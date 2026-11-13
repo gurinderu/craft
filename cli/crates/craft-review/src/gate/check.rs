@@ -23,6 +23,8 @@ pub(super) struct Cx<'a> {
     pub scope: Option<&'a str>,
     /// Where the reviewers' profiles are, for the CI map; `None`, CI is not read.
     pub projects: Option<&'a Path>,
+    /// Whether the gate may write no tracked file ([`super::GateSetup::locked`]).
+    pub locked: bool,
 }
 
 impl Cx<'_> {

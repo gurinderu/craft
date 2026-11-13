@@ -83,6 +83,7 @@ pub(super) fn gated(w: &World) -> (super::Gate, GateTrack) {
         path: Some(w.tools.path().as_os_str().to_owned()),
         scope: None,
         projects: Some(w.projects.path().to_owned()),
+        locked: false,
     };
     let run_dir = tempfile::tempdir().unwrap();
     let (gate, _) = run(

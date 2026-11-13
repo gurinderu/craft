@@ -52,6 +52,7 @@ pub(super) fn setup(path: &Path, budget: Duration) -> GateSetup {
         path: Some(path.as_os_str().to_owned()),
         scope: None,
         projects: None,
+        locked: false,
     }
 }
 
