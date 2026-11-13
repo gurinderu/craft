@@ -173,6 +173,7 @@ mod tests {
             agent: None,
             prompt: String::new(),
             model: None,
+            thinking: None,
             schema: None,
             allowed_tools: Vec::new(),
             cwd: PathBuf::from("."),

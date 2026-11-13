@@ -124,6 +124,7 @@ async fn run_one<B: AgentBackend + 'static>(
         agent: None,
         prompt: spec.prompt,
         model: spec.model,
+        thinking: None,
         schema: spec.schema,
         allowed_tools: spec.allowed_tools,
         cwd,

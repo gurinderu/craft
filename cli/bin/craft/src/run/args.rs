@@ -8,6 +8,7 @@ use craft_review::prompts::plugin_root_at;
 use regex::Regex;
 
 use super::host::Host;
+use super::models::ThinkingTable;
 use super::{HostKind, RunArgs, models};
 use crate::review::find_craft_root;
 
@@ -37,8 +38,32 @@ pub(super) fn concurrency_of(args: &RunArgs) -> Result<NonZeroUsize, String> {
     Ok(NonZeroUsize::new(usize::from(given.unwrap_or(4))).unwrap_or(NonZeroUsize::MIN))
 }
 
-/// The host from the arguments, or why it cannot be used.
+/// The host from the arguments and its environment variables, or why it cannot be used.
 pub(super) fn host_of(args: &RunArgs) -> Result<Host, String> {
+    host_with(args, &|what| host_env(args.backend, what))
+}
+
+/// pi's thinking level for each tier from `--thinking`, else `CRAFT_PI_THINKING` (realm
+/// `@nick/craft`, node #518); another host takes none, and is refused one.
+fn thinking_of(
+    args: &RunArgs,
+    env: &dyn Fn(&str) -> Option<String>,
+) -> Result<ThinkingTable, String> {
+    match (args.backend, &args.thinking) {
+        (HostKind::Pi, Some(flag)) => models::thinking_table(flag, "--thinking"),
+        (HostKind::Pi, None) => {
+            models::thinking_table(&env("THINKING").unwrap_or_default(), "CRAFT_PI_THINKING")
+        }
+        (_, Some(_)) => {
+            Err("--thinking is pi's alone: this backend takes no thinking level".into())
+        }
+        (_, None) => Ok(ThinkingTable::new()),
+    }
+}
+
+/// The host from the arguments and `env`, the host's variable for a name, or why it cannot be
+/// used.
+fn host_with(args: &RunArgs, env: &dyn Fn(&str) -> Option<String>) -> Result<Host, String> {
     let (name, command) = match args.backend {
         HostKind::Codex => (r"^[\w.:/-]{1,80}$", "codex"),
         HostKind::Pi => (r"^[\w.:/@*-]{1,120}$", "pi"),
@@ -49,16 +74,17 @@ pub(super) fn host_of(args: &RunArgs) -> Result<Host, String> {
     let spec = args
         .models
         .clone()
-        .or_else(|| host_env(args.backend, "MODELS"))
+        .or_else(|| env("MODELS"))
         .unwrap_or_default();
     let command = args
         .host_bin
         .clone()
-        .or_else(|| host_env(args.backend, "BIN").map(PathBuf::from))
+        .or_else(|| env("BIN").map(PathBuf::from))
         .unwrap_or_else(|| PathBuf::from(command));
     Ok(Host {
         kind: args.backend,
         models: models::model_table(&spec, &name)?,
+        thinking: thinking_of(args, env)?,
         command,
         agents: None,
         archived: true,
@@ -75,3 +101,7 @@ pub(super) fn root_of(args: &RunArgs) -> Result<PathBuf, String> {
     };
     near.ok_or_else(|| "no craft plugin root is known: pass --craft-root <the plugin's directory or a craft checkout>".into())
 }
+
+#[cfg(test)]
+#[path = "args_tests.rs"]
+mod tests;

@@ -87,6 +87,12 @@ pub struct RunArgs {
     /// `provider/model`); absent, `CRAFT_<HOST>_MODELS`, else the host's own configured model.
     #[arg(long)]
     pub models: Option<String>,
+    /// pi only: how hard each tier's model thinks — one level for every tier, or
+    /// `opus=<level>,sonnet=<level>,haiku=<level>` (any of them), a level one of off, minimal,
+    /// low, medium, high, xhigh, max; absent, `CRAFT_PI_THINKING`, else opus high, sonnet medium,
+    /// haiku low. A model `--models` names with its own `:<level>` keeps it.
+    #[arg(long)]
+    pub thinking: Option<String>,
     /// The host CLI to run; absent, `CRAFT_<HOST>_BIN`, else `codex`, `pi` or `opencode` on the
     /// PATH.
     #[arg(long)]

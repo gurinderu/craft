@@ -1,6 +1,7 @@
 //! What a task's model token means to a host CLI (realm @nick/craft, node #465): the binary names
 //! Claude tiers; the host runs its own configured model unless a table maps a tier to one of its
-//! models — one name for every tier, or `tier=model` pairs joined by commas.
+//! models — one name for every tier, or `tier=model` pairs joined by commas. pi's thinking level
+//! is a table of the same shape, with a default for each tier (realm `@nick/craft`, node #518).
 
 use std::collections::BTreeMap;
 
@@ -9,66 +10,84 @@ use regex::Regex;
 /// The tiers a task may name (`craft_review::agent::Model`).
 const TIERS: [&str; 3] = ["opus", "sonnet", "haiku"];
 
+/// pi's thinking levels (observed `pi --help`; realm `@nick/craft`, node #519).
+const LEVELS: [&str; 7] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+
+/// The thinking level a pi task runs at by its tier, unless the run names others (realm
+/// `@nick/craft`, node #518).
+const THINKING: [(&str, &str); 3] = [("opus", "high"), ("sonnet", "medium"), ("haiku", "low")];
+
 /// A host model for each tier mapped; a tier not in it runs on the host's own.
 pub(crate) type ModelTable = BTreeMap<String, String>;
+
+/// pi's thinking level for each tier.
+pub(crate) type ThinkingTable = BTreeMap<String, String>;
 
 /// The table from its text, "" none; or why it cannot be used. `name` is a model name the host
 /// takes.
 pub(crate) fn model_table(text: &str, name: &Regex) -> Result<ModelTable, String> {
+    tier_table(text, ("--models", "a model name", "model"), &|m| {
+        name.is_match(m)
+    })
+}
+
+/// The thinking level of each tier: craft's default for a tier `text` does not name — one level
+/// for every tier, or `tier=level` pairs joined by commas; or why it cannot be used, naming
+/// `source`, where `text` came from.
+pub(crate) fn thinking_table(text: &str, source: &str) -> Result<ThinkingTable, String> {
+    let mut table: ThinkingTable = THINKING
+        .iter()
+        .map(|(t, l)| ((*t).to_owned(), (*l).to_owned()))
+        .collect();
+    let what = format!("a thinking level ({})", LEVELS.join(", "));
+    table.extend(tier_table(text, (source, &what, "level"), &|l| {
+        LEVELS.contains(&l)
+    })?);
+    Ok(table)
+}
+
+/// Whether `model` names its own thinking level, as pi's `<model>:<level>` (realm `@nick/craft`,
+/// node #519).
+pub(crate) fn carries_level(model: &str) -> bool {
+    model
+        .rsplit_once(':')
+        .is_some_and(|(_, level)| LEVELS.contains(&level))
+}
+
+/// A value for each tier from `text`, "" none: one value for every tier, or `tier=value` pairs
+/// joined by commas; `flag` (where `text` came from), the value's noun and its placeholder name
+/// it in a refusal.
+fn tier_table(
+    text: &str,
+    (flag, noun, slot): (&str, &str, &str),
+    valid: &dyn Fn(&str) -> bool,
+) -> Result<BTreeMap<String, String>, String> {
     let spec = text.trim();
     if spec.is_empty() {
-        return Ok(ModelTable::new());
+        return Ok(BTreeMap::new());
     }
     if !spec.contains('=') {
-        return if name.is_match(spec) {
+        return if valid(spec) {
             Ok(TIERS
                 .iter()
                 .map(|t| ((*t).to_owned(), spec.to_owned()))
                 .collect())
         } else {
-            Err(format!("--models {text:?} is not a model name"))
+            Err(format!("{flag} {text:?} is not {noun}"))
         };
     }
     spec.split(',')
         .map(|pair| match pair.split_once('=') {
-            Some((tier, model)) if TIERS.contains(&tier.trim()) && name.is_match(model.trim()) => {
-                Ok((tier.trim().to_owned(), model.trim().to_owned()))
+            Some((tier, value)) if TIERS.contains(&tier.trim()) && valid(value.trim()) => {
+                Ok((tier.trim().to_owned(), value.trim().to_owned()))
             }
             _ => Err(format!(
-                "--models {text:?}: {pair:?} is not <opus|sonnet|haiku>=<model>"
+                "{flag} {text:?}: {pair:?} is not <opus|sonnet|haiku>=<{slot}>"
             )),
         })
         .collect()
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn name() -> Regex {
-        Regex::new(r"^[\w.:/@*-]{1,120}$").unwrap()
-    }
-
-    #[test]
-    fn one_name_maps_every_tier_and_pairs_map_theirs() {
-        assert!(model_table("", &name()).unwrap().is_empty());
-        let all = model_table("openai-codex/gpt-6-luna", &name()).unwrap();
-        assert_eq!(all.len(), 3);
-        assert_eq!(all["haiku"], "openai-codex/gpt-6-luna");
-        let some = model_table("opus=big, haiku=small", &name()).unwrap();
-        assert_eq!(
-            some.into_iter().collect::<Vec<_>>(),
-            [
-                ("haiku".into(), "small".into()),
-                ("opus".into(), "big".into())
-            ]
-        );
-    }
-
-    #[test]
-    fn a_bad_table_is_refused() {
-        model_table("bad name", &name()).unwrap_err();
-        model_table("giant=x", &name()).unwrap_err();
-        model_table("opus=", &name()).unwrap_err();
-    }
-}
+#[path = "models_tests.rs"]
+mod tests;
