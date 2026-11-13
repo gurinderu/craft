@@ -27,6 +27,7 @@ fn request(cwd: &Path) -> AgentRequest {
         agent: None,
         prompt: "the prompt".into(),
         model: None,
+        thinking: None,
         schema: Some(serde_json::json!({"type": "object"})),
         allowed_tools: vec!["Read".into()],
         cwd: cwd.to_path_buf(),

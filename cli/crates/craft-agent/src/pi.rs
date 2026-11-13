@@ -61,6 +61,10 @@ impl Pi {
             argv.push("--model".into());
             argv.push(model.clone());
         }
+        if let Some(level) = &request.thinking {
+            argv.push("--thinking".into());
+            argv.push(level.clone());
+        }
         argv.push("--".into());
         argv.push(request.prompt.clone());
         argv
@@ -108,6 +112,7 @@ mod tests {
             agent: None,
             prompt: "--do this".into(),
             model: Some("openai-codex/gpt-6-luna".into()),
+            thinking: Some("high".into()),
             schema: None,
             allowed_tools: Vec::new(),
             cwd: PathBuf::from("/repo"),
@@ -128,14 +133,18 @@ mod tests {
                 "read,bash,grep,find,ls",
                 "--model",
                 "openai-codex/gpt-6-luna",
+                "--thinking",
+                "high",
                 "--",
                 "--do this"
             ]
         );
         let bare = AgentRequest {
             model: None,
+            thinking: None,
             ..request
         };
-        assert!(!Pi::argv(&bare).iter().any(|a| a == "--model"));
+        let argv = Pi::argv(&bare);
+        assert!(!argv.iter().any(|a| a == "--model" || a == "--thinking"));
     }
 }

@@ -207,6 +207,7 @@ impl Bench {
         let host = Host {
             kind: self.kind,
             models,
+            thinking: super::models::ThinkingTable::new(),
             command: self.path("host"),
             agents: self.agents.clone(),
             archived: true,

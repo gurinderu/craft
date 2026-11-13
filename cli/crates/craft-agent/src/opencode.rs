@@ -121,6 +121,7 @@ mod tests {
             agent: Some("review-task".into()),
             prompt: "--do this".into(),
             model: Some("anthropic/claude-x#high".into()),
+            thinking: None,
             schema: None,
             allowed_tools: Vec::new(),
             cwd: PathBuf::from("/repo"),

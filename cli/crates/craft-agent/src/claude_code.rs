@@ -108,6 +108,7 @@ mod tests {
             agent: None,
             prompt: "hi".into(),
             model: Some("haiku".into()),
+            thinking: None,
             schema: Some(json!({"type": "object"})),
             allowed_tools: vec!["Read".into(), "Bash(git *)".into()],
             cwd: PathBuf::from("."),
