@@ -6,7 +6,8 @@ Run craft's review by invoking the `review` tool.
 
 If the user passed arguments, call the tool with `args` set to them exactly as written (the review's
 flags, such as `--base main`, `--depth light`, `--pr 123`, `--run <dir>` to resume a run, or
-`--models <provider/model>`):
+`--models <provider/model>`; a re-review of fix commits is `--base <the commit the review was made on>
+--fresh --delta --full-every 0`, whose clean verdict reads Warning, never Approve):
 
 `$ARGUMENTS`
 

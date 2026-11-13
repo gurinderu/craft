@@ -75,3 +75,16 @@ fn findings_still_raise_a_delta_round_and_its_cap_note_is_absent() {
         "a Warning a finding earned is not a cap"
     );
 }
+
+#[test]
+fn a_fresh_run_said_to_be_a_delta_is_a_warning() {
+    let mut s = run(&[], false, ReScope::First);
+    s.delta = true;
+    let v = verdict(&s);
+    assert_eq!(v, "Warning");
+    assert!(
+        verdict_line(&s, &v).contains("a delta round"),
+        "{}",
+        verdict_line(&s, &v)
+    );
+}

@@ -54,7 +54,7 @@ How it runs:
 Flags:
 - `--cwd <repository>` (default: the current directory), `--base <ref>` (default: the
   merge-base with origin's default branch), `--depth light|full`, `--path <directory>`.
-- Re-review of fix commits: `--base <the commit the review was made on> --fresh --full-every 0`.
+- Re-review of fix commits: `--base <the commit the review was made on> --fresh --delta --full-every 0` (`--delta`: a clean re-review of fix commits reads Warning, never Approve — Approve comes only from a full review).
 - `--strict`, `--no-gate`, `--optional all|<lens,...>`, `--pr <number>`, `--comment`
   (post the defects on the PR; doubtful findings stay in the report for the human),
   `--extra-lenses <agent,...>|off`, `--prior-decisions <file>` (a JSON list of the launcher's
