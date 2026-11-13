@@ -496,10 +496,14 @@ fn a_light_pass_runs_one_round_of_the_scoped_lenses() {
     assert_eq!(st["profiles"][0]["plan"]["maxRounds"], json!(1));
     let low = titled("Low", 2, "naming");
     let s = submit(&run, round1(&[low]));
-    assert_eq!(s["verdict"], json!("Approve"));
+    assert_eq!(
+        s["verdict"],
+        json!("Warning"),
+        "a light round never approves"
+    );
     let report = std::fs::read_to_string(s["report"].as_str().unwrap()).unwrap();
     for want in [
-        "## Verdict\n\nApprove · light pass (depth=light) -- see \"Light pass\" below for what it skipped",
+        "## Verdict\n\nWarning — a light round (depth=light) never approves: Approve comes only from a full round (the whole diff, `depth=full`) · light pass (depth=light) -- see \"Light pass\" below for what it skipped",
         "(NOT VERIFIED: light pass: only Medium and above are verified, so no verifier was spent on this Low finding and nothing here has been checked against the code)",
         "## Light pass -- what it skipped\n⚠️ This was a LIGHT pass (depth=light), not a full review, and its verdict covers only what it ran: the whole-diff lenses invariants, negative-space, compat were NOT dispatched (it DID run intent, which the diff called for);",
     ] {

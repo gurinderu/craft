@@ -413,8 +413,8 @@ fn a_deferred_finding_stays_known_and_deferred_while_its_question_holds() {
     let two = drive(&runs.path().join("r2"), s, &[]);
     assert_eq!(
         two["verdict"],
-        json!("Approve"),
-        "the held deferral holds no verdict"
+        json!("Warning"),
+        "the held deferral holds no verdict; a delta round caps a clean verdict at Warning"
     );
     let row = &two["ledger"][0];
     assert_eq!(
@@ -500,8 +500,8 @@ fn a_remembered_decision_sets_aside_a_prior_still_open() {
     );
     assert_eq!(
         two["verdict"],
-        json!("Approve"),
-        "the prior set aside holds no verdict"
+        json!("Warning"),
+        "the prior set aside holds no verdict; a delta round caps a clean verdict at Warning"
     );
     let ledger = two["ledger"].as_array().unwrap();
     assert_eq!(ledger.len(), 1, "{ledger:?}");
