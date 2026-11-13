@@ -90,6 +90,9 @@ pub struct StartOptions {
     pub light: bool,
     /// Start a new chain of rounds rather than build on the branch's earlier round.
     pub fresh: bool,
+    /// The run reviews only the fix commits since an earlier review: a delta round, which never
+    /// approves.
+    pub delta: bool,
     /// Every this-many-th round of a chain reviews the whole diff again; 0, never.
     pub full_every: u32,
     /// Where earlier runs are looked for; the run directory's parent when `None`.
@@ -155,6 +158,13 @@ pub struct StartOptions {
 }
 
 impl StartOptions {
+    /// Where earlier runs are looked for: `runs`, else the run directory's parent.
+    fn runs_or_parent(&self) -> Option<PathBuf> {
+        self.runs
+            .clone()
+            .or_else(|| self.run_dir.parent().map(Path::to_path_buf))
+    }
+
     /// How the run in `dir` asks gh for the pull request a detached `HEAD` heads, its output kept
     /// in `dir/chain`.
     fn chain_lookup(&self, dir: &Path) -> rereview::branch::Lookup<'_> {
@@ -185,10 +195,7 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
     let (cwd, laid) = pr_worktree(cwd, dir, opts)?;
     let (scope, branch_diff) = read_change(&cwd, opts)?;
     let profiles = Profile::all()?;
-    let runs = opts
-        .runs
-        .clone()
-        .or_else(|| dir.parent().map(Path::to_path_buf));
+    let runs = opts.runs_or_parent();
     let (mut chain, pr_note) = rereview::begin(
         &cwd,
         runs.as_deref().unwrap_or(dir),
@@ -228,6 +235,7 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
         tracks,
         uncovered,
         light: opts.light,
+        delta: opts.delta,
         optional,
         phase: Phase::Scout,
         rounds: Rounds::default(),

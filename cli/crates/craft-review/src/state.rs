@@ -283,6 +283,11 @@ pub struct RunState {
     pub uncovered: Vec<String>,
     /// A light pass (`depth=light`) rather than the full review.
     pub light: bool,
+    /// The launcher said the run reviews only the fix commits since an earlier review (`--delta`),
+    /// as a re-review whose base is that review's commit does: it never approves. Optional, so a
+    /// state written before it reads as no delta.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub delta: bool,
     /// The optional lenses the run was asked for, qualified by profile ([`crate::optional`]).
     /// Optional, so a state written before it reads as a run that bought none.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

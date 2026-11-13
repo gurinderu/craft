@@ -141,9 +141,12 @@ fn repo_rule_paths(raw: &[String]) -> Vec<String> {
 
 /// Whether the scout, having read the diff, chose `reconciler`: the controller-code signal.
 fn chose_reconciler(scout: Option<&Value>) -> bool {
-    scout_strings(scout, "lenses")
-        .iter()
-        .any(|l| l == "reconciler")
+    chose(scout, "reconciler")
+}
+
+/// Whether the scout, having read the diff, chose the lens `id`.
+fn chose(scout: Option<&Value>, id: &str) -> bool {
+    scout_strings(scout, "lenses").iter().any(|l| l == id)
 }
 
 /// The plan for `input`.
@@ -288,6 +291,9 @@ fn light(
     }
     if chose_reconciler(scout) {
         forced.extend(in_roster(&["reconciler", "failure-windows"]));
+    } else if chose(scout, "failure-windows") {
+        // A failure window the scout saw outside a controller: a write pair, a retry, a resume.
+        forced.extend(in_roster(&["failure-windows"]));
     }
     if files.iter().any(|f| is_contract_path(f)) {
         forced.extend(in_roster(&["compat"]));

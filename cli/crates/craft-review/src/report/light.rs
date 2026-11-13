@@ -115,6 +115,6 @@ pub(super) fn section(state: &RunState) -> String {
         )
     };
     format!(
-        "\n\n## Light pass -- what it skipped\n⚠️ This was a LIGHT pass (depth=light), not a full review, and its verdict covers only what it ran: {lenses}{kept}; the lenses ran ONE round (no loop-until-dry); the completeness critic did not run; Low and Info findings were not verified (each says so in its `why`), except those two or more lenses reported with a must-fix harm claimed, which were. That is an absence of a result, not a clean one. Re-run without `depth` (or with `depth=full`) for the full review.\n"
+        "\n\n## Light pass -- what it skipped\n⚠️ This was a LIGHT pass (depth=light), not a full review, and its verdict covers only what it ran: {lenses}{kept}; the lenses ran ONE round (no loop-until-dry); the completeness critic did not run; Low and Info findings were not verified (each says so in its `why`), except those two or more lenses reported with a must-fix harm claimed, which were. That is an absence of a result, not a clean one, so its verdict is never Approve. Re-run without `depth` (or with `depth=full`) for the full review.\n"
     )
 }

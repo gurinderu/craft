@@ -9,6 +9,9 @@ mod gate_cap;
 #[cfg(test)]
 mod gate_cap_tests;
 mod light;
+mod reduced_cap;
+#[cfg(test)]
+mod reduced_cap_tests;
 mod rereview;
 #[cfg(test)]
 mod tests;
@@ -56,8 +59,17 @@ pub fn verdict(state: &RunState) -> String {
 #[must_use]
 pub fn verdict_line(state: &RunState, verdict: &str) -> String {
     let gap = coverage::gap(&state.uncovered);
+    // A reduced round says why it does not approve (never over the gate's cap or INCOMPLETE).
+    let reduced = reduced_cap::reason(state, gate_cap::cap(state, findings_verdict(state)));
     let line = match (&state.exit, gap.is_empty()) {
         (Some(exit), _) if exit.verdict == verdict => exit.line.clone(),
+        (Some(exit), _) if reduced.is_some() => {
+            let what = exit
+                .line
+                .split_once(" — ")
+                .map_or(exit.line.as_str(), |(_, m)| m);
+            format!("{verdict} — {what}")
+        }
         (Some(_), _) => format!("{verdict} — {}", rereview_line(state)),
         (None, true) => verdict.to_owned(),
         (None, false) => format!(
@@ -67,6 +79,11 @@ pub fn verdict_line(state: &RunState, verdict: &str) -> String {
     };
     // An unknown gate says why it holds the verdict (realm @nick/craft, node #487).
     let line = match gate_cap::reason(state) {
+        Some(why) if line == verdict => format!("{line} — {why}"),
+        Some(why) => format!("{line} · {why}"),
+        None => line,
+    };
+    let line = match reduced {
         Some(why) if line == verdict => format!("{line} — {why}"),
         Some(why) => format!("{line} · {why}"),
         None => line,
@@ -89,6 +106,24 @@ pub fn verdict_line(state: &RunState, verdict: &str) -> String {
 /// still open (`rereviewVerdict`), and what did not run. A coverage exit's own verdict stands
 /// unless a prior finding still holds the run.
 fn severity_verdict(state: &RunState) -> String {
+    let worst = findings_verdict(state);
+    let stands = |e: &&coverage::Exit| worst == "Approve" && !reduced_cap::over_exit(state, e);
+    if let Some(exit) = state.exit.as_ref().filter(stands) {
+        return exit.verdict.clone();
+    }
+    // After the exit: a red gate's Block stands over another profile's unknown one; what did not
+    // run makes it INCOMPLETE before a reduced round's cap could name another cause.
+    let worst = gate_cap::cap(state, worst);
+    match (state.not_run.is_empty(), worst) {
+        (true, w) => reduced_cap::cap(state, w).into(),
+        (false, "Approve") => "INCOMPLETE".into(),
+        (false, w) => format!("{w} (INCOMPLETE)"),
+    }
+}
+
+/// The verdict the findings alone give: Block on a Critical or High (or strict mode's bar),
+/// Warning on a Medium, Approve otherwise.
+fn findings_verdict(state: &RunState) -> &'static str {
     let mut worst = "Approve";
     for f in &verdict_findings(state) {
         match field(f, "severity").to_lowercase().as_str() {
@@ -100,16 +135,7 @@ fn severity_verdict(state: &RunState) -> String {
     if strict_escalates(state) {
         worst = "Block";
     }
-    if let Some(exit) = state.exit.as_ref().filter(|_| worst == "Approve") {
-        return exit.verdict.clone();
-    }
-    // After the exit: a red gate's Block stands over another profile's unknown one.
-    let worst = gate_cap::cap(state, worst);
-    match (state.not_run.is_empty(), worst) {
-        (true, w) => w.into(),
-        (false, "Approve") => "INCOMPLETE".into(),
-        (false, w) => format!("{w} (INCOMPLETE)"),
-    }
+    worst
 }
 
 /// The findings that hold the verdict: the confirmed ones and the prior round's still open.
