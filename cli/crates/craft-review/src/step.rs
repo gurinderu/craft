@@ -387,6 +387,8 @@ fn prepare(cwd: &Path, dir: &Path, opts: &StartOptions, run: &mut RunState) {
                 .as_ref()
                 .map(|setup| GateSetup {
                     scope: run.context.scope.clone(),
+                    // In craft's own worktree of the PR, which other runs on its head share.
+                    locked: run.chain.worktree.is_some(),
                     ..setup.clone()
                 })
                 .map(|setup| gate::run(cwd, &run.diff.base, &run.tracks, &setup, dir)),
