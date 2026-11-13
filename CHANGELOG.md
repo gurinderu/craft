@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.53.0](https://github.com/gurinderu/craft/compare/v0.52.0...v0.53.0) (2026-11-13)
+
+
+### Features
+
+* craft lays its own worktree for a PR review whose head the checkout lacks ([b63914f](https://github.com/gurinderu/craft/commit/b63914f2b50d2a439d687426326aa1f6448b7e7a))
+* craft lays its own worktree for a PR review whose head the checkout lacks ([f633720](https://github.com/gurinderu/craft/commit/f6337202c3918a5f2b6a9db645b2fe02c2774e07))
+* one worktree per PR head, never moved ([a93775f](https://github.com/gurinderu/craft/commit/a93775ff157d1544ede2e00fe0b0f84c9bd8e2da))
+* the pi backend sets the thinking level by task tier ([5f7c51c](https://github.com/gurinderu/craft/commit/5f7c51c624a604a1a871daffb6c2936fcafd822f))
+* the pi backend sets the thinking level by task tier ([6c290a1](https://github.com/gurinderu/craft/commit/6c290a1f805fbce9f3f53b9da5ae34641326bed6))
+* worktree review checks OpenCode there, lays one at a time ([3902415](https://github.com/gurinderu/craft/commit/3902415afd54a93b2690e0ede5d3d404f69ad763))
+
+
+### Bug Fixes
+
+* a pr= run's fallback record is keyed to craft's worktree it reviewed ([167a3fa](https://github.com/gurinderu/craft/commit/167a3facbb8bae5191084384192ee776d822b11d))
+* carry the host's thinking levels into the worktree's host tests ([7df963b](https://github.com/gurinderu/craft/commit/7df963b4d616194488c47f74b6de59c14f787606))
+* name the thinking level's source and the pi surface ([5f1cc21](https://github.com/gurinderu/craft/commit/5f1cc2173e49d60d34bb7e832693df12ce52b4d4))
+* release 0.53.0 review — the gate writes nothing in craft's PR worktree, the PR's host config named ([1407713](https://github.com/gurinderu/craft/commit/1407713308ae41b3c3582794760fae728fa73c82))
+* review run compares the step's repo with its checkout resolved ([e3f00c2](https://github.com/gurinderu/craft/commit/e3f00c2007eedbd3845107f2068b8ad56c3eb370))
+* the gate writes no tracked file in craft's own PR worktree ([36441f6](https://github.com/gurinderu/craft/commit/36441f604dfd88fe8b0fb68ab8cde63b1fae35e1))
+* the worktree line says how the engine's task agents read craft's PR worktree ([cc39ec2](https://github.com/gurinderu/craft/commit/cc39ec27057f064af627ab6b174c29dc60c9471c))
+
 ## [0.52.0](https://github.com/gurinderu/craft/compare/v0.51.0...v0.52.0) (2026-11-12)
 
 

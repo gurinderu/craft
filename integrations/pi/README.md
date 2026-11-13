@@ -14,7 +14,7 @@ of craft's other skills):
 
 <!-- x-release-please-start-version -->
 ```sh
-pi install git:github.com/gurinderu/craft@v0.52.0
+pi install git:github.com/gurinderu/craft@v0.53.0
 ```
 <!-- x-release-please-end -->
 
