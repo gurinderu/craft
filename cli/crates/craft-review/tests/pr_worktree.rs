@@ -137,9 +137,9 @@ fn a_pr_head_the_checkout_lacks_is_fetched_and_reviewed_in_a_new_worktree() {
     assert_eq!(
         step["worktree"]
             .as_str()
-            .map(|l| l.contains(&dir.display().to_string())),
+            .map(|l| l.contains(&dir.display().to_string()) && l.contains("by its absolute path")),
         Some(true),
-        "{step}"
+        "the line names the worktree and how the engine's task agents read it: {step}"
     );
     untouched(repo.path(), &at);
 }
