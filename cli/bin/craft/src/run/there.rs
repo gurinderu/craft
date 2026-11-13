@@ -35,7 +35,7 @@ pub(crate) fn host_in(host: &Host, repo: &Path, log: &dyn Fn(&str)) -> Result<Ho
 #[cfg(test)]
 mod tests {
     use super::super::exe::write_executable;
-    use super::super::models::ModelTable;
+    use super::super::models::{ModelTable, ThinkingTable};
     use super::*;
 
     /// A stand-in opencode 2.x whose `review-task` agent is there only in a directory holding a
@@ -53,6 +53,7 @@ esac
         Host {
             kind: HostKind::OpenCode,
             models: ModelTable::default(),
+            thinking: ThinkingTable::default(),
             command,
             agents: Some(vec!["build".into(), "review-task".into()]),
             archived: true,
@@ -87,6 +88,7 @@ esac
         let host = Host {
             kind: HostKind::Pi,
             models: ModelTable::default(),
+            thinking: ThinkingTable::default(),
             command: "/no/pi".into(),
             agents: None,
             archived: false,
