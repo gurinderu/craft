@@ -120,9 +120,9 @@ fn reason(run: &RunState, i: usize) -> Option<Value> {
         .find_map(|v| v.get("reason").cloned())
 }
 
-/// Settles the pool into `run.settled`, notes each verifier that gave no valid answer, and adds
-/// what did not run to `run.not_run`.
-pub(crate) fn settle_run(run: &mut RunState) {
+/// Each finding as its votes judge it, by its index in the pool; `None` for a batched one no batch
+/// holds.
+pub(super) fn judged(run: &RunState) -> Vec<Option<Value>> {
     let mut out: Vec<Option<Value>> = vec![None; run.findings.len()];
     for (i, f) in run.findings.iter().enumerate() {
         let one = match route_in(f, run.light) {
@@ -149,6 +149,13 @@ pub(crate) fn settle_run(run: &mut RunState) {
             }
         }
     }
+    out
+}
+
+/// Settles the pool into `run.settled`, notes each verifier that gave no valid answer, and adds
+/// what did not run to `run.not_run`.
+pub(crate) fn settle_run(run: &mut RunState) {
+    let out = judged(run);
     let failed: Vec<String> = run
         .tasks
         .iter()
