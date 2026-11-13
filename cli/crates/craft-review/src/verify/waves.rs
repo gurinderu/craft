@@ -110,22 +110,28 @@ fn by_file(run: &RunState, batched: &[usize]) -> Vec<Vec<usize>> {
 pub(crate) fn escalation(run: &RunState) -> Result<Vec<Task>, ContentError> {
     let mut tasks = Vec::new();
     for (i, f) in run.findings.iter().enumerate() {
-        let n1 = culls(run, f);
-        if route_in(f, run.light) != Route::Individual || !is_high(f) || n1 < 2 {
+        if !awaits_escalation(run, i, f) {
             continue;
         }
-        let votes = panel(run, i);
-        let bought = votes.iter().any(|(k, _)| (1..n1).contains(k));
-        let pair: Vec<&Value> = votes.iter().filter_map(|(_, v)| v.as_ref()).collect();
-        let settled = matches!(pair.as_slice(), [a, b] if settle::agree(a, b));
-        if bought || settled {
-            continue;
-        }
-        for k in 1..n1 {
+        for k in 1..culls(run, f) {
             tasks.push(vote(run, i, f, k)?);
         }
     }
     Ok(tasks)
+}
+
+/// Whether finding `i`'s Critical or High panel still has the rest of its cull votes to buy: its
+/// deciding pair did not come back as two agreeing judgements and the rest is not bought yet.
+pub(super) fn awaits_escalation(run: &RunState, i: usize, f: &Value) -> bool {
+    let n1 = culls(run, f);
+    if route_in(f, run.light) != Route::Individual || !is_high(f) || n1 < 2 {
+        return false;
+    }
+    let votes = panel(run, i);
+    let bought = votes.iter().any(|(k, _)| (1..n1).contains(k));
+    let pair: Vec<&Value> = votes.iter().filter_map(|(_, v)| v.as_ref()).collect();
+    let settled = matches!(pair.as_slice(), [a, b] if settle::agree(a, b));
+    !bought && !settled
 }
 
 /// Vote `k` on finding `i`: a cull vote on the cheap model below `culls`, the authoritative one on

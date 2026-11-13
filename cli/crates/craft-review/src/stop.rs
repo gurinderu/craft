@@ -167,6 +167,7 @@ pub(crate) fn step(dir: &Path, run: &RunState) -> Result<Value, Error> {
     let line = format!("{}. Resume {when}: `{}`", stop.note(), resume(dir));
     let mut shown = run.clone();
     shown.not_run.push(line.clone());
+    crate::verify::stood(&mut shown);
     let verdict = report::verdict(&shown);
     let path = state::report_path(dir);
     std::fs::write(&path, report::markdown(&shown, &verdict))

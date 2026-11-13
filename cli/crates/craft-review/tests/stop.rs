@@ -3,7 +3,7 @@
 //! submit hands the held tasks out again. A lone dead agent — a transient 429 — does not stop it.
 mod common;
 
-use common::{fixture, ids, lens, prompt_of, small_run, submit, titled, write_answer};
+use common::{fixture, ids, lens, prompt_of, small_run, submit, titled, verdict, write_answer};
 use craft_review::status;
 use craft_review::step::{self, Said};
 use serde_json::json;
@@ -296,4 +296,61 @@ fn a_round_with_one_abandoned_task_and_the_rest_dead_is_no_limit_stop() {
         (&json!(true), &json!("INCOMPLETE"))
     );
     assert!(!s["line"].as_str().unwrap().contains("usage limit"));
+}
+
+#[test]
+fn a_limit_stop_in_verification_reports_every_finding_under_its_honest_tier() {
+    let repo = fixture(true);
+    let out = tempfile::tempdir().unwrap();
+    let (run, s) = small_run(repo.path(), out.path());
+    let found = lens(
+        "errors",
+        &[
+            titled("High", 1, "decided"),
+            titled("High", 2, "half judged"),
+            titled("Low", 3, "minor"),
+        ],
+    );
+    write_answer(&s, "lens-rust-errors-r1", &found.to_string());
+    write_answer(&s, "lens-rust-intent-r1", &lens("intent", &[]).to_string());
+    write_answer(&s, "lens-rust-tests-r1", &lens("tests", &[]).to_string());
+    let s = step::submit(&run, None).unwrap();
+    assert_eq!(ids(&s), ["dedup-rust"]);
+    let s = submit(&run, json!({"dedup-rust": {"groups": []}}));
+    assert_eq!(
+        ids(&s),
+        ["verify-0-v0", "verify-0-v1", "verify-1-v0", "verify-1-v1"]
+    );
+    // The first panel came back whole, the second with one vote; then the limit.
+    for id in ["verify-0-v0", "verify-0-v1", "verify-1-v0"] {
+        write_answer(&s, id, &verdict(false).to_string());
+    }
+    let said = Said {
+        limit: Some("The usage limit has been reached"),
+        ..Said::default()
+    };
+    let s = step::submit_with(&run, None, &said).unwrap();
+    assert_eq!(s["stopped"]["cause"], json!("limit"), "{s}");
+    assert_eq!(
+        s["verdict"],
+        json!("Block (INCOMPLETE)"),
+        "the decided High holds"
+    );
+    let report = std::fs::read_to_string(s["report"].as_str().unwrap()).unwrap();
+    let section = |name: &str| {
+        let (_, rest) = report.split_once(&format!("## {name} findings")).unwrap();
+        rest.split("\n## ").next().unwrap_or_default().to_owned()
+    };
+    assert!(section("Confirmed").contains("decided"), "{report}");
+    assert!(section("Suspected").contains("half judged"), "{report}");
+    assert!(section("Unverified").contains("minor"), "{report}");
+    assert!(
+        report
+            .contains("3 finding(s) reported: 1 confirmed, 1 suspected, 0 refuted, 1 unverified."),
+        "{report}"
+    );
+    assert!(
+        report.contains("verification stopped before it finished"),
+        "{report}"
+    );
 }
