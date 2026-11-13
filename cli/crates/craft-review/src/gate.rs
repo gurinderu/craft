@@ -42,6 +42,8 @@ mod ci_world;
 mod clippy;
 pub(crate) mod lines;
 mod lock;
+#[cfg(test)]
+mod locked_tests;
 mod nix;
 mod nix_answer;
 #[cfg(test)]
@@ -85,6 +87,11 @@ pub struct GateSetup {
     /// Where the reviewers' profiles are (`~/.craft/projects`): the CI map is read from the
     /// repository's when the gate cannot build the head itself. `None`, CI is not read.
     pub projects: Option<std::path::PathBuf>,
+    /// Whether the run reviews craft's own worktree of a pull request (realm `@nick/craft`, node
+    /// #517), shared by every run on its head: there the gate writes no tracked file — clippy runs
+    /// with `--locked` where a lockfile is — so no run leaves it dirty for the next. In the
+    /// user's own checkout, `false`: the gate builds as it always did.
+    pub locked: bool,
 }
 
 impl Default for GateSetup {
@@ -94,6 +101,7 @@ impl Default for GateSetup {
             path: None,
             scope: None,
             projects: None,
+            locked: false,
         }
     }
 }
@@ -222,6 +230,7 @@ pub fn run(
             profile: &t.profile,
             scope: setup.scope.as_deref(),
             projects: setup.projects.as_deref(),
+            locked: setup.locked,
         };
         let mut acc = Acc::default();
         if t.profile == "rust" {

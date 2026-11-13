@@ -70,7 +70,7 @@ pub fn checkout(
     };
     let dir = dir.canonicalize().map_err(|e| refuse(e.to_string()))?;
     let line = format!(
-        "pr={n}: this checkout's HEAD `{}` does not hold PR #{n}'s head `{}`, so craft reviewed it in its own detached worktree {} ({how}); your checkout was not touched",
+        "pr={n}: this checkout's HEAD `{}` does not hold PR #{n}'s head `{}`, so craft reviewed it in its own detached worktree {} ({how}); your checkout was not touched. Driven by the Claude Code plugin's review engine, the task agents run in the session's directory and read this worktree by its absolute path (not yet observed live)",
         short(head),
         short(&pr_head),
         dir.display()

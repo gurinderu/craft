@@ -63,7 +63,8 @@ Flags:
   head and reviews it in its own detached worktree, one per head and never moved,
   `~/.craft/worktrees/<repo>/pr-<number>-<head>` (runs on that head at once share it), and the
   answer names it; your checkout is not touched. The gate builds and runs the PR's code: add
-  `--no-gate` for a PR you do not trust. If it still refuses (it could not fetch the
+  `--no-gate` for a PR you do not trust (Codex itself, in that untrusted directory, takes only the head's
+  `AGENTS.md`, as instructions). If it still refuses (it could not fetch the
   head or lay the worktree), make a detached worktree in a fresh directory of your own
   (`mktemp -d`) as the refusal says and run again with `--cwd <that worktree>` and no `--pr`,
   without asking the human — never reuse a worktree another session or craft made.
