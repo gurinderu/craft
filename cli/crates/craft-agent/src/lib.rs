@@ -33,6 +33,9 @@ pub struct AgentRequest {
     pub prompt: String,
     /// The backend's own default when absent.
     pub model: Option<String>,
+    /// How hard the model thinks, as the backend names its levels; the backend's own default when
+    /// absent, and a backend with no such setting ignores it.
+    pub thinking: Option<String>,
     /// When present, the agent must answer with a value of this JSON Schema.
     pub schema: Option<serde_json::Value>,
     /// Tool uses allowed without a prompt; every other use is refused.

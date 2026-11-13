@@ -30,6 +30,7 @@ fn request(cwd: &Path) -> AgentRequest {
         agent: None,
         prompt: "the prompt".into(),
         model: None,
+        thinking: None,
         schema: None,
         allowed_tools: Vec::new(),
         cwd: cwd.to_path_buf(),
