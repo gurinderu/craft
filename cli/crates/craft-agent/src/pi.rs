@@ -61,6 +61,7 @@ impl Pi {
             argv.push("--model".into());
             argv.push(model.clone());
         }
+        // pi's `--thinking <level>` (realm `@nick/craft`, node #519).
         if let Some(level) = &request.thinking {
             argv.push("--thinking".into());
             argv.push(level.clone());

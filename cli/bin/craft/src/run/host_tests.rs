@@ -10,7 +10,7 @@ fn host(kind: HostKind) -> Host {
     Host {
         kind,
         models,
-        thinking: thinking_table("").unwrap(),
+        thinking: thinking_table("", "--thinking").unwrap(),
         command: PathBuf::from("x"),
         agents: None,
         archived: true,
@@ -100,7 +100,7 @@ fn a_pi_task_thinks_by_its_tier_unless_its_model_names_a_level() {
         t.model = tier.into();
         assert_eq!(level(&pi, &t).as_deref(), Some(want), "{tier}");
     }
-    pi.thinking = thinking_table("sonnet=max").unwrap();
+    pi.thinking = thinking_table("sonnet=max", "--thinking").unwrap();
     t.model = "sonnet".into();
     assert_eq!(level(&pi, &t).as_deref(), Some("max"));
     pi.models

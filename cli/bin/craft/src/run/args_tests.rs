@@ -37,7 +37,12 @@ fn pi_thinks_by_the_flag_then_its_variable_then_the_tier() {
 fn a_bad_level_or_another_hosts_thinking_is_refused() {
     let why = host(&["--backend", "pi", "--thinking", "huge"], &[]).unwrap_err();
     assert!(why.contains("not a thinking level"), "{why}");
-    host(&["--backend", "pi"], &[("THINKING", "opus=huge")]).unwrap_err();
+    assert!(why.starts_with("--thinking "), "the flag is named: {why}");
+    let why = host(&["--backend", "pi"], &[("THINKING", "opus=huge")]).unwrap_err();
+    assert!(
+        why.starts_with("CRAFT_PI_THINKING "),
+        "the env is named: {why}"
+    );
     let why = host(&["--backend", "codex", "--thinking", "high"], &[]).unwrap_err();
     assert!(why.contains("pi's alone"), "{why}");
     let codex = host(&["--backend", "codex"], &[("THINKING", "huge")]).unwrap();
