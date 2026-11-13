@@ -24,6 +24,7 @@ fn request(cwd: &Path) -> AgentRequest {
         agent: None,
         prompt: "the prompt".into(),
         model: None,
+        thinking: None,
         schema: Some(
             json!({"type": "object", "required": ["a"], "properties": {"a": {"type": "string"}, "b": {"type": "string"}}}),
         ),

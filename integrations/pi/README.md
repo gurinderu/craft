@@ -46,6 +46,8 @@ git, and it is not contained — a task's shell runs with your permissions in th
 do not trust with `--no-gate` and inside a container or VM.
 
 Login and the default model are pi's own: no key is passed, and `--model` is given only for a tier `--models` (or
-`CRAFT_PI_MODELS`) maps. A task past its deadline is abandoned; one that failed or printed no answer is left for the
-binary to ask again; the usage limit, or pi not logged in, starts no further task and stops the run where it can be
-resumed.
+`CRAFT_PI_MODELS`) maps. Each task gets `--thinking` by the tier it asks for — opus `high`, sonnet `medium`, haiku
+`low` — unless `--thinking <level>` or `--thinking opus=<level>,sonnet=<level>,haiku=<level>` (or `CRAFT_PI_THINKING`)
+names others, or the tier's `--models` model already ends in its own `:<level>`. A task past its deadline is
+abandoned; one that failed or printed no answer is left for the binary to ask again; the usage limit, or pi not logged
+in, starts no further task and stops the run where it can be resumed.

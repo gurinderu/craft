@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use super::*;
-use crate::run::models::ModelTable;
+use crate::run::models::{ModelTable, thinking_table};
 
 fn host(kind: HostKind) -> Host {
     let models: ModelTable = [("opus".to_owned(), "big".to_owned())]
@@ -10,6 +10,7 @@ fn host(kind: HostKind) -> Host {
     Host {
         kind,
         models,
+        thinking: thinking_table("").unwrap(),
         command: PathBuf::from("x"),
         agents: None,
         archived: true,
@@ -47,6 +48,7 @@ fn a_codex_task_reads_its_prompt_after_the_body_with_its_schema_and_tiers_model(
     );
     assert!(r.prompt.trim_end().ends_with("read it from there."));
     assert_eq!(r.schema, Some(serde_json::json!({"type": "object"})));
+    assert_eq!(r.thinking, None, "only pi is given a thinking level");
     assert_eq!(
         r.model, None,
         "a tier the table does not map runs on the host's own"
@@ -82,6 +84,30 @@ fn a_pi_task_reads_a_copy_of_its_prompt_with_the_root_written_in() {
         .request(&plain, "", (Path::new("/plugin"), dir.path()))
         .unwrap();
     assert!(r.prompt.contains(&plain.prompt_file.display().to_string()));
+}
+
+#[test]
+fn a_pi_task_thinks_by_its_tier_unless_its_model_names_a_level() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut t = task(dir.path(), "x");
+    let mut pi = host(HostKind::Pi);
+    let level = |pi: &Host, t: &Task| {
+        pi.request(t, "", (Path::new("/p"), dir.path()))
+            .unwrap()
+            .thinking
+    };
+    for (tier, want) in [("opus", "high"), ("sonnet", "medium"), ("haiku", "low")] {
+        t.model = tier.into();
+        assert_eq!(level(&pi, &t).as_deref(), Some(want), "{tier}");
+    }
+    pi.thinking = thinking_table("sonnet=max").unwrap();
+    t.model = "sonnet".into();
+    assert_eq!(level(&pi, &t).as_deref(), Some("max"));
+    pi.models
+        .insert("sonnet".into(), "anthropic/claude-x:minimal".into());
+    assert_eq!(level(&pi, &t), None, "the model's own level wins");
+    pi.models.insert("sonnet".into(), "ollama/llama3:8b".into());
+    assert_eq!(level(&pi, &t).as_deref(), Some("max"));
 }
 
 #[test]
