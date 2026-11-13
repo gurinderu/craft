@@ -12,6 +12,8 @@ flags, such as `--base main`, `--depth light`, `--pr 123`, `--run <dir>` to resu
 
 Otherwise call `review` with no arguments. Return the tool's answer verbatim — its `## Verdict` block, or
 what stopped the run and how to resume it. Do not edit any code yourself: the review reports, it does not fix.
+Never submit a GitHub review verdict (`gh pr review --approve` or `--request-changes`), approve or
+merge: the verdict goes to the user only, and findings reach the PR only through `--comment` when the user asked for it.
 
 With `--pr` from a checkout that lacks the PR's head, the review runs in craft's own worktree of it,
 where OpenCode loads the PR's own project config (plugins, MCP servers, agents): the PR's code runs
