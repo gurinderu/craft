@@ -136,7 +136,8 @@ pub struct StartOptions {
     /// and files no round record for a later one, as the engine keeps a nested run out of the chain.
     pub nested: bool,
     /// The pull request under review (`pr`), whose head `HEAD` must be or hold, else the run moves
-    /// to craft's own worktree at that head (`worktrees`), refused only where it cannot: on a
+    /// to craft's own worktree of that head, one per head and never moved (`worktrees`), refused
+    /// only where it cannot: on a
     /// detached `HEAD` its head branch keys the round chain ([`rereview::branch`]); `None`, gh is
     /// asked for the open one whose head is `HEAD`.
     pub pr: Option<u64>,

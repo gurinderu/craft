@@ -1,9 +1,10 @@
 //! Where a review of the pull request given (`pr=`) runs when this checkout's `HEAD` does not hold
-//! its head: craft's own detached worktree, `<worktrees>/<repo key>/pr-<N>`, outside the user's
-//! repository and registered with it, the head fetched from `origin` when the repository lacks it
-//! (realm `@nick/craft`, node #517). A worktree there from before is moved to the head when clean
-//! and refused when dirty; the user's checkout and every other worktree are never touched. Where
-//! the head cannot be got, the run is refused with the manual way ([`super::head`]).
+//! its head: craft's own detached worktree, `<worktrees>/<repo key>/pr-<N>-<head>`, outside the
+//! user's repository and registered with it, the head fetched from `origin` when the repository
+//! lacks it (realm `@nick/craft`, node #517). Keyed on the head, one there from before is reused,
+//! never moved — runs on several hosts at once share it; a dirty one, one at another `HEAD` or a
+//! stranger is refused. The user's checkout and every other worktree are never touched. Where the
+//! head cannot be got, the run is refused with the manual way ([`super::head`]).
 
 use std::path::{Path, PathBuf};
 
@@ -21,13 +22,13 @@ pub struct Laid {
     pub line: String,
 }
 
-/// The worktree `cwd`'s review of the PR given runs in, laid or moved under `root`: `None` when no
+/// The worktree `cwd`'s review of the PR given runs in, laid or reused under `root`: `None` when no
 /// PR is given, gh is not asked or cannot tell (the chain notes it, [`super::resolve`]), there is
 /// no `root`, or `HEAD` already holds the PR's head.
 ///
 /// # Errors
-/// The refusal, when the head cannot be fetched, the worktree cannot be laid or moved, or the
-/// place holds a dirty worktree or something that is no worktree of this repository.
+/// The refusal, when the head cannot be fetched, the worktree cannot be laid, or the place holds a
+/// dirty worktree, one at another `HEAD` or something that is no worktree of this repository.
 pub fn checkout(
     cwd: &Path,
     lookup: &Lookup<'_>,
@@ -53,13 +54,13 @@ pub fn checkout(
         return Ok(None);
     }
     let refuse = |why: String| head::refusal(n, &pr_head, head, Some(&why));
-    let dir = place(cwd, root, n).map_err(refuse)?;
-    fetch(cwd, n, &pr_head).map_err(refuse)?;
+    let dir = place(cwd, root, n, &pr_head).map_err(refuse)?;
     let how = if dir.exists() {
-        mine(cwd, &dir).map_err(refuse)?;
-        move_to(&dir, n, &pr_head)?;
-        "moved there"
+        reuse(cwd, &dir, &pr_head).map_err(refuse)?;
+        clean(&dir, n)?;
+        "reused at that head"
     } else {
+        fetch(cwd, n, &pr_head).map_err(refuse)?;
         add(cwd, &dir, &pr_head).map_err(refuse)?;
         "laid now"
     };
@@ -73,10 +74,12 @@ pub fn checkout(
     Ok(Some(Laid { dir, line }))
 }
 
-/// `<root>/<repo key>/pr-<n>`, the key the repository's profile is kept under.
-fn place(cwd: &Path, root: &Path, n: u64) -> Result<PathBuf, String> {
+/// `<root>/<repo key>/pr-<n>-<head>`, keyed on the repository as its profile is and on the head,
+/// so runs on one head share it and a run on another never moves it.
+fn place(cwd: &Path, root: &Path, n: u64, pr_head: &str) -> Result<PathBuf, String> {
     let common = git::common_dir(cwd).map_err(|e| e.to_string())?;
-    Ok(root.join(project_id(&common)).join(format!("pr-{n}")))
+    let name = format!("pr-{n}-{}", short(pr_head));
+    Ok(root.join(project_id(&common)).join(name))
 }
 
 /// PR `n`'s head `pr_head` in this repository: fetched from `origin`'s `pull/<n>/head` when it
@@ -87,15 +90,7 @@ fn fetch(cwd: &Path, n: u64, pr_head: &str) -> Result<(), String> {
     }
     let refspec = format!("pull/{n}/head");
     let at = cwd.display().to_string();
-    Git::prompt_free().run(&[
-        "-C",
-        &at,
-        "fetch",
-        "--no-tags",
-        "--quiet",
-        "origin",
-        &refspec,
-    ])?;
+    Git::prompt_free().run(&["-C", &at, "fetch", "--no-tags", "-q", "origin", &refspec])?;
     if git::has_commit(cwd, pr_head) {
         Ok(())
     } else {
@@ -106,38 +101,40 @@ fn fetch(cwd: &Path, n: u64, pr_head: &str) -> Result<(), String> {
     }
 }
 
-/// Whether `dir` is the top of a worktree of the repository `cwd` is in.
-fn mine(cwd: &Path, dir: &Path) -> Result<(), String> {
-    let stranger = |why: &dyn std::fmt::Display| {
-        format!(
-            "{} is there but is not a worktree of this repository: {why}",
-            dir.display()
-        )
-    };
+const STRANGER: &str = "is not a worktree of this repository";
+
+/// Whether `dir` is the top of a worktree of the repository `cwd` is in, its `HEAD` at `pr_head`.
+fn reuse(cwd: &Path, dir: &Path, pr_head: &str) -> Result<(), String> {
+    let other = |why: &dyn std::fmt::Display| format!("{} is there but {why}", dir.display());
     let common = git::common_dir(cwd).map_err(|e| e.to_string())?;
-    let theirs = git::common_dir(dir).map_err(|e| stranger(&e))?;
-    let top = git::toplevel(dir).map_err(|e| stranger(&e))?;
+    let stranger = |e: git::GitError| other(&format_args!("{STRANGER} ({e})"));
+    let theirs = git::common_dir(dir).map_err(stranger)?;
+    let top = git::toplevel(dir).map_err(stranger)?;
     let same = |a: &Path, b: &Path| a.canonicalize().ok() == b.canonicalize().ok();
-    if same(Path::new(&common), Path::new(&theirs)) && same(&top, dir) {
+    if !(same(Path::new(&common), Path::new(&theirs)) && same(&top, dir)) {
+        return Err(other(&STRANGER));
+    }
+    let at = git::git(dir, &["rev-parse", "HEAD"]).map_err(|e| other(&e))?;
+    if at.trim() == pr_head {
         Ok(())
     } else {
-        Err(stranger(&"its git directory or top level is another"))
+        Err(other(&format_args!(
+            "its HEAD is `{}`, not the PR's head",
+            short(at.trim())
+        )))
     }
 }
 
-/// Craft's worktree `dir` moved to PR `n`'s head, refused when its tracked files have changes.
-fn move_to(dir: &Path, n: u64, pr_head: &str) -> Result<(), String> {
-    if git::dirty(dir).unwrap_or(true) {
-        return Err(format!(
-            "pr={n}: craft's worktree for PR #{n}, {}, has local changes, so it was not moved to the PR's head `{}`. Commit or discard them there — or remove it with `git worktree remove {}` — and run again. Nothing was reviewed and no round was filed.",
-            dir.display(),
-            short(pr_head),
-            dir.display()
-        ));
+/// Whether craft's worktree `dir` for PR `n` has no change to its tracked files, else untouched.
+fn clean(dir: &Path, n: u64) -> Result<(), String> {
+    if !git::dirty(dir).unwrap_or(true) {
+        return Ok(());
     }
-    git::git(dir, &["checkout", "--quiet", "--detach", pr_head])
-        .map(drop)
-        .map_err(|e| format!("pr={n}: moving craft's worktree {} to PR #{n}'s head failed: {e}. Nothing was reviewed and no round was filed.", dir.display()))
+    Err(format!(
+        "pr={n}: craft's worktree for PR #{n}'s head, {}, has local changes, so it is not reviewed as that head. Commit or discard them there — or remove it with `git worktree remove {}` — and run again. Nothing was reviewed and no round was filed.",
+        dir.display(),
+        dir.display()
+    ))
 }
 
 /// A detached worktree of `cwd`'s repository at `dir`, on `pr_head`.
@@ -147,10 +144,6 @@ fn add(cwd: &Path, dir: &Path, pr_head: &str) -> Result<(), String> {
             .map_err(|e| format!("creating {}: {e}", parent.display()))?;
     }
     let at = dir.display().to_string();
-    git::git(
-        cwd,
-        &["worktree", "add", "--quiet", "--detach", &at, pr_head],
-    )
-    .map(drop)
-    .map_err(|e| e.to_string())
+    let args = ["worktree", "add", "--quiet", "--detach", &at, pr_head];
+    git::git(cwd, &args).map(drop).map_err(|e| e.to_string())
 }

@@ -1,7 +1,8 @@
 //! A given `pr=` whose head this checkout's `HEAD` does not hold is reviewed in craft's own detached
-//! worktree, `<worktrees>/<repo key>/pr-<N>`, the head fetched from `origin` when the repository
-//! lacks it; a clean worktree there from before is moved to the head, a dirty one or a stranger is
-//! refused, and a `HEAD` holding the head lays none. The user's checkout is never touched.
+//! worktree, `<worktrees>/<repo key>/pr-<N>-<head>`, the head fetched from `origin` when the
+//! repository lacks it; a clean worktree there from before, at that head, is reused and never
+//! moved; a dirty one, one at another `HEAD` or a stranger is refused, and a `HEAD` holding the
+//! head lays none. The user's checkout is never touched.
 #![expect(
     clippy::unwrap_used,
     reason = "the helpers of these tests fail loudly, like the tests they serve"
@@ -63,12 +64,21 @@ fn start(repo: &Path, runs: &Path, worktrees: &Path, gh: &PostSetup) -> Result<V
     .map_err(|e| e.to_string())
 }
 
-/// Where craft lays PR #7's worktree of `repo` under `worktrees`.
-fn place(repo: &Path, worktrees: &Path) -> PathBuf {
+/// Where craft lays PR #7's worktree of `repo` at `head` under `worktrees`.
+fn place(repo: &Path, worktrees: &Path, head: &str) -> PathBuf {
     let common = craft_review::git::common_dir(repo).unwrap();
     worktrees
         .join(craft_review::project::project_id(&common))
-        .join(format!("pr-{N}"))
+        .join(format!("pr-{N}-{}", head.get(..12).unwrap()))
+}
+
+/// A detached worktree of `repo` at `dir` on `at`, laid by hand as an earlier run would have, the
+/// PR's head fetched first.
+fn laid_before(repo: &Path, dir: &Path, at: &str) {
+    git(repo, &["fetch", "-q", "origin", "pull/7/head"]);
+    std::fs::create_dir_all(dir.parent().unwrap()).unwrap();
+    let path = dir.to_str().unwrap();
+    git(repo, &["worktree", "add", "-q", "--detach", path, at]);
 }
 
 fn state(run: &Path) -> Value {
@@ -98,7 +108,7 @@ fn a_pr_head_the_checkout_lacks_is_fetched_and_reviewed_in_a_new_worktree() {
         &pr(N, "feature", &head).to_string(),
     );
     let step = start(repo.path(), runs.path(), wt.path(), &gh).unwrap();
-    let dir = place(repo.path(), wt.path()).canonicalize().unwrap();
+    let dir = place(repo.path(), wt.path(), &head).canonicalize().unwrap();
     assert_eq!(rev(&dir, "HEAD"), head, "the worktree is at the PR's head");
     assert_eq!(step["repo"], dir.display().to_string());
     let st = state(&runs.path().join("r1"));
@@ -124,7 +134,7 @@ fn a_pr_head_the_checkout_lacks_is_fetched_and_reviewed_in_a_new_worktree() {
 }
 
 #[test]
-fn a_clean_worktree_from_before_is_moved_to_the_pr_head() {
+fn a_worktree_from_before_at_the_same_head_is_reused_as_it_is() {
     let (keep, runs, wt) = (
         tempfile::tempdir().unwrap(),
         tempfile::tempdir().unwrap(),
@@ -132,33 +142,47 @@ fn a_clean_worktree_from_before_is_moved_to_the_pr_head() {
     );
     let (repo, head) = on_trunk(keep.path());
     let at = rev(repo.path(), "HEAD");
-    let dir = place(repo.path(), wt.path());
-    std::fs::create_dir_all(dir.parent().unwrap()).unwrap();
-    git(
-        repo.path(),
-        &[
-            "worktree",
-            "add",
-            "-q",
-            "--detach",
-            dir.to_str().unwrap(),
-            "HEAD~1",
-        ],
-    );
+    let dir = place(repo.path(), wt.path(), &head);
+    laid_before(repo.path(), &dir, &head);
     let gh = pr_gh(
         &keep.path().join("gh"),
         "",
         &pr(N, "feature", &head).to_string(),
     );
-    start(repo.path(), runs.path(), wt.path(), &gh).unwrap();
+    let step = start(repo.path(), runs.path(), wt.path(), &gh).unwrap();
     assert_eq!(
-        rev(&dir, "HEAD"),
-        head,
-        "the worktree moved to the PR's head"
+        step["repo"],
+        dir.canonicalize().unwrap().display().to_string()
     );
+    assert_eq!(rev(&dir, "HEAD"), head);
     let notes = state(&runs.path().join("r1"))["notes"].to_string();
-    assert!(notes.contains("moved"), "{notes}");
+    assert!(notes.contains("reused"), "{notes}");
     untouched(repo.path(), &at);
+}
+
+#[test]
+fn a_worktree_at_the_same_path_on_another_head_is_refused_and_not_moved() {
+    let (keep, runs, wt) = (
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+    );
+    let (repo, head) = on_trunk(keep.path());
+    let dir = place(repo.path(), wt.path(), &head);
+    laid_before(repo.path(), &dir, "HEAD~1");
+    let was = rev(&dir, "HEAD");
+    let gh = pr_gh(
+        &keep.path().join("gh"),
+        "",
+        &pr(N, "feature", &head).to_string(),
+    );
+    let err = start(repo.path(), runs.path(), wt.path(), &gh).unwrap_err();
+    assert!(
+        err.contains("not the PR's head") && err.contains("git worktree add --detach"),
+        "{err}"
+    );
+    assert_eq!(rev(&dir, "HEAD"), was, "the worktree is not moved");
+    assert!(!runs.path().join("r1/state.json").exists());
 }
 
 #[test]
@@ -169,20 +193,8 @@ fn a_dirty_worktree_from_before_is_refused_and_kept() {
         tempfile::tempdir().unwrap(),
     );
     let (repo, head) = on_trunk(keep.path());
-    let dir = place(repo.path(), wt.path());
-    std::fs::create_dir_all(dir.parent().unwrap()).unwrap();
-    git(
-        repo.path(),
-        &[
-            "worktree",
-            "add",
-            "-q",
-            "--detach",
-            dir.to_str().unwrap(),
-            "HEAD~1",
-        ],
-    );
-    let was = rev(&dir, "HEAD");
+    let dir = place(repo.path(), wt.path(), &head);
+    laid_before(repo.path(), &dir, &head);
     std::fs::write(dir.join("README.md"), "someone's edit\n").unwrap();
     let gh = pr_gh(
         &keep.path().join("gh"),
@@ -194,11 +206,7 @@ fn a_dirty_worktree_from_before_is_refused_and_kept() {
         err.contains("local changes") && err.contains(dir.to_str().unwrap()),
         "{err}"
     );
-    assert_eq!(
-        rev(&dir, "HEAD"),
-        was,
-        "the dirty worktree stays where it was"
-    );
+    assert_eq!(rev(&dir, "HEAD"), head);
     assert_eq!(
         std::fs::read_to_string(dir.join("README.md")).unwrap(),
         "someone's edit\n"
@@ -217,7 +225,7 @@ fn a_path_there_that_is_no_worktree_of_this_repository_is_refused() {
         tempfile::tempdir().unwrap(),
     );
     let (repo, head) = on_trunk(keep.path());
-    let dir = place(repo.path(), wt.path());
+    let dir = place(repo.path(), wt.path(), &head);
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("mine.txt"), "x\n").unwrap();
     let gh = pr_gh(
@@ -257,7 +265,7 @@ fn a_head_that_cannot_be_fetched_is_refused_with_the_manual_way() {
     ] {
         assert!(err.contains(want), "{want} missing from: {err}");
     }
-    assert!(!place(repo.path(), wt.path()).exists());
+    assert!(!place(repo.path(), wt.path(), gone).exists());
 }
 
 #[test]
