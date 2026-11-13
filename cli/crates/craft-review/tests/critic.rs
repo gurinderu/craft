@@ -12,7 +12,7 @@ mod common;
 use std::path::Path;
 
 use common::{fixture, ids, lens, opts, prompt_of, submit, titled, verdict};
-use craft_review::step;
+use craft_review::step::{self, Said};
 use serde_json::{Map, Value, json};
 
 /// Every pending lens of `s` answered: `errors` with `found`, the rest with nothing.
@@ -120,4 +120,35 @@ fn a_critic_that_names_nothing_ends_the_run_as_it_stood() {
     );
     assert_eq!(s["verdict"], json!("Block"));
     assert!(!report(&s).contains("## Coverage gaps"));
+}
+
+#[test]
+fn a_limit_stop_in_the_critics_verification_keeps_the_first_passs_findings() {
+    let repo = fixture(true);
+    let out = tempfile::tempdir().unwrap();
+    let run = out.path().join("run");
+    step::start(&opts(repo.path(), out.path())).unwrap();
+    to_critic(&run);
+    submit(
+        &run,
+        json!({"critic-rust": {"missingLenses": ["safety"], "notes": "n"}}),
+    );
+    let found = [titled("High", 2, "unsafe read past the end")];
+    let s = submit(
+        &run,
+        json!({"critic-lens-rust-safety": lens("safety", &found)}),
+    );
+    assert_eq!(ids(&s), ["critic-verify-0-v0", "critic-verify-0-v3"]);
+    let said = Said {
+        limit: Some("You've hit your limit"),
+        ..Said::default()
+    };
+    let s = step::submit_with(&run, None, &said).unwrap();
+    assert_eq!(s["stopped"]["cause"], json!("limit"), "{s}");
+    assert_eq!(s["verdict"], json!("Block (INCOMPLETE)"), "{s}");
+    let r = report(&s);
+    let (_, confirmed) = r.split_once("## Confirmed findings").unwrap();
+    let confirmed = confirmed.split("\n## ").next().unwrap_or_default();
+    assert!(confirmed.contains("f returns 1"), "{r}");
+    assert!(r.contains("unsafe read past the end"), "{r}");
 }

@@ -290,6 +290,7 @@ pub(crate) fn start_step(args: &StartArgs) -> Result<Value> {
         pr: args.pr,
         chain_gh: Some(craft_review::publish::PostSetup::default()),
         worktrees: crate::init::worktrees_dir(),
+        runtime: args.runtime.clone(),
     };
     let step = stamped(step::start(&opts)?, began);
     Ok(match &args.record {
