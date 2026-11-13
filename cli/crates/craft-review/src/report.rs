@@ -9,6 +9,9 @@ mod gate_cap;
 #[cfg(test)]
 mod gate_cap_tests;
 mod light;
+mod reduced_cap;
+#[cfg(test)]
+mod reduced_cap_tests;
 mod rereview;
 #[cfg(test)]
 mod tests;
@@ -71,6 +74,17 @@ pub fn verdict_line(state: &RunState, verdict: &str) -> String {
         Some(why) => format!("{line} · {why}"),
         None => line,
     };
+    // A reduced round says why it does not approve, unless the gate's cap already holds it.
+    let reduced = gate_cap::reason(state)
+        .is_none()
+        .then(|| reduced_cap::reason(state, findings_verdict(state)))
+        .flatten()
+        .filter(|_| state.exit.is_none());
+    let line = match reduced {
+        Some(why) if line == verdict => format!("{line} — {why}"),
+        Some(why) => format!("{line} · {why}"),
+        None => line,
+    };
     let line = if strict_escalates(state) {
         format!(
             "{line} · strict maintainability mode escalated it: a confirmed maintainability finding at Medium or above is a presumptive blocker"
@@ -89,6 +103,22 @@ pub fn verdict_line(state: &RunState, verdict: &str) -> String {
 /// still open (`rereviewVerdict`), and what did not run. A coverage exit's own verdict stands
 /// unless a prior finding still holds the run.
 fn severity_verdict(state: &RunState) -> String {
+    let worst = findings_verdict(state);
+    if let Some(exit) = state.exit.as_ref().filter(|_| worst == "Approve") {
+        return exit.verdict.clone();
+    }
+    // After the exit: a red gate's Block stands over another profile's unknown one.
+    let worst = reduced_cap::cap(state, gate_cap::cap(state, worst));
+    match (state.not_run.is_empty(), worst) {
+        (true, w) => w.into(),
+        (false, "Approve") => "INCOMPLETE".into(),
+        (false, w) => format!("{w} (INCOMPLETE)"),
+    }
+}
+
+/// The verdict the findings alone give: Block on a Critical or High (or strict mode's bar),
+/// Warning on a Medium, Approve otherwise.
+fn findings_verdict(state: &RunState) -> &'static str {
     let mut worst = "Approve";
     for f in &verdict_findings(state) {
         match field(f, "severity").to_lowercase().as_str() {
@@ -100,16 +130,7 @@ fn severity_verdict(state: &RunState) -> String {
     if strict_escalates(state) {
         worst = "Block";
     }
-    if let Some(exit) = state.exit.as_ref().filter(|_| worst == "Approve") {
-        return exit.verdict.clone();
-    }
-    // After the exit: a red gate's Block stands over another profile's unknown one.
-    let worst = gate_cap::cap(state, worst);
-    match (state.not_run.is_empty(), worst) {
-        (true, w) => w.into(),
-        (false, "Approve") => "INCOMPLETE".into(),
-        (false, w) => format!("{w} (INCOMPLETE)"),
-    }
+    worst
 }
 
 /// The findings that hold the verdict: the confirmed ones and the prior round's still open.

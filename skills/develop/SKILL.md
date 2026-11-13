@@ -184,7 +184,8 @@ record named first.
   means not set aside by a decision or deferred question in memory, nor covered by a project rule
   (the report's **Rejected before** / **Known and deferred** / **Covered by project rules**) — a
   Medium+ finding raised again after its fix holds the loop like a new one. Low findings never hold
-  the loop. → go to phase 5.
+  the loop. A delta or light round never says Approve — a clean one says Warning and names that
+  cap — so convergence reads the open Medium+ count, not the verdict word. → go to phase 5.
 - **Round 4 ended without converging** — stop. Tell the human what is left: each open Medium+
   finding (title, file, severity, why it is still open) and the rounds' verdicts. **No PR** without
   the human's word.
@@ -226,7 +227,7 @@ verdict — file one record of it in craft's run store, from the reviewed reposi
 node "<this skill's base directory>/../../lib/craft-log-run.mjs" develop-cycle <<'JSON'
 {"mode": "light", "outcome": "converged",
  "rounds": [{"engine": "craft:review", "scope": "full", "verdict": "Warning", "mediumPlus": 2},
-            {"engine": "craft:review", "scope": "delta", "verdict": "Approve", "mediumPlus": 0}],
+            {"engine": "craft:review", "scope": "delta", "verdict": "Warning", "mediumPlus": 0}],
  "fullReviews": [{"afterRound": 2, "engine": "craft:review", "verdict": "Approve", "mediumPlus": 0}]}
 JSON
 ```
