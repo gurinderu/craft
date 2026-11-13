@@ -67,6 +67,11 @@ pub fn projects_dir() -> Option<PathBuf> {
     craft_home().map(|h| h.join("projects"))
 }
 
+/// `~/.craft/worktrees`, where craft lays its own worktree of a pull request under review.
+pub fn worktrees_dir() -> Option<PathBuf> {
+    craft_home().map(|h| h.join("worktrees"))
+}
+
 /// Where a run started from this process finds the reviewer's profile and the sources cache.
 pub fn sources_setup() -> Option<SourcesSetup> {
     let home = std::env::var_os("HOME").map(PathBuf::from);

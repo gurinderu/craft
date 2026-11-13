@@ -135,14 +135,18 @@ pub struct StartOptions {
     /// A parent engine launched the run (`nested`): it builds on no earlier round of the branch
     /// and files no round record for a later one, as the engine keeps a nested run out of the chain.
     pub nested: bool,
-    /// The pull request under review (`pr`), whose head `HEAD` must be or hold, else the run is
-    /// refused: on
-    /// a detached `HEAD` its head branch keys the round chain ([`rereview::branch`]); `None`, gh is
+    /// The pull request under review (`pr`), whose head `HEAD` must be or hold, else the run moves
+    /// to craft's own worktree at that head (`worktrees`), refused only where it cannot: on a
+    /// detached `HEAD` its head branch keys the round chain ([`rereview::branch`]); `None`, gh is
     /// asked for the open one whose head is `HEAD`.
     pub pr: Option<u64>,
     /// How gh is asked for that pull request; `None`, it is not asked and a detached `HEAD`
     /// chains nothing.
     pub chain_gh: Option<PostSetup>,
+    /// Where craft lays its own worktree of a pull request given whose head `HEAD` does not hold
+    /// (`~/.craft/worktrees`), the run then reviewing there ([`rereview::branch::checkout`]);
+    /// `None`, such a run is refused.
+    pub worktrees: Option<PathBuf>,
 }
 
 impl StartOptions {
@@ -171,8 +175,9 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
             path: opts.cwd.clone(),
             source,
         })?;
-    let (scope, branch_diff) = read_change(&cwd, opts)?;
     let dir = &opts.run_dir;
+    let (cwd, laid) = pr_worktree(cwd, dir, opts)?;
+    let (scope, branch_diff) = read_change(&cwd, opts)?;
     open_dir(dir)?;
     let profiles = Profile::all()?;
     let runs = opts
@@ -188,6 +193,8 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
         scope.as_deref(),
         opts.chain_lookup(dir),
     )?;
+    chain.worktree = laid.map(|l| l.line);
+    let pr_note = chain.worktree.clone().into_iter().chain(pr_note);
     let spec = branch_diff.log.chars().take(SPEC_MAX).collect();
     // The memory is recalled for the branch's paths, not only those a re-review's fix commits touch.
     let (recall_paths, recall_base) = (branch_diff.files.clone(), branch_diff.base.clone());
@@ -285,6 +292,22 @@ fn first_step(dir: &Path, run: &mut RunState) -> Result<Value, Error> {
         settle_memory(dir, run)?;
     }
     save_and_next(dir, run, &Said::default())
+}
+
+/// Where the run reviews: craft's own worktree of the pull request given, with the line naming
+/// it, when `cwd`'s `HEAD` does not hold its head and the run is no nested one (realm
+/// `@nick/craft`, node #517); else `cwd`.
+fn pr_worktree(
+    cwd: PathBuf,
+    dir: &Path,
+    opts: &StartOptions,
+) -> Result<(PathBuf, Option<rereview::branch::Laid>), StepError> {
+    if opts.nested {
+        return Ok((cwd, None));
+    }
+    let laid = rereview::branch::checkout(&cwd, &opts.chain_lookup(dir), opts.worktrees.as_deref())
+        .map_err(StepError::PrHead)?;
+    Ok((laid.as_ref().map_or(cwd, |l| l.dir.clone()), laid))
 }
 
 /// The scope the run reviews (`path`, repository-relative) and the branch's change under it.
@@ -682,7 +705,9 @@ fn next(dir: &Path, run: &RunState) -> Value {
                 .filter(|t| t.state == TaskState::Pending)
                 .map(|t| handoff::wire(dir, t))
                 .collect();
-            json!({"run": dir.display().to_string(), "tasks": tasks, "done": false, "head": run.diff.head, "repo": run.context.repo, "phase": run.phase})
+            let mut step = json!({"run": dir.display().to_string(), "tasks": tasks, "done": false, "head": run.diff.head, "repo": run.context.repo, "phase": run.phase});
+            finished::name_worktree(&mut step, run);
+            step
         }
     }
 }

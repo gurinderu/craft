@@ -66,7 +66,8 @@ fn a_pr_named_from_a_checkout_on_the_trunk_is_refused_before_any_task() {
         pr_head.get(..12).unwrap(),
         at.get(..12).unwrap(),
         "gh pr checkout 1491",
-        "git fetch origin pull/1491/head && git worktree add --detach <dir> FETCH_HEAD",
+        "git fetch origin pull/1491/head && git worktree add --detach ~/.craft/worktrees/<repo>/pr-1491 FETCH_HEAD",
+        "never a worktree another session made",
         "drop `pr=`",
     ] {
         assert!(err.contains(want), "{want} missing from: {err}");

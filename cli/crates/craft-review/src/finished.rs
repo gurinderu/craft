@@ -38,7 +38,15 @@ pub(crate) fn step(dir: &Path, run: &RunState, verdict: &str) -> Value {
             obj.insert(k.into(), v);
         }
     }
+    name_worktree(&mut done, run);
     done
+}
+
+/// `step` naming craft's own worktree the run reviews in, when it does (`worktree`).
+pub(crate) fn name_worktree(step: &mut Value, run: &RunState) {
+    if let (Some(obj), Some(line)) = (step.as_object_mut(), &run.chain.worktree) {
+        obj.insert("worktree".into(), json!(line));
+    }
 }
 
 /// The base the branch is reviewed against: the chain's, which a re-review of the fix commits

@@ -87,7 +87,7 @@ impl Git {
     /// Runs `git args`, its stdout; why not, one line, on a failure or the timeout. The output
     /// is read once git exits: each command here prints a line or two, well under a pipe's
     /// buffer.
-    pub(super) fn run(&self, args: &[&str]) -> Result<String, String> {
+    pub(crate) fn run(&self, args: &[&str]) -> Result<String, String> {
         let (limit, budget) = self.limit();
         if limit.is_zero() {
             return Err(OUT_OF_BUDGET.into());
