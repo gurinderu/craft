@@ -319,8 +319,9 @@ fn a_round_with_no_fix_since_the_last_reviews_the_whole_diff_and_a_detached_head
 fn an_unchecked_site_keeps_one_ledger_row_across_full_rescans() {
     let repo = fixture(true);
     let (_keep, runs) = runs();
+    // An Info: no verifier is spent on it, while a Low from the errors lens, a failure path, is.
     let mut low = found("RS-L", 2, "a low one");
-    low["severity"] = json!("Low");
+    low["severity"] = json!("Info");
     for (round, name) in [(1, "r1"), (2, "r2"), (3, "r3")] {
         let s = step::start(&StartOptions {
             full_every: 1,

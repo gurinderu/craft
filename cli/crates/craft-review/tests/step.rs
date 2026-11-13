@@ -370,9 +370,14 @@ fn a_run_of_low_and_info_findings_ends_unverified_with_no_verifier() {
     let repo = fixture(true);
     let out = tempfile::tempdir().unwrap();
     let (run, _) = small_run(repo.path(), out.path());
+    // From the intent lens: a Low the errors lens reports is on a failure path and is verified.
     let s = submit(
         &run,
-        round1(&[titled("Low", 1, "a"), titled("Info", 2, "b")]),
+        json!({
+            "lens-rust-errors-r1": lens("errors", &[]),
+            "lens-rust-intent-r1": lens("intent", &[titled("Low", 1, "a"), titled("Info", 2, "b")]),
+            "lens-rust-tests-r1": lens("tests", &[]),
+        }),
     );
     assert_eq!(ids(&s), ["dedup-rust"]);
     let s = submit(&run, json!({"dedup-rust": {"groups": [[0, 1]]}}));
@@ -389,6 +394,24 @@ fn a_run_of_low_and_info_findings_ends_unverified_with_no_verifier() {
         report.contains("1 Low/Info finding(s) NOT VERIFIED"),
         "{report}"
     );
+}
+
+#[test]
+fn a_low_on_a_failure_path_buys_a_batch_verifier() {
+    let repo = fixture(true);
+    let out = tempfile::tempdir().unwrap();
+    let (run, _) = small_run(repo.path(), out.path());
+    let s = submit(&run, round1(&[titled("Low", 1, "a")]));
+    assert_eq!(
+        ids(&s),
+        ["verify-batch-0"],
+        "an errors-lens Low is verified"
+    );
+    let one = json!({"verdicts": [{"index": 0, "refuted": false, "citedLineMatches": true, "reachable": true, "premiseSupported": true, "behaviourIntended": false, "harmSupported": false, "confirmedHarmLevel": "none", "reason": "r"}]});
+    let s = submit(&run, json!({"verify-batch-0": one}));
+    assert_eq!(s["done"], json!(true));
+    let report = std::fs::read_to_string(s["report"].as_str().unwrap()).unwrap();
+    assert!(report.contains("1 confirmed"), "{report}");
 }
 
 #[test]
