@@ -10,7 +10,7 @@ adapter layer.
 
 <!-- x-release-please-start-version -->
 ```bash
-opencode plugin add git+https://github.com/gurinderu/craft#opencode-v0.52.0
+opencode plugin add git+https://github.com/gurinderu/craft#opencode-v0.53.0
 ```
 <!-- x-release-please-end -->
 
@@ -37,7 +37,7 @@ Check out a release tag, then, from the project the adapters are for, symlink th
 
 <!-- x-release-please-start-version -->
 ```bash
-git clone --branch v0.52.0 https://github.com/gurinderu/craft ~/craft
+git clone --branch v0.53.0 https://github.com/gurinderu/craft ~/craft
 ~/craft/integrations/opencode/install.sh            # project-scoped: ./.opencode  (default)
 ~/craft/integrations/opencode/install.sh --global   # ~/.config/opencode
 ```
