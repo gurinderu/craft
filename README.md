@@ -164,6 +164,9 @@ drives the same review as the `craft:review` workflow and runs each review task 
 `--models opus=<m>,sonnet=<m>,haiku=<m>` (or `CRAFT_CODEX_MODELS`) names one per tier. The command writes under
 `~/.craft` and starts model calls, so it runs outside Codex's sandbox. Under Codex the hooks also count the project's own agent roles (`.codex/agents/*.toml`) as declared roles.
 
+On Ubuntu 24.04, Codex's sandbox needs an AppArmor profile for bwrap: see "Sandbox on Ubuntu 24.04" in
+`integrations/codex/README.md`.
+
 ## Workflows
 
 `workflows/review.js` is the diff review for any language. It drives the `craft` binary (the Rust
