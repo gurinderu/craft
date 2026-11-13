@@ -139,3 +139,21 @@ async fn a_worktree_where_opencode_cannot_be_checked_runs_no_task_and_says_why()
     );
     assert!(fake.submits.borrow().is_empty(), "nothing is submitted");
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_step_naming_the_checkout_by_a_symlink_runs_there_as_it_is() {
+    let mut bench = Bench::new(HostKind::OpenCode);
+    bench.agents = Some(vec!["review-task".into()]);
+    let link = bench.path("link");
+    std::os::unix::fs::symlink(bench.path("repo"), &link).unwrap();
+    let mut fake = bench.fake(vec![Spec("a", "do a", None)]);
+    fake.worktree = Some(link);
+    let answer = bench.drive(&fake).await;
+    assert!(
+        answer.finished,
+        "no worktree, no preflight: {}",
+        answer.text
+    );
+    assert_eq!(bench.answer("a"), json!({"answer": "ok"}));
+}
