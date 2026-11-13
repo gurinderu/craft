@@ -22,4 +22,28 @@ Codex sends `--output-schema` in the API's strict mode, so a task schema with op
 strict copy and the nulls it forces are dropped from the answer. The other workflow engines (`rust-audit`,
 `triage-findings`) are Claude Code only.
 
+## Sandbox on Ubuntu 24.04 (bwrap: loopback: Failed RTM_NEWADDR)
+
+Symptom: `codex sandbox true` fails with `bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted`. A craft
+review on the codex backend then ends INCOMPLETE with every lens failing, or Codex asks for approval on every command.
+
+Cause: Ubuntu 24.04 sets `kernel.apparmor_restrict_unprivileged_userns=1`, so bwrap cannot create its user namespace
+without an AppArmor profile that allows `userns` (observed with codex-cli 0.167.0 from nixpkgs).
+
+Fix: add a profile for the bwrap Codex actually runs, as `/etc/apparmor.d/codex-bwrap`, and load it with
+`sudo apparmor_parser -r /etc/apparmor.d/codex-bwrap`. For a nix install, where Codex may run either its bundled
+`codex-resources/bwrap` or nixpkgs' bubblewrap:
+
+```
+abi <abi/4.0>,
+include <tunables/global>
+profile codex-bwrap /nix/store/*-{codex-*/lib/codex/codex-resources,bubblewrap-*/bin}/bwrap flags=(unconfined) {
+  userns,
+  include if exists <local/codex-bwrap>
+}
+```
+
+For another install, find the path with `strace -f -e trace=execve codex sandbox true 2>&1 | grep bwrap` and put it
+in the profile. The profile persists across reboots; check it with `codex sandbox true && echo SANDBOX-OK`.
+
 Install: see "Codex" in the repository's `README.md`.
