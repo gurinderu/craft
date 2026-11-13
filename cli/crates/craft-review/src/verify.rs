@@ -7,9 +7,11 @@ use crate::harm;
 use crate::state::RunState;
 
 mod outcome;
+mod stopped;
 mod waves;
 pub(crate) use outcome::settle_run;
-use waves::{culls, is_high, panel, returned};
+pub(crate) use stopped::stood;
+use waves::{awaits_escalation, culls, is_high, panel, returned};
 pub(crate) use waves::{escalation, tasks};
 
 /// How many findings one batch verifier judges, as `BATCH_SIZE` in `lib/review-verify.mjs`.

@@ -49,7 +49,7 @@ fn why_failed(task: Option<&Task>) -> String {
 }
 
 /// The profiles taking part in the run, in its tracks' order.
-fn profiles_of(run: &RunState) -> Result<Vec<Profile>, Error> {
+pub(crate) fn profiles_of(run: &RunState) -> Result<Vec<Profile>, Error> {
     run.tracks
         .iter()
         .map(|t| Profile::load(&t.profile).map_err(Error::from))

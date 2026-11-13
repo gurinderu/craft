@@ -382,3 +382,40 @@ fn runs_starting_on_one_head_at_once_lay_one_worktree_and_share_it() {
     assert_eq!(left.len(), 1, "one worktree, no lock left: {left:?}");
     assert_eq!(rev(&dir, "HEAD"), head);
 }
+
+#[test]
+fn a_run_its_own_host_drives_says_nothing_of_the_engine_s_task_agents() {
+    let (keep, runs, wt) = (
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+    );
+    let (repo, head) = on_trunk(keep.path());
+    let gh = pr_gh(
+        &keep.path().join("gh"),
+        "",
+        &pr(N, "feature", &head).to_string(),
+    );
+    let step = step::start(&StartOptions {
+        run_dir: runs.path().join("r1"),
+        pr: Some(N),
+        chain_gh: Some(gh),
+        worktrees: Some(wt.path().to_path_buf()),
+        runtime: Some("pi".into()),
+        ..common::opts(repo.path(), runs.path())
+    })
+    .unwrap();
+    let dir = place(repo.path(), wt.path(), &head).canonicalize().unwrap();
+    let line = step["worktree"].as_str().unwrap();
+    assert!(line.contains(&dir.display().to_string()), "{line}");
+    assert!(
+        !line.contains("Claude Code plugin's review engine")
+            && !line.contains("session's directory"),
+        "craft review run's tasks run in the worktree itself: {line}"
+    );
+    let notes = state(&runs.path().join("r1"))["notes"].to_string();
+    assert!(
+        !notes.contains("Claude Code plugin's review engine"),
+        "{notes}"
+    );
+}

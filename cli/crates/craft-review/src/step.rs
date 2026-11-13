@@ -148,6 +148,10 @@ pub struct StartOptions {
     /// (`~/.craft/worktrees`), the run then reviewing there ([`rereview::branch::checkout`]);
     /// `None`, such a run is refused.
     pub worktrees: Option<PathBuf>,
+    /// The host `craft review run` drives the steps in (its backend), whose task agents run in the
+    /// run's worktree itself; `None`, the Claude Code plugin's review engine drives them through
+    /// `start` and `submit`, its task agents in the session's directory.
+    pub runtime: Option<String>,
 }
 
 impl StartOptions {
@@ -306,8 +310,13 @@ fn pr_worktree(
     if opts.nested {
         return Ok((cwd, None));
     }
-    let laid = rereview::branch::checkout(&cwd, &opts.chain_lookup(dir), opts.worktrees.as_deref())
-        .map_err(StepError::PrHead)?;
+    let laid = rereview::branch::checkout(
+        &cwd,
+        &opts.chain_lookup(dir),
+        opts.worktrees.as_deref(),
+        opts.runtime.is_none(),
+    )
+    .map_err(StepError::PrHead)?;
     Ok((laid.as_ref().map_or(cwd, |l| l.dir.clone()), laid))
 }
 

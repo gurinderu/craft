@@ -27,7 +27,9 @@ pub struct Laid {
 
 /// The worktree `cwd`'s review of the PR given runs in, laid or reused under `root`: `None` when no
 /// PR is given, gh is not asked or cannot tell (the chain notes it, [`super::resolve`]), there is
-/// no `root`, or `HEAD` already holds the PR's head.
+/// no `root`, or `HEAD` already holds the PR's head. Its line says how the task agents read it
+/// only when the Claude Code plugin's review engine drives the run (`engine`): `craft review run`
+/// runs its tasks in the worktree itself.
 ///
 /// # Errors
 /// The refusal, when the head cannot be fetched, the worktree cannot be laid, or the place holds a
@@ -36,6 +38,7 @@ pub fn checkout(
     cwd: &Path,
     lookup: &Lookup<'_>,
     root: Option<&Path>,
+    engine: bool,
 ) -> Result<Option<Laid>, String> {
     let (Some(n), Some(setup), Some(root)) = (lookup.pr, lookup.gh, root) else {
         return Ok(None);
@@ -69,12 +72,15 @@ pub fn checkout(
         "laid now"
     };
     let dir = dir.canonicalize().map_err(|e| refuse(e.to_string()))?;
-    let line = format!(
-        "pr={n}: this checkout's HEAD `{}` does not hold PR #{n}'s head `{}`, so craft reviewed it in its own detached worktree {} ({how}); your checkout was not touched. Driven by the Claude Code plugin's review engine, the task agents run in the session's directory and read this worktree by its absolute path (not yet observed live)",
+    let mut line = format!(
+        "pr={n}: this checkout's HEAD `{}` does not hold PR #{n}'s head `{}`, so craft reviewed it in its own detached worktree {} ({how}); your checkout was not touched",
         short(head),
         short(&pr_head),
         dir.display()
     );
+    if engine {
+        line.push_str(". Driven by the Claude Code plugin's review engine, the task agents run in the session's directory and read this worktree by its absolute path (not yet observed live)");
+    }
     Ok(Some(Laid { dir, line }))
 }
 
