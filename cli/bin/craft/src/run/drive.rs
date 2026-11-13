@@ -91,7 +91,26 @@ pub(crate) async fn steps<P: Protocol>(
     d.log(&format!("run={}", run.display()));
     r.run = Some(run.clone());
     r.lost.heard(&step, &|l| d.log(l));
-    rounds(d, &run, step, r).await
+    if let Some(line) = step.get("worktree").and_then(Value::as_str) {
+        d.log(line);
+    }
+    // The tasks run where the run reviews: craft's own worktree of the PR given, or on a resume
+    // the checkout the run recorded (realm `@nick/craft`, node #517).
+    let repo = step.get("repo").and_then(Value::as_str).map(PathBuf::from);
+    match repo.filter(|p| p.as_path() != d.round.repo) {
+        Some(repo) => {
+            let there = Driver {
+                proto: d.proto,
+                round: RoundCtx {
+                    repo: &repo,
+                    ..d.round.clone()
+                },
+                again: d.again,
+            };
+            rounds(&there, &run, step, r).await
+        }
+        None => rounds(d, &run, step, r).await,
+    }
 }
 
 /// Rounds of tasks and submits from `at` until the binary is done.

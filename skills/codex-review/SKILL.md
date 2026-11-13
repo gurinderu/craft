@@ -59,6 +59,12 @@ Flags:
   (post the defects on the PR; doubtful findings stay in the report for the human),
   `--extra-lenses <agent,...>|off`, `--prior-decisions <file>` (a JSON list of the launcher's
   decision, question and rule records).
+- `--pr <number>` from a checkout that lacks the PR's head (the trunk, say): craft fetches the
+  head and reviews it in its own detached worktree, `~/.craft/worktrees/<repo>/pr-<number>`, and
+  the answer names it; your checkout is not touched. If it still refuses (it could not fetch the
+  head or lay the worktree), make a detached worktree of your own under `~/.craft/worktrees` as
+  the refusal says and run again with `--cwd <that worktree>` and no `--pr`, without asking the
+  human — never reuse a worktree another session made.
 - `--run <directory>` resumes a stopped run; with `--comment` it publishes a finished run.
 - The mechanical gate alone is another command: `sh "<plugin root>/bin/craft" review gate
   [--cwd …] [--base …]`.

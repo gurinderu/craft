@@ -4,7 +4,8 @@
 //! (node #89). There the chain takes the head branch of the pull request `HEAD` heads, so a run on
 //! the branch and a run in a detached worktree of its PR build on each other.
 //! A fork's PR keys it on `<owner>:<head branch>` instead ([`pr`]), so it joins no local branch.
-//! A pull request given (`pr=`) is checked first: `HEAD` must be or hold its head ([`head`]).
+//! A pull request given (`pr=`) is checked first: `HEAD` must be or hold its head ([`head`]), else
+//! the run moves to craft's own worktree at that head ([`worktree`]).
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -15,8 +16,10 @@ use crate::publish::PostSetup;
 
 mod head;
 mod pr;
+mod worktree;
 
 use pr::{Named, given, heading};
+pub use worktree::{Laid, checkout};
 
 /// How long asking gh for the pull request may take: the run waits for it before its first task.
 const BUDGET: Duration = Duration::from_secs(20);
@@ -48,7 +51,8 @@ pub struct ChainBranch {
 ///
 /// # Errors
 /// The refusal, when a pull request is given and `HEAD` does not hold the head gh names for it
-/// (realm @nick/craft, node #468).
+/// (realm @nick/craft, node #468) — the start has moved to craft's own worktree at that head
+/// first ([`checkout`]), so it holds it there.
 pub fn resolve(cwd: &Path, lookup: &Lookup<'_>) -> Result<ChainBranch, String> {
     let branch = git::branch(cwd);
     if lookup.pr.is_none() && branch.is_some() {

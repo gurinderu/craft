@@ -25,6 +25,7 @@ use super::task::Task;
 use super::watch::{Named, watch};
 
 /// What a round runs with.
+#[derive(Clone)]
 pub(crate) struct RoundCtx<'a> {
     pub(crate) host: &'a Host,
     pub(crate) root: &'a Path,
