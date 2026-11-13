@@ -60,8 +60,9 @@ Flags:
   `--extra-lenses <agent,...>|off`, `--prior-decisions <file>` (a JSON list of the launcher's
   decision, question and rule records).
 - `--pr <number>` from a checkout that lacks the PR's head (the trunk, say): craft fetches the
-  head and reviews it in its own detached worktree, `~/.craft/worktrees/<repo>/pr-<number>`, and
-  the answer names it; your checkout is not touched. If it still refuses (it could not fetch the
+  head and reviews it in its own detached worktree, one per head and never moved,
+  `~/.craft/worktrees/<repo>/pr-<number>-<head>` (runs on that head at once share it), and the
+  answer names it; your checkout is not touched. If it still refuses (it could not fetch the
   head or lay the worktree), make a detached worktree of your own under `~/.craft/worktrees` as
   the refusal says and run again with `--cwd <that worktree>` and no `--pr`, without asking the
   human — never reuse a worktree another session made.
