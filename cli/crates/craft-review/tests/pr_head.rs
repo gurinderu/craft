@@ -65,9 +65,8 @@ fn a_pr_named_from_a_checkout_on_the_trunk_is_refused_before_any_task() {
         "PR #1491",
         pr_head.get(..12).unwrap(),
         at.get(..12).unwrap(),
-        "gh pr checkout 1491",
-        "git fetch origin pull/1491/head && git worktree add --detach ~/.craft/worktrees/<repo>/pr-1491-",
-        "never a worktree another session made",
+        "dir=$(mktemp -d) && git fetch origin pull/1491/head && git worktree add --detach \"$dir/pr-1491\" FETCH_HEAD",
+        "never a worktree another session or craft made",
         "drop `pr=`",
     ] {
         assert!(err.contains(want), "{want} missing from: {err}");
@@ -106,7 +105,7 @@ fn refused(repo: &Path, pr_head: &str) {
     let gh = pr_gh(&keep.path().join("gh"), "", &view);
     let err = start(repo, runs.path(), "r1", &gh, 1488).unwrap_err();
     assert!(
-        err.contains("does not hold it") && err.contains("gh pr checkout 1488"),
+        err.contains("does not hold it") && err.contains("mktemp -d"),
         "{err}"
     );
     assert_nothing_filed(&runs.path().join("r1"));

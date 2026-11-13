@@ -99,9 +99,20 @@ pub(crate) async fn steps<P: Protocol>(
     let repo = step.get("repo").and_then(Value::as_str).map(PathBuf::from);
     match repo.filter(|p| p.as_path() != d.round.repo) {
         Some(repo) => {
+            let host = match super::there::host_in(d.round.host, &repo, d.round.log) {
+                Ok(host) => host,
+                Err(why) => {
+                    let hint = d.hint(&run);
+                    return Ending::Stopped(format!(
+                        "review cannot run its tasks: {why}. The run is in {}. {hint}",
+                        run.display()
+                    ));
+                }
+            };
             let there = Driver {
                 proto: d.proto,
                 round: RoundCtx {
+                    host: &host,
                     repo: &repo,
                     ..d.round.clone()
                 },

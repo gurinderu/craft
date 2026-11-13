@@ -26,6 +26,7 @@ mod report;
 mod round;
 mod task;
 mod telemetry;
+mod there;
 mod watch;
 
 // The workspace's one way to write an executable a test then runs.

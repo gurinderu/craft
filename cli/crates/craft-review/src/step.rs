@@ -177,9 +177,9 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
             source,
         })?;
     let dir = &opts.run_dir;
+    open_dir(dir)?;
     let (cwd, laid) = pr_worktree(cwd, dir, opts)?;
     let (scope, branch_diff) = read_change(&cwd, opts)?;
-    open_dir(dir)?;
     let profiles = Profile::all()?;
     let runs = opts
         .runs
@@ -308,6 +308,9 @@ fn pr_worktree(
     }
     let laid = rereview::branch::checkout(&cwd, &opts.chain_lookup(dir), opts.worktrees.as_deref())
         .map_err(StepError::PrHead)?;
+    // The seam for the gate on a head craft got itself (a fork's PR, say): the gate runs there as
+    // on any checkout until the owner decides otherwise (realm `@nick/craft`, node #517); a policy
+    // keys on `laid` here, before `prepare` runs the gate.
     Ok((laid.as_ref().map_or(cwd, |l| l.dir.clone()), laid))
 }
 
