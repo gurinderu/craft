@@ -5,7 +5,10 @@
 //! however the run ended inside craft: a tool killed by the budget, an error, a panic. Not when
 //! craft itself is killed (a host's Bash timeout, a signal): cargo then lives on in its own process
 //! group (`runner.rs`) and the lockfile stays as it wrote it — `git status` in the reviewed
-//! checkout shows it. No signal handler is installed for that case.
+//! checkout shows it. No signal handler is installed for that case. Nor when two runs share one
+//! tree, as runs on one head share craft's own worktree of a PR: their saves and restores
+//! interleave, so there clippy runs `--locked` where a lockfile is and cargo writes none
+//! ([`super::GateSetup::locked`]).
 
 use std::path::{Path, PathBuf};
 
@@ -35,6 +38,11 @@ impl Lockfiles {
             })
             .collect();
         Self { saved }
+    }
+
+    /// Whether a lockfile is there for cargo to be held to (`--locked`).
+    pub(super) fn held(&self) -> bool {
+        self.saved.iter().any(|(_, before)| before.is_some())
     }
 }
 

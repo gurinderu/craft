@@ -97,7 +97,7 @@ pub(crate) async fn steps<P: Protocol>(
     // The tasks run where the run reviews: craft's own worktree of the PR given, or on a resume
     // the checkout the run recorded (realm `@nick/craft`, node #517).
     let repo = step.get("repo").and_then(Value::as_str).map(PathBuf::from);
-    match repo.filter(|p| p.as_path() != d.round.repo) {
+    match repo.filter(|p| !same_dir(p, d.round.repo)) {
         Some(repo) => {
             let host = match super::there::host_in(d.round.host, &repo, d.round.log) {
                 Ok(host) => host,
@@ -121,6 +121,15 @@ pub(crate) async fn steps<P: Protocol>(
             rounds(&there, &run, step, r).await
         }
         None => rounds(d, &run, step, r).await,
+    }
+}
+
+/// Whether `a` and `b` are one directory: compared resolved, so a symlinked path (macOS's `/var`)
+/// or a relative one names the checkout it points at; as given when either cannot be resolved.
+fn same_dir(a: &Path, b: &Path) -> bool {
+    match (a.canonicalize(), b.canonicalize()) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => a == b,
     }
 }
 

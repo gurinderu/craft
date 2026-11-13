@@ -137,9 +137,9 @@ fn a_pr_head_the_checkout_lacks_is_fetched_and_reviewed_in_a_new_worktree() {
     assert_eq!(
         step["worktree"]
             .as_str()
-            .map(|l| l.contains(&dir.display().to_string())),
+            .map(|l| l.contains(&dir.display().to_string()) && l.contains("by its absolute path")),
         Some(true),
-        "{step}"
+        "the line names the worktree and how the engine's task agents read it: {step}"
     );
     untouched(repo.path(), &at);
 }
@@ -169,6 +169,48 @@ fn a_worktree_from_before_at_the_same_head_is_reused_as_it_is() {
     let notes = state(&runs.path().join("r1"))["notes"].to_string();
     assert!(notes.contains("reused"), "{notes}");
     untouched(repo.path(), &at);
+}
+
+#[test]
+fn the_gate_in_crafts_worktree_holds_cargo_to_the_lockfile() {
+    let (keep, runs, wt) = (
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+    );
+    let (repo, head) = on_trunk(keep.path());
+    let dir = place(repo.path(), wt.path(), &head);
+    laid_before(repo.path(), &dir, &head);
+    // A package with its lockfile there, as a PR's head would hold them.
+    std::fs::write(dir.join("Cargo.toml"), "[package]\nname = \"f\"\n").unwrap();
+    std::fs::write(dir.join("Cargo.lock"), "pinned\n").unwrap();
+    let tools = keep.path().join("tools");
+    std::fs::create_dir_all(&tools).unwrap();
+    let calls = tools.join("calls");
+    let cargo = format!("#!/bin/sh\necho \"$*\" >> '{}'\n", calls.display());
+    common::exe::write_executable(&tools.join("cargo"), &cargo).unwrap();
+    let gh = pr_gh(
+        &keep.path().join("gh"),
+        "",
+        &pr(N, "feature", &head).to_string(),
+    );
+    step::start(&StartOptions {
+        run_dir: runs.path().join("r1"),
+        pr: Some(N),
+        chain_gh: Some(gh),
+        worktrees: Some(wt.path().to_path_buf()),
+        gate: Some(craft_review::gate::GateSetup {
+            path: Some(tools.into_os_string()),
+            ..craft_review::gate::GateSetup::default()
+        }),
+        ..common::opts(repo.path(), runs.path())
+    })
+    .unwrap();
+    let calls = std::fs::read_to_string(calls).unwrap();
+    assert!(
+        !calls.is_empty() && calls.lines().all(|l| l.contains("--locked")),
+        "{calls}"
+    );
 }
 
 #[test]
