@@ -1,6 +1,6 @@
 ---
 name: craft-review
-description: craft's review of a diff or PR in any language, run from a pi session — the `craft_review` tool; without it `sh <package root>/bin/craft review run --backend pi`, the package root four directories above this SKILL.md (`craft` is not on PATH; never run bare `craft`) — the mechanical gate, review lenses per profile, verification, one report and an Approve/Warning/Block verdict, each review agent its own `pi -p` process. Use when asked to review a branch, a diff or a PR before commit or merge, to re-review fix commits, or to resume a stopped review. Triggers - review this branch, review the diff, is this mergeable, re-review the fixes, resume the review.
+description: craft's review of a diff or PR in any language, run from a pi session — the `craft_review` tool; without it `sh <package root>/bin/craft review run --backend pi`, the package root four directories above this SKILL.md (`craft` is not on PATH; never run bare `craft`) — the mechanical gate, review lenses per profile, verification, one report and an Approve/Warning/Block verdict, each review agent its own `pi -p` process. Use whenever the user asks, in whatever language they write, to review a PR, a branch or a diff before commit or merge, to re-review fix commits, or to resume a stopped review: such a request runs this review, never a review by hand instead. Triggers - review this branch, review the diff, is this mergeable, re-review the fixes, resume the review.
 ---
 
 # craft-review — craft's review from pi
@@ -9,6 +9,10 @@ The review is the `craft_review` tool this package's extension registers. Call i
 session**, with `args` set to the review's flags as one string (none for the defaults), and relay
 its answer — the `## Verdict` block, the report's path and the `## Findings` list — then read the
 report file it names for the details. Do not review the diff yourself beside it.
+
+The review never submits a GitHub review verdict: no `gh pr review --approve` or
+`--request-changes`, no approving and no merging. Its verdict goes to the user only; findings
+reach the PR only through craft's `--comment`, and only when the user asked for that.
 
 Without the tool (the extension not loaded), run the same review with the bash tool. The craft
 package root is four directories above this file's directory (this file is
