@@ -1,8 +1,10 @@
 //! What a run stopped before verification settled its pool reports (realm @nick/craft, node #299):
 //! every finding it has, as it stood — a panel that came back whole as its votes decide it,
 //! one cut short Suspected on the votes it has, one no verifier judged yet unverified — so the
-//! report and the verdict never read as no findings while the run holds some. A stop in the
-//! completeness critic's own pass keeps the first pass's settled findings beside the critic's.
+//! report and the verdict never read as no findings while the run holds some, a lens round cut
+//! short included: its answered lenses' findings are taken as the round's end takes them. A stop
+//! in the completeness critic's own pass keeps the first pass's settled findings beside the
+//! critic's.
 
 use serde_json::Value;
 
@@ -16,8 +18,9 @@ use crate::state::{Phase, RunState, TaskKind, TaskState};
 const STOPPED: &str = "the run stopped before verification finished";
 
 /// Fills `run.settled` of a run stopped before verification settled it, from the pool it has —
-/// the dedup's, or the lens rounds' when the run stopped before the dedup — after the first pass's
-/// settled findings when the critic's pass stopped, and notes it.
+/// the dedup's, or the lens rounds' with the answers of the round the stop cut short when the run
+/// stopped before the dedup — after the first pass's settled findings when the critic's pass
+/// stopped, and notes it: a stop in the lens rounds always, even with nothing found yet.
 pub(crate) fn stood(run: &mut RunState) {
     if !run.settled.is_empty() {
         return;
@@ -31,16 +34,17 @@ pub(crate) fn stood(run: &mut RunState) {
         run.findings.iter().enumerate().map(at).collect()
     } else {
         let pool = if run.findings.is_empty() {
-            &run.rounds.pool
+            cut_short(run)
         } else {
-            &run.findings
+            run.findings.clone()
         };
         let why = format!(
             "{STOPPED}: no verifier had judged it yet, so nothing here has been checked against the code"
         );
         pool.iter().map(|f| not_verified(f, &why)).collect()
     };
-    if settled.is_empty() {
+    let in_rounds = matches!(run.phase, Phase::Lenses | Phase::Seam);
+    if settled.is_empty() && !in_rounds {
         return;
     }
     run.notes.push(note(run.phase, settled.len()));
@@ -51,6 +55,23 @@ pub(crate) fn stood(run: &mut RunState) {
     };
     all.extend(settled.iter().map(|f| finalize_in(f, run.context.strict)));
     run.settled = all;
+}
+
+/// The lens rounds' pool with the answers the round a stop cut short already holds, sifted and
+/// taken as the round's end takes them, on a copy: the run itself takes them when the resume
+/// finishes the round.
+fn cut_short(run: &RunState) -> Vec<Value> {
+    let mut rounds = run.rounds.clone();
+    if run.phase != Phase::Lenses {
+        return rounds.pool;
+    }
+    let Ok(profiles) = crate::phases::profiles_of(run) else {
+        return rounds.pool;
+    };
+    let mut tasks = run.tasks.clone();
+    crate::complexity::sift(&mut tasks, &profiles);
+    rounds.absorb(&tasks);
+    rounds.pool
 }
 
 /// The note on the `n` findings a stop in `phase` left as they stood: the lens rounds cut short
