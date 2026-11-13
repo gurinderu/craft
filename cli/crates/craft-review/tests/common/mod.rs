@@ -82,6 +82,7 @@ pub fn opts(repo: &Path, run: &Path) -> StartOptions {
         nested: false,
         pr: None,
         chain_gh: None,
+        worktrees: None,
     }
 }
 
