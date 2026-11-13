@@ -100,7 +100,8 @@ pub struct StartArgs {
     /// The pull request under review, whose head HEAD must be or hold: from a HEAD that does not
     /// hold it, craft fetches the head and reviews it in its own detached worktree, one per head and
     /// never moved, `~/.craft/worktrees/<repo key>/pr-<N>-<head>`, refusing the run before any task
-    /// only where it cannot get the head there (realm `@nick/craft`, node #517). On a detached HEAD its head branch keys the chain of review rounds. Absent, gh is
+    /// only where it cannot get the head there (realm `@nick/craft`, node #517). The gate builds
+    /// and runs the PR's code: `--no-gate` for a PR you do not trust. On a detached HEAD its head branch keys the chain of review rounds. Absent, gh is
     /// asked for the open pull request whose head is HEAD.
     #[arg(long, value_name = "NUMBER")]
     pub pr: Option<u64>,
