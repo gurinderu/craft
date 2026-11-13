@@ -88,3 +88,37 @@ fn a_fresh_run_said_to_be_a_delta_is_a_warning() {
         verdict_line(&s, &v)
     );
 }
+
+#[test]
+fn incomplete_wins_over_the_cap_and_the_line_names_no_cap() {
+    let mut s = run(&[], false, ReScope::Fixes);
+    s.not_run.push("lens errors: died".into());
+    let v = verdict(&s);
+    assert_eq!(
+        v, "INCOMPLETE",
+        "what did not run is the cause, not the cap"
+    );
+    assert!(
+        !verdict_line(&s, &v).contains("never approves"),
+        "{}",
+        verdict_line(&s, &v)
+    );
+}
+
+#[test]
+fn a_delta_round_over_nothing_reviewable_does_not_approve() {
+    let mut s = run(&[], false, ReScope::Fixes);
+    let mut docs = s.diff.clone();
+    docs.files = vec!["README.md".into()];
+    s.exit = crate::coverage::exit(&docs, 0, "Rust", true);
+    let v = verdict(&s);
+    assert_eq!(v, "Warning");
+    let line = verdict_line(&s, &v);
+    assert!(
+        line.starts_with("Warning — NOTHING NEEDED REVIEWING") && line.contains("never approves"),
+        "{line}"
+    );
+    let mut full = run(&[], false, ReScope::First);
+    full.exit = s.exit;
+    assert_eq!(verdict(&full), "Approve (nothing to review)");
+}

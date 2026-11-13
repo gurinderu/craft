@@ -53,8 +53,10 @@ const FAILURE_PATH_LENSES: [&str; 4] = ["failure-windows", "reconciler", "concur
 /// The rule families of a failure path: reconcile, concurrency and error handling.
 const FAILURE_PATH_RULES: [&str; 3] = ["REC-", "CON-", "ERR-"];
 
-/// The route `f` takes: Critical and High alone, Medium batched, a Low on a failure path batched,
-/// other Lows and Info skipped unless they cite a rule that blocks on sight.
+/// The route `f` takes: Critical and High alone, Medium batched, a Low on a failure path batched
+/// when a harm it claims could make it must-fix — only a verified harm can raise it, so another
+/// buys no verifier (realm @nick/craft, node #407) — other Lows and Info skipped unless they cite
+/// a rule that blocks on sight.
 pub(crate) fn route(f: &Value) -> Route {
     let sev = f.get("severity").and_then(Value::as_str).unwrap_or("");
     let rule = f.get("ruleId").and_then(Value::as_str).unwrap_or("");
@@ -62,14 +64,14 @@ pub(crate) fn route(f: &Value) -> Route {
         "Critical" | "High" => Route::Individual,
         "Medium" => Route::Batch,
         _ if CRITICAL_TIER_RULES.contains(&rule) => Route::Individual,
-        "Low" if on_failure_path(f) => Route::Batch,
+        "Low" if on_failure_path(f) && harm::raise::may_be_must_fix(f) => Route::Batch,
         _ => Route::Skip,
     }
 }
 
 /// Whether `f` concerns a failure path: a lens that reads them reported it, it cites a rule of
 /// their families, or its lens flagged it on a deletion or recovery path. Such Lows are where a
-/// review most often under-rates a defect, so a verifier is spent on them.
+/// review most often under-rates a defect.
 fn on_failure_path(f: &Value) -> bool {
     let rule = f.get("ruleId").and_then(Value::as_str).unwrap_or("");
     f.get("deletionOrRecoveryPath") == Some(&Value::Bool(true))
@@ -127,9 +129,14 @@ pub(crate) fn skipped_note(run: &RunState) -> Option<String> {
         .iter()
         .filter(|f| route_in(f, run.light) == Route::Skip)
         .count();
+    let why = if run.light {
+        "a light pass verifies only Medium and above, and a finding two lenses agree on with a must-fix harm claimed"
+    } else {
+        "none is on a failure path or agreed by two lenses with a harm a verifier could raise to must-fix, so none could move the verdict"
+    };
     (n > 0).then(|| {
         format!(
-            "{n} Low/Info finding(s) NOT VERIFIED: no verifier was spent on them, since Low and Info cannot change the verdict either way (a Low on a failure path is verified); they are reported as unverified"
+            "{n} Low/Info finding(s) NOT VERIFIED: no verifier was spent on them, since {why}; they are reported as unverified"
         )
     })
 }

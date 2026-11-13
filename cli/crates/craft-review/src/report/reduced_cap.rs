@@ -3,6 +3,7 @@
 //! has read enough to call the change clean. Approve comes only from a full round; findings still
 //! raise the verdict as ever.
 
+use crate::coverage::Exit;
 use crate::prompts::ReScope;
 use crate::state::RunState;
 
@@ -26,10 +27,19 @@ pub(super) fn cap<'a>(state: &RunState, worst: &'a str) -> &'a str {
     }
 }
 
-/// Why a reduced round holds the verdict, when `uncapped` (the verdict before the cap) was an
-/// Approve it turned into a Warning; `None` otherwise.
+/// Whether a reduced round overrides `exit`'s own Approve (nothing reviewable in the change): a
+/// delta over docs alone still says nothing of the earlier rounds' concerns.
+pub(super) fn over_exit(state: &RunState, exit: &Exit) -> bool {
+    reduced(state).is_some() && exit.verdict.starts_with("Approve")
+}
+
+/// Why a reduced round holds the verdict, when it turned `uncapped` (the verdict before the cap,
+/// the gate's applied) from Approve into a Warning; `None` otherwise, and when something did not
+/// run: INCOMPLETE then names the cause, not the cap.
 pub(super) fn reason(state: &RunState, uncapped: &str) -> Option<String> {
-    let what = reduced(state).filter(|_| uncapped == "Approve")?;
+    let exit_approves = state.exit.as_ref().is_none_or(|e| over_exit(state, e));
+    let holds = uncapped == "Approve" && exit_approves && state.not_run.is_empty();
+    let what = reduced(state).filter(|_| holds)?;
     Some(format!(
         "{what} never approves: Approve comes only from a full round (the whole diff, `depth=full`)"
     ))
