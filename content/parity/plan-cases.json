@@ -495,6 +495,43 @@
       }
     },
     {
+      "name": "light keeps failure-windows the scout picked alone",
+      "changedFiles": [
+        "src/lib.rs"
+      ],
+      "light": true,
+      "scout": {
+        "sizeBucket": "medium",
+        "lenses": [
+          "failure-windows"
+        ],
+        "isLibrary": false,
+        "securitySensitive": false,
+        "intent": "adds f",
+        "churn": [],
+        "repoRules": [],
+        "notes": "n"
+      },
+      "expected": {
+        "sizeBucket": "medium",
+        "lenses": [
+          "failure-windows",
+          "intent",
+          "tests"
+        ],
+        "maxRounds": 1,
+        "verifyVotes": 1,
+        "lensModel": "opus",
+        "isLibrary": false,
+        "securitySensitive": false,
+        "intent": "adds f",
+        "churn": [],
+        "repoRules": [],
+        "surfaceDropped": [],
+        "lightSkipped": []
+      }
+    },
+    {
       "name": "light over tests only falls back to the scoped roster",
       "changedFiles": [
         "tests/a.rs"
