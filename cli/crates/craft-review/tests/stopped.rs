@@ -59,6 +59,26 @@ fn a_stop_in_the_lens_rounds_reports_the_pool_unverified() {
 }
 
 #[test]
+fn a_stop_mid_round_reports_the_answers_that_round_already_holds() {
+    let repo = common::fixture(true);
+    let out = tempfile::tempdir().unwrap();
+    // A small plan: one lens round; one lens answers with a High, the limit hits before the rest.
+    let (run, s) = small_run(repo.path(), out.path());
+    let found = lens("errors", &[titled("High", 1, "found mid-round")]);
+    write_answer(&s, "lens-rust-errors-r1", &found.to_string());
+    let s = step::submit_with(&run, None, &limit()).unwrap();
+    assert_eq!(s["stopped"]["cause"], json!("limit"), "{s}");
+    let r = report(&s);
+    assert!(r.contains("INCOMPLETE"), "{r}");
+    let (_, unverified) = r.split_once("## Unverified findings").expect(&r);
+    assert!(unverified.contains("found mid-round"), "{r}");
+    assert!(
+        r.contains("the lens rounds stopped before verification began: 1 finding(s)"),
+        "{r}"
+    );
+}
+
+#[test]
 fn a_resume_after_a_stop_in_verification_settles_as_usual() {
     let repo = common::fixture(true);
     let out = tempfile::tempdir().unwrap();
