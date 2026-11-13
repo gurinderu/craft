@@ -7,7 +7,7 @@ use super::{Route, route, route_in};
 
 fn low(extra: &Value) -> Value {
     let mut f = json!({"severity": "Low", "title": "t", "file": "src/a.rs", "line": 3, "why": "w",
-                       "ruleId": "", "source": "correctness"});
+                       "ruleId": "", "source": "correctness", "harmLevel": "outage"});
     if let (Some(o), Some(e)) = (f.as_object_mut(), extra.as_object()) {
         o.extend(e.clone());
     }
@@ -61,4 +61,18 @@ fn a_light_pass_still_verifies_only_medium_and_above() {
     let f = low(&json!({"source": "failure-windows"}));
     assert_eq!(route_in(&f, true), Route::Skip);
     assert_eq!(route_in(&f, false), Route::Batch);
+}
+
+#[test]
+fn a_failure_path_low_whose_harm_cannot_be_must_fix_stays_unverified() {
+    for level in ["self-healing", "operator-recovery", "none"] {
+        let f = low(&json!({"source": "failure-windows", "harmLevel": level}));
+        assert_eq!(
+            route(&f),
+            Route::Skip,
+            "{level}: no verified harm could raise it"
+        );
+    }
+    let unnamed = json!({"severity": "Low", "source": "reconciler", "ruleId": ""});
+    assert_eq!(route(&unnamed), Route::Skip, "a Low naming no harm");
 }

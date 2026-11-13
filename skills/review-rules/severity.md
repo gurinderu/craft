@@ -88,11 +88,12 @@ Verification raises it when the verifier confirms a must-fix harm; synthesis nev
 - **Agreement** buys verification, not severity: a finding two or more different lenses reported
   independently, merged into one before verification, is verified whatever its severity when a harm
   it claims is must-fix. Only the verified harm can raise it.
-- **A failure path** buys verification too: a Low that a lens reading failure paths reported
-  (`reconciler`, `failure-windows`, `concurrency`, `errors`), that cites a reconcile, concurrency
-  or error-handling rule, or that is flagged on a deletion or recovery path is verified in a batch
-  on a full pass, so a verified must-fix harm can raise it. A light pass still verifies only Medium
-  and above.
+- **A failure path** buys verification too, as agreement does: a Low that a lens reading failure
+  paths reported (`reconciler`, `failure-windows`, `concurrency`, `errors`), that cites a
+  reconcile, concurrency or error-handling rule, or that is flagged on a deletion or recovery path
+  is verified in a batch on a full pass when a harm it claims is must-fix, so the verified harm can
+  raise it. One whose harm could not be must-fix stays unverified. A light pass still verifies only
+  Medium and above.
 - **Synthesis** never reports a finding above that cap.
 - A severity floor (for example, the deletion and recovery path floor of `distributed-races`)
   applies only when the finding names a harm of operator recovery or worse. A floor does not

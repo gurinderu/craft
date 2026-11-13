@@ -59,8 +59,17 @@ pub fn verdict(state: &RunState) -> String {
 #[must_use]
 pub fn verdict_line(state: &RunState, verdict: &str) -> String {
     let gap = coverage::gap(&state.uncovered);
+    // A reduced round says why it does not approve (never over the gate's cap or INCOMPLETE).
+    let reduced = reduced_cap::reason(state, gate_cap::cap(state, findings_verdict(state)));
     let line = match (&state.exit, gap.is_empty()) {
         (Some(exit), _) if exit.verdict == verdict => exit.line.clone(),
+        (Some(exit), _) if reduced.is_some() => {
+            let what = exit
+                .line
+                .split_once(" — ")
+                .map_or(exit.line.as_str(), |(_, m)| m);
+            format!("{verdict} — {what}")
+        }
         (Some(_), _) => format!("{verdict} — {}", rereview_line(state)),
         (None, true) => verdict.to_owned(),
         (None, false) => format!(
@@ -74,12 +83,6 @@ pub fn verdict_line(state: &RunState, verdict: &str) -> String {
         Some(why) => format!("{line} · {why}"),
         None => line,
     };
-    // A reduced round says why it does not approve, unless the gate's cap already holds it.
-    let reduced = gate_cap::reason(state)
-        .is_none()
-        .then(|| reduced_cap::reason(state, findings_verdict(state)))
-        .flatten()
-        .filter(|_| state.exit.is_none());
     let line = match reduced {
         Some(why) if line == verdict => format!("{line} — {why}"),
         Some(why) => format!("{line} · {why}"),
@@ -104,13 +107,15 @@ pub fn verdict_line(state: &RunState, verdict: &str) -> String {
 /// unless a prior finding still holds the run.
 fn severity_verdict(state: &RunState) -> String {
     let worst = findings_verdict(state);
-    if let Some(exit) = state.exit.as_ref().filter(|_| worst == "Approve") {
+    let stands = |e: &&coverage::Exit| worst == "Approve" && !reduced_cap::over_exit(state, e);
+    if let Some(exit) = state.exit.as_ref().filter(stands) {
         return exit.verdict.clone();
     }
-    // After the exit: a red gate's Block stands over another profile's unknown one.
-    let worst = reduced_cap::cap(state, gate_cap::cap(state, worst));
+    // After the exit: a red gate's Block stands over another profile's unknown one; what did not
+    // run makes it INCOMPLETE before a reduced round's cap could name another cause.
+    let worst = gate_cap::cap(state, worst);
     match (state.not_run.is_empty(), worst) {
-        (true, w) => w.into(),
+        (true, w) => reduced_cap::cap(state, w).into(),
         (false, "Approve") => "INCOMPLETE".into(),
         (false, w) => format!("{w} (INCOMPLETE)"),
     }
