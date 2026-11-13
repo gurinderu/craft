@@ -52,10 +52,21 @@ fn on_trunk(keep: &Path) -> (tempfile::TempDir, String) {
     (repo, head)
 }
 
-/// Starts `runs/<name>` over `repo` with PR #7 given, its worktrees under `worktrees`.
+/// Starts `runs/r1` over `repo` with PR #7 given, its worktrees under `worktrees`.
 fn start(repo: &Path, runs: &Path, worktrees: &Path, gh: &PostSetup) -> Result<Value, String> {
+    start_as("r1", repo, runs, worktrees, gh)
+}
+
+/// Starts `runs/<name>` over `repo` with PR #7 given, its worktrees under `worktrees`.
+fn start_as(
+    name: &str,
+    repo: &Path,
+    runs: &Path,
+    worktrees: &Path,
+    gh: &PostSetup,
+) -> Result<Value, String> {
     step::start(&StartOptions {
-        run_dir: runs.join("r1"),
+        run_dir: runs.join(name),
         pr: Some(N),
         chain_gh: Some(gh.clone()),
         worktrees: Some(worktrees.to_path_buf()),
@@ -292,4 +303,40 @@ fn a_head_holding_the_pr_head_lays_no_worktree() {
         0,
         "no worktree laid"
     );
+}
+
+#[test]
+fn runs_starting_on_one_head_at_once_lay_one_worktree_and_share_it() {
+    let (keep, runs, wt) = (
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+    );
+    let (repo, head) = on_trunk(keep.path());
+    let gh = pr_gh(
+        &keep.path().join("gh"),
+        "",
+        &pr(N, "feature", &head).to_string(),
+    );
+    let names = ["h1", "h2", "h3", "h4"];
+    let repos: Vec<Result<Value, String>> = std::thread::scope(|s| {
+        let runs = names.map(|name| {
+            let gh = gh.clone();
+            let (repo, runs, wt) = (repo.path(), runs.path(), wt.path());
+            s.spawn(move || start_as(name, repo, runs, wt, &gh))
+        });
+        runs.into_iter().map(|r| r.join().unwrap()).collect()
+    });
+    let dir = place(repo.path(), wt.path(), &head).canonicalize().unwrap();
+    for step in &repos {
+        let step = step.as_ref().unwrap();
+        assert_eq!(step["repo"], dir.display().to_string());
+    }
+    let parent = dir.parent().unwrap();
+    let left: Vec<_> = std::fs::read_dir(parent)
+        .unwrap()
+        .map(|e| e.unwrap().file_name())
+        .collect();
+    assert_eq!(left.len(), 1, "one worktree, no lock left: {left:?}");
+    assert_eq!(rev(&dir, "HEAD"), head);
 }

@@ -114,3 +114,28 @@ async fn a_usage_limit_stops_the_round_and_is_an_event() {
         text: limit.unwrap_or_default()
     }));
 }
+
+#[tokio::test]
+async fn a_worktree_where_opencode_cannot_be_checked_runs_no_task_and_says_why() {
+    let mut bench = Bench::new(HostKind::OpenCode);
+    bench.agents = Some(vec!["review-task".into()]);
+    let worktree = bench.path("worktree");
+    std::fs::create_dir_all(&worktree).unwrap();
+    let mut fake = bench.fake(vec![Spec("a", "do a", None)]);
+    fake.worktree = Some(worktree.clone());
+    let answer = bench.drive(&fake).await;
+    assert!(!answer.finished, "{}", answer.text);
+    assert!(
+        answer.text.contains("review cannot run its tasks")
+            && answer.text.contains(&worktree.display().to_string())
+            && answer.text.contains("install.sh --global"),
+        "{}",
+        answer.text
+    );
+    assert!(
+        !argvs(&bench).iter().any(|a| a.starts_with("run ")),
+        "{:?}",
+        argvs(&bench)
+    );
+    assert!(fake.submits.borrow().is_empty(), "nothing is submitted");
+}

@@ -41,10 +41,9 @@ pub(super) fn refusal(n: u64, pr_head: &str, head: &str, why: Option<&str>) -> S
         format!(" craft could not lay its own worktree for it ({why}).")
     });
     format!(
-        "pr={n} names PR #{n}, whose head is `{}`, but this checkout's HEAD is `{}` and does not hold it, so the review would read another commit than the PR's.{laid} Check the PR's head out in a detached worktree of your own and run there — `git fetch origin pull/{n}/head && git worktree add --detach ~/.craft/worktrees/<repo>/pr-{n}-{} FETCH_HEAD`, never a worktree another session made, or `gh pr checkout {n}` in a worktree — or drop `pr=` to review this checkout as it is. Nothing was reviewed and no round was filed.",
+        "pr={n} names PR #{n}, whose head is `{}`, but this checkout's HEAD is `{}` and does not hold it, so the review would read another commit than the PR's.{laid} Check the PR's head out in a detached worktree in a fresh directory of your own and run there without `pr=` — `dir=$(mktemp -d) && git fetch origin pull/{n}/head && git worktree add --detach \"$dir/pr-{n}\" FETCH_HEAD`, never a worktree another session or craft made — or drop `pr=` to review this checkout as it is. Nothing was reviewed and no round was filed.",
         short(pr_head),
-        short(head),
-        short(pr_head)
+        short(head)
     )
 }
 

@@ -1,10 +1,11 @@
 //! Where a review of the pull request given (`pr=`) runs when this checkout's `HEAD` does not hold
 //! its head: craft's own detached worktree, `<worktrees>/<repo key>/pr-<N>-<head>`, outside the
-//! user's repository and registered with it, the head fetched from `origin` when the repository
-//! lacks it (realm `@nick/craft`, node #517). Keyed on the head, one there from before is reused,
-//! never moved — runs on several hosts at once share it; a dirty one, one at another `HEAD` or a
-//! stranger is refused. The user's checkout and every other worktree are never touched. Where the
-//! head cannot be got, the run is refused with the manual way ([`super::head`]).
+//! user's checkout and registered with its repository, the head fetched from `origin` when the
+//! repository lacks it (realm `@nick/craft`, node #517). Keyed on the head, one there from before
+//! is reused, never moved — runs on several hosts at once share it, laying it one at a time
+//! ([`lock`]); a dirty one, one at another `HEAD` or a stranger is refused. The user's checkout and
+//! every other worktree are never touched; the repository's `.git` gains the fetched objects and
+//! the worktree's metadata. Where the head cannot be got, the run is refused with the manual way.
 
 use std::path::{Path, PathBuf};
 
@@ -14,6 +15,8 @@ use crate::gate::runner::Runner;
 use crate::git;
 use crate::project::project_id;
 use crate::sources::Git;
+
+mod lock;
 
 /// The worktree the review runs in, and the one line saying so for the report and the answer.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -55,6 +58,7 @@ pub fn checkout(
     }
     let refuse = |why: String| head::refusal(n, &pr_head, head, Some(&why));
     let dir = place(cwd, root, n, &pr_head).map_err(refuse)?;
+    let _held = lock::Lock::take(&dir).map_err(refuse)?;
     let how = if dir.exists() {
         reuse(cwd, &dir, &pr_head).map_err(refuse)?;
         clean(&dir, n)?;
@@ -82,23 +86,21 @@ fn place(cwd: &Path, root: &Path, n: u64, pr_head: &str) -> Result<PathBuf, Stri
     Ok(root.join(project_id(&common)).join(name))
 }
 
+const FETCH: [&str; 4] = ["fetch", "--no-tags", "--no-write-fetch-head", "--quiet"];
+
 /// PR `n`'s head `pr_head` in this repository: fetched from `origin`'s `pull/<n>/head` when it
-/// lacks it, never prompting.
+/// lacks it, never prompting, and leaving the user's `FETCH_HEAD` as it was.
 fn fetch(cwd: &Path, n: u64, pr_head: &str) -> Result<(), String> {
     if git::has_commit(cwd, pr_head) {
         return Ok(());
     }
     let refspec = format!("pull/{n}/head");
     let at = cwd.display().to_string();
-    Git::prompt_free().run(&["-C", &at, "fetch", "--no-tags", "-q", "origin", &refspec])?;
-    if git::has_commit(cwd, pr_head) {
-        Ok(())
-    } else {
-        Err(format!(
-            "origin's `{refspec}` does not hold `{}`",
-            short(pr_head)
-        ))
-    }
+    Git::prompt_free().run(&[&["-C", at.as_str()][..], &FETCH, &["origin", &refspec]].concat())?;
+    let missing = || format!("origin's `{refspec}` does not hold `{}`", short(pr_head));
+    git::has_commit(cwd, pr_head)
+        .then_some(())
+        .ok_or_else(missing)
 }
 
 const STRANGER: &str = "is not a worktree of this repository";
@@ -137,12 +139,8 @@ fn clean(dir: &Path, n: u64) -> Result<(), String> {
     ))
 }
 
-/// A detached worktree of `cwd`'s repository at `dir`, on `pr_head`.
+/// A detached worktree of `cwd`'s repository at `dir`, on `pr_head`; its parent made by [`lock`].
 fn add(cwd: &Path, dir: &Path, pr_head: &str) -> Result<(), String> {
-    if let Some(parent) = dir.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| format!("creating {}: {e}", parent.display()))?;
-    }
     let at = dir.display().to_string();
     let args = ["worktree", "add", "--quiet", "--detach", &at, pr_head];
     git::git(cwd, &args).map(drop).map_err(|e| e.to_string())
