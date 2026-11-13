@@ -1,12 +1,14 @@
-//! What a run stopped before verification settled its pool reports (realm @nick/craft, nodes #299,
-//! #300): every finding it has, as it stood — a panel that came back whole as its votes decide it,
+//! What a run stopped before verification settled its pool reports (realm @nick/craft, node #299):
+//! every finding it has, as it stood — a panel that came back whole as its votes decide it,
 //! one cut short Suspected on the votes it has, one no verifier judged yet unverified — so the
-//! report and the verdict never read as no findings while the run holds some.
+//! report and the verdict never read as no findings while the run holds some. A stop in the
+//! completeness critic's own pass keeps the first pass's settled findings beside the critic's.
 
 use serde_json::Value;
 
 use super::outcome::judged;
 use super::{Route, awaits_escalation, panel, route_in};
+use crate::critic::Stage;
 use crate::settle::{self, finalize_in, not_verified};
 use crate::state::{Phase, RunState, TaskKind, TaskState};
 
@@ -14,7 +16,8 @@ use crate::state::{Phase, RunState, TaskKind, TaskState};
 const STOPPED: &str = "the run stopped before verification finished";
 
 /// Fills `run.settled` of a run stopped before verification settled it, from the pool it has —
-/// the dedup's, or the lens rounds' when the run stopped before the dedup — and notes it.
+/// the dedup's, or the lens rounds' when the run stopped before the dedup — after the first pass's
+/// settled findings when the critic's pass stopped, and notes it.
 pub(crate) fn stood(run: &mut RunState) {
     if !run.settled.is_empty() {
         return;
@@ -44,10 +47,13 @@ pub(crate) fn stood(run: &mut RunState) {
         "verification stopped before it finished: {} finding(s) are reported as they stood — a finding whose verifiers had not all answered is Suspected on the votes it has or unverified without any; the resume settles them",
         settled.len()
     ));
-    run.settled = settled
-        .iter()
-        .map(|f| finalize_in(f, run.context.strict))
-        .collect();
+    let mut all = if run.critic.stage == Stage::Verifying {
+        run.critic.settled_before.clone()
+    } else {
+        Vec::new()
+    };
+    all.extend(settled.iter().map(|f| finalize_in(f, run.context.strict)));
+    run.settled = all;
 }
 
 /// Whether finding `i` still waits on a verifier: a vote or its batch not answered or not yet
