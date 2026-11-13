@@ -48,3 +48,11 @@ fn a_bad_level_or_another_hosts_thinking_is_refused() {
     let codex = host(&["--backend", "codex"], &[("THINKING", "huge")]).unwrap();
     assert!(codex.thinking.is_empty());
 }
+
+#[test]
+fn delta_is_a_start_flag_the_hosts_run_takes() {
+    let cli = Cli::try_parse_from(["craft", "--backend", "codex", "--fresh", "--delta"]).unwrap();
+    assert!(cli.run.start.delta && cli.run.start.fresh);
+    let plain = Cli::try_parse_from(["craft", "--backend", "codex"]).unwrap();
+    assert!(!plain.run.start.delta);
+}

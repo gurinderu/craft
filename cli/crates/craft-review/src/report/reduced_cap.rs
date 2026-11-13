@@ -8,7 +8,7 @@ use crate::state::RunState;
 
 /// What makes `state` a reduced round, as its verdict line names it; `None` for a full round.
 fn reduced(state: &RunState) -> Option<&'static str> {
-    if state.context.re_review == ReScope::Fixes {
+    if state.context.re_review == ReScope::Fixes || state.delta {
         Some("a delta round that reviewed only the fix commits")
     } else if state.light {
         Some("a light round (depth=light)")

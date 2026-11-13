@@ -249,6 +249,32 @@ fn fresh_starts_a_new_chain_over_the_whole_diff() {
 }
 
 #[test]
+fn a_fresh_delta_over_the_fix_commits_never_approves() {
+    // addressing-findings' re-review: fresh, its base the reviewed commit, said to be a delta.
+    let repo = fixture(true);
+    let (_keep, runs) = runs();
+    let reviewed = head(repo.path());
+    fix(repo.path());
+    let s = step::start(&StartOptions {
+        base: Some(reviewed),
+        fresh: true,
+        delta: true,
+        ..at(repo.path(), &runs, "r1")
+    })
+    .unwrap();
+    let done = drive(&runs.join("r1"), s, &[], &[]);
+    assert_eq!(done["verdict"], json!("Warning"), "{done}");
+    assert_eq!(done["lensScope"], json!("delta"));
+    assert!(
+        done["line"]
+            .as_str()
+            .unwrap()
+            .contains("Approve comes only from a full round"),
+        "{done}"
+    );
+}
+
+#[test]
 fn every_full_every_th_round_reviews_the_whole_diff_again() {
     let repo = fixture(true);
     let (_keep, runs) = runs();
