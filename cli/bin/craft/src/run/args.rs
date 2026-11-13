@@ -50,8 +50,9 @@ fn thinking_of(
     env: &dyn Fn(&str) -> Option<String>,
 ) -> Result<ThinkingTable, String> {
     match (args.backend, &args.thinking) {
-        (HostKind::Pi, flag) => {
-            models::thinking_table(&flag.clone().or_else(|| env("THINKING")).unwrap_or_default())
+        (HostKind::Pi, Some(flag)) => models::thinking_table(flag, "--thinking"),
+        (HostKind::Pi, None) => {
+            models::thinking_table(&env("THINKING").unwrap_or_default(), "CRAFT_PI_THINKING")
         }
         (_, Some(_)) => {
             Err("--thinking is pi's alone: this backend takes no thinking level".into())

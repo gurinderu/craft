@@ -65,4 +65,5 @@ Flags:
   also `CRAFT_PI_MODELS`); `--thinking <level>` or `--thinking opus=<level>,sonnet=<level>,haiku=<level>`
   — pi's thinking level (off, minimal, low, medium, high, xhigh, max) for each tier (default: opus
   high, sonnet medium, haiku low; also `CRAFT_PI_THINKING`); a `--models` model that ends in its
-  own `:<level>` keeps it.
+  own `:<level>` keeps it; craft passes a level on every task, so pi's own configured thinking
+  level is overridden unless `--thinking` or `CRAFT_PI_THINKING` is given.

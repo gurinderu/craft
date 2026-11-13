@@ -22,7 +22,7 @@ fn one_name_maps_every_tier_and_pairs_map_theirs() {
 
 #[test]
 fn thinking_follows_the_tier_unless_a_level_or_pairs_override_it() {
-    let default = thinking_table("").unwrap();
+    let default = thinking_table("", "--thinking").unwrap();
     assert_eq!(
         default.into_iter().collect::<Vec<_>>(),
         [
@@ -31,9 +31,9 @@ fn thinking_follows_the_tier_unless_a_level_or_pairs_override_it() {
             ("sonnet".into(), "medium".into())
         ]
     );
-    let all = thinking_table("xhigh").unwrap();
+    let all = thinking_table("xhigh", "--thinking").unwrap();
     assert!(all.values().all(|l| l == "xhigh"));
-    let some = thinking_table("haiku=off, sonnet=max").unwrap();
+    let some = thinking_table("haiku=off, sonnet=max", "--thinking").unwrap();
     assert_eq!(some["opus"], "high", "a tier not named keeps its default");
     assert_eq!(some["sonnet"], "max");
     assert_eq!(some["haiku"], "off");
@@ -41,11 +41,11 @@ fn thinking_follows_the_tier_unless_a_level_or_pairs_override_it() {
 
 #[test]
 fn an_unknown_thinking_level_is_refused() {
-    let why = thinking_table("huge").unwrap_err();
+    let why = thinking_table("huge", "--thinking").unwrap_err();
     assert!(why.contains("--thinking \"huge\""), "{why}");
-    thinking_table("opus=huge").unwrap_err();
-    thinking_table("giant=high").unwrap_err();
-    thinking_table("opus=").unwrap_err();
+    thinking_table("opus=huge", "--thinking").unwrap_err();
+    thinking_table("giant=high", "--thinking").unwrap_err();
+    thinking_table("opus=", "--thinking").unwrap_err();
 }
 
 #[test]

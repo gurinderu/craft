@@ -10,7 +10,7 @@ use regex::Regex;
 /// The tiers a task may name (`craft_review::agent::Model`).
 const TIERS: [&str; 3] = ["opus", "sonnet", "haiku"];
 
-/// pi's thinking levels (observed `pi --help`).
+/// pi's thinking levels (observed `pi --help`; realm `@nick/craft`, node #519).
 const LEVELS: [&str; 7] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 
 /// The thinking level a pi task runs at by its tier, unless the run names others (realm
@@ -32,20 +32,22 @@ pub(crate) fn model_table(text: &str, name: &Regex) -> Result<ModelTable, String
 }
 
 /// The thinking level of each tier: craft's default for a tier `text` does not name — one level
-/// for every tier, or `tier=level` pairs joined by commas; or why it cannot be used.
-pub(crate) fn thinking_table(text: &str) -> Result<ThinkingTable, String> {
+/// for every tier, or `tier=level` pairs joined by commas; or why it cannot be used, naming
+/// `source`, where `text` came from.
+pub(crate) fn thinking_table(text: &str, source: &str) -> Result<ThinkingTable, String> {
     let mut table: ThinkingTable = THINKING
         .iter()
         .map(|(t, l)| ((*t).to_owned(), (*l).to_owned()))
         .collect();
     let what = format!("a thinking level ({})", LEVELS.join(", "));
-    table.extend(tier_table(text, ("--thinking", &what, "level"), &|l| {
+    table.extend(tier_table(text, (source, &what, "level"), &|l| {
         LEVELS.contains(&l)
     })?);
     Ok(table)
 }
 
-/// Whether `model` names its own thinking level, as pi's `<model>:<level>`.
+/// Whether `model` names its own thinking level, as pi's `<model>:<level>` (realm `@nick/craft`,
+/// node #519).
 pub(crate) fn carries_level(model: &str) -> bool {
     model
         .rsplit_once(':')
@@ -53,7 +55,8 @@ pub(crate) fn carries_level(model: &str) -> bool {
 }
 
 /// A value for each tier from `text`, "" none: one value for every tier, or `tier=value` pairs
-/// joined by commas; `flag`, the value's noun and its placeholder name it in a refusal.
+/// joined by commas; `flag` (where `text` came from), the value's noun and its placeholder name
+/// it in a refusal.
 fn tier_table(
     text: &str,
     (flag, noun, slot): (&str, &str, &str),
