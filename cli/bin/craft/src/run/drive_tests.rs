@@ -32,6 +32,8 @@ struct Fake {
     tasks: Vec<Spec>,
     verdict: &'static str,
     broken: bool,
+    /// craft's own worktree the steps name as the run's repo, with its line.
+    worktree: Option<PathBuf>,
     submits: RefCell<Vec<Said>>,
     filed: RefCell<Vec<String>>,
 }
@@ -43,6 +45,7 @@ impl Fake {
             tasks,
             verdict: "Approve",
             broken: false,
+            worktree: None,
             submits: RefCell::default(),
             filed: RefCell::default(),
         }
@@ -64,7 +67,16 @@ impl Fake {
     }
 
     fn pending(&self, missing: &[&Spec]) -> Value {
-        json!({"run": self.run, "done": false, "phase": "lenses", "tasks": missing.iter().map(|s| self.task(s)).collect::<Vec<_>>()})
+        self.placed(json!({"run": self.run, "done": false, "phase": "lenses", "tasks": missing.iter().map(|s| self.task(s)).collect::<Vec<_>>()}))
+    }
+
+    /// `step` naming the worktree as the run's repo, when there is one.
+    fn placed(&self, mut step: Value) -> Value {
+        if let Some(w) = &self.worktree {
+            step["repo"] = json!(w);
+            step["worktree"] = json!(format!("reviewed in craft's own worktree {}", w.display()));
+        }
+        step
     }
 }
 
@@ -100,9 +112,9 @@ impl Protocol for Fake {
         if !missing.is_empty() && submits.len() < 3 {
             return Ok(self.pending(&missing));
         }
-        Ok(
+        Ok(self.placed(
             json!({"run": run, "done": true, "report": run.join("report.md"), "verdict": self.verdict, "line": format!("{} — fake review", self.verdict), "findings": [{"severity": "High", "file": "src/a.rs", "line": 3, "title": "a fake finding", "tier": "confirmed"}], "filing": {"record": "filed", "lost": []}}),
-        )
+        ))
     }
 
     fn status(&self, _run: &Path) -> Result<Value> {
@@ -126,7 +138,7 @@ fn host_script(log: &Path, read: &str, answer: &str) -> String {
         r#"#!/bin/sh
 {read}
 mkdir -p '{log}/live'; touch '{log}/live/'$$; ls '{log}/live' | wc -l >> '{log}/alive'
-printf '%s' "$input" > '{log}/call-'$$; echo "$@" > '{log}/argv-'$$; echo "$CLAUDE_PLUGIN_ROOT" > '{log}/root'
+printf '%s' "$input" > '{log}/call-'$$; echo "$@" > '{log}/argv-'$$; echo "$CLAUDE_PLUGIN_ROOT" > '{log}/root'; pwd -P > '{log}/cwd'
 case "$input" in *HANG*) sleep 30;; esac
 sleep 0.3; rm -f '{log}/live/'$$
 case "$input" in
@@ -523,3 +535,27 @@ async fn a_stopping_signal_stops_the_round_s_tasks_and_files_the_run_incomplete(
 
 #[path = "opencode_drive_tests.rs"]
 mod opencode;
+
+#[tokio::test]
+async fn the_tasks_run_in_the_worktree_the_step_names_and_the_answer_names_it() {
+    let bench = Bench::new(HostKind::Pi);
+    let worktree = bench.path("worktree");
+    std::fs::create_dir_all(&worktree).unwrap();
+    let mut fake = bench.fake(vec![Spec("a", "do a", None)]);
+    fake.worktree = Some(worktree.clone());
+    let answer = bench.drive(&fake).await;
+    assert!(answer.finished, "{}", answer.text);
+    let cwd = std::fs::read_to_string(bench.path("log/cwd")).unwrap();
+    assert_eq!(
+        cwd.trim(),
+        worktree.canonicalize().unwrap().display().to_string()
+    );
+    assert!(
+        answer.text.contains(&format!(
+            "reviewed in craft's own worktree {}.",
+            worktree.display()
+        )),
+        "{}",
+        answer.text
+    );
+}

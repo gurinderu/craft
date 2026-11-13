@@ -1,9 +1,11 @@
 //! Whether `HEAD` holds the head of the pull request given (`pr=`), which names the PR whose head
 //! is `HEAD` and never checks it out: a run from a commit off the PR's history — the trunk, a stale
-//! checkout — would review that commit and chain its rounds onto the PR. It is refused before any
-//! task, saying how to review the PR's head. A `HEAD` ahead of it, with fix commits not yet pushed,
-//! is reviewed — review comes before the push (realm @nick/craft, node #127) — and noted: its
-//! findings post only once the PR's head holds the reviewed head ([`crate::publish`]).
+//! checkout — would review that commit and chain its rounds onto the PR. craft then reviews the
+//! head in its own worktree ([`super::worktree`]); where it cannot get it there, the run is refused
+//! before any task, saying how to review the PR's head (realm `@nick/craft`, node #517). A `HEAD`
+//! ahead of it, with fix commits not yet pushed, is reviewed — review comes before the push (realm
+//! @nick/craft, node #127) — and noted: its findings post only once the PR's head holds the
+//! reviewed head ([`crate::publish`]).
 
 use std::path::Path;
 
@@ -23,7 +25,7 @@ pub(super) fn check(
         return Ok(None);
     }
     let Some(k) = ahead_by(cwd, pr_head) else {
-        return Err(refusal(n, pr_head, head));
+        return Err(refusal(n, pr_head, head, None));
     };
     Ok(Some(format!(
         "HEAD is {k} commit{} ahead of PR #{n}'s head `{}`; push before publishing — findings post only once the PR's head holds the reviewed head",
@@ -32,10 +34,14 @@ pub(super) fn check(
     )))
 }
 
-/// Why the run is refused: `HEAD` does not hold PR `n`'s head `pr_head`.
-fn refusal(n: u64, pr_head: &str, head: &str) -> String {
+/// Why the run is refused: `HEAD` does not hold PR `n`'s head `pr_head`, and craft could not lay
+/// its own worktree for it (`why`), or was not asked to.
+pub(super) fn refusal(n: u64, pr_head: &str, head: &str, why: Option<&str>) -> String {
+    let laid = why.map_or_else(String::new, |why| {
+        format!(" craft could not lay its own worktree for it ({why}).")
+    });
     format!(
-        "pr={n} names PR #{n}, whose head is `{}`, but this checkout's HEAD is `{}` and does not hold it, so the review would read another commit than the PR's. Check the PR's head out in a worktree and run there — `gh pr checkout {n}`, or `git fetch origin pull/{n}/head && git worktree add --detach <dir> FETCH_HEAD` — or drop `pr=` to review this checkout as it is. Nothing was reviewed and no round was filed.",
+        "pr={n} names PR #{n}, whose head is `{}`, but this checkout's HEAD is `{}` and does not hold it, so the review would read another commit than the PR's.{laid} Check the PR's head out in a detached worktree in a fresh directory of your own and run there without `pr=` — `dir=$(mktemp -d) && git fetch origin pull/{n}/head && git worktree add --detach \"$dir/pr-{n}\" FETCH_HEAD`, never a worktree another session or craft made — or drop `pr=` to review this checkout as it is. Nothing was reviewed and no round was filed.",
         short(pr_head),
         short(head)
     )
@@ -52,6 +58,6 @@ fn ahead_by(cwd: &Path, pr_head: &str) -> Option<u64> {
     count.trim().parse().ok()
 }
 
-fn short(sha: &str) -> &str {
+pub(super) fn short(sha: &str) -> &str {
     sha.get(..12).unwrap_or(sha)
 }

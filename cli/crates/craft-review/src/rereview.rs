@@ -101,6 +101,10 @@ pub struct Chain {
     /// checked-out branch's.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pr: Option<u64>,
+    /// The line naming craft's own worktree the run reviews the PR given in, its `HEAD` short of
+    /// the PR's head ([`branch::checkout`]); absent, the run reviews the checkout it started in.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub worktree: Option<String>,
     /// The directory of the change the run reviews (`path`), the chain's key beside them; empty,
     /// the whole change.
     #[serde(skip_serializing_if = "String::is_empty")]

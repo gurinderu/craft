@@ -97,8 +97,11 @@ pub struct StartArgs {
     /// whole again.
     #[arg(long)]
     pub nested: bool,
-    /// The pull request under review, whose head HEAD must be or hold: a HEAD that does not hold it
-    /// is refused before any task. On a detached HEAD its head branch keys the chain of review rounds. Absent, gh is
+    /// The pull request under review, whose head HEAD must be or hold: from a HEAD that does not
+    /// hold it, craft fetches the head and reviews it in its own detached worktree, one per head and
+    /// never moved, `~/.craft/worktrees/<repo key>/pr-<N>-<head>`, refusing the run before any task
+    /// only where it cannot get the head there (realm `@nick/craft`, node #517). The gate builds
+    /// and runs the PR's code: `--no-gate` for a PR you do not trust. On a detached HEAD its head branch keys the chain of review rounds. Absent, gh is
     /// asked for the open pull request whose head is HEAD.
     #[arg(long, value_name = "NUMBER")]
     pub pr: Option<u64>,
@@ -284,6 +287,7 @@ pub(crate) fn start_step(args: &StartArgs) -> Result<Value> {
         nested: args.nested,
         pr: args.pr,
         chain_gh: Some(craft_review::publish::PostSetup::default()),
+        worktrees: crate::init::worktrees_dir(),
     };
     let step = stamped(step::start(&opts)?, began);
     Ok(match &args.record {

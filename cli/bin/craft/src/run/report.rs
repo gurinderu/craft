@@ -125,6 +125,9 @@ pub(crate) fn finished_answer(step: &Value, again: &str) -> String {
         text(step, "report")
     )];
     rest.extend(publication(step));
+    if let Some(line) = step.get("worktree").and_then(Value::as_str) {
+        rest.push(format!("{line}."));
+    }
     let notes = strings(step.get("degraded"));
     if !notes.is_empty() {
         let mut d = vec!["⚠️ Degraded: part of this review ran weaker than asked — the report's Degraded section says how.".to_owned()];
