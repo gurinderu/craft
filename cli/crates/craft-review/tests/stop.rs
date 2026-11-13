@@ -308,7 +308,7 @@ fn a_limit_stop_in_verification_reports_every_finding_under_its_honest_tier() {
         &[
             titled("High", 1, "decided"),
             titled("High", 2, "half judged"),
-            titled("Low", 3, "minor"),
+            titled("Info", 3, "minor"),
         ],
     );
     write_answer(&s, "lens-rust-errors-r1", &found.to_string());

@@ -370,9 +370,14 @@ fn a_run_of_low_and_info_findings_ends_unverified_with_no_verifier() {
     let repo = fixture(true);
     let out = tempfile::tempdir().unwrap();
     let (run, _) = small_run(repo.path(), out.path());
+    // From the intent lens: a Low the errors lens reports is on a failure path and is verified.
     let s = submit(
         &run,
-        round1(&[titled("Low", 1, "a"), titled("Info", 2, "b")]),
+        json!({
+            "lens-rust-errors-r1": lens("errors", &[]),
+            "lens-rust-intent-r1": lens("intent", &[titled("Low", 1, "a"), titled("Info", 2, "b")]),
+            "lens-rust-tests-r1": lens("tests", &[]),
+        }),
     );
     assert_eq!(ids(&s), ["dedup-rust"]);
     let s = submit(&run, json!({"dedup-rust": {"groups": [[0, 1]]}}));
@@ -389,6 +394,24 @@ fn a_run_of_low_and_info_findings_ends_unverified_with_no_verifier() {
         report.contains("1 Low/Info finding(s) NOT VERIFIED"),
         "{report}"
     );
+}
+
+#[test]
+fn a_low_on_a_failure_path_buys_a_batch_verifier() {
+    let repo = fixture(true);
+    let out = tempfile::tempdir().unwrap();
+    let (run, _) = small_run(repo.path(), out.path());
+    let s = submit(&run, round1(&[titled("Low", 1, "a")]));
+    assert_eq!(
+        ids(&s),
+        ["verify-batch-0"],
+        "an errors-lens Low is verified"
+    );
+    let one = json!({"verdicts": [{"index": 0, "refuted": false, "citedLineMatches": true, "reachable": true, "premiseSupported": true, "behaviourIntended": false, "harmSupported": false, "confirmedHarmLevel": "none", "reason": "r"}]});
+    let s = submit(&run, json!({"verify-batch-0": one}));
+    assert_eq!(s["done"], json!(true));
+    let report = std::fs::read_to_string(s["report"].as_str().unwrap()).unwrap();
+    assert!(report.contains("1 confirmed"), "{report}");
 }
 
 #[test]
@@ -473,10 +496,14 @@ fn a_light_pass_runs_one_round_of_the_scoped_lenses() {
     assert_eq!(st["profiles"][0]["plan"]["maxRounds"], json!(1));
     let low = titled("Low", 2, "naming");
     let s = submit(&run, round1(&[low]));
-    assert_eq!(s["verdict"], json!("Approve"));
+    assert_eq!(
+        s["verdict"],
+        json!("Warning"),
+        "a light round never approves"
+    );
     let report = std::fs::read_to_string(s["report"].as_str().unwrap()).unwrap();
     for want in [
-        "## Verdict\n\nApprove · light pass (depth=light) -- see \"Light pass\" below for what it skipped",
+        "## Verdict\n\nWarning — a light round (depth=light) never approves: Approve comes only from a full round (the whole diff, `depth=full`) · light pass (depth=light) -- see \"Light pass\" below for what it skipped",
         "(NOT VERIFIED: light pass: only Medium and above are verified, so no verifier was spent on this Low finding and nothing here has been checked against the code)",
         "## Light pass -- what it skipped\n⚠️ This was a LIGHT pass (depth=light), not a full review, and its verdict covers only what it ran: the whole-diff lenses invariants, negative-space, compat were NOT dispatched (it DID run intent, which the diff called for);",
     ] {

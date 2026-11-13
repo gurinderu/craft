@@ -64,6 +64,7 @@ pub fn opts(repo: &Path, run: &Path) -> StartOptions {
         craft_version: Some("9.9.9".into()),
         light: false,
         fresh: false,
+        delta: false,
         full_every: 0,
         runs: None,
         strict: false,

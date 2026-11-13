@@ -132,7 +132,8 @@ a real OpenCode 2.x.
   unless the flags name `--models`: one `provider/model` for all, or
   `opus=provider/model,haiku=provider/model` (env `CRAFT_OPENCODE_MODELS`). `--concurrency <n>` caps
   the tasks at once (default 4, env `CRAFT_OPENCODE_CONCURRENCY`).
-- The flags are the binary's: `--base`, `--depth light|full`, `--pr`, `--comment`, `--path`,
+- The flags are the binary's: `--base`, `--depth light|full`, `--fresh`, `--delta` (a re-review of fix
+  commits, which never approves), `--pr`, `--comment`, `--path`,
   `--run <dir>` to resume a stopped run, `--no-gate`, ….
 - `--pr <n>` from a checkout that lacks the PR's head (the trunk, say) reviews it in craft's own
   detached worktree, `~/.craft/worktrees/<repo>/pr-<n>-<head>`, one per head, shared by runs at once

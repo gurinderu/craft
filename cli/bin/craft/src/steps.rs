@@ -35,6 +35,10 @@ pub struct StartArgs {
     /// Start a new chain of review rounds: build on no earlier round of this branch.
     #[arg(long)]
     pub fresh: bool,
+    /// The run reviews only the fix commits since an earlier review (its base that review's
+    /// commit): a delta round, whose clean verdict is a Warning, never Approve.
+    #[arg(long)]
+    pub delta: bool,
     /// Every this-many-th round of a branch's chain reviews the whole diff again rather than the
     /// fix commits since the prior round; 0, never.
     #[arg(long, default_value_t = 3)]
@@ -260,6 +264,7 @@ pub(crate) fn start_step(args: &StartArgs) -> Result<Value> {
         craft_version,
         light: args.depth == Depth::Light,
         fresh: args.fresh,
+        delta: args.delta,
         full_every: args.full_every,
         runs: args.runs.clone(),
         strict: args.strict,

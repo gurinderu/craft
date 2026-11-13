@@ -161,7 +161,11 @@ fn named(prompts: &str, root: &Path) -> Vec<PathBuf> {
 /// A finished review over `root`: a verdict, skills that exist, the agents' bodies, a filed record.
 fn assert_reviewed(tmp: &Path, root: &Path) {
     let (answer, prompts, home) = review(tmp, root);
-    assert!(answer.starts_with("## Verdict\n\n✅ Approve"), "{answer}");
+    // A light round never approves: a clean one is a Warning naming that cap.
+    assert!(
+        answer.starts_with("## Verdict\n\n⚠️ Warning — a light round (depth=light) never approves"),
+        "{answer}"
+    );
     let skills = named(&prompts, root);
     assert!(!skills.is_empty(), "the prompts name the plugin's files");
     for path in skills

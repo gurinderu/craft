@@ -80,11 +80,14 @@ not one of them: it is the main session's (→ "Who triages").
                commits named, or a base after the merge. Run the `craft:review` workflow, on a
                diff in any language — Rust and Nix under their profiles, other source under
                its general lenses — with
-               `{ base: <that commit>, fresh: true, fullEvery: 0 }` when the findings did not
+               `{ base: <that commit>, fresh: true, delta: true, fullEvery: 0 }` when the findings did not
                come from its last round on this branch (a human's PR review, any other review):
                `fresh` keeps it from chaining to an older run on the branch, which would widen
-               the scan and carry that run's settled findings; when they did, chain as `develop`
-               does (Phase 4, a later light round). Add `repo` and `intent` as
+               the scan and carry that run's settled findings, and `delta` tells it the run
+               covers only the fix commits, so a clean one reads Warning, never Approve (Approve
+               comes only from a full review; the whole-PR base above drops `delta`); when they
+               did, chain as `develop` does (Phase 4, a later light round), which is a delta
+               round already. Add `repo` and `intent` as
                usual; one run per PR. The findings the fixes touch were checked in step 6;
                `craft:review` re-checks its previous round's where it chains. The whole diff only
                on the human's word, or as the final pass the repo's rules ask for. Never handed to a subagent (it has no Workflow tool). Without the Workflow
