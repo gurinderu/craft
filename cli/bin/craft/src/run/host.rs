@@ -11,7 +11,7 @@ use regex::Regex;
 use serde_json::Value;
 
 use super::HostKind;
-use super::models::ModelTable;
+use super::models::{ModelTable, ThinkingTable, carries_level};
 use super::opencode::placement;
 use super::task::{Task, headed, skill_line, spell_root};
 
@@ -29,6 +29,8 @@ static PI_LOGIN: LazyLock<Option<Regex>> =
 pub(crate) struct Host {
     pub(crate) kind: HostKind,
     pub(crate) models: ModelTable,
+    /// pi's thinking level for each tier; unused by another host.
+    pub(crate) thinking: ThinkingTable,
     /// The host's CLI.
     pub(crate) command: PathBuf,
     /// The agents opencode lists, `None` when unknown or for another host.
@@ -92,11 +94,20 @@ impl Host {
                 (pi_message(body, task, &file, root), None, Some(place.agent))
             }
         };
+        let model = self.models.get(&task.model).cloned();
+        // Only pi is given a level, and a model the run names with its own `:<level>` keeps it
+        // (realm `@nick/craft`, node #518).
+        let thinking = match &model {
+            _ if self.kind != HostKind::Pi => None,
+            Some(m) if carries_level(m) => None,
+            _ => self.thinking.get(&task.model).cloned(),
+        };
         Ok(AgentRequest {
             label: task.id.clone(),
             agent,
             prompt,
-            model: self.models.get(&task.model).cloned(),
+            model,
+            thinking,
             schema,
             allowed_tools: Vec::new(),
             cwd: repo.to_path_buf(),

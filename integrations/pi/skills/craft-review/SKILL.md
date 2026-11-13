@@ -70,4 +70,8 @@ Flags:
 - `--concurrency <n>` — review agents at once, 1 to 16 (default 4; also `CRAFT_PI_CONCURRENCY`);
   `--models <model>` or `--models opus=<model>,sonnet=<model>,haiku=<model>` — the pi model (as
   `pi --model` takes it) for each tier the review asks for (default: pi's own configured model;
-  also `CRAFT_PI_MODELS`).
+  also `CRAFT_PI_MODELS`); `--thinking <level>` or `--thinking opus=<level>,sonnet=<level>,haiku=<level>`
+  — pi's thinking level (off, minimal, low, medium, high, xhigh, max) for each tier (default: opus
+  high, sonnet medium, haiku low; also `CRAFT_PI_THINKING`); a `--models` model that ends in its
+  own `:<level>` keeps it; craft passes a level on every task, so pi's own configured thinking
+  level is overridden unless `--thinking` or `CRAFT_PI_THINKING` is given.

@@ -162,6 +162,7 @@ mod tests {
             agent: None,
             prompt: String::new(),
             model: Some("gpt-x".into()),
+            thinking: None,
             schema: None,
             allowed_tools: Vec::new(),
             cwd: PathBuf::from("/repo"),
