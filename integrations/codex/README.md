@@ -22,4 +22,34 @@ Codex sends `--output-schema` in the API's strict mode, so a task schema with op
 strict copy and the nulls it forces are dropped from the answer. The other workflow engines (`rust-audit`,
 `triage-findings`) are Claude Code only.
 
+## Sandbox on Ubuntu 24.04 (bwrap: loopback: Failed RTM_NEWADDR)
+
+Symptom: `codex sandbox true` fails with `bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted`. A craft
+review on the codex backend then fails every task and ends INCOMPLETE.
+
+Cause: Ubuntu 24.04 sets `kernel.apparmor_restrict_unprivileged_userns=1`, so bwrap cannot use the user namespace it
+creates: AppArmor confines it there without capabilities, so its loopback setup fails. An AppArmor profile that allows
+`userns` lifts this (observed with codex-cli 0.167.0 from nixpkgs).
+
+Fix: add a profile for the bwrap Codex actually runs, as `/etc/apparmor.d/codex-bwrap`, and load it with
+`sudo apparmor_parser -r /etc/apparmor.d/codex-bwrap`. For a nix install, where Codex may run either its bundled
+`codex-resources/bwrap` or nixpkgs' bubblewrap:
+
+```
+abi <abi/4.0>,
+include <tunables/global>
+profile codex-bwrap /nix/store/*-{codex-*/lib/codex/codex-resources,bubblewrap-*/bin}/bwrap flags=(unconfined) {
+  userns,
+  include if exists <local/codex-bwrap>
+}
+```
+
+The profile exempts every binary at a path matching the glob from the user-namespace restriction: each gets
+unrestricted user namespaces. On a single-user machine the glob is fine. On a shared or multi-user Nix machine, where
+another user can build a store path with that name, attach the profile to the exact hashed path the `strace` line below
+prints instead, and re-load it after Codex or bubblewrap is upgraded.
+
+For another install, find the path with `strace -f -e trace=execve codex sandbox true 2>&1 | grep bwrap` and put it
+in the profile. The profile persists across reboots; check it with `codex sandbox true && echo SANDBOX-OK`.
+
 Install: see "Codex" in the repository's `README.md`.
