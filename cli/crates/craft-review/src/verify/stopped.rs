@@ -43,10 +43,7 @@ pub(crate) fn stood(run: &mut RunState) {
     if settled.is_empty() {
         return;
     }
-    run.notes.push(format!(
-        "verification stopped before it finished: {} finding(s) are reported as they stood — a finding whose verifiers had not all answered is Suspected on the votes it has or unverified without any; the resume settles them",
-        settled.len()
-    ));
+    run.notes.push(note(run.phase, settled.len()));
     let mut all = if run.critic.stage == Stage::Verifying {
         run.critic.settled_before.clone()
     } else {
@@ -54,6 +51,20 @@ pub(crate) fn stood(run: &mut RunState) {
     };
     all.extend(settled.iter().map(|f| finalize_in(f, run.context.strict)));
     run.settled = all;
+}
+
+/// The note on the `n` findings a stop in `phase` left as they stood: the lens rounds cut short
+/// before verification began, or verification cut short.
+fn note(phase: Phase, n: usize) -> String {
+    if matches!(phase, Phase::Dedup | Phase::Verify) {
+        format!(
+            "verification stopped before it finished: {n} finding(s) are reported as they stood — a finding whose verifiers had not all answered is Suspected on the votes it has or unverified without any; the resume settles them"
+        )
+    } else {
+        format!(
+            "the lens rounds stopped before verification began: {n} finding(s) found so far are reported unverified; the resume finishes the rounds and verifies them"
+        )
+    }
 }
 
 /// Whether finding `i` still waits on a verifier: a vote or its batch not answered or not yet
