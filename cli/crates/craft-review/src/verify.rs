@@ -7,6 +7,8 @@ use crate::harm;
 use crate::state::RunState;
 
 mod outcome;
+#[cfg(test)]
+mod route_tests;
 mod stopped;
 mod waves;
 pub(crate) use outcome::settle_run;
@@ -29,8 +31,8 @@ pub(crate) enum Route {
     Individual,
     /// One verifier judges a batch of them: Medium.
     Batch,
-    /// No verifier: a Low or Info citing no rule that blocks on sight cannot move the verdict, so
-    /// it stays unverified.
+    /// No verifier: an Info, or a Low citing no rule that blocks on sight and on no failure path,
+    /// cannot move the verdict, so it stays unverified.
     Skip,
 }
 
@@ -46,8 +48,13 @@ impl Route {
     }
 }
 
-/// The route `f` takes: Critical and High alone, Medium batched, Low and Info skipped unless they
-/// cite a rule that blocks on sight.
+/// The lenses that read failure paths: partial failure, retry, error handling, interleavings.
+const FAILURE_PATH_LENSES: [&str; 4] = ["failure-windows", "reconciler", "concurrency", "errors"];
+/// The rule families of a failure path: reconcile, concurrency and error handling.
+const FAILURE_PATH_RULES: [&str; 3] = ["REC-", "CON-", "ERR-"];
+
+/// The route `f` takes: Critical and High alone, Medium batched, a Low on a failure path batched,
+/// other Lows and Info skipped unless they cite a rule that blocks on sight.
 pub(crate) fn route(f: &Value) -> Route {
     let sev = f.get("severity").and_then(Value::as_str).unwrap_or("");
     let rule = f.get("ruleId").and_then(Value::as_str).unwrap_or("");
@@ -55,13 +62,24 @@ pub(crate) fn route(f: &Value) -> Route {
         "Critical" | "High" => Route::Individual,
         "Medium" => Route::Batch,
         _ if CRITICAL_TIER_RULES.contains(&rule) => Route::Individual,
+        "Low" if on_failure_path(f) => Route::Batch,
         _ => Route::Skip,
     }
 }
 
-/// Whether two or more different lenses reported `f` (`lensAgreed`): its `sources`, else its
-/// `source` — a gate tool's aside, as `agreeingLenses`: a seed is not an independent reading.
-fn lens_agreed(f: &Value) -> bool {
+/// Whether `f` concerns a failure path: a lens that reads them reported it, it cites a rule of
+/// their families, or its lens flagged it on a deletion or recovery path. Such Lows are where a
+/// review most often under-rates a defect, so a verifier is spent on them.
+fn on_failure_path(f: &Value) -> bool {
+    let rule = f.get("ruleId").and_then(Value::as_str).unwrap_or("");
+    f.get("deletionOrRecoveryPath") == Some(&Value::Bool(true))
+        || FAILURE_PATH_RULES.iter().any(|p| rule.starts_with(p))
+        || lenses(f).iter().any(|l| FAILURE_PATH_LENSES.contains(l))
+}
+
+/// The lenses that reported `f`: its `sources`, else its `source` — a gate tool's aside, as
+/// `agreeingLenses`: a seed is not an independent reading.
+fn lenses(f: &Value) -> Vec<&str> {
     let all: Vec<&Value> = match f.get("sources").and_then(Value::as_array) {
         Some(a) => a.iter().collect(),
         None => f.get("source").into_iter().collect(),
@@ -73,7 +91,12 @@ fn lens_agreed(f: &Value) -> bool {
         .collect();
     lenses.sort_unstable();
     lenses.dedup();
-    lenses.len() >= 2
+    lenses
+}
+
+/// Whether two or more different lenses reported `f` (`lensAgreed`).
+fn lens_agreed(f: &Value) -> bool {
+    lenses(f).len() >= 2
 }
 
 /// The route `f` takes in a run, as `routeOf` in `lib/review-verify-pool.mjs`: a light pass
@@ -106,7 +129,7 @@ pub(crate) fn skipped_note(run: &RunState) -> Option<String> {
         .count();
     (n > 0).then(|| {
         format!(
-            "{n} Low/Info finding(s) NOT VERIFIED: no verifier was spent on them, since Low and Info cannot change the verdict either way; they are reported as unverified"
+            "{n} Low/Info finding(s) NOT VERIFIED: no verifier was spent on them, since Low and Info cannot change the verdict either way (a Low on a failure path is verified); they are reported as unverified"
         )
     })
 }
