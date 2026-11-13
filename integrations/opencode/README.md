@@ -134,6 +134,13 @@ a real OpenCode 2.x.
   the tasks at once (default 4, env `CRAFT_OPENCODE_CONCURRENCY`).
 - The flags are the binary's: `--base`, `--depth light|full`, `--pr`, `--comment`, `--path`,
   `--run <dir>` to resume a stopped run, `--no-gate`, ….
+- `--pr <n>` from a checkout that lacks the PR's head (the trunk, say) reviews it in craft's own
+  detached worktree, `~/.craft/worktrees/<repo>/pr-<n>-<head>`, one per head, shared by runs at once
+  and never moved; your checkout is not touched. Every task — and the agent check before them — runs
+  there, so OpenCode loads the PR head's own `opencode.json`, `.opencode/` plugins, MCP servers and
+  agent overrides: the PR's code runs even with `--no-gate`. Review a PR you do not trust on another
+  host, with `--no-gate`. Project-installed craft agents are not in that worktree: install them
+  globally (`install.sh --global`) or, on 2.x, add the package.
 - A failed task is handed out again by the binary; the first usage-limit error stops new tasks and
   ends the run INCOMPLETE with how to resume it.
 - If this OpenCode has no `review-task` agent (an install from before it), the review refuses to
