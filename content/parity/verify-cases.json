@@ -871,6 +871,26 @@
       }
     },
     {
+      "name": "a Low from a failure-path lens is batched",
+      "finding": {
+        "severity": "Low",
+        "title": "t",
+        "file": "src/a.rs",
+        "line": 3,
+        "why": "w",
+        "ruleId": "",
+        "source": "failure-windows",
+        "harmLevel": "intent-unmet",
+        "harm": "callers see it"
+      },
+      "vote": null,
+      "expected": {
+        "tier": "unverified",
+        "severity": "Low",
+        "route": "batch"
+      }
+    },
+    {
       "name": "an Info citing a rule that does not block on sight goes unverified",
       "finding": {
         "severity": "Info",

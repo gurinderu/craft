@@ -115,7 +115,7 @@ installs with one command, from the release's package tag (the package has no np
 
 <!-- x-release-please-start-version -->
 ```bash
-opencode plugin add git+https://github.com/gurinderu/craft#opencode-v0.53.0
+opencode plugin add git+https://github.com/gurinderu/craft#opencode-v0.54.0
 ```
 <!-- x-release-please-end -->
 
@@ -131,7 +131,7 @@ root (see `integrations/codex/README.md`).
 
 <!-- x-release-please-start-version -->
 ```
-codex plugin marketplace add gurinderu/craft --ref v0.53.0
+codex plugin marketplace add gurinderu/craft --ref v0.54.0
 codex plugin add craft@craft
 ```
 <!-- x-release-please-end -->
@@ -146,7 +146,7 @@ upgrade craft` only refreshes the ref already pinned. Then add it at the new tag
 <!-- x-release-please-start-version -->
 ```
 codex plugin marketplace remove craft
-codex plugin marketplace add gurinderu/craft --ref v0.53.0
+codex plugin marketplace add gurinderu/craft --ref v0.54.0
 codex plugin add craft@craft
 ```
 <!-- x-release-please-end -->
@@ -163,6 +163,9 @@ drives the same review as the `craft:review` workflow and runs each review task 
 (`--concurrency <n>`), on Codex's configured model unless `--models <model>` or
 `--models opus=<m>,sonnet=<m>,haiku=<m>` (or `CRAFT_CODEX_MODELS`) names one per tier. The command writes under
 `~/.craft` and starts model calls, so it runs outside Codex's sandbox. Under Codex the hooks also count the project's own agent roles (`.codex/agents/*.toml`) as declared roles.
+
+On Ubuntu 24.04, Codex's sandbox needs an AppArmor profile for bwrap: see "Sandbox on Ubuntu 24.04" in
+`integrations/codex/README.md`.
 
 ## Workflows
 

@@ -1,7 +1,7 @@
 ---
 name: codex-review
 description: >-
-  Codex only: craft's review of a diff or PR in any language, run from a Codex session — one command, `sh <plugin root>/bin/craft review run --backend codex`, the plugin root two directories above this SKILL.md (`craft` is not on PATH; never run bare `craft`) — the mechanical gate, review lenses per profile, verification, one report and an Approve/Warning/Block verdict, each review agent its own `codex exec` process. Use in Codex when asked to review a branch, a diff or a PR before commit or merge, to re-review fix commits, or to resume a stopped review. Triggers: review this branch, review the diff, is this mergeable, re-review the fixes, resume the review. Not in Claude Code: there the review is the craft:review workflow (Workflow tool), never this skill. Not in OpenCode: there the review is the /craft-review command (the `review` tool), never this skill and never `codex exec`.
+  Codex only: craft's review of a diff or PR in any language, run from a Codex session — one command, `sh <plugin root>/bin/craft review run --backend codex`, the plugin root two directories above this SKILL.md (`craft` is not on PATH; never run bare `craft`) — the mechanical gate, review lenses per profile, verification, one report and an Approve/Warning/Block verdict, each review agent its own `codex exec` process. Use in Codex whenever the user asks, in whatever language they write, to review a PR, a branch or a diff before commit or merge, to re-review fix commits, or to resume a stopped review: such a request runs this command, never a review by hand instead. Triggers: review this branch, review the diff, is this mergeable, re-review the fixes, resume the review. Not in Claude Code: there the review is the craft:review workflow (Workflow tool), never this skill. Not in OpenCode: there the review is the /craft-review command (the `review` tool), never this skill and never `codex exec`.
 ---
 
 # codex-review — craft's review from Codex
@@ -25,6 +25,10 @@ download tool, no network, a platform with no released binary), relay that line.
 Run it **once, in this session**, never in a subagent, and relay what it prints on stdout — the
 `## Verdict` block, the report's path and the `## Findings` list — then read the report file it
 names for the details. Do not review the diff yourself beside it.
+
+The review never submits a GitHub review verdict: no `gh pr review --approve` or
+`--request-changes`, no approving and no merging. Its verdict goes to the user only; findings
+reach the PR only through craft's `--comment`, and only when the user asked for that.
 
 It exits 1 when the review's work was cut short (`INCOMPLETE`, `Warning (INCOMPLETE)`, …); that
 is still its answer, with its `## Verdict` block: relay it, and its `## What the agents said` section when there is one — the errors the
@@ -54,7 +58,7 @@ How to run it:
 Flags:
 - `--cwd <repository>` (default: the current directory), `--base <ref>` (default: the
   merge-base with origin's default branch), `--depth light|full`, `--path <directory>`.
-- Re-review of fix commits: `--base <the commit the review was made on> --fresh --full-every 0`.
+- Re-review of fix commits: `--base <the commit the review was made on> --fresh --delta --full-every 0` (`--delta`: a clean re-review of fix commits reads Warning, never Approve — Approve comes only from a full review).
 - `--strict`, `--no-gate`, `--optional all|<lens,...>`, `--pr <number>`, `--comment`
   (post the defects on the PR; doubtful findings stay in the report for the human),
   `--extra-lenses <agent,...>|off`, `--prior-decisions <file>` (a JSON list of the launcher's
