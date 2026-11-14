@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.54.0](https://github.com/gurinderu/craft/compare/v0.53.0...v0.54.0) (2026-11-13)
+
+
+### Features
+
+* a delta or light round never approves ([729da4d](https://github.com/gurinderu/craft/commit/729da4d7d61ffe150eae55cfe10165132ae9dbe2))
+* a re-review of fix commits says it is a delta and never approves ([db9f5a4](https://github.com/gurinderu/craft/commit/db9f5a49e9271c51358f9314534b8dd46448988c))
+* failure-window and reconciler lenses read retries, recreated objects and the loop's driver ([ac9b4f2](https://github.com/gurinderu/craft/commit/ac9b4f23aef0ff1436429c05e708fdb183819005))
+* verify failure-path Lows, never approve a delta or light round, sharper failure and reconciler lenses ([da2afb1](https://github.com/gurinderu/craft/commit/da2afb152816dcd926bf1567c610c84f74b05448))
+* verify Low findings on failure paths ([7877308](https://github.com/gurinderu/craft/commit/78773082a49679e13aefd0f6814eb172bb13fe19))
+
+
+### Bug Fixes
+
+* a review request in any language runs craft, and the review never approves on GitHub ([f1b62b7](https://github.com/gurinderu/craft/commit/f1b62b723e2bc16da60da6596729072eaabe45fc))
+* a review request in any language runs craft, and the review never approves on GitHub ([53ad472](https://github.com/gurinderu/craft/commit/53ad4721d8bb9f9d9be7bda7146f94197b4e7b96))
+* a stop in the critic's pass keeps the first pass's findings ([fa529d5](https://github.com/gurinderu/craft/commit/fa529d56cba9254942b89cd3870ef45ce82eb7a9))
+* a stop mid-round reports the answers that round already holds ([8af4815](https://github.com/gurinderu/craft/commit/8af48151fac9a6a8d024820935557a6f22b91b1e))
+* a stopped run's note names the phase the stop cut short ([e859d19](https://github.com/gurinderu/craft/commit/e859d19013040d2e32135e4f490cb176e6ebff3b))
+* a stopped run's report keeps its findings ([4e77958](https://github.com/gurinderu/craft/commit/4e77958865f67691b1f2a89284bfa39d18640c1a))
+* a stopped run's report keeps its findings ([0fd15b9](https://github.com/gurinderu/craft/commit/0fd15b9a891f54cc51700301a3c93ee963a74fd1))
+* review findings on the failure-path and reduced-round changes ([82fee26](https://github.com/gurinderu/craft/commit/82fee2608135bf9fe52fa96413ce1eaf9e2c973c))
+* the worktree note names the Claude Code engine only for its runs ([de270d0](https://github.com/gurinderu/craft/commit/de270d0c6eb678847e3f065e56ad202805fcee0c))
+
 ## [0.53.0](https://github.com/gurinderu/craft/compare/v0.52.0...v0.53.0) (2026-11-13)
 
 
