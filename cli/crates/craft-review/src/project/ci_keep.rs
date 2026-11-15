@@ -6,10 +6,11 @@ use std::path::Path;
 
 use super::ci::{CiEntry, CiError, unexpanded};
 use super::ci_files::{hashes, relative};
+use super::ci_ground::callers;
 
 impl CiEntry {
     /// The entry checked under `top` as [`Self::confirmed`] does: `held` keeps its hashes, else its
-    /// files are hashed now. A held one whose files changed is kept stale, its claims unread.
+    /// files are hashed now, the workflows that call its job among them. A held one whose files changed is kept stale, its claims unread.
     pub(super) fn checked(self, top: &Path, held: bool) -> Result<Self, CiError> {
         let mut e = self;
         if unexpanded(&e.check) {
@@ -20,8 +21,10 @@ impl CiEntry {
             e.sources.iter().try_for_each(|s| relative(s))?;
             e.lines()?;
             e.written(top)?;
+            let callers = callers(top, &e.workflow, &e.check)?;
             let files: Vec<&str> = std::iter::once(e.workflow.as_str())
                 .chain(e.sources.iter().map(String::as_str))
+                .chain(callers.iter().map(String::as_str))
                 .collect();
             e.hashes = hashes(top, &e.workflow, &files)?;
         }
