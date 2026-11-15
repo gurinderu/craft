@@ -1,7 +1,8 @@
 //! What a CI map entry's coverage is found in (realm @nick/craft, node #482): its command run, as a
 //! whole command whose failure fails the line (`ci_match`), by a `run:` line of the job its check
 //! names or by a line of one of its sources, comment lines aside, and each local `uses:` that job
-//! runs among its sources. A job is named as GitHub reports it: a called one as `<caller> / <job>`. A source is read as a whole: which recipe of it the job calls is the
+//! runs among its sources. A job is named as GitHub reports it: a called one as `<caller> / <job>`.
+//! A source is read as a whole: which recipe of it the job calls is the
 //! reviewer's to confirm. Checked when an entry is confirmed and whenever the gate would trust it,
 //! so an entry edited after its files were hashed is never read as coverage.
 
@@ -32,7 +33,7 @@ fn names(j: &Job, check: &str) -> bool {
 
 /// The jobs of `workflow` under `top` that `check` names, read as GitHub reports them
 /// (`reusable`); refused when it names none — naming the checks GitHub reports a workflow that
-/// only runs when called by.
+/// only runs when called by, or that no workflow here calls it.
 fn checked_jobs(top: &Path, workflow: &str, check: &str) -> Result<Vec<Reported>, CiError> {
     let files = read_all(top, workflow)?;
     let units: Vec<Reported> = reported(&files)
@@ -46,8 +47,11 @@ fn checked_jobs(top: &Path, workflow: &str, check: &str) -> Result<Vec<Reported>
         return Ok(mine);
     }
     let only = files.iter().any(|(f, t)| *f == workflow && called_only(t));
-    if !only || others.is_empty() {
+    if !only {
         return Err(CiError::NoJob { check, workflow });
+    }
+    if others.is_empty() {
+        return Err(CiError::Uncalled { check, workflow });
     }
     let name = |u: &Reported| u.job.name.clone().unwrap_or_default();
     let reported: Vec<String> = others.iter().map(|u| format!("`{}`", name(u))).collect();
@@ -62,7 +66,7 @@ fn checked_jobs(top: &Path, workflow: &str, check: &str) -> Result<Vec<Reported>
 /// names: whether they run, and under which check, rests on them too.
 pub(super) fn callers(top: &Path, workflow: &str, check: &str) -> Result<Vec<String>, CiError> {
     let units = checked_jobs(top, workflow, check)?;
-    Ok(units.into_iter().filter_map(|u| u.caller).collect())
+    Ok(units.into_iter().flat_map(|u| u.callers).collect())
 }
 
 /// Refuses a local `uses: ./…` of `mine` (a composite action, a reusable workflow) that none of
