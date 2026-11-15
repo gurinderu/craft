@@ -148,3 +148,36 @@ fn a_workflow_is_called_only_when_workflow_call_is_its_one_trigger() {
         assert!(!called_only(not), "{not}");
     }
 }
+
+#[test]
+fn a_job_reached_through_a_chain_of_calls_is_named_by_the_whole_chain() {
+    let b = ".github/workflows/b.yml";
+    let ci = "on: pull_request\njobs:\n  x:\n    uses: ./.github/workflows/b.yml\n";
+    let mid = "on: workflow_call\njobs:\n  y:\n    uses: ./.github/workflows/lints.yml\n";
+    let t = top(&[(CI, ci), (b, mid), (LINTS, CALLED)]);
+    let got = checks(&t);
+    let chain = ("x / y / lints".to_owned(), true);
+    assert_eq!(got, [chain.clone(), chain], "{got:?}");
+    let e = CiEntry::confirmed(&entry("x / y / lints"), t.path()).unwrap();
+    assert!(
+        e.hashes.contains_key(CI) && e.hashes.contains_key(b),
+        "{e:?}"
+    );
+    let err = CiEntry::confirmed(&entry("y / lints"), t.path())
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("`x / y / lints`"), "{err}");
+}
+
+#[test]
+fn a_job_of_a_called_workflow_no_workflow_here_calls_is_refused_saying_so() {
+    let t = top(&[(LINTS, CALLED)]);
+    let err = CiEntry::confirmed(&entry("lints"), t.path())
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("only when another workflow calls it")
+            && err.contains("no workflow of this repository calls it"),
+        "{err}"
+    );
+}
