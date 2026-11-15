@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.54.1](https://github.com/gurinderu/craft/compare/v0.54.0...v0.54.1) (2026-11-15)
+
+
+### Bug Fixes
+
+* craft init names a reusable workflow's job as GitHub reports it ([e93d785](https://github.com/gurinderu/craft/commit/e93d7850fae4409ebe93ddec634adf202bc21b4b))
+* map a reusable workflow's jobs by the check GitHub reports them under ([193af39](https://github.com/gurinderu/craft/commit/193af390cc282a6ce3acc6e3c31afe05cccdd761))
+* name a job reached through a chain of calls by the whole chain ([1b0d26c](https://github.com/gurinderu/craft/commit/1b0d26ccc63a26a4b16779eebbca26026c393baa))
+* propose a called job once when callers of one name report it ([cb92597](https://github.com/gurinderu/craft/commit/cb92597845bb0c763cecb7149fc76d51777389a6))
+
 ## [0.54.0](https://github.com/gurinderu/craft/compare/v0.53.0...v0.54.0) (2026-11-13)
 
 
