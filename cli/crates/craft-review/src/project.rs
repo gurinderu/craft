@@ -49,9 +49,13 @@ mod ci_shape;
 #[cfg(test)]
 mod ci_tests;
 mod point;
+mod reusable;
+#[cfg(test)]
+mod reusable_tests;
 mod shell;
 mod signal;
 pub mod workflow;
+mod workflow_on;
 mod workflow_steps;
 #[cfg(test)]
 mod workflow_steps_tests;

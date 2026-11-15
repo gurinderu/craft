@@ -7,15 +7,17 @@
 //! GitHub expands into runs `<prefix> (…)` — a `${{` in its trailing ` (…)`, or a matrix under a
 //! literal name — beside a job reported as `<check>` itself. Without such a job, a check under a
 //! job's expanded runs names one of them, whose other runs it would never see. `--propose` leaves a
-//! colliding candidate of one workflow unresolved, with the refusal as its note.
+//! colliding candidate of one workflow unresolved, with the refusal as its note. Jobs are read as
+//! GitHub reports them (`reusable`): a job calling a reusable workflow claims no check, a called
+//! one claims `<caller> / <job>`.
 
 use std::path::Path;
 
 use super::check_name::{OPEN, check_of, unexpanded};
 use super::ci_error::CiError;
-use super::ci_ground::read;
 use super::ci_match::runs_in;
-use super::workflow::{Job, jobs, workflow_files};
+use super::reusable::{read_all, reported};
+use super::workflow::Job;
 
 /// A job and the workflow file it is in.
 pub(super) type Placed<'a> = (&'a str, &'a Job);
@@ -107,21 +109,10 @@ pub(super) fn claimed(
     check: &str,
     command: &str,
 ) -> Result<(), CiError> {
-    let unlisted = |error| CiError::Unreadable {
-        path: ".github/workflows".to_owned(),
-        error,
-    };
-    let mut files = workflow_files(top).map_err(unlisted)?;
-    if !files.iter().any(|f| f == workflow) {
-        files.push(workflow.to_owned());
-    }
-    let read_all: Vec<(String, Vec<Job>)> = files
-        .into_iter()
-        .map(|f| read(top, &f).map(|t| (f, jobs(&t))))
-        .collect::<Result<_, _>>()?;
-    let all: Vec<Placed<'_>> = read_all
+    let units = reported(&read_all(top, workflow)?);
+    let all: Vec<Placed<'_>> = units
         .iter()
-        .flat_map(|(f, js)| js.iter().map(move |j| (f.as_str(), j)))
+        .map(|u| (u.workflow.as_str(), &u.job))
         .collect();
     one_run(&all, check)
         .or_else(|| collision(&all, check, command))
