@@ -59,6 +59,7 @@ fn jobs_are_read_with_their_name_matrix_and_run_lines() {
                 "RUSTFLAGS=-Dwarnings cargo +nightly build --release".into(),
             ],
             uses: Vec::new(),
+            calls: None,
         },
         "the `defaults: run:` mapping is no run line"
     );

@@ -61,6 +61,18 @@ pub enum CiError {
     )]
     NoJob { check: String, workflow: String },
     #[error(
+        "{check}: {workflow} runs only when another workflow calls it, and GitHub reports each of its jobs through the calling job, as `<caller> / <job>` — name one of {reported}"
+    )]
+    CalledAs {
+        check: String,
+        workflow: String,
+        reported: String,
+    },
+    #[error(
+        "{check}: {workflow} runs only when another workflow calls it, and GitHub reports its jobs only through the calling job, as `<caller> / <job>` — but no workflow of this repository calls it, so no check here names its runs: leave the entry out"
+    )]
+    Uncalled { check: String, workflow: String },
+    #[error(
         "{check}: the command {command:?} is not found in a `run:` line of its job in {workflow} nor in any of the entry's sources — list the file that spells it"
     )]
     Unfound {

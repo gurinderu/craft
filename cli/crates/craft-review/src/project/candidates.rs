@@ -3,7 +3,8 @@
 //! line; one that calls a recipe (`just`, `make`, `cargo xtask`, a script) is unresolved, its run
 //! lines and workflow named, for the session to read the recipe and quote what it runs. Each names
 //! the local actions its job runs (`uses: ./…`), which an entry must list among its sources; a
-//! clippy command that does not deny warnings carries a note for the reviewer.
+//! clippy command that does not deny warnings carries a note for the reviewer. A job is read as
+//! GitHub reports it (`reusable`): a job of a reusable workflow under `<caller> / <job>`.
 
 use std::path::Path;
 
@@ -11,9 +12,10 @@ use serde::Serialize;
 
 use super::check_claim_propose::unclaimed;
 use super::check_name::{check_of, expanded};
+use super::reusable::{jobs_of, reported};
 use super::shell::{cargo_sub, commands, hints, recipe};
 use super::signal::Signal;
-use super::workflow::{Job, jobs, workflow_files};
+use super::workflow::{Job, workflow_files};
 
 /// A resolved candidate: the job's check, the signal, and the command line that gives it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -114,22 +116,40 @@ fn checked(workflow: &str, j: &Job, check: &str) -> Vec<Candidate> {
     out
 }
 
-/// The candidates of the workflow `text` at `workflow`, job by job.
-#[must_use]
-pub fn candidates_in(workflow: &str, text: &str) -> Vec<Candidate> {
-    let all = jobs(text);
+/// The candidates of `workflow`'s jobs as GitHub reports them, job by job, each once: callers of
+/// one name report a called job under one check.
+fn of_workflow(workflow: &str, all: &[Job]) -> Vec<Candidate> {
     let found = all.iter().flat_map(|j| of_job(workflow, j)).collect();
-    unclaimed(workflow, &all, found)
+    let mut out: Vec<Candidate> = Vec::new();
+    for c in unclaimed(workflow, all, found) {
+        if !out.contains(&c) {
+            out.push(c);
+        }
+    }
+    out
 }
 
-/// The candidates of every workflow under `top` ([`workflow_files`]), by file name.
+/// The candidates of the workflow `text` at `workflow`, job by job, read alone: a job calling
+/// another workflow gives none, nor does a workflow that only runs when called.
+#[must_use]
+pub fn candidates_in(workflow: &str, text: &str) -> Vec<Candidate> {
+    let units = reported(&[(workflow.to_owned(), text.to_owned())]);
+    of_workflow(workflow, &jobs_of(&units, workflow))
+}
+
+/// The candidates of every workflow under `top` ([`workflow_files`]), by file name, each job as
+/// GitHub reports it: a called one through each job of the repository that calls its workflow.
 ///
 /// # Errors
 /// When the directory or a workflow cannot be read.
 pub fn candidates(top: &Path) -> std::io::Result<Vec<Candidate>> {
-    let mut out = Vec::new();
-    for f in workflow_files(top)? {
-        out.extend(candidates_in(&f, &std::fs::read_to_string(top.join(&f))?));
-    }
-    Ok(out)
+    let files = workflow_files(top)?
+        .into_iter()
+        .map(|f| std::fs::read_to_string(top.join(&f)).map(|t| (f, t)))
+        .collect::<std::io::Result<Vec<_>>>()?;
+    let units = reported(&files);
+    Ok(files
+        .iter()
+        .flat_map(|(f, _)| of_workflow(f, &jobs_of(&units, f)))
+        .collect())
 }
