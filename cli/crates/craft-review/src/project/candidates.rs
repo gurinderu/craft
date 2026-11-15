@@ -116,10 +116,17 @@ fn checked(workflow: &str, j: &Job, check: &str) -> Vec<Candidate> {
     out
 }
 
-/// The candidates of `workflow`'s jobs as GitHub reports them, job by job.
+/// The candidates of `workflow`'s jobs as GitHub reports them, job by job, each once: callers of
+/// one name report a called job under one check.
 fn of_workflow(workflow: &str, all: &[Job]) -> Vec<Candidate> {
     let found = all.iter().flat_map(|j| of_job(workflow, j)).collect();
-    unclaimed(workflow, all, found)
+    let mut out: Vec<Candidate> = Vec::new();
+    for c in unclaimed(workflow, all, found) {
+        if !out.contains(&c) {
+            out.push(c);
+        }
+    }
+    out
 }
 
 /// The candidates of the workflow `text` at `workflow`, job by job, read alone: a job calling

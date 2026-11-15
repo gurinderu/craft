@@ -42,8 +42,9 @@ fn checks(t: &tempfile::TempDir) -> Vec<(String, bool)> {
 }
 
 #[test]
-fn a_called_job_is_proposed_as_github_reports_it_through_its_caller() {
-    let t = top(&[(CI, CALLER), (LINTS, CALLED)]);
+fn a_called_job_is_proposed_as_github_reports_it_through_its_caller_once_per_check() {
+    let release = ".github/workflows/release.yml";
+    let t = top(&[(CI, CALLER), (LINTS, CALLED), (release, CALLER)]);
     let got = checks(&t);
     assert_eq!(
         got,
@@ -51,7 +52,7 @@ fn a_called_job_is_proposed_as_github_reports_it_through_its_caller() {
             ("lints / lints".to_owned(), true),
             ("lints / lints".to_owned(), true)
         ],
-        "the calling job has no check of its own"
+        "the calling job has no check of its own; two callers of one name give one candidate"
     );
 }
 
