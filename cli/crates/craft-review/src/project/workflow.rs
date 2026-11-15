@@ -1,6 +1,7 @@
 //! A GitHub Actions workflow file read for what the CI map needs (realm @nick/craft, node #482):
 //! each job under `jobs:` with its own `name:`, whether it runs a matrix, its `run:` lines and the
-//! local actions or reusable workflows its `uses: ./…` runs. A
+//! local actions or reusable workflows its `uses: ./…` runs, and the workflow a job calls by a
+//! `uses:` of its own. A
 //! line reader, not a YAML parser: workflow files are indented blocks, and these three keys sit at
 //! places their indent finds — no dependency is taken for them. What it misreads (anchors, flow
 //! mappings) only costs a candidate, which the reviewer confirms in words before it is recorded.
@@ -13,7 +14,8 @@ const WORKFLOWS: &str = ".github/workflows";
 
 /// One job of a workflow: its id, its `name:` when it has one, whether a `matrix:` expands it,
 /// each command line of its steps' `run:` whose failure fails it (none when it or its step
-/// continues on error), and each local path a `uses: ./…` names, without `./`.
+/// continues on error), each local path a `uses: ./…` names, without `./`, and the reusable
+/// workflow the job's own `uses:` calls, as written.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Job {
     pub id: String,
@@ -21,6 +23,7 @@ pub struct Job {
     pub matrix: bool,
     pub runs: Vec<String>,
     pub uses: Vec<String>,
+    pub calls: Option<String>,
 }
 
 pub(super) fn indent(l: &str) -> usize {
@@ -85,11 +88,14 @@ fn job(id: String, lines: &[&str]) -> Job {
         .iter()
         .find(|l| meaningful(l))
         .map_or(0, |l| indent(l));
-    let name = lines
-        .iter()
-        .filter(|l| indent(l) == at)
-        .find_map(|l| l.trim().strip_prefix("name:"))
-        .map(|v| unquote(v.split(" #").next().unwrap_or(v).trim()).to_owned());
+    let own = |key: &str| {
+        lines
+            .iter()
+            .filter(|l| indent(l) == at)
+            .find_map(|l| l.trim().strip_prefix(key))
+            .map(|v| unquote(v.split(" #").next().unwrap_or(v).trim()).to_owned())
+    };
+    let name = own("name:");
     let matrix = lines.iter().any(|l| step_key(l).1.starts_with("matrix:"));
     Job {
         id,
@@ -101,6 +107,7 @@ fn job(id: String, lines: &[&str]) -> Job {
             runs(lines)
         },
         uses: local_uses(lines),
+        calls: own("uses:"),
     }
 }
 

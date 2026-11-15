@@ -57,7 +57,8 @@ them. With nothing recalled, drop the heredoc and `--memory-externals -`. A loca
   and the `version` the manifest reads; `ran: false` with `why` when it could not run.
 - `ciCandidates` — what the repository's `.github/workflows/*.yml` hold for the CI map:
   `resolved`, a job whose `run:` names the cargo command itself, each with `check` (the job's
-  `name:`, else its id — the name GitHub reports; a `name:` holding `${{ … }}` in a trailing
+  `name:`, else its id — the name GitHub reports; a job of a reusable workflow is reported
+  through its calling job, `lints / lints`, see below; a `name:` holding `${{ … }}` in a trailing
   ` (…)` gives its literal part before it, `Build (${{ matrix.arch }})` the check `Build`, which
   each run `Build (…)` counts for), `matrix`, `signal` (`clippy`, `test` for
   `cargo test` or `cargo nextest`, `fmt`, `build` for `cargo build` or `cargo check`), `command`,
@@ -144,6 +145,15 @@ written only on the reviewer's word.
   the sibling shares its workflow, `--write` refuses it either way, and the gate skips a held
   entry a workflow added since collides with, with a note to run `craft init --propose`; tell
   the reviewer, and leave it out unless a job is renamed.
+- **Reusable workflows**: a job whose own `uses:` calls a workflow (`uses:
+  ./.github/workflows/lints.yml`) has no check of its own; GitHub reports each job of the called
+  workflow as `<caller> / <job>` (`lints / lints`; through a chain of calls, `ci / lints /
+  lints`), and a workflow whose one trigger is `workflow_call` never under the job's bare name.
+  `--propose` names such a job so, the entry's `workflow` the called file where its `run:`
+  lines are; `--write` refuses the bare name, naming the reported check, and hashes the calling
+  workflow too, so an edit there marks the entry stale. A matrix caller's runs
+  (`<caller> (…) / <job>`), and a called workflow no workflow of the repository calls, have no
+  check the map can name: leave them out and say so.
 - Then ask the reviewer in words, one numbered list beside the integration points: for each
   entry, its check, signal, the command line and where you read it (the workflow, or the recipe
   and its line). They confirm, drop, or correct each; add any check you missed.
