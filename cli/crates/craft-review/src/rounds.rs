@@ -265,7 +265,7 @@ impl Rounds {
     }
 
     /// Notes the CONSUMERS lines answered task `t` was shown: those it marked, and those it left.
-    fn consumer_marks(&mut self, t: &Task) {
+    pub(crate) fn consumer_marks(&mut self, t: &Task) {
         for site in &t.consumers {
             let into = if t.unmarked.contains(site) {
                 &mut self.consumers_left
