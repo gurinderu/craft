@@ -25,7 +25,7 @@ mod text;
 
 pub use make::{build, of_checkout};
 pub use save::keep;
-pub use section::{seam_line, section, unmarked_line};
+pub use section::{gap_line, section};
 pub use text::{confined_block, lens_block, seam_block};
 
 /// The name search's name in the report and on a site.

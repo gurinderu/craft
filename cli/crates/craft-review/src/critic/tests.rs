@@ -131,6 +131,7 @@ fn a_follow_up_finding_the_pool_holds_is_not_new_and_a_dead_lens_is_a_gap() {
         ),
         lens("b", "concurrency", None),
     ];
+    run.tasks[1].consumers = vec!["src/x.rs:9".into()];
     let fresh = fresh(&mut run);
     assert_eq!(fresh.len(), 1);
     assert_eq!(
@@ -139,6 +140,8 @@ fn a_follow_up_finding_the_pool_holds_is_not_new_and_a_dead_lens_is_a_gap() {
     );
     assert_eq!(run.not_run.len(), 1);
     assert!(run.not_run[0].starts_with("rust critic follow-up lens concurrency"));
+    // The line only the dead lens was shown is named as such.
+    assert_eq!(run.rounds.unanswered(), ["src/x.rs:9"]);
 }
 
 #[test]

@@ -1,5 +1,6 @@
 //! The CONSUMERS lines no lens was shown: confined lenses withhold the lines outside their units,
-//! which only the seam pass, marking nothing per line, then reads.
+//! which only the seam pass, marking nothing per line, then reads; and those shown only to lenses
+//! that did not answer.
 
 use serde_json::json;
 
@@ -43,6 +44,21 @@ fn a_line_shown_to_no_lens_is_named_and_one_a_dead_lens_was_shown_is_not() {
     ]);
     let listed = ["crates/a/x.rs:1", "crates/a/y.rs:2", "tools/z.rs:3"].map(str::to_owned);
     assert_eq!(r.unshown(&listed), ["tools/z.rs:3"]);
+    assert_eq!(r.unanswered(), ["crates/a/y.rs:2"]);
+}
+
+#[test]
+fn a_line_an_answered_lens_marked_or_left_is_not_named_as_shown_only_to_dead_lenses() {
+    let mut r = Rounds::default();
+    let mut left = shown("errors", &["a.rs:1", "b.rs:2"], true);
+    left.unmarked = vec!["b.rs:2".into()];
+    r.absorb(&[
+        shown("intent", &["a.rs:1", "b.rs:2", "c.rs:3"], false),
+        left,
+    ]);
+    assert_eq!(r.unanswered(), ["c.rs:3"]);
+    assert_eq!(r.unmarked(), ["b.rs:2"]);
+    assert!(!r.consumers_marked.contains(&"c.rs:3".to_owned()));
 }
 
 #[test]
@@ -51,11 +67,12 @@ fn the_lines_a_cut_short_copy_absorbed_are_taken_shown_marked_and_left() {
     let mut copy = run.clone();
     let mut left = shown("errors", &["a.rs:1", "b.rs:2"], true);
     left.unmarked = vec!["b.rs:2".into()];
-    copy.absorb(&[left]);
+    copy.absorb(&[left, shown("intent", &["c.rs:3"], false)]);
     copy.pool = vec![json!({"title": "kept"})];
     let pool = run.take_consumers(copy);
     assert_eq!(pool, [json!({"title": "kept"})]);
-    assert_eq!(run.consumers_shown, ["a.rs:1", "b.rs:2"]);
+    assert_eq!(run.consumers_shown, ["a.rs:1", "b.rs:2", "c.rs:3"]);
+    assert_eq!(run.unanswered(), ["c.rs:3"]);
     assert_eq!(run.consumers_marked, ["a.rs:1"]);
     assert_eq!(run.unmarked(), ["b.rs:2"]);
 }

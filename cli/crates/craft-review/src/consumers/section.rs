@@ -38,30 +38,12 @@ pub fn section(c: &Consumers) -> String {
     out
 }
 
-/// The report's line on the CONSUMERS lines no lens shown them marked; empty when there are none
-/// (realm @nick/craft, node #531).
+/// The report's line on the CONSUMERS `lines` no lens marked per line, `what` saying how; empty
+/// when there are none (realm @nick/craft, node #531).
 #[must_use]
-pub fn unmarked_line(lines: &[String]) -> String {
+pub fn gap_line(what: &str, lines: &[String]) -> String {
     if lines.is_empty() {
         return String::new();
     }
-    format!(
-        "- {} line(s) no lens marked: {}\n",
-        lines.len(),
-        gaps::shown(lines)
-    )
-}
-
-/// The report's line on the CONSUMERS lines only the seam pass read, which marks none per line;
-/// empty when there are none.
-#[must_use]
-pub fn seam_line(lines: &[String]) -> String {
-    if lines.is_empty() {
-        return String::new();
-    }
-    format!(
-        "- {} line(s) handed to the seam pass, not marked per line: {}\n",
-        lines.len(),
-        gaps::shown(lines)
-    )
+    format!("- {} line(s) {what}: {}\n", lines.len(), gaps::shown(lines))
 }

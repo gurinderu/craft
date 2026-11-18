@@ -54,6 +54,9 @@ pub struct Rounds {
     /// The CONSUMERS lines some lens task's prompt showed, answered or not.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub consumers_shown: Vec<String>,
+    /// The CONSUMERS lines shown to a lens task that did not answer: died, failed or still out.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub consumers_unanswered: Vec<String>,
 }
 
 /// The exact key of a finding: its file and title folded, and its line, as `key` in
@@ -227,16 +230,16 @@ impl Rounds {
                 continue;
             };
             added.entry(profile.clone()).or_insert(0);
-            self.note_shown(t);
             let mut k = lens_key(profile, lens);
             if let Some(s) = slice {
                 k = format!("{k}{SLICE_SEP}{s}");
             }
-            let Some(answer) = self.answered(t, &k) else {
+            let answer = self.answered(t, &k);
+            self.note_lines(t, answer.is_some());
+            let Some(answer) = answer else {
                 continue;
             };
             returned += 1;
-            self.consumer_marks(t);
             let found = answer.get("findings").and_then(Value::as_array);
             for f in found.into_iter().flatten() {
                 let f = pooled(f, profile, lens, *round);
@@ -274,28 +277,25 @@ impl Rounds {
         self.consumers_shown = other.consumers_shown;
         self.consumers_marked = other.consumers_marked;
         self.consumers_left = other.consumers_left;
+        self.consumers_unanswered = other.consumers_unanswered;
         other.pool
     }
 
-    /// Notes the CONSUMERS lines lens task `t` was shown, answered or not.
-    pub(crate) fn note_shown(&mut self, t: &Task) {
+    /// Notes the CONSUMERS lines lens task `t` was shown: when it `answered`, those it marked and
+    /// those it left; else as shown to a lens that did not answer.
+    pub(crate) fn note_lines(&mut self, t: &Task, answered: bool) {
         for site in &t.consumers {
-            if !self.consumers_shown.contains(site) {
-                self.consumers_shown.push(site.clone());
-            }
-        }
-    }
-
-    /// Notes the CONSUMERS lines answered task `t` was shown: those it marked, and those it left.
-    pub(crate) fn consumer_marks(&mut self, t: &Task) {
-        for site in &t.consumers {
-            let into = if t.unmarked.contains(site) {
+            let into = if !answered {
+                &mut self.consumers_unanswered
+            } else if t.unmarked.contains(site) {
                 &mut self.consumers_left
             } else {
                 &mut self.consumers_marked
             };
-            if !into.contains(site) {
-                into.push(site.clone());
+            for list in [into, &mut self.consumers_shown] {
+                if !list.contains(site) {
+                    list.push(site.clone());
+                }
             }
         }
     }
@@ -306,6 +306,17 @@ impl Rounds {
         self.consumers_left
             .iter()
             .filter(|s| !self.consumers_marked.contains(s))
+            .cloned()
+            .collect()
+    }
+
+    /// The CONSUMERS lines shown only to lens tasks that did not answer: no answered lens marked
+    /// or left them.
+    #[must_use]
+    pub fn unanswered(&self) -> Vec<String> {
+        self.consumers_unanswered
+            .iter()
+            .filter(|s| !self.consumers_marked.contains(s) && !self.consumers_left.contains(s))
             .cloned()
             .collect()
     }
