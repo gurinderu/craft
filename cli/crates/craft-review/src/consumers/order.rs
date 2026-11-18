@@ -29,7 +29,8 @@ fn crate_dir(top: &Path, file: &str) -> String {
 /// Same crate first, tests last, then by place.
 pub(super) fn rank(top: &Path, sym: &Symbol, sites: &mut [Site]) {
     let home = crate_dir(top, &sym.file);
-    let away = |f: &str| !home.is_empty() && !f.starts_with(&format!("{home}/"));
+    let inside = format!("{home}/");
+    let away = |f: &str| !home.is_empty() && !f.starts_with(&inside);
     sites.sort_by(|a, b| {
         let key = |s: &Site| (is_test_path(&s.file), away(&s.file));
         key(a)
@@ -58,3 +59,6 @@ pub(super) fn budget(symbols: &mut [Listed], per: usize, max: usize) -> usize {
     }
     total - kept
 }
+
+#[cfg(test)]
+mod tests;
