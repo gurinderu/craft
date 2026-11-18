@@ -1,8 +1,8 @@
 //! The answer a task kept when it was refused only for the CONSUMERS lines it left unmarked (realm
 //! @nick/craft, node #531). It lives beside the answers as `<id>.marks-only.json`, written whole
 //! before the refused answer file is set aside, so a stop at any moment leaves it; every path that
-//! would end the task failed goes through [`fail`], which takes it instead; an accepted attempt
-//! drops it.
+//! would end the task failed goes through [`fail`], which takes it instead; once the state saying
+//! the task answered — accepted, or the kept answer taken — is saved, it is dropped.
 
 use std::path::{Path, PathBuf};
 
@@ -15,35 +15,54 @@ fn file(dir: &Path, id: &str) -> PathBuf {
     handoff::answers_dir(dir).join(format!("{id}.marks-only.json"))
 }
 
-/// Keeps `answer`, the latest of `task` refused only for its unmarked lines, whole or not at all.
+/// Keeps `answer`, the latest of `task` refused only for its unmarked lines, whole or not at all:
+/// synced to the disk before it takes its name, so a crash of the machine leaves the old one or it.
 ///
 /// # Errors
 /// When the file cannot be written.
 pub(crate) fn keep(dir: &Path, task: &Task, answer: &Value) -> Result<(), HandoffError> {
+    use std::io::Write as _;
     let d = handoff::answers_dir(dir);
-    std::fs::create_dir_all(&d).map_err(|source| HandoffError::NoDir { path: d, source })?;
+    std::fs::create_dir_all(&d).map_err(|source| HandoffError::NoDir {
+        path: d.clone(),
+        source,
+    })?;
     let path = file(dir, &task.id);
     let tmp = path.with_extension("json.tmp");
-    std::fs::write(&tmp, serde_json::to_string(answer)?).map_err(|source| {
-        HandoffError::Unwritable {
+    let text = serde_json::to_string(answer)?;
+    std::fs::File::create(&tmp)
+        .and_then(|mut f| {
+            f.write_all(text.as_bytes())?;
+            f.sync_all()
+        })
+        .map_err(|source| HandoffError::Unwritable {
             path: tmp.clone(),
             source,
-        }
-    })?;
-    std::fs::rename(&tmp, &path).map_err(|source| HandoffError::Unwritable { path, source })
+        })?;
+    std::fs::rename(&tmp, &path).map_err(|source| HandoffError::Unwritable { path, source })?;
+    // The rename itself reaches the disk with its directory; a platform that cannot open one
+    // (Windows) keeps the rename as the filesystem orders it.
+    if let Ok(d) = std::fs::File::open(&d) {
+        std::mem::drop(d.sync_all());
+    }
+    Ok(())
 }
 
-/// Drops what `task` kept: a later attempt was accepted.
-///
-/// # Errors
-/// When the file is there and cannot be removed.
-pub(crate) fn clear(dir: &Path, task: &Task) -> Result<(), HandoffError> {
-    let path = file(dir, &task.id);
-    match std::fs::remove_file(&path) {
-        Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
-            Err(HandoffError::Unwritable { path, source: e })
-        }
-        _ => Ok(()),
+/// The tasks of `ids` that `run` now holds answered — accepted, or their kept answer taken.
+pub(crate) fn answered(run: &crate::state::RunState, ids: &[String]) -> Vec<String> {
+    run.tasks
+        .iter()
+        .filter(|t| t.state == TaskState::Answered && ids.contains(&t.id))
+        .map(|t| t.id.clone())
+        .collect()
+}
+
+/// Drops what the answered tasks `ids` kept, once the state recording their answers is saved, so a
+/// stop before leaves the kept file to fall back on. A file that cannot be removed stays: an
+/// answered task is never handed out again, so it is never read.
+pub(crate) fn drop(dir: &Path, ids: &[String]) {
+    for id in ids {
+        std::mem::drop(std::fs::remove_file(file(dir, id)));
     }
 }
 

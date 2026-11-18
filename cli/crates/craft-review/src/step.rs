@@ -625,8 +625,16 @@ pub fn submit_with(
     if let Some(id) = given.and_then(|g| g.keys().find(|id| !pending(id))) {
         return Err(StepError::UnknownTask(id.clone()).into());
     }
+    // The tasks pending before this submit, which it may answer.
+    let was_pending: Vec<String> = run
+        .tasks
+        .iter()
+        .filter(|t| t.state == TaskState::Pending)
+        .map(|t| t.id.clone())
+        .collect();
     abandon(dir, &mut run, said.abandoned)?;
     stop::open(&mut run);
+    let mut notes = Vec::new();
     let hold = match (said.limit, said.resume) {
         (Some(_), _) => Hold::Every,
         (None, true) => Hold::Missing,
@@ -637,11 +645,20 @@ pub fn submit_with(
         .iter_mut()
         .filter(|t| t.state == TaskState::Pending)
     {
-        let live = take_answer(dir, task, given, hold)?;
+        let live = take_answer(dir, task, given, hold, &mut notes)?;
         run.watch.live |= live;
     }
+    for note in notes {
+        if !run.degraded.contains(&note) {
+            run.degraded.push(note);
+        }
+    }
+    // What they kept is dropped once the state saying they answered is saved.
+    let answered = kept::answered(&run, &was_pending);
     move_on(dir, &mut run, said)?;
-    save_and_next(dir, &mut run, said)
+    let next = save_and_next(dir, &mut run, said)?;
+    kept::drop(dir, &answered);
+    Ok(next)
 }
 
 /// Fails each pending task of `ids`, abandoned by the host at its deadline, as the engine counts a
@@ -701,12 +718,14 @@ fn save_and_next(dir: &Path, run: &mut RunState, said: &Said<'_>) -> Result<Valu
 /// Takes the answer of one pending task, from `given` or the file its agent wrote; one refused is
 /// asked for again until its retries are spent — unless `hold` keeps it waiting uncounted: every
 /// one on the host's limit, a missing one on a resume (handed out again as first written). Says
-/// whether its agent answered at all, valid or not.
+/// whether its agent answered at all, valid or not; a marks-only answer it could not keep is noted
+/// in `notes`, the task going on as without one.
 fn take_answer(
     dir: &Path,
     task: &mut Task,
     given: Option<&Map<String, Value>>,
     hold: Hold,
+    notes: &mut Vec<String>,
 ) -> Result<bool, Error> {
     let submitted = match given {
         Some(g) => g
@@ -748,7 +767,6 @@ fn take_answer(
             task.state = TaskState::Answered;
             task.error = None;
             task.refused = None;
-            kept::clear(dir, task)?;
             return Ok(true);
         }
         Err(e) => {
@@ -761,8 +779,9 @@ fn take_answer(
                 .as_ref()
                 .ok()
                 .map(|a| validate::check(task, Some(a), true))
+                && let Err(e) = kept::keep(dir, task, &answer)
             {
-                kept::keep(dir, task, &answer)?;
+                notes.push(format!("{}: its answer refused only for unmarked CONSUMERS lines could not be kept to fall back on: {e}", task.id));
             }
         }
     }
