@@ -229,7 +229,7 @@ pub(super) fn rust_only(
     profile: &Profile,
     part: impl FnOnce() -> Result<String, ContentError>,
 ) -> Result<String, ContentError> {
-    if profile.id == "rust" {
+    if profile.id == crate::consumers::PROFILE {
         part()
     } else {
         Ok(String::new())
