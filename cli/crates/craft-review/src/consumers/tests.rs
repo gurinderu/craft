@@ -7,6 +7,9 @@ use crate::project::CodeGraph;
 use crate::gate::tests::exe;
 
 mod asks;
+mod built;
+mod changed;
+mod gaps;
 mod graphs;
 mod half_asked;
 mod heads;

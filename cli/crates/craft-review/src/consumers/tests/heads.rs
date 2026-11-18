@@ -80,10 +80,9 @@ fn a_caller_outside_the_repository_or_in_a_file_that_cannot_be_read_is_named_not
         "{}",
         section(&c)
     );
+    // Report-only: the name search ran for these symbols anyway (consumers/gaps.rs).
     assert!(
-        lens_block(&c)
-            .unwrap()
-            .contains("The code graph's callers in files not read here (read them yourself)"),
+        !lens_block(&c).unwrap().contains("../outside.rs"),
         "{}",
         lens_block(&c).unwrap()
     );
