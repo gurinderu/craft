@@ -47,7 +47,9 @@ fn a_missing_review_names_the_head_the_last_run_and_how_to_run_one() {
             "{text}"
         );
     }
-    assert!(model.contains("craft:review"), "{model}");
+    for text in [&human, &model] {
+        assert!(text.contains("craft:review or craft:rust-audit"), "{text}");
+    }
     assert!(model.contains("craft review run"), "{model}");
     assert!(model.contains("2 unreadable"), "{model}");
 }

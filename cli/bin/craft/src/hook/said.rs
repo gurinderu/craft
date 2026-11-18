@@ -19,10 +19,10 @@ pub fn said(found: &Found, here: &Here) -> Option<Value> {
             };
             (
                 format!(
-                    "craft: no full craft review on this head ({head}); {last}. Run craft:review before the pull request, or say why it goes without one."
+                    "craft: no full craft review on this head ({head}); {last}. Run craft:review or craft:rust-audit before the pull request, or say why it goes without one."
                 ),
                 format!(
-                    "craft: no full craft review on this head ({head}): the run store holds no finished, full craft:review run (not delta, not INCOMPLETE) on it; {last}.{skipped} Tell the human before the pull request is opened, then run one — the craft:review workflow on this branch in Claude Code, or `craft review run --backend codex|pi|opencode` on another host — or say why this pull request goes without it. This warns; it does not stop the command."
+                    "craft: no full craft review on this head ({head}): the run store holds no finished, full craft:review or craft:rust-audit run (not delta, not INCOMPLETE, not nested) on it; {last}.{skipped} Tell the human before the pull request is opened, then run one — the craft:review or craft:rust-audit workflow on this branch in Claude Code, or `craft review run --backend codex|pi|opencode` on another host — or say why this pull request goes without it. This warns; it does not stop the command."
                 ),
             )
         }

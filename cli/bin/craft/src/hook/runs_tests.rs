@@ -104,9 +104,50 @@ fn a_nested_or_partial_run_or_another_project_does_not_count() {
     partial["partial"] = json!(true);
     let mut elsewhere = run("2026-11-01T12-00-00Z", HEAD, "Approve", Some("full"));
     elsewhere["project"] = json!("/q");
-    let mut audit = run("2026-11-01T13-00-00Z", HEAD, "Approve", Some("full"));
-    audit["name"] = json!("rust-audit");
-    let s = store(&[nested, partial, elsewhere, audit], &[]);
+    let s = store(&[nested, partial, elsewhere], &[]);
+    missing(look(s.path(), &here()));
+}
+
+/// A rust-audit run as its engine files it: no `lensScope`, its nested crate reviews filed apart.
+fn audit(ts: &str, verdict: &str) -> Value {
+    let mut r = run(ts, HEAD, verdict, None);
+    r["name"] = json!("rust-audit");
+    r
+}
+
+#[test]
+fn a_clean_rust_audit_on_the_head_is_silent() {
+    for v in ["Approve", "Warning", "Block"] {
+        let s = store(&[audit("2026-11-01T10-00-00Z", v)], &[]);
+        assert!(matches!(look(s.path(), &here()), Found::Reviewed), "{v}");
+    }
+}
+
+#[test]
+fn an_incomplete_partial_nested_or_foreign_rust_audit_warns() {
+    for v in ["INCOMPLETE", "Warning (INCOMPLETE)", ""] {
+        let s = store(&[audit("2026-11-01T10-00-00Z", v)], &[]);
+        let (last, _) = missing(look(s.path(), &here()));
+        assert_eq!(last.unwrap().verdict, v);
+    }
+    let mut partial = audit("2026-11-01T11-00-00Z", "Approve");
+    partial["partial"] = json!(true);
+    let mut nested = audit("2026-11-01T12-00-00Z", "Approve");
+    nested["nested"] = json!(true);
+    let mut elsewhere = audit("2026-11-01T13-00-00Z", "Approve");
+    elsewhere["project"] = json!("/q");
+    let mut other_head = audit("2026-11-01T14-00-00Z", "Approve");
+    other_head["head"] = json!(OTHER);
+    let s = store(&[partial, nested, elsewhere, other_head], &[]);
+    missing(look(s.path(), &here()));
+}
+
+#[test]
+fn a_rust_audit_s_nested_crate_review_alone_warns() {
+    let mut child = run("2026-11-01T10-00-00Z", HEAD, "Approve", Some("full"));
+    child["nested"] = json!(true);
+    child["via"] = json!("rust-audit");
+    let s = store(&[child], &[]);
     missing(look(s.path(), &here()));
 }
 

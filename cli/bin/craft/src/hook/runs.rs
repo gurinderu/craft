@@ -1,8 +1,8 @@
-//! Whether the run store holds a finished, full craft review of a head (realm @nick/craft, node
-//! #541). The store is the one the record writer files into, `lib/craft-log-run.mjs`: its
-//! `index.jsonl`, one JSON line per run, read line by line with a malformed line counted and passed
-//! over; a run's detail file ([`scope_of`]) is read only for the runs on the head or the branch's
-//! newest, since the index carries no `lensScope`.
+//! Whether the run store holds a finished, full craft review of a head — a craft:review or a
+//! craft:rust-audit run (realm @nick/craft, node #541). The store is the one the record writer
+//! files into, `lib/craft-log-run.mjs`: its `index.jsonl`, one JSON line per run, read line by line
+//! with a malformed line counted and passed over; a run's detail file ([`scope_of`]) is read only
+//! for the runs on the head or the branch's newest, since the index carries no `lensScope`.
 
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -95,10 +95,13 @@ pub fn look(store: &Path, here: &Here) -> Found {
 }
 
 /// A top-level review run of this repository: the review's name either driver files (`review`,
-/// or the CLI's interim `cli-review`, as `isReviewRun`); a nested one is a rust-audit crate slice.
+/// or the CLI's interim `cli-review`, as `isReviewRun`), or `rust-audit`, which craft:develop sends
+/// a Rust diff's full review to. A nested run is a rust-audit crate slice and never counts alone.
 fn is_review(line: &Line, here: &Here) -> bool {
-    matches!(line.name.as_deref(), Some("review" | "cli-review"))
-        && line.project.as_deref() == Some(&here.project)
+    matches!(
+        line.name.as_deref(),
+        Some("review" | "cli-review" | "rust-audit")
+    ) && line.project.as_deref() == Some(&here.project)
         && line.nested != Some(true)
 }
 
