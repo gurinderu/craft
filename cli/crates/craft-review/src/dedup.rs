@@ -7,7 +7,7 @@ mod merge;
 
 use serde_json::{Value, json};
 
-use crate::harm::raise_path_floor;
+use crate::harm::{raise_path_floor, raise_weak_floor};
 use crate::profile::Profile;
 
 pub(crate) use merge::merge;
@@ -50,12 +50,15 @@ fn rolls_up(f: &Value, profiles: &[Profile]) -> bool {
         .is_some_and(|p| p.rollup_rule_ids.iter().any(|i| i == rule))
 }
 
-/// The pool through the path floor and the roll-up, as `rollupPool(applyPathFloor(pool))` does
-/// per profile: a finding is rolled up under its own profile's rules, with its lens's findings of
+/// The pool through the path floor, the weak-assertion floor and the roll-up, as
+/// `rollupPool(applyPathFloor(pool))` does per profile: a finding is rolled up under its own profile's rules, with its lens's findings of
 /// that rule.
 #[must_use]
 pub fn prepare(pool: &[Value], profiles: &[Profile]) -> Vec<Value> {
-    let floored: Vec<Value> = pool.iter().map(raise_path_floor).collect();
+    let floored: Vec<Value> = pool
+        .iter()
+        .map(|f| raise_weak_floor(&raise_path_floor(f)))
+        .collect();
     let mut out = Vec::new();
     let mut groups: Vec<(String, Vec<Value>)> = Vec::new();
     for f in floored {

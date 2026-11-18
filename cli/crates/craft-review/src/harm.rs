@@ -5,8 +5,10 @@
 
 mod floor;
 pub(crate) mod raise;
+mod test_gap;
 
 pub(crate) use floor::{floor_note, raise_path_floor};
+pub(crate) use test_gap::raise_weak_floor;
 
 use serde_json::{Map, Value};
 
@@ -71,11 +73,11 @@ fn rule_cited(rule: Option<&Value>) -> bool {
     filled("file") && filled("text")
 }
 
-/// The level the cap reads: the finding's own, or `none` for an uncited `repo-rule` and for a lint
-/// seed that names no harm.
+/// The level the cap reads: the finding's own, or `none` for an uncited `repo-rule`, for the tests
+/// lens's test gap that names no regression, and for a lint seed that names no harm.
 fn effective_level(f: &Value) -> Option<&str> {
     let own = text(f, "harmLevel").filter(|l| !l.is_empty());
-    if own == Some(REPO_RULE) && !rule_cited(f.get("repoRule")) {
+    if (own == Some(REPO_RULE) && !rule_cited(f.get("repoRule"))) || test_gap::unnamed(f) {
         return Some("none");
     }
     if own.is_some() {
@@ -94,10 +96,20 @@ fn note(f: &mut Map<String, Value>, why: &str) {
     f.insert("why".into(), Value::String(format!("{old} ({why})")));
 }
 
+/// The most `level` allows `f`: its row's ceiling, and no more than should-fix for a weak
+/// assertion, whose test is the missing guard, not the defect.
+fn ceiling_of(f: &Value, level: &str) -> Option<&'static str> {
+    let top = ceiling(level)?;
+    Some(match test_gap::weak_ceiling(f) {
+        Some(weak) if severity_rank(weak) > severity_rank(top) => weak,
+        Some(_) | None => top,
+    })
+}
+
 /// `f` lowered to its harm level's ceiling, with a note saying so; unchanged when it names no
 /// known level or already sits at or below the ceiling.
 pub(crate) fn cap(f: &Value) -> Value {
-    let Some((level, top)) = effective_level(f).and_then(|l| Some((l, ceiling(l)?))) else {
+    let Some((level, top)) = effective_level(f).and_then(|l| Some((l, ceiling_of(f, l)?))) else {
         return f.clone();
     };
     let severity = text(f, "severity").unwrap_or("");

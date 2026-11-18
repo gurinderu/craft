@@ -33,8 +33,8 @@ and optional (Low, Info: reported, never blocks).
 | `repo-rule` | A rule written in the reviewed repository's own files is broken (AGENTS.md, CLAUDE.md, CONTRIBUTING, a documented project convention the lens read), the rule cited | must-fix |
 | `operator-recovery` | A wedged or drifted state that an operator must recover by hand | should-fix |
 | `self-healing` | State that heals by itself on a later pass, a slower or noisier retry cadence | optional |
-| `text` | Wrong text, a misleading comment or doc, a log line, a name | optional |
-| `none` | No harm named: a missing test whose defect is not named, maintainability (structure, size, duplication, idiom), a remark | optional |
+| `text` | Wrong text only: a misleading comment or doc, a log line, a name — while the code behaves correctly | optional |
+| `none` | No harm named: a missing test or weak assertion whose regression is not named, maintainability (structure, size, duplication, idiom), a remark | optional |
 
 Read the table top down and stop at the first row the finding honestly fills, and put its
 `harmLevel` on the finding. A finding may sit
@@ -57,8 +57,22 @@ Two refinements:
 - **A false comment, doc or name** is rated by the behaviour it causes, not by its text. If the
   next caller will act on the false claim and lose data, the finding is rated as that data loss
   (see sweeps.md §5). If nobody acts on it, it is optional.
+- **`text` is for text alone.** It applies only when the documentation, comment or name diverges
+  while the code's behaviour is correct. When the running system does not do what the contract, a
+  doc comment or the PR's intent promises — the old value stays in force, a field is not applied, a
+  request is silently accepted without the promised check — the harm is named by its consequence
+  in production (behaviour, data, access) and takes that row, even when the lens found it through
+  the text mismatch and proposes the fix in the contract text. Name what happens in the running
+  system, not what is written wrong.
 - **A missing test** is rated by the defect it would have caught. Name that defect and its harm,
   and the finding takes that row; name none, and it is optional.
+- **A weak assertion is not a missing test.** It is a test that exists and still passes under a
+  named regression of the changed behaviour: it asserts only a status or an annotation, a mock
+  ignores the request body or fabricates the response, or only one of two sides (ingress and
+  egress, say) is covered. It must name the regression it lets through. Its severity is the harm
+  of that regression in production, capped at should-fix — the test is the missing guard, not the
+  defect — so it is not optional by default and goes to a verifier. A regression of text or style
+  only stays optional; a weak assertion that names no regression is read as `none`.
 
 ## Borderline findings stay in
 
@@ -95,6 +109,10 @@ Verification raises it when the verifier confirms a must-fix harm; synthesis nev
   raise it. One whose harm could not be must-fix stays unverified. A light pass still verifies only
   Medium and above.
 - **Synthesis** never reports a finding above that cap.
+- **A weak assertion** the tests lens reported alone, naming its regression and a harm of
+  operator recovery or worse, is raised to should-fix before verification when the lens rated it
+  lower, so a verifier reads it; a verified must-fix harm never raises it past should-fix, and the
+  cap holds it there. A test gap that names no regression is capped as `none`.
 - A severity floor (for example, the deletion and recovery path floor of `distributed-races`)
   applies only when the finding names a harm of operator recovery or worse. A floor does not
   invent a harm the finding did not name.

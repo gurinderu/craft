@@ -69,9 +69,11 @@ finding maps to a catalog rule (novel issues are fine and encouraged — report 
 they are reported at MEDIUM and become a presumption of block unless the author justified the
 change in the diff or brief (see `SKILL.md` → Maintainability bar).
 
-² `TST-*` are LOW by default. A missing or weak test takes the severity of the defect it would
-catch, once that defect and its harm are named (`review-rules` `severity.md`) — a missing
+² `TST-001`/`TST-002` are LOW by default. A missing test takes the severity of the defect it
+would catch, once that defect and its harm are named (`review-rules` `severity.md`) — a missing
 cross-tenant denial test on a new authz-guarded endpoint names a security harm and is HIGH.
+`TST-003` (a weak assertion) names the regression it lets through and takes that regression's
+harm, capped at MEDIUM; only a text- or style-only regression leaves it LOW.
 
 ## Adding a rule
 
