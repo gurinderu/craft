@@ -51,3 +51,17 @@ pub fn unmarked_line(lines: &[String]) -> String {
         gaps::shown(lines)
     )
 }
+
+/// The report's line on the CONSUMERS lines only the seam pass read, which marks none per line;
+/// empty when there are none.
+#[must_use]
+pub fn seam_line(lines: &[String]) -> String {
+    if lines.is_empty() {
+        return String::new();
+    }
+    format!(
+        "- {} line(s) handed to the seam pass, not marked per line: {}\n",
+        lines.len(),
+        gaps::shown(lines)
+    )
+}

@@ -35,12 +35,9 @@ pub(crate) fn stood(run: &mut RunState) {
         run.findings.iter().enumerate().map(at).collect()
     } else {
         let pool = if run.findings.is_empty() {
-            let rounds = cut_short(run);
-            // The CONSUMERS lines the cut-short round's answers marked or left, kept on the run
-            // beside the findings taken from them; the resume notes them again, once each.
-            run.rounds.consumers_marked = rounds.consumers_marked;
-            run.rounds.consumers_left = rounds.consumers_left;
-            rounds.pool
+            // The CONSUMERS lines the cut-short round showed, and its answers marked or left,
+            // taken beside the findings taken from them.
+            run.rounds.take_consumers(cut_short(run))
         } else {
             run.findings.clone()
         };

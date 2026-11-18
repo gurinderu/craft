@@ -160,6 +160,7 @@ pub(crate) fn fresh(run: &mut RunState) -> Vec<Value> {
         let TaskKind::CriticLens { profile, lens } = &t.kind else {
             continue;
         };
+        run.rounds.note_shown(t);
         let found = t
             .answer
             .as_ref()

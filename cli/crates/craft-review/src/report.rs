@@ -14,6 +14,8 @@ mod reduced_cap;
 mod reduced_cap_tests;
 mod rereview;
 #[cfg(test)]
+mod seam_tests;
+#[cfg(test)]
 mod tests;
 
 use rereview::rereview_line;
@@ -350,6 +352,7 @@ pub fn markdown(state: &RunState, verdict: &str) -> String {
     ));
     out.push_str(&crate::consumers::section(&state.context.consumers));
     out.push_str(&crate::consumers::unmarked_line(&state.rounds.unmarked()));
+    out.push_str(&crate::consumers::seam_line(&seam_only(state)));
     out.push_str(&crate::critic::section(state));
     out.push_str(&crate::units::section(&state.units));
     out.push_str("\n## Not run\n\n");
@@ -383,6 +386,14 @@ fn listed(heading: Option<&str>, files: &[String], out: &mut String) {
         out.push_str(&format!("- {f}\n"));
     }
     out.push('\n');
+}
+
+/// The CONSUMERS lines only a seam pass read: under unit mode, those no lens task was shown.
+fn seam_only(state: &RunState) -> Vec<String> {
+    if state.units.tracks.iter().all(|t| t.units.is_empty()) {
+        return Vec::new();
+    }
+    state.rounds.unshown(&state.context.consumers.sites())
 }
 
 /// How the run was weaker than asked: the host's notes, then the CONSUMERS lines no lens marked
