@@ -37,3 +37,17 @@ pub fn section(c: &Consumers) -> String {
     }
     out
 }
+
+/// The report's line on the CONSUMERS lines no lens shown them marked; empty when there are none
+/// (realm @nick/craft, node #531).
+#[must_use]
+pub fn unmarked_line(lines: &[String]) -> String {
+    if lines.is_empty() {
+        return String::new();
+    }
+    format!(
+        "- {} line(s) no lens marked: {}\n",
+        lines.len(),
+        gaps::shown(lines)
+    )
+}

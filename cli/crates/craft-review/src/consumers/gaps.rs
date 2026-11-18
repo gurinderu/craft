@@ -145,7 +145,7 @@ pub(super) fn for_report(c: &Consumers) -> String {
 const SHOWN_MAX: usize = 20;
 
 /// `v` joined, past [`SHOWN_MAX`] entries counted instead of named.
-fn shown(v: &[String]) -> String {
+pub(super) fn shown(v: &[String]) -> String {
     let head = v
         .iter()
         .take(SHOWN_MAX)

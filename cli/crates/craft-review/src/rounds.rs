@@ -44,6 +44,13 @@ pub struct Rounds {
     pub returned: Vec<String>,
     /// Why each lens's last dispatch gave no answer, by `profile:lens`.
     pub failures: BTreeMap<String, String>,
+    /// The CONSUMERS lines (`file:line`) some lens shown them marked.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub consumers_marked: Vec<String>,
+    /// The CONSUMERS lines a lens answer taken on its last attempt left unmarked (realm
+    /// @nick/craft, node #531).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub consumers_left: Vec<String>,
 }
 
 /// The exact key of a finding: its file and title folded, and its line, as `key` in
@@ -225,6 +232,7 @@ impl Rounds {
                 continue;
             };
             returned += 1;
+            self.consumer_marks(t);
             let found = answer.get("findings").and_then(Value::as_array);
             for f in found.into_iter().flatten() {
                 let f = pooled(f, profile, lens, *round);
@@ -254,6 +262,30 @@ impl Rounds {
         });
         self.pool.extend(fresh);
         added
+    }
+
+    /// Notes the CONSUMERS lines answered task `t` was shown: those it marked, and those it left.
+    fn consumer_marks(&mut self, t: &Task) {
+        for site in &t.consumers {
+            let into = if t.unmarked.contains(site) {
+                &mut self.consumers_left
+            } else {
+                &mut self.consumers_marked
+            };
+            if !into.contains(site) {
+                into.push(site.clone());
+            }
+        }
+    }
+
+    /// The CONSUMERS lines no lens shown them marked, in the order they were left.
+    #[must_use]
+    pub fn unmarked(&self) -> Vec<String> {
+        self.consumers_left
+            .iter()
+            .filter(|s| !self.consumers_marked.contains(s))
+            .cloned()
+            .collect()
     }
 
     /// Records the dispatch of the lens keyed `k` and whether it answered; its answer if it did.
