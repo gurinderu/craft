@@ -74,6 +74,20 @@ pub enum StepError {
     /// review its head ([`rereview::branch::resolve`]).
     #[error("{0}")]
     PrHead(String),
+    /// `--delta` over a base that reaches back to where the branch leaves origin's default branch:
+    /// the round would review the whole branch with no earlier review behind it, yet never approve
+    /// (realm @nick/craft, node #523).
+    #[error(
+        "--delta reviews only the fix commits since an earlier review, but the base {base} reaches \
+         back to {point}, where this branch leaves {trunk}: the round would review the whole branch \
+         with no earlier review behind it, and its verdict could never be Approve. Give --base the \
+         commit an earlier review reviewed, or drop --delta for a full review"
+    )]
+    DeltaOverBranch {
+        base: String,
+        point: String,
+        trunk: String,
+    },
 }
 
 /// What `start` needs.
@@ -194,6 +208,7 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
     open_dir(dir)?;
     let (cwd, laid) = pr_worktree(cwd, dir, opts)?;
     let (scope, branch_diff) = read_change(&cwd, opts)?;
+    refuse_delta_over_branch(&cwd, opts.delta, &branch_diff)?;
     let profiles = Profile::all()?;
     let runs = opts.runs_or_parent();
     let (mut chain, pr_note) = rereview::begin(
@@ -336,6 +351,23 @@ fn read_change(cwd: &Path, opts: &StartOptions) -> Result<(Option<String>, git::
     };
     let diff = git::read_diff(cwd, opts.base.as_deref(), scope.as_deref())?;
     Ok((scope, diff))
+}
+
+/// A delta round whose change starts where the branch leaves origin's default branch — the base
+/// given, or the default — is refused before any task (realm @nick/craft, node #523); one whose
+/// default branch cannot be found is let through, as nothing can be said of it.
+fn refuse_delta_over_branch(cwd: &Path, delta: bool, diff: &git::Diff) -> Result<(), StepError> {
+    if !delta {
+        return Ok(());
+    }
+    match git::trunk_point(cwd) {
+        Some((trunk, point)) if point == diff.merge_base => Err(StepError::DeltaOverBranch {
+            base: diff.base.clone(),
+            point,
+            trunk,
+        }),
+        _ => Ok(()),
+    }
 }
 
 /// The slices of the change when the run goes on to its lenses: under unit mode, when asked, the

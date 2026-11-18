@@ -257,6 +257,15 @@ pub fn default_base(cwd: &Path) -> Result<String, GitError> {
         .ok_or(GitError::NoDefaultBase)
 }
 
+/// Origin's default branch and the commit where `HEAD` leaves it (`git merge-base`); `None` when
+/// origin has no default branch or the two share no history, so nothing can be said of it.
+#[must_use]
+pub fn trunk_point(cwd: &Path) -> Option<(String, String)> {
+    let trunk = default_base(cwd).ok()?;
+    let point = git(cwd, &["merge-base", &trunk, "HEAD"]).ok()?;
+    Some((trunk, point.trim().to_owned()))
+}
+
 /// Whether tracked files in `cwd` differ from `HEAD` (untracked ones aside).
 ///
 /// # Errors
