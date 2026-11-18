@@ -271,10 +271,10 @@ which the `review` engine runs when no `craftBin` is given. The other hosts reac
 at the repository root, a POSIX `sh` wrapper carrying the plugin version (release-please moves it): it runs
 `~/.craft/bin/<version>/craft`, first downloading the release archive and its `.sha256` with `curl` or `wget` and
 checking it with `sha256sum` or `shasum` when the cache lacks it (no Windows), `CRAFT_BIN` naming a local build,
-and `CRAFT_ROOT` defaulting to the plugin root. `lib/pre-pr-hook.sh`, the PreToolUse hook on the Bash tool both
-Claude Code and Codex run, hands a `gh pr create` to `craft hook pre-pr` — the cached binary of its own version
+and `CRAFT_ROOT` defaulting to the plugin root. `lib/pre-pr-hook.sh`, the PreToolUse hook on the Bash tool (Claude Code;
+Codex: unobserved), hands a `gh pr create` to `craft hook pre-pr` — the cached binary of its own version
 (release-please moves it), never downloaded — which warns when the run store holds no finished full craft review of
-HEAD.
+the PR's head and whole change, and says when it could not check.
 
 ## Codex delivery
 

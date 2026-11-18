@@ -210,7 +210,7 @@ const UNUSED_VERDICT_SCHEMA = {
  * @typedef {{ candidates: number, confirmed: number, refuted: number, died: number, judged: number,
  *   refuteRate: number | null }} VerificationStats
  * @typedef {{ dimension: string, verdict: string, summary: string, findings: Finding[], evidence?: string,
- *   _verification?: VerificationStats, _priorDecisions?: string, _gateSection?: string, _gateDir?: string }} DimResult
+ *   _verification?: VerificationStats, _priorDecisions?: string, _gateSection?: string, _gateDir?: string, _verdictLine?: string }} DimResult
  */
 
 // The craft release that produced a run. Recorded on the run record and index line so an
@@ -564,6 +564,8 @@ const dispatchGate = async () => (await dispatchDim('gate',
   { deadReason: 'nested gate returned no result (died) — dimension NOT RUN', threw: msg => `gate failed: ${msg}`, evidenceGate: false })) ?? null
 /** The reviews the red gate kept from starting: NOT RUN, by design, not a failure. @type {string[]} */
 const gateBlocked = []
+/** Each nested review queued, by the path it covers ('' the whole change). @type {{ dimension: string, path: string }[]} */
+const reviewScopes = []
 /** Whether the gate came out red. @param {DimResult | null} g */
 const gateRed = g => g?.verdict === 'Block'
 /** A gate that answered but named no directory its result was kept in: the reviews then run ungated. */
@@ -590,6 +592,7 @@ const dispatched = ['gate']
  * @param {string} dimension @param {Record<string, unknown>} scope  its `path`, or none for the whole workspace
  */
 function queueReview(dimension, scope) {
+  reviewScopes.push({ dimension, path: String(scope['path'] ?? '') })
   tasks.push(() => gateFirst().then(g => {
     if (gateRed(g)) {
       gateBlocked.push(dimension)
@@ -624,6 +627,7 @@ function pushReviewDims() {
     log(`⚠️ crate ${c.name}: path=${String(c.path)} could not be made repo-relative (repoRoot=${repoRoot || 'unresolved'}) — its per-crate review is NOT RUN rather than silently widened to the whole workspace`)
     tasks.push(() => null)
     dispatched.push(`review:${c.name}`)
+    reviewScopes.push({ dimension: `review:${c.name}`, path: String(c.path) })
   }
 }
 pushReviewDims()
@@ -906,6 +910,9 @@ const auditRecord = {
   notRun,
   // The reviews the red gate kept from starting, apart from `notRun` (above).
   gateBlocked,
+  // Each nested review with its path and its own verdict line ('' when it never answered): the dimension's verdict hides a
+  // nested INCOMPLETE as a Warning, and the pre-PR check reads these to count the audit (realm @nick/craft, node #541).
+  reviews: reviewScopes.map(r => ({ ...r, verdict: results.find(x => x.dimension === r.dimension)?._verdictLine ?? '' })),
   couldNotRun,
   noEvidence,
   // Agent types that were not registered (so their dimensions ran on the generic subagent) and

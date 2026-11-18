@@ -1,9 +1,9 @@
 #!/bin/sh
-# craft's PreToolUse hook on the Bash tool (integrations/claude-code/hooks/hooks.json; Claude Code and Codex run the
-# same file): hands the hook input on stdin to `craft hook pre-pr`, which says when a `gh pr create` opens a pull
-# request on a head with no full craft review (realm @nick/craft, node #541), and prints what it says. Every Bash call
-# passes through here, so a cheap text test comes first and the binary runs only when the input may hold a
-# `gh pr create`; the binary decides.
+# craft's PreToolUse hook on the Bash tool (integrations/claude-code/hooks/hooks.json, which the Codex manifest names
+# too; whether Codex runs it is unobserved): hands the hook input on stdin to `craft hook pre-pr`, which says when a
+# `gh pr create` opens a pull request on a head with no full craft review (realm @nick/craft, node #541), and prints
+# what it says. Every Bash call passes through here, so a cheap text test comes first and the binary runs only when the input may hold a
+# `gh pr create` or its alias `gh pr new`; the binary decides.
 #
 # It runs the binary of this plugin version from the cache bin/craft and lib/craft-bin.mjs fill
 # (~/.craft/bin/<version>/craft), or CRAFT_BIN, and never downloads it: a hook has 10 s, a download can take longer,
@@ -15,8 +15,14 @@ set -u
 version=0.54.1 # x-release-please-version
 
 input=$(cat)
+# Single-star patterns only: dash matches a multi-star glob by backtracking, which a long command with many `gh` and
+# `pr` in it and no `create` made take tens of seconds.
 case $input in
-  *gh*pr*create*) ;;
+  *gh*) ;;
+  *) exit 0 ;;
+esac
+case $input in
+  *create* | *new*) ;;
   *) exit 0 ;;
 esac
 
