@@ -201,6 +201,7 @@ pub(super) fn common_vars(
         ("reReview", re_review(ctx)?),
         ("plan", plan_lines(plan)?),
         ("sources", sources_line(ctx, profile, lens)),
+        ("consumers", crate::consumers::lens_block(&ctx.consumers)?),
         (
             "mutants",
             if mutants {
@@ -335,6 +336,7 @@ fn negative_space(
             ("shapeUses", surface.shape_uses.clone()),
             ("rules", rules(ctx)?),
             ("repoRules", repo_rules_line(&plan.repo_rules)?),
+            ("consumers", crate::consumers::lens_block(&ctx.consumers)?),
             ("alreadyFound", already),
             ("rubricSkill", profile.rubric_skill.clone()),
         ]),

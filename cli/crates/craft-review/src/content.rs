@@ -210,6 +210,7 @@ const FILES: &[(&str, &str)] = content_files![
     "prompts/critic.md",
     "prompts/critic-prior.md",
     "prompts/lens-extra.md",
+    "prompts/lens-consumers.md",
     "prompts/lens-slice.md",
     "prompts/lens-confined.md",
     "prompts/unit-scope-head.md",

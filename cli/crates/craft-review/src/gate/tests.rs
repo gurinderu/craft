@@ -8,7 +8,7 @@ use super::{GateSetup, Status, run};
 use crate::state::Track;
 
 #[path = "../../../../test-support/exe.rs"]
-mod exe;
+pub(crate) mod exe;
 
 pub(super) fn tool(dir: &Path, name: &str, script: &str) {
     exe::write_executable(&dir.join(name), &format!("#!/bin/sh\n{script}\n")).unwrap();

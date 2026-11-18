@@ -348,6 +348,7 @@ pub fn markdown(state: &RunState, verdict: &str) -> String {
         &state.context.sources,
         &state.settled,
     ));
+    out.push_str(&crate::consumers::section(&state.context.consumers));
     out.push_str(&crate::critic::section(state));
     out.push_str(&crate::units::section(&state.units));
     out.push_str("\n## Not run\n\n");
