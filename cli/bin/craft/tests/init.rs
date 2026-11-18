@@ -7,8 +7,6 @@
     reason = "the fixture helpers fail the test loudly, like the tests they serve"
 )]
 
-mod hermetic;
-
 use std::path::Path;
 use std::process::{Command, Output};
 
@@ -53,7 +51,6 @@ fn craft(t: &Path, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_craft"))
         .args(args)
         .env("HOME", t.join("home"))
-        .env("PATH", hermetic::path(t))
         .env("CRAFT_SOURCES_DIR", t.join("cache"))
         .env("GIT_CONFIG_COUNT", "1")
         .env(
@@ -211,7 +208,6 @@ fn craft_fed(t: &Path, args: &[&str], stdin: &str) -> Output {
     let mut child = Command::new(env!("CARGO_BIN_EXE_craft"))
         .args(args)
         .env("HOME", t.join("home"))
-        .env("PATH", hermetic::path(t))
         .env_remove("CRAFT_ROOT")
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())

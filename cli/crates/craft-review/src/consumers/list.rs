@@ -1,16 +1,12 @@
-//! The list assembled: each symbol's lines from the name search and the graph's callers, a line
-//! found by both kept once with both sources, ranked and held to a hard cap
+//! The list assembled: each symbol's lines from the name search, ranked and held to a hard cap
 //! ([`super::order`]).
 
-use std::collections::HashMap;
 use std::path::Path;
 use std::time::Instant;
 
-use super::cbm::Caller;
-use super::graph::graph_sites;
 use super::order::{FILE_MAX, budget, rank};
 use super::symbols::{Symbol, declared};
-use super::{Consumers, GRAPH, Listed, NAME_SEARCH, SAME_NAME, Site, names};
+use super::{Consumers, Listed, NAME_SEARCH, SAME_NAME, Site, names};
 use crate::gate::lines::Lines;
 
 /// How many changed symbols are searched.
@@ -21,7 +17,7 @@ const TEXT_MAX: usize = 160;
 /// What the line `file:line` reading `text` is to `sym`: `None` when it is no consumer — a
 /// changed line, the symbol's own declaration, a comment; [`SAME_NAME`] when it declares another
 /// item of that name (an implementor or a sibling); an empty kind for a plain use.
-pub(super) fn consumer(
+fn consumer(
     changed: &Lines,
     sym: &Symbol,
     file: &str,
@@ -39,7 +35,7 @@ pub(super) fn consumer(
     })
 }
 
-pub(super) fn site(file: &str, line: u32, text: &str, from: &str, kind: &str) -> Site {
+fn site(file: &str, line: u32, text: &str, from: &str, kind: &str) -> Site {
     Site {
         file: file.to_owned(),
         line,
@@ -49,54 +45,15 @@ pub(super) fn site(file: &str, line: u32, text: &str, from: &str, kind: &str) ->
     }
 }
 
-/// Adds `s`, or its source to the same line already held.
-fn merge(sites: &mut Vec<Site>, s: Site) {
-    match sites
-        .iter_mut()
-        .find(|o| o.file == s.file && o.line == s.line)
-    {
-        Some(o) => {
-            for f in s.from {
-                if !o.from.contains(&f) {
-                    o.from.push(f);
-                }
-            }
-        }
-        None => sites.push(s),
-    }
-}
-
-/// The list of `found`, its name search run, `callers` (the graph's, when asked) merged in.
-pub(super) fn assemble(
-    top: &Path,
-    changed: &Lines,
-    found: &[Symbol],
-    callers: Option<&[Caller]>,
-) -> Consumers {
+/// The list of `found`, its name search run.
+pub(super) fn assemble(top: &Path, changed: &Lines, found: &[Symbol]) -> Consumers {
     let mut out = Consumers {
-        sources: std::iter::once(NAME_SEARCH)
-            .chain(callers.map(|_| GRAPH))
-            .map(str::to_owned)
-            .collect(),
+        sources: vec![NAME_SEARCH.to_owned()],
         ..Consumers::default()
     };
-    let mut files = HashMap::new();
     let deadline = Instant::now() + names::BUDGET;
     for sym in found {
         let mut sites = searched(top, changed, sym, deadline, &mut out.unsearched);
-        let theirs = callers.unwrap_or_default().iter();
-        for c in theirs.filter(|c| c.symbol == sym.name && c.defined_in == sym.file) {
-            match graph_sites(&mut files, top, c, sym, changed) {
-                Ok((found, located)) => {
-                    out.graph_unlocated += usize::from(!located);
-                    for s in found {
-                        merge(&mut sites, s);
-                    }
-                }
-                Err(why) if !out.graph_unreadable.contains(&why) => out.graph_unreadable.push(why),
-                Err(_) => {}
-            }
-        }
         rank(top, sym, &mut sites);
         out.symbols.push(Listed {
             name: sym.name.clone(),

@@ -36,7 +36,7 @@ fn every_symbol_past_the_limit_is_named_in_both_outputs() {
         .map(|i| format!("pub fn sym_{i:02}() -> u8 {{\n    {i}\n}}\n"))
         .collect();
     let repo = repo(t.path(), &[], &[("src/lib.rs", &text)]);
-    let c = build(&repo, &diff_of(&repo), Err("no graph".into()));
+    let c = build(&repo, &diff_of(&repo));
     assert_eq!(c.symbols.len(), 40);
     let past: Vec<String> = (40..45).map(|i| format!("sym_{i} (src/lib.rs)")).collect();
     assert_eq!(c.unlisted, past);
@@ -55,7 +55,7 @@ fn a_name_changed_in_two_files_is_kept_for_each() {
     let a = "pub fn shared_name() -> u8 {\n    1\n}\n";
     let b = "pub fn shared_name() -> u8 {\n    2\n}\n";
     let repo = repo(t.path(), &[], &[("src/a.rs", a), ("src/b.rs", b)]);
-    let c = build(&repo, &diff_of(&repo), Err(String::new()));
+    let c = build(&repo, &diff_of(&repo));
     let listed: Vec<(&str, &str)> = c
         .symbols
         .iter()
@@ -78,7 +78,7 @@ fn a_changed_file_that_is_a_link_is_said_not_read_through() {
     std::os::unix::fs::symlink("/dev/zero", repo.join("src/zero.rs")).unwrap();
     git(&repo, &["add", "."]);
     git(&repo, &["commit", "-qm", "feat: links"]);
-    let c = build(&repo, &diff_of(&repo), Err(String::new()));
+    let c = build(&repo, &diff_of(&repo));
     assert!(c.symbols.is_empty(), "{:?}", c.symbols);
     assert_eq!(
         c.unreadable,
