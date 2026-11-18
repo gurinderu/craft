@@ -20,12 +20,7 @@ pub(super) fn stand_in(t: &Path, answer: &str) -> CodeGraph {
         root = repo_root(t)
     );
     exe::write_executable(&tool, &script).unwrap();
-    CodeGraph {
-        tool: tool.display().to_string(),
-        available: true,
-        project: "p".into(),
-        note: String::new(),
-    }
+    CodeGraph::indexed(&tool.display().to_string(), "p")
 }
 
 pub(super) fn queries(t: &Path) -> Vec<String> {

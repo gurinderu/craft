@@ -7,6 +7,8 @@
     reason = "the fixture helpers fail the test loudly, like the tests they serve"
 )]
 
+mod hermetic;
+
 use std::path::Path;
 use std::process::{Command, Output};
 
@@ -37,6 +39,7 @@ fn craft(t: &Path, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_craft"))
         .args(args)
         .env("HOME", t.join("home"))
+        .env("PATH", hermetic::path(t))
         .env_remove("CRAFT_ROOT")
         .output()
         .unwrap()

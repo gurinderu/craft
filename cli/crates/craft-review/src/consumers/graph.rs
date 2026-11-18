@@ -10,7 +10,7 @@ use super::list::{consumer, site};
 use super::symbols::Symbol;
 use super::{GRAPH, Site, fresh, names};
 use crate::gate::lines::Lines;
-use crate::project::{self, CodeGraph};
+use crate::project::{self, CodeGraph, GraphState};
 
 /// The graph's callers of `found`; why the graph was not asked otherwise: its index not ready,
 /// of another repository than `top`'s, or older than `merge_base`, or no answer.
@@ -20,18 +20,21 @@ pub(super) fn graph_callers(
     g: &CodeGraph,
     found: &[Symbol],
 ) -> Result<Asked, String> {
+    let project = g
+        .project()
+        .ok_or("the review profile's code graph indexes no project")?;
     let cbm = Cbm::new(&g.tool);
-    let index = cbm.index(&g.project).map_err(|e| e.to_string())?;
+    let index = cbm.index(project).map_err(|e| e.to_string())?;
     let roots = cbm::roots_of(top);
     if !index.root.is_empty() && !roots.contains(&index.root) {
         return Err(format!(
             "the index of {} is of {}, not of this repository ({})",
-            g.project,
+            project,
             index.root,
             roots.join(" or ")
         ));
     }
-    if let Some(why) = fresh::stale(top, merge_base, &g.project, &index) {
+    if let Some(why) = fresh::stale(top, merge_base, project, &index) {
         return Err(why);
     }
     let (left_out, asked): (Vec<&Symbol>, Vec<&Symbol>) =
@@ -40,9 +43,7 @@ pub(super) fn graph_callers(
         .iter()
         .map(|s| (s.name.as_str(), s.file.as_str()))
         .collect();
-    let mut out = cbm
-        .callers(&g.project, &symbols)
-        .map_err(|e| e.to_string())?;
+    let mut out = cbm.callers(project, &symbols).map_err(|e| e.to_string())?;
     let not_indexed = left_out
         .iter()
         .map(|s| format!("{} (file not indexed by the graph)", s.name));
@@ -117,15 +118,28 @@ pub fn graph_of(projects: Option<&Path>, cwd: &Path) -> Result<CodeGraph, String
     let projects = projects.ok_or("no review profile directory")?;
     let (path, _) = project::profile_path(projects, cwd).map_err(|e| e.to_string())?;
     let profile = project::load(&path).map_err(|e| e.to_string())?;
-    let graph = profile
-        .and_then(|p| p.code_graph)
-        .ok_or("the review profile names no code graph (`craft init --write` checks for one)")?;
-    if graph.usable() {
-        return Ok(graph);
-    }
-    Err(if graph.note.is_empty() {
-        format!("{} did not answer when `craft init` checked", graph.tool)
+    let graph = profile.and_then(|p| p.code_graph).ok_or(
+        "the review profile names no code graph (`craft init --propose` checks for one and \
+         prints the write that records it)",
+    )?;
+    let note = match &graph.state {
+        GraphState::Indexed { .. } if graph.usable() => return Ok(graph),
+        GraphState::Indexed { .. } => "it names no project",
+        GraphState::Unavailable { note } | GraphState::Unindexed { note } => note,
+    };
+    let after = format!(
+        "once it answers and indexes this repository, {}",
+        super::cbm::RECORD
+    );
+    Err(if note.is_empty() {
+        format!(
+            "{} did not answer when `craft init` checked; {after}",
+            graph.tool
+        )
     } else {
-        format!("`craft init` found {} unusable: {}", graph.tool, graph.note)
+        format!(
+            "`craft init` found {} unusable: {note}; {after}",
+            graph.tool
+        )
     })
 }

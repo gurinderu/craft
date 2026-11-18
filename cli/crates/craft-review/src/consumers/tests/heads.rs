@@ -17,12 +17,7 @@ fn index_of(t: &Path, root: &str, rows: &str) -> CodeGraph {
         "#!/bin/sh\ncase \"$3\" in\n index_status) echo '{{\"status\":\"ready\",\"indexed_at\":\"2099-01-01T00:00:00Z\",\"root_path\":\"{root}\"}}';;\n query_graph) case \"$4\" in *\"AND NOT (\"*k8s_rule_to_api*|*k8s_rule_to_api*\"AND NOT (\"*) echo '{{\"rows\":[{rows}]}}';; *) echo '{{\"rows\":[]}}';; esac;;\nesac\n"
     );
     exe::write_executable(&tool, &script).unwrap();
-    CodeGraph {
-        tool: tool.display().to_string(),
-        available: true,
-        project: "p".into(),
-        note: String::new(),
-    }
+    CodeGraph::indexed(&tool.display().to_string(), "p")
 }
 
 fn row(file: &str, start: u64, end: u64) -> String {

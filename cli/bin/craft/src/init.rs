@@ -23,6 +23,7 @@ use serde_json::{Value, json};
 use crate::review::find_craft_root;
 
 mod ci;
+mod graph;
 mod memory;
 
 #[derive(Debug, clap::Args)]
@@ -102,8 +103,11 @@ pub fn init(args: &InitArgs) -> Result<ExitCode> {
             .collect::<Result<Vec<_>>>()?;
         let entries = ci::confirmed(&args.ci, &args.cwd)?;
         let mut profile = ProjectProfile::new(common, points, entries)?;
-        let roots = cbm::roots_of(&args.cwd);
-        let graph = cbm::probe(cbm::TOOL, &roots);
+        let held = project::load(&path)
+            .ok()
+            .flatten()
+            .and_then(|p| p.code_graph);
+        let (graph, says) = graph::recorded(cbm::look(cbm::TOOL, &args.cwd), held);
         profile.code_graph = Some(graph.clone());
         project::save(&path, &profile)?;
         return print(&json!({
@@ -111,7 +115,7 @@ pub fn init(args: &InitArgs) -> Result<ExitCode> {
             "integrations": profile.integrations,
             "ci": profile.ci,
             "codeGraph": graph,
-            "codeGraphSays": cbm::said(&graph, &roots),
+            "codeGraphSays": says,
         }));
     }
     let held = project::load(&path)?;
@@ -133,17 +137,12 @@ pub fn init(args: &InitArgs) -> Result<ExitCode> {
         "ci": ci::held(&held_ci, &args.cwd),
         "ciCandidates": ci::proposed(&args.cwd),
         "codeGraph": held.as_ref().and_then(|p| p.code_graph.clone()),
-        "codeGraphSays": code_graph_says(&args.cwd),
+        "codeGraphSays": graph::live_says(
+            cbm::look(cbm::TOOL, &args.cwd),
+            held.as_ref().and_then(|p| p.code_graph.as_ref()),
+        ),
         "write": "craft init --write --point <name>=<git url>@<tag or full commit> … --ci '<entry JSON>' … (every point and CI entry to keep, a held entry as `ci` prints it, one with `unusable` dropped or replaced; a branch is refused when a review prepares the sources)",
     }))
-}
-
-/// What the code graph says for the repository at `cwd`: whether it answers and which project
-/// indexes it (realm @nick/craft, node #529); a graph that is missing or fails is said so, never
-/// an error.
-fn code_graph_says(cwd: &Path) -> String {
-    let roots = cbm::roots_of(cwd);
-    cbm::said(&cbm::probe(cbm::TOOL, &roots), &roots)
 }
 
 /// `answer` marked as having run, or `{"ran": false, "why": …}` when it could not (no plugin root,
