@@ -16,6 +16,7 @@ use crate::finished;
 use crate::gate::{self, GateSetup};
 use crate::git;
 use crate::handoff;
+use crate::kept;
 use crate::memory::Memory;
 use crate::phases::{advance, settle_memory};
 use crate::profile::Profile;
@@ -642,8 +643,9 @@ pub fn submit_with(
 }
 
 /// Fails each pending task of `ids`, abandoned by the host at its deadline, as the engine counts a
-/// deadline fire: a dead agent not dispatched again, whose wait already spent the budget. Its
-/// answer file, should one be there, is set aside unread.
+/// deadline fire: a dead agent not dispatched again, whose wait already spent the budget — unless
+/// it kept an answer refused only for unmarked lines, which it takes. Its answer file, should one
+/// be there, is set aside unread.
 fn abandon(dir: &Path, run: &mut RunState, ids: &[String]) -> Result<(), Error> {
     for task in run
         .tasks
@@ -651,9 +653,10 @@ fn abandon(dir: &Path, run: &mut RunState, ids: &[String]) -> Result<(), Error> 
         .filter(|t| t.state == TaskState::Pending && ids.contains(&t.id))
     {
         handoff::set_aside(dir, task)?;
-        task.state = TaskState::Failed;
         task.abandoned = true;
-        task.error = Some(
+        kept::fail(
+            dir,
+            task,
             "abandoned at its deadline: the host waited its whole budget and no answer came back, so it is not asked for again".into(),
         );
     }
@@ -718,15 +721,15 @@ fn take_answer(
     // An agent that could not look fails with its reason at once, its findings dropped and before
     // its schema is checked: an empty answer from it would read as a clean review, and one that
     // left out a required field would otherwise lose that reason to a refusal and its retries
-    // (realm @nick/craft, node #511).
+    // (realm @nick/craft, node #511) — unless an earlier attempt that did look was kept, refused
+    // only for unmarked lines, which it takes (#531).
     if let Some(why) = submitted
         .as_ref()
         .ok()
         .and_then(|a| blocked::said(&task.schema, a))
     {
-        task.state = TaskState::Failed;
-        task.error = Some(blocked::failure(&why));
         task.refused = None;
+        kept::fail(dir, task, blocked::failure(&why));
         return Ok(true);
     }
     // On its last attempt an answer whose only defect is unmarked CONSUMERS lines is taken, the
@@ -743,19 +746,21 @@ fn take_answer(
             task.state = TaskState::Answered;
             task.error = None;
             task.refused = None;
+            kept::clear(dir, task)?;
             return Ok(true);
         }
         Err(e) => {
             task.error = Some(e);
             // An answer that came back but off its schema is a live vote, not a dead one.
             task.refused = submitted.as_ref().ok().map(validate::normalize);
-            // One refused only for its unmarked lines is kept, to fall back on.
+            // One refused only for its unmarked lines is kept, to fall back on, before its answer
+            // file is set aside.
             if let Some(Ok((answer, _))) = submitted
                 .as_ref()
                 .ok()
                 .map(|a| validate::check(task, Some(a), true))
             {
-                task.marks_only = Some(answer);
+                kept::keep(dir, task, &answer)?;
             }
         }
     }
@@ -775,27 +780,11 @@ fn take_answer(
     }
     if task.retries < MAX_RETRIES {
         task.retries += 1;
-    } else if !fall_back(task) {
-        task.state = TaskState::Failed;
+    } else {
+        let why = task.error.take().unwrap_or_default();
+        kept::fail(dir, task, why);
     }
     Ok(live)
-}
-
-/// Takes the answer `task` kept when it was refused only for unmarked CONSUMERS lines, those
-/// lines with it, once its retries are spent; whether it held one.
-fn fall_back(task: &mut Task) -> bool {
-    let Some(kept) = task.marks_only.take() else {
-        return false;
-    };
-    let Ok((answer, unmarked)) = validate::check(task, Some(&kept), true) else {
-        return false;
-    };
-    task.answer = Some(answer);
-    task.unmarked = unmarked;
-    task.state = TaskState::Answered;
-    task.error = None;
-    task.refused = None;
-    true
 }
 
 /// What the host is to do next: the pending tasks, or the finished run's report, verdict and what
