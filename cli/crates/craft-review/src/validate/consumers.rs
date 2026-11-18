@@ -23,8 +23,8 @@ pub fn listed(prompt: &str, c: &Consumers) -> Vec<String> {
     out
 }
 
-/// `Err` naming the lines of `listed` that `answer`'s `consumers` does not mark.
-pub(super) fn unmarked(answer: &Value, listed: &[String]) -> Result<(), String> {
+/// The lines of `listed` that `answer`'s `consumers` does not mark, in `listed`'s order.
+pub(super) fn unmarked(answer: &Value, listed: &[String]) -> Vec<String> {
     let marks: Vec<&str> = answer
         .get("consumers")
         .and_then(Value::as_array)
@@ -33,27 +33,28 @@ pub(super) fn unmarked(answer: &Value, listed: &[String]) -> Result<(), String> 
         .iter()
         .filter_map(|m| m.get("site").and_then(Value::as_str))
         .collect();
-    let left: Vec<&str> = listed
+    listed
         .iter()
-        .map(String::as_str)
-        .filter(|s| !marks.contains(s))
-        .collect();
-    if left.is_empty() {
-        return Ok(());
-    }
+        .filter(|s| !marks.contains(&s.as_str()))
+        .cloned()
+        .collect()
+}
+
+/// The refusal naming the lines `left` unmarked, as the retry prompt asks for them.
+pub(super) fn refusal(left: &[String]) -> String {
     let more = left.len().saturating_sub(SHOWN_MAX);
     let more = if more == 0 {
         String::new()
     } else {
         format!(" and {more} more")
     };
-    Err(format!(
+    format!(
         "it leaves {} CONSUMERS line(s) unmarked ({}{more}): list each in `consumers` with the site as given and status \"checked\" or \"not-relevant\"",
         left.len(),
         left.iter()
             .take(SHOWN_MAX)
-            .copied()
+            .cloned()
             .collect::<Vec<_>>()
             .join(", ")
-    ))
+    )
 }

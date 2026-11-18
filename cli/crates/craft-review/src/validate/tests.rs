@@ -37,7 +37,7 @@ fn answer(marked: &[&str]) -> Value {
 #[test]
 fn a_lens_answer_that_leaves_consumer_lines_unmarked_is_asked_again_naming_them() {
     let t = lens(&["src/a.rs:3", "src/b.rs:5", "src/c.rs:9"]);
-    let Err(why) = check(&t, Some(&answer(&["src/a.rs:3"]))) else {
+    let Err(why) = check(&t, Some(&answer(&["src/a.rs:3"])), false) else {
         panic!("an answer leaving consumer lines unmarked was taken");
     };
     assert!(
@@ -48,16 +48,27 @@ fn a_lens_answer_that_leaves_consumer_lines_unmarked_is_asked_again_naming_them(
 }
 
 #[test]
+fn on_its_last_attempt_an_answer_leaving_lines_unmarked_is_taken_naming_them() {
+    let t = lens(&["src/a.rs:3", "src/b.rs:5"]);
+    let (taken, left) = check(&t, Some(&answer(&["src/a.rs:3"])), true).unwrap();
+    assert_eq!(taken["lens"], json!("correctness"));
+    assert_eq!(left, ["src/b.rs:5"]);
+    // Only the unmarked lines are forgiven: an answer off its schema is still refused.
+    let off = json!({"lens": "correctness"});
+    check(&t, Some(&off), true).unwrap_err();
+}
+
+#[test]
 fn a_lens_answer_marking_every_listed_line_is_taken() {
     let t = lens(&["src/a.rs:3", "src/b.rs:5"]);
     let a = answer(&["src/b.rs:5", "src/a.rs:3", "src/z.rs:1"]);
-    check(&t, Some(&a)).unwrap();
+    check(&t, Some(&a), false).unwrap();
 }
 
 #[test]
 fn a_lens_shown_no_consumer_lines_needs_no_marks() {
     let a = json!({"lens": "correctness", "findings": []});
-    check(&lens(&[]), Some(&a)).unwrap();
+    check(&lens(&[]), Some(&a), false).unwrap();
 }
 
 fn site(file: &str, line: u32) -> Site {

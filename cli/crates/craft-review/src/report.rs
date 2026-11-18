@@ -349,6 +349,7 @@ pub fn markdown(state: &RunState, verdict: &str) -> String {
         &state.settled,
     ));
     out.push_str(&crate::consumers::section(&state.context.consumers));
+    out.push_str(&crate::consumers::unmarked_line(&state.rounds.unmarked()));
     out.push_str(&crate::critic::section(state));
     out.push_str(&crate::units::section(&state.units));
     out.push_str("\n## Not run\n\n");
@@ -382,6 +383,23 @@ fn listed(heading: Option<&str>, files: &[String], out: &mut String) {
         out.push_str(&format!("- {f}\n"));
     }
     out.push('\n');
+}
+
+/// How the run was weaker than asked: the host's notes, then the CONSUMERS lines no lens marked
+/// (realm @nick/craft, node #531).
+#[must_use]
+pub fn degraded_notes(state: &RunState) -> Vec<String> {
+    let mut notes = state.degraded.clone();
+    let left = state.rounds.unmarked();
+    if !left.is_empty() {
+        notes.push(
+            crate::consumers::unmarked_line(&left)
+                .trim_start_matches("- ")
+                .trim_end()
+                .to_owned(),
+        );
+    }
+    notes
 }
 
 /// How the run was weaker than asked, as its host said: before the findings, so they are read with it.
