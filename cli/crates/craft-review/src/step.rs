@@ -74,7 +74,7 @@ pub enum StepError {
     /// review its head ([`rereview::branch::resolve`]).
     #[error("{0}")]
     PrHead(String),
-    /// `--delta` over a base that reaches back to where the branch leaves origin's default branch:
+    /// `--delta` over a base at or before where the branch leaves origin's default branch:
     /// the round would review the whole branch with no earlier review behind it, yet never approve
     /// (realm @nick/craft, node #523).
     #[error(
@@ -208,7 +208,6 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
     open_dir(dir)?;
     let (cwd, laid) = pr_worktree(cwd, dir, opts)?;
     let (scope, branch_diff) = read_change(&cwd, opts)?;
-    refuse_delta_over_branch(&cwd, opts.delta, &branch_diff)?;
     let profiles = Profile::all()?;
     let runs = opts.runs_or_parent();
     let (mut chain, pr_note) = rereview::begin(
@@ -226,6 +225,7 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
     // The memory is recalled for the branch's paths, not only those a re-review's fix commits touch.
     let (recall_paths, recall_base) = (branch_diff.files.clone(), branch_diff.base.clone());
     let (diff, re_review) = rereview::scope(&cwd, &mut chain, branch_diff)?;
+    refuse_delta_over_branch(&cwd, opts.delta, re_review, &diff)?;
     let context = PromptContext {
         repo: cwd.display().to_string(),
         base: diff.base.clone(),
@@ -353,19 +353,29 @@ fn read_change(cwd: &Path, opts: &StartOptions) -> Result<(Option<String>, git::
     Ok((scope, diff))
 }
 
-/// A delta round whose change starts where the branch leaves origin's default branch — the base
-/// given, or the default — is refused before any task (realm @nick/craft, node #523); one whose
-/// default branch cannot be found is let through, as nothing can be said of it.
-fn refuse_delta_over_branch(cwd: &Path, delta: bool, diff: &git::Diff) -> Result<(), StepError> {
-    if !delta {
+/// A delta round whose change starts at or before where the branch leaves origin's default
+/// branch — the base given, the default, or a prior round's head the branch was rebased past —
+/// is refused before any task (realm @nick/craft, node #523): `diff` is what the round reviews,
+/// the fix commits since a prior round's head when the chain has one. A re-scan has a prior round
+/// behind it and is let through, as is a run whose default branch cannot be found, as nothing can
+/// be said of it.
+fn refuse_delta_over_branch(
+    cwd: &Path,
+    delta: bool,
+    re_review: ReScope,
+    diff: &git::Diff,
+) -> Result<(), StepError> {
+    if !delta || re_review == ReScope::Rescan {
         return Ok(());
     }
     match git::trunk_point(cwd) {
-        Some((trunk, point)) if point == diff.merge_base => Err(StepError::DeltaOverBranch {
-            base: diff.base.clone(),
-            point,
-            trunk,
-        }),
+        Some((trunk, point)) if git::holds(cwd, &point, &diff.merge_base) => {
+            Err(StepError::DeltaOverBranch {
+                base: diff.base.clone(),
+                point,
+                trunk,
+            })
+        }
         _ => Ok(()),
     }
 }
