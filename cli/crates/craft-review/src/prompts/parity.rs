@@ -191,6 +191,7 @@ fn consumers(g: &mut Golden, ctx: &PromptContext, plan: &Plan, prior: &str) {
         line,
         text: text.into(),
         from: from.iter().map(|f| (*f).to_owned()).collect(),
+        kind: String::new(),
     };
     let listed = Consumers {
         sources: vec!["name search".into(), "codebase-memory".into()],

@@ -1,24 +1,28 @@
 //! The code graph as the binary asks it: `codebase-memory-mcp cli --quiet <tool> '<json>'`, one
 //! process per question, its payload JSON on stdout (`"format": "json"`), bounded in time
 //! (realm @nick/craft, node #529). Never indexes: an index older than the review's base is
-//! named, and the index-warmup refreshes it.
+//! named, with the command that refreshes it.
 
-use std::io::Read;
-use std::process::{Command, Stdio};
+use std::process::Command;
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 
 mod probe;
+mod run;
 
-pub use probe::{probe, roots_of, said};
+use run::{bounded, last_line};
+
+pub use probe::{probe, refresh_hint, roots_of, said};
 
 /// The program `craft init` asks.
 pub const TOOL: &str = "codebase-memory-mcp";
 /// How long one question may run.
 const TIMEOUT: Duration = Duration::from_secs(30);
-/// How many caller rows one query may return.
-const ROWS_MAX: usize = 400;
+/// How long the callers of all a review's symbols may take, past which none is asked.
+const CALLERS_TIMEOUT: Duration = Duration::from_secs(90);
+/// How many caller rows one symbol's query keeps.
+pub(super) const ROWS_PER_SYMBOL: usize = 50;
 
 /// One caller the graph names: the called symbol, the file it is defined in, and the calling
 /// function's file and line span.
@@ -29,6 +33,14 @@ pub struct Caller {
     pub file: String,
     pub start: u32,
     pub end: u32,
+}
+
+/// The graph's callers of a review's symbols, and the symbols whose callers were cut at
+/// [`ROWS_PER_SYMBOL`].
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Asked {
+    pub callers: Vec<Caller>,
+    pub truncated: Vec<String>,
 }
 
 /// The graph's program, asked within a time bound.
@@ -91,27 +103,37 @@ impl Cbm {
         Ok(text(s.get("indexed_at")))
     }
 
-    /// The functions that call any of `names` (identifiers only), by a `CALLS` edge.
+    /// The functions that call each of `names` (identifiers only), by a `CALLS` edge, one query
+    /// per name, each kept to [`ROWS_PER_SYMBOL`] rows; refused past [`CALLERS_TIMEOUT`].
     ///
     /// # Errors
     /// When the graph does not answer.
-    pub fn callers(&self, project: &str, names: &[&str]) -> Result<Vec<Caller>, String> {
-        let list: Vec<String> = names
-            .iter()
-            .filter(|n| is_ident(n))
-            .map(|n| format!("'{n}'"))
-            .collect();
-        if list.is_empty() {
-            return Ok(Vec::new());
+    pub fn callers(&self, project: &str, names: &[&str]) -> Result<Asked, String> {
+        let mut out = Asked::default();
+        let start = Instant::now();
+        for name in names.iter().filter(|n| is_ident(n)) {
+            if start.elapsed() > CALLERS_TIMEOUT {
+                return Err(format!(
+                    "query_graph: the callers took over {}s",
+                    CALLERS_TIMEOUT.as_secs()
+                ));
+            }
+            let query = format!(
+                "MATCH (c)-[r:CALLS]->(f) WHERE f.name = '{name}' RETURN f.name, f.file_path, \
+                 c.file_path, c.start_line, c.end_line LIMIT {}",
+                ROWS_PER_SYMBOL + 1
+            );
+            let args = json!({"project": project, "query": query, "max_rows": ROWS_PER_SYMBOL});
+            let answer = self.call("query_graph", args)?;
+            let rows = answer.get("rows").and_then(Value::as_array);
+            let rows: Vec<Caller> = rows.into_iter().flatten().filter_map(caller).collect();
+            let flag = |k: &str| answer.get(k).and_then(Value::as_bool) == Some(true);
+            if flag("has_more") || flag("truncated") || rows.len() > ROWS_PER_SYMBOL {
+                out.truncated.push((*name).to_owned());
+            }
+            out.callers.extend(rows.into_iter().take(ROWS_PER_SYMBOL));
         }
-        let query = format!(
-            "MATCH (c)-[r:CALLS]->(f) WHERE f.name IN [{}] RETURN f.name, f.file_path, \
-             c.file_path, c.start_line, c.end_line LIMIT {ROWS_MAX}",
-            list.join(", ")
-        );
-        let out = self.call("query_graph", json!({"project": project, "query": query}))?;
-        let rows = out.get("rows").and_then(Value::as_array);
-        Ok(rows.into_iter().flatten().filter_map(caller).collect())
+        Ok(out)
     }
 }
 
@@ -143,54 +165,4 @@ pub(super) fn is_ident(s: &str) -> bool {
     cs.next()
         .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
         && cs.all(|c| c.is_ascii_alphanumeric() || c == '_')
-}
-
-fn last_line(stderr: &str, stdout: &str) -> String {
-    let all = format!("{stderr}\n{stdout}");
-    let line = all.lines().map(str::trim).rfind(|l| !l.is_empty());
-    line.unwrap_or("no message").chars().take(200).collect()
-}
-
-/// Runs `cmd` with no stdin, its success, stdout and stderr; killed past `limit`. stdout is read
-/// on its own thread, so a long answer never blocks the program on a full pipe.
-fn bounded(mut cmd: Command, limit: Duration) -> Result<(bool, String, String), String> {
-    let mut child = cmd
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("{} could not run: {e}", cmd.get_program().display()))?;
-    let pipe = |r: Option<Box<dyn Read + Send>>| {
-        std::thread::spawn(move || {
-            let mut s = String::new();
-            r.map(|mut r| r.read_to_string(&mut s));
-            s
-        })
-    };
-    let out = pipe(
-        child
-            .stdout
-            .take()
-            .map(|p| Box::new(p) as Box<dyn Read + Send>),
-    );
-    let err = pipe(
-        child
-            .stderr
-            .take()
-            .map(|p| Box::new(p) as Box<dyn Read + Send>),
-    );
-    let start = Instant::now();
-    let status = loop {
-        if let Some(s) = child.try_wait().map_err(|e| e.to_string())? {
-            break s;
-        }
-        if start.elapsed() > limit {
-            child.kill().map_err(|e| e.to_string())?;
-            child.wait().map_err(|e| e.to_string())?;
-            return Err(format!("no answer within {}s", limit.as_secs()));
-        }
-        std::thread::sleep(Duration::from_millis(20));
-    };
-    let read = |h: std::thread::JoinHandle<String>| h.join().unwrap_or_default();
-    Ok((status.success(), read(out), read(err)))
 }

@@ -102,7 +102,8 @@ pub fn init(args: &InitArgs) -> Result<ExitCode> {
             .collect::<Result<Vec<_>>>()?;
         let entries = ci::confirmed(&args.ci, &args.cwd)?;
         let mut profile = ProjectProfile::new(common, points, entries)?;
-        let graph = code_graph(&args.cwd);
+        let roots = cbm::roots_of(&args.cwd);
+        let graph = cbm::probe(cbm::TOOL, &roots);
         profile.code_graph = Some(graph.clone());
         project::save(&path, &profile)?;
         return print(&json!({
@@ -110,7 +111,7 @@ pub fn init(args: &InitArgs) -> Result<ExitCode> {
             "integrations": profile.integrations,
             "ci": profile.ci,
             "codeGraph": graph,
-            "codeGraphSays": cbm::said(&graph),
+            "codeGraphSays": cbm::said(&graph, &roots),
         }));
     }
     let held = project::load(&path)?;
@@ -132,15 +133,17 @@ pub fn init(args: &InitArgs) -> Result<ExitCode> {
         "ci": ci::held(&held_ci, &args.cwd),
         "ciCandidates": ci::proposed(&args.cwd),
         "codeGraph": held.as_ref().and_then(|p| p.code_graph.clone()),
-        "codeGraphSays": cbm::said(&code_graph(&args.cwd)),
+        "codeGraphSays": code_graph_says(&args.cwd),
         "write": "craft init --write --point <name>=<git url>@<tag or full commit> … --ci '<entry JSON>' … (every point and CI entry to keep, a held entry as `ci` prints it, one with `unusable` dropped or replaced; a branch is refused when a review prepares the sources)",
     }))
 }
 
-/// Whether the code graph answers for the repository at `cwd` and which project indexes it
-/// (realm @nick/craft, node #529); a graph that is missing or fails is said so, never an error.
-fn code_graph(cwd: &Path) -> craft_review::project::CodeGraph {
-    cbm::probe(cbm::TOOL, &cbm::roots_of(cwd))
+/// What the code graph says for the repository at `cwd`: whether it answers and which project
+/// indexes it (realm @nick/craft, node #529); a graph that is missing or fails is said so, never
+/// an error.
+fn code_graph_says(cwd: &Path) -> String {
+    let roots = cbm::roots_of(cwd);
+    cbm::said(&cbm::probe(cbm::TOOL, &roots), &roots)
 }
 
 /// `answer` marked as having run, or `{"ran": false, "why": …}` when it could not (no plugin root,

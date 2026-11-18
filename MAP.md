@@ -231,6 +231,11 @@ backend — the `claude`, `codex`, `pi` or `opencode` CLI — and many under a c
 any other language, `content/profiles/`), the mechanical gate the binary runs itself before any lens (clippy and semgrep
 for Rust, nix flake check, statix and deadnix for Nix: a red check blocks, a diagnostic on a changed line is a seed the
 lenses and verifiers see, a tool not installed is named), a scout per profile whose answer plans its lenses over its own files, the
+consumers list, built at start beside the gate (`src/consumers/`: for each changed Rust symbol the lines outside the diff that name it —
+callers, implementors and same-named declarations, places passing it as a value — from a name search and, when the
+reviewer's profile says codebase-memory answers and its index is not older than the base, its callers; the whole list
+saved as `consumers.json` in the run directory, each lens given a budgeted part to go through line by line; `craft
+init` probes codebase-memory and writes `[code_graph]` into the profile), the
 lenses round after round until each profile's round finds nothing new or its plan's rounds are spent, the
 floor, roll-up and dedup of their one pool, then verification as the plan buys it — a batch vote per file group of Mediums, one
 vote per other finding routed alone, and for a Critical or High a cheap vote plus an authoritative one, the rest of the

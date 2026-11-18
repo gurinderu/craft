@@ -41,8 +41,9 @@ pub(super) fn stale(top: &Path, base: &str, project: &str, indexed_at: &str) -> 
     };
     (at < base_at).then(|| {
         format!(
-            "the index of {project} (made {indexed_at}) is older than the base commit — the \
-             index-warmup refreshes it; craft never reindexes"
+            "the index of {project} (made {indexed_at}) is older than the base commit; craft \
+             never reindexes — refresh it with {}",
+            super::cbm::refresh_hint(&top.display().to_string())
         )
     })
 }
