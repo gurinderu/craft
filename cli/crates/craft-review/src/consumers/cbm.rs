@@ -9,11 +9,15 @@ use std::time::Duration;
 use serde_json::{Value, json};
 
 mod callers;
+mod error;
 mod probe;
 mod query;
+mod rows;
 mod run;
 
 use run::{bounded, last_line};
+
+pub use error::CbmError;
 
 pub use probe::{probe, refresh_hint, roots_of, said};
 
@@ -76,7 +80,7 @@ impl Cbm {
     }
 
     /// The payload of `cli --quiet <name> <args + format json>`; why not, one line.
-    fn call(&self, name: &str, mut args: Value, limit: Duration) -> Result<Value, String> {
+    fn call(&self, name: &str, mut args: Value, limit: Duration) -> Result<Value, CbmError> {
         if let Some(o) = args.as_object_mut() {
             o.insert("format".into(), "json".into());
         }
@@ -87,8 +91,14 @@ impl Cbm {
         let error = payload.as_ref().and_then(|p| p.get("error"));
         match (ok, payload.as_ref(), error) {
             (true, Some(p), None) => Ok(p.clone()),
-            (_, _, Some(e)) => Err(format!("{name}: {}", e.as_str().unwrap_or("error"))),
-            _ => Err(format!("{name}: {}", last_line(&stderr, &stdout))),
+            (_, _, Some(e)) => Err(CbmError::Graph(format!(
+                "{name}: {}",
+                e.as_str().unwrap_or("error")
+            ))),
+            _ => Err(CbmError::Graph(format!(
+                "{name}: {}",
+                last_line(&stderr, &stdout)
+            ))),
         }
     }
 
@@ -96,7 +106,7 @@ impl Cbm {
     ///
     /// # Errors
     /// When the graph does not answer.
-    pub fn project_of(&self, roots: &[String]) -> Result<Option<String>, String> {
+    pub fn project_of(&self, roots: &[String]) -> Result<Option<String>, CbmError> {
         let listed = self.call("list_projects", json!({"limit": 1000}), self.timeout)?;
         let projects = listed.get("projects").and_then(Value::as_array);
         Ok(projects.into_iter().flatten().find_map(|p| {
@@ -109,11 +119,13 @@ impl Cbm {
     ///
     /// # Errors
     /// When the graph does not answer or the project is not ready.
-    pub fn index(&self, project: &str) -> Result<Index, String> {
+    pub fn index(&self, project: &str) -> Result<Index, CbmError> {
         let s = self.call("index_status", json!({"project": project}), self.timeout)?;
         let status = text(s.get("status"));
         if status != "ready" {
-            return Err(format!("the index of {project} is {status:?}, not ready"));
+            return Err(CbmError::Graph(format!(
+                "the index of {project} is {status:?}, not ready"
+            )));
         }
         Ok(Index {
             at: text(s.get("indexed_at")),

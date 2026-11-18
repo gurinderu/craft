@@ -12,7 +12,7 @@ use crate::project::CodeGraph;
 pub fn probe(tool: &str, roots: &[String]) -> CodeGraph {
     let cbm = Cbm::new(tool);
     let (available, project, note) = match cbm.project_of(roots) {
-        Err(why) => (false, String::new(), why),
+        Err(why) => (false, String::new(), why.to_string()),
         Ok(None) => (
             true,
             String::new(),
