@@ -71,7 +71,8 @@ Two refinements:
   ignores the request body or fabricates the response, or only one of two sides (ingress and
   egress, say) is covered. It must name the regression it lets through. Its severity is the harm
   of that regression in production, capped at should-fix — the test is the missing guard, not the
-  defect — so it is not optional by default and goes to a verifier. A regression of text or style
+  defect — so it is not optional by default and goes to a verifier. It names the production line
+  the regression breaks, and its reachability is judged there, not at the test. A regression of text or style
   only stays optional; a weak assertion that names no regression is read as `none`.
 
 ## Borderline findings stay in
@@ -112,7 +113,11 @@ Verification raises it when the verifier confirms a must-fix harm; synthesis nev
 - **A weak assertion** the tests lens reported alone, naming its regression and a harm of
   operator recovery or worse, is raised to should-fix before verification when the lens rated it
   lower, so a verifier reads it; a verified must-fix harm never raises it past should-fix, and the
-  cap holds it there. A test gap that names no regression is capped as `none`.
+  cap holds it there — whatever harm level it names, or none. A weak assertion that names no
+  regression is capped as `none`; a missing test keeps the harm level its lens named.
+- **A weak assertion's reachability is its regression's.** It cites a test, but names the
+  production line the regression breaks; the verifier judges whether that regression reaches
+  production, and the reachability demotion applies only when it does not.
 - A severity floor (for example, the deletion and recovery path floor of `distributed-races`)
   applies only when the finding names a harm of operator recovery or worse. A floor does not
   invent a harm the finding did not name.
