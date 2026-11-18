@@ -26,3 +26,6 @@ fn write(dir: &Path, c: &mut Consumers) -> std::io::Result<()> {
     let body = serde_json::to_string_pretty(c).map_err(std::io::Error::other)?;
     std::fs::write(&path, body)
 }
+
+#[cfg(test)]
+mod tests;

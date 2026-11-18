@@ -159,6 +159,7 @@ fn lens_task(
     // Only the lenses run on the profile's agent, as the engine dispatches them
     // (lib/review-lens-dispatch.mjs); the scout, the dedup and the verifiers keep the default.
     task.agent_type = profile.lens_agent;
+    task.consumers = crate::validate::listed(&task.prompt, &ctx.consumers);
     Ok(task)
 }
 
