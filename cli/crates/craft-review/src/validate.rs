@@ -1,9 +1,14 @@
-//! Whether a submitted answer is one its task can use: it matches the task's schema, and a batch
-//! verdict carries every finding of its batch exactly once.
+//! Whether a submitted answer is one its task can use: it matches the task's schema, a lens marks
+//! every CONSUMERS line it was shown, and a batch verdict carries every finding of its batch
+//! exactly once.
 
 use serde_json::Value;
 
 use crate::state::{Task, TaskKind};
+
+mod consumers;
+
+pub use consumers::listed;
 
 /// How many schema errors a refusal names.
 const ERRORS_SHOWN: usize = 3;
@@ -23,7 +28,8 @@ pub fn normalize(answer: &Value) -> Value {
 /// The answer `task` can use, or why not, in one line.
 ///
 /// # Errors
-/// The refusal: no answer, a schema mismatch, or a batch verdict missing or repeating an index.
+/// The refusal: no answer, a schema mismatch, a CONSUMERS line its prompt listed left unmarked, or
+/// a batch verdict missing or repeating an index.
 pub fn check(task: &Task, answer: Option<&Value>) -> Result<Value, String> {
     let answer = normalize(answer.ok_or("no answer was submitted")?);
     let validator = jsonschema::validator_for(&task.schema)
@@ -43,6 +49,7 @@ pub fn check(task: &Task, answer: Option<&Value>) -> Result<Value, String> {
             errors.join("; ")
         ));
     }
+    consumers::unmarked(&answer, &task.consumers)?;
     if let TaskKind::VerifyBatch { findings } = &task.kind {
         batch_indices(&answer, findings.len())?;
     }
@@ -77,3 +84,6 @@ fn batch_indices(answer: &Value, count: usize) -> Result<(), String> {
         None => Ok(()),
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -169,6 +169,9 @@ pub struct Task {
     pub consumer_agent: Option<String>,
     #[serde(flatten)]
     pub kind: TaskKind,
+    /// The CONSUMERS lines (`file:line`) its prompt lists, each of which its answer must mark.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub consumers: Vec<String>,
     pub state: TaskState,
     /// Answers asked for again so far.
     pub retries: u32,
@@ -206,6 +209,7 @@ impl Task {
             agent_type: None,
             consumer_agent: None,
             kind,
+            consumers: Vec::new(),
             state: TaskState::Pending,
             retries: 0,
             error: None,
