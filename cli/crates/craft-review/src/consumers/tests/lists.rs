@@ -116,9 +116,10 @@ fn the_graph_is_asked_per_symbol_and_a_truncated_answer_is_said() {
         Ok(graph(t.path(), "2099-01-01T00:00:00Z")),
     );
     let asked = queries(t.path());
-    assert_eq!(asked.len(), 2, "{asked:?}");
+    // The cut symbol is asked once; `twice`, answered nothing, is asked for its test callers too.
+    assert_eq!(asked.len(), 3, "{asked:?}");
     for q in &asked {
-        assert_eq!(q.matches('\'').count(), 2, "one name: {q}");
+        assert_eq!(q.matches("f.name = '").count(), 1, "one name: {q}");
         assert!(q.contains("\"max_rows\":50"), "{q}");
     }
     assert_eq!(c.graph_truncated, vec!["k8s_rule_to_api"]);

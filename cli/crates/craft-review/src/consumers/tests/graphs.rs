@@ -44,5 +44,6 @@ fn the_probe_finds_the_project_by_root_or_says_the_graph_is_not_there() {
     let missing = cbm::probe(&t.path().join("none").display().to_string(), &[]);
     assert!(!missing.available);
     assert!(missing.note.contains("could not run"), "{}", missing.note);
-    assert_eq!(Cbm::new(&g.tool).indexed_at("p").unwrap(), "x");
+    let index = Cbm::new(&g.tool).index("p").unwrap();
+    assert_eq!((index.at.as_str(), index.root.as_str()), ("x", "/r"));
 }

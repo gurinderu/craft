@@ -67,5 +67,11 @@ fn section_gaps(c: &Consumers) -> String {
             c.graph_truncated.join(", ")
         ));
     }
+    if !c.graph_unasked.is_empty() {
+        out.push_str(&format!(
+            "- {GRAPH} not asked for: {}\n",
+            c.graph_unasked.join(", ")
+        ));
+    }
     out
 }

@@ -4,11 +4,13 @@
 //! named, with the command that refreshes it.
 
 use std::process::Command;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use serde_json::{Value, json};
 
+mod callers;
 mod probe;
+mod query;
 mod run;
 
 use run::{bounded, last_line};
@@ -19,8 +21,8 @@ pub use probe::{probe, refresh_hint, roots_of, said};
 pub const TOOL: &str = "codebase-memory-mcp";
 /// How long one question may run.
 const TIMEOUT: Duration = Duration::from_secs(30);
-/// How long the callers of all a review's symbols may take, past which none is asked.
-const CALLERS_TIMEOUT: Duration = Duration::from_secs(90);
+/// How long the callers of all a review's symbols may take, past which the rest are not asked.
+const CALLERS_BUDGET: Duration = Duration::from_secs(90);
 /// How many caller rows one symbol's query keeps.
 pub(super) const ROWS_PER_SYMBOL: usize = 50;
 
@@ -41,13 +43,26 @@ pub struct Caller {
 pub struct Asked {
     pub callers: Vec<Caller>,
     pub truncated: Vec<String>,
+    /// The symbols whose callers were not asked, each with why: `name (why)`.
+    pub unasked: Vec<String>,
+}
+
+/// What `index_status` says of a ready project: when it was indexed (`indexed_at`, UTC, as the
+/// graph prints it) and the root it indexes.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Index {
+    pub at: String,
+    pub root: String,
 }
 
 /// The graph's program, asked within a time bound.
 #[derive(Debug, Clone)]
 pub struct Cbm {
     pub tool: String,
+    /// How long one question may run.
     pub timeout: Duration,
+    /// How long the callers of all a review's symbols may take.
+    pub budget: Duration,
 }
 
 impl Cbm {
@@ -56,17 +71,18 @@ impl Cbm {
         Self {
             tool: tool.to_owned(),
             timeout: TIMEOUT,
+            budget: CALLERS_BUDGET,
         }
     }
 
     /// The payload of `cli --quiet <name> <args + format json>`; why not, one line.
-    fn call(&self, name: &str, mut args: Value) -> Result<Value, String> {
+    fn call(&self, name: &str, mut args: Value, limit: Duration) -> Result<Value, String> {
         if let Some(o) = args.as_object_mut() {
             o.insert("format".into(), "json".into());
         }
         let mut cmd = Command::new(&self.tool);
         cmd.args(["cli", "--quiet", name, &args.to_string()]);
-        let (ok, stdout, stderr) = bounded(cmd, self.timeout)?;
+        let (ok, stdout, stderr) = bounded(cmd, limit)?;
         let payload: Option<Value> = serde_json::from_str(stdout.trim()).ok();
         let error = payload.as_ref().and_then(|p| p.get("error"));
         match (ok, payload.as_ref(), error) {
@@ -81,7 +97,7 @@ impl Cbm {
     /// # Errors
     /// When the graph does not answer.
     pub fn project_of(&self, roots: &[String]) -> Result<Option<String>, String> {
-        let listed = self.call("list_projects", json!({"limit": 1000}))?;
+        let listed = self.call("list_projects", json!({"limit": 1000}), self.timeout)?;
         let projects = listed.get("projects").and_then(Value::as_array);
         Ok(projects.into_iter().flatten().find_map(|p| {
             let root = p.get("root_path").and_then(Value::as_str)?;
@@ -89,70 +105,21 @@ impl Cbm {
         }))
     }
 
-    /// When `project` was indexed (`indexed_at`, UTC, as the graph prints it), refused unless its
-    /// status is `ready`.
+    /// When `project` was indexed and the root it indexes, refused unless its status is `ready`.
     ///
     /// # Errors
     /// When the graph does not answer or the project is not ready.
-    pub fn indexed_at(&self, project: &str) -> Result<String, String> {
-        let s = self.call("index_status", json!({"project": project}))?;
+    pub fn index(&self, project: &str) -> Result<Index, String> {
+        let s = self.call("index_status", json!({"project": project}), self.timeout)?;
         let status = text(s.get("status"));
         if status != "ready" {
             return Err(format!("the index of {project} is {status:?}, not ready"));
         }
-        Ok(text(s.get("indexed_at")))
+        Ok(Index {
+            at: text(s.get("indexed_at")),
+            root: text(s.get("root_path")),
+        })
     }
-
-    /// The functions that call each of `names` (identifiers only), by a `CALLS` edge, one query
-    /// per name, each kept to [`ROWS_PER_SYMBOL`] rows; refused past [`CALLERS_TIMEOUT`].
-    ///
-    /// # Errors
-    /// When the graph does not answer.
-    pub fn callers(&self, project: &str, names: &[&str]) -> Result<Asked, String> {
-        let mut out = Asked::default();
-        let start = Instant::now();
-        for name in names.iter().filter(|n| is_ident(n)) {
-            if start.elapsed() > CALLERS_TIMEOUT {
-                return Err(format!(
-                    "query_graph: the callers took over {}s",
-                    CALLERS_TIMEOUT.as_secs()
-                ));
-            }
-            let query = format!(
-                "MATCH (c)-[r:CALLS]->(f) WHERE f.name = '{name}' RETURN f.name, f.file_path, \
-                 c.file_path, c.start_line, c.end_line LIMIT {}",
-                ROWS_PER_SYMBOL + 1
-            );
-            let args = json!({"project": project, "query": query, "max_rows": ROWS_PER_SYMBOL});
-            let answer = self.call("query_graph", args)?;
-            let rows = answer.get("rows").and_then(Value::as_array);
-            let rows: Vec<Caller> = rows.into_iter().flatten().filter_map(caller).collect();
-            let flag = |k: &str| answer.get(k).and_then(Value::as_bool) == Some(true);
-            if flag("has_more") || flag("truncated") || rows.len() > ROWS_PER_SYMBOL {
-                out.truncated.push((*name).to_owned());
-            }
-            out.callers.extend(rows.into_iter().take(ROWS_PER_SYMBOL));
-        }
-        Ok(out)
-    }
-}
-
-/// One `query_graph` row as a [`Caller`]; the graph prints numbers as strings.
-fn caller(row: &Value) -> Option<Caller> {
-    let cell = |i: usize| row.get(i);
-    let num = |i: usize| -> Option<u32> {
-        let v = cell(i)?;
-        v.as_u64()
-            .and_then(|n| u32::try_from(n).ok())
-            .or_else(|| v.as_str()?.parse().ok())
-    };
-    Some(Caller {
-        symbol: cell(0)?.as_str()?.to_owned(),
-        defined_in: cell(1)?.as_str()?.to_owned(),
-        file: cell(2)?.as_str()?.to_owned(),
-        start: num(3)?,
-        end: num(4)?,
-    })
 }
 
 fn text(v: Option<&Value>) -> String {

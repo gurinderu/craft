@@ -3,6 +3,8 @@
 
 use std::path::Path;
 
+use super::cbm::Index;
+
 /// Seconds since the epoch of `YYYY-MM-DDTHH:MM:SS` (a trailing `Z` or fraction ignored), as
 /// UTC; `None` when it is not that.
 pub(super) fn iso_unix(s: &str) -> Option<i64> {
@@ -28,9 +30,9 @@ pub(super) fn commit_unix(top: &Path, commit: &str) -> Option<i64> {
     out.trim().parse().ok()
 }
 
-/// Why an index made at `indexed_at` cannot serve a review whose base is `base` at `top`; `None`
-/// when it is fresh.
-pub(super) fn stale(top: &Path, base: &str, project: &str, indexed_at: &str) -> Option<String> {
+/// Why `index` cannot serve a review whose base is `base` at `top`; `None` when it is fresh.
+pub(super) fn stale(top: &Path, base: &str, project: &str, index: &Index) -> Option<String> {
+    let indexed_at = index.at.as_str();
     let Some(at) = iso_unix(indexed_at) else {
         return Some(format!(
             "the index of {project} names no time it was made ({indexed_at:?})"
@@ -39,11 +41,18 @@ pub(super) fn stale(top: &Path, base: &str, project: &str, indexed_at: &str) -> 
     let Some(base_at) = commit_unix(top, base) else {
         return Some(format!("the base {base} has no commit time"));
     };
+    // The root the index was made of, not this checkout: a review in a linked worktree refreshes
+    // the profile's project rather than indexing a new one.
+    let root = if index.root.is_empty() {
+        top.display().to_string()
+    } else {
+        index.root.clone()
+    };
     (at < base_at).then(|| {
         format!(
             "the index of {project} (made {indexed_at}) is older than the base commit; craft \
              never reindexes — refresh it with {}",
-            super::cbm::refresh_hint(&top.display().to_string())
+            super::cbm::refresh_hint(&root)
         )
     })
 }

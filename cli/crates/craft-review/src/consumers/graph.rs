@@ -20,12 +20,15 @@ pub(super) fn graph_callers(
     found: &[Symbol],
 ) -> (Option<Asked>, String) {
     let cbm = Cbm::new(&g.tool);
-    let asked = cbm.indexed_at(&g.project).and_then(|at| {
-        if let Some(why) = fresh::stale(top, merge_base, &g.project, &at) {
+    let asked = cbm.index(&g.project).and_then(|index| {
+        if let Some(why) = fresh::stale(top, merge_base, &g.project, &index) {
             return Err(why);
         }
-        let names: Vec<&str> = found.iter().map(|s| s.name.as_str()).collect();
-        cbm.callers(&g.project, &names)
+        let symbols: Vec<(&str, &str)> = found
+            .iter()
+            .map(|s| (s.name.as_str(), s.file.as_str()))
+            .collect();
+        cbm.callers(&g.project, &symbols)
     });
     match asked {
         Ok(c) => (Some(c), String::new()),
