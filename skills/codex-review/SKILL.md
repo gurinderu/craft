@@ -58,7 +58,7 @@ How to run it:
 Flags:
 - `--cwd <repository>` (default: the current directory), `--base <ref>` (default: the
   merge-base with origin's default branch), `--depth light|full`, `--path <directory>`.
-- Re-review of fix commits: `--base <the commit the review was made on> --fresh --delta --full-every 0` (`--delta`: a clean re-review of fix commits reads Warning, never Approve — Approve comes only from a full review).
+- Re-review of fix commits: `--base <the commit the review was made on> --fresh --delta --full-every 0` (`--delta`: a clean re-review of fix commits reads Warning, never Approve — Approve comes only from a full review). `--delta` needs a base after the merge-base: with the merge-base itself, or no `--base`, the binary refuses it before anything runs, since that round would review the whole branch.
 - `--strict`, `--no-gate`, `--optional all|<lens,...>`, `--pr <number>`, `--comment`
   (post the defects on the PR; doubtful findings stay in the report for the human),
   `--extra-lenses <agent,...>|off`, `--prior-decisions <file>` (a JSON list of the launcher's
