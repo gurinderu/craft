@@ -3,6 +3,10 @@
 
 use std::collections::BTreeMap;
 
+mod path;
+
+use path::header_path;
+
 /// Each changed file's added line ranges, inclusive, by its repository-relative path.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct Lines(BTreeMap<String, Vec<(u32, u32)>>);
@@ -37,7 +41,7 @@ impl Lines {
                     out.entry(f.clone()).or_default().push(range);
                 }
             } else if let Some(path) = l.strip_prefix(header).filter(|_| in_header) {
-                file = path.strip_prefix(prefix).map(str::to_owned);
+                file = header_path(path, prefix);
             }
         }
         Self(out)
@@ -92,7 +96,7 @@ pub(crate) fn removals(diff: &str) -> Vec<Removal> {
             }
         } else if in_header {
             if let Some(path) = l.strip_prefix("+++ ") {
-                file = path.strip_prefix("b/").map(str::to_owned);
+                file = header_path(path, "b/");
             }
         } else if let (true, Some(t), Some(r)) = (open, l.strip_prefix('-'), out.last_mut()) {
             r.text.push(t.to_owned());
@@ -172,5 +176,31 @@ mod tests {
     fn an_added_line_that_reads_like_a_header_keeps_the_hunks_after_it() {
         let l = Lines::parse(LOOKALIKES);
         assert!(l.touches("q.sql", 4) && l.touches("q.sql", 9) && l.touches("q.sql", 12));
+    }
+
+    /// A path holding a space ends its header with a tab; one holding a quote, a backslash or a
+    /// control character is quoted, C-style, prefix and all.
+    const ODD_PATHS: &str = "diff --git a/my dir/x.rs b/my dir/x.rs\n--- a/my dir/x.rs\t\n+++ b/my dir/x.rs\t\n@@ -1,2 +1 @@\n-a\n-b\n+c\n@@ -5 +4,0 @@\n-d\ndiff --git \"a/q\\\"t.rs\" \"b/q\\\"t.rs\"\n--- \"a/q\\\"t.rs\"\n+++ \"b/q\\\"t.rs\"\n@@ -2 +2 @@\n-e\n+f\n@@ -7 +6,0 @@\n-g\ndiff --git \"a/t\\tx\\303\\251.rs\" \"b/t\\tx\\303\\251.rs\"\n--- \"a/t\\tx\\303\\251.rs\"\n+++ \"b/t\\tx\\303\\251.rs\"\n@@ -3 +3 @@\n-h\n+i\n";
+
+    #[test]
+    fn a_header_path_with_a_space_or_a_quote_is_read_as_the_file_s_own() {
+        let l = Lines::parse(ODD_PATHS);
+        assert!(l.touches("my dir/x.rs", 1), "{l:?}");
+        assert!(l.touches("q\"t.rs", 2), "{l:?}");
+        assert!(l.touches("t\txé.rs", 3), "{l:?}");
+        let old = Lines::parse_old(ODD_PATHS);
+        assert!(
+            old.touches("my dir/x.rs", 2) && old.touches("q\"t.rs", 7),
+            "{old:?}"
+        );
+    }
+
+    #[test]
+    fn a_pure_deletion_under_a_spaced_or_quoted_path_is_read_with_its_path() {
+        let files: Vec<String> = super::removals(ODD_PATHS)
+            .into_iter()
+            .map(|r| r.file)
+            .collect();
+        assert_eq!(files, vec!["my dir/x.rs".to_owned(), "q\"t.rs".to_owned()]);
     }
 }
