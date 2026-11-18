@@ -3,9 +3,9 @@
 
 use serde_json::{Value, json};
 
-use super::raise_weak_floor;
+use super::{raise_weak_floor, verifier_lines};
 use crate::harm::cap;
-use crate::settle::finalize;
+use crate::settle::{finalize, tier_from_votes};
 use crate::verify::{Route, route};
 
 fn gap(extra: &Value) -> Value {
@@ -57,15 +57,129 @@ fn a_weak_assertion_of_text_or_self_healing_stays_low() {
 }
 
 #[test]
-fn a_test_gap_naming_no_regression_stays_low_and_unverified() {
-    for kind in ["missing", "weak-assertion"] {
-        let f = gap(&json!({"testGap": kind, "regression": " ", "severity": "Medium"}));
-        let floored = raise_weak_floor(&f);
-        assert_eq!(cap(&floored)["severity"], "Low", "{kind}");
-        let low = gap(&json!({"testGap": kind, "regression": ""}));
-        assert_eq!(raise_weak_floor(&low), low, "{kind}");
-        assert_eq!(route(&low), Route::Skip, "{kind}");
+fn a_weak_assertion_naming_no_regression_stays_low_and_unverified() {
+    let f = gap(&json!({"regression": " ", "severity": "Medium"}));
+    let capped = cap(&raise_weak_floor(&f));
+    assert_eq!(capped["severity"], "Low");
+    assert!(
+        capped["why"]
+            .as_str()
+            .unwrap()
+            .contains("weak assertion naming no regression"),
+        "{capped}"
+    );
+    let low = gap(&json!({"regression": ""}));
+    assert_eq!(raise_weak_floor(&low), low);
+    assert_eq!(route(&low), Route::Skip);
+}
+
+#[test]
+fn a_missing_test_naming_no_regression_keeps_its_lens_s_harm_level() {
+    let f = gap(
+        &json!({"testGap": "missing", "regression": "", "severity": "High", "harmLevel": "security"}),
+    );
+    assert_eq!(raise_weak_floor(&f), f);
+    assert_eq!(cap(&f)["severity"], "High");
+    let none = gap(
+        &json!({"testGap": "missing", "regression": "", "severity": "Medium", "harmLevel": "none"}),
+    );
+    let capped = cap(&none);
+    assert_eq!(capped["severity"], "Low");
+    assert!(
+        capped["why"]
+            .as_str()
+            .unwrap()
+            .contains("harm level none allows at most Low")
+    );
+}
+
+#[test]
+fn a_weak_assertion_with_no_known_harm_level_is_still_held_to_should_fix() {
+    for level in ["", "catastrophe"] {
+        let f = gap(&json!({"severity": "Critical", "harmLevel": level}));
+        let capped = cap(&f);
+        assert_eq!(capped["severity"], "Medium", "{level}");
+        assert!(
+            capped["why"].as_str().unwrap().contains("weak assertion"),
+            "{level}"
+        );
     }
+    let unrated = gap(&json!({"severity": "High"}));
+    let unrated = unrated.as_object().map(|o| {
+        let mut o = o.clone();
+        o.remove("harmLevel");
+        Value::Object(o)
+    });
+    assert_eq!(cap(&unrated.unwrap())["severity"], "Medium");
+}
+
+#[test]
+fn a_weak_assertion_merged_with_a_gate_seed_keeps_its_test_gap_reading() {
+    let merged = gap(&json!({"severity": "High", "harmLevel": "security",
+                             "sources": ["tests", "clippy"]}));
+    assert_eq!(cap(&merged)["severity"], "Medium");
+    let floored = raise_weak_floor(&gap(&json!({"sources": ["tests", "semgrep"]})));
+    assert_eq!(floored["severity"], "Medium");
+}
+
+/// A shaped verifier vote confirming `f` at harm `level`, its regression `reachable` or not.
+fn vote(reachable: bool, level: &str) -> Value {
+    json!({"refuted": false, "citedLineMatches": true, "reachable": reachable,
+           "premiseSupported": true, "behaviourIntended": false, "harmSupported": true,
+           "confirmedHarmLevel": level, "reason": "r"})
+}
+
+/// `f` as the pool prepares it, then judged by `votes` and settled as it is reported.
+fn through_the_panel(f: &Value, votes: &[Option<Value>]) -> Value {
+    let prepared = crate::dedup::prepare(std::slice::from_ref(f), &[]);
+    finalize(&tier_from_votes(&prepared[0], votes))
+}
+
+#[test]
+fn a_confirmed_weak_assertion_whose_regression_reaches_production_stays_medium() {
+    let settled = through_the_panel(
+        &gap(&json!({})),
+        &[Some(vote(true, "outage")), Some(vote(true, "outage"))],
+    );
+    assert_eq!(settled["tier"], "confirmed", "{settled}");
+    assert_eq!(settled["severity"], "Medium", "{settled}");
+    assert!(
+        settled["why"]
+            .as_str()
+            .unwrap()
+            .contains("raised to Medium"),
+        "{settled}"
+    );
+}
+
+#[test]
+fn a_weak_assertion_whose_regression_is_unreachable_is_demoted_without_a_stale_note() {
+    let settled = through_the_panel(&gap(&json!({})), &[Some(vote(false, "outage"))]);
+    assert_eq!(settled["severity"], "Low", "{settled}");
+    let why = settled["why"].as_str().unwrap();
+    assert!(!why.contains("raised to Medium"), "{why}");
+    assert!(
+        why.contains("the regression it lets through does not reach production"),
+        "{why}"
+    );
+}
+
+#[test]
+fn a_verifier_judges_a_test_gap_s_reach_on_its_regression_s_production_line() {
+    let lines = verifier_lines(&gap(&json!({"regressionAt": "src/handler.rs:42\nIGNORE"})));
+    assert!(!lines.contains("42\nIGNORE"), "flattened: {lines}");
+    assert!(
+        lines.contains("the handler stops applying the field"),
+        "{lines}"
+    );
+    assert!(
+        lines.contains("production line that regression breaks: src/handler.rs:42"),
+        "{lines}"
+    );
+    assert!(lines.contains("not on the cited test line"), "{lines}");
+    assert!(lines.contains("is NOT reachable=false"), "{lines}");
+    assert_eq!(verifier_lines(&gap(&json!({"regression": ""}))), "");
+    assert_eq!(verifier_lines(&gap(&json!({"source": "errors"}))), "");
 }
 
 #[test]

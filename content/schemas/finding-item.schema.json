@@ -138,6 +138,10 @@
     "regression": {
       "type": "string",
       "description": "tests lens only, with testGap: the regression of the changed behaviour the suite lets through green, named concretely (what the running system would then do); empty when none is named — the finding then stays Low"
+    },
+    "regressionAt": {
+      "type": "string",
+      "description": "tests lens only, with regression: file:line of the production code the regression breaks — its reachability is judged there, not at the cited test line"
     }
   }
 }
