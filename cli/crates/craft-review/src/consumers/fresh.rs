@@ -24,13 +24,17 @@ pub(super) fn iso_unix(s: &str) -> Option<i64> {
     Some(days * 86_400 + h * 3600 + mi * 60 + se)
 }
 
-/// The committer time of `commit` in seconds since the epoch.
-pub(super) fn commit_unix(top: &Path, commit: &str) -> Option<i64> {
-    let out = crate::git::git(top, &["show", "-s", "--format=%ct", commit, "--"]).ok()?;
-    out.trim().parse().ok()
+/// The committer time of `commit` in seconds since the epoch; git's word when it has none.
+pub(super) fn commit_unix(top: &Path, commit: &str) -> Result<i64, String> {
+    let out = crate::git::git(top, &["show", "-s", "--format=%ct", commit, "--"])
+        .map_err(|e| e.to_string())?;
+    out.trim()
+        .parse()
+        .map_err(|e| format!("git printed {:?} as its time: {e}", out.trim()))
 }
 
-/// Why `index` cannot serve a review whose base is `base` at `top`; `None` when it is fresh.
+/// Why `index` cannot serve a review whose base is `base` at `top`; `None` when it is fresh: made
+/// after the base, of a root whose history holds it.
 pub(super) fn stale(top: &Path, base: &str, project: &str, index: &Index) -> Option<String> {
     let indexed_at = index.at.as_str();
     let Some(at) = iso_unix(indexed_at) else {
@@ -38,8 +42,9 @@ pub(super) fn stale(top: &Path, base: &str, project: &str, index: &Index) -> Opt
             "the index of {project} names no time it was made ({indexed_at:?})"
         ));
     };
-    let Some(base_at) = commit_unix(top, base) else {
-        return Some(format!("the base {base} has no commit time"));
+    let base_at = match commit_unix(top, base) {
+        Ok(t) => t,
+        Err(why) => return Some(format!("the base {base} has no commit time: {why}")),
     };
     // The root the index was made of, not this checkout: a review in a linked worktree refreshes
     // the profile's project rather than indexing a new one.
@@ -48,11 +53,23 @@ pub(super) fn stale(top: &Path, base: &str, project: &str, index: &Index) -> Opt
     } else {
         index.root.clone()
     };
-    (at < base_at).then(|| {
-        format!(
+    let refresh = || super::cbm::refresh_hint(&root);
+    if at < base_at {
+        return Some(format!(
             "the index of {project} (made {indexed_at}) is older than the base commit; craft \
              never reindexes — refresh it with {}",
-            super::cbm::refresh_hint(&root)
+            refresh()
+        ));
+    }
+    let ancestor = crate::git::git(
+        Path::new(&root),
+        &["merge-base", "--is-ancestor", base, "HEAD"],
+    );
+    ancestor.err().map(|e| {
+        format!(
+            "the base {base} is not in the history of {root}, which the index of {project} is \
+             of ({e}); refresh it with {}",
+            refresh()
         )
     })
 }

@@ -91,6 +91,10 @@ pub struct Consumers {
     /// question): `name (why)`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub graph_unasked: Vec<String>,
+    /// The files of graph callers that could not be read in head, or lie outside the repository,
+    /// each with why: `file (why)`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub graph_unreadable: Vec<String>,
     /// The symbols whose graph callers were cut at the per-symbol limit.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub graph_truncated: Vec<String>,
@@ -134,10 +138,11 @@ pub fn build(top: &Path, diff: &crate::git::Diff, graph: Result<CodeGraph, Strin
     let text = crate::git::zero_context_diff(top, &diff.base).unwrap_or_default();
     let changed = crate::gate::lines::Lines::parse(&text);
     let (found, unplaced) = symbols::changed(top, &diff.files, &changed, list::SYMBOLS_MAX);
-    let (asked, graph_skipped) = match graph {
-        Ok(g) => graph::graph_callers(top, &diff.merge_base, &g, &found),
-        Err(why) => (None, why),
-    };
+    let (asked, graph_skipped) =
+        match graph.and_then(|g| graph::graph_callers(top, &diff.merge_base, &g, &found)) {
+            Ok(a) => (Some(a), String::new()),
+            Err(why) => (None, why),
+        };
     let callers = asked.as_ref().map(|a| a.callers.as_slice());
     let mut out = list::assemble(top, &changed, &found, callers);
     if let Some(a) = asked {

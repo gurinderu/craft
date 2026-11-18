@@ -8,7 +8,11 @@ use crate::gate::tests::exe;
 
 mod asks;
 mod graphs;
+mod half_asked;
+mod heads;
+mod index;
 mod lists;
+mod stale;
 mod walk;
 
 fn git(dir: &Path, args: &[&str]) -> String {
@@ -46,11 +50,17 @@ pub(super) fn fixture(t: &Path, extra: &str) -> std::path::PathBuf {
     repo
 }
 
+/// The root the stand-in graphs index: the fixture's repository, as git names its top level.
+pub(super) fn repo_root(t: &Path) -> String {
+    let repo = t.join("repo");
+    repo.canonicalize().unwrap_or(repo).display().to_string()
+}
+
 pub(super) fn diff_of(repo: &Path) -> crate::git::Diff {
     crate::git::read_diff(repo, Some("base"), None).unwrap()
 }
 
-fn sites(c: &Consumers, name: &str) -> Vec<(String, u32, Vec<String>)> {
+pub(super) fn sites(c: &Consumers, name: &str) -> Vec<(String, u32, Vec<String>)> {
     c.symbols
         .iter()
         .find(|s| s.name == name)
@@ -128,16 +138,12 @@ fn the_run_budget_takes_each_symbol_in_turn() {
 pub(super) fn graph(t: &Path, indexed_at: &str) -> CodeGraph {
     let tool = t.join("cbm");
     let script = format!(
-        "#!/bin/sh\ncase \"$3\" in\n index_status) echo '{{\"status\":\"ready\",\"indexed_at\":\"{indexed_at}\",\"root_path\":\"/r\"}}';;\n query_graph) echo \"$4\" >> {log}; case \"$4\" in *k8s_rule_to_api*) echo '{{\"has_more\":true,\"rows\":[[\"k8s_rule_to_api\",\"src/lib.rs\",\"src/uses.rs\",\"3\",\"5\"],[\"k8s_rule_to_api\",\"src/lib.rs\",\"src/uses.rs\",\"7\",\"8\"],[\"k8s_rule_to_api\",\"src/elsewhere.rs\",\"src/uses.rs\",\"1\",\"1\"]]}}';; *) echo '{{\"rows\":[]}}';; esac;;\n list_projects) echo '{{\"projects\":[{{\"name\":\"p\",\"root_path\":\"/r\"}}]}}';;\n *) echo '{{\"error\":\"unknown\"}}'; exit 1;;\nesac\n",
-        log = t.join("queries").display()
+        "#!/bin/sh\ncase \"$3\" in\n index_status) echo '{{\"status\":\"ready\",\"indexed_at\":\"{indexed_at}\",\"root_path\":\"{root}\"}}';;\n query_graph) echo \"$4\" >> {log}; case \"$4\" in *k8s_rule_to_api*) echo '{{\"has_more\":true,\"rows\":[[\"k8s_rule_to_api\",\"src/lib.rs\",\"src/uses.rs\",\"3\",\"5\"],[\"k8s_rule_to_api\",\"src/lib.rs\",\"src/uses.rs\",\"7\",\"8\"],[\"k8s_rule_to_api\",\"src/elsewhere.rs\",\"src/uses.rs\",\"1\",\"1\"]]}}';; *) echo '{{\"rows\":[]}}';; esac;;\n list_projects) echo '{{\"projects\":[{{\"name\":\"p\",\"root_path\":\"/r\"}}]}}';;\n *) echo '{{\"error\":\"unknown\"}}'; exit 1;;\nesac\n",
+        log = t.join("queries").display(),
+        root = repo_root(t)
     );
     exe::write_executable(&tool, &script).unwrap();
-    CodeGraph {
-        tool: tool.display().to_string(),
-        available: true,
-        project: "p".into(),
-        note: String::new(),
-    }
+    CodeGraph::indexed(&tool.display().to_string(), "p")
 }
 
 #[test]
@@ -175,7 +181,8 @@ fn a_stale_or_absent_graph_leaves_the_name_search_alone_and_says_why() {
     assert!(
         c.graph_skipped.contains("older than the base")
             && c.graph_skipped.contains("cli index_repository")
-            && c.graph_skipped.contains(r#""repo_path":"/r""#)
+            && c.graph_skipped
+                .contains(&format!(r#""repo_path":"{}""#, repo_root(t.path())))
             && !c.graph_skipped.contains("warmup"),
         "{}",
         c.graph_skipped
