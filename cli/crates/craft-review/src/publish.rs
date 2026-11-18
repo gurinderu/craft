@@ -174,7 +174,7 @@ fn short(commit: &str) -> &str {
 }
 
 /// Writes the finished run's report again, with what came of publishing.
-fn write_report(dir: &Path, run: &RunState) -> Result<(), Error> {
+pub(crate) fn write_report(dir: &Path, run: &RunState) -> Result<(), Error> {
     let Some(verdict) = &run.verdict else {
         return Ok(());
     };

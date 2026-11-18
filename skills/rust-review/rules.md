@@ -61,7 +61,8 @@ finding maps to a catalog rule (novel issues are fine and encouraged — report 
 | **REC-006** | MEDIUM | non-idempotent apply — create/patch off a stale read, no 404/409 race tolerance | `distributed-races` (R12) |
 | **TST-001** | LOW² | New error path or branch with no test | `rust-testing` |
 | **TST-002** | LOW² | Bug fix landed without a regression test reproducing it | `rust-testing` |
-| **TST-003** | LOW² | Weak assertion — test passes whether or not the behavior holds (no `.never()`, asserts nothing meaningful) | `rust-testing` |
+| **TST-003** | LOW² | Vacuous test — passes whatever the code does (`assert!(true)`, no assertions, no `.never()`): counts as a missing test | `rust-testing` |
+| **TST-004** | ≤ MEDIUM³ | Weak assertion — a test that still passes under a named regression of the changed behaviour (asserts only a status or annotation, a mock ignores the input or fabricates the response, one side of two covered) | `rust-testing` |
 | **DEP-001** | MEDIUM | API used incorrectly **for the crate version actually pinned** (deprecated/removed/changed since) — see the dependency-context step in `SKILL.md` | `rust-ecosystem` |
 | **DEP-002** | HIGH | Known-vulnerable dependency version (RUSTSEC advisory) | `rust-security` |
 
@@ -69,9 +70,13 @@ finding maps to a catalog rule (novel issues are fine and encouraged — report 
 they are reported at MEDIUM and become a presumption of block unless the author justified the
 change in the diff or brief (see `SKILL.md` → Maintainability bar).
 
-² `TST-*` are LOW by default. A missing or weak test takes the severity of the defect it would
-catch, once that defect and its harm are named (`review-rules` `severity.md`) — a missing
-cross-tenant denial test on a new authz-guarded endpoint names a security harm and is HIGH.
+² `TST-001`–`TST-003` are LOW by default. A missing or vacuous test takes the severity of the
+defect it would catch, once that defect and its harm are named (`review-rules` `severity.md`) — a
+missing cross-tenant denial test on a new authz-guarded endpoint names a security harm and is HIGH.
+
+³ `TST-004` names the regression it lets through and the production line it breaks, and takes
+that regression's harm, capped at MEDIUM; a text- or style-only regression leaves it LOW, and one
+that names no regression is not a weak assertion.
 
 ## Adding a rule
 

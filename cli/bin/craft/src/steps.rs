@@ -364,12 +364,37 @@ fn opened(
 }
 
 /// Where the run's telemetry is filed through when the run knows no plugin root: the one `given`,
-/// the plugin root above the binary, else the one the harness names (`CLAUDE_PLUGIN_ROOT`) — the
-/// first that holds the record writer; `None`, and nothing can be filed.
+/// the plugin root above the binary, the one the harness names (`CLAUDE_PLUGIN_ROOT`), else this
+/// version's installed copy ([`installed_copy`]) — the first that holds the record writer; `None`,
+/// and nothing can be filed.
 pub(crate) fn filing_root(given: Option<&Path>) -> Option<String> {
-    let harness = std::env::var_os("CLAUDE_PLUGIN_ROOT").map(PathBuf::from);
+    let env = |k| {
+        std::env::var_os(k)
+            .filter(|v| !v.is_empty())
+            .map(PathBuf::from)
+    };
     let given = given.and_then(|g| std::path::absolute(g).ok());
-    filing::found_root([given, find_craft_root(), harness])
+    let installed = installed_copy(env("CLAUDE_CONFIG_DIR"), env("HOME"));
+    filing::found_root([
+        given,
+        find_craft_root(),
+        env("CLAUDE_PLUGIN_ROOT"),
+        installed,
+    ])
+}
+
+/// This binary's version of the plugin as Claude Code installs it, under `config` (the session's
+/// `CLAUDE_CONFIG_DIR`) else `home`'s `.claude`: the last place every plugin script is looked for
+/// (lib/plugin-script.mjs), so a fetched binary under no plugin finds its writer without the engine's
+/// locate step (realm @nick/craft, node #524). The cache layout is the harness's (realm @nick/craft,
+/// node #48), so a miss is ordinary.
+fn installed_copy(config: Option<PathBuf>, home: Option<PathBuf>) -> Option<PathBuf> {
+    let config = config.or_else(|| home.map(|h| h.join(".claude")))?;
+    Some(
+        config
+            .join("plugins/cache/craft/craft")
+            .join(env!("CARGO_PKG_VERSION")),
+    )
 }
 
 /// A JSON value the host passes, as a file or `-` for stdin.
@@ -475,4 +500,24 @@ pub fn status(args: &StatusArgs) -> Result<ExitCode> {
 /// Where the run in `run` stands, as `status` prints it.
 pub(crate) fn status_step(run: &Path) -> Result<Value> {
     Ok(status::status(run)?)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::installed_copy;
+
+    #[test]
+    fn the_installed_copy_is_under_the_config_dir_else_home_and_names_this_version() {
+        let at = |p: &str| {
+            PathBuf::from(p)
+                .join("plugins/cache/craft/craft")
+                .join(env!("CARGO_PKG_VERSION"))
+        };
+        let (config, home) = (Some(PathBuf::from("/c")), Some(PathBuf::from("/h")));
+        assert_eq!(installed_copy(config, home.clone()), Some(at("/c")));
+        assert_eq!(installed_copy(None, home), Some(at("/h/.claude")));
+        assert_eq!(installed_copy(None, None), None);
+    }
 }
