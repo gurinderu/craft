@@ -188,11 +188,8 @@ pub struct Task {
     /// retries counts as an off-schema vote rather than a dead one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub refused: Option<Value>,
-    /// The latest answer refused only for CONSUMERS lines it left unmarked, taken with those
-    /// lines when every later attempt fails (realm @nick/craft, node #531).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub marks_only: Option<Value>,
-    /// The host abandoned its agent at its deadline (`submit --abandoned`): failed for good, never
+    /// The host abandoned its agent at its deadline (`submit --abandoned`): failed for good — or
+    /// answered by the answer it kept refused only for unmarked lines ([`crate::kept`]) — never
     /// held for a resume nor handed out again, and no death of its dispatch round.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub abandoned: bool,
@@ -224,7 +221,6 @@ impl Task {
             error: None,
             answer: None,
             refused: None,
-            marks_only: None,
             abandoned: false,
         }
     }
