@@ -101,6 +101,14 @@ pub fn branch(cwd: &Path) -> Option<String> {
     (!name.is_empty() && name != "HEAD").then(|| name.to_owned())
 }
 
+/// The commit `HEAD` names.
+///
+/// # Errors
+/// When `cwd` is not a repository, `HEAD` names no commit yet, or `git` fails.
+pub fn head(cwd: &Path) -> Result<String, GitError> {
+    Ok(git(cwd, &["rev-parse", "HEAD"])?.trim().to_owned())
+}
+
 /// The repository's shared git directory, one for a checkout and all its linked worktrees, so the
 /// worktrees of one repository share their review rounds as `repoKey` lets them.
 ///

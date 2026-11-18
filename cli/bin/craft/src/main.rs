@@ -1,6 +1,7 @@
 //! `craft`: the command line over craft's review.
 
 mod comment;
+mod hook;
 mod init;
 mod printed;
 mod review;
@@ -29,6 +30,16 @@ enum Command {
     /// Your review profile of a repository, kept outside it (`~/.craft/projects/<id>/review.toml`):
     /// the integration points whose source a review reads at their deployed revision.
     Init(init::InitArgs),
+    /// craft's hooks that run as this binary, each reading the harness's hook input on stdin.
+    #[command(subcommand)]
+    Hook(HookCommand),
+}
+
+#[derive(Subcommand)]
+enum HookCommand {
+    /// Before `gh pr create`: say when the run store holds no finished full craft review of HEAD.
+    /// Prints the `PreToolUse` output or nothing, and always exits 0.
+    PrePr(hook::PrePrArgs),
 }
 
 #[derive(Subcommand)]
@@ -103,6 +114,7 @@ async fn main() -> ExitCode {
         Command::Review(ReviewCommand::Gate(args)) => steps::gate(&args),
         Command::Review(ReviewCommand::Run(args)) => run::run(*args).await,
         Command::Init(args) => init::init(&args),
+        Command::Hook(HookCommand::PrePr(args)) => hook::pre_pr(&args),
     };
     // Every way out — a stop, an error, a finished run — waits out the grace of the agents'
     // groups, so their SIGKILL is sent before craft is gone.

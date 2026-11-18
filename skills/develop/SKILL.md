@@ -246,6 +246,11 @@ or not); none declared → title in the repository's commit style, body naming w
 loop's rounds and verdicts, the full review's verdict, and each finding left open with why. The
 project's rules on pushing and opening PRs (and on asking first) apply unchanged.
 
+On `gh pr create`, craft's hook looks in the run store for a finished, full `craft:review` run (not
+delta, not INCOMPLETE) on HEAD, and says when there is none — even when the project's declared
+reviewer took phase 5. That warning goes to the human as it is, with the branch's last run it names;
+a declared reviewer's verdict does not answer it.
+
 ## Boundaries
 
 - Working an existing set of findings, without the rest of the cycle → `craft:addressing-findings`.

@@ -12,6 +12,7 @@
         { "type": "json", "path": ".claude-plugin/marketplace.json", "jsonpath": "$.version" },
         { "type": "json", "path": ".codex-plugin/plugin.json", "jsonpath": "$.version" },
         { "type": "generic", "path": "bin/craft" },
+        { "type": "generic", "path": "lib/pre-pr-hook.sh" },
         { "type": "generic", "path": "README.md" },
         { "type": "generic", "path": "integrations/opencode/README.md" },
         { "type": "generic", "path": "integrations/pi/README.md" },
