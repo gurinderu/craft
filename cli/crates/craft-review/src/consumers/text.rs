@@ -66,6 +66,14 @@ fn gaps(c: &Consumers) -> Vec<String> {
             "Changed lines in no item this list could name (find what they change and its uses yourself)",
         ),
         (
+            &c.unlisted,
+            "Changed symbols past the 40-symbol limit, not searched (find their uses yourself)",
+        ),
+        (
+            &c.unreadable,
+            "Changed files not read, their symbols not searched (read them and find the uses yourself)",
+        ),
+        (
             &c.graph_truncated,
             "The code graph's callers were cut for (find the rest yourself)",
         ),

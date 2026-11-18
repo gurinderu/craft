@@ -3,11 +3,14 @@
 //! close at or below it. Test functions and test files are left out; a changed code line in no
 //! item is kept, so it is said rather than lost.
 
+use std::path::Path;
 use std::sync::LazyLock;
 
 use regex::Regex;
 
+use super::attrs::is_test;
 use super::braces::{item_end, structure};
+use super::source::read;
 use crate::gate::lines::Lines;
 
 /// A Rust item declaration and its name.
@@ -43,20 +46,6 @@ pub(super) fn is_test_path(path: &str) -> bool {
         || name == "tests.rs"
         || name.ends_with("_tests.rs")
         || name.ends_with("_test.rs")
-}
-
-/// Whether the declaration at `at` carries a test attribute on the lines above it.
-fn is_test_fn(lines: &[&str], at: usize) -> bool {
-    lines
-        .get(..at)
-        .unwrap_or_default()
-        .iter()
-        .rev()
-        .take_while(|l| {
-            let t = l.trim_start();
-            t.starts_with("#[") || t.starts_with("///")
-        })
-        .any(|l| l.contains("test]") || l.contains("test("))
 }
 
 /// The declaration line index enclosing `at` (0-based), the line itself when it declares: the
@@ -97,7 +86,7 @@ pub(super) fn of_file(file: &str, text: &str, ranges: &[(u32, u32)]) -> (Vec<Sym
             continue;
         };
         let name = lines.get(d).and_then(|l| declared(l)).unwrap_or_default();
-        if name.is_empty() || is_test_fn(&lines, d) || out.iter().any(|s| s.name == name) {
+        if name.is_empty() || out.iter().any(|s| s.name == name) || is_test(&lines, &st, d) {
             continue;
         }
         out.push(Symbol {
@@ -109,31 +98,41 @@ pub(super) fn of_file(file: &str, text: &str, ranges: &[(u32, u32)]) -> (Vec<Sym
     (out, unplaced)
 }
 
-/// The symbols the change `lines` adds or changes in the Rust files of `files` under `top`, each
-/// name once, at most `max`; and the changed code lines (`file:line`) in no item.
-pub(super) fn changed(
-    top: &std::path::Path,
-    files: &[String],
-    lines: &Lines,
-    max: usize,
-) -> (Vec<Symbol>, Vec<String>) {
-    let mut out: Vec<Symbol> = Vec::new();
-    let mut unplaced = Vec::new();
+/// What [`changed`] found: the symbols, each `(file, name)` once and at most the limit; the
+/// changed code lines (`file:line`) in no item; the symbols past the limit (`name (file)`); the
+/// changed Rust files not read (`file (why)`).
+#[derive(Debug, Default)]
+pub(super) struct Changed {
+    pub symbols: Vec<Symbol>,
+    pub unplaced: Vec<String>,
+    pub unlisted: Vec<String>,
+    pub unreadable: Vec<String>,
+}
+
+/// The symbols the change `lines` adds or changes in the Rust files of `files` under `top`, at
+/// most `max`, the rest named.
+pub(super) fn changed(top: &Path, files: &[String], lines: &Lines, max: usize) -> Changed {
+    let mut out = Changed::default();
     for (file, ranges) in lines.ranges() {
         if !file.ends_with(".rs") || is_test_path(file) || !files.iter().any(|f| f == file) {
             continue;
         }
-        let Ok(text) = std::fs::read_to_string(top.join(file)) else {
-            continue;
+        let text = match read(&top.join(file)) {
+            Ok(text) => text,
+            Err(why) => {
+                out.unreadable.push(format!("{file} ({why})"));
+                continue;
+            }
         };
         let (found, lost) = of_file(file, &text, ranges);
-        unplaced.extend(lost.into_iter().map(|n| format!("{file}:{n}")));
-        for s in found {
-            if !out.iter().any(|o| o.name == s.name) {
-                out.push(s);
-            }
-        }
+        out.unplaced
+            .extend(lost.into_iter().map(|n| format!("{file}:{n}")));
+        out.symbols.extend(found);
     }
-    out.truncate(max);
-    (out, unplaced)
+    let past = out.symbols.split_off(max.min(out.symbols.len()));
+    out.unlisted = past
+        .iter()
+        .map(|s| format!("{} ({})", s.name, s.file))
+        .collect();
+    out
 }
