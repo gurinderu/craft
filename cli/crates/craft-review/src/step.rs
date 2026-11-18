@@ -748,7 +748,15 @@ fn take_answer(
         Err(e) => {
             task.error = Some(e);
             // An answer that came back but off its schema is a live vote, not a dead one.
-            task.refused = submitted.ok().map(|a| validate::normalize(&a));
+            task.refused = submitted.as_ref().ok().map(validate::normalize);
+            // One refused only for its unmarked lines is kept, to fall back on.
+            if let Some(Ok((answer, _))) = submitted
+                .as_ref()
+                .ok()
+                .map(|a| validate::check(task, Some(a), true))
+            {
+                task.marks_only = Some(answer);
+            }
         }
     }
     if given.is_none() {
@@ -767,10 +775,27 @@ fn take_answer(
     }
     if task.retries < MAX_RETRIES {
         task.retries += 1;
-    } else {
+    } else if !fall_back(task) {
         task.state = TaskState::Failed;
     }
     Ok(live)
+}
+
+/// Takes the answer `task` kept when it was refused only for unmarked CONSUMERS lines, those
+/// lines with it, once its retries are spent; whether it held one.
+fn fall_back(task: &mut Task) -> bool {
+    let Some(kept) = task.marks_only.take() else {
+        return false;
+    };
+    let Ok((answer, unmarked)) = validate::check(task, Some(&kept), true) else {
+        return false;
+    };
+    task.answer = Some(answer);
+    task.unmarked = unmarked;
+    task.state = TaskState::Answered;
+    task.error = None;
+    task.refused = None;
+    true
 }
 
 /// What the host is to do next: the pending tasks, or the finished run's report, verdict and what
