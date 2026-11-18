@@ -1,11 +1,9 @@
 //! Every gap field of a consumers list in one place: who is told of it — the lenses and the
 //! report, or the report alone — and how each words it. The lenses are told only what they can
-//! act on (lines and names the list could not search, files it could not read); what the code
-//! graph lost stays in the report, since the name search ran for those symbols anyway.
+//! act on (lines and names the list could not search, files it could not read).
 
-use super::cbm::ROWS_PER_SYMBOL;
+use super::Consumers;
 use super::list::SYMBOLS_MAX;
-use super::{Consumers, GRAPH};
 
 /// One gap field: its name as the run state writes it, whether the lenses are told, and the
 /// report's and the lenses' lines when it holds anything.
@@ -31,15 +29,6 @@ fn both(field: &'static str, v: &[String], report: &str, lens: &str) -> Gap {
                 format!("{lens}: {}.", shown(v)),
             )
         }),
-    }
-}
-
-/// A field told to the report alone.
-fn report(field: &'static str, line: Option<String>) -> Gap {
-    Gap {
-        field,
-        to_lens: false,
-        said: line.map(|l| (l, String::new())),
     }
 }
 
@@ -84,42 +73,6 @@ pub(super) fn all(c: &Consumers) -> Vec<Gap> {
             &c.unplaced,
             "changed line(s) in no item the list could name, their uses not searched",
             "Changed lines in no item this list could name (find what they change and its uses yourself)",
-        ),
-        report(
-            "graphSkipped",
-            (!c.graph_skipped.is_empty()).then(|| format!("- {GRAPH} not used: {}\n", c.graph_skipped)),
-        ),
-        report(
-            "graphUnlocated",
-            (c.graph_unlocated > 0).then(|| {
-                format!(
-                    "- {} {GRAPH} caller(s) not located in head: no line of the span names the symbol\n",
-                    c.graph_unlocated
-                )
-            }),
-        ),
-        report(
-            "graphUnreadable",
-            (!c.graph_unreadable.is_empty()).then(|| {
-                format!(
-                    "- {GRAPH} callers in files not read: {}\n",
-                    shown(&c.graph_unreadable)
-                )
-            }),
-        ),
-        report(
-            "graphTruncated",
-            (!c.graph_truncated.is_empty()).then(|| {
-                format!(
-                    "- {GRAPH} callers cut at {ROWS_PER_SYMBOL} for: {}\n",
-                    shown(&c.graph_truncated)
-                )
-            }),
-        ),
-        report(
-            "graphUnasked",
-            (!c.graph_unasked.is_empty())
-                .then(|| format!("- {GRAPH} not asked for: {}\n", shown(&c.graph_unasked))),
         ),
     ]
 }

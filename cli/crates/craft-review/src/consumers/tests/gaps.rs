@@ -33,7 +33,7 @@ fn a_name_not_searched_is_not_said_to_have_no_consumer() {
     let lib = "pub fn parse() -> u8 {\n    1\n}\n\npub fn busy_name() -> u8 {\n    2\n}\n";
     std::fs::write(repo.join("src/lib.rs"), lib).unwrap();
     git(&repo, &["commit", "-qam", "feat: change"]);
-    let c = build(&repo, &diff_of(&repo), Err(String::new()));
+    let c = build(&repo, &diff_of(&repo));
     assert_eq!(c.unsearched.len(), 2, "{:?}", c.unsearched);
     assert_eq!(c.unsearched[0], "parse");
     assert!(
@@ -59,11 +59,6 @@ fn every_gap() -> Consumers {
         unplaced: one("unplaced_x:1"),
         unlisted: one("unlisted_x (a.rs)"),
         unreadable: one("unreadable_x.rs (why)"),
-        graph_skipped: "skipped_x".into(),
-        graph_unlocated: 7,
-        graph_unasked: one("unasked_x (why)"),
-        graph_unreadable: one("graph_unreadable_x.rs (why)"),
-        graph_truncated: one("truncated_x"),
         ..Consumers::default()
     }
 }
@@ -97,21 +92,11 @@ fn each_gap_reaches_its_audiences_and_no_other() {
         "unlisted_x",
         "unreadable_x.rs",
     ];
-    let report_only = [
-        "skipped_x",
-        "7 codebase-memory",
-        "unasked_x",
-        "graph_unreadable_x.rs",
-        "truncated_x",
-    ];
-    for x in to_lens.iter().chain(&report_only) {
+    for x in to_lens {
         assert!(report.contains(x), "report lacks {x}: {report}");
     }
     for x in to_lens {
         assert!(block.contains(x), "lens lacks {x}: {block}");
-    }
-    for x in report_only {
-        assert!(!block.contains(x), "lens has {x}: {block}");
     }
     let told: Vec<&str> = gaps::all(&c)
         .iter()

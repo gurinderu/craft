@@ -431,11 +431,9 @@ fn open_dir(dir: &Path) -> Result<(), StepError> {
     })
 }
 
-/// The consumers list of the change (realm @nick/craft, node #529), the code graph asked when
-/// the reviewer's profile says it answers.
-fn consumers_of(cwd: &Path, opts: &StartOptions, diff: &git::Diff) -> crate::consumers::Consumers {
-    let projects = opts.sources.as_ref().map(|s| s.projects.as_path());
-    crate::consumers::of_checkout(cwd, projects, diff)
+/// The consumers list of the change (realm @nick/craft, node #529).
+fn consumers_of(cwd: &Path, diff: &git::Diff) -> crate::consumers::Consumers {
+    crate::consumers::of_checkout(cwd, diff)
 }
 
 /// The integration points' sources, the gate and the consumers list, side by side, none waiting
@@ -449,7 +447,7 @@ fn prepare(cwd: &Path, dir: &Path, opts: &StartOptions, run: &mut RunState) {
                 .map(|setup| sources::for_repo(cwd, setup))
         });
         // Started before the gate, which runs on this thread, so the two overlap.
-        let consumers = s.spawn(|| consumers_of(cwd, opts, &run.diff));
+        let consumers = s.spawn(|| consumers_of(cwd, &run.diff));
         let gated = match &opts.gate_from {
             Some(from) => Some(gate::alone::taken(from, &run.diff)),
             None => opts
