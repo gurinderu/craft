@@ -3,15 +3,12 @@
 //! close at or below it. Test functions and test files are left out; a changed code line in no
 //! item is kept, so it is said rather than lost.
 
-use std::path::Path;
 use std::sync::LazyLock;
 
 use regex::Regex;
 
 use super::attrs::is_test;
 use super::braces::{item_end, structure};
-use super::source::read;
-use crate::gate::lines::Lines;
 
 /// A Rust item declaration and its name.
 static DECL: LazyLock<Option<Regex>> = LazyLock::new(|| {
@@ -50,7 +47,7 @@ pub(super) fn is_test_path(path: &str) -> bool {
 
 /// The declaration line index enclosing `at` (0-based), the line itself when it declares: the
 /// nearest declaration above whose item ends at or below it.
-fn enclosing(lines: &[&str], st: &[Vec<u8>], at: usize) -> Option<usize> {
+pub(super) fn enclosing(lines: &[&str], st: &[Vec<u8>], at: usize) -> Option<usize> {
     if declared(lines.get(at)?).is_some() {
         return Some(at);
     }
@@ -62,7 +59,7 @@ fn enclosing(lines: &[&str], st: &[Vec<u8>], at: usize) -> Option<usize> {
 
 /// Whether `l` is code an item would hold: not blank, a comment, an attribute, an import, a
 /// module line or bare punctuation.
-fn is_code(l: &str) -> bool {
+pub(super) fn is_code(l: &str) -> bool {
     let t = l.trim_start();
     let skipped = ["//", "#[", "#!", "use ", "pub use ", "mod ", "pub mod "];
     !skipped.iter().any(|p| t.starts_with(p)) && t.chars().any(char::is_alphanumeric)
@@ -85,54 +82,26 @@ pub(super) fn of_file(file: &str, text: &str, ranges: &[(u32, u32)]) -> (Vec<Sym
             }
             continue;
         };
-        let name = lines.get(d).and_then(|l| declared(l)).unwrap_or_default();
-        if name.is_empty() || out.iter().any(|s| s.name == name) || is_test(&lines, &st, d) {
-            continue;
+        if let Some(sym) = item(file, &lines, &st, d) {
+            add(&mut out, sym);
         }
-        out.push(Symbol {
-            name: name.to_owned(),
-            file: file.to_owned(),
-            line: u32::try_from(d + 1).unwrap_or(u32::MAX),
-        });
     }
     (out, unplaced)
 }
 
-/// What [`changed`] found: the symbols, each `(file, name)` once and at most the limit; the
-/// changed code lines (`file:line`) in no item; the symbols past the limit (`name (file)`); the
-/// changed Rust files not read (`file (why)`).
-#[derive(Debug, Default)]
-pub(super) struct Changed {
-    pub symbols: Vec<Symbol>,
-    pub unplaced: Vec<String>,
-    pub unlisted: Vec<String>,
-    pub unreadable: Vec<String>,
+/// The symbol the declaration at `d` (0-based) names, when it is not test code.
+pub(super) fn item(file: &str, lines: &[&str], st: &[Vec<u8>], d: usize) -> Option<Symbol> {
+    let name = lines.get(d).and_then(|l| declared(l))?;
+    (!is_test(lines, st, d)).then(|| Symbol {
+        name: name.to_owned(),
+        file: file.to_owned(),
+        line: u32::try_from(d + 1).unwrap_or(u32::MAX),
+    })
 }
 
-/// The symbols the change `lines` adds or changes in the Rust files of `files` under `top`, at
-/// most `max`, the rest named.
-pub(super) fn changed(top: &Path, files: &[String], lines: &Lines, max: usize) -> Changed {
-    let mut out = Changed::default();
-    for (file, ranges) in lines.ranges() {
-        if !file.ends_with(".rs") || is_test_path(file) || !files.iter().any(|f| f == file) {
-            continue;
-        }
-        let text = match read(&top.join(file)) {
-            Ok(text) => text,
-            Err(why) => {
-                out.unreadable.push(format!("{file} ({why})"));
-                continue;
-            }
-        };
-        let (found, lost) = of_file(file, &text, ranges);
-        out.unplaced
-            .extend(lost.into_iter().map(|n| format!("{file}:{n}")));
-        out.symbols.extend(found);
+/// Adds `sym` to one file's symbols unless its name is there already.
+pub(super) fn add(out: &mut Vec<Symbol>, sym: Symbol) {
+    if !out.iter().any(|s| s.name == sym.name) {
+        out.push(sym);
     }
-    let past = out.symbols.split_off(max.min(out.symbols.len()));
-    out.unlisted = past
-        .iter()
-        .map(|s| format!("{} ({})", s.name, s.file))
-        .collect();
-    out
 }

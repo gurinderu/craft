@@ -105,7 +105,7 @@ fn a_file_that_is_not_utf8_or_too_large_is_said() {
         .collect();
     let lines = crate::gate::lines::Lines::of(ranges);
     let files = vec!["src/bad.rs".to_owned(), "src/big.rs".to_owned()];
-    let got = crate::consumers::symbols::changed(top, &files, &lines, 40);
+    let got = crate::consumers::changed::changed(top, &files, &lines, &[], 40);
     assert!(got.symbols.is_empty(), "{:?}", got.symbols);
     assert_eq!(got.unreadable.len(), 2, "{:?}", got.unreadable);
     assert!(got.unreadable[0].starts_with("src/bad.rs (not UTF-8"));

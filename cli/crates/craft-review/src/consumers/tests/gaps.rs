@@ -54,6 +54,7 @@ fn every_gap() -> Consumers {
     let one = |s: &str| vec![s.to_owned()];
     Consumers {
         sources: vec!["name search".into()],
+        failed: "failed_x".into(),
         unsearched: one("unsearched_x"),
         unplaced: one("unplaced_x:1"),
         unlisted: one("unlisted_x (a.rs)"),
@@ -110,7 +111,10 @@ fn each_gap_reaches_its_audiences_and_no_other() {
         .filter(|g| g.to_lens)
         .map(|g| g.field)
         .collect();
-    assert_eq!(told, ["unreadable", "unlisted", "unsearched", "unplaced"]);
+    assert_eq!(
+        told,
+        ["failed", "unreadable", "unlisted", "unsearched", "unplaced"]
+    );
     for g in gaps::all(&c) {
         assert!(g.said.is_some(), "{} said nothing", g.field);
     }

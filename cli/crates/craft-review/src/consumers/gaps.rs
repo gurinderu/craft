@@ -46,6 +46,19 @@ fn report(field: &'static str, line: Option<String>) -> Gap {
 /// Every gap field of `c`, in the order both outputs print them.
 pub(super) fn all(c: &Consumers) -> Vec<Gap> {
     vec![
+        Gap {
+            field: "failed",
+            to_lens: true,
+            said: (!c.failed.is_empty()).then(|| {
+                (
+                    format!("- Not built: {}\n", c.failed),
+                    format!(
+                        "No consumers list could be built ({}): find the uses of every item the change touches yourself.",
+                        c.failed
+                    ),
+                )
+            }),
+        },
         both(
             "unreadable",
             &c.unreadable,
