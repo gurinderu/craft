@@ -75,7 +75,7 @@ pub fn alone(
     };
     std::fs::create_dir_all(dir).map_err(no_dir)?;
     let profiles = Profile::all()?;
-    let (tracks, _) = crate::step::tracks_of(&diff.files, &profiles);
+    let (tracks, _) = crate::step::tracks_of(&diff, &profiles);
     let (gate, seeds) = super::run(&cwd, &diff.base, &tracks, setup, dir);
     let kept = Kept {
         head: diff.head.clone(),

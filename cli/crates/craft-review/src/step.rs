@@ -239,7 +239,7 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
         consumers: crate::consumers::Consumers::default(),
         scope,
     };
-    let (tracks, uncovered) = tracks_of(&diff.files, &profiles);
+    let (tracks, uncovered) = tracks_of(&diff, &profiles);
     let memory = Memory::open(opts.prior_decisions.clone());
     let (optional, unknown) = crate::optional::request(opts.optional.as_deref(), &profiles);
     let notes =
@@ -303,15 +303,17 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
     first_step(dir, &mut run)
 }
 
-/// Each profile's part of the changed `files`, and the files no profile covers that carry
-/// something to review.
-pub(crate) fn tracks_of(files: &[String], profiles: &[Profile]) -> (Vec<Track>, Vec<String>) {
+/// Each profile's part of the changed files of `diff`, and the files no profile covers that carry
+/// something to review — and the paths that are not UTF-8, left out whole, as one entry.
+pub(crate) fn tracks_of(diff: &git::Diff, profiles: &[Profile]) -> (Vec<Track>, Vec<String>) {
+    let files = &diff.files;
     let tracks: Vec<Track> = coverage::assign(files, profiles)
         .into_iter()
         .filter_map(|(i, files)| Some(Track::new(&profiles.get(i)?.id, files)))
         .collect();
     let taken = |f: &str| tracks.iter().any(|t| t.files.iter().any(|x| x == f));
-    let uncovered = coverage::uncovered(files, taken);
+    let mut uncovered = coverage::uncovered(files, taken);
+    uncovered.extend(coverage::not_utf8(&diff.not_utf8));
     (tracks, uncovered)
 }
 
