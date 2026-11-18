@@ -16,29 +16,7 @@
       }
     },
     "consumers": {
-      "type": "array",
-      "description": "each line of the CONSUMERS list, marked once judged",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "site",
-          "status"
-        ],
-        "properties": {
-          "site": {
-            "type": "string",
-            "description": "<file>:<line> as the list names it"
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "checked",
-              "not-relevant"
-            ]
-          }
-        }
-      }
+      "$ref": "consumers.schema.json"
     },
     "blocked": {
       "$ref": "blocked.schema.json"

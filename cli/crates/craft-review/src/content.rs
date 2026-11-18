@@ -234,6 +234,7 @@ const FILES: &[(&str, &str)] = content_files![
     "schemas/unit-findings.schema.json",
     "schemas/seam.schema.json",
     "schemas/blocked.schema.json",
+    "schemas/consumers.schema.json",
 ];
 
 /// The raw text of the content file at `path` under `content/`.
