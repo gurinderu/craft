@@ -5,6 +5,7 @@ use serde_json::Value;
 use crate::coverage;
 use crate::state::{RunState, Track};
 
+mod consumer_lines;
 mod gate_cap;
 #[cfg(test)]
 mod gate_cap_tests;
@@ -351,8 +352,9 @@ pub fn markdown(state: &RunState, verdict: &str) -> String {
         &state.settled,
     ));
     out.push_str(&crate::consumers::section(&state.context.consumers));
-    out.push_str(&crate::consumers::unmarked_line(&state.rounds.unmarked()));
-    out.push_str(&crate::consumers::seam_line(&seam_only(state)));
+    for (line, _) in consumer_lines::all(state) {
+        out.push_str(&line);
+    }
     out.push_str(&crate::critic::section(state));
     out.push_str(&crate::units::section(&state.units));
     out.push_str("\n## Not run\n\n");
@@ -388,28 +390,17 @@ fn listed(heading: Option<&str>, files: &[String], out: &mut String) {
     out.push('\n');
 }
 
-/// The CONSUMERS lines only a seam pass read: under unit mode, those no lens task was shown.
-fn seam_only(state: &RunState) -> Vec<String> {
-    if state.units.tracks.iter().all(|t| t.units.is_empty()) {
-        return Vec::new();
-    }
-    state.rounds.unshown(&state.context.consumers.sites())
-}
-
 /// How the run was weaker than asked: the host's notes, then the CONSUMERS lines no lens marked
-/// (realm @nick/craft, node #531).
+/// per line and no seam pass read (realm @nick/craft, node #531).
 #[must_use]
 pub fn degraded_notes(state: &RunState) -> Vec<String> {
     let mut notes = state.degraded.clone();
-    let left = state.rounds.unmarked();
-    if !left.is_empty() {
-        notes.push(
-            crate::consumers::unmarked_line(&left)
-                .trim_start_matches("- ")
-                .trim_end()
-                .to_owned(),
-        );
-    }
+    notes.extend(
+        consumer_lines::all(state)
+            .into_iter()
+            .filter(|(_, degraded)| *degraded)
+            .map(|(line, _)| line.trim_start_matches("- ").trim_end().to_owned()),
+    );
     notes
 }
 
