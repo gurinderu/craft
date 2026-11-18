@@ -33,7 +33,7 @@ pub use node::NodeWriter;
 pub use resume::{Host, resuming};
 pub use root::{adopt, found_root};
 use said::outcome;
-pub use said::{summary, with_filing};
+pub use said::{brief, summary, with_filing};
 pub use unfinished::unfinished;
 pub use wire::{Call, WriteError, Writer};
 

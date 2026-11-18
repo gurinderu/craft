@@ -482,6 +482,18 @@ fn the_summary_names_the_record_and_the_step_the_segment_ended_with() {
 }
 
 #[test]
+fn the_brief_names_the_record_and_that_the_step_is_kept_without_the_step() {
+    let run = tempfile::tempdir().unwrap();
+    let w = Fake::default();
+    assert_eq!(brief(run.path()), None);
+    open(run.path(), ctx(), "", &finished(1), &w);
+    assert_eq!(
+        brief(run.path()).unwrap(),
+        json!({"record": "filed", "recordFile": "/store/r.json", "kept": true, "pending": 0, "lost": []})
+    );
+}
+
+#[test]
 fn a_resume_whose_first_step_finishes_its_new_segment_names_its_own_record() {
     let run = tempfile::tempdir().unwrap();
     let w = Fake::default();
