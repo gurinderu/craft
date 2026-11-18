@@ -7,6 +7,7 @@ mod built;
 mod changed;
 mod gaps;
 mod lists;
+mod paths;
 mod walk;
 
 fn git(dir: &Path, args: &[&str]) -> String {

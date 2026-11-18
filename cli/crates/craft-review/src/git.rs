@@ -305,8 +305,11 @@ pub fn read_diff(cwd: &Path, base: Option<&str>, scope: Option<&str>) -> Result<
         }
         git(cwd, &all)
     };
-    let files = limited(&["diff", "--name-only", "--merge-base", &base])?
-        .lines()
+    // `-z`: each path as it is, unquoted, so it is spelled as the zero-context diff's headers
+    // read it.
+    let files = limited(&["diff", "--name-only", "-z", "--merge-base", &base])?
+        .split('\0')
+        .filter(|f| !f.is_empty())
         .map(str::to_owned)
         .collect();
     let stat = limited(&["diff", "--stat", "--merge-base", &base])?;
