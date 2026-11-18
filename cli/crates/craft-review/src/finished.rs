@@ -1,5 +1,5 @@
 //! The finished step: where the report is and the verdict, and what the host files as the run's
-//! record beside them — the verdict line as the report shows it, the head and base the run read,
+//! record beside them — the verdict line as the report shows it, the head and base the run read, the path it was confined to (`path=`, null for the whole change),
 //! the findings it reported (severity, file, line, title, tier), the changed files no profile
 //! covered and what did not run, the sorting before publication, the findings going against
 //! memory and what was posted on the PR ([`crate::publish`]), and what the lenses yielded and
@@ -21,7 +21,7 @@ pub(crate) fn step(dir: &Path, run: &RunState, verdict: &str) -> Value {
         "run": dir.display().to_string(), "done": true,
         "report": state::report_path(dir).display().to_string(),
         "verdict": verdict, "line": report::verdict_line(run, verdict),
-        "head": run.diff.head, "base": base(run), "repo": run.context.repo,
+        "head": run.diff.head, "base": base(run), "path": run.context.scope, "repo": run.context.repo,
         "findings": findings(run), "uncovered": run.uncovered, "notRun": run.not_run,
         "lensScope": if run.context.re_review == ReScope::Fixes || run.delta { "delta" } else { "full" },
         "round": run.chain.round.max(1), "ledger": run.chain.ledger, "reReview": re_review(run),

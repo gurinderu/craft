@@ -1,20 +1,25 @@
 //! `craft hook pre-pr`: the `PreToolUse` hook on the Bash tool that says, before `gh pr create`
-//! opens a pull request, when the run store holds no finished full craft review of its head
-//! (realm @nick/craft, node #541; in the binary, not Node: #537). It reads the harness's hook input
-//! on stdin — `tool_name`, `tool_input.command`, `cwd`, as Claude Code sends a `PreToolUse` input —
-//! and prints the hook's JSON output or nothing. It warns, never blocks: every way out is exit 0.
+//! opens a pull request, when the run store holds no finished full craft review of its head and
+//! whole change (realm @nick/craft, node #541; in the binary, not Node: #537). It reads the
+//! harness's hook input on stdin — `tool_name`, `tool_input.command`, `cwd`, as Claude Code sends a
+//! `PreToolUse` input — and prints the hook's JSON output or nothing. Silence means that review
+//! exists; whatever stops the check from telling is said as a line, never as silence. It warns,
+//! never blocks: every way out is exit 0, a write to a closed stdout included.
 
 mod command;
+mod counts;
+mod here;
+mod prefix;
 mod record;
 mod runs;
 mod said;
+mod split;
 
-use std::io::Read;
+use std::io::{Read, Write as _};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::Result;
-use craft_review::git;
 use serde_json::Value;
 
 #[derive(Debug, clap::Args)]
@@ -30,13 +35,15 @@ pub struct PrePrArgs {
 )]
 pub fn pre_pr(args: &PrePrArgs) -> Result<ExitCode> {
     let mut input = String::new();
-    if std::io::stdin().read_to_string(&mut input).is_ok()
-        && let Some(out) = check(&input, args.store.as_deref(), home().as_deref())
-    {
-        #[expect(clippy::print_stdout, reason = "the hook's output is its stdout")]
-        {
-            println!("{out}");
-        }
+    let out = match std::io::stdin().read_to_string(&mut input) {
+        Ok(_) => check(&input, args.store.as_deref(), home().as_deref()),
+        Err(e) => Some(said::could_not(&format!(
+            "the hook input could not be read ({e})"
+        ))),
+    };
+    if let Some(out) = out {
+        // A reader gone (the harness's timeout) leaves no one to tell; the exit stays 0.
+        writeln!(std::io::stdout().lock(), "{out}").unwrap_or_default();
     }
     Ok(ExitCode::SUCCESS)
 }
@@ -47,55 +54,65 @@ fn home() -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
-/// The output for the hook input `input`; `None` when it is not a `gh pr create` from a repository
-/// with a commit, or the head has its review.
+/// Input that may be a `gh pr create`: what is not cannot be ours, and stays silent unread.
+fn may_be_ours(input: &str) -> bool {
+    input.contains("gh") && (input.contains("create") || input.contains("new"))
+}
+
+/// The output for the hook input `input`; `None` when it is not a `gh pr create`, or the head has
+/// its review.
 fn check(input: &str, store: Option<&Path>, home: Option<&Path>) -> Option<Value> {
-    let input: Value = serde_json::from_str(input).ok()?;
-    if input.get("tool_name").and_then(Value::as_str) != Some("Bash") {
+    let parsed: Value = match serde_json::from_str(input) {
+        Ok(v) => v,
+        Err(e) => {
+            return may_be_ours(input)
+                .then(|| said::could_not(&format!("the hook input is not JSON ({e})")));
+        }
+    };
+    if parsed.get("tool_name").and_then(Value::as_str) != Some("Bash") {
         return None;
     }
-    let command = input
+    let Some(command) = parsed
         .pointer("/tool_input/command")
-        .and_then(Value::as_str)?;
-    let cwd = match input.get("cwd").and_then(Value::as_str) {
-        Some(c) if !c.is_empty() => PathBuf::from(c),
-        _ => std::env::current_dir().ok()?,
+        .and_then(Value::as_str)
+    else {
+        return may_be_ours(input)
+            .then(|| said::could_not("the hook input carries no tool_input.command"));
     };
-    let dir = command::pr_create_dir(command, &cwd, home)?;
-    let here = runs::Here {
-        head: git::head(&dir).ok()?,
-        project: repo_key(&dir),
-        branch: git::branch(&dir),
+    let cwd = match parsed.get("cwd").and_then(Value::as_str) {
+        Some(c) if !c.is_empty() => Ok(PathBuf::from(c)),
+        _ => {
+            std::env::current_dir().map_err(|e| format!("the hook's directory is unreadable ({e})"))
+        }
+    };
+    let pr = command::pr_create(command, cwd.as_deref().unwrap_or(Path::new("")), home)?;
+    judge(pr, cwd.err(), store, home)
+}
+
+/// What to say of the PR `pr` opens, `None` when its head has its review; `unknown_cwd` why the directory it runs from is unknown.
+fn judge(
+    pr: command::PrCreate,
+    unknown_cwd: Option<String>,
+    store: Option<&Path>,
+    home: Option<&Path>,
+) -> Option<Value> {
+    if let Some(by) = &pr.moved_by {
+        return Some(said::moved(by));
+    }
+    let dir = match (unknown_cwd, pr.dir) {
+        (Some(why), _) | (None, Err(why)) => return Some(said::could_not(&why)),
+        (None, Ok(dir)) => dir,
+    };
+    let (here, git) = match here::read(&dir, pr.head.as_deref()) {
+        Ok(h) => h,
+        Err(why) => return Some(said::could_not(&why)),
     };
     let found = match store
         .map(Path::to_path_buf)
         .or_else(|| home.map(|h| h.join(".craft/runs")))
     {
-        Some(store) => runs::look(&store, &here),
+        Some(store) => runs::look(&store, &here, &git),
         None => runs::Found::NoStore("HOME is not set, so there is no ~/.craft/runs".into()),
     };
     said::said(&found, &here)
-}
-
-/// The repository as run records name it, `repoKey` in `lib/repo-key.mjs`: the parent of a common
-/// git directory named `.git` (a plain checkout and its linked worktrees share it), else the work
-/// tree's top level, else the common directory, else the directory itself.
-fn repo_key(dir: &Path) -> String {
-    let common = git::common_dir(dir)
-        .ok()
-        .filter(|c| !c.contains('\n') && Path::new(c).is_absolute());
-    if let Some(c) = &common
-        && Path::new(c).file_name().is_some_and(|n| n == ".git")
-        && let Some(parent) = Path::new(c).parent()
-    {
-        return parent.display().to_string();
-    }
-    let found = git::toplevel(dir)
-        .ok()
-        .or_else(|| common.map(PathBuf::from));
-    found
-        .or_else(|| std::fs::canonicalize(dir).ok())
-        .unwrap_or_else(|| dir.to_path_buf())
-        .display()
-        .to_string()
 }

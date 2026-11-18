@@ -1,42 +1,84 @@
 //! What the pre-PR check says (realm @nick/craft, node #541): one line for the human
-//! (`systemMessage`) and one for the model (`additionalContext`), in the `PreToolUse` output Claude
-//! Code reads; nothing when the head has its full review.
+//! (`systemMessage`), shown before the command runs, and one for the model (`additionalContext`),
+//! which reaches it only after the command ran (#289) — so it speaks of a pull request already
+//! opened. Nothing when the head has its full review.
 
 use serde_json::{Value, json};
 
-use super::runs::{Found, Here, LastRun, Scope};
+use super::here::Here;
+use super::runs::{Found, LastRun, Scope};
+
+const OFFER: &str = "Tell the human, and offer to run one — the craft:review workflow on this branch in Claude Code, or `craft review run --backend codex|pi|opencode` on another host. This warns; it did not stop the command.";
 
 /// The hook's output for `found` at `here`; `None` when there is nothing to say.
 pub fn said(found: &Found, here: &Here) -> Option<Value> {
-    let head = short(&here.head);
-    let (human, model) = match found {
-        Found::Reviewed => return None,
-        Found::Missing { last, malformed } => {
+    let head = head_of(here);
+    match found {
+        Found::Reviewed => None,
+        Found::Missing {
+            last,
+            crates_only,
+            malformed,
+        } => {
             let last = last_run(last.as_ref(), here);
+            let crates = if *crates_only {
+                " A rust-audit covered only the crates; the rest of the change has no full review."
+            } else {
+                ""
+            };
             let skipped = match malformed {
                 0 => String::new(),
                 n => format!(" ({n} unreadable line(s) of the run store's index passed over.)"),
             };
-            (
-                format!(
-                    "craft: no full craft review on this head ({head}); {last}. Run craft:review or craft:rust-audit before the pull request, or say why it goes without one."
+            Some(output(
+                &format!(
+                    "craft: opening a PR with no full craft review on this head ({head}); {last}.{crates} Run craft:review on it before the pull request, or say why it goes without one."
                 ),
-                format!(
-                    "craft: no full craft review on this head ({head}): the run store holds no finished, full craft:review or craft:rust-audit run (not delta, not INCOMPLETE, not nested) on it; {last}.{skipped} Tell the human before the pull request is opened, then run one — the craft:review or craft:rust-audit workflow on this branch in Claude Code, or `craft review run --backend codex|pi|opencode` on another host — or say why this pull request goes without it. This warns; it does not stop the command."
+                &format!(
+                    "craft: the pull request was opened without a full craft review of its head ({head}): the run store holds no finished craft:review or craft:rust-audit run of the PR's whole change on it (not delta, light, path-scoped, dirty, INCOMPLETE, PARTIAL COVERAGE, gate-red or nested, and on origin's default branch's merge-base); {last}.{crates}{skipped} {OFFER}"
                 ),
-            )
+            ))
         }
-        Found::NoStore(why) => {
-            let text = format!(
-                "craft: could not check for a craft review on this head ({head}): the run store is not readable — {why}. No craft review is known for this pull request."
-            );
-            (text.clone(), text)
-        }
-    };
-    Some(json!({
+        Found::NoStore(why) => Some(could_not(&format!(
+            "the run store is not readable for this head ({head}) — {why}"
+        ))),
+    }
+}
+
+/// The output when the check could not be made, and why.
+pub fn could_not(why: &str) -> Value {
+    output(
+        &format!("craft: could not check for a full craft review before the PR: {why}."),
+        &format!(
+            "craft: whether the pull request's head has a full craft review could not be checked: {why}. {OFFER}"
+        ),
+    )
+}
+
+/// The output when an earlier command of the chain, `by`, moves HEAD before the PR is opened.
+pub fn moved(by: &str) -> Value {
+    output(
+        &format!(
+            "craft: could not check before the PR: the command changes the branch first (`{by}`) — run the review on the final head."
+        ),
+        &format!(
+            "craft: the pull request was opened after `{by}` changed the branch in the same command, so whether its head has a full craft review could not be checked. {OFFER}"
+        ),
+    )
+}
+
+fn output(human: &str, model: &str) -> Value {
+    json!({
         "systemMessage": human,
         "hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": model},
-    }))
+    })
+}
+
+fn head_of(here: &Here) -> String {
+    match &here.named {
+        Some(b) => format!("{}, the tip of {b} that --head names", short(&here.head)),
+        None => short(&here.head).to_owned(),
+    }
 }
 
 fn last_run(last: Option<&LastRun>, here: &Here) -> String {

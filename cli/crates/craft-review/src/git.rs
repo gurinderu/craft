@@ -96,9 +96,17 @@ pub fn worktree(cwd: &Path) -> Result<String, GitError> {
 /// `HEAD`) or when git cannot say, as `branchFromAbbrevRef`.
 #[must_use]
 pub fn branch(cwd: &Path) -> Option<String> {
-    let name = git(cwd, &["rev-parse", "--abbrev-ref", "HEAD"]).ok()?;
+    current_branch(cwd).ok().flatten()
+}
+
+/// The branch `HEAD` is on, `None` on a detached `HEAD`; a git failure kept apart from it.
+///
+/// # Errors
+/// When `cwd` is not a repository or `git` fails.
+pub fn current_branch(cwd: &Path) -> Result<Option<String>, GitError> {
+    let name = git(cwd, &["rev-parse", "--abbrev-ref", "HEAD"])?;
     let name = name.trim();
-    (!name.is_empty() && name != "HEAD").then(|| name.to_owned())
+    Ok((!name.is_empty() && name != "HEAD").then(|| name.to_owned()))
 }
 
 /// The commit `HEAD` names.
@@ -107,6 +115,44 @@ pub fn branch(cwd: &Path) -> Option<String> {
 /// When `cwd` is not a repository, `HEAD` names no commit yet, or `git` fails.
 pub fn head(cwd: &Path) -> Result<String, GitError> {
     Ok(git(cwd, &["rev-parse", "HEAD"])?.trim().to_owned())
+}
+
+/// The commit `rev` names in `cwd`, `None` when it names none (or would read as an option).
+#[must_use]
+pub fn commit_of(cwd: &Path, rev: &str) -> Option<String> {
+    if rev.is_empty() || rev.starts_with('-') {
+        return None;
+    }
+    let spec = format!("{rev}^{{commit}}");
+    let sha = git(cwd, &["rev-parse", "--verify", "--quiet", &spec]).ok()?;
+    Some(sha.trim().to_owned())
+}
+
+/// `git merge-base <a> <b>`.
+///
+/// # Errors
+/// When either is no commit (one spelled as an option included), they share no history, or `git`
+/// fails.
+pub fn merge_base(cwd: &Path, a: &str, b: &str) -> Result<String, GitError> {
+    if let Some(bad) = [a, b].into_iter().find(|r| r.starts_with('-')) {
+        return Err(GitError::NotACommit {
+            base: bad.to_owned(),
+            repo: cwd.to_owned(),
+        });
+    }
+    Ok(git(cwd, &["merge-base", a, b])?.trim().to_owned())
+}
+
+/// The paths that differ between the commits `from` and `to`, repository-relative.
+///
+/// # Errors
+/// When either is no commit or `git` fails.
+pub fn changed_files(cwd: &Path, from: &str, to: &str) -> Result<Vec<String>, GitError> {
+    let out = git(
+        cwd,
+        &["diff", "--name-only", "--no-renames", from, to, "--"],
+    )?;
+    Ok(out.lines().map(str::to_owned).collect())
 }
 
 /// The repository's shared git directory, one for a checkout and all its linked worktrees, so the
