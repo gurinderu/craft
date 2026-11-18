@@ -21,7 +21,7 @@ use run::{bounded, last_line};
 pub use error::CbmError;
 pub use index::Index;
 
-pub use probe::{probe, refresh_hint, roots_of, said};
+pub use probe::{RECORD, look, probe, refresh_hint, roots_of, said};
 
 /// The program `craft init` asks.
 pub const TOOL: &str = "codebase-memory-mcp";
