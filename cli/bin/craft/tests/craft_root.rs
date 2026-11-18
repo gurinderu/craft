@@ -215,6 +215,17 @@ fn filing_roots(
     start_root: Option<&Path>,
     submit_root: Option<&Path>,
 ) -> (Value, Value, Value) {
+    let home = tempfile::tempdir().unwrap();
+    filing_roots_in(home.path(), harness, start_root, submit_root)
+}
+
+/// [`filing_roots`] with `home` as the user's home, which holds the plugin cache.
+fn filing_roots_in(
+    home: &Path,
+    harness: Option<&Path>,
+    start_root: Option<&Path>,
+    submit_root: Option<&Path>,
+) -> (Value, Value, Value) {
     let tmp = tempfile::tempdir().unwrap();
     let code = tmp.path().join("repo");
     std::fs::create_dir_all(&code).unwrap();
@@ -222,7 +233,10 @@ fn filing_roots(
     let (exe, run) = (fetched(tmp.path()), tmp.path().join("run"));
     let craft = |args: &[&str], root: Option<&Path>| {
         let mut cmd = Command::new(&exe);
-        cmd.args(args).env_remove("CRAFT_ROOT");
+        cmd.args(args)
+            .env_remove("CRAFT_ROOT")
+            .env_remove("CLAUDE_CONFIG_DIR")
+            .env("HOME", home);
         match harness {
             Some(h) => cmd.env("CLAUDE_PLUGIN_ROOT", h),
             None => cmd.env_remove("CLAUDE_PLUGIN_ROOT"),
@@ -294,6 +308,24 @@ fn a_binary_given_no_root_files_through_the_harness_plugin_when_it_holds_the_wri
         filing_roots(Some(&bare), None, None).0,
         Value::Null,
         "no writer there"
+    );
+}
+
+#[test]
+fn a_binary_under_no_plugin_files_through_its_own_versions_installed_copy() {
+    let home = tempfile::tempdir().unwrap();
+    let copy = home
+        .path()
+        .join(".claude/plugins/cache/craft/craft")
+        .join(env!("CARGO_PKG_VERSION"));
+    plugin_with_writer(&copy, true);
+    let (started, submitted, prompts_root) = filing_roots_in(home.path(), None, None, None);
+    let copy = Value::from(copy.display().to_string());
+    assert_eq!((started, submitted), (copy.clone(), copy));
+    assert_eq!(
+        prompts_root,
+        Value::Null,
+        "the prompts keep the binary's own root"
     );
 }
 
