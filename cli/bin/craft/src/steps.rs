@@ -2,7 +2,7 @@
 //! command line. Each prints one JSON value on stdout; an error is one line on stderr and a
 //! non-zero exit (`main`).
 
-use std::io::{Read, Write};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
@@ -181,6 +181,10 @@ pub struct StatusArgs {
     /// The run directory `start` printed.
     #[arg(long)]
     pub run: PathBuf,
+    /// Only what no finding count grows: the phase, round, verdict, verdict line, report and
+    /// whether the record is filed, without the finished step the status embeds.
+    #[arg(long)]
+    pub brief: bool,
 }
 
 #[derive(Debug, clap::Args)]
@@ -197,9 +201,9 @@ pub struct GateArgs {
     pub dir: Option<PathBuf>,
 }
 
+/// `value` on stdout as one JSON line, as the host is handed it ([`crate::printed::write_line`]).
 pub(crate) fn print(value: &Value) -> Result<ExitCode> {
-    let mut out = std::io::stdout().lock();
-    writeln!(out, "{}", serde_json::to_string(value)?)?;
+    crate::printed::write_line(&mut std::io::stdout().lock(), value)?;
     Ok(ExitCode::SUCCESS)
 }
 
@@ -462,6 +466,9 @@ fn refuse_folded(run: &Path, args: &SubmitArgs) -> Result<()> {
 }
 
 pub fn status(args: &StatusArgs) -> Result<ExitCode> {
+    if args.brief {
+        return print(&status::brief(&args.run)?);
+    }
     print(&status::status(&args.run)?)
 }
 

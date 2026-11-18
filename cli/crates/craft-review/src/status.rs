@@ -76,3 +76,59 @@ pub fn status(dir: &Path) -> Result<Value, StateError> {
     }
     Ok(s)
 }
+
+/// Where the run in `dir` stands in a few fields whose size no finding count grows, for a host
+/// that could not copy the whole status (realm @nick/craft, node #522): its phase and round,
+/// whether it is done or stopped and why it stopped (`stop`), the head it read, its verdict,
+/// verdict line and report, how it ran weaker than asked (`degraded`), craft's own worktree it
+/// reviewed in, what came of publishing on the PR, and what its telemetry filed — without the
+/// finished step `status` embeds, its findings and its memory part.
+///
+/// # Errors
+/// When the state cannot be read.
+pub fn brief(dir: &Path) -> Result<Value, StateError> {
+    let run = state::load(dir)?;
+    let mut s = json!({
+        "run": dir.display().to_string(), "brief": true, "phase": phase_label(&run),
+        "round": run.chain.round.max(1), "done": run.phase == Phase::Done,
+        "stopped": run.stopped.is_some(), "head": run.diff.head,
+    });
+    if let (Some(v), Some(obj)) = (&run.verdict, s.as_object_mut()) {
+        obj.insert("verdict".into(), json!(v));
+        obj.insert("line".into(), json!(report::verdict_line(&run, v)));
+        obj.insert(
+            "report".into(),
+            json!(state::report_path(dir).display().to_string()),
+        );
+    }
+    if let (Some(filing), Some(obj)) = (crate::filing::brief(dir), s.as_object_mut()) {
+        obj.insert("filing".into(), filing);
+    }
+    bounded_parts(&mut s, &run);
+    Ok(s)
+}
+
+/// What a parent reads off a finished run's answer besides its findings, none of it growing
+/// with them: the stop, the degraded notes, the worktree line, and the publication's counts.
+fn bounded_parts(s: &mut Value, run: &RunState) {
+    crate::finished::name_worktree(s, run);
+    let Some(obj) = s.as_object_mut() else {
+        return;
+    };
+    if let Some(stop) = &run.stopped {
+        obj.insert("stop".into(), json!(stop));
+    }
+    if !run.degraded.is_empty() {
+        obj.insert("degraded".into(), json!(run.degraded));
+    }
+    let p = &run.publish;
+    if let Some(posted) = &p.posted {
+        obj.insert("prComments".into(), json!(posted));
+    }
+    if let Some(sorting) = &p.sorting {
+        obj.insert(
+            "sorting".into(),
+            json!({"defect": sorting.defects.len(), "doubtful": sorting.doubtful.len()}),
+        );
+    }
+}
