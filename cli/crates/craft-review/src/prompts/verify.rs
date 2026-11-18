@@ -36,6 +36,12 @@ fn finding_fields(f: &Value, self_contained: &str) -> Vec<(&'static str, String)
             format!("\n  harm claimed (worst first; effect, who, recovery): {level}: {h}")
         }
     };
+    let regression = field("regression");
+    let harm = if regression.is_empty() {
+        harm
+    } else {
+        format!("{harm}\n  regression the test lets through (a test gap): {regression}")
+    };
     vec![
         ("severity", field("severity")),
         ("title", field("title")),
