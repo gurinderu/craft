@@ -119,11 +119,7 @@ fn the_symbols_the_graph_was_not_asked_of_are_said() {
         "{}",
         section(&c)
     );
+    // The name search ran for `b`: what the graph was not asked stays in the report.
     let block = lens_block(&c).unwrap();
-    assert!(
-        block.contains(
-            "The code graph was not asked for the callers of (find them yourself): b (time bound)."
-        ),
-        "{block}"
-    );
+    assert!(!block.contains("b (time bound)"), "{block}");
 }

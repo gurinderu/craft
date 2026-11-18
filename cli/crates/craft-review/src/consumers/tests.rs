@@ -8,6 +8,7 @@ use crate::gate::tests::exe;
 
 mod asks;
 mod changed;
+mod gaps;
 mod graphs;
 mod lists;
 mod walk;
