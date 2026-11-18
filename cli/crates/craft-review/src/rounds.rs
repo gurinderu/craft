@@ -51,6 +51,9 @@ pub struct Rounds {
     /// @nick/craft, node #531).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub consumers_left: Vec<String>,
+    /// The CONSUMERS lines some lens task's prompt showed, answered or not.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub consumers_shown: Vec<String>,
 }
 
 /// The exact key of a finding: its file and title folded, and its line, as `key` in
@@ -224,6 +227,7 @@ impl Rounds {
                 continue;
             };
             added.entry(profile.clone()).or_insert(0);
+            self.note_shown(t);
             let mut k = lens_key(profile, lens);
             if let Some(s) = slice {
                 k = format!("{k}{SLICE_SEP}{s}");
@@ -264,6 +268,24 @@ impl Rounds {
         added
     }
 
+    /// Takes the CONSUMERS lines `other` (these rounds with more answers absorbed) holds as
+    /// shown, marked and left; returns its pool.
+    pub(crate) fn take_consumers(&mut self, other: Self) -> Vec<Value> {
+        self.consumers_shown = other.consumers_shown;
+        self.consumers_marked = other.consumers_marked;
+        self.consumers_left = other.consumers_left;
+        other.pool
+    }
+
+    /// Notes the CONSUMERS lines lens task `t` was shown, answered or not.
+    pub(crate) fn note_shown(&mut self, t: &Task) {
+        for site in &t.consumers {
+            if !self.consumers_shown.contains(site) {
+                self.consumers_shown.push(site.clone());
+            }
+        }
+    }
+
     /// Notes the CONSUMERS lines answered task `t` was shown: those it marked, and those it left.
     pub(crate) fn consumer_marks(&mut self, t: &Task) {
         for site in &t.consumers {
@@ -284,6 +306,17 @@ impl Rounds {
         self.consumers_left
             .iter()
             .filter(|s| !self.consumers_marked.contains(s))
+            .cloned()
+            .collect()
+    }
+
+    /// The lines of `listed` no lens task was shown, in `listed`'s order: under unit mode, those
+    /// outside every confined lens's units, which only the seam pass reads.
+    #[must_use]
+    pub fn unshown(&self, listed: &[String]) -> Vec<String> {
+        listed
+            .iter()
+            .filter(|s| !self.consumers_shown.contains(s))
             .cloned()
             .collect()
     }
@@ -345,5 +378,7 @@ impl Rounds {
     }
 }
 
+#[cfg(test)]
+mod shown_tests;
 #[cfg(test)]
 mod tests;

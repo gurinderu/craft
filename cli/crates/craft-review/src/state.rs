@@ -172,8 +172,8 @@ pub struct Task {
     /// The CONSUMERS lines (`file:line`) its prompt lists, each of which its answer must mark.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub consumers: Vec<String>,
-    /// The CONSUMERS lines its answer, taken on its last attempt, left unmarked (realm
-    /// @nick/craft, node #531).
+    /// The CONSUMERS lines its answer left unmarked, when taken anyway: on its last attempt, or
+    /// fallen back on once its retries were spent (realm @nick/craft, node #531).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub unmarked: Vec<String>,
     pub state: TaskState,

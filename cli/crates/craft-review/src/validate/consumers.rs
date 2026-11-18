@@ -13,14 +13,10 @@ const SHOWN_MAX: usize = 10;
 /// none of it, is held to what it was shown.
 #[must_use]
 pub fn listed(prompt: &str, c: &Consumers) -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
-    for s in c.symbols.iter().flat_map(|s| &s.sites) {
-        let site = format!("{}:{}", s.file, s.line);
-        if prompt.contains(&format!("- {site}: ")) && !out.contains(&site) {
-            out.push(site);
-        }
-    }
-    out
+    c.sites()
+        .into_iter()
+        .filter(|site| prompt.contains(&format!("- {site}: ")))
+        .collect()
 }
 
 /// The lines of `listed` that `answer`'s `consumers` does not mark, in `listed`'s order.

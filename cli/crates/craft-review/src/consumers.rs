@@ -25,7 +25,7 @@ mod text;
 
 pub use make::{build, of_checkout};
 pub use save::keep;
-pub use section::{section, unmarked_line};
+pub use section::{seam_line, section, unmarked_line};
 pub use text::{confined_block, lens_block, seam_block};
 
 /// The name search's name in the report and on a site.
@@ -115,5 +115,18 @@ impl Consumers {
     #[must_use]
     pub fn lines(&self) -> usize {
         self.symbols.iter().map(|s| s.sites.len()).sum()
+    }
+
+    /// Each line the list holds as `file:line`, once, in the list's order.
+    #[must_use]
+    pub fn sites(&self) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        for s in self.symbols.iter().flat_map(|s| &s.sites) {
+            let site = format!("{}:{}", s.file, s.line);
+            if !out.contains(&site) {
+                out.push(site);
+            }
+        }
+        out
     }
 }
