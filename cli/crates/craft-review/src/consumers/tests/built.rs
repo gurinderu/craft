@@ -99,3 +99,18 @@ fn a_removal_between_two_items_is_held_by_neither() {
     assert!(found.is_empty(), "{found:?}");
     assert_eq!(unplaced, vec!["a.rs:3 (lines removed after it)"]);
 }
+
+#[test]
+fn a_removal_inside_a_test_module_names_no_symbol() {
+    let text = "#[cfg(test)]\nmod tests {\n    fn helper() {\n        1;\n        2;\n    }\n}\n";
+    let gone = crate::gate::lines::Removal {
+        file: "a.rs".into(),
+        after: 4,
+        text: vec!["        x();".into()],
+    };
+    let (found, unplaced) = crate::consumers::removed::of_removals("a.rs", text, &[&gone]);
+    assert!(
+        found.is_empty() && unplaced.is_empty(),
+        "{found:?} {unplaced:?}"
+    );
+}

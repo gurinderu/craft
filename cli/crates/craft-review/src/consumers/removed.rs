@@ -1,6 +1,7 @@
 //! The items a change only removes lines from: a pure deletion names the item holding both lines
 //! it sat between; one no single item holds is kept as unplaced, so it is said rather than lost.
 
+use super::attrs::test_mods;
 use super::braces::structure;
 use super::symbols::{Symbol, add, enclosing, is_code, item};
 use crate::gate::lines::Removal;
@@ -18,6 +19,7 @@ pub(super) fn of_removals(
     }
     let lines: Vec<&str> = text.lines().collect();
     let st = structure(&lines);
+    let mods = test_mods(&lines, &st);
     for r in removals
         .iter()
         .filter(|r| r.text.iter().any(|l| is_code(l)))
@@ -28,7 +30,7 @@ pub(super) fn of_removals(
         let holder = above.filter(|&d| enclosing(&lines, &st, below) == Some(d));
         match holder {
             Some(d) => {
-                if let Some(sym) = item(file, &lines, &st, d) {
+                if let Some(sym) = item(file, &lines, &st, &mods, d) {
                     add(&mut out, sym);
                 }
             }
