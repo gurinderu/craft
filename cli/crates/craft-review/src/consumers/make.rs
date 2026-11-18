@@ -31,7 +31,7 @@ pub fn of_checkout(cwd: &Path, diff: &crate::git::Diff) -> Consumers {
 /// change's diff cannot be read.
 #[must_use]
 pub fn build(top: &Path, diff: &crate::git::Diff) -> Consumers {
-    let text = match crate::git::zero_context_diff_lossy(top, &diff.merge_base) {
+    let text = match crate::git::zero_context_diff(top, &diff.merge_base) {
         Ok(text) => text,
         Err(e) => return Consumers::failed(format!("the change's diff could not be read: {e}")),
     };
@@ -42,12 +42,5 @@ pub fn build(top: &Path, diff: &crate::git::Diff) -> Consumers {
     out.unplaced = found.unplaced;
     out.unlisted = found.unlisted;
     out.unreadable = found.unreadable;
-    // A Rust path that is not UTF-8 is listed quoted, as git quotes it: no file by that name.
-    out.unreadable.extend(
-        diff.not_utf8
-            .iter()
-            .filter(|f| f.trim_end_matches('"').ends_with(".rs"))
-            .map(|f| format!("{f} (path not UTF-8)")),
-    );
     out
 }

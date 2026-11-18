@@ -119,23 +119,3 @@ fn a_test_item_is_left_out_whatever_its_attribute_looks_like() {
     let names: Vec<&str> = found.iter().map(|s| s.name.as_str()).collect();
     assert_eq!(names, vec!["kept"]);
 }
-
-#[cfg(unix)]
-#[test]
-fn a_changed_rust_file_whose_path_is_not_utf8_is_said_not_read() {
-    use std::os::unix::ffi::OsStrExt;
-    let t = tempfile::tempdir().unwrap();
-    let repo = repo(t.path(), &[], &[]);
-    for n in [&b"src/caf\xe9.rs"[..], b"src/caf\xe9.txt"] {
-        std::fs::write(
-            repo.join(std::ffi::OsStr::from_bytes(n)),
-            "pub fn odd() {}\n",
-        )
-        .unwrap();
-    }
-    git(&repo, &["add", "."]);
-    git(&repo, &["commit", "-qm", "feat: odd names"]);
-    let c = build(&repo, &diff_of(&repo));
-    assert_eq!(c.failed, "", "the rest of the change still reads");
-    assert_eq!(c.unreadable, vec![r#""src/caf\351.rs" (path not UTF-8)"#]);
-}
