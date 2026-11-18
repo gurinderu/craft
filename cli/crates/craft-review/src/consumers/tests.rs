@@ -7,6 +7,7 @@ use crate::project::CodeGraph;
 use crate::gate::tests::exe;
 
 mod asks;
+mod changed;
 mod graphs;
 mod lists;
 mod walk;

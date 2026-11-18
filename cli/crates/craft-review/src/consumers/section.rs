@@ -55,6 +55,20 @@ fn section_gaps(c: &Consumers) -> String {
             shown(&c.unplaced)
         ));
     }
+    if !c.unlisted.is_empty() {
+        out.push_str(&format!(
+            "- {} changed symbol(s) past the 40-symbol limit, not searched: {}\n",
+            c.unlisted.len(),
+            shown(&c.unlisted)
+        ));
+    }
+    if !c.unreadable.is_empty() {
+        out.push_str(&format!(
+            "- {} changed file(s) not read, their symbols not searched: {}\n",
+            c.unreadable.len(),
+            shown(&c.unreadable)
+        ));
+    }
     if c.graph_unlocated > 0 {
         out.push_str(&format!(
             "- {} {GRAPH} caller(s) not located in head: no line of the span names the symbol\n",

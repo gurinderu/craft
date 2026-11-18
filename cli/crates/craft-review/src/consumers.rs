@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::project::CodeGraph;
 
+mod attrs;
 mod braces;
 pub mod cbm;
 mod fresh;
@@ -21,6 +22,7 @@ mod names;
 mod order;
 mod save;
 mod section;
+mod source;
 mod symbols;
 #[cfg(test)]
 mod tests;
@@ -84,6 +86,13 @@ pub struct Consumers {
     /// was searched.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub unplaced: Vec<String>,
+    /// The changed symbols past the per-run limit, neither searched by name nor asked of the graph:
+    /// `name (file)`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unlisted: Vec<String>,
+    /// The changed Rust files whose symbols were not read, each with why: `file (why)`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unreadable: Vec<String>,
     /// How many of the graph's callers no line of head's span names the symbol in.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub graph_unlocated: usize,
@@ -133,18 +142,20 @@ impl Consumers {
 pub fn build(top: &Path, diff: &crate::git::Diff, graph: Result<CodeGraph, String>) -> Consumers {
     let text = crate::git::zero_context_diff(top, &diff.base).unwrap_or_default();
     let changed = crate::gate::lines::Lines::parse(&text);
-    let (found, unplaced) = symbols::changed(top, &diff.files, &changed, list::SYMBOLS_MAX);
+    let found = symbols::changed(top, &diff.files, &changed, list::SYMBOLS_MAX);
     let (asked, graph_skipped) = match graph {
-        Ok(g) => graph::graph_callers(top, &diff.merge_base, &g, &found),
+        Ok(g) => graph::graph_callers(top, &diff.merge_base, &g, &found.symbols),
         Err(why) => (None, why),
     };
     let callers = asked.as_ref().map(|a| a.callers.as_slice());
-    let mut out = list::assemble(top, &changed, &found, callers);
+    let mut out = list::assemble(top, &changed, &found.symbols, callers);
     if let Some(a) = asked {
         out.graph_truncated = a.truncated;
         out.graph_unasked = a.unasked;
     }
     out.graph_skipped = graph_skipped;
-    out.unplaced = unplaced;
+    out.unplaced = found.unplaced;
+    out.unlisted = found.unlisted;
+    out.unreadable = found.unreadable;
     out
 }
