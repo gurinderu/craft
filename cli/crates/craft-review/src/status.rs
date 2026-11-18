@@ -76,3 +76,31 @@ pub fn status(dir: &Path) -> Result<Value, StateError> {
     }
     Ok(s)
 }
+
+/// Where the run in `dir` stands in a few fields whose size no finding count grows, for a host
+/// that could not copy the whole status (realm @nick/craft, node #522): its phase and round,
+/// whether it is done or stopped, the head it read, its verdict, verdict line and report, and what
+/// its telemetry filed — without the finished step `status` embeds.
+///
+/// # Errors
+/// When the state cannot be read.
+pub fn brief(dir: &Path) -> Result<Value, StateError> {
+    let run = state::load(dir)?;
+    let mut s = json!({
+        "run": dir.display().to_string(), "brief": true, "phase": phase_label(&run),
+        "round": run.chain.round.max(1), "done": run.phase == Phase::Done,
+        "stopped": run.stopped.is_some(), "head": run.diff.head,
+    });
+    if let (Some(v), Some(obj)) = (&run.verdict, s.as_object_mut()) {
+        obj.insert("verdict".into(), json!(v));
+        obj.insert("line".into(), json!(report::verdict_line(&run, v)));
+        obj.insert(
+            "report".into(),
+            json!(state::report_path(dir).display().to_string()),
+        );
+    }
+    if let (Some(filing), Some(obj)) = (crate::filing::brief(dir), s.as_object_mut()) {
+        obj.insert("filing".into(), filing);
+    }
+    Ok(s)
+}
