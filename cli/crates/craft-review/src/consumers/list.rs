@@ -4,6 +4,7 @@
 
 use std::collections::HashMap;
 use std::path::Path;
+use std::time::Instant;
 
 use super::cbm::Caller;
 use super::graph::graph_sites;
@@ -80,8 +81,9 @@ pub(super) fn assemble(
         ..Consumers::default()
     };
     let mut files = HashMap::new();
+    let deadline = Instant::now() + names::BUDGET;
     for sym in found {
-        let mut sites = searched(top, changed, sym, &mut out.unsearched);
+        let mut sites = searched(top, changed, sym, deadline, &mut out.unsearched);
         let theirs = callers.unwrap_or_default().iter();
         for c in theirs.filter(|c| c.symbol == sym.name && c.defined_in == sym.file) {
             let (found, located) = graph_sites(&mut files, top, c, sym, changed);
@@ -102,13 +104,20 @@ pub(super) fn assemble(
     out
 }
 
-/// The name search's lines for `sym`; a name too common to search is noted in `unsearched`.
-fn searched(top: &Path, changed: &Lines, sym: &Symbol, unsearched: &mut Vec<String>) -> Vec<Site> {
+/// The name search's lines for `sym`, searched before `deadline`; a name too common to search, or
+/// one the search could not finish, is noted in `unsearched`.
+fn searched(
+    top: &Path,
+    changed: &Lines,
+    sym: &Symbol,
+    deadline: Instant,
+    unsearched: &mut Vec<String>,
+) -> Vec<Site> {
     if names::skip(&sym.name) {
         unsearched.push(sym.name.clone());
         return Vec::new();
     }
-    match names::search(top, &sym.name) {
+    match names::search(top, &sym.name, deadline) {
         Ok(hits) => hits
             .iter()
             .filter_map(|h| {
