@@ -20,6 +20,8 @@ use crate::state::{RunState, Task, TaskKind, TaskState, finding_profile};
 
 mod admit;
 #[cfg(test)]
+mod marks_tests;
+#[cfg(test)]
 mod tests;
 
 pub(crate) use admit::followups;
@@ -144,11 +146,13 @@ fn lens_task(run: &RunState, p: &Profile, plan: &Plan, lens: &str) -> Result<Tas
         },
     );
     task.agent_type = p.lens_agent;
+    task.consumers = crate::validate::listed(&task.prompt, &run.context.consumers);
     Ok(task)
 }
 
 /// What the admitted lenses found that the pool does not hold, each once, its `source` the lens
-/// and its `profile` the critic's; each lens that gave no findings is named in `not_run`.
+/// and its `profile` the critic's; each lens that gave no findings is named in `not_run`. The
+/// CONSUMERS lines each answered lens was shown are noted as the rounds note a lens's.
 pub(crate) fn fresh(run: &mut RunState) -> Vec<Value> {
     let mut seen: Vec<String> = run.rounds.pool.iter().map(key).collect();
     let mut out = Vec::new();
@@ -166,6 +170,7 @@ pub(crate) fn fresh(run: &mut RunState) -> Vec<Value> {
             run.not_run.push(format!("{profile} critic follow-up lens {lens} — dispatched and returned no findings (died, or answered off-schema)"));
             continue;
         };
+        run.rounds.consumer_marks(t);
         for f in found {
             let mut f = f.as_object().cloned().unwrap_or_default();
             f.insert("source".into(), Value::String(lens.clone()));

@@ -5,7 +5,7 @@ use super::*;
 use crate::state::{RunState, Task, TaskState};
 
 /// A run of one Rust track planned as `plan`, read from the JSON a state file holds.
-fn run_with(plan: &serde_json::Value) -> RunState {
+pub(super) fn run_with(plan: &serde_json::Value) -> RunState {
     let mut run: RunState = serde_json::from_value(json!({
         "version": crate::state::STATE_VERSION,
         "context": {"repo": "/r", "base": "origin/main", "spec": "", "craftRoot": null, "craftVersion": null},
@@ -19,7 +19,7 @@ fn run_with(plan: &serde_json::Value) -> RunState {
     run
 }
 
-fn plan(
+pub(super) fn plan(
     size: &str,
     security: bool,
     lenses: &[&str],
