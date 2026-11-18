@@ -11,6 +11,8 @@ use serde_json::Value;
 use crate::sources::Sources;
 
 mod adjudicate;
+#[cfg(test)]
+mod consumers_tests;
 mod critic;
 mod lens;
 #[cfg(test)]

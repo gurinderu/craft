@@ -91,4 +91,40 @@ fn unit_mode_prompts_render_as_the_engine_renders_them() {
     ] {
         g.check(&format!("/expected/unit/{name}"), body(got.unwrap()));
     }
+    // The batch's lens with a consumers list: its crates' lines only, the rest the seam's.
+    let ctx = PromptContext {
+        consumers: listed(),
+        ..ctx
+    };
+    g.check(
+        "/expected/consumers/confined",
+        body(slice_lens_prompt(&ctx, &at, &batch).unwrap()),
+    );
+    let seam = seam_prompt(&ctx, &rust, words, &batch.units, &[], &plan.repo_rules);
+    g.check("/expected/consumers/seam", body(seam.unwrap()));
+}
+
+/// A symbol of `crates/a` named in its own crate and in `crates/c`.
+fn listed() -> crate::consumers::Consumers {
+    use crate::consumers::{Consumers, Listed, Site};
+    let site = |file: &str, line: u32, text: &str| Site {
+        file: file.into(),
+        line,
+        text: text.into(),
+        from: vec!["name search".into()],
+        kind: String::new(),
+    };
+    Consumers {
+        sources: vec!["name search".into()],
+        symbols: vec![Listed {
+            name: "rule_to_api".into(),
+            file: "crates/a/src/lib.rs".into(),
+            line: 12,
+            sites: vec![
+                site("crates/a/src/map.rs", 33, ".map(rule_to_api)"),
+                site("crates/c/src/use.rs", 41, "let a = rule_to_api(r);"),
+            ],
+        }],
+        ..Consumers::default()
+    }
 }

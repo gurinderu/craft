@@ -7,8 +7,8 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
+use super::attrs::is_test;
 use super::braces::{item_end, structure};
-use crate::gate::lines::Lines;
 
 /// A Rust item declaration and its name.
 static DECL: LazyLock<Option<Regex>> = LazyLock::new(|| {
@@ -45,23 +45,9 @@ pub(super) fn is_test_path(path: &str) -> bool {
         || name.ends_with("_test.rs")
 }
 
-/// Whether the declaration at `at` carries a test attribute on the lines above it.
-fn is_test_fn(lines: &[&str], at: usize) -> bool {
-    lines
-        .get(..at)
-        .unwrap_or_default()
-        .iter()
-        .rev()
-        .take_while(|l| {
-            let t = l.trim_start();
-            t.starts_with("#[") || t.starts_with("///")
-        })
-        .any(|l| l.contains("test]") || l.contains("test("))
-}
-
 /// The declaration line index enclosing `at` (0-based), the line itself when it declares: the
 /// nearest declaration above whose item ends at or below it.
-fn enclosing(lines: &[&str], st: &[Vec<u8>], at: usize) -> Option<usize> {
+pub(super) fn enclosing(lines: &[&str], st: &[Vec<u8>], at: usize) -> Option<usize> {
     if declared(lines.get(at)?).is_some() {
         return Some(at);
     }
@@ -73,7 +59,7 @@ fn enclosing(lines: &[&str], st: &[Vec<u8>], at: usize) -> Option<usize> {
 
 /// Whether `l` is code an item would hold: not blank, a comment, an attribute, an import, a
 /// module line or bare punctuation.
-fn is_code(l: &str) -> bool {
+pub(super) fn is_code(l: &str) -> bool {
     let t = l.trim_start();
     let skipped = ["//", "#[", "#!", "use ", "pub use ", "mod ", "pub mod "];
     !skipped.iter().any(|p| t.starts_with(p)) && t.chars().any(char::is_alphanumeric)
@@ -96,44 +82,26 @@ pub(super) fn of_file(file: &str, text: &str, ranges: &[(u32, u32)]) -> (Vec<Sym
             }
             continue;
         };
-        let name = lines.get(d).and_then(|l| declared(l)).unwrap_or_default();
-        if name.is_empty() || is_test_fn(&lines, d) || out.iter().any(|s| s.name == name) {
-            continue;
+        if let Some(sym) = item(file, &lines, &st, d) {
+            add(&mut out, sym);
         }
-        out.push(Symbol {
-            name: name.to_owned(),
-            file: file.to_owned(),
-            line: u32::try_from(d + 1).unwrap_or(u32::MAX),
-        });
     }
     (out, unplaced)
 }
 
-/// The symbols the change `lines` adds or changes in the Rust files of `files` under `top`, each
-/// name once, at most `max`; and the changed code lines (`file:line`) in no item.
-pub(super) fn changed(
-    top: &std::path::Path,
-    files: &[String],
-    lines: &Lines,
-    max: usize,
-) -> (Vec<Symbol>, Vec<String>) {
-    let mut out: Vec<Symbol> = Vec::new();
-    let mut unplaced = Vec::new();
-    for (file, ranges) in lines.ranges() {
-        if !file.ends_with(".rs") || is_test_path(file) || !files.iter().any(|f| f == file) {
-            continue;
-        }
-        let Ok(text) = std::fs::read_to_string(top.join(file)) else {
-            continue;
-        };
-        let (found, lost) = of_file(file, &text, ranges);
-        unplaced.extend(lost.into_iter().map(|n| format!("{file}:{n}")));
-        for s in found {
-            if !out.iter().any(|o| o.name == s.name) {
-                out.push(s);
-            }
-        }
+/// The symbol the declaration at `d` (0-based) names, when it is not test code.
+pub(super) fn item(file: &str, lines: &[&str], st: &[Vec<u8>], d: usize) -> Option<Symbol> {
+    let name = lines.get(d).and_then(|l| declared(l))?;
+    (!is_test(lines, st, d)).then(|| Symbol {
+        name: name.to_owned(),
+        file: file.to_owned(),
+        line: u32::try_from(d + 1).unwrap_or(u32::MAX),
+    })
+}
+
+/// Adds `sym` to one file's symbols unless its name is there already.
+pub(super) fn add(out: &mut Vec<Symbol>, sym: Symbol) {
+    if !out.iter().any(|s| s.name == sym.name) {
+        out.push(sym);
     }
-    out.truncate(max);
-    (out, unplaced)
 }
