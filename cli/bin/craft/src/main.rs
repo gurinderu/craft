@@ -116,7 +116,16 @@ async fn main() -> ExitCode {
             {
                 eprintln!("craft: {e:#}");
             }
-            ExitCode::FAILURE
+            // A refused argument exits as clap's own usage errors do, so a host tells it from a
+            // failure (realm @nick/craft, node #523).
+            let refused = e
+                .downcast_ref::<craft_review::Error>()
+                .is_some_and(craft_review::Error::refuses_argument);
+            if refused {
+                ExitCode::from(2)
+            } else {
+                ExitCode::FAILURE
+            }
         }
     }
 }

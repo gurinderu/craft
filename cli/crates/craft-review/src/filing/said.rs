@@ -16,7 +16,7 @@ pub fn summary(run: &Path) -> Option<Value> {
     let finished = filing
         .finished
         .clone()
-        .map(|step| with_filing(step, outcome(&filing, &filing.lost, true)));
+        .map(|step| with_filing(step, outcome(run, &filing, &filing.lost, true)));
     Some(json!({
         "record": filing.record, "recordFile": filing.record_file, "finished": finished,
         "pending": filing.pending.len(),
@@ -38,17 +38,19 @@ pub fn brief(run: &Path) -> Option<Value> {
     }))
 }
 
-/// `step` with the outcome of its telemetry under `filing`.
+/// `step` with the outcome of its telemetry under `filing`, its degraded notes saying whether its
+/// record is filed.
 #[must_use]
 pub fn with_filing(mut step: Value, filing: Value) -> Value {
     if let Some(obj) = step.as_object_mut() {
+        super::unfiled::tell(obj, &filing);
         obj.insert("filing".into(), filing);
     }
     step
 }
 
 /// What the writes after a step did, as the step's `filing` says it.
-pub(super) fn outcome(filing: &Filing, lost: &[String], done: bool) -> Value {
+pub(super) fn outcome(run: &Path, filing: &Filing, lost: &[String], done: bool) -> Value {
     let mut v = json!({"runDir": filing.run_dir, "rejoin": filing.rejoin, "lost": lost});
     if let Some(obj) = v.as_object_mut().filter(|_| done) {
         obj.insert("record".into(), json!(filing.record));
@@ -61,6 +63,9 @@ pub(super) fn outcome(filing: &Filing, lost: &[String], done: bool) -> Value {
         };
         if !filing.record_file.is_empty() {
             obj.insert(key.into(), json!(filing.record_file));
+        }
+        if let Some(note) = super::unfiled::note(run, filing, lost) {
+            obj.insert("unfiled".into(), json!(note));
         }
     }
     v
