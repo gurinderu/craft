@@ -45,5 +45,9 @@ fn the_probe_finds_the_project_by_root_or_says_the_graph_is_not_there() {
     assert!(!missing.available);
     assert!(missing.note.contains("could not run"), "{}", missing.note);
     let index = Cbm::new(&g.tool).index("p").unwrap();
-    assert_eq!((index.at.as_str(), index.root.as_str()), ("x", "/r"));
+    let root = super::repo_root(t.path());
+    assert_eq!(
+        (index.at.as_str(), index.root.as_str()),
+        ("x", root.as_str())
+    );
 }

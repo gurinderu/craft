@@ -70,6 +70,10 @@ fn gaps(c: &Consumers) -> Vec<String> {
             "The code graph's callers were cut for (find the rest yourself)",
         ),
         (
+            &c.graph_unreadable,
+            "The code graph's callers in files not read here (read them yourself)",
+        ),
+        (
             &c.graph_unasked,
             "The code graph was not asked for the callers of (find them yourself)",
         ),
