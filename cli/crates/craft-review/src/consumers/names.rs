@@ -1,9 +1,14 @@
 //! The name search: the lines of the working tree that name a symbol as a whole word, from
-//! `git grep -n -w -I -F -z` over the tracked files, build output, lockfiles and vendored trees
-//! left out — always run, because a code graph loses edges (a function passed as a value).
+//! `git grep -n -w -I -F -z` over the tracked Rust sources, build output, lockfiles and vendored
+//! trees left out — always run, because a code graph loses edges (a function passed as a value).
 
 use std::path::Path;
 use std::process::Command;
+use std::time::{Duration, Instant};
+
+mod stream;
+
+use stream::{Ended, stream};
 
 /// Names too common for a whole-word search to tell one symbol's uses from another's.
 const COMMON: [&str; 40] = [
@@ -50,6 +55,11 @@ const COMMON: [&str; 40] = [
 ];
 /// A name matching more lines than this is too common to list.
 pub(super) const HITS_MAX: usize = 200;
+/// How long the name search of all a review's symbols may take, past which the rest are not
+/// searched.
+pub(super) const BUDGET: Duration = Duration::from_secs(60);
+/// What the search reads: Rust sources only, the language whose symbols it searches.
+const RUST: &str = ":(glob)**/*.rs";
 /// What the search never reads.
 const EXCLUDE: [&str; 6] = [
     ":(exclude,glob)**/target/**",
@@ -73,11 +83,11 @@ pub(super) fn skip(name: &str) -> bool {
     name.len() < 3 || COMMON.contains(&name)
 }
 
-/// The lines of the working tree at `top` that name `name` as a whole word; `Err` with the count
-/// when more than [`HITS_MAX`] do, or with git's reason.
-pub(super) fn search(top: &Path, name: &str) -> Result<Vec<Hit>, String> {
-    let out = Command::new("git")
-        .arg("-C")
+/// The lines of the working tree's Rust sources at `top` that name `name` as a whole word; `Err`
+/// once more than [`HITS_MAX`] do, when `deadline` passes first, or with git's reason.
+pub(super) fn search(top: &Path, name: &str, deadline: Instant) -> Result<Vec<Hit>, String> {
+    let mut cmd = Command::new("git");
+    cmd.arg("-C")
         .arg(top)
         .args([
             "grep",
@@ -90,34 +100,15 @@ pub(super) fn search(top: &Path, name: &str) -> Result<Vec<Hit>, String> {
             "-e",
             name,
             "--",
-            ".",
+            RUST,
         ])
-        .args(EXCLUDE)
-        .output()
-        .map_err(|e| format!("git grep could not run: {e}"))?;
-    match out.status.code() {
-        Some(0) => {}
-        Some(1) => return Ok(Vec::new()),
-        _ => {
-            let err = String::from_utf8_lossy(&out.stderr);
-            return Err(format!("git grep failed: {}", err.trim()));
-        }
+        .args(EXCLUDE);
+    match stream(cmd, deadline)? {
+        Ended::Capped => Err(format!("over {HITS_MAX} lines")),
+        Ended::Exited(Some(0), hits, _) => Ok(hits),
+        Ended::Exited(Some(1), ..) => Ok(Vec::new()),
+        Ended::Exited(_, _, err) => Err(format!("git grep failed: {}", err.trim())),
     }
-    let text = String::from_utf8_lossy(&out.stdout);
-    let hits: Vec<Hit> = text.lines().filter_map(hit).collect();
-    if hits.len() > HITS_MAX {
-        return Err(format!("{} lines", hits.len()));
-    }
-    Ok(hits)
-}
-
-/// One `path\0line\0text` line of `git grep -z -n`.
-fn hit(l: &str) -> Option<Hit> {
-    let mut parts = l.splitn(3, '\0');
-    let file = parts.next()?.to_owned();
-    let line = parts.next()?.parse().ok()?;
-    let text = parts.next()?.to_owned();
-    Some(Hit { file, line, text })
 }
 
 /// Whether `text` names `name` as a whole word.
@@ -129,3 +120,6 @@ pub(super) fn names(text: &str, name: &str) -> bool {
         !before.is_some_and(ident) && !after.is_some_and(ident)
     })
 }
+
+#[cfg(test)]
+mod tests;
