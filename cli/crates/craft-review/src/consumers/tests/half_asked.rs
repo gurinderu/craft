@@ -112,13 +112,13 @@ fn rows_that_do_not_read_as_callers_are_named_not_dropped() {
 #[test]
 fn a_first_question_that_fails_leaves_the_graph_out_of_the_sources() {
     let t = tempfile::tempdir().unwrap();
+    let repo = fixture(t.path(), "");
     let g = stand_in(t.path(), "echo 'database locked' >&2; exit 1");
     let why = Cbm::new(&g.tool)
         .callers("p", &[("a", "src/a.rs")])
         .unwrap_err()
         .to_string();
     assert!(why.contains("database locked"), "{why}");
-    let repo = fixture(t.path(), "");
     let c = build(&repo, &diff_of(&repo), Ok(g));
     assert!(c.graph_skipped.contains("database locked"), "{c:?}");
     assert!(!c.sources.contains(&GRAPH.to_owned()), "{:?}", c.sources);

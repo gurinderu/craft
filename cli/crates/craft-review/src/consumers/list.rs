@@ -84,10 +84,15 @@ pub(super) fn assemble(
         let mut sites = searched(top, changed, sym, &mut out.unsearched);
         let theirs = callers.unwrap_or_default().iter();
         for c in theirs.filter(|c| c.symbol == sym.name && c.defined_in == sym.file) {
-            let (found, located) = graph_sites(&mut files, top, c, sym, changed);
-            out.graph_unlocated += usize::from(!located);
-            for s in found {
-                merge(&mut sites, s);
+            match graph_sites(&mut files, top, c, sym, changed) {
+                Ok((found, located)) => {
+                    out.graph_unlocated += usize::from(!located);
+                    for s in found {
+                        merge(&mut sites, s);
+                    }
+                }
+                Err(why) if !out.graph_unreadable.contains(&why) => out.graph_unreadable.push(why),
+                Err(_) => {}
             }
         }
         rank(top, sym, &mut sites);

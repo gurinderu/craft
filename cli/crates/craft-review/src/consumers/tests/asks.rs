@@ -4,7 +4,7 @@
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use super::{diff_of, fixture};
+use super::{diff_of, fixture, repo_root};
 use crate::consumers::cbm::Cbm;
 use crate::consumers::{GRAPH, build, lens_block, section};
 use crate::gate::tests::exe;
@@ -15,8 +15,9 @@ use crate::project::CodeGraph;
 pub(super) fn stand_in(t: &Path, answer: &str) -> CodeGraph {
     let tool = t.join("cbm");
     let script = format!(
-        "#!/bin/sh\ncase \"$3\" in\n index_status) echo '{{\"status\":\"ready\",\"indexed_at\":\"2099-01-01T00:00:00Z\",\"root_path\":\"/r\"}}';;\n query_graph) echo \"$4\" >> {log}; {answer};;\nesac\n",
-        log = t.join("queries").display()
+        "#!/bin/sh\ncase \"$3\" in\n index_status) echo '{{\"status\":\"ready\",\"indexed_at\":\"2099-01-01T00:00:00Z\",\"root_path\":\"{root}\"}}';;\n query_graph) echo \"$4\" >> {log}; {answer};;\nesac\n",
+        log = t.join("queries").display(),
+        root = repo_root(t)
     );
     exe::write_executable(&tool, &script).unwrap();
     CodeGraph {
