@@ -32,7 +32,7 @@ pub use graph::graph_of;
 pub use make::{build, of_checkout};
 pub use save::keep;
 pub use section::section;
-pub use text::lens_block;
+pub use text::{confined_block, lens_block, seam_block};
 
 /// The name search's name in the report and on a site.
 pub const NAME_SEARCH: &str = "name search";

@@ -4,7 +4,7 @@
 //! graph lost stays in the report, since the name search ran for those symbols anyway.
 
 use super::cbm::ROWS_PER_SYMBOL;
-use super::text::shown;
+use super::list::SYMBOLS_MAX;
 use super::{Consumers, GRAPH};
 
 /// One gap field: its name as the run state writes it, whether the lenses are told, and the
@@ -68,8 +68,10 @@ pub(super) fn all(c: &Consumers) -> Vec<Gap> {
         both(
             "unlisted",
             &c.unlisted,
-            "changed symbol(s) past the 40-symbol limit, not searched",
-            "Changed symbols past the 40-symbol limit, not searched (find their uses yourself)",
+            &format!("changed symbol(s) past the {SYMBOLS_MAX}-symbol limit, not searched"),
+            &format!(
+                "Changed symbols past the {SYMBOLS_MAX}-symbol limit, not searched (find their uses yourself)"
+            ),
         ),
         both(
             "unsearched",
@@ -128,4 +130,21 @@ pub(super) fn for_report(c: &Consumers) -> String {
         .into_iter()
         .filter_map(|g| g.said.map(|(report, _)| report))
         .collect()
+}
+
+/// How many entries of a list a text names before it counts the rest.
+const SHOWN_MAX: usize = 20;
+
+/// `v` joined, past [`SHOWN_MAX`] entries counted instead of named.
+fn shown(v: &[String]) -> String {
+    let head = v
+        .iter()
+        .take(SHOWN_MAX)
+        .cloned()
+        .collect::<Vec<_>>()
+        .join(", ");
+    match v.len().saturating_sub(SHOWN_MAX) {
+        0 => head,
+        more => format!("{head} and {more} more"),
+    }
 }
