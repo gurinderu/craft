@@ -87,6 +87,10 @@ pub struct Consumers {
     /// How many of the graph's callers no line of head's span names the symbol in.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub graph_unlocated: usize,
+    /// The symbols whose graph callers were not asked, each with why (the time bound, a failed
+    /// question): `name (why)`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub graph_unasked: Vec<String>,
     /// The symbols whose graph callers were cut at the per-symbol limit.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub graph_truncated: Vec<String>,
@@ -136,7 +140,10 @@ pub fn build(top: &Path, diff: &crate::git::Diff, graph: Result<CodeGraph, Strin
     };
     let callers = asked.as_ref().map(|a| a.callers.as_slice());
     let mut out = list::assemble(top, &changed, &found, callers);
-    out.graph_truncated = asked.map(|a| a.truncated).unwrap_or_default();
+    if let Some(a) = asked {
+        out.graph_truncated = a.truncated;
+        out.graph_unasked = a.unasked;
+    }
     out.graph_skipped = graph_skipped;
     out.unplaced = unplaced;
     out

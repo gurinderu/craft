@@ -54,7 +54,7 @@ fn site_line(x: &Site) -> String {
 }
 
 /// What the lenses must look for themselves: names not searched, changed lines in no item, and
-/// symbols whose graph callers were cut.
+/// symbols whose graph callers were cut or not asked.
 fn gaps(c: &Consumers) -> Vec<String> {
     let said = [
         (
@@ -68,6 +68,10 @@ fn gaps(c: &Consumers) -> Vec<String> {
         (
             &c.graph_truncated,
             "The code graph's callers were cut for (find the rest yourself)",
+        ),
+        (
+            &c.graph_unasked,
+            "The code graph was not asked for the callers of (find them yourself)",
         ),
     ];
     said.iter()

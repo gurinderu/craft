@@ -6,6 +6,7 @@ use crate::project::CodeGraph;
 
 use crate::gate::tests::exe;
 
+mod asks;
 mod graphs;
 mod lists;
 mod walk;
@@ -127,7 +128,7 @@ fn the_run_budget_takes_each_symbol_in_turn() {
 pub(super) fn graph(t: &Path, indexed_at: &str) -> CodeGraph {
     let tool = t.join("cbm");
     let script = format!(
-        "#!/bin/sh\ncase \"$3\" in\n index_status) echo '{{\"status\":\"ready\",\"indexed_at\":\"{indexed_at}\"}}';;\n query_graph) echo \"$4\" >> {log}; case \"$4\" in *k8s_rule_to_api*) echo '{{\"has_more\":true,\"rows\":[[\"k8s_rule_to_api\",\"src/lib.rs\",\"src/uses.rs\",\"3\",\"5\"],[\"k8s_rule_to_api\",\"src/lib.rs\",\"src/uses.rs\",\"7\",\"8\"],[\"k8s_rule_to_api\",\"src/elsewhere.rs\",\"src/uses.rs\",\"1\",\"1\"]]}}';; *) echo '{{\"rows\":[]}}';; esac;;\n list_projects) echo '{{\"projects\":[{{\"name\":\"p\",\"root_path\":\"/r\"}}]}}';;\n *) echo '{{\"error\":\"unknown\"}}'; exit 1;;\nesac\n",
+        "#!/bin/sh\ncase \"$3\" in\n index_status) echo '{{\"status\":\"ready\",\"indexed_at\":\"{indexed_at}\",\"root_path\":\"/r\"}}';;\n query_graph) echo \"$4\" >> {log}; case \"$4\" in *k8s_rule_to_api*) echo '{{\"has_more\":true,\"rows\":[[\"k8s_rule_to_api\",\"src/lib.rs\",\"src/uses.rs\",\"3\",\"5\"],[\"k8s_rule_to_api\",\"src/lib.rs\",\"src/uses.rs\",\"7\",\"8\"],[\"k8s_rule_to_api\",\"src/elsewhere.rs\",\"src/uses.rs\",\"1\",\"1\"]]}}';; *) echo '{{\"rows\":[]}}';; esac;;\n list_projects) echo '{{\"projects\":[{{\"name\":\"p\",\"root_path\":\"/r\"}}]}}';;\n *) echo '{{\"error\":\"unknown\"}}'; exit 1;;\nesac\n",
         log = t.join("queries").display()
     );
     exe::write_executable(&tool, &script).unwrap();
@@ -174,6 +175,7 @@ fn a_stale_or_absent_graph_leaves_the_name_search_alone_and_says_why() {
     assert!(
         c.graph_skipped.contains("older than the base")
             && c.graph_skipped.contains("cli index_repository")
+            && c.graph_skipped.contains(r#""repo_path":"/r""#)
             && !c.graph_skipped.contains("warmup"),
         "{}",
         c.graph_skipped
