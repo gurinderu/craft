@@ -489,7 +489,7 @@ fn the_brief_names_the_record_and_that_the_step_is_kept_without_the_step() {
     open(run.path(), ctx(), "", &finished(1), &w);
     assert_eq!(
         brief(run.path()).unwrap(),
-        json!({"record": "filed", "recordFile": "/store/r.json", "kept": true, "pending": 0})
+        json!({"record": "filed", "recordFile": "/store/r.json", "kept": true, "pending": 0, "lost": []})
     );
 }
 
