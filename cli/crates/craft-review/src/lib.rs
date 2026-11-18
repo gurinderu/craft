@@ -10,6 +10,7 @@ pub mod agent;
 pub mod blocked;
 pub mod chain;
 pub mod complexity;
+pub mod consumers;
 pub mod content;
 pub mod coverage;
 pub mod critic;

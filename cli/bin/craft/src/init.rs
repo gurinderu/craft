@@ -14,6 +14,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Stdio};
 
 use anyhow::{Context, Result};
+use craft_review::consumers::cbm;
 use craft_review::git;
 use craft_review::project::{self, IntegrationPoint, ProjectProfile};
 use craft_review::sources::{self, Git, SourcesSetup};
@@ -100,11 +101,17 @@ pub fn init(args: &InitArgs) -> Result<ExitCode> {
             .map(|p| IntegrationPoint::parse(p).map_err(anyhow::Error::msg))
             .collect::<Result<Vec<_>>>()?;
         let entries = ci::confirmed(&args.ci, &args.cwd)?;
-        let profile = ProjectProfile::new(common, points, entries)?;
+        let mut profile = ProjectProfile::new(common, points, entries)?;
+        let graph = code_graph(&args.cwd);
+        profile.code_graph = Some(graph.clone());
         project::save(&path, &profile)?;
-        return print(
-            &json!({"profile": path, "integrations": profile.integrations, "ci": profile.ci}),
-        );
+        return print(&json!({
+            "profile": path,
+            "integrations": profile.integrations,
+            "ci": profile.ci,
+            "codeGraph": graph,
+            "codeGraphSays": cbm::said(&graph),
+        }));
     }
     let held = project::load(&path)?;
     let integrations = held
@@ -124,8 +131,16 @@ pub fn init(args: &InitArgs) -> Result<ExitCode> {
         "discovery": discovery,
         "ci": ci::held(&held_ci, &args.cwd),
         "ciCandidates": ci::proposed(&args.cwd),
+        "codeGraph": held.as_ref().and_then(|p| p.code_graph.clone()),
+        "codeGraphSays": cbm::said(&code_graph(&args.cwd)),
         "write": "craft init --write --point <name>=<git url>@<tag or full commit> … --ci '<entry JSON>' … (every point and CI entry to keep, a held entry as `ci` prints it, one with `unusable` dropped or replaced; a branch is refused when a review prepares the sources)",
     }))
+}
+
+/// Whether the code graph answers for the repository at `cwd` and which project indexes it
+/// (realm @nick/craft, node #529); a graph that is missing or fails is said so, never an error.
+fn code_graph(cwd: &Path) -> craft_review::project::CodeGraph {
+    cbm::probe(cbm::TOOL, &cbm::roots_of(cwd))
 }
 
 /// `answer` marked as having run, or `{"ran": false, "why": …}` when it could not (no plugin root,

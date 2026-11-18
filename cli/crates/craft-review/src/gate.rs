@@ -65,7 +65,7 @@ mod rust;
 mod section;
 mod semgrep;
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 pub mod unknown;
 
 use check::{Acc, Cx};

@@ -49,6 +49,11 @@ impl Lines {
         Self(ranges)
     }
 
+    /// Each file's added ranges, by path.
+    pub(crate) fn ranges(&self) -> impl Iterator<Item = (&str, &[(u32, u32)])> {
+        self.0.iter().map(|(f, rs)| (f.as_str(), rs.as_slice()))
+    }
+
     /// Whether `line` of `file` is one the change added.
     pub(crate) fn touches(&self, file: &str, line: u32) -> bool {
         self.0

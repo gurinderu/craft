@@ -220,6 +220,7 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
         re_review,
         strict: opts.strict,
         sources: sources::Sources::default(),
+        consumers: crate::consumers::Consumers::default(),
         scope,
     };
     let (tracks, uncovered) = tracks_of(&diff.files, &profiles);
@@ -388,10 +389,22 @@ fn open_dir(dir: &Path) -> Result<(), StepError> {
     })
 }
 
-/// The integration points' sources and the gate, side by side, neither waiting on the other: the
-/// sources reach the prompts, the gate's seeds the pool as round-0 findings.
+/// The consumers list of the change (realm @nick/craft, node #529), the code graph asked when
+/// the reviewer's profile says it answers.
+fn consumers_of(cwd: &Path, opts: &StartOptions, diff: &git::Diff) -> crate::consumers::Consumers {
+    let Ok(top) = git::toplevel(cwd) else {
+        return crate::consumers::Consumers::default();
+    };
+    let projects = opts.sources.as_ref().map(|s| s.projects.as_path());
+    let graph = crate::consumers::graph_of(projects, &top);
+    crate::consumers::build(&top, diff, graph)
+}
+
+/// The integration points' sources, the gate and the consumers list, side by side, none waiting
+/// on another: the sources and the list reach the prompts, the gate's seeds the pool as round-0
+/// findings.
 fn prepare(cwd: &Path, dir: &Path, opts: &StartOptions, run: &mut RunState) {
-    let (prepared, gated) = std::thread::scope(|s| {
+    let (prepared, gated, listed) = std::thread::scope(|s| {
         let sources = s.spawn(|| {
             opts.sources
                 .as_ref()
@@ -410,8 +423,18 @@ fn prepare(cwd: &Path, dir: &Path, opts: &StartOptions, run: &mut RunState) {
                 })
                 .map(|setup| gate::run(cwd, &run.diff.base, &run.tracks, &setup, dir)),
         };
-        (sources.join(), gated)
+        let consumers = s.spawn(|| consumers_of(cwd, opts, &run.diff));
+        (sources.join(), gated, consumers.join())
     });
+    run.context.consumers = listed.unwrap_or_else(|_| crate::consumers::Consumers {
+        graph_skipped: "the consumers list stopped unexpectedly".into(),
+        ..crate::consumers::Consumers::default()
+    });
+    if let Err(e) = crate::consumers::write(dir, &mut run.context.consumers) {
+        run.context.consumers.file.clear();
+        run.notes
+            .push(format!("the consumers list could not be written: {e}"));
+    }
     match prepared {
         Ok(Some(s)) => run.context.sources = s,
         Ok(None) => {}
