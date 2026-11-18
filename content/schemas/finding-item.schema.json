@@ -126,6 +126,22 @@
           "description": "the rule, quoted from that file"
         }
       }
+    },
+    "testGap": {
+      "type": "string",
+      "enum": [
+        "missing",
+        "weak-assertion"
+      ],
+      "description": "tests lens only: `missing` — no test pins the behaviour; `weak-assertion` — a test exists and still passes under the named regression (it asserts only a status or an annotation, a mock ignores the request body or fabricates the response, only one of two sides is covered); omit otherwise"
+    },
+    "regression": {
+      "type": "string",
+      "description": "tests lens only, with testGap: the regression of the changed behaviour the suite lets through green, named concretely (what the running system would then do); empty when none is named — the finding then stays Low"
+    },
+    "regressionAt": {
+      "type": "string",
+      "description": "tests lens only, with regression: file:line of the production code the regression breaks — its reachability is judged there, not at the cited test line"
     }
   }
 }

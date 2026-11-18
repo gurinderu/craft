@@ -81,7 +81,7 @@ fn on_failure_path(f: &Value) -> bool {
 
 /// The lenses that reported `f`: its `sources`, else its `source` — a gate tool's aside, as
 /// `agreeingLenses`: a seed is not an independent reading.
-fn lenses(f: &Value) -> Vec<&str> {
+pub(crate) fn lenses(f: &Value) -> Vec<&str> {
     let all: Vec<&Value> = match f.get("sources").and_then(Value::as_array) {
         Some(a) => a.iter().collect(),
         None => f.get("source").into_iter().collect(),

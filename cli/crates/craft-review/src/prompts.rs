@@ -112,7 +112,7 @@ fn shq(s: &str) -> String {
 }
 
 /// A model-authored field as one prompt line: newlines flattened, trimmed, capped.
-fn flatten(v: Option<&Value>) -> String {
+pub(crate) fn flatten(v: Option<&Value>) -> String {
     let s = match v {
         Some(Value::String(s)) => s.clone(),
         Some(Value::Null) | None => String::new(),

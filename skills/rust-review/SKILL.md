@@ -183,7 +183,9 @@ Review the diff against these tiers. This skill owns only the review *process*; 
 
 A missing test takes the severity of the defect it would catch once that defect and its harm are
 named — a missing cross-tenant denial test on a new authz-guarded endpoint is HIGH. With no harm
-named, it stays here.
+named, it stays here. A weak assertion — a test that exists and still passes under a named
+regression — is a different finding: it takes that regression's harm, capped at MEDIUM
+(`review-rules` `severity.md`).
 
 **Docs & lint hygiene** (no harm named, so optional)
 - `pub` item without a `///` doc

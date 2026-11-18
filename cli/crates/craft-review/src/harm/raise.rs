@@ -133,7 +133,8 @@ pub(crate) fn panel_harm(f: &Value, votes: &[&Value]) -> Option<String> {
 }
 
 /// A confirmed `f` after its harm `level` was verified: it shows that claim, and goes to High
-/// from Medium or below when that harm is must-fix.
+/// from Medium or below when that harm is must-fix — but a weak assertion, held to should-fix
+/// (realm @nick/craft, node #527).
 pub(crate) fn raise(f: &Value, level: &str) -> Value {
     let Some(claim) = claims(f).into_iter().find(|c| c.level == level) else {
         return f.clone();
@@ -149,7 +150,8 @@ pub(crate) fn raise(f: &Value, level: &str) -> Value {
         out.insert("repoRule".into(), r.clone());
     }
     let severity = text(f, "severity").unwrap_or("").to_owned();
-    if must_fix(&claim) && matches!(severity.as_str(), "Medium" | "Low" | "Info") {
+    let held = super::test_gap::is_weak(f);
+    if must_fix(&claim) && !held && matches!(severity.as_str(), "Medium" | "Low" | "Info") {
         out.insert("severity".into(), Value::String("High".into()));
         note(
             &mut out,

@@ -36,6 +36,7 @@ fn finding_fields(f: &Value, self_contained: &str) -> Vec<(&'static str, String)
             format!("\n  harm claimed (worst first; effect, who, recovery): {level}: {h}")
         }
     };
+    let harm = format!("{harm}{}", crate::harm::verifier_lines(f));
     vec![
         ("severity", field("severity")),
         ("title", field("title")),
