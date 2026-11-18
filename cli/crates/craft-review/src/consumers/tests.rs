@@ -1,11 +1,14 @@
 use std::path::Path;
 use std::process::Command;
 
-use super::cbm::{self, Cbm};
 use super::{Consumers, GRAPH, NAME_SEARCH, build, graph_of, lens_block, section};
-use crate::project::{self, CodeGraph, ProjectProfile};
+use crate::project::CodeGraph;
 
 use crate::gate::tests::exe;
+
+mod graphs;
+mod lists;
+mod walk;
 
 fn git(dir: &Path, args: &[&str]) -> String {
     let out = Command::new("git")
@@ -27,7 +30,7 @@ const USES: &str = "use crate::k8s_rule_to_api;\n\npub fn all(v: Vec<u8>) -> Vec
 
 /// A repository on `main` whose change rewrites `k8s_rule_to_api`'s body and adds a call on a
 /// changed line; `src/uses.rs` passes it as a value, unchanged.
-fn fixture(t: &Path, extra: &str) -> std::path::PathBuf {
+pub(super) fn fixture(t: &Path, extra: &str) -> std::path::PathBuf {
     let repo = t.join("repo");
     std::fs::create_dir_all(repo.join("src")).unwrap();
     git(&repo, &["init", "-q", "-b", "main"]);
@@ -42,7 +45,7 @@ fn fixture(t: &Path, extra: &str) -> std::path::PathBuf {
     repo
 }
 
-fn diff_of(repo: &Path) -> crate::git::Diff {
+pub(super) fn diff_of(repo: &Path) -> crate::git::Diff {
     crate::git::read_diff(repo, Some("base"), None).unwrap()
 }
 
@@ -87,9 +90,11 @@ fn the_budget_keeps_ten_lines_a_symbol_and_counts_the_rest() {
         .map(|i| format!("fn c{i}() {{ k8s_rule_to_api(1); }}\n"))
         .collect();
     let repo = fixture(t.path(), &calls);
-    let c = build(&repo, &diff_of(&repo), Err(String::new()));
-    assert_eq!(sites(&c, "k8s_rule_to_api").len(), super::list::PER_SYMBOL);
-    assert_eq!(c.cut, 17 - super::list::PER_SYMBOL);
+    let full = build(&repo, &diff_of(&repo), Err(String::new()));
+    assert_eq!(sites(&full, "k8s_rule_to_api").len(), 17);
+    let (c, _) = super::keep(&t.path().join("none"), full);
+    assert_eq!(sites(&c, "k8s_rule_to_api").len(), super::order::PER_SYMBOL);
+    assert_eq!(c.cut, 17 - super::order::PER_SYMBOL);
     assert!(lens_block(&c).unwrap().contains("7 more cut by the budget"));
 }
 
@@ -105,12 +110,13 @@ fn the_run_budget_takes_each_symbol_in_turn() {
                 line: i,
                 text: String::new(),
                 from: vec![],
+                kind: String::new(),
             })
             .collect(),
     };
     let mut all: Vec<_> = (0..9).map(listed).collect();
-    let cut = super::list::budget(&mut all);
-    assert_eq!(cut, 90 - super::list::RUN_MAX);
+    let cut = super::order::budget(&mut all, super::order::PER_SYMBOL, super::order::RUN_MAX);
+    assert_eq!(cut, 90 - super::order::RUN_MAX);
     let kept: Vec<usize> = all.iter().map(|s| s.sites.len()).collect();
     assert_eq!(kept, vec![9, 9, 9, 9, 9, 9, 9, 9, 8]);
 }
@@ -118,10 +124,11 @@ fn the_run_budget_takes_each_symbol_in_turn() {
 /// A stand-in code graph: `index_status` answers `indexed_at`, `query_graph` one caller of
 /// `k8s_rule_to_api` in `src/uses.rs` lines 3–5, one in lines 7–8 that names it nowhere, and one
 /// of another item of that name.
-fn graph(t: &Path, indexed_at: &str) -> CodeGraph {
+pub(super) fn graph(t: &Path, indexed_at: &str) -> CodeGraph {
     let tool = t.join("cbm");
     let script = format!(
-        "#!/bin/sh\ncase \"$3\" in\n index_status) echo '{{\"status\":\"ready\",\"indexed_at\":\"{indexed_at}\"}}';;\n query_graph) echo '{{\"rows\":[[\"k8s_rule_to_api\",\"src/lib.rs\",\"src/uses.rs\",\"3\",\"5\"],[\"k8s_rule_to_api\",\"src/lib.rs\",\"src/uses.rs\",\"7\",\"8\"],[\"k8s_rule_to_api\",\"src/elsewhere.rs\",\"src/uses.rs\",\"1\",\"1\"]]}}';;\n list_projects) echo '{{\"projects\":[{{\"name\":\"p\",\"root_path\":\"/r\"}}]}}';;\n *) echo '{{\"error\":\"unknown\"}}'; exit 1;;\nesac\n"
+        "#!/bin/sh\ncase \"$3\" in\n index_status) echo '{{\"status\":\"ready\",\"indexed_at\":\"{indexed_at}\"}}';;\n query_graph) echo \"$4\" >> {log}; case \"$4\" in *k8s_rule_to_api*) echo '{{\"has_more\":true,\"rows\":[[\"k8s_rule_to_api\",\"src/lib.rs\",\"src/uses.rs\",\"3\",\"5\"],[\"k8s_rule_to_api\",\"src/lib.rs\",\"src/uses.rs\",\"7\",\"8\"],[\"k8s_rule_to_api\",\"src/elsewhere.rs\",\"src/uses.rs\",\"1\",\"1\"]]}}';; *) echo '{{\"rows\":[]}}';; esac;;\n list_projects) echo '{{\"projects\":[{{\"name\":\"p\",\"root_path\":\"/r\"}}]}}';;\n *) echo '{{\"error\":\"unknown\"}}'; exit 1;;\nesac\n",
+        log = t.join("queries").display()
     );
     exe::write_executable(&tool, &script).unwrap();
     CodeGraph {
@@ -148,7 +155,6 @@ fn a_fresh_graph_is_merged_with_the_name_search_each_line_once() {
         vec![
             ("src/uses.rs".to_owned(), 1, vec![NAME_SEARCH.to_owned()]),
             ("src/uses.rs".to_owned(), 4, both),
-            ("src/uses.rs".to_owned(), 7, vec![GRAPH.to_owned()]),
         ]
     );
     assert!(c.graph_skipped.is_empty());
@@ -166,7 +172,9 @@ fn a_stale_or_absent_graph_leaves_the_name_search_alone_and_says_why() {
     );
     assert_eq!(c.sources, vec![NAME_SEARCH]);
     assert!(
-        c.graph_skipped.contains("older than the base"),
+        c.graph_skipped.contains("older than the base")
+            && c.graph_skipped.contains("cli index_repository")
+            && !c.graph_skipped.contains("warmup"),
         "{}",
         c.graph_skipped
     );
@@ -180,42 +188,6 @@ fn a_stale_or_absent_graph_leaves_the_name_search_alone_and_says_why() {
     let projects = t.path().join("projects");
     let why = graph_of(Some(&projects), &repo).unwrap_err();
     assert!(why.contains("names no code graph"), "{why}");
-}
-
-#[test]
-fn the_profile_s_graph_is_read_and_an_unusable_one_is_named() {
-    let t = tempfile::tempdir().unwrap();
-    let repo = fixture(t.path(), "");
-    let projects = t.path().join("projects");
-    let (path, common) = project::profile_path(&projects, &repo).unwrap();
-    let mut p = ProjectProfile::new(common, Vec::new(), Vec::new()).unwrap();
-    p.code_graph = Some(CodeGraph {
-        tool: cbm::TOOL.into(),
-        available: false,
-        project: String::new(),
-        note: "codebase-memory-mcp could not run".into(),
-    });
-    project::save(&path, &p).unwrap();
-    let why = graph_of(Some(&projects), &repo).unwrap_err();
-    assert!(why.contains("could not run"), "{why}");
-    p.code_graph = Some(graph(t.path(), "x"));
-    project::save(&path, &p).unwrap();
-    assert_eq!(graph_of(Some(&projects), &repo).unwrap().project, "p");
-}
-
-#[test]
-fn the_probe_finds_the_project_by_root_or_says_the_graph_is_not_there() {
-    let t = tempfile::tempdir().unwrap();
-    let g = graph(t.path(), "x");
-    let found = cbm::probe(&g.tool, &["/elsewhere".into(), "/r".into()]);
-    assert_eq!((found.available, found.project.as_str()), (true, "p"));
-    let unindexed = cbm::probe(&g.tool, &["/elsewhere".into()]);
-    assert!(unindexed.available && unindexed.project.is_empty());
-    assert!(unindexed.note.contains("no project indexes"));
-    let missing = cbm::probe(&t.path().join("none").display().to_string(), &[]);
-    assert!(!missing.available);
-    assert!(missing.note.contains("could not run"), "{}", missing.note);
-    assert_eq!(Cbm::new(&g.tool).indexed_at("p").unwrap(), "x");
 }
 
 #[test]
@@ -241,6 +213,7 @@ fn a_changed_line_names_the_item_around_it_and_a_test_fn_is_left_out() {
     let text = "impl A {\n    pub(crate) fn outer(\n        a: u8,\n    ) -> u8 {\n        a\n    }\n}\n\n#[test]\nfn checks() {\n    x();\n}\nconst LIMIT: u8 = 3;\n";
     let names = |ranges: &[(u32, u32)]| -> Vec<String> {
         super::symbols::of_file("a.rs", text, ranges)
+            .0
             .into_iter()
             .map(|s| format!("{}:{}", s.name, s.line))
             .collect()

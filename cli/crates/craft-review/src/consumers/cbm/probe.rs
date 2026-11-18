@@ -44,17 +44,28 @@ pub fn roots_of(cwd: &Path) -> Vec<String> {
     out
 }
 
-/// What `craft init` says of `g`, a line for the reviewer.
+/// The command that indexes (or refreshes the index of) the repository at `root`; craft never
+/// runs it.
 #[must_use]
-pub fn said(g: &CodeGraph) -> String {
+pub fn refresh_hint(root: &str) -> String {
+    let args = serde_json::json!({"repo_path": root, "mode": "fast"});
+    format!("`{} cli index_repository '{args}'`", super::TOOL)
+}
+
+/// What `craft init` says of `g` for the repository whose roots are `roots`, a line for the
+/// reviewer.
+#[must_use]
+pub fn said(g: &CodeGraph, roots: &[String]) -> String {
     match (g.available, g.project.is_empty()) {
         (true, false) => format!(
             "{} answers and indexes this repository as {}: a review adds its callers to the consumers list",
             g.tool, g.project
         ),
         (true, true) => format!(
-            "{} answers but does not index this repository ({}): the consumers list is built from name search alone; the review's index-warmup can index it",
-            g.tool, g.note
+            "{} answers but does not index this repository ({}): the consumers list is built from name search alone; index it with {}",
+            g.tool,
+            g.note,
+            refresh_hint(roots.first().map_or("<repository root>", String::as_str))
         ),
         (false, _) => format!(
             "{} is not available ({}): the consumers list is built from name search alone",

@@ -1,0 +1,28 @@
+//! The list saved whole to the run directory, and the lenses' budgeted part of it.
+
+use std::path::Path;
+
+use super::{Consumers, FILE, order};
+
+/// Saves `full` as `dir`/[`FILE`] and gives the lenses' part of it, cut to the budgets, with the
+/// file's path; a note when the file could not be written, its path then left empty.
+#[must_use]
+pub fn keep(dir: &Path, full: Consumers) -> (Consumers, Option<String>) {
+    let mut lens = full;
+    let note = write(dir, &mut lens)
+        .err()
+        .map(|e| format!("the consumers list could not be written: {e}"));
+    if note.is_some() {
+        lens.file.clear();
+    }
+    lens.cut = order::budget(&mut lens.symbols, order::PER_SYMBOL, order::RUN_MAX);
+    (lens, note)
+}
+
+/// Writes `c` as `dir`/[`FILE`], noting the path in it.
+fn write(dir: &Path, c: &mut Consumers) -> std::io::Result<()> {
+    let path = dir.join(FILE);
+    c.file = path.display().to_string();
+    let body = serde_json::to_string_pretty(c).map_err(std::io::Error::other)?;
+    std::fs::write(&path, body)
+}

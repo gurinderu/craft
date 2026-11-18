@@ -1,7 +1,7 @@
-//! What the consumers list gives a run's text: the lenses' CONSUMERS block and the report's
-//! section saying which sources built it.
+//! The lenses' CONSUMERS block of the consumers list.
 
-use super::{Consumers, GRAPH};
+use super::order::FILE_MAX;
+use super::{Consumers, Site};
 use crate::content::{self, ContentError, vars};
 
 /// The lenses' block; empty when the change adds or changes no symbol the list looked for.
@@ -15,11 +15,7 @@ pub fn lens_block(c: &Consumers) -> Result<String, ContentError> {
     let mut lines: Vec<String> = Vec::new();
     for s in c.symbols.iter().filter(|s| !s.sites.is_empty()) {
         lines.push(format!("`{}` ({}:{}):", s.name, s.file, s.line));
-        lines.extend(
-            s.sites
-                .iter()
-                .map(|x| format!("- {}:{}: {}", x.file, x.line, x.text)),
-        );
+        lines.extend(s.sites.iter().map(site_line));
     }
     let none: Vec<String> = c
         .symbols
@@ -33,21 +29,8 @@ pub fn lens_block(c: &Consumers) -> Result<String, ContentError> {
             none.join(", ")
         ));
     }
-    if !c.unsearched.is_empty() {
-        lines.push(format!(
-            "Not searched by name (find their uses yourself): {}.",
-            c.unsearched.join(", ")
-        ));
-    }
-    let cut = if c.cut == 0 {
-        String::new()
-    } else {
-        format!(
-            "; {} more cut by the budget, all in `{}`",
-            c.cut,
-            if c.file.is_empty() { "?" } else { &c.file }
-        )
-    };
+    lines.extend(gaps(c));
+    let cut = cut_text(c);
     let block = content::prompt(
         "lens-consumers",
         &vars([
@@ -60,34 +43,72 @@ pub fn lens_block(c: &Consumers) -> Result<String, ContentError> {
     Ok(format!("\n{block}"))
 }
 
-/// The report's section: which sources built the list, and why the graph was not one; empty
-/// when no list was built.
-#[must_use]
-pub fn section(c: &Consumers) -> String {
-    if c.sources.is_empty() {
+/// One listed line, its kind after it when it is not a plain use.
+fn site_line(x: &Site) -> String {
+    let kind = if x.kind.is_empty() {
+        String::new()
+    } else {
+        format!(" ({}: an implementor or a sibling)", x.kind)
+    };
+    format!("- {}:{}: {}{kind}", x.file, x.line, x.text)
+}
+
+/// What the lenses must look for themselves: names not searched, changed lines in no item, and
+/// symbols whose graph callers were cut.
+fn gaps(c: &Consumers) -> Vec<String> {
+    let said = [
+        (
+            &c.unsearched,
+            "Not searched by name (find their uses yourself)",
+        ),
+        (
+            &c.unplaced,
+            "Changed lines in no item this list could name (find what they change and its uses yourself)",
+        ),
+        (
+            &c.graph_truncated,
+            "The code graph's callers were cut for (find the rest yourself)",
+        ),
+    ];
+    said.iter()
+        .filter(|(v, _)| !v.is_empty())
+        .map(|(v, what)| format!("{what}: {}.", shown(v)))
+        .collect()
+}
+
+/// The lens text's word on the lines its budget cut, and on any past the saved list's cap.
+fn cut_text(c: &Consumers) -> String {
+    if c.cut == 0 {
         return String::new();
     }
-    let mut out = format!(
-        "\n## Consumers\n\nBuilt from: {}. {} line(s) for {} changed Rust symbol(s)",
-        c.sources.join(", "),
-        c.lines(),
-        c.symbols.len()
-    );
-    if c.cut > 0 {
-        out.push_str(&format!("; {} more cut by the budget", c.cut));
+    if c.file.is_empty() {
+        return format!(
+            "; {} more cut by the budget (the whole list could not be saved)",
+            c.cut
+        );
     }
-    out.push_str(".\n");
-    if !c.graph_skipped.is_empty() {
-        out.push_str(&format!("- {GRAPH} not used: {}\n", c.graph_skipped));
+    if c.capped == 0 {
+        return format!("; {} more cut by the budget, all in `{}`", c.cut, c.file);
     }
-    if !c.unsearched.is_empty() {
-        out.push_str(&format!(
-            "- Not searched by name: {}\n",
-            c.unsearched.join(", ")
-        ));
+    format!(
+        "; {} more cut by the budget, in `{}`, which stops at {FILE_MAX} lines ({} more listed nowhere)",
+        c.cut, c.file, c.capped
+    )
+}
+
+/// How many entries of a list a text names before it counts the rest.
+const SHOWN_MAX: usize = 20;
+
+/// `v` joined, past [`SHOWN_MAX`] entries counted instead of named.
+pub(super) fn shown(v: &[String]) -> String {
+    let head = v
+        .iter()
+        .take(SHOWN_MAX)
+        .cloned()
+        .collect::<Vec<_>>()
+        .join(", ");
+    match v.len().saturating_sub(SHOWN_MAX) {
+        0 => head,
+        more => format!("{head} and {more} more"),
     }
-    if !c.file.is_empty() {
-        out.push_str(&format!("- The whole list: `{}`\n", c.file));
-    }
-    out
 }

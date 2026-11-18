@@ -10,18 +10,26 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use crate::project::{self, CodeGraph};
+use crate::project::CodeGraph;
 
+mod braces;
 pub mod cbm;
 mod fresh;
+mod graph;
 mod list;
 mod names;
+mod order;
+mod save;
+mod section;
 mod symbols;
 #[cfg(test)]
 mod tests;
 mod text;
 
-pub use text::{lens_block, section};
+pub use graph::graph_of;
+pub use save::keep;
+pub use section::section;
+pub use text::lens_block;
 
 /// The name search's name in the report and on a site.
 pub const NAME_SEARCH: &str = "name search";
@@ -29,6 +37,9 @@ pub const NAME_SEARCH: &str = "name search";
 pub const GRAPH: &str = "codebase-memory";
 /// The run directory's file holding the whole list.
 pub const FILE: &str = "consumers.json";
+/// A site's kind when its line declares another item of the symbol's name: a trait method's
+/// implementation or a same-named method of a sibling.
+pub const SAME_NAME: &str = "declares the same name";
 
 /// One line that names a changed symbol.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -38,6 +49,9 @@ pub struct Site {
     pub text: String,
     /// The sources that found it.
     pub from: Vec<String>,
+    /// What the line is, when not a plain use: [`SAME_NAME`].
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub kind: String,
 }
 
 /// A changed symbol and the lines that name it, as many as the budgets keep.
@@ -66,7 +80,20 @@ pub struct Consumers {
     /// why when it is not the name alone.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub unsearched: Vec<String>,
-    /// How many lines the budgets left out.
+    /// The changed lines (`file:line`) in no item the list could name, so no symbol of theirs
+    /// was searched.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unplaced: Vec<String>,
+    /// How many of the graph's callers no line of head's span names the symbol in.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub graph_unlocated: usize,
+    /// The symbols whose graph callers were cut at the per-symbol limit.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub graph_truncated: Vec<String>,
+    /// How many lines past the whole list's hard cap no file holds.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub capped: usize,
+    /// How many lines the lenses' budget left out of their part.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub cut: usize,
     /// Where the whole list is written.
@@ -95,28 +122,6 @@ impl Consumers {
     }
 }
 
-/// The code graph the profile of the repository at `cwd` under `projects` names as usable;
-/// why not otherwise.
-///
-/// # Errors
-/// Why the graph is not to be asked, a line for the report.
-pub fn graph_of(projects: Option<&Path>, cwd: &Path) -> Result<CodeGraph, String> {
-    let projects = projects.ok_or("no review profile directory")?;
-    let (path, _) = project::profile_path(projects, cwd).map_err(|e| e.to_string())?;
-    let profile = project::load(&path).map_err(|e| e.to_string())?;
-    let graph = profile
-        .and_then(|p| p.code_graph)
-        .ok_or("the review profile names no code graph (`craft init --write` checks for one)")?;
-    if graph.usable() {
-        return Ok(graph);
-    }
-    Err(if graph.note.is_empty() {
-        format!("{} did not answer when `craft init` checked", graph.tool)
-    } else {
-        format!("`craft init` found {} unusable: {}", graph.tool, graph.note)
-    })
-}
-
 /// The list for the change of the working tree at `top` against `diff`'s base (read from its
 /// merge-base, as the lenses' diff), over its changed files, the graph asked when `graph` names
 /// one.
@@ -124,23 +129,15 @@ pub fn graph_of(projects: Option<&Path>, cwd: &Path) -> Result<CodeGraph, String
 pub fn build(top: &Path, diff: &crate::git::Diff, graph: Result<CodeGraph, String>) -> Consumers {
     let text = crate::git::zero_context_diff(top, &diff.base).unwrap_or_default();
     let changed = crate::gate::lines::Lines::parse(&text);
-    let found = symbols::changed(top, &diff.files, &changed, list::SYMBOLS_MAX);
-    let (callers, graph_skipped) = match graph {
-        Ok(g) => list::graph_callers(top, &diff.merge_base, &g, &found),
+    let (found, unplaced) = symbols::changed(top, &diff.files, &changed, list::SYMBOLS_MAX);
+    let (asked, graph_skipped) = match graph {
+        Ok(g) => graph::graph_callers(top, &diff.merge_base, &g, &found),
         Err(why) => (None, why),
     };
-    let mut out = list::assemble(top, &changed, &found, callers.as_deref());
+    let callers = asked.as_ref().map(|a| a.callers.as_slice());
+    let mut out = list::assemble(top, &changed, &found, callers);
+    out.graph_truncated = asked.map(|a| a.truncated).unwrap_or_default();
     out.graph_skipped = graph_skipped;
+    out.unplaced = unplaced;
     out
-}
-
-/// Writes `c` as `dir`/[`FILE`], noting the path in it.
-///
-/// # Errors
-/// When the file cannot be written.
-pub fn write(dir: &Path, c: &mut Consumers) -> std::io::Result<()> {
-    let path = dir.join(FILE);
-    c.file = path.display().to_string();
-    let body = serde_json::to_string_pretty(c).map_err(std::io::Error::other)?;
-    std::fs::write(&path, body)
 }

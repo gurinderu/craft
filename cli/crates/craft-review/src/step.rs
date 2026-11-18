@@ -468,15 +468,13 @@ fn prepare(cwd: &Path, dir: &Path, opts: &StartOptions, run: &mut RunState) {
         let consumers = s.spawn(|| consumers_of(cwd, opts, &run.diff));
         (sources.join(), gated, consumers.join())
     });
-    run.context.consumers = listed.unwrap_or_else(|_| crate::consumers::Consumers {
+    let full = listed.unwrap_or_else(|_| crate::consumers::Consumers {
         graph_skipped: "the consumers list stopped unexpectedly".into(),
         ..crate::consumers::Consumers::default()
     });
-    if let Err(e) = crate::consumers::write(dir, &mut run.context.consumers) {
-        run.context.consumers.file.clear();
-        run.notes
-            .push(format!("the consumers list could not be written: {e}"));
-    }
+    let (lens, note) = crate::consumers::keep(dir, full);
+    run.context.consumers = lens;
+    run.notes.extend(note);
     match prepared {
         Ok(Some(s)) => run.context.sources = s,
         Ok(None) => {}
