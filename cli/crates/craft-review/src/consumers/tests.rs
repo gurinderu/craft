@@ -8,6 +8,7 @@ use crate::gate::tests::exe;
 
 mod asks;
 mod graphs;
+mod half_asked;
 mod lists;
 mod walk;
 

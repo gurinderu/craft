@@ -12,7 +12,7 @@ use crate::project::CodeGraph;
 
 /// A stand-in graph whose `query_graph` runs `answer` (shell, the query in `$4`), each query
 /// logged to `queries`.
-fn stand_in(t: &Path, answer: &str) -> CodeGraph {
+pub(super) fn stand_in(t: &Path, answer: &str) -> CodeGraph {
     let tool = t.join("cbm");
     let script = format!(
         "#!/bin/sh\ncase \"$3\" in\n index_status) echo '{{\"status\":\"ready\",\"indexed_at\":\"2099-01-01T00:00:00Z\",\"root_path\":\"/r\"}}';;\n query_graph) echo \"$4\" >> {log}; {answer};;\nesac\n",
@@ -27,7 +27,7 @@ fn stand_in(t: &Path, answer: &str) -> CodeGraph {
     }
 }
 
-fn queries(t: &Path) -> Vec<String> {
+pub(super) fn queries(t: &Path) -> Vec<String> {
     let log = std::fs::read_to_string(t.join("queries")).unwrap_or_default();
     log.lines().map(str::to_owned).collect()
 }
@@ -79,11 +79,14 @@ fn a_symbol_whose_non_test_callers_fill_the_rows_asks_no_more() {
     assert_eq!(queries(t.path()).len(), 1);
 }
 
+/// Answers `a` at once and makes every later symbol wait past the bound, so the bound falls
+/// between `a` and `b` however slow the machine is.
+const SLOW_AFTER_A: &str = r#"case "$4" in *"f.name = 'a'"*) echo '{"rows":[["a","src/a.rs","src/x.rs","1","2"]]}';; *) sleep 3; echo '{"rows":[]}';; esac"#;
+
 #[test]
 fn the_time_bound_keeps_what_was_answered_and_names_what_was_not_asked() {
     let t = tempfile::tempdir().unwrap();
-    let slow = r#"sleep 0.4; echo '{"rows":[["a","src/a.rs","src/x.rs","1","2"]]}'"#;
-    let g = stand_in(t.path(), slow);
+    let g = stand_in(t.path(), SLOW_AFTER_A);
     let cbm = Cbm {
         budget: Duration::from_millis(1000),
         ..Cbm::new(&g.tool)
@@ -92,7 +95,7 @@ fn the_time_bound_keeps_what_was_answered_and_names_what_was_not_asked() {
     let symbols = [("a", "src/a.rs"), ("b", "src/b.rs"), ("c", "src/c.rs")];
     let asked = cbm.callers("p", &symbols).unwrap();
     assert!(
-        start.elapsed() < Duration::from_millis(1600),
+        start.elapsed() < Duration::from_millis(2500),
         "{:?}",
         start.elapsed()
     );
