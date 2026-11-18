@@ -34,11 +34,20 @@ pub(super) fn graph_callers(
     if let Some(why) = fresh::stale(top, merge_base, &g.project, &index) {
         return Err(why);
     }
-    let symbols: Vec<(&str, &str)> = found
+    let (left_out, asked): (Vec<&Symbol>, Vec<&Symbol>) =
+        found.iter().partition(|s| index.leaves_out(&s.file));
+    let symbols: Vec<(&str, &str)> = asked
         .iter()
         .map(|s| (s.name.as_str(), s.file.as_str()))
         .collect();
-    cbm.callers(&g.project, &symbols).map_err(|e| e.to_string())
+    let mut out = cbm
+        .callers(&g.project, &symbols)
+        .map_err(|e| e.to_string())?;
+    let not_indexed = left_out
+        .iter()
+        .map(|s| format!("{} (file not indexed by the graph)", s.name));
+    out.unasked.extend(not_indexed);
+    Ok(out)
 }
 
 /// The lines of `file` in head, read once per file; an absent file has none. Why not, for a path

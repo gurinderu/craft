@@ -16,6 +16,7 @@ fn a_base_outside_the_indexed_root_s_history_is_stale() {
     let index = |root: &Path| Index {
         at: "2099-01-01T00:00:00Z".into(),
         root: root.display().to_string(),
+        ..Index::default()
     };
     assert_eq!(fresh::stale(&repo, &base, "p", &index(&repo)), None);
     let why = fresh::stale(&repo, &base, "p", &index(&other)).unwrap();
@@ -31,6 +32,7 @@ fn stale_names_a_bad_time_a_base_with_no_time_and_reads_an_empty_root_as_this_ch
     let at = |at: &str| Index {
         at: at.into(),
         root: String::new(),
+        ..Index::default()
     };
     let why = fresh::stale(&repo, &base, "p", &at("yesterday")).unwrap();
     assert!(why.contains("names no time it was made"), "{why}");
