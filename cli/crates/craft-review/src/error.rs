@@ -23,3 +23,12 @@ pub enum Error {
     #[error(transparent)]
     Comment(#[from] CommentError),
 }
+
+impl Error {
+    /// Whether the run was refused for an argument it was given, before any work: the command
+    /// exits as a refused argument does.
+    #[must_use]
+    pub fn refuses_argument(&self) -> bool {
+        matches!(self, Self::Step(StepError::DeltaOverBranch { .. }))
+    }
+}
