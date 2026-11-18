@@ -16,6 +16,7 @@ mod attrs;
 mod braces;
 pub mod cbm;
 mod fresh;
+mod gaps;
 mod graph;
 mod list;
 mod names;

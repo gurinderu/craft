@@ -1,15 +1,17 @@
 //! The lenses' CONSUMERS block of the consumers list.
 
 use super::order::FILE_MAX;
-use super::{Consumers, Site};
+use super::{Consumers, Site, gaps};
 use crate::content::{self, ContentError, vars};
 
-/// The lenses' block; empty when the change adds or changes no symbol the list looked for.
+/// The lenses' block; empty when the change adds or changes no symbol the list looked for and
+/// left nothing unsearched.
 ///
 /// # Errors
 /// When its template is missing.
 pub fn lens_block(c: &Consumers) -> Result<String, ContentError> {
-    if c.symbols.is_empty() {
+    let gaps = gaps::for_lens(c);
+    if c.symbols.is_empty() && gaps.is_empty() {
         return Ok(String::new());
     }
     let mut lines: Vec<String> = Vec::new();
@@ -20,7 +22,7 @@ pub fn lens_block(c: &Consumers) -> Result<String, ContentError> {
     let none: Vec<String> = c
         .symbols
         .iter()
-        .filter(|s| s.sites.is_empty())
+        .filter(|s| s.sites.is_empty() && !unsearched(c, &s.name))
         .map(|s| format!("`{}`", s.name))
         .collect();
     if !none.is_empty() {
@@ -29,7 +31,7 @@ pub fn lens_block(c: &Consumers) -> Result<String, ContentError> {
             none.join(", ")
         ));
     }
-    lines.extend(gaps(c));
+    lines.extend(gaps);
     let cut = cut_text(c);
     let block = content::prompt(
         "lens-consumers",
@@ -43,6 +45,14 @@ pub fn lens_block(c: &Consumers) -> Result<String, ContentError> {
     Ok(format!("\n{block}"))
 }
 
+/// Whether the name search left `name` out: an `unsearched` entry is the name, or the name and
+/// why in brackets.
+fn unsearched(c: &Consumers, name: &str) -> bool {
+    c.unsearched
+        .iter()
+        .any(|u| u == name || u.strip_prefix(name).is_some_and(|r| r.starts_with(" (")))
+}
+
 /// One listed line, its kind after it when it is not a plain use.
 fn site_line(x: &Site) -> String {
     let kind = if x.kind.is_empty() {
@@ -51,41 +61,6 @@ fn site_line(x: &Site) -> String {
         format!(" ({}: an implementor or a sibling)", x.kind)
     };
     format!("- {}:{}: {}{kind}", x.file, x.line, x.text)
-}
-
-/// What the lenses must look for themselves: names not searched, changed lines in no item, and
-/// symbols whose graph callers were cut or not asked.
-fn gaps(c: &Consumers) -> Vec<String> {
-    let said = [
-        (
-            &c.unsearched,
-            "Not searched by name (find their uses yourself)",
-        ),
-        (
-            &c.unplaced,
-            "Changed lines in no item this list could name (find what they change and its uses yourself)",
-        ),
-        (
-            &c.unlisted,
-            "Changed symbols past the 40-symbol limit, not searched (find their uses yourself)",
-        ),
-        (
-            &c.unreadable,
-            "Changed files not read, their symbols not searched (read them and find the uses yourself)",
-        ),
-        (
-            &c.graph_truncated,
-            "The code graph's callers were cut for (find the rest yourself)",
-        ),
-        (
-            &c.graph_unasked,
-            "The code graph was not asked for the callers of (find them yourself)",
-        ),
-    ];
-    said.iter()
-        .filter(|(v, _)| !v.is_empty())
-        .map(|(v, what)| format!("{what}: {}.", shown(v)))
-        .collect()
 }
 
 /// The lens text's word on the lines its budget cut, and on any past the saved list's cap.
