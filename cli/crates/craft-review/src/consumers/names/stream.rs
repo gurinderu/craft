@@ -85,7 +85,7 @@ fn kill(child: &mut Child) {
     let _reaped = child.wait().is_ok();
 }
 
-pub(super) fn out_of_time() -> String {
+fn out_of_time() -> String {
     format!("no time left of the name search's {}s", BUDGET.as_secs())
 }
 
@@ -94,7 +94,9 @@ fn read_hits(out: impl Read) -> Result<Vec<Hit>, String> {
     let mut hits = Vec::new();
     for line in BufReader::new(out).split(b'\n') {
         let line = line.map_err(|e| format!("git grep's output unreadable: {e}"))?;
-        hits.extend(hit(&String::from_utf8_lossy(&line)));
+        // As `str::lines`: a CRLF file's line ends without its `\r`.
+        let line = line.strip_suffix(b"\r").unwrap_or(&line);
+        hits.extend(hit(&String::from_utf8_lossy(line)));
         if hits.len() > HITS_MAX {
             break;
         }

@@ -90,3 +90,13 @@ fn git_s_failure_is_named() {
     };
     assert!(why.starts_with("git grep failed"), "{why}");
 }
+
+#[test]
+fn a_crlf_line_s_text_ends_without_its_carriage_return() {
+    let mut cmd = Command::new("printf");
+    cmd.arg("f.rs\\0001\\000x()\\r\\n");
+    let Ok(Ended::Exited(_, hits, _)) = stream(cmd, far()) else {
+        panic!("printf did not exit");
+    };
+    assert_eq!(hits[0].text, "x()");
+}
