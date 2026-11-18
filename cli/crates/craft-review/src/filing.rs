@@ -19,6 +19,9 @@ mod root_tests;
 mod said;
 #[cfg(test)]
 mod tests;
+mod unfiled;
+#[cfg(test)]
+mod unfiled_tests;
 mod unfinished;
 mod wire;
 mod write;
@@ -67,7 +70,7 @@ pub fn submitted(
             ..Filing::default()
         };
     } else if filing.finished.is_some() {
-        return Some(outcome(&filing, &earlier, true));
+        return Some(outcome(run, &filing, &earlier, true));
     }
     if host.output_tokens.is_some() {
         filing.output_tokens = host.output_tokens;
@@ -99,7 +102,7 @@ pub fn republished(run: &Path, step: &Value, w: &dyn Writer) -> Option<Value> {
         );
     }
     keep(run, &mut filing, &mut lost);
-    Some(outcome(&filing, &lost, true))
+    Some(outcome(run, &filing, &lost, true))
 }
 
 /// The finished step of the segment whose record is not in the store, `None` when it is or the
@@ -130,11 +133,13 @@ fn file_again(run: &Path, mut lost: Vec<String>, w: &dyn Writer) -> Option<Value
     filing.refiled = true;
     file_record(run, &mut filing, &step, &mut lost, w);
     keep(run, &mut filing, &mut lost);
-    Some(with_filing(step, outcome(&filing, &lost, true)))
+    Some(with_filing(step, outcome(run, &filing, &lost, true)))
 }
 
-/// Keeps `filing` with what its writes lost, for `status` to say why.
+/// Keeps `filing` with what its writes lost, for `status` to say why, and the run's state saying
+/// whether its record is filed ([`unfiled`]).
 fn keep(run: &Path, filing: &mut Filing, lost: &mut Vec<String>) {
+    unfiled::keep(run, unfiled::note(run, filing, lost).as_deref(), lost);
     filing.lost.clone_from(lost);
     save(run, filing, lost);
 }
@@ -159,7 +164,7 @@ fn record_step(
         file_record(run, &mut filing, step, &mut lost, w);
     }
     keep(run, &mut filing, &mut lost);
-    outcome(&filing, &lost, done)
+    outcome(run, &filing, &lost, done)
 }
 
 /// One attempt at the record, counted and kept before it is made.
