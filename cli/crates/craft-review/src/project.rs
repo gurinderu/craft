@@ -63,7 +63,7 @@ mod workflow_steps_tests;
 #[cfg(test)]
 mod workflow_tests;
 pub use ci::{CI_MAX, CiEntry, CiError, Signal};
-pub use code_graph::CodeGraph;
+pub use code_graph::{CodeGraph, GraphState};
 pub use point::IntegrationPoint;
 
 /// The profile's format; a profile of another is refused, not misread.

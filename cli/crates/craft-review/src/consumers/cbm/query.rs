@@ -1,6 +1,9 @@
 //! The `query_graph` text asking one symbol's callers: those of the function of its name defined
 //! in its own file, so callers of same-named functions elsewhere never fill its rows; non-test
 //! callers asked apart from test ones, since the query language orders by no expression.
+//!
+//! A test caller is told apart by its path alone: a caller in an inline `#[cfg(test)]` module of
+//! a source file is asked with the non-test ones, since the graph marks no such module.
 
 /// A caller in a test path, as [`crate::consumers::symbols`]'s `is_test_path` reads one: a
 /// `tests` or `benches` directory, a `tests.rs`, `*_tests.rs` or `*_test.rs` file.
@@ -21,10 +24,22 @@ pub(super) fn quoted(s: &str) -> Option<String> {
     ))
 }
 
+/// Which callers one query asks for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Callers {
+    /// Those outside test paths.
+    NonTest,
+    /// Those in test paths.
+    Test,
+}
+
 /// The query for up to `limit` callers of `name` defined in `file` (an identifier and a quoted
 /// path), from test paths or from the rest.
-pub(super) fn callers(name: &str, file: &str, tests: bool, limit: usize) -> String {
-    let which = if tests { "" } else { "NOT " };
+pub(super) fn callers(name: &str, file: &str, which: Callers, limit: usize) -> String {
+    let which = match which {
+        Callers::Test => "",
+        Callers::NonTest => "NOT ",
+    };
     format!(
         "MATCH (c)-[r:CALLS]->(f) WHERE f.name = '{name}' AND f.file_path = {file} AND \
          {which}{TEST_CALLER} RETURN f.name, f.file_path, c.file_path, c.start_line, c.end_line \

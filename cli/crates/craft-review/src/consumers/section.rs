@@ -61,6 +61,12 @@ fn section_gaps(c: &Consumers) -> String {
             c.graph_unlocated
         ));
     }
+    if !c.graph_unreadable.is_empty() {
+        out.push_str(&format!(
+            "- {GRAPH} callers in files not read: {}\n",
+            c.graph_unreadable.join(", ")
+        ));
+    }
     if !c.graph_truncated.is_empty() {
         out.push_str(&format!(
             "- {GRAPH} callers cut at {ROWS_PER_SYMBOL} for: {}\n",
