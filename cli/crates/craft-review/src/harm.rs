@@ -5,8 +5,10 @@
 
 mod floor;
 pub(crate) mod raise;
+mod test_gap;
 
 pub(crate) use floor::{floor_note, raise_path_floor};
+pub(crate) use test_gap::{raise_weak_floor, reach_is_regression, verifier_lines, weak_floor_note};
 
 use serde_json::{Map, Value};
 
@@ -71,11 +73,11 @@ fn rule_cited(rule: Option<&Value>) -> bool {
     filled("file") && filled("text")
 }
 
-/// The level the cap reads: the finding's own, or `none` for an uncited `repo-rule` and for a lint
-/// seed that names no harm.
+/// The level the cap reads: the finding's own, or `none` for an uncited `repo-rule`, for the tests
+/// lens's weak assertion that names no regression, and for a lint seed that names no harm.
 fn effective_level(f: &Value) -> Option<&str> {
     let own = text(f, "harmLevel").filter(|l| !l.is_empty());
-    if own == Some(REPO_RULE) && !rule_cited(f.get("repoRule")) {
+    if (own == Some(REPO_RULE) && !rule_cited(f.get("repoRule"))) || test_gap::unnamed(f) {
         return Some("none");
     }
     if own.is_some() {
@@ -94,10 +96,42 @@ fn note(f: &mut Map<String, Value>, why: &str) {
     f.insert("why".into(), Value::String(format!("{old} ({why})")));
 }
 
+/// The most `f` is allowed and why: its level's row, but a weak assertion naming its regression
+/// no more than should-fix, whatever level it names or none (realm @nick/craft, node #527).
+fn limit(f: &Value) -> Option<(&'static str, String)> {
+    let level = effective_level(f);
+    let row = level.and_then(|l| Some((ceiling(l)?, l)));
+    let weak = test_gap::is_weak(f).then_some(test_gap::WEAK_CEILING);
+    let held = |top| severity_rank(top) < severity_rank(test_gap::WEAK_CEILING);
+    match (row, weak) {
+        (Some((top, l)), Some(w)) if held(top) => Some((
+            w,
+            format!(
+                "weak assertion, harm level {l}: the test is the missing guard, not the defect, so at most {w}"
+            ),
+        )),
+        (None, Some(w)) => Some((
+            w,
+            format!("weak assertion naming no known harm level: at most {w}"),
+        )),
+        (Some((top, l)), _) => Some((
+            top,
+            if test_gap::unnamed(f) {
+                format!(
+                    "a weak assertion naming no regression is read as harm level {l}, which allows at most {top}"
+                )
+            } else {
+                format!("harm level {l} allows at most {top}")
+            },
+        )),
+        (None, None) => None,
+    }
+}
+
 /// `f` lowered to its harm level's ceiling, with a note saying so; unchanged when it names no
 /// known level or already sits at or below the ceiling.
 pub(crate) fn cap(f: &Value) -> Value {
-    let Some((level, top)) = effective_level(f).and_then(|l| Some((l, ceiling(l)?))) else {
+    let Some((top, reason)) = limit(f) else {
         return f.clone();
     };
     let severity = text(f, "severity").unwrap_or("");
@@ -106,9 +140,7 @@ pub(crate) fn cap(f: &Value) -> Value {
         .is_some_and(|(at, max)| at < max);
     let mut out = f.as_object().cloned().unwrap_or_default();
     if worse {
-        let why = format!(
-            "lowered to {top} from {severity}: harm cap — harm level {level} allows at most {top}"
-        );
+        let why = format!("lowered to {top} from {severity}: harm cap — {reason}");
         out.insert("severity".into(), Value::String(top.to_owned()));
         note(&mut out, &why);
     }

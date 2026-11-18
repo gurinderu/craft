@@ -190,13 +190,21 @@ fn premise_demoted(f: &Value) -> Value {
 }
 
 /// A confirmed finding off every production-reachable path: one severity lower (`reachDemoted`),
-/// without the path floor's note, which claims a Medium that no longer holds.
+/// without the path floor's or the weak-assertion floor's note, which claim a Medium that no
+/// longer holds. A test gap's `reachable` is its regression's: its verifier was asked whether the
+/// regression reaches production, not whether the test line does (realm @nick/craft, node #527).
 fn reach_demoted(f: &Value) -> Value {
     let from = text(f, "severity");
     let to = demote(from).unwrap_or(from);
     let why = text(f, "why");
     let why = why.replacen(harm::floor_note(why), "", 1);
-    let why = format!("{why} (severity demoted {from}→{to}: not on a production-reachable path)");
+    let why = why.replacen(harm::weak_floor_note(&why), "", 1);
+    let path = if harm::reach_is_regression(f) {
+        "the regression it lets through does not reach production"
+    } else {
+        "not on a production-reachable path"
+    };
+    let why = format!("{why} (severity demoted {from}→{to}: {path})");
     with(
         f,
         vec![
