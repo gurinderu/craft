@@ -1,7 +1,7 @@
 //! The report's lines on the CONSUMERS lines no lens marked per line (realm @nick/craft, node
 //! #531): those an answer left, those shown only to lenses that did not answer, and under unit
-//! mode those no lens was shown — handed to the seam pass when every one answered, else unmarked
-//! with why.
+//! mode those no lens was shown — handed to the seam pass when their own track's answered, else
+//! unmarked with why.
 
 use crate::consumers::gap_line;
 use crate::state::RunState;
@@ -32,20 +32,20 @@ pub(super) fn all(state: &RunState) -> Vec<(String, bool)> {
     .collect()
 }
 
-/// Under unit mode, the lines no lens task was shown: handed to the seam pass when it answered on
-/// every track that has units, else left unread by it.
+/// Under unit mode, the lines no lens task was shown: handed to the seam pass when the seam pass
+/// of their own track — the profile handed the list ([`crate::consumers::PROFILE`]) — answered,
+/// else left unread by it; another track's seam pass never read them.
 fn seam_split(state: &RunState) -> (Vec<String>, Vec<String>) {
-    let mut tracks = state
+    let Some(track) = state
         .units
         .tracks
         .iter()
-        .filter(|t| !t.units.is_empty())
-        .peekable();
-    if tracks.peek().is_none() {
+        .find(|t| t.profile == crate::consumers::PROFILE && !t.units.is_empty())
+    else {
         return (Vec::new(), Vec::new());
-    }
+    };
     let unshown = state.rounds.unshown(&state.context.consumers.sites());
-    if tracks.all(|t| t.seam.is_some()) {
+    if track.seam.is_some() {
         (unshown, Vec::new())
     } else {
         (Vec::new(), unshown)

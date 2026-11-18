@@ -30,6 +30,8 @@ pub use text::{confined_block, lens_block, seam_block};
 
 /// The name search's name in the report and on a site.
 pub const NAME_SEARCH: &str = "name search";
+/// The one profile whose lenses and seam pass are handed the list: its lines are that track's.
+pub const PROFILE: &str = "rust";
 /// The run directory's file holding the whole list.
 pub const FILE: &str = "consumers.json";
 /// A site's kind when its line declares another item of the symbol's name: a trait method's

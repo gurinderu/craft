@@ -64,13 +64,25 @@ fn a_line_left_to_a_seam_pass_that_never_answered_is_unmarked_and_says_why() {
     assert!(notes.contains(&note(SEAM_DID_NOT_RUN)), "{notes:?}");
 }
 
-#[test]
-fn every_track_s_seam_pass_must_have_answered() {
-    let mut s = state(&["src/a"], &answered());
+/// `state` with a second unit track of `profile` whose seam pass did not answer.
+fn with_dead_seam(mut s: RunState, profile: &str) -> RunState {
     let mut other = s.units.tracks[0].clone();
-    other.profile = "nix".into();
+    other.profile = profile.into();
     other.seam = None;
     s.units.tracks.push(other);
+    s
+}
+
+#[test]
+fn only_the_lines_own_track_s_seam_pass_counts() {
+    let s = with_dead_seam(state(&["src/a"], &answered()), "nix");
+    let report = markdown(&s, "Approve");
+    assert!(report.contains(SEAM_RAN), "{report}");
+    assert!(!report.contains("seam pass did not run"), "{report}");
+    assert!(degraded_notes(&s).is_empty(), "{:?}", degraded_notes(&s));
+    // The other way round: the nix track's seam pass answered, the rust one's did not.
+    let mut s = with_dead_seam(state(&["src/a"], &answered()), "rust");
+    s.units.tracks[0].profile = "nix".into();
     let report = markdown(&s, "Approve");
     assert!(report.contains(SEAM_DID_NOT_RUN), "{report}");
 }
