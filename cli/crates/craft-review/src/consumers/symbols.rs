@@ -7,7 +7,7 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
-use super::attrs::is_test;
+use super::attrs::{is_test, test_mods};
 use super::braces::{item_end, structure};
 
 /// A Rust item declaration and its name.
@@ -70,6 +70,7 @@ pub(super) fn is_code(l: &str) -> bool {
 pub(super) fn of_file(file: &str, text: &str, ranges: &[(u32, u32)]) -> (Vec<Symbol>, Vec<u32>) {
     let lines: Vec<&str> = text.lines().collect();
     let st = structure(&lines);
+    let mods = test_mods(&lines, &st);
     let mut out: Vec<Symbol> = Vec::new();
     let mut unplaced = Vec::new();
     for n in ranges.iter().flat_map(|&(a, b)| a..=b) {
@@ -82,17 +83,24 @@ pub(super) fn of_file(file: &str, text: &str, ranges: &[(u32, u32)]) -> (Vec<Sym
             }
             continue;
         };
-        if let Some(sym) = item(file, &lines, &st, d) {
+        if let Some(sym) = item(file, &lines, &st, &mods, d) {
             add(&mut out, sym);
         }
     }
     (out, unplaced)
 }
 
-/// The symbol the declaration at `d` (0-based) names, when it is not test code.
-pub(super) fn item(file: &str, lines: &[&str], st: &[Vec<u8>], d: usize) -> Option<Symbol> {
+/// The symbol the declaration at `d` (0-based) names, when it is not test code: in none of the
+/// file's `test_mods`.
+pub(super) fn item(
+    file: &str,
+    lines: &[&str],
+    st: &[Vec<u8>],
+    test_mods: &[(usize, usize)],
+    d: usize,
+) -> Option<Symbol> {
     let name = lines.get(d).and_then(|l| declared(l))?;
-    (!is_test(lines, st, d)).then(|| Symbol {
+    (!is_test(lines, st, test_mods, d)).then(|| Symbol {
         name: name.to_owned(),
         file: file.to_owned(),
         line: u32::try_from(d + 1).unwrap_or(u32::MAX),

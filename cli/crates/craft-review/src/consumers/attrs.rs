@@ -6,10 +6,15 @@ use super::braces::item_end;
 /// The last path segments of the attributes that make an item a test.
 const TEST_ATTRS: [&str; 3] = ["test", "test_case", "rstest"];
 
-/// Whether the declaration at `at` (0-based) is test code: carries a test attribute, or sits in a
-/// module carrying `#[cfg(test)]`.
-pub(super) fn is_test(lines: &[&str], st: &[Vec<u8>], at: usize) -> bool {
-    has_test_attr(lines, st, at) || in_test_mod(lines, st, at)
+/// Whether the declaration at `at` (0-based) is test code: carries a test attribute, or sits in
+/// one of `test_mods`, the file's test modules ([`test_mods`]).
+pub(super) fn is_test(
+    lines: &[&str],
+    st: &[Vec<u8>],
+    test_mods: &[(usize, usize)],
+    at: usize,
+) -> bool {
+    has_test_attr(lines, st, at) || test_mods.iter().any(|&(d, end)| d < at && at <= end)
 }
 
 /// Whether the attributes above the declaration at `at` hold a test attribute.
@@ -76,14 +81,15 @@ fn is_test_attr(body: &str) -> bool {
     path == "cfg" && rest.starts_with("(test)]")
 }
 
-/// Whether the line at `at` sits in a module whose attributes hold `#[cfg(test)]` (or a test
-/// attribute).
-fn in_test_mod(lines: &[&str], st: &[Vec<u8>], at: usize) -> bool {
-    (0..at).rev().any(|d| {
-        lines.get(d).is_some_and(|l| is_mod(l))
-            && item_end(st, d).is_some_and(|end| end >= at)
-            && has_test_attr(lines, st, d)
-    })
+/// The spans (first and last line, 0-based) of the file's inline modules whose attributes hold
+/// `#[cfg(test)]` (or a test attribute), read once per file.
+pub(super) fn test_mods(lines: &[&str], st: &[Vec<u8>]) -> Vec<(usize, usize)> {
+    lines
+        .iter()
+        .enumerate()
+        .filter(|&(d, l)| is_mod(l) && has_test_attr(lines, st, d))
+        .filter_map(|(d, _)| Some((d, item_end(st, d)?)))
+        .collect()
 }
 
 /// Whether `line` opens an inline module: `mod name {`, with any visibility.

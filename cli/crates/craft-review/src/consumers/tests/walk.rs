@@ -75,3 +75,17 @@ fn a_long_list_of_unplaced_lines_is_named_in_part_and_counted() {
     assert!(s.contains("a.rs:20 and 5 more"), "{s}");
     assert!(!s.contains("a.rs:21"), "{s}");
 }
+
+/// Every line of a large file changed, each a declaration inside one module that spans the file:
+/// the test modules are found once per file, not once per changed line.
+#[test]
+fn a_large_changed_file_is_walked_in_linear_time() {
+    let n = 20_000;
+    let body = "    fn f() {}\n".repeat(n);
+    let text = format!("mod outer {{\n{body}}}\n");
+    let start = std::time::Instant::now();
+    let (found, _) = of_file("a.rs", &text, &[(2, u32::try_from(n).unwrap() + 1)]);
+    assert_eq!(found.len(), 1);
+    let took = start.elapsed();
+    assert!(took < std::time::Duration::from_secs(3), "{took:?}");
+}
