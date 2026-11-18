@@ -85,7 +85,10 @@ not one of them: it is the main session's (→ "Who triages").
                `fresh` keeps it from chaining to an older run on the branch, which would widen
                the scan and carry that run's settled findings, and `delta` tells it the run
                covers only the fix commits, so a clean one reads Warning, never Approve (Approve
-               comes only from a full review; the whole-PR base above drops `delta`); when they
+               comes only from a full review; the whole-PR base above drops `delta`, and the
+               binary refuses `delta` before anything runs when its base reaches back to or past
+               where the branch leaves trunk, as no base does with no earlier round of the branch:
+               `delta` needs a base after the merge-base); when they
                did, chain as `develop` does (Phase 4, a later light round), which is a delta
                round already. Add `repo` and `intent` as
                usual; one run per PR. The findings the fixes touch were checked in step 6;

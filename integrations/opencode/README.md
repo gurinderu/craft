@@ -134,7 +134,9 @@ a real OpenCode 2.x.
   the tasks at once (default 4, env `CRAFT_OPENCODE_CONCURRENCY`).
 - The flags are the binary's: `--base`, `--depth light|full`, `--fresh`, `--delta` (a re-review of fix
   commits, which never approves), `--pr`, `--comment`, `--path`,
-  `--run <dir>` to resume a stopped run, `--no-gate`, ….
+  `--run <dir>` to resume a stopped run, `--no-gate`, …. `--delta` needs a base after the merge-base:
+  with the merge-base or an older commit — or no `--base` and no earlier round of the branch — the
+  binary refuses it before anything runs, since that round would review the whole branch.
 - `--pr <n>` from a checkout that lacks the PR's head (the trunk, say) reviews it in craft's own
   detached worktree, `~/.craft/worktrees/<repo>/pr-<n>-<head>`, one per head, shared by runs at once
   and never moved; your checkout is not touched. Every task — and the agent check before them — runs
