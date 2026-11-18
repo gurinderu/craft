@@ -6,10 +6,11 @@
 use std::process::Command;
 use std::time::Duration;
 
-use serde_json::{Value, json};
+use serde_json::Value;
 
 mod callers;
 mod error;
+mod index;
 mod probe;
 mod query;
 mod rows;
@@ -18,6 +19,7 @@ mod run;
 use run::{bounded, last_line};
 
 pub use error::CbmError;
+pub use index::Index;
 
 pub use probe::{probe, refresh_hint, roots_of, said};
 
@@ -49,14 +51,6 @@ pub struct Asked {
     pub truncated: Vec<String>,
     /// The symbols whose callers were not asked, each with why: `name (why)`.
     pub unasked: Vec<String>,
-}
-
-/// What `index_status` says of a ready project: when it was indexed (`indexed_at`, UTC, as the
-/// graph prints it) and the root it indexes.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Index {
-    pub at: String,
-    pub root: String,
 }
 
 /// The graph's program, asked within a time bound.
@@ -93,7 +87,7 @@ impl Cbm {
             (true, Some(p), None) => Ok(p.clone()),
             (_, _, Some(e)) => Err(CbmError::Graph(format!(
                 "{name}: {}",
-                e.as_str().unwrap_or("error")
+                e.as_str().map_or_else(|| e.to_string(), str::to_owned)
             ))),
             _ => Err(CbmError::Graph(format!(
                 "{name}: {}",
@@ -101,41 +95,6 @@ impl Cbm {
             ))),
         }
     }
-
-    /// The graph's project whose root is one of `roots`.
-    ///
-    /// # Errors
-    /// When the graph does not answer.
-    pub fn project_of(&self, roots: &[String]) -> Result<Option<String>, CbmError> {
-        let listed = self.call("list_projects", json!({"limit": 1000}), self.timeout)?;
-        let projects = listed.get("projects").and_then(Value::as_array);
-        Ok(projects.into_iter().flatten().find_map(|p| {
-            let root = p.get("root_path").and_then(Value::as_str)?;
-            roots.iter().any(|r| r == root).then(|| text(p.get("name")))
-        }))
-    }
-
-    /// When `project` was indexed and the root it indexes, refused unless its status is `ready`.
-    ///
-    /// # Errors
-    /// When the graph does not answer or the project is not ready.
-    pub fn index(&self, project: &str) -> Result<Index, CbmError> {
-        let s = self.call("index_status", json!({"project": project}), self.timeout)?;
-        let status = text(s.get("status"));
-        if status != "ready" {
-            return Err(CbmError::Graph(format!(
-                "the index of {project} is {status:?}, not ready"
-            )));
-        }
-        Ok(Index {
-            at: text(s.get("indexed_at")),
-            root: text(s.get("root_path")),
-        })
-    }
-}
-
-fn text(v: Option<&Value>) -> String {
-    v.and_then(Value::as_str).unwrap_or_default().to_owned()
 }
 
 /// Whether `s` is an identifier, so it can be quoted into a query as it is.

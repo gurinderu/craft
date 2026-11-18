@@ -10,6 +10,7 @@ mod asks;
 mod graphs;
 mod half_asked;
 mod heads;
+mod index;
 mod lists;
 mod stale;
 mod walk;
