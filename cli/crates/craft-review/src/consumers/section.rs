@@ -4,30 +4,34 @@
 use super::order::FILE_MAX;
 use super::{Consumers, gaps};
 
-/// The report's section: which sources built the list, and why the graph was not one; empty
-/// when no list was built.
+/// The report's section: which sources built the list, and what it could not search; empty when
+/// no list was built and none was asked for.
 #[must_use]
 pub fn section(c: &Consumers) -> String {
-    if c.sources.is_empty() {
+    let gaps = gaps::for_report(c);
+    if c.sources.is_empty() && gaps.is_empty() {
         return String::new();
     }
-    let mut out = format!(
-        "\n## Consumers\n\nBuilt from: {}. {} line(s) for {} changed Rust symbol(s)",
-        c.sources.join(", "),
-        c.lines(),
-        c.symbols.len()
-    );
-    if c.cut > 0 {
-        out.push_str(&format!("; {} more cut by the budget", c.cut));
+    let mut out = String::from("\n## Consumers\n\n");
+    if !c.sources.is_empty() {
+        out.push_str(&format!(
+            "Built from: {}. {} line(s) for {} changed Rust symbol(s)",
+            c.sources.join(", "),
+            c.lines(),
+            c.symbols.len()
+        ));
+        if c.cut > 0 {
+            out.push_str(&format!("; {} more cut by the budget", c.cut));
+        }
+        out.push_str(".\n");
     }
-    out.push_str(".\n");
     if c.capped > 0 {
         out.push_str(&format!(
             "- {} more line(s) past the {FILE_MAX}-line cap, in no file\n",
             c.capped
         ));
     }
-    out.push_str(&gaps::for_report(c));
+    out.push_str(&gaps);
     if !c.file.is_empty() {
         out.push_str(&format!("- The whole list: `{}`\n", c.file));
     }

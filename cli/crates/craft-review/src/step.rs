@@ -434,12 +434,8 @@ fn open_dir(dir: &Path) -> Result<(), StepError> {
 /// The consumers list of the change (realm @nick/craft, node #529), the code graph asked when
 /// the reviewer's profile says it answers.
 fn consumers_of(cwd: &Path, opts: &StartOptions, diff: &git::Diff) -> crate::consumers::Consumers {
-    let Ok(top) = git::toplevel(cwd) else {
-        return crate::consumers::Consumers::default();
-    };
     let projects = opts.sources.as_ref().map(|s| s.projects.as_path());
-    let graph = crate::consumers::graph_of(projects, &top);
-    crate::consumers::build(&top, diff, graph)
+    crate::consumers::of_checkout(cwd, projects, diff)
 }
 
 /// The integration points' sources, the gate and the consumers list, side by side, none waiting
@@ -452,6 +448,8 @@ fn prepare(cwd: &Path, dir: &Path, opts: &StartOptions, run: &mut RunState) {
                 .as_ref()
                 .map(|setup| sources::for_repo(cwd, setup))
         });
+        // Started before the gate, which runs on this thread, so the two overlap.
+        let consumers = s.spawn(|| consumers_of(cwd, opts, &run.diff));
         let gated = match &opts.gate_from {
             Some(from) => Some(gate::alone::taken(from, &run.diff)),
             None => opts
@@ -465,12 +463,10 @@ fn prepare(cwd: &Path, dir: &Path, opts: &StartOptions, run: &mut RunState) {
                 })
                 .map(|setup| gate::run(cwd, &run.diff.base, &run.tracks, &setup, dir)),
         };
-        let consumers = s.spawn(|| consumers_of(cwd, opts, &run.diff));
         (sources.join(), gated, consumers.join())
     });
-    let full = listed.unwrap_or_else(|_| crate::consumers::Consumers {
-        graph_skipped: "the consumers list stopped unexpectedly".into(),
-        ..crate::consumers::Consumers::default()
+    let full = listed.unwrap_or_else(|_| {
+        crate::consumers::Consumers::failed("the consumers list stopped unexpectedly")
     });
     let (lens, note) = crate::consumers::keep(dir, full);
     run.context.consumers = lens;

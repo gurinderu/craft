@@ -6,21 +6,20 @@
 //! with a name search, always run, because the graph loses edges. Each lens gets the list and
 //! marks every line; the report says which sources built it. Rust symbols only.
 
-use std::path::Path;
-
 use serde::{Deserialize, Serialize};
-
-use crate::project::CodeGraph;
 
 mod attrs;
 mod braces;
 pub mod cbm;
+mod changed;
 mod fresh;
 mod gaps;
 mod graph;
 mod list;
+mod make;
 mod names;
 mod order;
+mod removed;
 mod save;
 mod section;
 mod source;
@@ -30,6 +29,7 @@ mod tests;
 mod text;
 
 pub use graph::graph_of;
+pub use make::{build, of_checkout};
 pub use save::keep;
 pub use section::section;
 pub use text::lens_block;
@@ -71,6 +71,10 @@ pub struct Listed {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Consumers {
+    /// Why no list could be built at all: the change's diff or its checkout could not be read, or
+    /// the build stopped.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub failed: String,
     /// The sources that built the list.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sources: Vec<String>,
@@ -134,29 +138,4 @@ impl Consumers {
     pub fn lines(&self) -> usize {
         self.symbols.iter().map(|s| s.sites.len()).sum()
     }
-}
-
-/// The list for the change of the working tree at `top` against `diff`'s base (read from its
-/// merge-base, as the lenses' diff), over its changed files, the graph asked when `graph` names
-/// one.
-#[must_use]
-pub fn build(top: &Path, diff: &crate::git::Diff, graph: Result<CodeGraph, String>) -> Consumers {
-    let text = crate::git::zero_context_diff(top, &diff.base).unwrap_or_default();
-    let changed = crate::gate::lines::Lines::parse(&text);
-    let found = symbols::changed(top, &diff.files, &changed, list::SYMBOLS_MAX);
-    let (asked, graph_skipped) = match graph {
-        Ok(g) => graph::graph_callers(top, &diff.merge_base, &g, &found.symbols),
-        Err(why) => (None, why),
-    };
-    let callers = asked.as_ref().map(|a| a.callers.as_slice());
-    let mut out = list::assemble(top, &changed, &found.symbols, callers);
-    if let Some(a) = asked {
-        out.graph_truncated = a.truncated;
-        out.graph_unasked = a.unasked;
-    }
-    out.graph_skipped = graph_skipped;
-    out.unplaced = found.unplaced;
-    out.unlisted = found.unlisted;
-    out.unreadable = found.unreadable;
-    out
 }
