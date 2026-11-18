@@ -197,9 +197,11 @@ pub struct GateArgs {
     pub dir: Option<PathBuf>,
 }
 
+/// `value` on stdout as one JSON line, as the host is handed it ([`crate::printed::for_host`]).
 pub(crate) fn print(value: &Value) -> Result<ExitCode> {
     let mut out = std::io::stdout().lock();
-    writeln!(out, "{}", serde_json::to_string(value)?)?;
+    let printed = crate::printed::for_host(value.clone());
+    writeln!(out, "{}", serde_json::to_string(&printed)?)?;
     Ok(ExitCode::SUCCESS)
 }
 

@@ -2,6 +2,7 @@
 
 mod comment;
 mod init;
+mod printed;
 mod review;
 mod run;
 mod steps;
