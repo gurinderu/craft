@@ -56,7 +56,26 @@ fn a_full_loop_reads_every_answer_from_its_file() {
     assert_eq!(
         (st["findings"].clone(), st["tiers"]["refuted"].clone()),
         (json!(2), json!(1))
+    ); // The brief status says the run ended without what grows with it (realm @nick/craft, node #522).
+    let brief = status::brief(&run).unwrap();
+    assert_eq!(
+        (
+            brief["done"].clone(),
+            brief["verdict"].clone(),
+            brief["brief"].clone()
+        ),
+        (json!(true), json!("Block"), json!(true))
     );
+    assert!(
+        brief["line"]
+            .as_str()
+            .is_some_and(|l| l.starts_with("Block")),
+        "{brief}"
+    );
+    assert_eq!(brief["report"], st["report"]);
+    for big in ["findings", "tasks", "profiles", "notes", "filing"] {
+        assert!(brief.get(big).is_none(), "{big} in {brief}");
+    }
 }
 
 #[test]
