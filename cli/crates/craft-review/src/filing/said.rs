@@ -24,7 +24,8 @@ pub fn summary(run: &Path) -> Option<Value> {
 }
 
 /// What `summary` says without the step it keeps, for `status --brief`: whether the record is
-/// filed, its file, whether the segment's finished step is kept, and how many stopped parts wait —
+/// filed, its file, whether the segment's finished step is kept, what the writes after the
+/// segment's last step lost, and how many stopped parts wait —
 /// a size no finding count grows (realm @nick/craft, node #522); `None` when the run files no
 /// telemetry.
 #[must_use]
@@ -33,6 +34,7 @@ pub fn brief(run: &Path) -> Option<Value> {
     Some(json!({
         "record": filing.record, "recordFile": filing.record_file,
         "kept": filing.finished.is_some(), "pending": filing.pending.len(),
+        "lost": filing.lost,
     }))
 }
 

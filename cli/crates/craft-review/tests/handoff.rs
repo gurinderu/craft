@@ -76,6 +76,44 @@ fn a_full_loop_reads_every_answer_from_its_file() {
     for big in ["findings", "tasks", "profiles", "notes", "filing"] {
         assert!(brief.get(big).is_none(), "{big} in {brief}");
     }
+    weaker_parts_ride_the_brief(&run);
+}
+
+/// What a parent reads a weaker run by rides the brief status too: the stop, the degraded notes
+/// and the worktree line, none of them growing with the findings (realm @nick/craft, node #522).
+#[expect(
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    reason = "a step of the test, failing loudly like it"
+)]
+fn weaker_parts_ride_the_brief(run: &std::path::Path) {
+    let brief = status::brief(run).unwrap();
+    for weaker in ["stop", "degraded", "worktree", "prComments", "sorting"] {
+        assert!(brief.get(weaker).is_none(), "{weaker} in {brief}");
+    }
+    let mut held = craft_review::state::load(run).unwrap();
+    held.stopped = Some(craft_review::stop::Stop {
+        cause: craft_review::stop::Cause::Limit,
+        text: "resets 5pm".into(),
+    });
+    held.degraded = vec!["round 1: 2 task(s) on `x` ran on the default agent type instead".into()];
+    held.chain.worktree = Some("reviewed in craft's own worktree /w".into());
+    craft_review::state::save(run, &held).unwrap();
+    let weaker = status::brief(run).unwrap();
+    assert_eq!(
+        (
+            weaker["stopped"].clone(),
+            weaker["stop"].clone(),
+            weaker["degraded"].clone(),
+            weaker["worktree"].clone()
+        ),
+        (
+            json!(true),
+            json!({"cause": "limit", "text": "resets 5pm"}),
+            json!(held.degraded),
+            json!("reviewed in craft's own worktree /w")
+        )
+    );
 }
 
 #[test]
