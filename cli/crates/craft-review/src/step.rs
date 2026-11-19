@@ -729,17 +729,16 @@ fn take_answer(
         task.refused = None;
         return Ok(true);
     }
-    // On its last attempt an answer whose only defect is unmarked CONSUMERS lines is taken, the
-    // lines kept as a coverage gap (realm @nick/craft, node #531).
-    let last = task.retries >= MAX_RETRIES;
     let checked = submitted
         .as_ref()
         .map_err(Clone::clone)
-        .and_then(|a| validate::check(task, Some(a), last));
+        .and_then(|a| validate::check(task, Some(a)));
     match checked {
-        Ok((answer, unmarked)) => {
+        Ok(answer) => {
+            // The CONSUMERS lines it left unmarked are taken with it, to be reported as unchecked,
+            // never asked for again (realm @nick/craft, node #531).
+            task.unmarked = validate::unmarked(&answer, &task.consumers);
             task.answer = Some(answer);
-            task.unmarked = unmarked;
             task.state = TaskState::Answered;
             task.error = None;
             task.refused = None;

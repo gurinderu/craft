@@ -126,10 +126,7 @@ fn the_lens_block_lists_every_line_by_symbol() {
     let repo = fixture(t.path(), "");
     let c = build(&repo, &diff_of(&repo));
     let block = lens_block(&c).unwrap();
-    assert!(
-        block.contains("CONSUMERS (required): the 2 line(s)"),
-        "{block}"
-    );
+    assert!(block.contains("CONSUMERS: the 2 line(s)"), "{block}");
     assert!(block.contains("`k8s_rule_to_api` (src/lib.rs:1):\n- src/uses.rs:1: use crate::k8s_rule_to_api;\n- src/uses.rs:4: v.into_iter().map(k8s_rule_to_api).collect()"), "{block}");
     assert!(
         block.contains("No line outside the change names: `twice`."),

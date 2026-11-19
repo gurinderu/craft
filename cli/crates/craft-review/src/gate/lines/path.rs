@@ -3,7 +3,8 @@
 //! quote, a backslash or a control character, or a non-ASCII byte without `core.quotePath=false`.
 
 /// The path of a header's rest (after `+++ ` or `--- `) without its side's `prefix`; `None` for
-/// `/dev/null`, a path not under `prefix`, or a quoted one that does not close.
+/// `/dev/null`, a path not under `prefix`, or a quoted one that does not close or is not UTF-8
+/// (left out, as before quoted paths were read; issue #414).
 pub(super) fn header_path(rest: &str, prefix: &str) -> Option<String> {
     let path = match rest.strip_prefix('"') {
         Some(quoted) => unquote(quoted)?,
@@ -12,14 +13,14 @@ pub(super) fn header_path(rest: &str, prefix: &str) -> Option<String> {
     path.strip_prefix(prefix).map(str::to_owned)
 }
 
-/// The bytes of a C-quoted string up to its closing quote, read as UTF-8 (lossily, as a path
-/// git printed in octal may not be); `None` when it does not close.
+/// The bytes of a C-quoted string up to its closing quote, read as UTF-8; `None` when it does not
+/// close or its bytes are not UTF-8.
 fn unquote(s: &str) -> Option<String> {
     let mut out = Vec::new();
     let mut chars = s.chars();
     loop {
         match chars.next()? {
-            '"' => return Some(String::from_utf8_lossy(&out).into_owned()),
+            '"' => return String::from_utf8(out).ok(),
             '\\' => out.push(escaped(&mut chars)?),
             c => out.extend_from_slice(c.encode_utf8(&mut [0; 4]).as_bytes()),
         }
@@ -67,5 +68,6 @@ mod tests {
         assert_eq!(header_path("/dev/null", "b/"), None);
         assert_eq!(header_path(r#""b/open"#, "b/"), None);
         assert_eq!(header_path(r#""b/bad\9.rs""#, "b/"), None);
+        assert_eq!(header_path(r#""b/\377.rs""#, "b/"), None);
     }
 }

@@ -1,6 +1,6 @@
 //! `craft review start` builds the consumers list of a change with a caller: the whole list saved
-//! in the run directory, the lenses handed their part; a lens still leaving a line unmarked on its
-//! last attempt is taken and the line reported.
+//! in the run directory, the lenses handed their part; a lens answer leaving a line unmarked is
+//! taken at once and the line reported.
 #![expect(
     clippy::unwrap_used,
     clippy::indexing_slicing,
@@ -40,7 +40,7 @@ fn start_saves_the_list_and_hands_the_lenses_its_lines() {
         .find(|t| t["id"] == json!("lens-rust-errors-r1"))
         .unwrap_or_else(|| panic!("{:?}", ids(&s)));
     let prompt = prompt_of(task);
-    assert!(prompt.contains("CONSUMERS (required)"), "{prompt}");
+    assert!(prompt.contains("CONSUMERS: the"), "{prompt}");
     assert!(
         prompt.contains("- src/user.rs:2: crate::shared_target()"),
         "{prompt}"
@@ -52,14 +52,15 @@ const SITE: &str = "src/user.rs:2";
 
 /// Drives a run over [`one_consumer`] to its end: the `errors` lens never marks [`SITE`] and
 /// reports one finding in round 1; every other lens marks it when `others_mark`; the dedup groups
-/// nothing and each verifier confirms. Returns the finished step.
+/// nothing and each verifier confirms. Returns the finished step, the `errors` lens's first answer
+/// taken at once, never asked for again.
 fn drive(others_mark: bool) -> (Value, tempfile::TempDir, tempfile::TempDir) {
     let repo = tempfile::tempdir().unwrap();
     one_consumer(repo.path());
     let out = tempfile::tempdir().unwrap();
     let run = out.path().join("run");
     let mut s = step::start(&opts(repo.path(), out.path())).unwrap();
-    let mut errors_asked = 0;
+    let mut errors_r1_asked = 0;
     while s["done"] == json!(false) {
         let mut answers = serde_json::Map::new();
         for id in ids(&s) {
@@ -68,8 +69,8 @@ fn drive(others_mark: bool) -> (Value, tempfile::TempDir, tempfile::TempDir) {
             } else if let Some(rest) = id.strip_prefix("lens-rust-") {
                 let name = rest.split('-').next().unwrap();
                 let mut a = if name == "errors" {
-                    errors_asked += 1;
                     let first = rest.ends_with("-r1");
+                    errors_r1_asked += usize::from(first);
                     lens(
                         name,
                         &if first {
@@ -94,13 +95,15 @@ fn drive(others_mark: bool) -> (Value, tempfile::TempDir, tempfile::TempDir) {
         }
         s = submit(&run, Value::Object(answers));
     }
-    assert!(errors_asked > 1, "the errors lens was never asked again");
+    assert_eq!(
+        errors_r1_asked, 1,
+        "the errors lens's unmarked answer was asked for again"
+    );
     (s, repo, out)
 }
 
 #[test]
-fn a_lens_still_leaving_a_consumer_line_unmarked_on_its_last_attempt_is_taken_and_the_line_reported()
- {
+fn a_lens_answer_leaving_a_consumer_line_unmarked_is_taken_at_once_and_the_line_reported() {
     let (s, _repo, _out) = drive(false);
     let titles: Vec<&str> = s["findings"]
         .as_array()

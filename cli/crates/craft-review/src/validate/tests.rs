@@ -1,8 +1,8 @@
-//! A lens answer must mark every CONSUMERS line its prompt listed.
+//! A lens answer is taken whatever CONSUMERS lines it marks; the lines it leaves are read beside it.
 
 use serde_json::{Value, json};
 
-use super::{check, listed};
+use super::{check, listed, unmarked};
 use crate::agent::Model;
 use crate::consumers::{Consumers, Listed, Site, lens_block};
 use crate::content;
@@ -35,40 +35,27 @@ fn answer(marked: &[&str]) -> Value {
 }
 
 #[test]
-fn a_lens_answer_that_leaves_consumer_lines_unmarked_is_asked_again_naming_them() {
+fn a_lens_answer_leaving_consumer_lines_unmarked_is_taken_and_the_lines_read_beside_it() {
     let t = lens(&["src/a.rs:3", "src/b.rs:5", "src/c.rs:9"]);
-    let Err(why) = check(&t, Some(&answer(&["src/a.rs:3"])), false) else {
-        panic!("an answer leaving consumer lines unmarked was taken");
-    };
-    assert!(
-        why.contains("src/b.rs:5") && why.contains("src/c.rs:9"),
-        "{why}"
-    );
-    assert!(!why.contains("src/a.rs:3"), "{why}");
-}
-
-#[test]
-fn on_its_last_attempt_an_answer_leaving_lines_unmarked_is_taken_naming_them() {
-    let t = lens(&["src/a.rs:3", "src/b.rs:5"]);
-    let (taken, left) = check(&t, Some(&answer(&["src/a.rs:3"])), true).unwrap();
+    let a = answer(&["src/a.rs:3", "src/z.rs:1"]);
+    let taken = check(&t, Some(&a)).unwrap();
     assert_eq!(taken["lens"], json!("correctness"));
-    assert_eq!(left, ["src/b.rs:5"]);
-    // Only the unmarked lines are forgiven: an answer off its schema is still refused.
-    let off = json!({"lens": "correctness"});
-    check(&t, Some(&off), true).unwrap_err();
+    assert_eq!(unmarked(&taken, &t.consumers), ["src/b.rs:5", "src/c.rs:9"]);
+    // Only the schema refuses: an answer off it is still refused.
+    check(&t, Some(&json!({"lens": "correctness"}))).unwrap_err();
 }
 
 #[test]
-fn a_lens_answer_marking_every_listed_line_is_taken() {
+fn a_lens_answer_marking_every_listed_line_leaves_none_unmarked() {
     let t = lens(&["src/a.rs:3", "src/b.rs:5"]);
-    let a = answer(&["src/b.rs:5", "src/a.rs:3", "src/z.rs:1"]);
-    check(&t, Some(&a), false).unwrap();
-}
-
-#[test]
-fn a_lens_shown_no_consumer_lines_needs_no_marks() {
-    let a = json!({"lens": "correctness", "findings": []});
-    check(&lens(&[]), Some(&a), false).unwrap();
+    let a = check(&t, Some(&answer(&["src/b.rs:5", "src/a.rs:3"]))).unwrap();
+    assert!(unmarked(&a, &t.consumers).is_empty());
+    let none = check(
+        &lens(&[]),
+        Some(&json!({"lens": "correctness", "findings": []})),
+    )
+    .unwrap();
+    assert!(unmarked(&none, &[]).is_empty());
 }
 
 fn site(file: &str, line: u32) -> Site {

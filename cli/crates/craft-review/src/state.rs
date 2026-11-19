@@ -169,11 +169,11 @@ pub struct Task {
     pub consumer_agent: Option<String>,
     #[serde(flatten)]
     pub kind: TaskKind,
-    /// The CONSUMERS lines (`file:line`) its prompt lists, each of which its answer must mark.
+    /// The CONSUMERS lines (`file:line`) its prompt lists, each of which its answer is to mark.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub consumers: Vec<String>,
-    /// The CONSUMERS lines its answer left unmarked, when taken anyway: on its last attempt, or
-    /// fallen back on once its retries were spent (realm @nick/craft, node #531).
+    /// The CONSUMERS lines its taken answer left unmarked, reported as unchecked (realm
+    /// @nick/craft, node #531).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub unmarked: Vec<String>,
     pub state: TaskState,
