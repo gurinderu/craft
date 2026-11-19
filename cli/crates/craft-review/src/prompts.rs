@@ -14,6 +14,8 @@ mod adjudicate;
 #[cfg(test)]
 mod consumers_tests;
 mod critic;
+#[cfg(test)]
+mod fixture;
 mod lens;
 #[cfg(test)]
 mod parity;
