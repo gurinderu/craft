@@ -86,6 +86,10 @@ fn same_commit(a: &str, b: &str) -> bool {
     hex(&a) && hex(&b) && (a.starts_with(&b) || b.starts_with(&a))
 }
 
+/// The verdict of a run whose changed files all carry nothing to review: no lens ran because none
+/// had anything to look at. The pre-PR check reads it as a full review (`bin/craft`'s `hook`).
+pub const NOTHING_TO_REVIEW: &str = "Approve (nothing to review)";
+
 const NO_CHANGED_FILES: &str = "NOTHING WAS REVIEWED — the diff came back EMPTY: no changed file was detected against the resolved base. Either there is genuinely nothing to review here (an already-merged branch, or a `path` scope that matches nothing) or the base/scope is wrong and detection failed. No lens ran, so this is not an approval — check the base and re-run.";
 const ON_TRUNK: &str = "NOTHING WAS REVIEWED — HEAD IS the resolved base: this checkout has no commit of its own beyond the trunk (the review ran on the trunk itself, or on a branch not yet ahead of it), so the diff against the trunk is empty by construction. Re-run it from the branch's own checkout or worktree, or pass `base` naming what to compare against. No lens ran, so this is not an approval.";
 
@@ -115,7 +119,7 @@ pub fn exit(diff: &Diff, covered: usize, lang: &str, explicit_base: bool) -> Opt
             files.len()
         );
         return Some(Exit {
-            verdict: "Approve (nothing to review)".into(),
+            verdict: NOTHING_TO_REVIEW.into(),
             line: format!("✅ Approve (NOTHING TO REVIEW) — {msg}"),
             not_run: None,
             listed: Some("Not reviewed (nothing reviewable in them)".into()),

@@ -75,6 +75,7 @@ fn round_one(repo: &Path, runs: &Path) -> Value {
     );
     assert_eq!(done["reReview"]["chained"], json!(false));
     assert_eq!(done["lensScope"], json!("full"));
+    assert_eq!(done["path"], json!(null), "a review of the whole change");
     let ledger: Vec<&str> = done["ledger"]
         .as_array()
         .unwrap()
