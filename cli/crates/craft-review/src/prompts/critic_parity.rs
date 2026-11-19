@@ -48,6 +48,7 @@ fn the_critic_its_follow_up_and_an_extra_lens_render_as_the_engines_do() {
         re_review: ReScope::First,
         strict: false,
         sources: crate::sources::Sources::default(),
+        consumers: crate::consumers::Consumers::default(),
         scope: None,
     };
     let dir = repo_directive(&ctx.repo);

@@ -460,6 +460,7 @@ fn an_absorbed_host_comes_back_next_round_to_be_adjudicated_with_its_absorbed_si
         craft_version: None,
         re_review: crate::prompts::ReScope::Fixes,
         sources: crate::sources::Sources::default(),
+        consumers: crate::consumers::Consumers::default(),
         scope: None,
     };
     let profiles = crate::profile::Profile::all().unwrap();
@@ -489,6 +490,7 @@ fn a_red_team_runs_on_the_model_it_is_handed_not_a_fixed_one() {
         craft_version: None,
         re_review: crate::prompts::ReScope::Fixes,
         sources: crate::sources::Sources::default(),
+        consumers: crate::consumers::Consumers::default(),
         scope: None,
     };
     let answered = [adjudicated(0, Some(said("resolved", 3, "")))];

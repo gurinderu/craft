@@ -118,8 +118,9 @@ fn bounded_parts(s: &mut Value, run: &RunState) {
     if let Some(stop) = &run.stopped {
         obj.insert("stop".into(), json!(stop));
     }
-    if !run.degraded.is_empty() {
-        obj.insert("degraded".into(), json!(run.degraded));
+    let degraded = crate::report::degraded_notes(run);
+    if !degraded.is_empty() {
+        obj.insert("degraded".into(), json!(degraded));
     }
     let p = &run.publish;
     if let Some(posted) = &p.posted {

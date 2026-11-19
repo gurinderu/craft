@@ -15,6 +15,9 @@
         "$ref": "finding-item.schema.json"
       }
     },
+    "consumers": {
+      "$ref": "consumers.schema.json"
+    },
     "blocked": {
       "$ref": "blocked.schema.json"
     }

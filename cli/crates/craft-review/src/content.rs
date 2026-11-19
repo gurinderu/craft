@@ -210,6 +210,7 @@ const FILES: &[(&str, &str)] = content_files![
     "prompts/critic.md",
     "prompts/critic-prior.md",
     "prompts/lens-extra.md",
+    "prompts/lens-consumers.md",
     "prompts/lens-slice.md",
     "prompts/lens-confined.md",
     "prompts/unit-scope-head.md",
@@ -233,6 +234,7 @@ const FILES: &[(&str, &str)] = content_files![
     "schemas/unit-findings.schema.json",
     "schemas/seam.schema.json",
     "schemas/blocked.schema.json",
+    "schemas/consumers.schema.json",
 ];
 
 /// The raw text of the content file at `path` under `content/`.
