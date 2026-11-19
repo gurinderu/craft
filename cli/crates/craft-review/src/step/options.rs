@@ -88,6 +88,10 @@ pub struct StartOptions {
     /// run's worktree itself; `None`, the Claude Code plugin's review engine drives them through
     /// `start` and `submit`, its task agents in the session's directory.
     pub runtime: Option<String>,
+    /// A stop asked of the start in flight (`craft review run` on a stopping signal): the gate's
+    /// tools, the sources' git and the consumers' name search stop, and the run opens with what
+    /// they had, each saying it was stopped.
+    pub cancel: crate::cancel::Cancel,
 }
 
 impl StartOptions {

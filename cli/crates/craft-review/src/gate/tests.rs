@@ -53,6 +53,7 @@ pub(super) fn setup(path: &Path, budget: Duration) -> GateSetup {
         scope: None,
         projects: None,
         locked: false,
+        cancel: crate::cancel::Cancel::default(),
     }
 }
 
