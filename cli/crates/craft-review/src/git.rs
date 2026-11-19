@@ -42,12 +42,8 @@ pub struct Diff {
     /// it, which then reads as before and keeps its format.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub worktree: String,
-    /// Every changed path, repository-relative; one that is not UTF-8 spelled as `git` quotes it.
+    /// Every changed path, repository-relative.
     pub files: Vec<String>,
-    /// The changed paths of `files` that are not UTF-8, as `git` quotes them: no consumers list
-    /// reads them.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub not_utf8: Vec<String>,
     /// `git diff --stat`'s summary.
     pub stat: String,
     /// The commit messages from the merge-base to `HEAD`, newest first.
@@ -155,17 +151,6 @@ pub fn zero_context_diff(cwd: &Path, base: &str) -> Result<String, GitError> {
     diff_u0(cwd, &["--merge-base", base])
 }
 
-/// [`zero_context_diff`], its bytes that are not UTF-8 replaced (U+FFFD) rather than refused: a
-/// path that is not UTF-8 then names no changed file, and the rest of the change still reads.
-///
-/// # Errors
-/// As [`zero_context_diff`], but never for non-UTF-8 output.
-pub fn zero_context_diff_lossy(cwd: &Path, base: &str) -> Result<String, GitError> {
-    not_an_option(cwd, &[base])?;
-    let raw = diff_u0_bytes(cwd, &["--merge-base", base])?;
-    Ok(String::from_utf8_lossy(&raw).into_owned())
-}
-
 /// The change from `from` to the commit `to` with no context lines, printed as
 /// [`zero_context_diff`] prints it: from their merge-base when `merge_base`, else from `from`
 /// itself.
@@ -199,11 +184,6 @@ fn not_an_option(cwd: &Path, revs: &[&str]) -> Result<(), GitError> {
 
 /// `git diff -U0` over `revs`, from the top level.
 fn diff_u0(cwd: &Path, revs: &[&str]) -> Result<String, GitError> {
-    String::from_utf8(diff_u0_bytes(cwd, revs)?).map_err(GitError::NotUtf8)
-}
-
-/// [`diff_u0`]'s output as bytes, whatever their encoding.
-fn diff_u0_bytes(cwd: &Path, revs: &[&str]) -> Result<Vec<u8>, GitError> {
     let top = toplevel(cwd)?;
     let mut args = vec![
         "-c",
@@ -216,7 +196,7 @@ fn diff_u0_bytes(cwd: &Path, revs: &[&str]) -> Result<Vec<u8>, GitError> {
         "--dst-prefix=b/",
     ];
     args.extend_from_slice(revs);
-    git_bytes(&top, &args)
+    git(&top, &args)
 }
 
 /// Whether `commit` is `descendant` or an ancestor of it.
@@ -323,19 +303,16 @@ pub fn read_diff(cwd: &Path, base: Option<&str>, scope: Option<&str>) -> Result<
         if let Some(p) = &pathspec {
             all.extend(["--", p.as_str()]);
         }
-        git_bytes(cwd, &all)
+        git(cwd, &all)
     };
     // `-z`: each path as it is, unquoted, so it is spelled as the zero-context diff's headers
-    // read it; one that is not UTF-8 is quoted as git quotes it, the run going on without it.
-    let (files, not_utf8) = names::split(&limited(&[
-        "diff",
-        "--name-only",
-        "-z",
-        "--merge-base",
-        &base,
-    ])?);
-    let stat = String::from_utf8(limited(&["diff", "--stat", "--merge-base", &base])?)
-        .map_err(GitError::NotUtf8)?;
+    // read it.
+    let files = limited(&["diff", "--name-only", "-z", "--merge-base", &base])?
+        .split('\0')
+        .filter(|f| !f.is_empty())
+        .map(str::to_owned)
+        .collect();
+    let stat = limited(&["diff", "--stat", "--merge-base", &base])?;
     let log = git(cwd, &["log", "--format=%B", &format!("{merge_base}..HEAD")])?;
     Ok(Diff {
         base,
@@ -344,12 +321,10 @@ pub fn read_diff(cwd: &Path, base: Option<&str>, scope: Option<&str>) -> Result<
         dirty,
         worktree,
         files,
-        not_utf8,
         stat: stat.trim_end().to_owned(),
         log: log.trim().to_owned(),
     })
 }
 
-mod names;
 #[cfg(test)]
 mod tests;
