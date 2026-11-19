@@ -1,9 +1,14 @@
 //! Whether a submitted answer is one its task can use: it matches the task's schema, and a batch
-//! verdict carries every finding of its batch exactly once.
+//! verdict carries every finding of its batch exactly once. The CONSUMERS lines a lens answer
+//! leaves unmarked do not refuse it: they are read beside it and reported as unchecked.
 
 use serde_json::Value;
 
 use crate::state::{Task, TaskKind};
+
+mod consumers;
+
+pub use consumers::{listed, unmarked};
 
 /// How many schema errors a refusal names.
 const ERRORS_SHOWN: usize = 3;
@@ -77,3 +82,6 @@ fn batch_indices(answer: &Value, count: usize) -> Result<(), String> {
         None => Ok(()),
     }
 }
+
+#[cfg(test)]
+mod tests;

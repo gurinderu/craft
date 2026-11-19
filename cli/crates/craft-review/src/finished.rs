@@ -31,8 +31,9 @@ pub(crate) fn step(dir: &Path, run: &RunState, verdict: &str) -> Value {
         "lensRounds": run.rounds.yields,
     });
     if let Some(obj) = done.as_object_mut() {
-        if !run.degraded.is_empty() {
-            obj.insert("degraded".into(), json!(run.degraded));
+        let degraded = report::degraded_notes(run);
+        if !degraded.is_empty() {
+            obj.insert("degraded".into(), json!(degraded));
         }
         for (k, v) in crate::publish::finished(run) {
             obj.insert(k.into(), v);

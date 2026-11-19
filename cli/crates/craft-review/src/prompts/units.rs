@@ -10,7 +10,7 @@
 //! no live channel, and on the #402 run the live coordinators answered nothing. Every question rides
 //! in the lens's answer and reaches the coordinator after the round ([`seam_prompt`]).
 
-use super::lens::{common_vars, lens_prompt_in, lens_spec};
+use super::lens::{common_vars, lens_prompt_in, lens_spec, rust_only};
 use super::{LensIn, PromptContext, repo_directive, shq};
 use crate::content::{self, ContentError, vars};
 use crate::profile::UnitWords;
@@ -104,6 +104,12 @@ pub fn slice_lens_prompt(
         ("count", count),
         ("noun", words.noun.clone()),
         ("unitRule", unit_rule(words, &slice.units)?),
+        (
+            "consumers",
+            rust_only(at.profile, || {
+                crate::consumers::confined_block(&ctx.consumers, &slice.units, &words.noun)
+            })?,
+        ),
     ]));
     Ok(format!(
         "{}{}",

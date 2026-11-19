@@ -170,3 +170,59 @@ fn the_prior_summary_is_worst_first_and_capped() {
     assert!(s.ends_with("so do not spend effort guessing what is missing from it."));
     assert!(s.contains("… and 177 more already-found finding(s)"), "{s}");
 }
+
+/// A Rust lens shown the consumers list carries its lines, so its answer must mark each.
+#[test]
+fn a_lens_shown_consumer_lines_must_mark_them() {
+    use crate::consumers::{Consumers, Listed, Site};
+    let site = |line: u32| Site {
+        file: "src/api.rs".into(),
+        line,
+        text: "rule_to_api(r)".into(),
+        from: vec!["name search".into()],
+        kind: String::new(),
+    };
+    let ctx = PromptContext {
+        repo: "/work/repo".into(),
+        base: "main".into(),
+        spec: String::new(),
+        craft_root: None,
+        craft_version: None,
+        re_review: prompts::ReScope::First,
+        strict: false,
+        sources: crate::sources::Sources::default(),
+        consumers: Consumers {
+            sources: vec!["name search".into()],
+            symbols: vec![Listed {
+                name: "rule_to_api".into(),
+                file: "src/rule.rs".into(),
+                line: 12,
+                sites: vec![site(33), site(41)],
+            }],
+            ..Consumers::default()
+        },
+        scope: None,
+    };
+    let plan = Plan {
+        size_bucket: "small".into(),
+        lenses: vec!["safety".into()],
+        max_rounds: 2,
+        verify_votes: 1,
+        is_library: false,
+        security_sensitive: false,
+        intent: String::new(),
+        spec: String::new(),
+        churn: Vec::new(),
+        repo_rules: Vec::new(),
+        surface_dropped: Vec::new(),
+        light_skipped: Vec::new(),
+        metrics_dropped: Vec::new(),
+    };
+    let rust = Profile::load("rust").unwrap();
+    let rounds = Rounds {
+        round: 1,
+        ..Rounds::default()
+    };
+    let got = tasks(&ctx, (&rust, &plan), &[], &[], &rounds).unwrap();
+    assert_eq!(got[0].consumers, ["src/api.rs:33", "src/api.rs:41"]);
+}
