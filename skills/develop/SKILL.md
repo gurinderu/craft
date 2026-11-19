@@ -205,12 +205,12 @@ Print one line per round: `develop: round <n>/4 (<whole diff | delta since <sha>
 ## Phase 5 — Full review
 
 Only after the loop converged, and once. The project's declared reviewer (or its rule for the last
-review before a PR) when there is one; otherwise by stack, over the whole branch diff:
-
-| Diff | Full review |
-|---|---|
-| touches Rust | the `craft:rust-audit` workflow, `{ base: <trunk> }` (it reviews the Rust crates only) — and, when the diff also holds files outside them (Nix or other source), the `craft:review` workflow with `{ base: <trunk>, strict: true, fresh: true }` over the whole diff |
-| anything else | the `craft:review` workflow with `{ base: <trunk>, strict: true, fresh: true }` — the harsh maintainability bar over every profile (`fresh`: without it the run would chain to the loop and scan the last delta only) |
+review before a PR) when there is one; otherwise, for every diff, the `craft:review` workflow over
+the whole branch diff with `{ base: <trunk>, strict: true, fresh: true }` — no `delta`, no `path`: the
+harsh maintainability bar over every profile (`fresh`: without it the run would chain to the loop and
+scan the last delta only). For a diff that touches Rust, the `craft:rust-audit` workflow,
+`{ base: <trunk> }`, may run beside it (it reviews the Rust crates only); it never replaces the
+`craft:review` run.
 
 Findings from the full review go through `craft:addressing-findings` like a loop round. An open
 Medium+ finding here reopens phase 4 within the same 4-round budget (the rounds already spent
