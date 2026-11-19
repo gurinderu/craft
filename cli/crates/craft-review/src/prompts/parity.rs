@@ -41,6 +41,7 @@ fn every_prompt_renders_as_the_engines_render_it() {
         re_review: ReScope::First,
         strict: false,
         sources: crate::sources::Sources::default(),
+        consumers: crate::consumers::Consumers::default(),
         scope: None,
     };
     let p = &input["plan"];
@@ -92,6 +93,7 @@ fn every_prompt_renders_as_the_engines_render_it() {
     rereview(&mut g, &ctx, &plan, &prior, input);
     strict(&mut g, &ctx, &plan, &prior);
     sources(&mut g, &ctx, &plan, &prior, input);
+    consumers(&mut g, &ctx, &plan, &prior);
     verifiers(&mut g, &ctx, input);
     complexity(&mut g, &ctx, &plan, &prior);
 }
@@ -178,6 +180,62 @@ fn sources(g: &mut Golden, ctx: &PromptContext, plan: &Plan, prior: &str, input:
             .unwrap()
             .contains(&block)
     );
+}
+
+/// The consumers list in a judging lens and the negative-space lens: two lines of one symbol, a
+/// symbol with none, one too common to search, and lines cut.
+fn consumers(g: &mut Golden, ctx: &PromptContext, plan: &Plan, prior: &str) {
+    use crate::consumers::{Consumers, Listed, Site};
+    let site = |line: u32, text: &str, from: &[&str]| Site {
+        file: "src/api.rs".into(),
+        line,
+        text: text.into(),
+        from: from.iter().map(|f| (*f).to_owned()).collect(),
+        kind: String::new(),
+    };
+    let listed = Consumers {
+        sources: vec!["name search".into()],
+        symbols: vec![
+            Listed {
+                name: "rule_to_api".into(),
+                file: "src/rule.rs".into(),
+                line: 12,
+                sites: vec![
+                    site(33, ".map(rule_to_api)", &["name search"]),
+                    site(41, "let a = rule_to_api(r);", &["name search"]),
+                ],
+            },
+            Listed {
+                name: "unused_helper".into(),
+                file: "src/rule.rs".into(),
+                line: 40,
+                sites: Vec::new(),
+            },
+        ],
+        unsearched: vec!["new".into()],
+        cut: 3,
+        file: "/run/consumers.json".into(),
+        ..Consumers::default()
+    };
+    let ctx = PromptContext {
+        consumers: listed,
+        ..ctx.clone()
+    };
+    let rust = Profile::load("rust").unwrap();
+    let pathspec = rust.pathspec(&[]);
+    for lens in ["tests", "negative-space"] {
+        let at = LensIn {
+            profile: &rust,
+            lens,
+            plan,
+            pathspec: &pathspec,
+            prior,
+        };
+        g.check(
+            &format!("/expected/consumers/{lens}"),
+            body(&ctx, lens_prompt(&ctx, &at).unwrap()),
+        );
+    }
 }
 
 /// Strict mode's scout and maintainability lens.

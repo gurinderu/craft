@@ -11,6 +11,7 @@ use serde_json::Value;
 use super::outcome::judged;
 use super::{Route, awaits_escalation, panel, route_in};
 use crate::critic::Stage;
+use crate::rounds::Rounds;
 use crate::settle::{self, finalize_in, not_verified};
 use crate::state::{Phase, RunState, TaskKind, TaskState};
 
@@ -34,7 +35,9 @@ pub(crate) fn stood(run: &mut RunState) {
         run.findings.iter().enumerate().map(at).collect()
     } else {
         let pool = if run.findings.is_empty() {
-            cut_short(run)
+            // The CONSUMERS lines the cut-short round showed, and its answers marked or left,
+            // taken beside the findings taken from them.
+            run.rounds.take_consumers(cut_short(run))
         } else {
             run.findings.clone()
         };
@@ -57,21 +60,21 @@ pub(crate) fn stood(run: &mut RunState) {
     run.settled = all;
 }
 
-/// The lens rounds' pool with the answers the round a stop cut short already holds, sifted and
-/// taken as the round's end takes them, on a copy: the run itself takes them when the resume
-/// finishes the round.
-fn cut_short(run: &RunState) -> Vec<Value> {
+/// The lens rounds with the answers the round a stop cut short already holds, sifted and taken as
+/// the round's end takes them, on a copy: the run itself takes them when the resume finishes the
+/// round.
+fn cut_short(run: &RunState) -> Rounds {
     let mut rounds = run.rounds.clone();
     if run.phase != Phase::Lenses {
-        return rounds.pool;
+        return rounds;
     }
     let Ok(profiles) = crate::phases::profiles_of(run) else {
-        return rounds.pool;
+        return rounds;
     };
     let mut tasks = run.tasks.clone();
     crate::complexity::sift(&mut tasks, &profiles);
     rounds.absorb(&tasks);
-    rounds.pool
+    rounds
 }
 
 /// The note on the `n` findings a stop in `phase` left as they stood: the lens rounds cut short

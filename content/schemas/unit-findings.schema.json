@@ -65,6 +65,9 @@
         }
       }
     },
+    "consumers": {
+      "$ref": "consumers.schema.json"
+    },
     "blocked": {
       "$ref": "blocked.schema.json"
     }

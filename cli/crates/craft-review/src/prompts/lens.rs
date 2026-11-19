@@ -202,6 +202,10 @@ pub(super) fn common_vars(
         ("plan", plan_lines(plan)?),
         ("sources", sources_line(ctx, profile, lens)),
         (
+            "consumers",
+            rust_only(profile, || crate::consumers::lens_block(&ctx.consumers))?,
+        ),
+        (
             "mutants",
             if mutants {
                 content::text("lens-mutants")?
@@ -214,6 +218,22 @@ pub(super) fn common_vars(
             content::prompt("already-found", &vars([("summary", at.prior.to_owned())]))?,
         ),
     ]))
+}
+
+/// The consumers list's part of a prompt for `profile`: the list holds Rust symbols only, so a
+/// prompt of another profile carries none.
+///
+/// # Errors
+/// When `part` fails.
+pub(super) fn rust_only(
+    profile: &Profile,
+    part: impl FnOnce() -> Result<String, ContentError>,
+) -> Result<String, ContentError> {
+    if profile.id == crate::consumers::PROFILE {
+        part()
+    } else {
+        Ok(String::new())
+    }
 }
 
 /// [`lens_prompt`] with `slice`, the YOUR SLICE block of a directory slice (empty unsliced).
@@ -335,6 +355,10 @@ fn negative_space(
             ("shapeUses", surface.shape_uses.clone()),
             ("rules", rules(ctx)?),
             ("repoRules", repo_rules_line(&plan.repo_rules)?),
+            (
+                "consumers",
+                rust_only(profile, || crate::consumers::lens_block(&ctx.consumers))?,
+            ),
             ("alreadyFound", already),
             ("rubricSkill", profile.rubric_skill.clone()),
         ]),

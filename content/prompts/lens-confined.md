@@ -3,7 +3,7 @@ You are the **{{lens}}** review lens for a {{lang}} diff. Review ONLY this slice
 SLICE: {{brief}}
 {{catalogue}}
 {{rules}}
-{{strict}}{{sources}}
+{{strict}}{{sources}}{{consumers}}
 Diff base: {{base}}. Review with `git diff {{range}} -- {{pathspec}}`.
 YOUR SLICE: `{{key}}` — {{count}} changed file(s) of a larger diff. Sibling lenses hold the other {{noun}}s, and overlapping findings are de-duplicated downstream.
 EFFICIENCY: pull your slice's diff ONCE, in one command.

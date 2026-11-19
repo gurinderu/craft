@@ -3,7 +3,7 @@
 
 use serde_json::Value;
 
-use super::lens::{range, repo_rules_line};
+use super::lens::{range, repo_rules_line, rust_only};
 use super::units::scope_head;
 use super::{PromptContext, repo_directive, shq};
 use crate::content::{self, ContentError, vars};
@@ -80,6 +80,10 @@ pub fn seam_prompt(
             ),
             ("range", range(ctx)),
             ("changedItems", words.changed_items.clone()),
+            (
+                "consumers",
+                rust_only(profile, || Ok(crate::consumers::seam_block(&ctx.consumers)))?,
+            ),
             ("open", Value::Array(open.to_vec()).to_string()),
             ("repoRules", repo_rules_line(repo_rules)?),
         ]),
