@@ -7,29 +7,32 @@ use std::path::{Path, PathBuf};
 use serde_json::{Map, Value, json};
 
 use crate::Error;
-use crate::blocked;
-use crate::complexity;
-use crate::content;
 use crate::coverage;
 use crate::extra;
 use crate::finished;
-use crate::gate::{self, GateSetup};
-use crate::git;
+use crate::gate;
 use crate::handoff;
 use crate::memory::Memory;
-use crate::phases::{advance, settle_memory};
+use crate::phases::settle_memory;
 use crate::profile::Profile;
-use crate::prompts::{self, PromptContext, ReScope, SPEC_MAX};
+use crate::prompts::{PromptContext, ReScope, SPEC_MAX};
 use crate::publish::{self, PostSetup, Publish};
 use crate::rereview;
 use crate::rounds::Rounds;
-use crate::sources::{self, SourcesSetup};
-use crate::state::{
-    self, MAX_RETRIES, Phase, RunState, STATE_VERSION, Task, TaskKind, TaskState, Track,
-};
+use crate::sources;
+use crate::state::{self, Phase, RunState, STATE_VERSION, TaskState, Track};
 use crate::stop;
 use crate::units;
-use crate::validate;
+
+mod answers;
+mod open;
+mod options;
+mod prepare;
+
+use answers::{Hold, abandon, move_on, take_answer};
+use open::{open_dir, pr_worktree, read_change, refuse_delta_over_branch};
+pub use options::StartOptions;
+use prepare::{choose_extra, choose_units, prepare, scouts};
 
 /// Why a run could not be opened or moved on, beyond its parts' own errors.
 #[derive(Debug, thiserror::Error)]
@@ -88,106 +91,6 @@ pub enum StepError {
         point: String,
         trunk: String,
     },
-}
-
-/// What `start` needs.
-#[derive(Debug, Clone, Default)]
-pub struct StartOptions {
-    pub cwd: PathBuf,
-    pub base: Option<String>,
-    pub run_dir: PathBuf,
-    /// craft's checkout and plugin version, for the review-rules paths the prompts name.
-    pub craft_root: Option<String>,
-    pub craft_version: Option<String>,
-    /// A light pass (`depth=light`): the diff-scoped lenses, one round, only Medium and above
-    /// verified.
-    pub light: bool,
-    /// Start a new chain of rounds rather than build on the branch's earlier round.
-    pub fresh: bool,
-    /// The run reviews only the fix commits since an earlier review: a delta round, which never
-    /// approves.
-    pub delta: bool,
-    /// Every this-many-th round of a chain reviews the whole diff again; 0, never.
-    pub full_every: u32,
-    /// Where earlier runs are looked for; the run directory's parent when `None`.
-    pub runs: Option<PathBuf>,
-    /// Strict mode: the maintainability bar is a presumption of block.
-    pub strict: bool,
-    /// The launcher's own records (`priorDecisions`) as given, added to what the run recalls; `Err`
-    /// names why the host's list could not be read, which refuses it and runs the review anyway.
-    pub prior_decisions: Option<Result<Value, String>>,
-    /// Recall the project's memory beside the scouts; without it only `prior_decisions` apply.
-    pub recall: bool,
-    /// Where the reviewer's profile and the sources cache are: the integration points' sources are
-    /// prepared before the first tasks. `None`, none are.
-    pub sources: Option<SourcesSetup>,
-    /// How the mechanical gate runs its tools before the scouts; `None`, it does not run, and the
-    /// report says so.
-    pub gate: Option<GateSetup>,
-    /// The launching run's gate to take rather than run one (`--gate-from`, the directory
-    /// `craft review gate` wrote): its seeds on this run's files reach the lenses
-    /// ([`gate::alone::taken`]); over `gate` when both are given.
-    pub gate_from: Option<PathBuf>,
-    /// The consumer's own agents to run as extra lenses, as the host names them (`extraLenses`):
-    /// names separated by commas or spaces, or `off`; `None`, discovered on a light pass and off
-    /// on a full review ([`crate::extra::request`]).
-    pub extra_lenses: Option<String>,
-    /// The directory the host session runs in, whose project's `.claude/agents` discovery reads;
-    /// the process's working directory when `None`.
-    pub session: Option<PathBuf>,
-    /// Unit mode (`unitScope`, off by default): each sliceable lens confined to a batch of the
-    /// units its profile finds, a contract lens per touched unit and a coordinator after the rounds
-    /// ([`crate::units`]).
-    pub unit_scope: bool,
-    /// The directory (or file) of the change to review (`path`), repository-relative or absolute
-    /// inside the repository; `None`, the whole change ([`crate::scope`]).
-    pub path: Option<String>,
-    /// Publish the findings on the branch's PR when the run finishes (`comment`): the defects
-    /// posted with the craft-finding marker, the doubtful ones listed for the reviewer
-    /// ([`crate::publish`]); off, nothing is posted.
-    pub comment: bool,
-    /// The optional lenses to run (`optional`): `all`, or their names separated by commas or
-    /// spaces; `None`, none ([`crate::optional`]).
-    pub optional: Option<String>,
-    /// A parent engine launched the run (`nested`): it builds on no earlier round of the branch
-    /// and files no round record for a later one, as the engine keeps a nested run out of the chain.
-    pub nested: bool,
-    /// The pull request under review (`pr`), whose head `HEAD` must be or hold, else the run moves
-    /// to craft's own worktree of that head, one per head and never moved (`worktrees`), refused
-    /// only where it cannot: on a
-    /// detached `HEAD` its head branch keys the round chain ([`rereview::branch`]); `None`, gh is
-    /// asked for the open one whose head is `HEAD`.
-    pub pr: Option<u64>,
-    /// How gh is asked for that pull request; `None`, it is not asked and a detached `HEAD`
-    /// chains nothing.
-    pub chain_gh: Option<PostSetup>,
-    /// Where craft lays its own worktree of a pull request given whose head `HEAD` does not hold
-    /// (`~/.craft/worktrees`), the run then reviewing there ([`rereview::branch::checkout`]);
-    /// `None`, such a run is refused.
-    pub worktrees: Option<PathBuf>,
-    /// The host `craft review run` drives the steps in (its backend), whose task agents run in the
-    /// run's worktree itself; `None`, the Claude Code plugin's review engine drives them through
-    /// `start` and `submit`, its task agents in the session's directory.
-    pub runtime: Option<String>,
-}
-
-impl StartOptions {
-    /// Where earlier runs are looked for: `runs`, else the run directory's parent.
-    fn runs_or_parent(&self) -> Option<PathBuf> {
-        self.runs
-            .clone()
-            .or_else(|| self.run_dir.parent().map(Path::to_path_buf))
-    }
-
-    /// How the run in `dir` asks gh for the pull request a detached `HEAD` heads, its output kept
-    /// in `dir/chain`.
-    fn chain_lookup(&self, dir: &Path) -> rereview::branch::Lookup<'_> {
-        rereview::branch::Lookup {
-            pr: self.pr,
-            gh: self.chain_gh.as_ref(),
-            dir: dir.join("chain"),
-        }
-    }
 }
 
 /// Opens a run in `opts.run_dir` and hands out its first tasks.
@@ -323,197 +226,6 @@ fn first_step(dir: &Path, run: &mut RunState) -> Result<Value, Error> {
     save_and_next(dir, run, &Said::default())
 }
 
-/// Where the run reviews: craft's own worktree of the pull request given, with the line naming
-/// it, when `cwd`'s `HEAD` does not hold its head and the run is no nested one (realm
-/// `@nick/craft`, node #517); else `cwd`.
-fn pr_worktree(
-    cwd: PathBuf,
-    dir: &Path,
-    opts: &StartOptions,
-) -> Result<(PathBuf, Option<rereview::branch::Laid>), StepError> {
-    if opts.nested {
-        return Ok((cwd, None));
-    }
-    let laid = rereview::branch::checkout(
-        &cwd,
-        &opts.chain_lookup(dir),
-        opts.worktrees.as_deref(),
-        opts.runtime.is_none(),
-    )
-    .map_err(StepError::PrHead)?;
-    Ok((laid.as_ref().map_or(cwd, |l| l.dir.clone()), laid))
-}
-
-/// The scope the run reviews (`path`, repository-relative) and the branch's change under it.
-fn read_change(cwd: &Path, opts: &StartOptions) -> Result<(Option<String>, git::Diff), Error> {
-    let scope = match opts.path.as_deref() {
-        Some(p) => crate::scope::normalize(&git::toplevel(cwd)?, p).map_err(StepError::from)?,
-        None => None,
-    };
-    let diff = git::read_diff(cwd, opts.base.as_deref(), scope.as_deref())?;
-    Ok((scope, diff))
-}
-
-/// A delta round whose change starts at or before where the branch leaves origin's default
-/// branch — the base given, the default, or a prior round's head the branch was rebased past —
-/// is refused before any task (realm @nick/craft, node #523): `diff` is what the round reviews,
-/// the fix commits since a prior round's head when the chain has one. A re-scan has a prior round
-/// behind it and is let through, as is a run whose default branch cannot be found, as nothing can
-/// be said of it.
-fn refuse_delta_over_branch(
-    cwd: &Path,
-    delta: bool,
-    re_review: ReScope,
-    diff: &git::Diff,
-) -> Result<(), StepError> {
-    if !delta || re_review == ReScope::Rescan {
-        return Ok(());
-    }
-    match git::trunk_point(cwd) {
-        Some((trunk, point)) if git::holds(cwd, &point, &diff.merge_base) => {
-            Err(StepError::DeltaOverBranch {
-                base: diff.base.clone(),
-                point,
-                trunk,
-            })
-        }
-        _ => Ok(()),
-    }
-}
-
-/// The slices of the change when the run goes on to its lenses: under unit mode, when asked, the
-/// units of each profile taking part, discovered in the repository's top level, and their batches;
-/// else the normal mode's directory slices.
-fn choose_units(cwd: &Path, asked: bool, run: &mut RunState, profiles: &[Profile]) {
-    run.units.asked = asked;
-    if run.exit.is_some() {
-        return;
-    }
-    let top = git::toplevel(cwd).unwrap_or_else(|_| cwd.to_path_buf());
-    let d = &run.diff;
-    run.units = units::open(asked, &top, &d.base, &d.files, &run.tracks, profiles);
-}
-
-/// The extra lenses the run is asked for, discovered among the session project's agents when it
-/// asks for discovery and goes on to its lenses; a run ending here says they did not run.
-fn choose_extra(cwd: &Path, opts: &StartOptions, run: &mut RunState) {
-    run.extra = extra::request(opts.extra_lenses.as_deref(), opts.light);
-    if run.exit.is_some() {
-        extra::not_reached(run);
-        return;
-    }
-    if run.extra.how == extra::How::Discovered {
-        let session = opts
-            .session
-            .clone()
-            .or_else(|| std::env::current_dir().ok())
-            .unwrap_or_else(|| cwd.to_path_buf());
-        let (agents, read) = extra::discover(&session, cwd);
-        run.extra.agents = agents;
-        run.extra.discovery = read;
-    }
-}
-
-/// Makes `dir` the new run's: refused when it holds a run, or a task or answer file that would be
-/// read as this run's.
-fn open_dir(dir: &Path) -> Result<(), StepError> {
-    if state::state_path(dir).exists() {
-        return Err(StepError::RunExists(dir.to_owned()));
-    }
-    for sub in [handoff::tasks_dir(dir), handoff::answers_dir(dir)] {
-        if sub.read_dir().is_ok_and(|mut d| d.next().is_some()) {
-            return Err(StepError::Leftovers(sub));
-        }
-    }
-    std::fs::create_dir_all(dir).map_err(|source| StepError::NoDir {
-        path: dir.to_owned(),
-        source,
-    })
-}
-
-/// The consumers list of the change (realm @nick/craft, node #529).
-fn consumers_of(cwd: &Path, diff: &git::Diff) -> crate::consumers::Consumers {
-    crate::consumers::of_checkout(cwd, diff)
-}
-
-/// The integration points' sources, the gate and the consumers list, side by side, none waiting
-/// on another: the sources and the list reach the prompts, the gate's seeds the pool as round-0
-/// findings.
-fn prepare(cwd: &Path, dir: &Path, opts: &StartOptions, run: &mut RunState) {
-    let (prepared, gated, listed) = std::thread::scope(|s| {
-        let sources = s.spawn(|| {
-            opts.sources
-                .as_ref()
-                .map(|setup| sources::for_repo(cwd, setup))
-        });
-        // Started before the gate, which runs on this thread, so the two overlap.
-        let consumers = s.spawn(|| consumers_of(cwd, &run.diff));
-        let gated = match &opts.gate_from {
-            Some(from) => Some(gate::alone::taken(from, &run.diff)),
-            None => opts
-                .gate
-                .as_ref()
-                .map(|setup| GateSetup {
-                    scope: run.context.scope.clone(),
-                    // In craft's own worktree of the PR, which other runs on its head share.
-                    locked: run.chain.worktree.is_some(),
-                    ..setup.clone()
-                })
-                .map(|setup| gate::run(cwd, &run.diff.base, &run.tracks, &setup, dir)),
-        };
-        (sources.join(), gated, consumers.join())
-    });
-    let full = listed.unwrap_or_else(|_| {
-        crate::consumers::Consumers::failed("the consumers list stopped unexpectedly")
-    });
-    let (lens, note) = crate::consumers::keep(dir, full);
-    run.context.consumers = lens;
-    run.notes.extend(note);
-    match prepared {
-        Ok(Some(s)) => run.context.sources = s,
-        Ok(None) => {}
-        Err(_) => {
-            run.context.sources.skipped = "the sources' preparation stopped unexpectedly".into();
-        }
-    }
-    match gated {
-        Some((gate, seeds)) => {
-            // A red gate ends the run before any lens: its seeds are no one's to read.
-            if gate.exit().is_none() {
-                run.rounds.pool = seeds;
-            }
-            run.gate = gate;
-        }
-        None => run.gate = gate::Gate::not_asked(),
-    }
-}
-
-/// One scout per profile taking part of the change, each over its own files; beside them the index
-/// warm-up when a profile taking part has a metrics-or-nothing lens.
-fn scouts(run: &RunState, profiles: &[Profile]) -> Result<Vec<Task>, Error> {
-    let mut tasks = Vec::new();
-    for t in &run.tracks {
-        let Some(p) = profiles.iter().find(|p| p.id == t.profile) else {
-            continue;
-        };
-        tasks.push(Task::new(
-            format!("scout-{}", p.id),
-            format!("scout:{}", p.id),
-            prompts::scout_prompt(&run.context, p, &t.files)?,
-            p.scout_model,
-            content::schema("scout")?,
-            TaskKind::Scout {
-                profile: p.id.clone(),
-            },
-        ));
-    }
-    let taking_part = |p: &&Profile| run.tracks.iter().any(|t| t.profile == p.id);
-    if profiles.iter().filter(taking_part).any(complexity::wanted) {
-        tasks.push(complexity::warmup_task(&run.context.repo)?);
-    }
-    Ok(tasks)
-}
-
 /// Takes the answers to the pending tasks of the run in `dir` and hands out what comes next. The
 /// answers are read from the files their agents wrote (`handoff`), or taken from `given`, a map by
 /// task id, when the host passes them itself.
@@ -563,16 +275,6 @@ pub struct Said<'a> {
     /// The tasks whose agents the host abandoned at their deadline (`--abandoned`): each fails at
     /// once, never handed out again, and an answer its agent writes later is never read.
     pub abandoned: &'a [String],
-}
-
-/// Which failed answers wait uncounted rather than use up a retry.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Hold {
-    Nothing,
-    /// The missing ones (a resume).
-    Missing,
-    /// Every one (the host's limit).
-    Every,
 }
 
 /// [`submit`] with what the host `said`. A stopped run is resumed by a submit without a limit —
@@ -641,45 +343,6 @@ pub fn submit_with(
     save_and_next(dir, &mut run, said)
 }
 
-/// Fails each pending task of `ids`, abandoned by the host at its deadline, as the engine counts a
-/// deadline fire: a dead agent not dispatched again, whose wait already spent the budget. Its
-/// answer file, should one be there, is set aside unread.
-fn abandon(dir: &Path, run: &mut RunState, ids: &[String]) -> Result<(), Error> {
-    for task in run
-        .tasks
-        .iter_mut()
-        .filter(|t| t.state == TaskState::Pending && ids.contains(&t.id))
-    {
-        handoff::set_aside(dir, task)?;
-        task.state = TaskState::Failed;
-        task.abandoned = true;
-        task.error = Some(
-            "abandoned at its deadline: the host waited its whole budget and no answer came back, so it is not asked for again".into(),
-        );
-    }
-    Ok(())
-}
-
-/// Moves the run on once this submit's answers are in: stopped on the host's limit (after
-/// advancing when nothing is left to wait for) or on a round that died whole — never read from a
-/// resume, whose missing answers are held — else advanced.
-fn move_on(dir: &Path, run: &mut RunState, said: &Said<'_>) -> Result<(), Error> {
-    if let Some(text) = said.limit {
-        if run.tasks.iter().all(|t| t.state != TaskState::Pending) {
-            advance(dir, run)?;
-        }
-        if run.phase != Phase::Done {
-            stop::hold(run, stop::limit(text));
-        }
-        return Ok(());
-    }
-    match stop::round_died(run).filter(|_| !said.resume) {
-        Some(why) => stop::hold(run, stop::deaths(why)),
-        None => advance(dir, run)?,
-    }
-    Ok(())
-}
-
 /// Posts a run that finished on its PR when it was asked to, writes the pending tasks and the
 /// state, and says what comes next: the stop, when the run stopped.
 fn save_and_next(dir: &Path, run: &mut RunState, said: &Said<'_>) -> Result<Value, Error> {
@@ -691,85 +354,6 @@ fn save_and_next(dir: &Path, run: &mut RunState, said: &Said<'_>) -> Result<Valu
         return stop::step(dir, run);
     }
     Ok(next(dir, run))
-}
-
-/// Takes the answer of one pending task, from `given` or the file its agent wrote; one refused is
-/// asked for again until its retries are spent — unless `hold` keeps it waiting uncounted: every
-/// one on the host's limit, a missing one on a resume (handed out again as first written). Says
-/// whether its agent answered at all, valid or not.
-fn take_answer(
-    dir: &Path,
-    task: &mut Task,
-    given: Option<&Map<String, Value>>,
-    hold: Hold,
-) -> Result<bool, Error> {
-    let submitted = match given {
-        Some(g) => g
-            .get(&task.id)
-            .cloned()
-            .ok_or_else(|| "no answer was submitted".to_owned()),
-        None => handoff::read_answer(dir, task),
-    };
-    // An answer file that cannot be read or parsed was still written: its agent was alive.
-    let live = match given {
-        Some(g) => g.contains_key(&task.id),
-        None => handoff::answer_file(dir, &task.id).exists(),
-    };
-    // An agent that could not look fails with its reason at once, its findings dropped and before
-    // its schema is checked: an empty answer from it would read as a clean review, and one that
-    // left out a required field would otherwise lose that reason to a refusal and its retries
-    // (realm @nick/craft, node #511).
-    if let Some(why) = submitted
-        .as_ref()
-        .ok()
-        .and_then(|a| blocked::said(&task.schema, a))
-    {
-        task.state = TaskState::Failed;
-        task.error = Some(blocked::failure(&why));
-        task.refused = None;
-        return Ok(true);
-    }
-    let checked = submitted
-        .as_ref()
-        .map_err(Clone::clone)
-        .and_then(|a| validate::check(task, Some(a)));
-    match checked {
-        Ok(answer) => {
-            // The CONSUMERS lines it left unmarked are taken with it, to be reported as unchecked,
-            // never asked for again (realm @nick/craft, node #531).
-            task.unmarked = validate::unmarked(&answer, &task.consumers);
-            task.answer = Some(answer);
-            task.state = TaskState::Answered;
-            task.error = None;
-            task.refused = None;
-            return Ok(true);
-        }
-        Err(e) => {
-            task.error = Some(e);
-            // An answer that came back but off its schema is a live vote, not a dead one.
-            task.refused = submitted.ok().map(|a| validate::normalize(&a));
-        }
-    }
-    if given.is_none() {
-        handoff::set_aside(dir, task)?;
-    }
-    match hold {
-        Hold::Every => return Ok(live),
-        Hold::Missing if !live => {
-            // Handed out again as first written, its ladder whole, as `stop::hold` holds a task.
-            task.retries = 0;
-            task.error = None;
-            task.refused = None;
-            return Ok(false);
-        }
-        Hold::Missing | Hold::Nothing => {}
-    }
-    if task.retries < MAX_RETRIES {
-        task.retries += 1;
-    } else {
-        task.state = TaskState::Failed;
-    }
-    Ok(live)
 }
 
 /// What the host is to do next: the pending tasks, or the finished run's report, verdict and what
