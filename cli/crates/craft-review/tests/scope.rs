@@ -87,6 +87,11 @@ fn a_path_reviews_only_that_crate() {
     );
     let done = drive(&run, s);
     assert_eq!(done["verdict"], json!("Approve"), "{done}");
+    assert_eq!(
+        done["path"],
+        json!("crates/a"),
+        "the record says what it was confined to"
+    );
     let report = std::fs::read_to_string(done["report"].as_str().unwrap()).unwrap();
     assert!(
         report.contains("1 changed file(s) under `crates/a`, 1 Rust."),

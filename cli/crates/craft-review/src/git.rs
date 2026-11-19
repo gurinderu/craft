@@ -101,6 +101,21 @@ pub fn branch(cwd: &Path) -> Option<String> {
     (!name.is_empty() && name != "HEAD").then(|| name.to_owned())
 }
 
+/// `git merge-base <a> <b>`.
+///
+/// # Errors
+/// When either is no commit (one spelled as an option included), they share no history, or `git`
+/// fails.
+pub fn merge_base(cwd: &Path, a: &str, b: &str) -> Result<String, GitError> {
+    if let Some(bad) = [a, b].into_iter().find(|r| r.starts_with('-')) {
+        return Err(GitError::NotACommit {
+            base: bad.to_owned(),
+            repo: cwd.to_owned(),
+        });
+    }
+    Ok(git(cwd, &["merge-base", a, b])?.trim().to_owned())
+}
+
 /// The repository's shared git directory, one for a checkout and all its linked worktrees, so the
 /// worktrees of one repository share their review rounds as `repoKey` lets them.
 ///
