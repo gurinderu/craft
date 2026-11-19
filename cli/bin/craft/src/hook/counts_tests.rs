@@ -7,13 +7,20 @@ use crate::hook::repo::{Git, Here};
 pub struct Fake;
 
 impl Git for Fake {
+    /// A local `main` that lags `origin/main`, and relative bases that happen to meet the head
+    /// where the PR's base does (a one-commit branch): only the rule, not git, keeps them out.
     fn merge_base(&self, base: &str) -> Option<String> {
         match base {
-            "origin/main" | "abc123" => Some("POINT".into()),
-            "HEAD~1" => Some("PARENT".into()),
+            "origin/main" | "abc123" | "HEAD" | "ORIG_HEAD" | "HEAD~1" | "HEAD^" | "@" | "@~1"
+            | "main~0" => Some("POINT".into()),
+            "main" => Some("LAGGED".into()),
             "feat/base" => Some("FORK".into()),
             _ => None,
         }
+    }
+
+    fn has_ref(&self, name: &str) -> bool {
+        name == "origin/main"
     }
 }
 
@@ -49,6 +56,7 @@ fn a_finished_full_review_of_the_whole_change_on_the_head_counts() {
     assert!(judge(&l, &d));
     for (field, v) in [
         ("base", json!("abc123")),
+        ("base", json!("main")),
         ("path", json!(".")),
         ("path", Value::Null),
         ("depth", Value::Null),
@@ -93,7 +101,13 @@ fn every_narrowing_of_a_review_takes_it_out() {
         ("notRun", Value::Null),
         ("lensRounds", json!([])),
         ("lensRounds", Value::Null),
+        ("base", json!("HEAD")),
+        ("base", json!("ORIG_HEAD")),
         ("base", json!("HEAD~1")),
+        ("base", json!("HEAD^")),
+        ("base", json!("@")),
+        ("base", json!("@~1")),
+        ("base", json!("main~0")),
         ("base", json!("feat/base")),
         ("base", json!("gone")),
         ("base", json!("")),
@@ -110,4 +124,33 @@ fn an_unreadable_detail_file_never_counts() {
     let (l, _) = review();
     let line: Line = serde_json::from_value(l).unwrap();
     assert!(!counts(&line, None, &here(), &Fake));
+}
+
+#[test]
+fn a_full_review_with_nothing_to_review_counts_and_a_red_gate_does_not() {
+    let (mut l, mut d) = review();
+    l["verdict"] = json!("Approve (nothing to review)");
+    d["lensRounds"] = json!([]);
+    assert!(judge(&l, &d));
+    let narrowed: &[(&str, Value)] = &[
+        ("notRun", json!(["x"])),
+        ("lensRounds", Value::Null),
+        ("lensScope", json!("delta")),
+    ];
+    for (field, v) in narrowed {
+        let mut d = d.clone();
+        d[*field] = v.clone();
+        assert!(!judge(&l, &d), "{field}: {v}");
+    }
+    for verdict in [
+        "Block",
+        "Approve",
+        "Warning",
+        "Approve (nothing to review) (PARTIAL COVERAGE)",
+        "Approve (nothing to review) — a prose note",
+        "approve (NOTHING TO REVIEW)",
+    ] {
+        l["verdict"] = json!(verdict);
+        assert!(!judge(&l, &d), "{verdict}");
+    }
 }

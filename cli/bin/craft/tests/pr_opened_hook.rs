@@ -251,6 +251,21 @@ fn a_review_over_a_narrower_base_warns() {
 }
 
 #[test]
+fn a_review_over_the_trunks_bare_name_is_read_against_origin_where_the_local_trunk_lags() {
+    let repo = repo();
+    git(&repo.r, &["checkout", "-q", "main"]);
+    commit(&repo.r, "c");
+    git(&repo.r, &["push", "-q", "origin", "main"]);
+    git(&repo.r, &["checkout", "-qb", "feat/y"]);
+    commit(&repo.r, "d");
+    git(&repo.r, &["branch", "-f", "main", "HEAD~2"]);
+    let head = git(&repo.r, &["rev-parse", "HEAD"]);
+    repo.gh_answers(&head);
+    repo.file_run("2026-11-01T10-00-00Z", &head, &[("base", json!("main"))]);
+    assert_eq!(repo.hook("gh pr create", OPENED), Value::Null);
+}
+
+#[test]
 fn a_review_of_another_commit_than_the_pr_head_does_not_count() {
     let repo = repo();
     repo.file_run("2026-11-01T10-00-00Z", &repo.head, &[]);
