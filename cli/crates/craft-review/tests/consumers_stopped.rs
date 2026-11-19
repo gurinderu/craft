@@ -9,12 +9,12 @@
 mod common;
 
 use common::consumers::one_consumer;
-use common::{ids, lens, opts, scout, submit, titled, write_answer};
+use common::{lens, opts, scout, submit, titled, write_answer};
 use craft_review::step::{self, Said};
 use serde_json::json;
 
 /// Stops a run over [`one_consumer`] on the usage limit once the `errors` lens, never marking its
-/// line, is taken on its last attempt; the `intent` lens marks the line first when `intent_marks`.
+/// line, has answered; the `intent` lens marks the line first when `intent_marks`.
 /// Returns the stopped run's report.
 fn stopped(intent_marks: bool) -> String {
     let repo = tempfile::tempdir().unwrap();
@@ -22,19 +22,14 @@ fn stopped(intent_marks: bool) -> String {
     let out = tempfile::tempdir().unwrap();
     let run = out.path().join("run");
     step::start(&opts(repo.path(), out.path())).unwrap();
-    let mut s = submit(&run, json!({"scout-rust": scout("small", &["errors"])}));
+    let s = submit(&run, json!({"scout-rust": scout("small", &["errors"])}));
     if intent_marks {
         let mut a = lens("intent", &[]);
         a["consumers"] = json!([{"site": "src/user.rs:2", "status": "checked"}]);
         write_answer(&s, "lens-rust-intent-r1", &a.to_string());
     }
     let answer = lens("errors", &[titled("High", 1, "kept from the cut round")]).to_string();
-    // Refused for the unmarked line until its last attempt, the tests lens still out.
-    for _ in 0..2 {
-        write_answer(&s, "lens-rust-errors-r1", &answer);
-        s = step::submit(&run, None).unwrap();
-        assert!(ids(&s).contains(&"lens-rust-errors-r1".to_owned()), "{s}");
-    }
+    // Taken at once though it leaves its line unmarked, the tests lens still out.
     write_answer(&s, "lens-rust-errors-r1", &answer);
     let limit = Said {
         limit: Some("You've hit your limit"),

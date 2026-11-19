@@ -1,6 +1,6 @@
-//! Whether a submitted answer is one its task can use: it matches the task's schema, a lens marks
-//! every CONSUMERS line it was shown, and a batch verdict carries every finding of its batch
-//! exactly once.
+//! Whether a submitted answer is one its task can use: it matches the task's schema, and a batch
+//! verdict carries every finding of its batch exactly once. The CONSUMERS lines a lens answer
+//! leaves unmarked do not refuse it: they are read beside it and reported as unchecked.
 
 use serde_json::Value;
 
@@ -8,7 +8,7 @@ use crate::state::{Task, TaskKind};
 
 mod consumers;
 
-pub use consumers::listed;
+pub use consumers::{listed, unmarked};
 
 /// How many schema errors a refusal names.
 const ERRORS_SHOWN: usize = 3;
@@ -25,19 +25,11 @@ pub fn normalize(answer: &Value) -> Value {
     }
 }
 
-/// The answer `task` can use, or why not, in one line; on the task's `last` attempt an answer
-/// whose only defect is CONSUMERS lines left unmarked is taken, its findings kept and the lines it
-/// left returned beside it, to be reported as a coverage gap rather than drop the lens (realm
-/// @nick/craft, node #531).
+/// The answer `task` can use, or why not, in one line.
 ///
 /// # Errors
-/// The refusal: no answer, a schema mismatch, a CONSUMERS line its prompt listed left unmarked
-/// (not on the `last` attempt), or a batch verdict missing or repeating an index.
-pub fn check(
-    task: &Task,
-    answer: Option<&Value>,
-    last: bool,
-) -> Result<(Value, Vec<String>), String> {
+/// The refusal: no answer, a schema mismatch, or a batch verdict missing or repeating an index.
+pub fn check(task: &Task, answer: Option<&Value>) -> Result<Value, String> {
     let answer = normalize(answer.ok_or("no answer was submitted")?);
     let validator = jsonschema::validator_for(&task.schema)
         .map_err(|e| format!("the task's own schema does not compile: {e}"))?;
@@ -59,11 +51,7 @@ pub fn check(
     if let TaskKind::VerifyBatch { findings } = &task.kind {
         batch_indices(&answer, findings.len())?;
     }
-    let left = consumers::unmarked(&answer, &task.consumers);
-    if !left.is_empty() && !last {
-        return Err(consumers::refusal(&left));
-    }
-    Ok((answer, left))
+    Ok(answer)
 }
 
 /// Every index `0..count` appears exactly once among the verdicts.

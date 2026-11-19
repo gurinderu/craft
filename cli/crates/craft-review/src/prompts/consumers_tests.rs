@@ -76,8 +76,8 @@ fn lens(ctx: &PromptContext, profile: &Profile, lens: &str) -> String {
 fn a_lens_of_another_profile_carries_no_consumers_block() {
     let ctx = ctx();
     let rust = Profile::load("rust").unwrap();
-    assert!(lens(&ctx, &rust, "errors").contains("CONSUMERS (required)"));
-    assert!(lens(&ctx, &rust, "negative-space").contains("CONSUMERS (required)"));
+    assert!(lens(&ctx, &rust, "errors").contains("CONSUMERS: the"));
+    assert!(lens(&ctx, &rust, "negative-space").contains("CONSUMERS: the"));
     for (id, names) in [
         ("nix", ["purity", "negative-space"]),
         ("general", ["correctness", "errors"]),
@@ -122,5 +122,5 @@ fn a_confined_lens_gets_its_crates_lines_and_hands_the_rest_to_the_seam() {
     let words = rust.units.as_ref().unwrap();
     let seam = seam_prompt(&ctx, &rust, words, &batch.units, &[], &[]).unwrap();
     assert!(seam.contains("- crates/c/src/y.rs:22: call_22()"), "{seam}");
-    assert!(!seam.contains("CONSUMERS (required)"), "{seam}");
+    assert!(!seam.contains("CONSUMERS: the"), "{seam}");
 }

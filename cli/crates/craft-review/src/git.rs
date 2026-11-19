@@ -306,12 +306,20 @@ pub fn read_diff(cwd: &Path, base: Option<&str>, scope: Option<&str>) -> Result<
         git(cwd, &all)
     };
     // `-z`: each path as it is, unquoted, so it is spelled as the zero-context diff's headers
-    // read it.
-    let files = limited(&["diff", "--name-only", "-z", "--merge-base", &base])?
-        .split('\0')
-        .filter(|f| !f.is_empty())
-        .map(str::to_owned)
-        .collect();
+    // read it. A path that is not UTF-8 lists the change as git quotes it, as before `-z`; full
+    // support is issue #414.
+    let files = match limited(&["diff", "--name-only", "-z", "--merge-base", &base]) {
+        Ok(z) => z
+            .split('\0')
+            .filter(|f| !f.is_empty())
+            .map(str::to_owned)
+            .collect(),
+        Err(GitError::NotUtf8(_)) => limited(&["diff", "--name-only", "--merge-base", &base])?
+            .lines()
+            .map(str::to_owned)
+            .collect(),
+        Err(e) => return Err(e),
+    };
     let stat = limited(&["diff", "--stat", "--merge-base", &base])?;
     let log = git(cwd, &["log", "--format=%B", &format!("{merge_base}..HEAD")])?;
     Ok(Diff {

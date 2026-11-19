@@ -1,6 +1,6 @@
 {
   "type": "array",
-  "description": "each line of the CONSUMERS list, marked once judged",
+  "description": "each line of the CONSUMERS list, marked once judged; a line left unmarked is reported as unchecked",
   "items": {
     "type": "object",
     "additionalProperties": false,

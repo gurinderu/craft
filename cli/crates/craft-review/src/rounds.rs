@@ -47,8 +47,7 @@ pub struct Rounds {
     /// The CONSUMERS lines (`file:line`) some lens shown them marked.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub consumers_marked: Vec<String>,
-    /// The CONSUMERS lines a lens answer taken on its last attempt left unmarked (realm
-    /// @nick/craft, node #531).
+    /// The CONSUMERS lines a taken lens answer left unmarked (realm @nick/craft, node #531).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub consumers_left: Vec<String>,
     /// The CONSUMERS lines some lens task's prompt showed, answered or not.
