@@ -23,7 +23,8 @@ role's `tools` list is empty or names `Workflow` and `Skill`, it runs this cycle
 In Claude Code, craft's SessionStart hook says this at the start of a session in a repo that
 declares its own agents (`.claude/agents/*.md`) or work rules (an `AGENTS.md` / `CLAUDE.md` that
 names the process: pull request, PR, code review, reviewer, review loop, before merging): the repo's
-roles and rules win on every step they cover, whichever declared role develops there runs this cycle
+roles and rules win on every step they cover, except the final full review, where they run beside craft's
+full `craft:review` and never replace it; whichever declared role develops there runs this cycle
 with craft's tools, and a role running as a subagent hands the review loop back to the main session.
 It is silent in other repos and on a resumed session; `CRAFT_ROLE_HOOK=0` in the environment, or a
 line `craft-role-hook: off` in `AGENTS.md` / `CLAUDE.md`, switches it off. In the same repos it speaks
