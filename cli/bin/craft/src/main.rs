@@ -37,9 +37,9 @@ enum Command {
 
 #[derive(Subcommand)]
 enum HookCommand {
-    /// Before `gh pr create`: say when the run store holds no finished full craft review of HEAD.
-    /// Prints the `PreToolUse` output or nothing, and always exits 0.
-    PrePr(hook::PrePrArgs),
+    /// After a Bash call opened a pull request: say when the run store holds no finished full
+    /// craft review of its head. Prints the `PostToolUse` output or nothing, and always exits 0.
+    PrOpened(hook::PrOpenedArgs),
 }
 
 #[derive(Subcommand)]
@@ -114,7 +114,7 @@ async fn main() -> ExitCode {
         Command::Review(ReviewCommand::Gate(args)) => steps::gate(&args),
         Command::Review(ReviewCommand::Run(args)) => run::run(*args).await,
         Command::Init(args) => init::init(&args),
-        Command::Hook(HookCommand::PrePr(args)) => hook::pre_pr(&args),
+        Command::Hook(HookCommand::PrOpened(args)) => hook::pr_opened(&args),
     };
     // Every way out — a stop, an error, a finished run — waits out the grace of the agents'
     // groups, so their SIGKILL is sent before craft is gone.
