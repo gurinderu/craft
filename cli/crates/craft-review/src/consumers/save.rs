@@ -4,6 +4,15 @@ use std::path::Path;
 
 use super::{Consumers, FILE, order};
 
+/// The list a thread built for the run in `dir`, kept as [`keep`] keeps it; a list saying the build
+/// stopped when its thread panicked (realm @nick/craft, node #529).
+#[must_use]
+pub fn prepare(dir: &Path, built: std::thread::Result<Consumers>) -> (Consumers, Option<String>) {
+    let full =
+        built.unwrap_or_else(|_| Consumers::failed("the consumers list stopped unexpectedly"));
+    keep(dir, full)
+}
+
 /// Saves `full` as `dir`/[`FILE`] and gives the lenses' part of it, cut to the budgets, with the
 /// file's path; a note when the file could not be written, its path then left empty.
 #[must_use]
