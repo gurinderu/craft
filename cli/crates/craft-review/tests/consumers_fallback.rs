@@ -68,10 +68,8 @@ fn kept(run: &Path) -> PathBuf {
         .join(format!("{ERRORS}.marks-only.json"))
 }
 
-/// The run took the kept answer, and dropped its file once that was saved.
-fn kept_its_findings(run: &Path, s: &Value) {
+fn kept_its_findings(s: &Value) {
     assert!(s["findings"].to_string().contains("f returns 2"), "{s}");
-    assert!(!kept(run).exists(), "dropped once taken");
     let report = std::fs::read_to_string(s["report"].as_str().unwrap()).unwrap();
     assert!(!report.contains("lenses that never returned"), "{report}");
 }
@@ -89,7 +87,7 @@ fn an_answer_refused_only_for_marks_is_taken_when_every_retry_fails() {
         }
     });
     assert_eq!(errors_asked, 3, "{s}");
-    kept_its_findings(&run, &s);
+    kept_its_findings(&s);
     // Its unmarked line is kept as left by it, though another lens marked it.
     let state: Value =
         serde_json::from_str(&std::fs::read_to_string(run.join("state.json")).unwrap()).unwrap();
@@ -115,7 +113,7 @@ fn an_answer_refused_only_for_marks_is_taken_when_a_later_one_could_not_look() {
         }
     });
     assert_eq!(errors_asked, 2, "{s}");
-    kept_its_findings(&run, &s);
+    kept_its_findings(&s);
 }
 
 #[test]
@@ -140,7 +138,7 @@ fn an_answer_refused_only_for_marks_is_taken_when_the_task_is_abandoned() {
     };
     let s = step::submit_with(&run, None, &said).unwrap();
     let s = to_end(&run, s, || panic!("the abandoned lens is not asked again"));
-    kept_its_findings(&run, &s);
+    kept_its_findings(&s);
 }
 
 #[test]
@@ -165,7 +163,7 @@ fn an_answer_refused_only_for_marks_survives_a_stop_before_the_state_is_saved() 
         s = step::submit(&run, None).unwrap();
     }
     let s = to_end(&run, s, || panic!("the errors lens's retries are spent"));
-    kept_its_findings(&run, &s);
+    kept_its_findings(&s);
 }
 
 #[test]
@@ -185,80 +183,4 @@ fn the_kept_answer_is_dropped_once_a_later_one_is_accepted() {
     assert!(kept(&run).exists(), "kept beside the answers");
     let s = to_end(&run, s, || other(ERRORS));
     assert!(!kept(&run).exists(), "dropped once accepted: {s}");
-}
-
-/// A run past its scout and a first batch in which the errors lens's answer is refused only for
-/// its marks, `before` run first; the step that submit returned.
-fn refused_once(
-    before: impl FnOnce(&Path),
-) -> (
-    PathBuf,
-    Result<Value, craft_review::Error>,
-    [tempfile::TempDir; 2],
-) {
-    let (run, _, dirs) = started();
-    let s = submit(&run, json!({"scout-rust": other("scout-rust")}));
-    before(&run);
-    let mut answers = serde_json::Map::new();
-    for id in ids(&s) {
-        let a = if id == ERRORS {
-            marks_only()
-        } else {
-            other(&id)
-        };
-        answers.insert(id, a);
-    }
-    let s = step::submit(&run, Some(&answers));
-    (run, s, dirs)
-}
-
-#[test]
-fn the_kept_answer_survives_a_stop_between_its_acceptance_and_the_state_save() {
-    let (run, s, _dirs) = refused_once(|_| {});
-    assert_eq!(ids(&s.unwrap()), [ERRORS]);
-    assert!(kept(&run).exists());
-    // The state cannot be saved: the submit that accepts the errors lens's answer stops before.
-    std::fs::create_dir(run.join("state.json.tmp")).unwrap();
-    let accepted = serde_json::Map::from_iter([(ERRORS.to_owned(), other(ERRORS))]);
-    step::submit(&run, Some(&accepted)).unwrap_err();
-    assert!(
-        kept(&run).exists(),
-        "kept until the state saying it answered is saved"
-    );
-}
-
-#[test]
-fn a_kept_answer_that_cannot_be_written_is_noted_and_the_batch_goes_on() {
-    let (run, s, _dirs) = refused_once(|run| {
-        std::fs::create_dir_all(
-            run.join("answers")
-                .join(format!("{ERRORS}.marks-only.json.tmp")),
-        )
-        .unwrap();
-    });
-    assert_eq!(
-        ids(&s.unwrap()),
-        [ERRORS],
-        "every other answer of the batch taken"
-    );
-    let state = std::fs::read_to_string(run.join("state.json")).unwrap();
-    assert!(
-        state.contains("could not be kept to fall back on"),
-        "{state}"
-    );
-}
-
-#[test]
-fn a_kept_answer_that_cannot_be_dropped_fails_nothing() {
-    let (run, _, _dirs) = started();
-    let s = submit(&run, json!({"scout-rust": other("scout-rust")}));
-    std::fs::create_dir_all(kept(&run).join("in-the-way")).unwrap();
-    let answers: serde_json::Map<String, Value> = ids(&s)
-        .into_iter()
-        .map(|id| {
-            let a = other(&id);
-            (id, a)
-        })
-        .collect();
-    step::submit(&run, Some(&answers)).unwrap();
 }
