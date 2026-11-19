@@ -12,7 +12,7 @@ mod assign;
 mod gap;
 
 pub use assign::{assign, supported};
-pub use gap::{gap, is_ancillary, is_project_config, not_utf8, note, uncovered};
+pub use gap::{gap, is_ancillary, is_project_config, note, uncovered};
 
 /// A run that ended before any lens ran: its verdict, the line under it, and the files it lists.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -98,17 +98,6 @@ pub fn exit(diff: &Diff, covered: usize, lang: &str, explicit_base: bool) -> Opt
         return None;
     }
     let files = &diff.files;
-    if let Some(left) = not_utf8(&diff.not_utf8).filter(|_| files.is_empty()) {
-        let msg = format!(
-            "NOTHING WAS REVIEWED — every changed path is not UTF-8, which this review leaves out ({left}). No lens ran, so this is not an approval."
-        );
-        return Some(Exit {
-            verdict: "INCOMPLETE (path not UTF-8)".into(),
-            line: format!("⚠️ INCOMPLETE — {msg}"),
-            not_run: Some(msg),
-            listed: None,
-        });
-    }
     if files.is_empty() {
         let on_trunk = !explicit_base && same_commit(&diff.merge_base, &diff.head);
         let msg = if on_trunk { ON_TRUNK } else { NO_CHANGED_FILES };
@@ -175,17 +164,5 @@ mod tests {
         ] {
             assert!(!is_inert(f), "{f}");
         }
-    }
-
-    #[test]
-    fn a_change_of_paths_that_are_not_utf8_alone_reviewed_nothing() {
-        let diff: crate::git::Diff = serde_json::from_value(serde_json::json!({
-            "base": "origin/main", "mergeBase": "abc", "head": "def", "dirty": false,
-            "files": [], "notUtf8": [r#""a\351.rs""#], "stat": "", "log": ""
-        }))
-        .unwrap();
-        let exit = super::exit(&diff, 0, "Rust", true).unwrap();
-        assert_eq!(exit.verdict, "INCOMPLETE (path not UTF-8)");
-        assert!(exit.line.contains(r#""a\351.rs""#), "{}", exit.line);
     }
 }

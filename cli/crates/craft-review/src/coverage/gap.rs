@@ -62,16 +62,6 @@ pub fn is_project_config(f: &str) -> bool {
     is_ancillary(f) || PROJECT_CONFIG.contains(&base) || variant
 }
 
-/// What the one uncovered entry naming the changed paths that are not UTF-8 opens with.
-const NOT_UTF8: &str = "Not reviewed — path not UTF-8: ";
-
-/// The one uncovered entry naming `paths`, the changed paths that are not UTF-8, which the review
-/// leaves out whole ([`crate::git::Diff::not_utf8`]); `None` when there is none.
-#[must_use]
-pub fn not_utf8(paths: &[String]) -> Option<String> {
-    (!paths.is_empty()).then(|| format!("{NOT_UTF8}{}", paths.join(", ")))
-}
-
 /// The changed files `covers` leaves out that carry something to review, in diff order.
 pub fn uncovered(files: &[String], covers: impl Fn(&str) -> bool) -> Vec<String> {
     files
@@ -86,7 +76,7 @@ pub fn uncovered(files: &[String], covers: impl Fn(&str) -> bool) -> Vec<String>
 pub fn gap(uncovered: &[String]) -> Vec<String> {
     uncovered
         .iter()
-        .filter(|f| f.starts_with(NOT_UTF8) || !is_ancillary(f))
+        .filter(|f| !is_ancillary(f))
         .cloned()
         .collect()
 }
@@ -113,7 +103,7 @@ pub fn note(gap: &[String]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{gap, is_ancillary, is_project_config, not_utf8, note, uncovered};
+    use super::{gap, is_ancillary, is_project_config, note, uncovered};
 
     fn owned(files: &[&str]) -> Vec<String> {
         files.iter().map(|f| (*f).to_owned()).collect()
@@ -193,18 +183,5 @@ mod tests {
             note(&seven),
             "7 changed file(s) matched no language profile and were NOT reviewed (a, b, c, d, e, +2 more)"
         );
-    }
-
-    #[test]
-    fn the_paths_that_are_not_utf8_are_one_entry_and_a_gap_wherever_they_lie() {
-        assert_eq!(not_utf8(&[]), None);
-        let left = not_utf8(&owned(&[r#"".github/ci\351.yml""#, r#""a\351.rs""#])).unwrap();
-        assert_eq!(
-            left,
-            r#"Not reviewed — path not UTF-8: ".github/ci\351.yml", "a\351.rs""#
-        );
-        let one = owned(&[r#""x/.github/ci\351.yml""#]);
-        let only_ci = not_utf8(&one).unwrap();
-        assert_eq!(gap(std::slice::from_ref(&only_ci)), vec![only_ci]);
     }
 }

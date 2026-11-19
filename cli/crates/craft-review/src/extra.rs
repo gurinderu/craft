@@ -212,7 +212,7 @@ pub(crate) fn not_reached(run: &mut RunState) {
 fn exit_reason(run: &RunState) -> (&'static str, bool) {
     if run.gate.exit().is_some() {
         ("the mechanical gate is red", true)
-    } else if run.diff.files.is_empty() && run.diff.not_utf8.is_empty() {
+    } else if run.diff.files.is_empty() {
         ("the diff is empty", false)
     } else if run
         .exit
