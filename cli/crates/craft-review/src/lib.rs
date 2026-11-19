@@ -26,7 +26,6 @@ pub mod git;
 mod golden;
 pub mod handoff;
 mod harm;
-mod kept;
 pub mod ledger;
 pub mod memory;
 pub mod optional;
