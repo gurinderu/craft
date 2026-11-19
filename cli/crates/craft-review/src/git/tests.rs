@@ -35,3 +35,46 @@ fn a_change_is_seen_from_a_subdirectory_of_the_repository() {
     assert!(!unchanged_since(&sub, &commit, "src/lib.rs"));
     assert!(!unchanged_since(d, &commit, "src/lib.rs"));
 }
+
+#[test]
+fn a_changed_file_is_listed_by_its_own_name_whatever_its_characters() {
+    let t = tempfile::tempdir().unwrap();
+    let d = t.path();
+    git(d, &["init", "-q", "-b", "main"]);
+    std::fs::write(d.join("README"), "r\n").unwrap();
+    git(d, &["add", "."]);
+    git(d, &["commit", "-qm", "one"]);
+    git(d, &["branch", "base"]);
+    let names = ["café.rs", "my dir/x.rs", "q\"t.rs", "tab\tx.rs"];
+    std::fs::create_dir_all(d.join("my dir")).unwrap();
+    for n in names {
+        std::fs::write(d.join(n), "a\n").unwrap();
+    }
+    git(d, &["add", "."]);
+    git(d, &["commit", "-qm", "two"]);
+    let diff = super::read_diff(d, Some("base"), None).unwrap();
+    let mut files = diff.files;
+    files.sort();
+    let mut want: Vec<String> = names.iter().map(|n| (*n).to_owned()).collect();
+    want.sort();
+    assert_eq!(files, want);
+}
+
+#[test]
+fn a_changed_path_that_is_not_utf8_lists_the_change_as_git_quotes_it() {
+    use std::os::unix::ffi::OsStrExt;
+    let t = tempfile::tempdir().unwrap();
+    let d = t.path();
+    git(d, &["init", "-q", "-b", "main"]);
+    std::fs::write(d.join("README"), "r\n").unwrap();
+    git(d, &["add", "."]);
+    git(d, &["commit", "-qm", "one"]);
+    git(d, &["branch", "base"]);
+    std::fs::write(d.join(std::ffi::OsStr::from_bytes(b"\xff.rs")), "a\n").unwrap();
+    std::fs::write(d.join("ok.rs"), "a\n").unwrap();
+    git(d, &["add", "."]);
+    git(d, &["commit", "-qm", "two"]);
+    let diff = super::read_diff(d, Some("base"), None).unwrap();
+    let quoted = super::git(d, &["diff", "--name-only", "--merge-base", "base"]).unwrap();
+    assert_eq!(diff.files, quoted.lines().collect::<Vec<_>>());
+}

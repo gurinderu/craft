@@ -14,6 +14,8 @@ hook, code path or legacy cohort is a new finding.
    the table of places the class can occur in this change: every error arm beside the success arm,
    every record written in the same pass, every hook or handler registered alongside, every path
    (create, update, delete, recover), every cohort of old objects the new code meets.
+   When the task carries a CONSUMERS list, its lines are rows of this table first: each names a
+   changed symbol outside the changed lines, and a row the list holds is never left out.
 2. Mark the rows a finding already covers.
 3. Report every uncovered row where the defect holds, each as its own finding at its own place.
 

@@ -235,6 +235,7 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
         re_review,
         strict: opts.strict,
         sources: sources::Sources::default(),
+        consumers: crate::consumers::Consumers::default(),
         scope,
     };
     let (tracks, uncovered) = tracks_of(&diff.files, &profiles);
@@ -430,15 +431,23 @@ fn open_dir(dir: &Path) -> Result<(), StepError> {
     })
 }
 
-/// The integration points' sources and the gate, side by side, neither waiting on the other: the
-/// sources reach the prompts, the gate's seeds the pool as round-0 findings.
+/// The consumers list of the change (realm @nick/craft, node #529).
+fn consumers_of(cwd: &Path, diff: &git::Diff) -> crate::consumers::Consumers {
+    crate::consumers::of_checkout(cwd, diff)
+}
+
+/// The integration points' sources, the gate and the consumers list, side by side, none waiting
+/// on another: the sources and the list reach the prompts, the gate's seeds the pool as round-0
+/// findings.
 fn prepare(cwd: &Path, dir: &Path, opts: &StartOptions, run: &mut RunState) {
-    let (prepared, gated) = std::thread::scope(|s| {
+    let (prepared, gated, listed) = std::thread::scope(|s| {
         let sources = s.spawn(|| {
             opts.sources
                 .as_ref()
                 .map(|setup| sources::for_repo(cwd, setup))
         });
+        // Started before the gate, which runs on this thread, so the two overlap.
+        let consumers = s.spawn(|| consumers_of(cwd, &run.diff));
         let gated = match &opts.gate_from {
             Some(from) => Some(gate::alone::taken(from, &run.diff)),
             None => opts
@@ -452,8 +461,14 @@ fn prepare(cwd: &Path, dir: &Path, opts: &StartOptions, run: &mut RunState) {
                 })
                 .map(|setup| gate::run(cwd, &run.diff.base, &run.tracks, &setup, dir)),
         };
-        (sources.join(), gated)
+        (sources.join(), gated, consumers.join())
     });
+    let full = listed.unwrap_or_else(|_| {
+        crate::consumers::Consumers::failed("the consumers list stopped unexpectedly")
+    });
+    let (lens, note) = crate::consumers::keep(dir, full);
+    run.context.consumers = lens;
+    run.notes.extend(note);
     match prepared {
         Ok(Some(s)) => run.context.sources = s,
         Ok(None) => {}
@@ -720,6 +735,9 @@ fn take_answer(
         .and_then(|a| validate::check(task, Some(a)));
     match checked {
         Ok(answer) => {
+            // The CONSUMERS lines it left unmarked are taken with it, to be reported as unchecked,
+            // never asked for again (realm @nick/craft, node #531).
+            task.unmarked = validate::unmarked(&answer, &task.consumers);
             task.answer = Some(answer);
             task.state = TaskState::Answered;
             task.error = None;

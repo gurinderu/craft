@@ -11,6 +11,8 @@ use serde_json::Value;
 use crate::sources::Sources;
 
 mod adjudicate;
+#[cfg(test)]
+mod consumers_tests;
 mod critic;
 mod lens;
 #[cfg(test)]
@@ -61,6 +63,10 @@ pub struct PromptContext {
     /// them. Optional, so a state written before it reads as a run with none.
     #[serde(default, skip_serializing_if = "Sources::is_empty")]
     pub sources: Sources,
+    /// The consumers list the run prepared (realm @nick/craft, node #529), for every judging
+    /// lens. Optional, so a state written before it reads as a run with none.
+    #[serde(default, skip_serializing_if = "crate::consumers::Consumers::is_empty")]
+    pub consumers: crate::consumers::Consumers,
     /// The directory of the change the run reviews (`path`, [`crate::scope`]): the scout is told
     /// it, and the lenses read only its files. Optional, so a state written before it reads as a
     /// review of the whole change.

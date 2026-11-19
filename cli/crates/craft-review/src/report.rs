@@ -5,6 +5,7 @@ use serde_json::Value;
 use crate::coverage;
 use crate::state::{RunState, Track};
 
+mod consumer_lines;
 mod gate_cap;
 #[cfg(test)]
 mod gate_cap_tests;
@@ -13,6 +14,8 @@ mod reduced_cap;
 #[cfg(test)]
 mod reduced_cap_tests;
 mod rereview;
+#[cfg(test)]
+mod seam_tests;
 #[cfg(test)]
 mod tests;
 
@@ -348,6 +351,10 @@ pub fn markdown(state: &RunState, verdict: &str) -> String {
         &state.context.sources,
         &state.settled,
     ));
+    out.push_str(&crate::consumers::section(&state.context.consumers));
+    for (line, _) in consumer_lines::all(state) {
+        out.push_str(&line);
+    }
     out.push_str(&crate::critic::section(state));
     out.push_str(&crate::units::section(&state.units));
     out.push_str("\n## Not run\n\n");
@@ -381,6 +388,20 @@ fn listed(heading: Option<&str>, files: &[String], out: &mut String) {
         out.push_str(&format!("- {f}\n"));
     }
     out.push('\n');
+}
+
+/// How the run was weaker than asked: the host's notes, then the CONSUMERS lines no lens marked
+/// per line and no seam pass read (realm @nick/craft, node #531).
+#[must_use]
+pub fn degraded_notes(state: &RunState) -> Vec<String> {
+    let mut notes = state.degraded.clone();
+    notes.extend(
+        consumer_lines::all(state)
+            .into_iter()
+            .filter(|(_, degraded)| *degraded)
+            .map(|(line, _)| line.trim_start_matches("- ").trim_end().to_owned()),
+    );
+    notes
 }
 
 /// How the run was weaker than asked, as its host said: before the findings, so they are read with it.

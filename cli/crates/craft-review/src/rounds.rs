@@ -44,6 +44,18 @@ pub struct Rounds {
     pub returned: Vec<String>,
     /// Why each lens's last dispatch gave no answer, by `profile:lens`.
     pub failures: BTreeMap<String, String>,
+    /// The CONSUMERS lines (`file:line`) some lens shown them marked.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub consumers_marked: Vec<String>,
+    /// The CONSUMERS lines a taken lens answer left unmarked (realm @nick/craft, node #531).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub consumers_left: Vec<String>,
+    /// The CONSUMERS lines some lens task's prompt showed, answered or not.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub consumers_shown: Vec<String>,
+    /// The CONSUMERS lines shown to a lens task that did not answer: died, failed or still out.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub consumers_unanswered: Vec<String>,
 }
 
 /// The exact key of a finding: its file and title folded, and its line, as `key` in
@@ -159,6 +171,7 @@ fn lens_task(
     // Only the lenses run on the profile's agent, as the engine dispatches them
     // (lib/review-lens-dispatch.mjs); the scout, the dedup and the verifiers keep the default.
     task.agent_type = profile.lens_agent;
+    task.consumers = crate::validate::listed(&task.prompt, &ctx.consumers);
     Ok(task)
 }
 
@@ -220,7 +233,9 @@ impl Rounds {
             if let Some(s) = slice {
                 k = format!("{k}{SLICE_SEP}{s}");
             }
-            let Some(answer) = self.answered(t, &k) else {
+            let answer = self.answered(t, &k);
+            self.note_lines(t, answer.is_some());
+            let Some(answer) = answer else {
                 continue;
             };
             returned += 1;
@@ -253,6 +268,67 @@ impl Rounds {
         });
         self.pool.extend(fresh);
         added
+    }
+
+    /// Takes the CONSUMERS lines `other` (these rounds with more answers absorbed) holds as
+    /// shown, marked and left; returns its pool.
+    pub(crate) fn take_consumers(&mut self, other: Self) -> Vec<Value> {
+        self.consumers_shown = other.consumers_shown;
+        self.consumers_marked = other.consumers_marked;
+        self.consumers_left = other.consumers_left;
+        self.consumers_unanswered = other.consumers_unanswered;
+        other.pool
+    }
+
+    /// Notes the CONSUMERS lines lens task `t` was shown: when it `answered`, those it marked and
+    /// those it left; else as shown to a lens that did not answer.
+    pub(crate) fn note_lines(&mut self, t: &Task, answered: bool) {
+        for site in &t.consumers {
+            let into = if !answered {
+                &mut self.consumers_unanswered
+            } else if t.unmarked.contains(site) {
+                &mut self.consumers_left
+            } else {
+                &mut self.consumers_marked
+            };
+            for list in [into, &mut self.consumers_shown] {
+                if !list.contains(site) {
+                    list.push(site.clone());
+                }
+            }
+        }
+    }
+
+    /// The CONSUMERS lines no lens shown them marked, in the order they were left.
+    #[must_use]
+    pub fn unmarked(&self) -> Vec<String> {
+        self.consumers_left
+            .iter()
+            .filter(|s| !self.consumers_marked.contains(s))
+            .cloned()
+            .collect()
+    }
+
+    /// The CONSUMERS lines shown only to lens tasks that did not answer: no answered lens marked
+    /// or left them.
+    #[must_use]
+    pub fn unanswered(&self) -> Vec<String> {
+        self.consumers_unanswered
+            .iter()
+            .filter(|s| !self.consumers_marked.contains(s) && !self.consumers_left.contains(s))
+            .cloned()
+            .collect()
+    }
+
+    /// The lines of `listed` no lens task was shown, in `listed`'s order: under unit mode, those
+    /// outside every confined lens's units, which only the seam pass reads.
+    #[must_use]
+    pub fn unshown(&self, listed: &[String]) -> Vec<String> {
+        listed
+            .iter()
+            .filter(|s| !self.consumers_shown.contains(s))
+            .cloned()
+            .collect()
     }
 
     /// Records the dispatch of the lens keyed `k` and whether it answered; its answer if it did.
@@ -312,5 +388,7 @@ impl Rounds {
     }
 }
 
+#[cfg(test)]
+mod shown_tests;
 #[cfg(test)]
 mod tests;
