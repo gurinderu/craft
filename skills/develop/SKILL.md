@@ -1,7 +1,7 @@
 ---
 name: develop
 description: >-
-  Run a change end to end up to a pull request with craft's tools — read the project's declared roles and rules first and let them take any phase they cover, recall project memory for the touched paths, make the change, loop review → triage → fix — the first round over the branch diff, each next over the fixed delta only — until a round brings no open Medium-or-higher finding (at most 4 rounds, then stop and tell the human), run one full review, record the cycle, and open the PR only after that. Needs Claude Code's Workflow tool (not in Codex, OpenCode or a subagent): main session only; the SessionStart hook points a declared developer role here. Use when asked to implement a feature or fix and open a PR, or take a change from request to PR. Triggers: implement this and open a PR, develop X end to end, take this to a PR, do the whole cycle. Not for working existing findings only (addressing-findings), a one-off review (the review workflows), or how to plan, test or debug (bring the project's own process).
+  Run a change end to end up to a pull request with craft's tools — read the project's declared roles and rules first and let them take any phase they cover but the final full review (theirs runs beside craft's), recall project memory for the touched paths, make the change, loop review → triage → fix — the first round over the branch diff, each next over the fixed delta — until a round brings no open Medium-or-higher finding (at most 4 rounds, then stop and tell the human), run one full craft:review, record the cycle, and open the PR only after that. Needs Claude Code's Workflow tool (not in Codex, OpenCode or a subagent): main session only. Use when asked to implement a feature or fix and open a PR, or take a change from request to PR. Triggers: implement this and open a PR, develop X end to end, take this to a PR, do the whole cycle. Not for working existing findings only (addressing-findings), a one-off review (the review workflows), or how to plan, test or debug (bring the project's own process).
 ---
 
 # Develop — the cycle up to a PR
@@ -39,7 +39,9 @@ session's.
 Before anything else, find what the project already declares for each phase. **A declared role or
 rule takes its phase; craft runs a phase only where the project declared nothing.** A declared rule
 that conflicts with a default below wins (its review order, its gate command, its PR form, its
-reviewer). Never skip a declared step because craft has its own.
+reviewer). Never skip a declared step because craft has its own. **One exception: the final full
+review (phase 5).** A declared reviewer or rule for the last review runs beside craft's full
+`craft:review`, never instead of it.
 
 ## Phase 1 — Consumer roles
 
@@ -55,7 +57,7 @@ Then print one line per phase, before starting phase 2:
 
 ```
 develop: roles — 1 roles: craft (read) · 2 recall: craft:memory · 3 work: <role or rule | craft session>
-         · 4 review loop: <role/rule | craft:review> · 5 full review: <…>
+         · 4 review loop: <role/rule | craft:review> · 5 full review: craft:review [+ <role/rule>]
          · 6 record: craft · 7 PR: <rule | craft default>
 ```
 
@@ -204,13 +206,14 @@ Print one line per round: `develop: round <n>/4 (<whole diff | delta since <sha>
 
 ## Phase 5 — Full review
 
-Only after the loop converged, and once. The project's declared reviewer (or its rule for the last
-review before a PR) when there is one; otherwise, for every diff, the `craft:review` workflow over
+Only after the loop converged, and once. Always, for every diff, the `craft:review` workflow over
 the whole branch diff with `{ base: <trunk>, strict: true, fresh: true }` — no `delta`, no `path`: the
 harsh maintainability bar over every profile (`fresh`: without it the run would chain to the loop and
 scan the last delta only). For a diff that touches Rust, the `craft:rust-audit` workflow,
 `{ base: <trunk> }`, may run beside it (it reviews the Rust crates only); it never replaces the
-`craft:review` run.
+`craft:review` run. The project's declared reviewer (or its rule for the last review before a PR),
+when there is one, runs beside it over the same diff — in addition, never instead. Both verdicts
+count: a Medium+ finding from either side stays open.
 
 Findings from the full review go through `craft:addressing-findings` like a loop round. An open
 Medium+ finding here reopens phase 4 within the same 4-round budget (the rounds already spent
@@ -250,7 +253,7 @@ Once `gh pr create` has opened the PR, craft's hook asks GitHub for the PR's hea
 the run store for a finished, full `craft:review` run of that head and the PR's whole change (not delta,
 light, path-scoped, dirty, partial, nested, INCOMPLETE or PARTIAL COVERAGE, over the PR's base); a
 `craft:rust-audit` run does not count. It says when there is none, naming the branch's last run, or
-when it could not check — even when the project's declared reviewer took phase 5. That line goes to the
+when it could not check — even when the project's declared reviewer also ran in phase 5. That line goes to the
 human as it is, with the offer to run the review; a declared reviewer's verdict does not answer it.
 
 ## Boundaries
