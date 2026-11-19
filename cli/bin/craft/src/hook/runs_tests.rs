@@ -4,7 +4,7 @@ use serde_json::{Value, json};
 
 use super::{Found, Scope, look};
 use crate::hook::counts::tests::Fake;
-use crate::hook::here::Here;
+use crate::hook::repo::Here;
 
 const HEAD: &str = "1111111111111111111111111111111111111111";
 const OTHER: &str = "2222222222222222222222222222222222222222";
@@ -13,14 +13,13 @@ fn here() -> Here {
     Here {
         project: "/p".into(),
         head: HEAD.into(),
-        branch: Some("feat/x".into()),
-        named: None,
+        branch: "feat/x".into(),
         trunk: "origin/main".into(),
         point: "POINT".into(),
     }
 }
 
-const GIT: Fake = Fake { changed: None };
+const GIT: Fake = Fake;
 
 /// A finished full review as the store files it: index fields and detail fields in one object.
 fn run(ts: &str, head: &str, verdict: &str, scope: &str) -> Value {
@@ -49,13 +48,9 @@ fn store(runs: &[Value], lines: &[&str]) -> tempfile::TempDir {
     d
 }
 
-fn missing(found: Found) -> (Option<super::LastRun>, bool, usize) {
+fn missing(found: Found) -> (Option<super::LastRun>, usize) {
     match found {
-        Found::Missing {
-            last,
-            crates_only,
-            malformed,
-        } => (last, crates_only, malformed),
+        Found::Missing { last, malformed } => (last, malformed),
         other @ (Found::Reviewed | Found::NoStore(_)) => {
             panic!("expected a warning, got {other:?}")
         }
@@ -74,35 +69,23 @@ fn only_a_delta_run_on_the_head_warns_naming_it() {
         &[run("2026-11-01T10-00-00Z", HEAD, "Warning", "delta")],
         &[],
     );
-    let (last, crates_only, _) = missing(look(s.path(), &here(), &GIT));
+    let (last, _) = missing(look(s.path(), &here(), &GIT));
     let last = last.unwrap();
     assert_eq!((last.head.as_str(), last.scope), (HEAD, Scope::Delta));
-    assert!(!crates_only);
 }
 
 #[test]
-fn a_nested_run_or_another_project_does_not_count() {
+fn a_nested_run_does_not_count_and_another_project_s_is_not_the_last() {
     let mut nested = run("2026-11-01T10-00-00Z", HEAD, "Approve", "full");
     nested["nested"] = json!(true);
     nested["via"] = json!("rust-audit");
     let mut elsewhere = run("2026-11-01T12-00-00Z", HEAD, "Approve", "full");
     elsewhere["project"] = json!("/q");
-    let s = store(&[nested, elsewhere], &[]);
+    let s = store(&[nested], &[]);
     missing(look(s.path(), &here(), &GIT));
-}
-
-#[test]
-fn a_rust_audit_of_the_crates_only_warns_saying_so() {
-    let audit = json!({"ts": "2026-11-01T10-00-00Z", "kind": "workflow", "name": "rust-audit",
-        "project": "/p", "branch": "feat/x", "head": HEAD, "verdict": "Approve", "dirty": false,
-        "scout": {"baseRef": ""}, "gateBlocked": [],
-        "reviews": [{"path": "cli/a", "verdict": "✅ Approve"}]});
-    let s = store(&[audit], &[]);
-    let git = Fake {
-        changed: Some(vec!["cli/a/x.rs".into(), "lib/y.mjs".into()]),
-    };
-    let (_, crates_only, _) = missing(look(s.path(), &here(), &git));
-    assert!(crates_only);
+    elsewhere["head"] = json!(OTHER);
+    let s = store(&[elsewhere], &[]);
+    assert!(missing(look(s.path(), &here(), &GIT)).0.is_none());
 }
 
 #[test]
@@ -117,15 +100,12 @@ fn the_branch_s_newest_run_is_named_whatever_the_order_filed() {
         ],
         &[],
     );
-    let (last, _, _) = missing(look(s.path(), &here(), &GIT));
+    let (last, _) = missing(look(s.path(), &here(), &GIT));
     let last = last.unwrap();
     assert_eq!(
         (last.verdict.as_str(), last.scope, last.ts.as_str()),
         ("Block", Scope::Delta, "2026-11-02T10-00-00Z")
     );
-    let mut detached = here();
-    detached.branch = None;
-    assert!(missing(look(s.path(), &detached, &GIT)).0.is_none());
 }
 
 #[test]
@@ -136,7 +116,7 @@ fn malformed_and_blank_index_lines_are_counted_and_passed_over() {
     );
     assert!(matches!(look(s.path(), &here(), &GIT), Found::Reviewed));
     let s = store(&[], &["{not json", "", "  {", "42"]);
-    let (last, _, malformed) = missing(look(s.path(), &here(), &GIT));
+    let (last, malformed) = missing(look(s.path(), &here(), &GIT));
     assert!(last.is_none());
     assert_eq!(malformed, 3);
 }
@@ -145,7 +125,7 @@ fn malformed_and_blank_index_lines_are_counted_and_passed_over() {
 fn an_unreadable_detail_file_leaves_the_scope_unknown_and_never_counts() {
     let s = store(&[run("2026-11-01T10-00-00Z", HEAD, "Approve", "full")], &[]);
     std::fs::remove_file(s.path().join("2026-11-01T10-00-00Z-workflow-review.json")).unwrap();
-    let (last, _, _) = missing(look(s.path(), &here(), &GIT));
+    let (last, _) = missing(look(s.path(), &here(), &GIT));
     assert_eq!(last.unwrap().scope, Scope::Unknown);
 }
 
@@ -153,8 +133,8 @@ fn an_unreadable_detail_file_leaves_the_scope_unknown_and_never_counts() {
 fn a_store_with_no_index_yet_holds_no_review() {
     let d = tempfile::tempdir().unwrap();
     for at in [d.path().join("nope"), d.path().to_path_buf()] {
-        let (last, crates_only, malformed) = missing(look(&at, &here(), &GIT));
-        assert!(last.is_none() && !crates_only && malformed == 0);
+        let (last, malformed) = missing(look(&at, &here(), &GIT));
+        assert!(last.is_none() && malformed == 0);
     }
 }
 

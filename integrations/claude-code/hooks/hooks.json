@@ -1,5 +1,5 @@
 {
-  "description": "craft: when the repo declares its own roles or work rules, tell the session how they run their cycle with craft's tools — at session start, on a request for review work, and to the subagent such work is handed to; and, when the main session dispatches the repo's own reviewer agent, tell it to run the same range through craft's review engine as well and fold both verdicts under the repo's rules.",
+  "description": "craft: when the repo declares its own roles or work rules, tell the session how they run their cycle with craft's tools — at session start, on a request for review work, and to the subagent such work is handed to; and, when the main session dispatches the repo's own reviewer agent, tell it to run the same range through craft's review engine as well and fold both verdicts under the repo's rules; and, once a Bash call opens a pull request, say when its head has no full craft review.",
   "hooks": {
     "PreToolUse": [
       {
@@ -11,14 +11,16 @@
             "timeout": 10
           }
         ]
-      },
+      }
+    ],
+    "PostToolUse": [
       {
         "matcher": "Bash",
         "hooks": [
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/lib/pre-pr-hook.sh\" || true",
-            "timeout": 10
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/lib/pr-opened-hook.sh\" || true",
+            "timeout": 30
           }
         ]
       }

@@ -246,12 +246,12 @@ or not); none declared → title in the repository's commit style, body naming w
 loop's rounds and verdicts, the full review's verdict, and each finding left open with why. The
 project's rules on pushing and opening PRs (and on asking first) apply unchanged.
 
-On `gh pr create`, craft's hook looks in the run store for a finished, full `craft:review` or
-`craft:rust-audit` run of the PR's head and whole change (not delta, light, path-scoped, INCOMPLETE or
-nested; a rust-audit only when its crates hold every changed file), and says when there is none or it
-could not check
-— even when the project's declared reviewer took phase 5. That warning goes to the human as it is, with the branch's last run it names;
-a declared reviewer's verdict does not answer it.
+Once `gh pr create` has opened the PR, craft's hook asks GitHub for the PR's head and base and looks in
+the run store for a finished, full `craft:review` run of that head and the PR's whole change (not delta,
+light, path-scoped, dirty, partial, nested, INCOMPLETE or PARTIAL COVERAGE, over the PR's base); a
+`craft:rust-audit` run does not count. It says when there is none, naming the branch's last run, or
+when it could not check — even when the project's declared reviewer took phase 5. That line goes to the
+human as it is, with the offer to run the review; a declared reviewer's verdict does not answer it.
 
 ## Boundaries
 

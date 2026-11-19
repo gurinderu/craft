@@ -1,16 +1,16 @@
 //! Whether the run store holds a finished, full craft review of a pull request's head — a
-//! craft:review or a craft:rust-audit run ([`counts`]; realm @nick/craft, node #541). The store is
+//! craft:review run ([`counts`]; realm @nick/craft, node #541). The store is
 //! the one the record writer files into, `lib/craft-log-run.mjs`: its `index.jsonl`, one JSON line
 //! per run, read line by line with a malformed line counted and passed over; a run's detail file is
-//! read only for the runs on the head and the branch's newest, since the index carries no scope.
+//! read only for the runs on the head and the PR branch's newest, since the index carries no scope.
 
 use std::fs::File;
 use std::io::{BufRead, BufReader, ErrorKind};
 use std::path::Path;
 
-use super::counts::{Counts, counts};
-use super::here::{Git, Here};
+use super::counts::counts;
 use super::record::{Line, detail};
+use super::repo::{Git, Here};
 
 /// What a review covered, as the warning names the branch's last one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,11 +34,9 @@ pub struct LastRun {
 pub enum Found {
     /// A finished full review of the PR's whole change on its head is filed.
     Reviewed,
-    /// None is: the branch's newest review run, if any; whether a finished rust-audit of the head
-    /// left files of the change outside its crates; how many index lines did not parse.
+    /// None is: the PR branch's newest review run, if any; how many index lines did not parse.
     Missing {
         last: Option<LastRun>,
-        crates_only: bool,
         malformed: usize,
     },
     /// The store could not be read, and why.
@@ -54,14 +52,13 @@ pub fn look(store: &Path, here: &Here, git: &dyn Git) -> Found {
         Err(e) if e.kind() == ErrorKind::NotFound => {
             return Found::Missing {
                 last: None,
-                crates_only: false,
                 malformed: 0,
             };
         }
         Err(e) => return Found::NoStore(format!("{}: {e}", index.display())),
     };
     let mut reader = BufReader::new(file);
-    let (mut last, mut malformed, mut crates_only, mut buf) = (None::<Line>, 0, false, Vec::new());
+    let (mut last, mut malformed, mut buf) = (None::<Line>, 0, Vec::new());
     loop {
         buf.clear();
         match reader.read_until(b'\n', &mut buf) {
@@ -76,15 +73,13 @@ pub fn look(store: &Path, here: &Here, git: &dyn Git) -> Found {
             malformed += 1;
             continue;
         };
-        if !is_review(&line, here) {
+        if !is_review(&line) {
             continue;
         }
-        if line.head.as_deref() == Some(&here.head) {
-            match counts(&line, detail(store, &line).as_ref(), here, git) {
-                Counts::Full => return Found::Reviewed,
-                Counts::CratesOnly => crates_only = true,
-                Counts::No => {}
-            }
+        if line.head.as_deref() == Some(&here.head)
+            && counts(&line, detail(store, &line).as_ref(), here, git)
+        {
+            return Found::Reviewed;
         }
         if on_branch(&line, here) && newer(&line, last.as_ref()) {
             last = Some(line);
@@ -97,26 +92,18 @@ pub fn look(store: &Path, here: &Here, git: &dyn Git) -> Found {
         head: l.head.unwrap_or_default(),
         verdict: l.verdict.unwrap_or_default(),
     });
-    Found::Missing {
-        last,
-        crates_only,
-        malformed,
-    }
+    Found::Missing { last, malformed }
 }
 
-/// A top-level review run of this repository: the review's name either driver files (`review`,
-/// or the CLI's interim `cli-review`, as `isReviewRun`), or `rust-audit`, which craft:develop sends
-/// a Rust diff's full review to. A nested run is a rust-audit crate slice and never counts alone.
-fn is_review(line: &Line, here: &Here) -> bool {
-    matches!(
-        line.name.as_deref(),
-        Some("review" | "cli-review" | "rust-audit")
-    ) && line.project.as_deref() == Some(&here.project)
-        && line.nested != Some(true)
+/// A top-level craft:review run: the review's name either driver files (`review`, or the CLI's
+/// interim `cli-review`, as `isReviewRun`). A nested run is a rust-audit crate slice, never one.
+fn is_review(line: &Line) -> bool {
+    matches!(line.name.as_deref(), Some("review" | "cli-review")) && line.nested != Some(true)
 }
 
+/// A run of this repository on the PR's branch.
 fn on_branch(line: &Line, here: &Here) -> bool {
-    here.branch.is_some() && line.branch == here.branch
+    line.project.as_deref() == Some(&here.project) && line.branch.as_deref() == Some(&here.branch)
 }
 
 /// Index timestamps are UTC `YYYY-MM-DDTHH-MM-SSZ`, so text order is time order.

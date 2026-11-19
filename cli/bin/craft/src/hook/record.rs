@@ -22,8 +22,7 @@ pub struct Line {
     pub dirty: Option<bool>,
 }
 
-/// A run's detail file: a CLI review's (`lib/cli-review-record.mjs`) or a rust-audit's
-/// (`src/rust-audit.js`).
+/// A CLI review's detail file (`lib/cli-review-record.mjs`).
 #[derive(Deserialize, Default)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Detail {
@@ -40,25 +39,6 @@ pub struct Detail {
     pub not_run: Option<Vec<Value>>,
     /// One entry per lens round; none when the run ended before its lenses (a red gate).
     pub lens_rounds: Option<Vec<Value>>,
-    /// rust-audit: the base its scout used.
-    pub scout: Option<Scout>,
-    /// rust-audit: the reviews a red gate kept from starting.
-    pub gate_blocked: Option<Vec<Value>>,
-    /// rust-audit: each nested review, its path and its own verdict line.
-    pub reviews: Option<Vec<Review>>,
-}
-
-#[derive(Deserialize, Default)]
-#[serde(rename_all = "camelCase", default)]
-pub struct Scout {
-    pub base_ref: Option<String>,
-}
-
-#[derive(Deserialize, Default)]
-#[serde(default)]
-pub struct Review {
-    pub path: Option<String>,
-    pub verdict: Option<String>,
 }
 
 /// The detail file of the run `line` names, `None` when it is missing or unreadable.
