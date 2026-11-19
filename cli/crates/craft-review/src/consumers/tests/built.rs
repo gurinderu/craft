@@ -37,7 +37,7 @@ fn a_checkout_whose_top_cannot_be_read_is_said() {
     let diff = diff_of(&repo);
     let elsewhere = t.path().join("not-a-repo");
     std::fs::create_dir_all(&elsewhere).unwrap();
-    let c = of_checkout(&elsewhere, &diff);
+    let c = of_checkout(&elsewhere, &diff, &crate::cancel::Cancel::default());
     said_in_both(&c, "the checkout's top could not be read");
 }
 

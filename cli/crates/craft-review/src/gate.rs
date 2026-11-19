@@ -94,6 +94,9 @@ pub struct GateSetup {
     /// with `--locked` where a lockfile is — so no run leaves it dirty for the next. In the
     /// user's own checkout, `false`: the gate builds as it always did.
     pub locked: bool,
+    /// A stop asked of the run: the tool running is killed with its group and no other starts, the
+    /// gate then ending with what it had.
+    pub cancel: crate::cancel::Cancel,
 }
 
 impl Default for GateSetup {
@@ -104,6 +107,7 @@ impl Default for GateSetup {
             scope: None,
             projects: None,
             locked: false,
+            cancel: crate::cancel::Cancel::default(),
         }
     }
 }
@@ -220,7 +224,8 @@ pub fn run(
     let lines = crate::git::zero_context_diff(cwd, base)
         .map(|d| lines::Lines::parse(&d))
         .unwrap_or_default();
-    let runner = runner::Runner::new(setup.budget, setup.path.clone(), dir.join("gate"));
+    let runner = runner::Runner::new(setup.budget, setup.path.clone(), dir.join("gate"))
+        .stopped_by(setup.cancel.clone());
     let mut gate = Gate::default();
     let mut seeds = Vec::new();
     for t in gated {

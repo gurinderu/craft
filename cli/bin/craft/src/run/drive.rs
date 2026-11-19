@@ -8,7 +8,10 @@ use std::path::{Path, PathBuf};
 use craft_agent::codex::Codex;
 use craft_agent::opencode::OpenCode;
 use craft_agent::pi::Pi;
+use craft_review::cancel::Cancel;
 use serde_json::Value;
+use tokio::runtime::{Handle, RuntimeFlavor};
+use tokio::task::block_in_place;
 
 use super::HostKind;
 use super::ending::{Ending, recovered};
@@ -76,12 +79,15 @@ pub(crate) async fn steps<P: Protocol>(
                 ..Said::default()
             },
         ),
-        None => d.proto.start(),
+        None => start(d),
     };
+    // A stopping signal that came while the binary opened the run ends it here, before any round.
+    let signalled = *d.round.stop.borrow();
     let doing = if resume.is_some() { "resume" } else { "start" };
-    let step = match first {
-        Ok(s) => s,
-        Err(e) => return Ending::Stopped(format!("review could not {doing}: {e:#}")),
+    let step = match (first, signalled) {
+        (Ok(s), _) => s,
+        (Err(_), Some(code)) => return Ending::Signalled(code),
+        (Err(e), None) => return Ending::Stopped(format!("review could not {doing}: {e:#}")),
     };
     let Some(run) = step.get("run").and_then(Value::as_str).map(PathBuf::from) else {
         return Ending::Stopped(format!(
@@ -93,6 +99,9 @@ pub(crate) async fn steps<P: Protocol>(
     r.lost.heard(&step, &|l| d.log(l));
     if let Some(line) = step.get("worktree").and_then(Value::as_str) {
         d.log(line);
+    }
+    if let Some(code) = signalled {
+        return Ending::Signalled(code);
     }
     // The tasks run where the run reviews: craft's own worktree of the PR given, or on a resume
     // the checkout the run recorded (realm `@nick/craft`, node #517).
@@ -122,6 +131,29 @@ pub(crate) async fn steps<P: Protocol>(
         }
         None => rounds(d, &run, step, r).await,
     }
+}
+
+/// The run opened by the binary, a stopping signal meanwhile cutting its gate, sources and
+/// consumers list short (realm @nick/craft, node #40): the start blocks this thread, so the stop is
+/// handed on by a task the runtime's workers run — on a multi-threaded runtime, which `main`'s is;
+/// on a current-thread one the stop is seen only once the start returns.
+fn start<P: Protocol>(d: &Driver<'_, P>) -> anyhow::Result<Value> {
+    let cancel = Cancel::default();
+    let stopping = {
+        let (cancel, mut stop) = (cancel.clone(), d.round.stop.clone());
+        tokio::spawn(async move {
+            if stop.wait_for(Option::is_some).await.is_ok() {
+                cancel.cancel();
+            }
+        })
+    };
+    let first = match Handle::current().runtime_flavor() {
+        // Off its worker's queue, so no task waiting there is held behind the start.
+        RuntimeFlavor::MultiThread => block_in_place(|| d.proto.start(&cancel)),
+        RuntimeFlavor::CurrentThread | _ => d.proto.start(&cancel),
+    };
+    stopping.abort();
+    first
 }
 
 /// Whether `a` and `b` are one directory: compared resolved, so a symlinked path (macOS's `/var`)

@@ -57,10 +57,14 @@ pub(super) fn prepare(cwd: &Path, dir: &Path, opts: &StartOptions, run: &mut Run
         let sources = s.spawn(|| {
             opts.sources
                 .as_ref()
-                .map(|setup| sources::for_repo(cwd, setup))
+                .map(|setup| sources::SourcesSetup {
+                    git: setup.git.stopped_by(opts.cancel.clone()),
+                    ..setup.clone()
+                })
+                .map(|setup| sources::for_repo(cwd, &setup))
         });
         // Started before the gate, which runs on this thread, so the two overlap.
-        let consumers = s.spawn(|| crate::consumers::of_checkout(cwd, &run.diff));
+        let consumers = s.spawn(|| crate::consumers::of_checkout(cwd, &run.diff, &opts.cancel));
         let gated = match &opts.gate_from {
             Some(from) => Some(gate::alone::taken(from, &run.diff)),
             None => opts
@@ -70,6 +74,7 @@ pub(super) fn prepare(cwd: &Path, dir: &Path, opts: &StartOptions, run: &mut Run
                     scope: run.context.scope.clone(),
                     // In craft's own worktree of the PR, which other runs on its head share.
                     locked: run.chain.worktree.is_some(),
+                    cancel: opts.cancel.clone(),
                     ..setup.clone()
                 })
                 .map(|setup| gate::run(cwd, &run.diff.base, &run.tracks, &setup, dir)),
