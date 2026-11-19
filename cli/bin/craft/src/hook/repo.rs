@@ -32,6 +32,8 @@ pub struct Here {
 pub trait Git {
     /// `git merge-base <base> <head>`, `None` when git cannot say.
     fn merge_base(&self, base: &str) -> Option<String>;
+    /// Whether `name` names a commit in this checkout.
+    fn has_ref(&self, name: &str) -> bool;
 }
 
 /// The checkout in `dir` at the commit `head`.
@@ -43,6 +45,10 @@ pub struct Checkout {
 impl Git for Checkout {
     fn merge_base(&self, base: &str) -> Option<String> {
         git::merge_base(&self.dir, base, &self.head).ok()
+    }
+
+    fn has_ref(&self, name: &str) -> bool {
+        git::has_commit(&self.dir, name)
     }
 }
 
