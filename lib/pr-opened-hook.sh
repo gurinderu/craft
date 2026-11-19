@@ -2,8 +2,9 @@
 # craft's PostToolUse hook on the Bash tool (integrations/claude-code/hooks/hooks.json, which the Codex manifest names
 # too; whether Codex runs it is unobserved): hands the hook input on stdin to `craft hook pr-opened`, which says when a
 # Bash call opened a pull request whose head has no full craft review (realm @nick/craft, node #541), and prints what
-# it says. Every Bash call passes through here, so a cheap text test comes first and the binary runs only when the
-# input may hold a pull request's URL; the binary decides.
+# it says. Every Bash call passes through here, so a cheap text test comes first: the input must name `pr create` or
+# `pr new` and hold a pull request's numbered URL (`/pull/<digit>`, which a push's `/pull/new/<branch>` is not) before
+# anything is said, the binary's absence included; the binary decides, reading the command and its output apart.
 #
 # It runs the binary of this plugin version from the cache bin/craft and lib/craft-bin.mjs fill
 # (~/.craft/bin/<version>/craft), or CRAFT_BIN, and never downloads it: a hook has its time limit, a download can take
@@ -16,9 +17,14 @@ set -u
 version=0.54.1 # x-release-please-version
 
 input=$(cat)
-# One single-star pattern: dash matches a multi-star glob by backtracking, which a long output makes slow.
+# Each test one substring between two stars: dash matches a glob with more stars by backtracking, which a long output
+# makes slow.
 case $input in
-  *pull/*) ;;
+  *'pr create'* | *'pr new'*) ;;
+  *) exit 0 ;;
+esac
+case $input in
+  */pull/[0-9]*) ;;
   *) exit 0 ;;
 esac
 
