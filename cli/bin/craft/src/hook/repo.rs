@@ -98,8 +98,9 @@ fn fetch(dir: &Path, base: &str) -> Result<(), String> {
     cmd.arg("-C")
         .arg(dir)
         .args(["fetch", "--quiet", "--no-tags", "origin"])
-        .arg(format!("+refs/heads/{base}:refs/remotes/origin/{base}"))
-        .env("GIT_TERMINAL_PROMPT", "0");
+        .arg(format!("+refs/heads/{base}:refs/remotes/origin/{base}"));
+    // No prompt but an askpass the caller named (realm @nick/craft, node #545).
+    craft_review::cancel::no_prompt(&mut cmd);
     let out = bounded::output(cmd, FETCH_LIMIT)?;
     if out.status.success() {
         return Ok(());

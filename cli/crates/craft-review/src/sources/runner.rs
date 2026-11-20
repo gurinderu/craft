@@ -6,7 +6,7 @@ use std::ffi::OsString;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use crate::cancel::{Cancel, STOPPED, kill_group, own_session};
+use crate::cancel::{Cancel, STOPPED, detached_no_prompt, kill_group};
 
 /// How long one git command may run.
 const GIT_TIMEOUT: Duration = Duration::from_secs(120);
@@ -35,8 +35,9 @@ const REPO_VARS: [&str; 14] = [
     "GIT_INTERNAL_SUPER_PREFIX",
 ];
 
-/// What a source whose git failed on the remote is told with: git asks nothing here (`own_session`), so its
-/// last line ("Could not read from remote repository") is all it says of an authentication.
+/// What a source whose git failed on the remote is told with: git asks nothing here unless the
+/// caller named an askpass (`detached_no_prompt`), so its last line ("Could not read from remote
+/// repository") is all it says of an authentication.
 pub(super) const AUTH_HINT: &str = "craft runs git with no terminal or password prompt: an ssh key \
     with a passphrase must be in ssh-agent, https needs a credential helper or a token";
 
@@ -60,8 +61,9 @@ pub struct Git {
 }
 
 impl Git {
-    /// git that never prompts — every command runs unattended (`own_session`) — with batch mode
-    /// and a connect timeout for ssh unless the caller set its own command (`gitEnv`).
+    /// git that never prompts on its own — every command runs detached, with no prompt but an
+    /// askpass the caller named (`detached_no_prompt`) — with batch mode and a connect timeout for
+    /// ssh unless the caller set its own command (`gitEnv`).
     #[must_use]
     pub fn prompt_free() -> Self {
         let mut env = Vec::new();
@@ -120,12 +122,12 @@ impl Git {
         for v in REPO_VARS {
             cmd.env_remove(v);
         }
-        // Unattended (realm @nick/craft, node #545): a stop or the timeout kills what it runs too
-        // (ssh, a helper), and an ssh of the caller's own `GIT_SSH_COMMAND` (no batch mode) or a
-        // remote that asks a password fails at once instead of waiting on a terminal or an
-        // askpass; the report names the source with git's reason, a remote's failure with the hint
+        // Detached, with no prompt (realm @nick/craft, node #545): a stop or the timeout kills what
+        // it runs too (ssh, a helper), and an ssh of the caller's own `GIT_SSH_COMMAND` (no batch
+        // mode) or a remote that asks a password fails at once instead of waiting on a terminal or
+        // a desktop's askpass, unless the caller named one; the report names the source with git's reason, a remote's failure with the hint
         // [`AUTH_HINT`].
-        own_session(&mut cmd);
+        detached_no_prompt(&mut cmd);
         let mut child = cmd
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -193,6 +195,8 @@ impl Git {
 
 #[cfg(test)]
 mod askpass_tests;
+#[cfg(test)]
+mod env_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
