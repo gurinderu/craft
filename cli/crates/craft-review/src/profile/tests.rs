@@ -100,3 +100,47 @@ fn an_unknown_agent_or_model_token_refuses_the_profile() {
         assert!(err.to_string().contains("unknown variant"), "{key}: {err}");
     }
 }
+
+#[test]
+fn the_sql_profile_takes_sql_files_on_the_default_agent_with_its_two_lenses() {
+    let p = Profile::load("sql").unwrap();
+    assert_eq!(
+        p.lens_agent, None,
+        "its lenses run on the host's default agent"
+    );
+    assert_eq!(p.roster(), ["sql-migrations", "sql-queries"]);
+    assert_eq!(p.always_lenses, ["sql-migrations", "sql-queries"]);
+    assert!(p.rule_catalog, "sql-review ships rules.md");
+    assert_eq!(
+        (
+            p.rubric_skill.as_str(),
+            p.fp_rules.as_str(),
+            p.safety_lens.as_str()
+        ),
+        ("sql-review", "", "sql-queries")
+    );
+    assert!(p.covers("db/migrations/0001_init.sql") && p.covers("q.sql"));
+    assert!(!p.covers("a.sqlx") && !p.covers("src/db.rs"));
+    assert_eq!(p.pathspec(&["q.sql".into()]), "'*.sql'");
+}
+
+#[test]
+fn the_rust_and_general_profiles_hold_the_queries_lens_behind_a_code_signal() {
+    for id in ["rust", "general"] {
+        let p = Profile::load(id).unwrap();
+        let l = p.lens("sql-queries").unwrap();
+        assert!(
+            l.conditional,
+            "{id}: admitted by the embedded-SQL signal only"
+        );
+        assert_eq!(
+            l.brief,
+            Profile::load("sql")
+                .unwrap()
+                .lens("sql-queries")
+                .unwrap()
+                .brief
+        );
+    }
+    assert!(Profile::load("nix").unwrap().lens("sql-queries").is_none());
+}

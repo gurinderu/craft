@@ -1,5 +1,5 @@
-//! The profiles of one run: each changed file to one profile (Rust, Nix, or the general lenses for
-//! any other source), a scout and a plan per profile over its own files, the lens rounds shared,
+//! The profiles of one run: each changed file to one profile (Rust, Nix, SQL, or the general lenses
+//! for any other source), a scout and a plan per profile over its own files, the lens rounds shared,
 //! and one dedup, one verification and one verdict over every profile's findings.
 
 mod common;
@@ -11,11 +11,18 @@ use craft_review::step;
 use serde_json::{Value, json};
 
 /// A repository whose `origin/main` is its first commit, with `files` added after it.
+fn repo_with(files: &[&str]) -> tempfile::TempDir {
+    let pairs: Vec<(&str, &str)> = files.iter().map(|f| (*f, "x = 1\n")).collect();
+    repo_holding(&pairs)
+}
+
+/// A repository whose `origin/main` is its first commit, with each file of `files` added after it
+/// holding its text.
 #[expect(
     clippy::unwrap_used,
     reason = "a step of the tests, failing loudly like them"
 )]
-fn repo_with(files: &[&str]) -> tempfile::TempDir {
+fn repo_holding(files: &[(&str, &str)]) -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     let d = dir.path();
     git(d, &["init", "-q", "-b", "main"]);
@@ -23,10 +30,10 @@ fn repo_with(files: &[&str]) -> tempfile::TempDir {
     git(d, &["add", "."]);
     git(d, &["commit", "-qm", "init"]);
     git(d, &["update-ref", "refs/remotes/origin/main", "HEAD"]);
-    for f in files {
+    for (f, text) in files {
         let path = d.join(f);
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        std::fs::write(path, "x = 1\n").unwrap();
+        std::fs::write(path, text).unwrap();
     }
     git(d, &["add", "."]);
     git(d, &["commit", "-qm", "feat: add f, which never fails"]);
@@ -286,4 +293,61 @@ fn a_mixed_diff_plans_each_profile_over_its_own_files_and_settles_one_pool() {
     ] {
         assert!(report.contains(want), "{want}: {report}");
     }
+}
+
+#[test]
+fn a_sql_diff_runs_both_sql_lenses_on_the_default_agent() {
+    let repo = repo_with(&["db/migrations/0002_add.sql"]);
+    let out = tempfile::tempdir().unwrap();
+    let (run, s) = start(repo.path(), out.path());
+    assert_eq!(ids(&s), ["scout-sql"]);
+    assert!(prompt_of(task(&s, "scout-sql")).contains("You are scouting a SQL diff"));
+    let s = submit(&run, json!({"scout-sql": scout("small", &["sql-queries"])}));
+    assert_eq!(
+        ids(&s),
+        ["lens-sql-sql-queries-r1", "lens-sql-sql-migrations-r1"]
+    );
+    for id in ids(&s) {
+        assert!(
+            task(&s, &id).get("agentType").is_none(),
+            "{id}: the default agent"
+        );
+    }
+    let p = prompt_of(task(&s, "lens-sql-sql-migrations-r1"));
+    for want in [
+        "for a SQL diff",
+        "Load the sql-review skill for the rubric.",
+        "the matching catalog ID from the sql-review skill's rules.md",
+        "CREATE INDEX takes SHARE",
+        "-- '*.sql'",
+    ] {
+        assert!(p.contains(want), "{want}: {p}");
+    }
+}
+
+#[test]
+fn a_query_string_on_a_changed_rust_line_adds_the_queries_lens() {
+    let repo = repo_holding(&[(
+        "src/db.rs",
+        "pub async fn n(p: &sqlx::PgPool) {\n    sqlx::query(\"SELECT count(*) FROM jobs\").execute(p).await.ok();\n}\n",
+    )]);
+    let out = tempfile::tempdir().unwrap();
+    let (run, _) = start(repo.path(), out.path());
+    let s = submit(&run, json!({"scout-rust": scout("small", &["errors"])}));
+    assert!(
+        ids(&s).contains(&"lens-rust-sql-queries-r1".to_owned()),
+        "{:?}",
+        ids(&s)
+    );
+    let p = prompt_of(task(&s, "lens-rust-sql-queries-r1"));
+    assert!(
+        p.contains("Load the rust-review skill") && p.contains("sql-review skill"),
+        "{p}"
+    );
+
+    let plain = repo_with(&["src/lib.rs"]);
+    let out = tempfile::tempdir().unwrap();
+    let (run, _) = start(plain.path(), out.path());
+    let s = submit(&run, json!({"scout-rust": scout("small", &["errors"])}));
+    assert!(!ids(&s).iter().any(|i| i.contains("sql")), "{:?}", ids(&s));
 }
