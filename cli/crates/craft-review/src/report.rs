@@ -175,8 +175,11 @@ fn entry(f: &Value) -> String {
             .join(", "),
         None => field(f, "source").to_owned(),
     };
+    let corrected = crate::anchor::moved_from(f)
+        .map(|from| format!(" (line corrected from {from})"))
+        .unwrap_or_default();
     let mut e = format!(
-        "- **{}** `{}:{line}` — {} ({by})\n  - Why: {}\n",
+        "- **{}** `{}:{line}`{corrected} — {} ({by})\n  - Why: {}\n",
         field(f, "severity"),
         field(f, "file"),
         field(f, "title"),
