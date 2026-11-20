@@ -151,6 +151,8 @@ fn wait(mut child: Child, limit: Duration, cancel: &Cancel, (out, err): (&Path, 
     loop {
         match child.try_wait() {
             Ok(Some(status)) => {
+                // What it left behind goes with it.
+                kill_group(&mut child);
                 let read =
                     |p: &Path| std::fs::read(p).map(|b| String::from_utf8_lossy(&b).into_owned());
                 return match (read(out), read(err)) {

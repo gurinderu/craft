@@ -2,6 +2,7 @@
 //! under a terminal of its own, the ssh a program that reads `/dev/tty`.
 #![cfg(target_os = "linux")]
 
+use std::path::Path;
 use std::time::{Duration, Instant};
 
 use super::Git;
@@ -25,6 +26,7 @@ fn a_passphrase_asked_on_the_terminal_fails_at_once_and_is_named() {
         repo: "ssh://git@example.invalid/org/sys.git".into(),
         rev: "v1.2.3".into(),
     };
+    let ssh = std::env::var_os("GIT_SSH_COMMAND").unwrap();
     let cache = tempfile::tempdir().unwrap();
     let mut git = Git::prompt_free();
     // Under the 60 s the outer run waits: a hang fails here, named, rather than there.
@@ -35,6 +37,10 @@ fn a_passphrase_asked_on_the_terminal_fails_at_once_and_is_named() {
         began.elapsed() < Duration::from_secs(10),
         "{:?}: {got:?}",
         began.elapsed()
+    );
+    assert!(
+        under_tty::asked(Path::new(&ssh)),
+        "the asking ssh never ran"
     );
     let error = &got.failed[0].error;
     assert!(error.starts_with("git failed: "), "{got:?}");
