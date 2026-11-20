@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use super::add;
+use crate::cancel::Cancel;
 
 fn git(dir: &Path, args: &[&str]) -> String {
     let out = Command::new("git")
@@ -54,7 +55,7 @@ fn the_pr_worktree_of_a_partial_clone_fetches_the_blobs_its_head_lacks() {
     let t = tempfile::tempdir().unwrap();
     let (clone, pr) = blobless(t.path());
     let dir = t.path().join("wt");
-    let got = add(&clone, &dir, &pr);
+    let got = add(&clone, &dir, &pr, &Cancel::default());
     assert_eq!(got, Ok(()));
     assert_eq!(std::fs::read_to_string(dir.join("g")).unwrap(), "pr\n");
 }
@@ -85,10 +86,71 @@ fn the_lazy_fetch_of_the_pr_worktree_runs_detached_and_never_prompts() {
         &clone,
         &["config", "core.sshCommand", &ssh.display().to_string()],
     );
-    let got = add(&clone, &t.path().join("wt"), &pr);
+    let got = add(&clone, &t.path().join("wt"), &pr, &Cancel::default());
     assert!(got.is_err(), "{got:?}");
     let seen = std::fs::read_to_string(&seen).expect("the lazy fetch reached the remote's ssh");
     assert!(seen.contains("prompt=0\n"), "{seen}");
     let ours = nix::unistd::getsid(None).unwrap().to_string();
     assert!(!seen.contains(&format!("sid={ours}\n")), "{seen}");
+}
+
+/// The PR's base side absent: the clone is checked out on `other`, whose `f` is not `main`'s, and
+/// the PR changes `main`'s `f`.
+#[test]
+fn a_pr_worktree_laid_in_a_partial_clone_reads_its_diff_from_the_base() {
+    let t = tempfile::tempdir().unwrap();
+    let root = t.path();
+    let src = root.join("src");
+    std::fs::create_dir(&src).unwrap();
+    git(&src, &["init", "-q", "-b", "main"]);
+    std::fs::write(src.join("f"), "main\n").unwrap();
+    git(&src, &["add", "."]);
+    git(&src, &["commit", "-qm", "one"]);
+    git(&src, &["checkout", "-qb", "pr"]);
+    std::fs::write(src.join("f"), "pr\n").unwrap();
+    git(&src, &["commit", "-qam", "pr"]);
+    let pr = git(&src, &["rev-parse", "HEAD"]);
+    git(&src, &["checkout", "-q", "main"]);
+    git(&src, &["checkout", "-qb", "other"]);
+    std::fs::write(src.join("f"), "other\n").unwrap();
+    git(&src, &["commit", "-qam", "other"]);
+    let remote = root.join("remote.git").display().to_string();
+    git(root, &["clone", "-q", "--bare", "src", &remote]);
+    git(
+        Path::new(&remote),
+        &["config", "uploadpack.allowFilter", "true"],
+    );
+    let url = format!("file://{remote}");
+    git(
+        root,
+        &[
+            "clone",
+            "-q",
+            "-b",
+            "other",
+            "--filter=blob:none",
+            &url,
+            "clone",
+        ],
+    );
+    let clone = root.join("clone");
+    let dir = root.join("wt");
+    assert_eq!(add(&clone, &dir, &pr, &Cancel::default()), Ok(()));
+    let diff = crate::git::warm::read_diff(&dir, Some("origin/main"), None, &Cancel::default());
+    let diff = diff.unwrap();
+    assert_eq!(diff.files, ["f"]);
+    assert!(diff.stat.contains("1 file changed"), "{}", diff.stat);
+}
+
+#[test]
+fn a_worktree_add_failing_on_this_side_says_nothing_of_access() {
+    let t = tempfile::tempdir().unwrap();
+    let (clone, pr) = blobless(t.path());
+    let dir = t.path().join("wt");
+    std::fs::create_dir(&dir).unwrap();
+    std::fs::write(dir.join("x"), "taken\n").unwrap();
+    let got = add(&clone, &dir, &pr, &Cancel::default());
+    let Err(why) = got else { panic!("{got:?}") };
+    assert!(why.contains("already exists"), "{why}");
+    assert!(!why.contains("ssh-agent"), "{why}");
 }

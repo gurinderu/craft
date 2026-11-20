@@ -67,7 +67,8 @@ pub(crate) fn git(cwd: &Path, args: &[&str]) -> Result<String, GitError> {
 /// itself, here with no detach and no time limit, so the lazy fetch is off
 /// (`GIT_NO_LAZY_FETCH=1`, observed on git 2.54; a git that predates it ignores it) and a
 /// missing object fails the call as [`GitError::NotFetched`]; craft's no-prompt environment on
-/// top, for an older git that fetches anyway (realm @nick/craft, node #545).
+/// top, for an older git that fetches anyway. A review fetches what its diff needs first, through
+/// the guarded path ([`warm`]) (realm @nick/craft, node #548).
 fn git_bytes(cwd: &Path, args: &[&str]) -> Result<Vec<u8>, GitError> {
     let mut cmd = Command::new("git");
     cmd.arg("-C")
@@ -370,5 +371,7 @@ pub fn read_diff(cwd: &Path, base: Option<&str>, scope: Option<&str>) -> Result<
     })
 }
 
+pub mod warm;
+
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
