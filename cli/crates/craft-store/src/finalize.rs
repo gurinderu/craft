@@ -93,6 +93,20 @@ mod corrupt_rejoin_test {
             "{"
         );
         assert!(said.err.iter().any(|line| line.contains("01-bad.json")));
+        let mut retry = Said::default();
+        finalize(
+            &Obj::new(),
+            &w,
+            Asked {
+                dir: dir.to_str().unwrap(),
+                rejoin: false,
+                retry: true,
+            },
+            &mut retry,
+        )
+        .unwrap();
+        assert!(retry.out.iter().any(|line| line.contains("already filed")));
+        assert!(retry.err.iter().any(|line| line.contains("01-bad.json")));
     }
 }
 
@@ -196,6 +210,12 @@ pub fn finalize(
     let id = start.as_ref().unwrap_or(&w.git_id);
     let (file, _) = write_record(&record, w, id, over.as_deref())?;
     say_slow_git(said);
+    if !read_error.is_empty() {
+        said.err.push(format!(
+            "craft-log-run WARNING: the run directory could not be read ({}) — record written, checkpoints not folded",
+            safe_path(&read_error)
+        ));
+    }
     proof::leave(raw, at, &file, &said.err);
     let unreadable = remove_folded(target.as_deref(), mine, &read_error, w.now);
     let tail = if folded.is_empty() {
@@ -210,7 +230,7 @@ pub fn finalize(
             safe_path(&t.display().to_string())
         ));
     }
-    if !unreadable.is_empty() {
+    if !unreadable.is_empty() && read_error.is_empty() {
         said.err.push(format!(
             "craft-log-run WARNING: the run directory could not be read ({}) — record written, checkpoints not folded",
             safe_path(&unreadable)

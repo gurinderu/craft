@@ -271,15 +271,34 @@ pub(crate) fn write_atomically_using(
     content: &[u8],
     write: impl FnOnce(&Path, &[u8]) -> std::io::Result<()>,
 ) -> Result<(), StoreError> {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let name = file
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
-    let tmp = file.with_file_name(format!(
-        ".{name}.{}-{}.tmp",
-        std::process::id(),
-        crate::time::now_ms()
-    ));
+    let mut tmp = None;
+    for _ in 0..60 {
+        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let path = file.with_file_name(format!(
+            ".{name}.{}-{}-{n}.tmp",
+            std::process::id(),
+            crate::time::now_ms()
+        ));
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+        {
+            Ok(f) => {
+                drop(f);
+                tmp = Some(path);
+                break;
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(e) => return Err(StoreError::io(&path, &e)),
+        }
+    }
+    let tmp = tmp.ok_or_else(|| StoreError::Refused("60 temporary file names are taken".into()))?;
     let done = write(&tmp, content).and_then(|()| std::fs::rename(&tmp, file));
     done.map_err(|e| {
         drop(std::fs::remove_file(&tmp));
@@ -327,6 +346,34 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
 
     use super::*;
+
+    #[test]
+    fn concurrent_atomic_writes_use_distinct_temporary_files() {
+        let d = tempfile::tempdir().unwrap();
+        let file = d.path().join("00-phase.json");
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::scope(|scope| {
+            for content in [b"one".as_slice(), b"two".as_slice()] {
+                let barrier = barrier.clone();
+                let tx = tx.clone();
+                let file = &file;
+                scope.spawn(move || {
+                    write_atomically_using(file, content, |tmp, bytes| {
+                        tx.send(tmp.to_owned()).unwrap();
+                        barrier.wait();
+                        std::fs::write(tmp, bytes)
+                    })
+                    .unwrap();
+                });
+            }
+        });
+        let a = rx.recv().unwrap();
+        let b = rx.recv().unwrap();
+        assert_ne!(a, b);
+        let contents = std::fs::read(file).unwrap();
+        assert!(contents == b"one" || contents == b"two");
+    }
     use crate::js::parse;
 
     fn record(ts: &str) -> Obj {
