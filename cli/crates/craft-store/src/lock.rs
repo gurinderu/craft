@@ -139,6 +139,9 @@ fn append_using(
             Err(e) if e.kind() == ErrorKind::NotFound => Vec::new(),
             Err(e) => return Err(StoreError::io(&index, &e)),
         };
+        if !bytes.is_empty() && !bytes.ends_with(b"\n") {
+            bytes.push(b'\n');
+        }
         bytes.extend_from_slice(format!("{line}\n").as_bytes());
         crate::write::write_atomically_using(&index, &bytes, write)
     })
@@ -147,6 +150,18 @@ fn append_using(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn appending_to_an_unterminated_row_keeps_both_rows() {
+        let d = tempfile::tempdir().unwrap();
+        let index = d.path().join("index.jsonl");
+        std::fs::write(&index, b"{\"old\":true}").unwrap();
+        append_index_line(d.path(), "{\"new\":true}").unwrap();
+        assert_eq!(
+            std::fs::read(&index).unwrap(),
+            b"{\"old\":true}\n{\"new\":true}\n"
+        );
+    }
 
     #[test]
     fn interrupted_index_write_does_not_damage_existing_rows() {

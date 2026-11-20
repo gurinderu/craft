@@ -314,7 +314,7 @@ pub fn write_checkpoint(
         slice.set("session", Js::str(session));
     }
     slice.set("engineRevision", Js::Num(ENGINE_REVISION));
-    std::fs::write(&file, Js::Obj(slice).pretty()).map_err(|e| StoreError::io(&file, &e))?;
+    crate::write::write_atomically(&file, Js::Obj(slice).pretty())?;
     Ok(file)
 }
 
@@ -322,6 +322,19 @@ pub fn write_checkpoint(
 mod enumeration_tests {
     use super::{Identity, checkpoint_dir, checkpoint_names};
     use crate::js::{Js, Obj};
+
+    #[test]
+    fn interrupted_checkpoint_publication_keeps_previous_file_intact() {
+        let d = tempfile::tempdir().unwrap();
+        let file = d.path().join("00-phase.json");
+        std::fs::write(&file, b"original").unwrap();
+        let result = crate::write::write_atomically_using(&file, b"replacement", |tmp, _| {
+            std::fs::write(tmp, b"partial")?;
+            Err(std::io::Error::other("interrupted"))
+        });
+        result.unwrap_err();
+        assert_eq!(std::fs::read(file).unwrap(), b"original");
+    }
 
     #[test]
     fn rejoin_refuses_a_candidate_with_a_corrupt_checkpoint() {

@@ -58,6 +58,42 @@ mod corrupt_rejoin_test {
         assert_eq!(std::fs::read_dir(d.path()).unwrap().count(), 1);
         assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 2);
     }
+
+    #[test]
+    fn ordinary_finalize_preserves_unreadable_checkpoints() {
+        let d = tempfile::tempdir().unwrap();
+        let dir = d.path().join(".partial/run");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("00-good.json"), r#"{"project":"/p"}"#).unwrap();
+        std::fs::write(dir.join("01-bad.json"), "{").unwrap();
+        let w = Writing {
+            store: d.path().into(),
+            project: "/p".into(),
+            workdir: d.path().into(),
+            session: String::new(),
+            git_id: GitId::default(),
+            observe: false,
+            craft_commit: None,
+            now: 0,
+        };
+        let mut said = Said::default();
+        finalize(
+            &Obj::new(),
+            &w,
+            Asked {
+                dir: dir.to_str().unwrap(),
+                rejoin: false,
+                retry: false,
+            },
+            &mut said,
+        )
+        .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dir.join("01-bad.json")).unwrap(),
+            "{"
+        );
+        assert!(said.err.iter().any(|line| line.contains("01-bad.json")));
+    }
 }
 
 /// What a finalize asks beyond the record.
@@ -192,7 +228,7 @@ pub fn finalize(
 }
 
 fn read_target(dir: Option<&Path>, rejoin: bool) -> Result<(Vec<Obj>, String), StoreError> {
-    match dir.map(|d| read_checkpoint_files(d, rejoin)) {
+    match dir.map(|d| read_checkpoint_files(d, true)) {
         Some(Ok(phases)) => Ok((phases, String::new())),
         Some(Err(e)) if rejoin => Err(StoreError::Refused(format!(
             "cannot read checkpoint directory: {e}"
