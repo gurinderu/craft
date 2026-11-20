@@ -110,6 +110,12 @@ pub fn home_store() -> Option<PathBuf> {
     home_from(std::env::var_os("HOME")).map(|h| h.join(".craft/runs"))
 }
 
+/// The user's home: `HOME` when set and not empty, else the passwd entry ([`home_from`]).
+#[must_use]
+pub fn home() -> Option<PathBuf> {
+    home_from(std::env::var_os("HOME"))
+}
+
 /// The user's home as `os.homedir()` finds it: `home` (`$HOME`) when set and not empty, else the
 /// passwd entry of the user the process runs as.
 #[must_use]

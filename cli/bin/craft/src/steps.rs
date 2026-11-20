@@ -230,7 +230,12 @@ pub(crate) fn stamped(mut step: Value, began: Instant) -> Value {
 
 /// A fresh run directory under `~/.craft/runs/cli`, named by the time and this process.
 fn default_run_dir() -> Result<PathBuf> {
-    let home = std::env::var_os("HOME").context("HOME is not set; pass --run-dir")?;
+    run_dir_in(craft_store::read::home())
+}
+
+/// [`default_run_dir`] under `home` — the home the run store is under, so the two never split.
+fn run_dir_in(home: Option<PathBuf>) -> Result<PathBuf> {
+    let home = home.context("neither HOME nor the passwd entry names a home; pass --run-dir")?;
     let secs = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
@@ -507,7 +512,16 @@ pub(crate) fn status_step(run: &Path) -> Result<Value> {
 mod tests {
     use std::path::PathBuf;
 
-    use super::installed_copy;
+    use super::{installed_copy, run_dir_in};
+
+    #[test]
+    fn with_an_empty_home_the_run_dir_is_under_the_passwd_home_beside_the_store() {
+        let home = craft_store::read::home_from(Some("".into()));
+        let dir = run_dir_in(home.clone()).unwrap();
+        assert!(dir.is_absolute(), "{}", dir.display());
+        assert!(dir.starts_with(home.unwrap().join(".craft/runs/cli")));
+        drop(run_dir_in(None).unwrap_err());
+    }
 
     #[test]
     fn the_installed_copy_is_under_the_config_dir_else_home_and_names_this_version() {

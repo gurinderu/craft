@@ -33,18 +33,28 @@ pub struct Writing {
     pub now: i64,
 }
 
+/// The working copy's commit and dirtiness, read once per filing — not again on each stamp a
+/// collision steps to; `None` when the payload carries the run's own.
+type Observed = Option<(String, bool)>;
+
 impl Writing {
+    fn observed(&self) -> Observed {
+        self.observe.then(|| {
+            let commit = git(&["rev-parse", "--short", "HEAD"], &self.workdir);
+            let dirty = !git(&["status", "--porcelain"], &self.workdir).is_empty();
+            (commit, dirty)
+        })
+    }
+
     /// The fields the writer owns (`computedFields`), at `ms`.
-    fn computed(&self, ms: i64) -> Obj {
+    fn computed(&self, ms: i64, observed: &Observed) -> Obj {
         let mut o = Obj::new()
             .with("engineRevision", Js::Num(ENGINE_REVISION))
             .with("ts", Js::str(stamp(ms)))
             .with("project", Js::str(&self.project));
-        if self.observe {
-            let commit = git(&["rev-parse", "--short", "HEAD"], &self.workdir);
-            let dirty = !git(&["status", "--porcelain"], &self.workdir).is_empty();
+        if let Some((commit, dirty)) = observed {
             o.set("commit", Js::str(commit));
-            o.set("dirty", Js::Bool(dirty));
+            o.set("dirty", Js::Bool(*dirty));
         }
         let craft = self.craft_commit.clone().filter(|c| !c.is_empty());
         o.set("craftCommit", craft.map_or(Js::Null, Js::Str));
@@ -88,10 +98,11 @@ pub fn write_record(
 ) -> Result<(PathBuf, Obj), StoreError> {
     std::fs::create_dir_all(&w.store).map_err(|e| StoreError::io(&w.store, &e))?;
     let raw = with_git(input, git_id);
-    let replaced = over.and_then(|o| replace_record_file(&raw, o, w).transpose());
+    let seen = w.observed();
+    let replaced = over.and_then(|o| replace_record_file(&raw, o, w, &seen).transpose());
     let (file, record, replaced) = match replaced {
         Some(r) => r.map(|(f, rec)| (f, rec, true))?,
-        None => claim_record_file(&raw, w).map(|(f, rec)| (f, rec, false))?,
+        None => claim_record_file(&raw, w, &seen).map(|(f, rec)| (f, rec, false))?,
     };
     verify_written(&file, &record)?;
     if let Err(e) = index_filed(&w.store, &record, replaced) {
@@ -115,10 +126,14 @@ fn index_filed(store: &Path, record: &Obj, replaced: bool) -> Result<(), StoreEr
 
 /// The record claimed under a fresh name: written exclusively, the stamp stepped a second on a
 /// collision, sixty times at most.
-fn claim_record_file(raw: &Obj, w: &Writing) -> Result<(PathBuf, Obj), StoreError> {
+fn claim_record_file(
+    raw: &Obj,
+    w: &Writing,
+    seen: &Observed,
+) -> Result<(PathBuf, Obj), StoreError> {
     for bump in 0..60 {
         let mut record = raw.clone();
-        record.spread(&w.computed(w.now + bump * 1000));
+        record.spread(&w.computed(w.now + bump * 1000, seen));
         let file = w.store.join(filename(&record));
         let made = std::fs::OpenOptions::new()
             .write(true)
@@ -146,6 +161,7 @@ fn replace_record_file(
     raw: &Obj,
     over: &Path,
     w: &Writing,
+    seen: &Observed,
 ) -> Result<Option<(PathBuf, Obj)>, StoreError> {
     let in_store = over.parent().map(crate::git::lexical) == Some(crate::git::lexical(&w.store));
     let prev = std::fs::read_to_string(over)
@@ -155,7 +171,7 @@ fn replace_record_file(
         return Ok(None);
     };
     let mut record = raw.clone();
-    record.spread(&w.computed(w.now));
+    record.spread(&w.computed(w.now, seen));
     record.set("ts", prev.get("ts").cloned().unwrap_or(Js::Null));
     if over.file_name().is_none_or(|n| *n != *filename(&record)) {
         return Ok(None);
@@ -305,6 +321,7 @@ mod tests {
         drop(crate::git::take_timed_out());
         let (_, clean) = write_record(&record("x"), &w, &GitId::default(), None).unwrap();
         assert!(!clean.has("gitTimedOut"));
+        crate::git::note_timed_out(&["status", "--porcelain"]);
         crate::git::note_timed_out(&["status", "--porcelain"]);
         let (_, slow) = write_record(&record("x"), &w, &GitId::default(), None).unwrap();
         drop(crate::git::take_timed_out());

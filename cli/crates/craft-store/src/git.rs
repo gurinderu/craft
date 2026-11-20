@@ -74,10 +74,18 @@ pub fn note_timed_out(args: &[&str]) {
     TIMED_OUT.with(|t| t.borrow_mut().push(format!("git {}", args.join(" "))));
 }
 
-/// The git probes that timed out on this thread since the last [`take_timed_out`].
+/// The git probes that timed out on this thread since the last [`take_timed_out`], each once.
 #[must_use]
 pub fn timed_out() -> Vec<String> {
-    TIMED_OUT.with(|t| t.borrow().clone())
+    TIMED_OUT.with(|t| {
+        let mut seen: Vec<String> = Vec::new();
+        for p in t.borrow().iter() {
+            if !seen.contains(p) {
+                seen.push(p.clone());
+            }
+        }
+        seen
+    })
 }
 
 /// [`timed_out`], forgotten after.

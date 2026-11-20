@@ -57,9 +57,9 @@ pub struct InitArgs {
     pub craft_root: Option<PathBuf>,
 }
 
-/// `~/.craft`, from `HOME`.
+/// `~/.craft`, under the home the run store is under (`HOME`, else the passwd entry).
 fn craft_home() -> Option<PathBuf> {
-    std::env::var_os("HOME").map(|h| Path::new(&h).join(".craft"))
+    craft_store::read::home().map(|h| h.join(".craft"))
 }
 
 /// `~/.craft/projects`, where each repository's profile is.
@@ -74,7 +74,7 @@ pub fn worktrees_dir() -> Option<PathBuf> {
 
 /// Where a run started from this process finds the reviewer's profile and the sources cache.
 pub fn sources_setup() -> Option<SourcesSetup> {
-    let home = std::env::var_os("HOME").map(PathBuf::from);
+    let home = craft_store::read::home();
     let set = std::env::var("CRAFT_SOURCES_DIR").ok();
     Some(SourcesSetup {
         projects: craft_home()?.join("projects"),

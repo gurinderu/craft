@@ -21,6 +21,8 @@ impl Writer for StoreWriter {
             .clone()
             .or_else(craft_store::read::home_store)
             .ok_or(WriteError::NoStore)?;
+        // Opened before the craftCommit probe, so the record names it when it timed out.
+        craft_store::begin_write();
         let commit = (!call.root.is_empty())
             .then(|| craft_store::git::git(&["rev-parse", "--short", "HEAD"], Path::new(call.root)))
             .filter(|c| !c.is_empty());

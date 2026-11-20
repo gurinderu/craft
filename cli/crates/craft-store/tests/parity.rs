@@ -66,6 +66,29 @@ fn map_strings(v: &Js, f: &dyn Fn(&str) -> String) -> Js {
     }
 }
 
+/// A file's bytes as the parity file holds them: each line as text, or `hex:<bytes>` for one that
+/// is not UTF-8.
+fn shown(bytes: &[u8]) -> String {
+    bytes
+        .split(|b| *b == b'\n')
+        .map(|l| match std::str::from_utf8(l) {
+            Ok(t) => t.to_owned(),
+            Err(_) => format!(
+                "hex:{}",
+                l.iter().map(|b| format!("{b:02x}")).collect::<String>()
+            ),
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn hex(h: &str) -> Vec<u8> {
+    h.as_bytes()
+        .chunks(2)
+        .map(|c| u8::from_str_radix(std::str::from_utf8(c).unwrap(), 16).unwrap())
+        .collect()
+}
+
 fn files_under(dir: &Path, at: &str, out: &mut BTreeMap<String, String>) {
     for e in std::fs::read_dir(dir.join(at)).unwrap().flatten() {
         let name = e.file_name().to_string_lossy().into_owned();
@@ -77,10 +100,7 @@ fn files_under(dir: &Path, at: &str, out: &mut BTreeMap<String, String>) {
         if e.file_type().unwrap().is_dir() {
             files_under(dir, &rel, out);
         } else {
-            out.insert(
-                rel.clone(),
-                std::fs::read_to_string(dir.join(&rel)).unwrap(),
-            );
+            out.insert(rel.clone(), shown(&std::fs::read(dir.join(&rel)).unwrap()));
         }
     }
 }
@@ -179,7 +199,11 @@ fn every_case_files_as_the_javascript_writer_filed_it() {
                 // A file laid in the store as another writer left it.
                 let at = Path::new(req.text("path"));
                 std::fs::create_dir_all(at.parent().unwrap()).unwrap();
-                std::fs::write(at, req.text("text")).unwrap();
+                let bytes = match req.get("hex").and_then(Js::as_str) {
+                    Some(h) => hex(h),
+                    None => req.text("text").as_bytes().to_vec(),
+                };
+                std::fs::write(at, bytes).unwrap();
                 let wrote = Obj::new().with("wrote", Js::str(real.back(req.text("path"))));
                 answers.push(Js::Obj(wrote));
                 continue;
