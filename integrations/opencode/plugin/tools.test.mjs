@@ -74,6 +74,28 @@ test('a profile check error does not look like a missing profile', async () => {
   assert.match(typeof answer === 'string' ? answer : answer.output, /profile could not be checked/)
 })
 
+test('an aborted preflight does not start the review', async () => {
+  const argv = fakeBinary()
+  const review = TOOLS.find(t => t.name === 'review')
+  assert.ok(review)
+  const controller = new AbortController()
+  controller.abort()
+  const answer = await review.run(fakeHost(), {}, { signal: controller.signal })
+  assert.match(typeof answer === 'string' ? answer : answer.output, /profile could not be checked/)
+  assert.equal(fs.existsSync(argv), false)
+})
+
+test('the profile prompt names the repository selected with --cwd', async () => {
+  fakeBinary()
+  const bin = process.env['CRAFT_BIN']
+  assert.ok(bin)
+  writeExecutable(bin, '#!/bin/sh\nprintf \'{"exists":false}\\n\'\n')
+  const review = TOOLS.find(t => t.name === 'review')
+  assert.ok(review)
+  const answer = await review.run(fakeHost(), { args: '--cwd /tmp' }, {})
+  assert.match(typeof answer === 'string' ? answer : answer.output, /No review profile exists for \/tmp\./)
+})
+
 test("the review runs the binary with the opencode backend on the caller's model, its progress the title, its answer titled", async () => {
   const argv = fakeBinary()
   const review = TOOLS.find(t => t.name === 'review')

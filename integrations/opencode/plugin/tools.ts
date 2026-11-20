@@ -23,16 +23,16 @@ export function nestedUnder(host: Host, parent: string | undefined): Host {
 const hasModels = (words: string[]) => words.some(w => w === '--models' || w.startsWith('--models='))
 const exec = promisify(execFile)
 
-async function profilePreflight(wrapper: string, cwd: string): Promise<string | undefined> {
+async function profilePreflight(wrapper: string, cwd: string, signal?: AbortSignal): Promise<string | undefined> {
   try {
-    const { stdout } = await exec('sh', [wrapper, 'init', '--propose', '--cwd', cwd], { cwd })
+    const { stdout } = await exec('sh', [wrapper, 'init', '--propose', '--cwd', cwd], { cwd, timeout: 120_000, ...(signal ? { signal } : {}) })
     const result: unknown = JSON.parse(stdout)
     if (!result || typeof result !== 'object' || !('exists' in result) || typeof result.exists !== 'boolean') {
       return 'The review profile could not be checked: craft init returned an invalid response. Nothing ran.'
     }
     return result.exists
       ? undefined
-      : 'No review profile exists for this repository. Ask the user whether to set it up with the review-init skill or continue without it. To continue without setup, call review again with --without-profile. Nothing ran.'
+      : `No review profile exists for ${cwd}. Ask the user whether to set it up with the review-init skill for that repository or continue without it. To continue without setup, call review again with --without-profile. Nothing ran.`
   } catch (error) {
     return `The review profile could not be checked: ${String(error)}. Nothing ran.`
   }
@@ -51,7 +51,7 @@ async function runReview(host: Host, args: string, call: ToolCall): Promise<Tool
   const review = await import('../../../lib/craft-review-run.mjs')
   const { forwarded, skip, resumed, cwd } = profileOptions(review.flagWords(args), host.directory)
   if (!skip && !resumed) {
-    const why = await profilePreflight(review.WRAPPER, cwd)
+    const why = await profilePreflight(review.WRAPPER, cwd, call.signal)
     if (why) return { title: 'craft review: profile', output: why }
   }
   const mapped = hasModels(forwarded) || Boolean(process.env['CRAFT_OPENCODE_MODELS'])

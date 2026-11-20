@@ -14,7 +14,8 @@ branch — the binary refuses it before anything runs, since that round would re
 `$ARGUMENTS`
 
 Otherwise call `review` with no arguments. If the tool says the profile is missing, ask the user whether to
-set it up or continue without it. On setup, load `review-init`, complete it with the user, then call `review`
+set it up or continue without it. On setup, load `review-init` and run its steps against the repository
+path named by the tool, not the session's current directory; complete it with the user, then call `review`
 again with the original arguments. On continuing without setup, call `review` with `--without-profile`
 and the original arguments. Never select for the user. If the profile check fails, report the error.
 Return the tool's answer verbatim — its `## Verdict` block, or
