@@ -6,7 +6,7 @@ use std::ffi::OsString;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use crate::cancel::{Cancel, STOPPED};
+use crate::cancel::{Cancel, STOPPED, kill_group, own_group};
 
 /// How long one git command may run.
 const GIT_TIMEOUT: Duration = Duration::from_secs(120);
@@ -49,7 +49,8 @@ pub struct Git {
     pub budget: Duration,
     /// When the budget runs out, once a preparation started.
     pub(super) deadline: Option<Instant>,
-    /// A stop asked of the run: the command running is killed and no other starts.
+    /// A stop asked of the run: the command running is killed with what it started (its process
+    /// group) and no other starts.
     pub(super) cancel: Cancel,
 }
 
@@ -114,6 +115,8 @@ impl Git {
         for v in REPO_VARS {
             cmd.env_remove(v);
         }
+        // Its group of its own: a stop or the timeout kills what it runs too (ssh, a helper).
+        own_group(&mut cmd);
         let mut child = cmd
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -129,13 +132,11 @@ impl Git {
         let start = Instant::now();
         while child.try_wait().map_err(|e| e.to_string())?.is_none() {
             if self.cancel.is_cancelled() {
-                child.kill().map_err(|e| e.to_string())?;
-                child.wait().map_err(|e| e.to_string())?;
+                kill_group(&mut child);
                 return Err(STOPPED.into());
             }
             if start.elapsed() > limit {
-                child.kill().map_err(|e| e.to_string())?;
-                child.wait().map_err(|e| e.to_string())?;
+                kill_group(&mut child);
                 return Err(if budget {
                     OUT_OF_BUDGET.into()
                 } else {
