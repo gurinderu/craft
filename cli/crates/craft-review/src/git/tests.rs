@@ -3,7 +3,7 @@ use std::process::Command;
 
 use super::unchanged_since;
 
-fn git(dir: &Path, args: &[&str]) -> String {
+pub(crate) fn git(dir: &Path, args: &[&str]) -> String {
     let out = Command::new("git")
         .arg("-C")
         .arg(dir)
@@ -77,4 +77,65 @@ fn a_changed_path_that_is_not_utf8_lists_the_change_as_git_quotes_it() {
     let diff = super::read_diff(d, Some("base"), None).unwrap();
     let quoted = super::git(d, &["diff", "--name-only", "--merge-base", "base"]).unwrap();
     assert_eq!(diff.files, quoted.lines().collect::<Vec<_>>());
+}
+
+/// A blobless clone (`--filter=blob:none`) of a bare repository served over `file://`, its
+/// `base` branch's blobs absent: the base's `f` differs from `main`'s.
+pub(crate) fn blobless(root: &Path) -> (std::path::PathBuf, std::path::PathBuf) {
+    let src = root.join("src");
+    std::fs::create_dir(&src).unwrap();
+    git(&src, &["init", "-q", "-b", "main"]);
+    std::fs::write(src.join("f"), "a\n").unwrap();
+    git(&src, &["add", "."]);
+    git(&src, &["commit", "-qm", "one"]);
+    git(&src, &["branch", "base"]);
+    std::fs::write(src.join("f"), "b\n").unwrap();
+    git(&src, &["commit", "-qam", "two"]);
+    let remote = root.join("remote.git");
+    let at = remote.display().to_string();
+    git(root, &["clone", "-q", "--bare", "src", &at]);
+    git(&remote, &["config", "uploadpack.allowFilter", "true"]);
+    let url = format!("file://{at}");
+    git(root, &["clone", "-q", "--filter=blob:none", &url, "clone"]);
+    (root.join("clone"), remote)
+}
+
+/// The objects the clone `dir` lacks.
+pub(crate) fn missing(dir: &Path) -> usize {
+    let listed = git(dir, &["rev-list", "--objects", "--missing=print", "--all"]);
+    listed.lines().filter(|l| l.starts_with('?')).count()
+}
+
+#[test]
+fn a_partial_clone_missing_the_bases_blobs_fails_the_read_at_once_and_fetches_nothing() {
+    let t = tempfile::tempdir().unwrap();
+    let (clone, _remote) = blobless(t.path());
+    assert_eq!(missing(&clone), 1, "the base's blob is absent");
+    let began = std::time::Instant::now();
+    let got = super::read_diff(&clone, Some("origin/base"), None);
+    assert!(began.elapsed() < std::time::Duration::from_secs(10));
+    let Err(e @ super::GitError::NotFetched { .. }) = &got else {
+        panic!("{got:?}");
+    };
+    let said = e.to_string();
+    assert!(said.contains("partial clone"), "{said}");
+    assert!(said.contains("diff --stat"), "{said}");
+    // The remote was there to answer, and nothing was fetched from it.
+    assert_eq!(missing(&clone), 1);
+}
+
+#[test]
+fn a_partial_clone_whose_remote_is_gone_is_named_as_missing_objects_not_as_the_remote() {
+    let t = tempfile::tempdir().unwrap();
+    let (clone, remote) = blobless(t.path());
+    std::fs::rename(&remote, t.path().join("gone.git")).unwrap();
+    let got = super::read_diff(&clone, Some("origin/base"), None);
+    let Err(e @ super::GitError::NotFetched { .. }) = &got else {
+        panic!("{got:?}");
+    };
+    assert!(
+        !e.to_string()
+            .contains("does not appear to be a git repository"),
+        "{e}"
+    );
 }

@@ -14,6 +14,7 @@ use serde_json::Value;
 
 use crate::Error;
 use crate::agent::Model;
+use crate::anchor;
 use crate::chain;
 use crate::complexity;
 use crate::content;
@@ -298,8 +299,12 @@ fn dedup_answered(run: &mut RunState) {
     run.findings = merged;
 }
 
-/// Hands the pool to its verifiers, or ends the run when none is to be spent.
+/// Moves each finding whose line is past its file's end to its symbol's one line (realm
+/// @nick/craft, node #547), then hands the pool to its verifiers, or ends the run when none is to
+/// be spent.
 fn start_verify(dir: &Path, run: &mut RunState) -> Result<(), Error> {
+    let moved = anchor::reanchor(run);
+    run.notes.extend(moved);
     run.notes.extend(verify::skipped_note(run));
     let mut tasks = verify::tasks(run)?;
     crate::critic::relabel(run, &mut tasks);
