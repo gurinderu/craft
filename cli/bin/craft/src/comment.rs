@@ -22,8 +22,8 @@ pub struct CommentArgs {
     /// recorded (given at its start, or found for a detached HEAD), else the reviewed branch's.
     #[arg(long)]
     pub pr: Option<u64>,
-    /// The plugin root the run's telemetry is filed through, for a run whose telemetry knows none
-    /// that holds the record writer, as `submit --record-root`.
+    /// The craft plugin root the run's records are stamped with, for a run whose telemetry knows
+    /// none, as `submit --record-root`.
     #[arg(long)]
     pub record_root: Option<PathBuf>,
 }
@@ -43,7 +43,7 @@ pub(crate) fn comment_step(args: &CommentArgs) -> Result<Value> {
         began,
     );
     Ok(
-        match filing::republished(&run, &step, &filing::NodeWriter) {
+        match filing::republished(&run, &step, &filing::StoreWriter::default()) {
             Some(filed) => filing::with_filing(step, filed),
             None => step,
         },

@@ -1,24 +1,27 @@
-//! What a run's telemetry is completed with after it was kept: the plugin root it is filed through,
-//! when the run was started with none known (`start` given no `--craft-root`, the binary under no
-//! plugin) or its own was uninstalled — one found later, holding the adapter, is kept for every
-//! write after it, a stopped part's still pending included — and the run's identity, for a filing
-//! kept before it carried one.
+//! What a run's telemetry is completed with after it was kept: the plugin root whose commit its
+//! records are stamped with (`craftCommit`), when the run was started with none known (`start`
+//! given no `--craft-root`, the binary under no plugin) or its own was uninstalled — one found
+//! later, holding the plugin manifest, is kept for every write after it, a stopped part's still
+//! pending included — and the run's identity, for a filing kept before it carried one. A run that
+//! knows no root files all the same: the binary writes the store itself.
 
 use std::path::{Path, PathBuf};
 
 use super::kept::{Ctx, load, save};
-use super::node::ADAPTER;
 use crate::prompts::plugin_path;
 
-/// The first of `candidates` that holds the adapter: the binary's own plugin root, then the one the
-/// harness names (`CLAUDE_PLUGIN_ROOT`).
+/// What marks a craft plugin root.
+const MANIFEST: &str = ".claude-plugin/plugin.json";
+
+/// The first of `candidates` that is a craft plugin root (holds its manifest): the binary's own
+/// plugin root, then the one the harness names (`CLAUDE_PLUGIN_ROOT`).
 #[must_use]
 pub fn found_root(candidates: impl IntoIterator<Item = Option<PathBuf>>) -> Option<String> {
     candidates
         .into_iter()
         .flatten()
         .filter(|r| !r.as_os_str().is_empty())
-        .find(|r| plugin_path(r, ADAPTER).is_file())
+        .find(|r| plugin_path(r, MANIFEST).is_file())
         .map(|r| r.display().to_string())
 }
 
@@ -45,9 +48,9 @@ pub fn adopt(run: &Path, root: Option<&str>) {
     }
 }
 
-/// `ctx` takes `root` unless the root it knows still holds the adapter; whether it did.
+/// `ctx` takes `root` unless the root it knows is still a plugin root; whether it did.
 fn rooted(ctx: &mut Ctx, root: &str) -> bool {
-    let holds = |r: &str| !r.is_empty() && plugin_path(Path::new(r), ADAPTER).is_file();
+    let holds = |r: &str| !r.is_empty() && plugin_path(Path::new(r), MANIFEST).is_file();
     if ctx.root.as_deref().is_some_and(holds) || ctx.root.as_deref() == Some(root) {
         return false;
     }

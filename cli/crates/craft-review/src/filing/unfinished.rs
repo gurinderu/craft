@@ -36,7 +36,7 @@ mod tests {
 
     use serde_json::Value;
 
-    use super::super::{Call, Ctx, NodeWriter, WriteError, open};
+    use super::super::{Call, Ctx, StoreWriter, WriteError, open};
     use super::*;
 
     /// Keeps each call and answers it landed.
@@ -84,6 +84,6 @@ mod tests {
     #[test]
     fn a_run_that_files_no_telemetry_is_left_alone() {
         let run = tempfile::tempdir().unwrap();
-        assert_eq!(unfinished(run.path(), "why", &NodeWriter), None);
+        assert_eq!(unfinished(run.path(), "why", &StoreWriter::default()), None);
     }
 }

@@ -1,8 +1,7 @@
 //! The run's own telemetry (realm @nick/craft, node #456): when the host asks for it at start
 //! (`--record`), the binary files a checkpoint as each of its phases ends and the run record when
-//! the run finishes, through `lib/cli-review-file.mjs` in craft's plugin root and the one write path
-//! behind it, `lib/craft-log-run.mjs` — the record's shape is that JavaScript's, never rebuilt here.
-//! What it needs between steps is kept in `filing.json` ([`Filing`]). A write that
+//! the run finishes, through its own store writer (`craft-store`, node #539), which writes them byte
+//! for byte as `lib/craft-log-run.mjs` does. What it needs between steps is kept in `filing.json` ([`Filing`]). A write that
 //! does not land never fails a step: it is said in the step's `filing`, and a finished run whose
 //! record failed files it again on `--resume` ([`refile`]), marked a retry so the store answers
 //! `already filed` for an attempt that did land. A stopped segment whose record did not land is
@@ -11,12 +10,12 @@
 //! and the step names any still pending.
 
 mod kept;
-pub mod node;
 mod resume;
 mod root;
 #[cfg(test)]
 mod root_tests;
 mod said;
+mod store;
 #[cfg(test)]
 mod tests;
 mod unfiled;
@@ -32,11 +31,11 @@ use serde_json::Value;
 
 pub use kept::{Ctx, Filing, Record, Told, state_path};
 use kept::{load, save};
-pub use node::NodeWriter;
 pub use resume::{Host, resuming};
 pub use root::{adopt, found_root};
 use said::outcome;
 pub use said::{brief, summary, with_filing};
+pub use store::StoreWriter;
 pub use unfinished::unfinished;
 pub use wire::{Call, WriteError, Writer};
 

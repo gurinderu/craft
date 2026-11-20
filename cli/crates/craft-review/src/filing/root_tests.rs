@@ -19,11 +19,11 @@ impl Writer for Roots {
     }
 }
 
-fn plugin(with_adapter: bool) -> tempfile::TempDir {
+fn plugin(with_manifest: bool) -> tempfile::TempDir {
     let d = tempfile::tempdir().unwrap();
-    if with_adapter {
-        std::fs::create_dir_all(d.path().join("lib")).unwrap();
-        std::fs::write(d.path().join("lib/cli-review-file.mjs"), "").unwrap();
+    if with_manifest {
+        std::fs::create_dir_all(d.path().join(".claude-plugin")).unwrap();
+        std::fs::write(d.path().join(".claude-plugin/plugin.json"), "{}").unwrap();
     }
     d
 }
@@ -42,7 +42,7 @@ fn finished() -> Value {
 }
 
 #[test]
-fn the_root_found_is_the_first_that_holds_the_adapter() {
+fn the_root_found_is_the_first_that_holds_the_plugin_manifest() {
     let (bare, held) = (plugin(false), plugin(true));
     let found = found_root([
         None,
@@ -55,17 +55,14 @@ fn the_root_found_is_the_first_that_holds_the_adapter() {
 }
 
 #[test]
-fn a_run_started_with_no_root_files_its_record_through_one_found_later_and_keeps_it() {
+fn a_run_started_with_no_root_files_its_record_and_keeps_a_root_found_later() {
     let run = tempfile::tempdir().unwrap();
     let w = Roots::default();
     let said = open(run.path(), rootless(), "s", &finished(), &w);
-    assert_eq!(said["record"], json!("failed"));
-    assert!(w.0.borrow().is_empty());
+    assert_eq!(said["record"], json!("filed"));
+    assert_eq!(*w.0.borrow(), ["", ""], "no root: written all the same");
 
     adopt(run.path(), Some("/plugin"));
-    let again = file_again(run.path(), Vec::new(), &w).unwrap();
-    assert_eq!(again["filing"]["record"], json!("filed"));
-    assert_eq!(*w.0.borrow(), ["/plugin"]);
     assert_eq!(
         load(run.path()).unwrap().ctx.root.as_deref(),
         Some("/plugin")
@@ -113,7 +110,7 @@ fn a_run_that_files_nothing_gets_no_telemetry_from_a_root_found() {
 }
 
 #[test]
-fn a_root_that_no_longer_holds_the_writer_is_replaced_by_the_one_found() {
+fn a_root_that_is_no_longer_a_plugin_is_replaced_by_the_one_found() {
     let (run, kept, gone) = (tempfile::tempdir().unwrap(), plugin(true), plugin(false));
     let at = |root: &tempfile::TempDir| Filing {
         ctx: Ctx {
@@ -133,7 +130,7 @@ fn a_root_that_no_longer_holds_the_writer_is_replaced_by_the_one_found() {
     assert_eq!(
         after.pending[0].ctx.root,
         Some(kept.path().display().to_string()),
-        "a root that still holds the writer is kept"
+        "a root that is still a plugin is kept"
     );
     adopt(run.path(), None);
     assert_eq!(

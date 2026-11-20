@@ -2,8 +2,7 @@
 //! telemetry's lost lines (realm @nick/craft, node #524): one note among how the run ran weaker
 //! than asked — in its state, so its report, its finished step and its brief status carry it, and a
 //! parent reads the run as degraded — with the command that files the record again. The note
-//! follows the record: said while no plugin root holds the writer or the last attempt failed,
-//! taken back once the record is filed.
+//! follows the record: said while the last attempt failed, taken back once the record is filed.
 
 use std::path::Path;
 
@@ -15,21 +14,11 @@ use crate::state::{self, Phase};
 /// How every such note opens, so a later one replaces it.
 const UNFILED: &str = "the run record is not filed";
 
-/// The note the run's telemetry calls for now, `None` when its record is filed, or not yet
-/// attempted through a root that holds the writer. `lost` is what its last writes lost, read
-/// before what the filing kept.
+/// The note the run's telemetry calls for now, `None` when its record is filed or not yet
+/// attempted. `lost` is what its last writes lost, read before what the filing kept.
 pub(super) fn note(run: &Path, filing: &Filing, lost: &[String]) -> Option<String> {
     let dir = run.display().to_string().replace('\'', r"'\''");
-    let rootless = filing.ctx.root.as_deref().is_none_or(str::is_empty);
-    if filing.record == Record::Filed {
-        None
-    } else if rootless {
-        Some(format!(
-            "{UNFILED} — no craft plugin root holding lib/cli-review-file.mjs was found (--record-root, a \
-             plugin above the binary, CLAUDE_PLUGIN_ROOT, this version's installed copy): once the run has \
-             ended, file it with `craft review submit --run '{dir}' --resume --record-root <a craft plugin root>`"
-        ))
-    } else if filing.record == Record::Failed {
+    if filing.record == Record::Failed {
         let why = lost
             .iter()
             .chain(&filing.lost)

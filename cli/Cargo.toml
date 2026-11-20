@@ -4,6 +4,7 @@ members = [
     "bin/craft",
     "crates/craft-agent",
     "crates/craft-review",
+    "crates/craft-store",
     "crates/craft-tui",
 ]
 
@@ -31,6 +32,7 @@ tokio = { version = "1.53", default-features = false }
 
 craft-agent = { path = "crates/craft-agent" }
 craft-review = { path = "crates/craft-review" }
+craft-store = { path = "crates/craft-store" }
 craft-tui = { path = "crates/craft-tui" }
 
 # Lints every member opts into with `[lints] workspace = true`. All are `warn`:

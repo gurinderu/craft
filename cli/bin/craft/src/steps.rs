@@ -112,8 +112,8 @@ pub struct StartArgs {
     #[arg(long, value_name = "NUMBER")]
     pub pr: Option<u64>,
     /// File the run's telemetry under this craft version, as the review engine's own run: a
-    /// checkpoint as each phase ends and the run record when it finishes, through the plugin
-    /// root's `lib/cli-review-file.mjs` and `node`. Absent, nothing is filed.
+    /// checkpoint as each phase ends and the run record when it finishes, written into the run
+    /// store (`~/.craft/runs`) by the binary itself. Absent, nothing is filed.
     #[arg(long, value_name = "CRAFT_VERSION")]
     pub record: Option<String>,
     /// The host the run's tasks run in, as its record names it (`runtime`): `craft review run`
@@ -123,9 +123,9 @@ pub struct StartArgs {
     /// The parent engine a nested run's record is filed under.
     #[arg(long, requires = "record")]
     pub via: Option<String>,
-    /// The plugin root the run's telemetry is filed through, when it is not the one the prompts
-    /// name (`--craft-root`, else the one above the binary): the host's plugin, whose record writer
-    /// files the run. It names nothing in the prompts.
+    /// The craft plugin root the run's records are stamped with (`craftCommit`, its commit when it
+    /// is a checkout), when it is not the one the prompts name (`--craft-root`, else the one above
+    /// the binary). It names nothing in the prompts, and the run files without it.
     #[arg(long, requires = "record")]
     pub record_root: Option<PathBuf>,
 }
@@ -169,9 +169,9 @@ pub struct SubmitArgs {
     /// For the run's telemetry: the output tokens the host's run has spent so far.
     #[arg(long)]
     pub output_tokens: Option<u64>,
-    /// The plugin root the run's telemetry is filed through, for a run whose telemetry knows none
-    /// that holds the record writer (started with none known, or its own uninstalled): its writes
-    /// go through it from now on. It names nothing in the prompts.
+    /// The craft plugin root the run's records are stamped with, for a run whose telemetry knows
+    /// none (started with none known, or its own uninstalled): kept from now on. It names nothing
+    /// in the prompts.
     #[arg(long)]
     pub record_root: Option<PathBuf>,
 }
@@ -338,8 +338,8 @@ fn session() -> String {
 }
 
 /// The started `step` with its telemetry opened: the start checkpoint written, and the record when
-/// the run ended at once. It files through `record_root` when that holds the record writer, else
-/// through the root the prompts name, else through one found ([`filing_root`]).
+/// the run ended at once. Its records are stamped with `record_root` when that is a plugin root,
+/// else the root the prompts name, else one found ([`filing_root`]).
 fn opened(
     run: &Path,
     version: &str,
@@ -355,7 +355,7 @@ fn opened(
             ctx.root = filing::found_root([given])
                 .or(ctx.root)
                 .or_else(|| filing_root(None));
-            filing::open(run, ctx, &session(), &step, &filing::NodeWriter)
+            filing::open(run, ctx, &session(), &step, &filing::StoreWriter::default())
         }
         Err(e) => {
             json!({"runDir": "", "rejoin": false, "lost": [format!("the run's telemetry — {e}")]})
@@ -364,10 +364,10 @@ fn opened(
     filing::with_filing(step, filing)
 }
 
-/// Where the run's telemetry is filed through when the run knows no plugin root: the one `given`,
+/// The plugin root the run's records are stamped with when the run knows none: the one `given`,
 /// the plugin root above the binary, the one the harness names (`CLAUDE_PLUGIN_ROOT`), else this
-/// version's installed copy ([`installed_copy`]) — the first that holds the record writer; `None`,
-/// and nothing can be filed.
+/// version's installed copy ([`installed_copy`]) — the first that is a plugin root; `None`, and the
+/// records name no craft commit.
 pub(crate) fn filing_root(given: Option<&Path>) -> Option<String> {
     let env = |k| {
         std::env::var_os(k)
@@ -386,7 +386,7 @@ pub(crate) fn filing_root(given: Option<&Path>) -> Option<String> {
 
 /// This binary's version of the plugin as Claude Code installs it, under `config` (the session's
 /// `CLAUDE_CONFIG_DIR`) else `home`'s `.claude`: the last place every plugin script is looked for
-/// (lib/plugin-script.mjs), so a fetched binary under no plugin finds its writer without the engine's
+/// (lib/plugin-script.mjs), so a fetched binary under no plugin finds its root without the engine's
 /// locate step (realm @nick/craft, node #524). The cache layout is the harness's (realm @nick/craft,
 /// node #48), so a miss is ordinary.
 fn installed_copy(config: Option<PathBuf>, home: Option<PathBuf>) -> Option<PathBuf> {
@@ -434,12 +434,12 @@ pub(crate) fn submit_step(args: &SubmitArgs) -> Result<Value> {
     // stopped parts that did not land are filed again; a finished run whose own record did not land
     // is filed again rather than refused.
     let earlier = if args.resume {
-        filing::resuming(&run, &filing::NodeWriter)
+        filing::resuming(&run, &filing::StoreWriter::default())
     } else {
         Vec::new()
     };
     if args.resume
-        && let Some(step) = filing::refile(&run, earlier.clone(), &filing::NodeWriter)
+        && let Some(step) = filing::refile(&run, earlier.clone(), &filing::StoreWriter::default())
     {
         return Ok(step);
     }
@@ -468,7 +468,7 @@ pub(crate) fn submit_step(args: &SubmitArgs) -> Result<Value> {
         session: session(),
     };
     Ok(
-        match filing::submitted(&run, &step, &host, earlier, &filing::NodeWriter) {
+        match filing::submitted(&run, &step, &host, earlier, &filing::StoreWriter::default()) {
             Some(filed) => filing::with_filing(step, filed),
             None => step,
         },
