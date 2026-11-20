@@ -6,7 +6,10 @@ use std::ffi::OsString;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use crate::cancel::{Cancel, STOPPED, kill_group, own_group};
+use crate::cancel::{Cancel, STOPPED, detached, kill_group, no_prompt_env};
+use spool::Spool;
+
+mod spool;
 
 /// How long one git command may run.
 const GIT_TIMEOUT: Duration = Duration::from_secs(120);
@@ -35,14 +38,35 @@ const REPO_VARS: [&str; 14] = [
     "GIT_INTERNAL_SUPER_PREFIX",
 ];
 
+/// What a source whose git failed on the remote is told with: git asks on no terminal here and
+/// ssh through no askpass the caller did not choose (`no_prompt_env`, `detached`), so git's last
+/// line ("Could not read from remote repository") is all it says of an access failure.
+pub(crate) const AUTH_HINT: &str = "if this is an access failure: craft runs git with no terminal \
+    prompt, so an ssh key with a passphrase must be in ssh-agent, and https needs a credential \
+    helper, a token or an askpass of your own";
+
 /// The failure of a command the budget cut, and of one it left no time for.
 pub(super) const OUT_OF_BUDGET: &str = "the preparation's budget ran out";
+
+/// Why git's output could not be kept or read, one line.
+fn kept(e: &std::io::Error) -> String {
+    format!("git's output could not be kept: {e}")
+}
+
+/// Whether a git command reaches the remote: its failure then says git asks for no credentials.
+#[derive(Debug, Clone, Copy)]
+enum Call {
+    Local,
+    Remote,
+}
 
 /// git as the preparation runs it.
 #[derive(Debug, Clone)]
 pub struct Git {
     /// What the commands' environment adds to craft's own.
     pub env: Vec<(OsString, OsString)>,
+    /// What the commands' environment takes out of craft's own.
+    pub unset: Vec<OsString>,
     /// How long one command may run.
     pub timeout: Duration,
     /// How long the whole preparation may run.
@@ -55,16 +79,18 @@ pub struct Git {
 }
 
 impl Git {
-    /// git that never prompts: no terminal for https, batch mode and a connect timeout for ssh
+    /// git that never prompts on a terminal — every command runs detached, with craft's no-prompt
+    /// environment (`detached`, `no_prompt_env`) — with batch mode and a connect timeout for ssh
     /// unless the caller set its own command (`gitEnv`).
     #[must_use]
     pub fn prompt_free() -> Self {
-        let mut env = vec![("GIT_TERMINAL_PROMPT".into(), "0".into())];
+        let mut env = Vec::new();
         if std::env::var_os("GIT_SSH_COMMAND").is_none() {
             env.push(("GIT_SSH_COMMAND".into(), SSH.into()));
         }
         Self {
             env,
+            unset: Vec::new(),
             timeout: GIT_TIMEOUT,
             budget: BUDGET,
             deadline: None,
@@ -99,10 +125,22 @@ impl Git {
         }
     }
 
-    /// Runs `git args`, its stdout; why not, one line, on a failure or the timeout. The output
-    /// is read once git exits: each command here prints a line or two, well under a pipe's
-    /// buffer.
+    /// Runs `git args` on this side only (`init`, `checkout`), its stdout; why not, one line, on a
+    /// failure or the timeout.
     pub(crate) fn run(&self, args: &[&str]) -> Result<String, String> {
+        self.call(args, Call::Local)
+    }
+
+    /// Runs `git args` that reach the remote (`ls-remote`, `fetch`), its stdout; why not, one
+    /// line — git's own failure followed by [`AUTH_HINT`], a timeout, a stop or a git that would
+    /// not start without it.
+    pub(crate) fn run_remote(&self, args: &[&str]) -> Result<String, String> {
+        self.call(args, Call::Remote)
+    }
+
+    /// Runs `git args` as `call` says. Its output goes to files ([`Spool`]) read once git exits,
+    /// so nothing it left running holds the read past the timeout or the stop.
+    fn call(&self, args: &[&str], call: Call) -> Result<String, String> {
         if self.cancel.is_cancelled() {
             return Err(STOPPED.into());
         }
@@ -115,12 +153,22 @@ impl Git {
         for v in REPO_VARS {
             cmd.env_remove(v);
         }
-        // Its group of its own: a stop or the timeout kills what it runs too (ssh, a helper).
-        own_group(&mut cmd);
+        for v in &self.unset {
+            cmd.env_remove(v);
+        }
+        // Detached, with no prompt (realm @nick/craft, node #545): a stop or the timeout kills what
+        // it runs too (ssh, a helper), and an ssh of the caller's own `GIT_SSH_COMMAND` (no batch
+        // mode) that asks a passphrase fails at once instead of waiting on a terminal or an ssh
+        // askpass the caller did not choose; the report names the source with git's reason, a
+        // remote's failure with the hint [`AUTH_HINT`].
+        no_prompt_env(&mut cmd);
+        detached(&mut cmd);
+        let (mut out, to_out) = Spool::new().map_err(|e| kept(&e))?;
+        let (mut err, to_err) = Spool::new().map_err(|e| kept(&e))?;
         let mut child = cmd
             .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            .stdout(to_out)
+            .stderr(to_err)
             .spawn()
             .map_err(|e| {
                 if e.kind() == std::io::ErrorKind::NotFound {
@@ -130,7 +178,15 @@ impl Git {
                 }
             })?;
         let start = Instant::now();
-        while child.try_wait().map_err(|e| e.to_string())?.is_none() {
+        loop {
+            match child.try_wait() {
+                Ok(Some(_)) => break,
+                Ok(None) => {}
+                Err(e) => {
+                    kill_group(&mut child);
+                    return Err(e.to_string());
+                }
+            }
             if self.cancel.is_cancelled() {
                 kill_group(&mut child);
                 return Err(STOPPED.into());
@@ -145,22 +201,26 @@ impl Git {
             }
             std::thread::sleep(Duration::from_millis(20));
         }
-        let out = child.wait_with_output().map_err(|e| e.to_string())?;
-        if out.status.success() {
-            return Ok(String::from_utf8_lossy(&out.stdout).into_owned());
+        let status = child.wait().map_err(|e| e.to_string())?;
+        if status.success() {
+            return out.text().map_err(|e| kept(&e));
         }
-        let err = String::from_utf8_lossy(&out.stderr);
+        let err = err.text().map_err(|e| kept(&e))?;
         let line = err.lines().map(str::trim).rfind(|l| !l.is_empty());
-        Err(format!("git failed: {}", line.unwrap_or("no message"))
+        let failed: String = format!("git failed: {}", line.unwrap_or("no message"))
             .chars()
             .take(300)
-            .collect())
+            .collect();
+        Err(match call {
+            Call::Local => failed,
+            Call::Remote => format!("{failed} — {AUTH_HINT}"),
+        })
     }
 
     /// Whether the remote lists the tag `rev`.
     pub(super) fn lists_tag(&self, url: &str, rev: &str) -> Result<bool, String> {
         let want = format!("refs/tags/{rev}");
-        let listed = self.run(&["ls-remote", "--tags", "--", url, &want])?;
+        let listed = self.run_remote(&["ls-remote", "--tags", "--", url, &want])?;
         Ok(listed
             .lines()
             .any(|l| l.split('\t').nth(1) == Some(want.as_str())))
@@ -168,4 +228,10 @@ impl Git {
 }
 
 #[cfg(test)]
+mod askpass_tests;
+#[cfg(test)]
+mod env_tests;
+#[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tty_tests;

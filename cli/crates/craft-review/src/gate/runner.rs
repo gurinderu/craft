@@ -1,10 +1,10 @@
-//! A gate tool as the binary runs it: in its own process group, its output in files of the run's
-//! `gate/` directory (a lint run prints megabytes, past a pipe's buffer), every command bounded by
-//! what is left of the gate's one budget — a command the budget cuts is killed with its group and
-//! reads as an unestablished signal, never a failure (`GATE_TIME_BUDGET`). The group is killed by
-//! craft, not with it: a craft killed from outside leaves a running tool behind, unless the stop
-//! reached craft first as a [`Cancel`] (`craft review run`'s stopping signal), which kills the
-//! tool's group and starts no other.
+//! A gate tool as the binary runs it: in its own session (a process group of its own, no
+//! terminal), its output in files of the run's `gate/` directory (a lint run prints megabytes,
+//! past a pipe's buffer), every command bounded by what is left of the gate's one budget — a
+//! command the budget cuts is killed with its group and reads as an unestablished signal, never a
+//! failure (`GATE_TIME_BUDGET`). The group is killed by craft, not with it: a craft killed from
+//! outside leaves a running tool behind, unless the stop reached craft first as a [`Cancel`]
+//! (`craft review run`'s stopping signal), which kills the tool's group and starts no other.
 
 use std::ffi::OsString;
 use std::fs::File;
@@ -12,10 +12,12 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
-use crate::cancel::{Cancel, STOPPED, kill_group, own_group};
+use crate::cancel::{Cancel, STOPPED, detached, kill_group};
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tty_tests;
 
 /// How often a running tool is checked for having exited.
 const POLL: Duration = Duration::from_millis(50);
@@ -117,7 +119,9 @@ impl Runner {
         if let Some(p) = &self.path {
             cmd.env("PATH", p);
         }
-        own_group(&mut cmd);
+        // No terminal (realm @nick/craft, node #545): a tool that would ask on one (cargo fetching
+        // over ssh) fails at once. Its environment is the caller's: the reviewed project's own.
+        detached(&mut cmd);
         cmd.spawn().map_err(|e| {
             // A working directory that is gone fails the spawn as NotFound too: that is no
             // missing program, and saying so would send its reader after the wrong cause.

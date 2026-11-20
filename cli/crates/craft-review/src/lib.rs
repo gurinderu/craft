@@ -53,6 +53,8 @@ pub mod stop;
 mod strict;
 pub mod telemetry;
 mod tool;
+#[cfg(test)]
+mod under_tty;
 pub mod units;
 mod validate;
 mod verify;
