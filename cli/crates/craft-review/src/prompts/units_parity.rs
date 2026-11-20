@@ -28,18 +28,7 @@ fn unit_mode_prompts_render_as_the_engine_renders_them() {
     let mut g = Golden::open("prompt-cases.json");
     let file = g.file();
     let input = &file["input"];
-    let ctx = PromptContext {
-        repo: "/work/repo".into(),
-        base: input["base"].as_str().unwrap().into(),
-        spec: String::new(),
-        craft_root: input["craftRoot"].as_str().map(str::to_owned),
-        craft_version: input["craftVersion"].as_str().map(str::to_owned),
-        re_review: ReScope::First,
-        strict: false,
-        sources: crate::sources::Sources::default(),
-        consumers: crate::consumers::Consumers::default(),
-        scope: None,
-    };
+    let ctx = PromptContext::parity(input);
     let p = &input["plan"];
     let plan = Plan {
         size_bucket: p["sizeBucket"].as_str().unwrap().into(),

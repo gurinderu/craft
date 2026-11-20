@@ -2,13 +2,17 @@
 //! `gate/` directory (a lint run prints megabytes, past a pipe's buffer), every command bounded by
 //! what is left of the gate's one budget — a command the budget cuts is killed with its group and
 //! reads as an unestablished signal, never a failure (`GATE_TIME_BUDGET`). The group is killed by
-//! craft, not with it: a craft killed from outside leaves a running tool behind.
+//! craft, not with it: a craft killed from outside leaves a running tool behind, unless the stop
+//! reached craft first as a [`Cancel`] (`craft review run`'s stopping signal), which kills the
+//! tool's group and starts no other.
 
 use std::ffi::OsString;
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
+
+use crate::cancel::{Cancel, STOPPED, kill_group, own_group};
 
 #[cfg(test)]
 mod tests;
@@ -42,6 +46,8 @@ pub(crate) struct Runner {
     path: Option<OsString>,
     dir: PathBuf,
     count: std::cell::Cell<usize>,
+    /// A stop asked of the run: the tool running is killed with its group, no other starts.
+    cancel: Cancel,
 }
 
 impl Runner {
@@ -51,7 +57,14 @@ impl Runner {
             path,
             dir,
             count: std::cell::Cell::new(0),
+            cancel: Cancel::default(),
         }
+    }
+
+    /// This runner, its tools stopped once `cancel` is.
+    #[must_use]
+    pub(crate) fn stopped_by(self, cancel: Cancel) -> Self {
+        Self { cancel, ..self }
     }
 
     /// What is left of the budget.
@@ -61,6 +74,9 @@ impl Runner {
 
     /// Runs `program args` in `cwd` within what is left of the budget.
     pub(crate) fn run(&self, cwd: &Path, program: &str, args: &[&str]) -> Ran {
+        if self.cancel.is_cancelled() {
+            return Ran::Broken(STOPPED.into());
+        }
         let limit = self.left();
         if limit.is_zero() {
             return Ran::TimedOut(Duration::ZERO);
@@ -80,7 +96,7 @@ impl Runner {
             Err(Spawn::Missing) => return Ran::Missing,
             Err(Spawn::Other(e)) => return Ran::Broken(e),
         };
-        wait(child, limit, &out, &err)
+        wait(child, limit, &self.cancel, (&out, &err))
     }
 
     fn spawn(
@@ -101,8 +117,7 @@ impl Runner {
         if let Some(p) = &self.path {
             cmd.env("PATH", p);
         }
-        #[cfg(unix)]
-        std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
+        own_group(&mut cmd);
         cmd.spawn().map_err(|e| {
             // A working directory that is gone fails the spawn as NotFound too: that is no
             // missing program, and saying so would send its reader after the wrong cause.
@@ -126,8 +141,9 @@ enum Spawn {
     Other(String),
 }
 
-/// Waits for `child` at most `limit`, killing its group past it; its output read from the files.
-fn wait(mut child: Child, limit: Duration, out: &Path, err: &Path) -> Ran {
+/// Waits for `child` at most `limit`, killing its group past it or once `cancel` is; its output
+/// read from the files.
+fn wait(mut child: Child, limit: Duration, cancel: &Cancel, (out, err): (&Path, &Path)) -> Ran {
     let start = Instant::now();
     loop {
         match child.try_wait() {
@@ -145,26 +161,15 @@ fn wait(mut child: Child, limit: Duration, out: &Path, err: &Path) -> Ran {
                 };
             }
             Ok(None) if start.elapsed() >= limit => {
-                kill(&mut child);
+                kill_group(&mut child);
                 return Ran::TimedOut(start.elapsed());
+            }
+            Ok(None) if cancel.is_cancelled() => {
+                kill_group(&mut child);
+                return Ran::Broken(STOPPED.into());
             }
             Ok(None) => std::thread::sleep(POLL),
             Err(e) => return Ran::Broken(e.to_string()),
         }
-    }
-}
-
-/// Kills `child` and every process of its group, then reaps it.
-fn kill(child: &mut Child) {
-    #[cfg(unix)]
-    if let Ok(pid) = i32::try_from(child.id()) {
-        let group = nix::unistd::Pid::from_raw(pid);
-        // The group may be gone already: nothing is left to kill then.
-        nix::sys::signal::killpg(group, nix::sys::signal::Signal::SIGKILL).unwrap_or(());
-    }
-    // Likewise the leader, which the group's kill may have reaped already.
-    child.kill().unwrap_or(());
-    if child.wait().is_err() {
-        // Nothing is left to reap.
     }
 }

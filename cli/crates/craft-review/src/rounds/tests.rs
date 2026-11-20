@@ -183,14 +183,6 @@ fn a_lens_shown_consumer_lines_must_mark_them() {
         kind: String::new(),
     };
     let ctx = PromptContext {
-        repo: "/work/repo".into(),
-        base: "main".into(),
-        spec: String::new(),
-        craft_root: None,
-        craft_version: None,
-        re_review: prompts::ReScope::First,
-        strict: false,
-        sources: crate::sources::Sources::default(),
         consumers: Consumers {
             sources: vec!["name search".into()],
             symbols: vec![Listed {
@@ -201,7 +193,7 @@ fn a_lens_shown_consumer_lines_must_mark_them() {
             }],
             ..Consumers::default()
         },
-        scope: None,
+        ..PromptContext::fixture("/work/repo", "main")
     };
     let plan = Plan {
         size_bucket: "small".into(),

@@ -24,7 +24,7 @@ mod tests;
 mod text;
 
 pub use make::{build, of_checkout};
-pub use save::keep;
+pub use save::{keep, prepare};
 pub use section::{gap_line, section};
 pub use text::{confined_block, lens_block, seam_block};
 

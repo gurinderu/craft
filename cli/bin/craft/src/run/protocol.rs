@@ -5,6 +5,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
+use craft_review::cancel::Cancel;
 use craft_review::filing;
 use serde_json::Value;
 
@@ -24,8 +25,9 @@ pub(crate) struct Said {
 
 /// The binary's side of the loop.
 pub(crate) trait Protocol {
-    /// Opens the run: its first step.
-    fn start(&self) -> Result<Value>;
+    /// Opens the run: its first step; a stop asked through `cancel` cuts its gate, sources and
+    /// consumers list short, each saying so.
+    fn start(&self, cancel: &Cancel) -> Result<Value>;
     /// Hands in the step's answers: the next step.
     fn submit(&self, run: &Path, said: &Said) -> Result<Value>;
     /// Where the run stands.
@@ -46,8 +48,8 @@ pub(crate) struct InProcess {
 }
 
 impl Protocol for InProcess {
-    fn start(&self) -> Result<Value> {
-        start_step(&self.start)
+    fn start(&self, cancel: &Cancel) -> Result<Value> {
+        start_step(&self.start, cancel)
     }
 
     fn submit(&self, run: &Path, said: &Said) -> Result<Value> {

@@ -7,6 +7,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use super::{BUDGET, HITS_MAX, Hit};
+use crate::cancel::{Cancel, STOPPED};
 
 /// How much of git's stderr is kept.
 const ERR_MAX: u64 = 64 * 1024;
@@ -18,9 +19,16 @@ pub(super) enum Ended {
     Exited(Option<i32>, Vec<Hit>, String),
 }
 
-/// Runs `cmd`, its stdout read line by line as it comes; killed once its lines pass [`HITS_MAX`]
-/// or `deadline` passes.
-pub(super) fn stream(mut cmd: Command, deadline: Instant) -> Result<Ended, String> {
+/// Runs `cmd`, its stdout read line by line as it comes; killed once its lines pass [`HITS_MAX`],
+/// `deadline` passes or `cancel` is.
+pub(super) fn stream(
+    mut cmd: Command,
+    deadline: Instant,
+    cancel: &Cancel,
+) -> Result<Ended, String> {
+    if cancel.is_cancelled() {
+        return Err(STOPPED.into());
+    }
     if Instant::now() >= deadline {
         return Err(out_of_time());
     }
@@ -38,7 +46,7 @@ pub(super) fn stream(mut cmd: Command, deadline: Instant) -> Result<Ended, Strin
         err.map(|e| e.take(ERR_MAX).read_to_string(&mut s));
         s
     });
-    if let Err(e) = until(deadline, || Ok(hits.is_finished())) {
+    if let Err(e) = until((deadline, cancel), || Ok(hits.is_finished())) {
         kill(&mut child);
         return Err(e);
     }
@@ -50,7 +58,7 @@ pub(super) fn stream(mut cmd: Command, deadline: Instant) -> Result<Ended, Strin
         return Ok(Ended::Capped);
     }
     let mut code = None;
-    let reaped = until(deadline, || {
+    let reaped = until((deadline, cancel), || {
         code = child
             .try_wait()
             .map_err(|e| e.to_string())?
@@ -68,9 +76,15 @@ pub(super) fn stream(mut cmd: Command, deadline: Instant) -> Result<Ended, Strin
     ))
 }
 
-/// Waits until `done`, or `Err` once `deadline` passes.
-fn until(deadline: Instant, mut done: impl FnMut() -> Result<bool, String>) -> Result<(), String> {
+/// Waits until `done`, or `Err` once `deadline` passes or `cancel` is.
+fn until(
+    (deadline, cancel): (Instant, &Cancel),
+    mut done: impl FnMut() -> Result<bool, String>,
+) -> Result<(), String> {
     while !done()? {
+        if cancel.is_cancelled() {
+            return Err(STOPPED.into());
+        }
         if Instant::now() >= deadline {
             return Err(out_of_time());
         }

@@ -9,7 +9,7 @@ use super::*;
 use crate::golden::Golden;
 use crate::plan::Plan;
 use crate::profile::Profile;
-use crate::prompts::{LensIn, ReScope, lens_prompt, prior_found_summary};
+use crate::prompts::{LensIn, lens_prompt, prior_found_summary};
 
 fn strings(v: &Value) -> Vec<String> {
     serde_json::from_value(v.clone()).unwrap()
@@ -39,18 +39,7 @@ fn the_critic_its_follow_up_and_an_extra_lens_render_as_the_engines_do() {
     let mut g = Golden::open("prompt-cases.json");
     let file = g.file();
     let input = &file["input"];
-    let ctx = PromptContext {
-        repo: "/work/repo".into(),
-        base: input["base"].as_str().unwrap().into(),
-        spec: String::new(),
-        craft_root: input["craftRoot"].as_str().map(str::to_owned),
-        craft_version: input["craftVersion"].as_str().map(str::to_owned),
-        re_review: ReScope::First,
-        strict: false,
-        sources: crate::sources::Sources::default(),
-        consumers: crate::consumers::Consumers::default(),
-        scope: None,
-    };
+    let ctx = PromptContext::parity(input);
     let dir = repo_directive(&ctx.repo);
     let body = |s: String| s.strip_prefix(&dir).unwrap().to_owned();
     let rust = Profile::load("rust").unwrap();

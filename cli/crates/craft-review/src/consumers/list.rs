@@ -7,6 +7,7 @@ use std::time::Instant;
 use super::order::{FILE_MAX, budget, rank};
 use super::symbols::{Symbol, declared};
 use super::{Consumers, Listed, NAME_SEARCH, SAME_NAME, Site, names};
+use crate::cancel::Cancel;
 use crate::gate::lines::Lines;
 
 /// How many changed symbols are searched.
@@ -45,15 +46,20 @@ fn site(file: &str, line: u32, text: &str, from: &str, kind: &str) -> Site {
     }
 }
 
-/// The list of `found`, its name search run.
-pub(super) fn assemble(top: &Path, changed: &Lines, found: &[Symbol]) -> Consumers {
+/// The list of `found`, its name search run until `cancel` is.
+pub(super) fn assemble(
+    top: &Path,
+    changed: &Lines,
+    found: &[Symbol],
+    cancel: &Cancel,
+) -> Consumers {
     let mut out = Consumers {
         sources: vec![NAME_SEARCH.to_owned()],
         ..Consumers::default()
     };
     let deadline = Instant::now() + names::BUDGET;
     for sym in found {
-        let mut sites = searched(top, changed, sym, deadline, &mut out.unsearched);
+        let mut sites = searched(top, changed, sym, (deadline, cancel), &mut out.unsearched);
         rank(top, sym, &mut sites);
         out.symbols.push(Listed {
             name: sym.name.clone(),
@@ -66,20 +72,20 @@ pub(super) fn assemble(top: &Path, changed: &Lines, found: &[Symbol]) -> Consume
     out
 }
 
-/// The name search's lines for `sym`, searched before `deadline`; a name too common to search, or
+/// The name search's lines for `sym`, searched before `deadline` and until `cancel` is; a name too common to search, or
 /// one the search could not finish, is noted in `unsearched`.
 fn searched(
     top: &Path,
     changed: &Lines,
     sym: &Symbol,
-    deadline: Instant,
+    (deadline, cancel): (Instant, &Cancel),
     unsearched: &mut Vec<String>,
 ) -> Vec<Site> {
     if names::skip(&sym.name) {
         unsearched.push(sym.name.clone());
         return Vec::new();
     }
-    match names::search(top, &sym.name, deadline) {
+    match names::search(top, &sym.name, deadline, cancel) {
         Ok(hits) => hits
             .iter()
             .filter_map(|h| {

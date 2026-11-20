@@ -24,3 +24,44 @@ fn a_working_directory_that_is_gone_is_no_missing_program() {
     assert!(why.contains("does not exist"), "{why}");
     assert!(why.contains("removed-worktree"), "{why}");
 }
+
+#[test]
+fn a_stop_kills_the_running_tool_with_its_group_and_starts_no_other() {
+    let d = tempfile::tempdir().unwrap();
+    let cancel = crate::cancel::Cancel::default();
+    let r = runner(d.path()).stopped_by(cancel.clone());
+    let pid = d.path().join("child.pid");
+    let script = format!("sleep 30 & echo $! > '{}'; wait", pid.display());
+    let stopper = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(300));
+        cancel.cancel();
+    });
+    let began = std::time::Instant::now();
+    let ran = r.run(d.path(), "sh", &["-c", &script]);
+    stopper.join().unwrap();
+    assert!(
+        began.elapsed() < Duration::from_secs(5),
+        "{:?}",
+        began.elapsed()
+    );
+    assert_eq!(ran, Ran::Broken(crate::cancel::STOPPED.into()));
+    // The group's other member, the sleep, was killed with its leader.
+    let pid: i32 = std::fs::read_to_string(&pid)
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    // Reparented and reaped by init once killed: looked for a little while.
+    let gone = (0..100).any(|_| {
+        let gone = nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None).is_err();
+        if !gone {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        gone
+    });
+    assert!(gone, "the tool's child {pid} outlived the stop");
+    assert_eq!(
+        r.run(d.path(), "sh", &["-c", "true"]),
+        Ran::Broken(crate::cancel::STOPPED.into())
+    );
+}

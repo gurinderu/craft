@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use anyhow::{Result, bail};
+use craft_review::cancel::Cancel;
 use serde_json::{Value, json};
 
 use super::HostKind;
@@ -36,6 +37,10 @@ struct Fake {
     worktree: Option<PathBuf>,
     submits: RefCell<Vec<Said>>,
     filed: RefCell<Vec<String>>,
+    /// The start runs until a stop is asked of it, as a long gate does: whether one was.
+    slow_start: Option<std::cell::Cell<bool>>,
+    /// The start fails with this error once it returns.
+    start_fails: Option<&'static str>,
 }
 
 impl Fake {
@@ -48,6 +53,8 @@ impl Fake {
             worktree: None,
             submits: RefCell::default(),
             filed: RefCell::default(),
+            slow_start: None,
+            start_fails: None,
         }
     }
 
@@ -81,7 +88,17 @@ impl Fake {
 }
 
 impl Protocol for Fake {
-    fn start(&self) -> Result<Value> {
+    fn start(&self, cancel: &Cancel) -> Result<Value> {
+        if let Some(stopped) = &self.slow_start {
+            let began = std::time::Instant::now();
+            while !cancel.is_cancelled() && began.elapsed() < Duration::from_secs(30) {
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            stopped.set(cancel.is_cancelled());
+        }
+        if let Some(why) = self.start_fails {
+            bail!("{why}");
+        }
         std::fs::create_dir_all(self.run.join("tasks"))?;
         for s in &self.tasks {
             std::fs::write(self.run.join("tasks").join(format!("{}.md", s.0)), s.1)?;
@@ -535,6 +552,9 @@ async fn a_stopping_signal_stops_the_round_s_tasks_and_files_the_run_incomplete(
 
 #[path = "opencode_drive_tests.rs"]
 mod opencode;
+
+#[path = "start_stop_tests.rs"]
+mod start_stop;
 
 #[tokio::test]
 async fn the_tasks_run_in_the_worktree_the_step_names_and_the_answer_names_it() {

@@ -101,3 +101,16 @@ fn a_line_shown_only_to_lenses_that_did_not_answer_is_named_apart() {
         degraded_notes(&s)
     );
 }
+
+#[test]
+fn a_gate_whose_changed_lines_could_not_be_read_is_a_degraded_note() {
+    let mut s = state(&[], &Value::Null);
+    s.gate.unread_lines = "git printed non-UTF-8 output".into();
+    let notes = degraded_notes(&s);
+    assert!(
+        notes.iter().any(|n| n.starts_with(
+            "the gate could not read the change's lines (git printed non-UTF-8 output)"
+        )),
+        "{notes:?}"
+    );
+}
