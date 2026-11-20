@@ -172,9 +172,19 @@ fn every_case_files_as_the_javascript_writer_filed_it() {
                     .replace("<recordFile>", &record_file)
                     .replace("<repo>", &real.repo)
                     .replace("<head>", &real.head)
+                    .replace("<store>", &real.store)
             });
-            let got =
-                craft_store::answer_js(call.text("command"), req.as_obj().unwrap(), &env).unwrap();
+            let req = req.as_obj().unwrap();
+            if call.text("command") == "write" {
+                // A file laid in the store as another writer left it.
+                let at = Path::new(req.text("path"));
+                std::fs::create_dir_all(at.parent().unwrap()).unwrap();
+                std::fs::write(at, req.text("text")).unwrap();
+                let wrote = Obj::new().with("wrote", Js::str(real.back(req.text("path"))));
+                answers.push(Js::Obj(wrote));
+                continue;
+            }
+            let got = craft_store::answer_js(call.text("command"), req, &env).unwrap();
             if !got.text("runDir").is_empty() {
                 run_dir = got.text("runDir").to_owned();
             }
