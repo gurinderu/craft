@@ -3,6 +3,7 @@
 //! bounded in time and all of them by the preparation's budget, a failure one line.
 
 use std::ffi::OsString;
+use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
@@ -16,7 +17,7 @@ const GIT_TIMEOUT: Duration = Duration::from_secs(120);
 /// How long the whole preparation may run: well under the 600 s the driver gives `review start`
 /// (`lib/cli-review-steps.mjs`), so points past it are named and the review still starts.
 const BUDGET: Duration = Duration::from_secs(240);
-/// How long ssh waits to connect, unless the caller set its own command.
+/// How long ssh waits to connect, unless the caller chose its own ssh ([`callers_ssh`]).
 const SSH: &str = "ssh -o BatchMode=yes -o ConnectTimeout=20";
 /// What locates a repository for git: set by a hook git runs, they would point a fetch or a
 /// checkout at the reviewer's own repository (`git rev-parse --local-env-vars`, configuration
@@ -81,11 +82,18 @@ pub struct Git {
 impl Git {
     /// git that never prompts on a terminal — every command runs detached, with craft's no-prompt
     /// environment (`detached`, `no_prompt_env`) — with batch mode and a connect timeout for ssh
-    /// unless the caller set its own command (`gitEnv`).
+    /// unless the caller chose its own ssh ([`callers_ssh`]), for commands run in a temporary
+    /// directory as the sources' are.
     #[must_use]
     pub fn prompt_free() -> Self {
+        Self::prompt_free_in(&std::env::temp_dir())
+    }
+
+    /// [`Git::prompt_free`] for commands run in `dir`.
+    #[must_use]
+    pub fn prompt_free_in(dir: &Path) -> Self {
         let mut env = Vec::new();
-        if std::env::var_os("GIT_SSH_COMMAND").is_none() {
+        if !callers_ssh(dir, |v| std::env::var_os(v).is_some()) {
             env.push(("GIT_SSH_COMMAND".into(), SSH.into()));
         }
         Self {
@@ -227,10 +235,33 @@ impl Git {
     }
 }
 
+/// Whether the caller chose the ssh git runs in `dir`: `GIT_SSH_COMMAND` or `GIT_SSH` in the
+/// environment (`is_set` asks it), or `core.sshCommand` in the configuration git reads there —
+/// the system's and the user's, and the repository's when `dir` is one. A sources clone runs in a
+/// temporary directory, so only the first two count for it.
+fn callers_ssh(dir: &Path, is_set: impl Fn(&str) -> bool) -> bool {
+    if is_set("GIT_SSH_COMMAND") || is_set("GIT_SSH") {
+        return true;
+    }
+    let mut cmd = Command::new("git");
+    cmd.arg("-C")
+        .arg(dir)
+        .args(["config", "--get", "core.sshCommand"]);
+    for v in REPO_VARS {
+        cmd.env_remove(v);
+    }
+    cmd.stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .is_ok_and(|o| o.status.success() && !o.stdout.trim_ascii().is_empty())
+}
+
 #[cfg(test)]
 mod askpass_tests;
 #[cfg(test)]
 mod env_tests;
+#[cfg(test)]
+mod ssh_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
