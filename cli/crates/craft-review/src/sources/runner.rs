@@ -48,6 +48,11 @@ pub(crate) const AUTH_HINT: &str = "if this is an access failure: craft runs git
 /// The failure of a command the budget cut, and of one it left no time for.
 pub(super) const OUT_OF_BUDGET: &str = "the preparation's budget ran out";
 
+/// Why git's output could not be kept or read, one line.
+fn kept(e: &std::io::Error) -> String {
+    format!("git's output could not be kept: {e}")
+}
+
 /// Whether a git command reaches the remote: its failure then says git asks for no credentials.
 #[derive(Debug, Clone, Copy)]
 enum Call {
@@ -158,11 +163,12 @@ impl Git {
         // remote's failure with the hint [`AUTH_HINT`].
         no_prompt_env(&mut cmd);
         detached(&mut cmd);
-        let (mut out, mut err) = (Spool::new()?, Spool::new()?);
+        let (mut out, to_out) = Spool::new().map_err(|e| kept(&e))?;
+        let (mut err, to_err) = Spool::new().map_err(|e| kept(&e))?;
         let mut child = cmd
             .stdin(Stdio::null())
-            .stdout(out.to()?)
-            .stderr(err.to()?)
+            .stdout(to_out)
+            .stderr(to_err)
             .spawn()
             .map_err(|e| {
                 if e.kind() == std::io::ErrorKind::NotFound {
@@ -189,9 +195,9 @@ impl Git {
         }
         let status = child.wait().map_err(|e| e.to_string())?;
         if status.success() {
-            return out.text();
+            return out.text().map_err(|e| kept(&e));
         }
-        let err = err.text()?;
+        let err = err.text().map_err(|e| kept(&e))?;
         let line = err.lines().map(str::trim).rfind(|l| !l.is_empty());
         let failed: String = format!("git failed: {}", line.unwrap_or("no message"))
             .chars()
