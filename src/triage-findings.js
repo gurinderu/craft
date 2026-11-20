@@ -17,10 +17,10 @@ export const meta = {
   description: 'Triage review findings (craft agents + GitHub PR comments) into one ordered, validated fix plan — no edits',
   whenToUse: 'For every batch of review findings, whatever its size — from the report file of any review engine or the inline comments of a PR — when you want them validated against the code, deduped, conflict-checked, and turned into an ordered fix plan. It reads the checkout the session runs in, or the one `repo=` names (an absolute path), as in `craft:review`; an argument it does not take is refused the same way, and a repo= that is not an absolute path (or is blank, or holds a control character) is refused: it files an INCOMPLETE run record with only the logger run, no work agent. Pass `prBase` = `git merge-base origin/<trunk> <reviewed head>` (the commit the PR forks from) only when the reviewed head is a branch diverging from trunk, and with it `base` = the reviewed head\'s SHA; on trunk or with no branch leave prBase out. prBase counts only beside a `base` it differs from (with no base, or one equal to it, or HEAD, it is absent): a finding is deferred as not this PR\'s only when shown there, else it comes back needs-decision. `base` is the ref the findings were generated against — the reviewed head — which validation pins to. Once a workflow run has ended (completed, failed or stopped — not while you may still resume it), fold its real cost into the records it filed: `node "<craft plugin root>/lib/craft-log-run.mjs" enrich-cost --run-id <wf_…>` (the plugin root is two directories above a craft skill\'s base directory), with the run id the Workflow completion names. Best-effort: if it fails, say so in one line and go on.',
   phases: [
-    { title: 'Gather', detail: 'pull raw findings from the requested sources (a report file from any review engine, GitHub PR threads)' },
-    { title: 'Sift', detail: 'collapse repeats in the batch; recall the project memory and set aside what an active decision, deferred question or project rule already answers — no validator for those' },
-    { title: 'Validate', detail: 'judge each finding against the code at a pinned ref: accept / reject / defer / needs-decision' },
-    { title: 'Plan', detail: 'dedup, detect conflicts, group by file, order, render a writing-plans-format fix plan + triage ledger' },
+    { title: 'Gather', detail: 'pull raw findings from the requested sources (a report file from any review engine, GitHub PR threads)', model: 'sonnet' },
+    { title: 'Sift', detail: 'collapse repeats in the batch; recall the project memory and set aside what an active decision, deferred question or project rule already answers — no validator for those', model: 'sonnet' },
+    { title: 'Validate', detail: 'judge each finding against the code at a pinned ref: accept / reject / defer / needs-decision', model: 'opus' },
+    { title: 'Plan', detail: 'dedup, detect conflicts, group by file, order, render a writing-plans-format fix plan + triage ledger', model: 'opus' },
   ],
 }
 
@@ -211,14 +211,14 @@ function gatherPlan() {
     // (the session's), not a path inside the triaged checkout.
     tasks.push(() => /** @type {Promise<RawResult | null>} */ (agent(
       `Read the review report at \`${report}\`. Extract every finding into the schema. Set source to the engine that wrote the report, as the report names it: "review" (craft:review), "adversarial-review", "rust-audit", "rust-reviewer" (a single reviewer verdict) or "nix-review"; "report" when the report does not say. Copy severity/title/location/detail verbatim; leave proposed_fix and thread_id empty unless present. The report's \`## Tool finding titles (verbatim)\` section (also nested under \`## Prior decisions in the nested reviews (verbatim)\`) lists titles, not findings: never extract its rows as findings. For a finding at a \`file:line\` it lists, take the title from it — the listed title equal to the finding's line; or the only one listed there, but only when the report prints a single finding at that \`file:line\` (the section lists gate-tool findings only, so a lens finding at the same site is printed beside the tool's and must not take its title). When several findings are printed there, or several titles are listed and none is equal, keep the finding's own line, never a guess between them.`,
-      { label: 'gather:report', phase: 'Gather', schema: RAW_SCHEMA },
+      { label: 'gather:report', phase: 'Gather', schema: RAW_SCHEMA, model: 'sonnet', effort: 'low' },
     )))
   }
   if (pr) {
     locators.push('pr')
     tasks.push(() => /** @type {Promise<RawResult | null>} */ (work(
       `Gather inline review comments from GitHub PR #${pr}. Resolve the repo with \`gh repo view --json owner,name\`, then \`gh api repos/{owner}/{repo}/pulls/${pr}/comments --paginate\`. For each UNRESOLVED, non-outdated review comment make one finding: title = short summary, location = \`<path>:<line>\` (path + line/original_line), detail = the comment body, thread_id = the comment/thread id, severity = your best estimate (Critical|High|Medium|Low|Info), proposed_fix = empty. Set source = "github-pr".`,
-      { label: 'gather:pr', phase: 'Gather', schema: RAW_SCHEMA },
+      { label: 'gather:pr', phase: 'Gather', schema: RAW_SCHEMA, model: 'sonnet', effort: 'low' },
     )))
   }
   return { gatherTasks: tasks, requestedLocators: locators }
@@ -273,7 +273,7 @@ async function recallMemory() {
     memory = { ...memory, why: 'not recalled — no gathered finding names a file' }
     return
   }
-  const r = await recallDecisions(p => work(p, { label: 'memory-recall', phase: 'Sift', schema: MEMORY_RECALL_SCHEMA, effort: 'low' }), paths, base)
+  const r = await recallDecisions(p => work(p, { label: 'memory-recall', phase: 'Sift', schema: MEMORY_RECALL_SCHEMA, model: 'sonnet', effort: 'low' }), paths, base)
   const m = mergeRecall(r, A['priorDecisions'], parsePriorDecisions)
   priorDecisionsIn = m.prior
   memory = m.memory
@@ -285,7 +285,7 @@ async function siftBatch() {
   const s = await siftByMemory(
     collapsed.kept,
     priorDecisionsIn.decisions,
-    toCheck => work(scopeCheckPrompt(toCheck), { label: 'decision-scope', phase: 'Sift', schema: SCOPE_CHECK_SCHEMA, effort: 'low' }),
+    toCheck => work(scopeCheckPrompt(toCheck), { label: 'decision-scope', phase: 'Sift', schema: SCOPE_CHECK_SCHEMA, model: 'sonnet', effort: 'low' }),
     prompt => work(prompt, { label: 'decision-match', phase: 'Sift', schema: MATCH_JUDGE_SCHEMA, model: 'sonnet', effort: 'low' }),
     prompt => work(prompt, { label: 'rule-match', phase: 'Sift', schema: RULE_JUDGE_SCHEMA, model: 'sonnet', effort: 'low' }),
   )
@@ -377,7 +377,7 @@ severity: the source's severity unless the code supports another.
 
 stable_id MUST be exactly: ${id}
 Keep reason to one line. fix_pointer empty unless verdict is accept.`,
-    { label: `validate:${(f.location || f.title).slice(0, 40)}`, phase: 'Validate', schema: VALIDATION_SCHEMA },
+    { label: `validate:${(f.location || f.title).slice(0, 40)}`, phase: 'Validate', schema: VALIDATION_SCHEMA, model: 'opus' },
   )).then(v => {
     // A dead validator used to be dropped by `filter(Boolean)`, which removed the finding from the
     // plan AND from the ledger: a Critical whose judge died did not appear as unjudged, it appeared
@@ -418,7 +418,7 @@ ${JSON.stringify(validations, null, 2)}
 
 SETTLED BEFORE VALIDATION (repeats in this batch, and what the project memory already answered — final; into the ledger as given, never into the plan):
 ${JSON.stringify(sifted, null, 2)}`,
-  { label: 'plan', phase: 'Plan', schema: PLAN_SCHEMA },
+  { label: 'plan', phase: 'Plan', schema: PLAN_SCHEMA, model: 'opus' },
 ))
 
 // ---- Observability: persist a run record (best-effort) -------------------

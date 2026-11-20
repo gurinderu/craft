@@ -23,8 +23,8 @@ export const meta = {
   phases: [
     { title: 'Scout', detail: 'detect the diff base, unsafe code, and the workspace crates + dependency edges', model: 'haiku' },
     { title: 'Audit', detail: 'parallel: the mechanical gate once (review gateOnly), then per-crate CLI review taking it (gateFrom; none on a red gate) + per-edge contracts + architecture + crate-decomposition + security + Miri + semver/build-matrix/deps/unused-crates/tests-cov' },
-    { title: 'Verify', detail: 'adversarially verify unused-crate candidates before reporting' },
-    { title: 'Synthesize', detail: 'merge every dimension into one severity-ranked report' },
+    { title: 'Verify', detail: 'adversarially verify unused-crate candidates before reporting', model: 'opus' },
+    { title: 'Synthesize', detail: 'merge every dimension into one severity-ranked report', model: 'sonnet' },
   ],
 }
 
@@ -433,7 +433,7 @@ const { baseRef, hasUnsafe, repoRoot, crates, changedCrates, edges, notes: scout
 // launcher's records merged in (the recalled one kept on an id clash).
 async function recallOnce() {
   if (recalledByLauncher) return
-  const r = await recallDecisions(p => auditAgent(p, { label: 'memory-recall', phase: 'Scout', schema: MEMORY_RECALL_SCHEMA, effort: 'low' }), [], baseRef || baseArg)
+  const r = await recallDecisions(p => auditAgent(p, { label: 'memory-recall', phase: 'Scout', schema: MEMORY_RECALL_SCHEMA, model: 'sonnet', effort: 'low' }), [], baseRef || baseArg)
   const { merged, read, blocked, overrides } = mergeAndRead(r.decisions, passedList, parsePriorDecisions, r.inactive)
   memory = withDerived(withPassed(r.memory, passedAccepted, read.passed), read.prior.decisions)
   // A passed copy of a record the store withdrew or superseded is not forwarded; the audit names it on
@@ -654,13 +654,13 @@ pushContractDims()
 // Crate-decomposition dimension (feature C) — whole-project; runs even on a single crate.
 tasks.push(() => dispatchDim('crate-decomposition', /** @type {Promise<FindingsResult | null>} */ (auditAgent(
   `Judge this Rust workspace's crate boundaries and recommend where code should be EXTRACTED into its own crate, or where an over-split crate should be MERGED back. Load the rust-ecosystem skill and its crate-extraction.md rubric, and build on the workspace dependency graph (\`cargo metadata --locked\`, or \`--no-deps\` when that refuses). For EACH recommendation give: the DRIVER (reuse / compile parallelism / dependency inversion / trust boundary / independent semver / test isolation / god-crate split — or, for a merge, "single consumer, no boundary reason"), the BOUNDARY (which module or code), and the HOW. Recommend only — do NOT move code. Return a verdict (Healthy / Concerns / At-risk) and findings. Fill the \`evidence\` field with one line beginning \`Evidence:\` naming the exact commands you ran (e.g. \`cargo metadata\`) and manifests you read this pass — a passing verdict with an empty evidence field is treated as INCOMPLETE, not trusted.`,
-  { label: 'crate-decomposition', phase: 'Audit', schema: FINDINGS_SCHEMA, effort: 'medium' },
+  { label: 'crate-decomposition', phase: 'Audit', schema: FINDINGS_SCHEMA, model: 'opus', effort: 'medium' },
 ))))
 dispatched.push('crate-decomposition')
 
 tasks.push(() => dispatchDim('architecture', /** @type {Promise<FindingsResult | null>} */ (safeAgent(
   `Audit the architecture of this whole Rust project against the rust-architecture-review rubric (load the rust-architecture-review skill). Build the crate/module dependency graph and judge the structure in BOTH directions — too little (layer leaks, god modules) and too much (ghost abstractions, over-layering). Return your health rating and findings. If NO dependency graph could be built at all (cargo metadata/tree failed, cargo-modules absent, and no manifest or source structure was readable), nothing was judged: return verdict "INCOMPLETE (not run)" naming what was missing — not "Healthy". A graph built from the source fallback IS a graph: rate it normally.\n\nObservability: the rust-audit workflow records this run — do NOT write your own record.`,
-  { label: 'architecture', agentType: 'craft:rust-architecture-reviewer', phase: 'Audit', schema: FINDINGS_SCHEMA },
+  { label: 'architecture', agentType: 'craft:rust-architecture-reviewer', phase: 'Audit', schema: FINDINGS_SCHEMA, model: 'opus' },
 ))))
 dispatched.push('architecture')
 
@@ -691,19 +691,19 @@ pushMiriDim()
 
 tasks.push(afterGate(() => dispatchDim('semver', /** @type {Promise<FindingsResult | null>} */ (auditAgent(
   `Check public-API semver compatibility across the workspace's PUBLISHED crates. Run \`cargo semver-checks check-release\` (per published crate as needed). If \`cargo-semver-checks\` is not installed, say so and return verdict "INCOMPLETE (not run)" with a one-line note naming what was missing — do NOT fail, and do NOT return Approve: nothing was checked. If the tool IS available but there is no published library crate to check, that is a real, complete answer — return "Approve" with a note that the workspace publishes no library. Load the rust-ecosystem skill (semver/publishing) and the rust-review api-design pass. Report breaking changes vs the published baseline as findings. Fill the \`evidence\` field with one line beginning \`Evidence:\` naming the exact commands you ran and crates you checked this pass — a passing verdict with an empty evidence field is treated as INCOMPLETE, not trusted.`,
-  { label: 'semver', phase: 'Audit', schema: FINDINGS_SCHEMA, effort: 'low' },
+  { label: 'semver', phase: 'Audit', schema: FINDINGS_SCHEMA, model: 'sonnet', effort: 'low' },
 )))))
 dispatched.push('semver')
 
 tasks.push(afterGate(() => dispatchDim('build-matrix', /** @type {Promise<FindingsResult | null>} */ (auditAgent(
   `Check the build across feature combinations and the MSRV. If \`cargo-hack\` is installed: \`cargo hack check --feature-powerset --no-dev-deps\`, plus \`cargo check --no-default-features\` and \`cargo check --all-features\`. For MSRV: read \`rust-version\` from Cargo.toml and run \`cargo hack --rust-version check\` (or \`cargo +<rust-version> check\` if that toolchain is installed). Skip any tool/toolchain that is absent with a note. If NOTHING could run, return verdict "INCOMPLETE (not run)" naming what was missing — do NOT fail, and do NOT return Approve: no feature combination was actually built. Return "Approve" only if at least one check ran and passed. Load the rust-ecosystem skill. Report failing feature combinations or MSRV breakage as findings. Fill the \`evidence\` field with one line beginning \`Evidence:\` naming the exact commands you ran (feature sets, MSRV checks) this pass — a passing verdict with an empty evidence field is treated as INCOMPLETE, not trusted.`,
-  { label: 'build-matrix', phase: 'Audit', schema: FINDINGS_SCHEMA, effort: 'low' },
+  { label: 'build-matrix', phase: 'Audit', schema: FINDINGS_SCHEMA, model: 'sonnet', effort: 'low' },
 )))))
 dispatched.push('build-matrix')
 
 tasks.push(() => dispatchDim('deps', /** @type {Promise<FindingsResult | null>} */ (auditAgent(
   `Audit dependency HYGIENE (distinct from security vulns/licenses). Run \`cargo tree -d\` (duplicate/conflicting versions that bloat the build and binary) and \`cargo outdated\` (out-of-date deps). Do NOT check unused dependencies here — the \`unused-crates\` dimension owns that (with verification). Skip any tool that is not installed with a note — do NOT fail; but if NEITHER tool is installed, so no dependency hygiene was actually inspected, return verdict "INCOMPLETE (not run)" naming the missing tools rather than "Approve". Load the rust-ecosystem skill (dependency weight/hygiene). Report duplicates and notably out-of-date deps as findings. Fill the \`evidence\` field with one line beginning \`Evidence:\` naming the exact commands you ran (e.g. \`cargo tree -d\`, \`cargo outdated\`) this pass — a passing verdict with an empty evidence field is treated as INCOMPLETE, not trusted.`,
-  { label: 'deps', phase: 'Audit', schema: FINDINGS_SCHEMA, effort: 'low' },
+  { label: 'deps', phase: 'Audit', schema: FINDINGS_SCHEMA, model: 'sonnet', effort: 'low' },
 ))))
 dispatched.push('deps')
 
@@ -723,7 +723,7 @@ tasks.push(afterGate(() => dispatchDim('unused-crates', (async () => {
 Skip a tool that is not installed with a note — do NOT fail. \`cargo metadata\` alone answers class (a), so it is enough to run: if the graph loads and there are no orphan members, that is a real "Approve" with an empty findings list. But if \`cargo metadata\` itself does not run, so NOTHING was inspected, return verdict "INCOMPLETE (not run)" naming what was missing — not "Approve".
 Load the rust-ecosystem skill (dependency / crate hygiene).
 These are CANDIDATES, not confirmed — they will be verified downstream. Return one finding per candidate: title = "orphan-member: <crate>" or "unused-dep: <dep> in <crate>", location = the owning manifest path, detail = why the graph/tool thinks it is unused. Use severity Info (verification sets the real severity).`,
-    { label: 'unused-crates:find', phase: 'Audit', schema: FINDINGS_SCHEMA, effort: 'low' },
+    { label: 'unused-crates:find', phase: 'Audit', schema: FINDINGS_SCHEMA, model: 'sonnet', effort: 'low' },
   ))
   // A dead find-step nulls the whole dimension. Return the null and let dispatchDim log its reason
   // in the one place both sub-deaths are named — including a THROWN find-step, which rejects this
@@ -763,7 +763,7 @@ function mutantsInstruction() {
 }
 tasks.push(afterGate(() => dispatchDim('tests-cov', /** @type {Promise<FindingsResult | null>} */ (auditAgent(
   `Assess test effectiveness and docs. Run \`cargo llvm-cov --summary-only\` (overall coverage + worst-covered files) if \`cargo-llvm-cov\` is installed.${mutantsInstruction()} Build docs cleanly: \`cargo doc --no-deps\` (flag broken intra-doc links) and run doctests (\`cargo test --doc\`). Skip any tool that is not installed with a note — do NOT fail; but if NONE of them ran (no coverage tool, no doc build, no doctests), return verdict "INCOMPLETE (not run)" naming the missing tools rather than "Approve" — nothing was measured. Load the rust-testing skill (coverage/mutation/doctests) and rust-idioms (rustdoc). Report low-coverage hotspots, surviving mutants, broken doc links, and failing doctests as findings. Fill the \`evidence\` field with one line beginning \`Evidence:\` naming the exact commands you ran (coverage, doc build, doctests) this pass — a passing verdict with an empty evidence field is treated as INCOMPLETE, not trusted.`,
-  { label: 'tests-cov', phase: 'Audit', schema: FINDINGS_SCHEMA, effort: 'low' },
+  { label: 'tests-cov', phase: 'Audit', schema: FINDINGS_SCHEMA, model: 'sonnet', effort: 'low' },
 )))))
 dispatched.push('tests-cov')
 
@@ -852,7 +852,7 @@ NO EVIDENCE (agent claimed a green but showed no work, so its verdict is not tru
 RESULTS:
 ${JSON.stringify(stripped, null, 2)}`,
   // Synthesis is merge/dedup/rank of given verdicts — moderate reasoning, not a deep judgement call.
-  { label: 'synthesis', effort: 'medium' },
+  { label: 'synthesis', model: 'sonnet', effort: 'medium' },
 )
 
 const uc = results.find(r => r.dimension === 'unused-crates')
