@@ -39,18 +39,46 @@ fn the_step_moves_the_line_keeps_where_it_came_from_and_names_it_in_one_note() {
         "{}",
         notes[0]
     );
-    // Run again, as the critic's verification pass does: nothing moves twice.
+    // Run again over the same findings: the step is idempotent, nothing moves twice.
     assert!(reanchor_with(&mut r, &Fake::default()).is_empty());
     assert_eq!(moved_from(&r.findings[0]), Some(603));
 }
 
 #[test]
-fn a_dirty_tree_is_not_read_and_says_so() {
+fn a_dirty_tree_is_not_read_and_says_so_once() {
     let mut r = run(&[finding(603, "head_lines", &json!({}))]);
     r.diff.dirty = true;
     let notes = super::super::reanchor(&mut r);
     assert_eq!(r.findings[0]["line"], 603);
+    assert_eq!(notes.len(), 1, "{notes:?}");
     assert!(notes[0].contains("did not run"), "{notes:?}");
+    r.notes.extend(notes);
+    assert!(
+        super::super::reanchor(&mut r).is_empty(),
+        "a second pass does not repeat the note"
+    );
+}
+
+#[test]
+fn a_dirty_tree_with_nothing_the_step_would_examine_says_nothing() {
+    let seed = finding(603, "head_lines", &json!({"source": "clippy"}));
+    let file_level = finding(0, "head_lines", &json!({}));
+    let no_file = finding(603, "head_lines", &json!({"file": ""}));
+    for f in [seed, file_level, no_file] {
+        let mut r = run(&[f]);
+        r.diff.dirty = true;
+        assert!(
+            super::super::reanchor(&mut r).is_empty(),
+            "{:?}",
+            r.findings
+        );
+    }
+    let mut r = run(&[]);
+    r.diff.dirty = true;
+    assert!(
+        super::super::reanchor(&mut r).is_empty(),
+        "no findings at all"
+    );
 }
 
 #[test]
