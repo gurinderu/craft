@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
-use crate::cancel::{Cancel, STOPPED};
+use crate::cancel::{Cancel, STOPPED, kill_group, own_group};
 
 #[cfg(test)]
 mod tests;
@@ -117,8 +117,7 @@ impl Runner {
         if let Some(p) = &self.path {
             cmd.env("PATH", p);
         }
-        #[cfg(unix)]
-        std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
+        own_group(&mut cmd);
         cmd.spawn().map_err(|e| {
             // A working directory that is gone fails the spawn as NotFound too: that is no
             // missing program, and saying so would send its reader after the wrong cause.
@@ -162,30 +161,15 @@ fn wait(mut child: Child, limit: Duration, cancel: &Cancel, (out, err): (&Path, 
                 };
             }
             Ok(None) if start.elapsed() >= limit => {
-                kill(&mut child);
+                kill_group(&mut child);
                 return Ran::TimedOut(start.elapsed());
             }
             Ok(None) if cancel.is_cancelled() => {
-                kill(&mut child);
+                kill_group(&mut child);
                 return Ran::Broken(STOPPED.into());
             }
             Ok(None) => std::thread::sleep(POLL),
             Err(e) => return Ran::Broken(e.to_string()),
         }
-    }
-}
-
-/// Kills `child` and every process of its group, then reaps it.
-fn kill(child: &mut Child) {
-    #[cfg(unix)]
-    if let Ok(pid) = i32::try_from(child.id()) {
-        let group = nix::unistd::Pid::from_raw(pid);
-        // The group may be gone already: nothing is left to kill then.
-        nix::sys::signal::killpg(group, nix::sys::signal::Signal::SIGKILL).unwrap_or(());
-    }
-    // Likewise the leader, which the group's kill may have reaped already.
-    child.kill().unwrap_or(());
-    if child.wait().is_err() {
-        // Nothing is left to reap.
     }
 }
