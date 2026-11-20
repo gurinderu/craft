@@ -14,7 +14,7 @@
 # exits 0.
 set -u
 
-version=0.54.1 # x-release-please-version
+version=0.55.0 # x-release-please-version
 
 input=$(cat)
 # Each test one substring between two stars: dash matches a glob with more stars by backtracking, which a long output
