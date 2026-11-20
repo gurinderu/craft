@@ -51,3 +51,36 @@ fn a_command_whose_child_holds_its_output_past_the_limit_is_said() {
     );
     assert!(why.contains("did not answer within"), "{why}");
 }
+
+#[test]
+fn a_detached_command_past_its_limit_is_stopped_with_its_group() {
+    let d = tempfile::tempdir().unwrap();
+    let pid = d.path().join("pid");
+    let mut c = Command::new("sh");
+    c.args([
+        "-c",
+        &format!("sleep 30 & echo $! > '{}'; wait", pid.display()),
+    ]);
+    craft_review::cancel::detached(&mut c);
+    let why = output(c, Duration::from_millis(500)).unwrap_err();
+    assert!(why.contains("did not answer within"), "{why}");
+    let child = std::fs::read_to_string(&pid).unwrap();
+    let child = child.trim();
+    // Reparented and reaped once killed: looked for a little while.
+    let gone = (0..100).any(|_| {
+        let alive = std::path::Path::new(&format!("/proc/{child}")).exists()
+            && !std::fs::read_to_string(format!("/proc/{child}/stat"))
+                .unwrap_or_default()
+                .rsplit(')')
+                .next()
+                .is_some_and(|r| r.trim_start().starts_with('Z'));
+        if alive {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        !alive
+    });
+    if !gone {
+        let _killed = Command::new("kill").args(["-KILL", child]).status();
+    }
+    assert!(gone, "the command's child {child} outlived its limit");
+}

@@ -1,63 +1,169 @@
-//! A remote that asks for a password (401, Basic): with no askpass of the caller's own, a
-//! desktop's (`SSH_ASKPASS`, `core.askPass`, `DISPLAY` set) is never started and git fails at
-//! once, named; the caller's own `GIT_ASKPASS` (a CI token script) is used and git authenticates.
+//! A remote that asks for a password (401, Basic): the caller's own `GIT_ASKPASS` (a CI token
+//! script) is used, git authenticates and the source is prepared — craft's no-prompt environment
+//! leaves git's askpass alone (realm @nick/craft, node #545). The remote is a local repository
+//! served by `git http-backend` behind a minimal HTTP server.
 #![cfg(unix)]
 
-use std::io::{Read, Write};
-use std::net::TcpListener;
+use std::io::{BufRead, BufReader, Read, Write};
+use std::net::{TcpListener, TcpStream};
 use std::os::unix::fs::PermissionsExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use super::Git;
-use crate::cancel::caller_chooses_prompts;
 use crate::project::IntegrationPoint;
-use crate::sources::{Sources, prepare, section};
+use crate::sources::prepare;
 
 const URL: &str = "https://example.com/org/sys.git";
 /// `craft:token`, as Basic sends it.
-const CRAFT_TOKEN: &str = "Authorization: Basic Y3JhZnQ6dG9rZW4=";
+const CRAFT_TOKEN: &str = "Basic Y3JhZnQ6dG9rZW4=";
 
-/// A remote on localhost that answers 401 to a request without credentials and an empty
-/// advertisement to one with them; its URL, and the `Authorization` lines it was sent.
-fn asking_remote() -> (String, Arc<Mutex<Vec<String>>>) {
+/// git in `dir`, as a fixture runs it.
+fn git(dir: &Path, args: &[&str]) {
+    let ok = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(args)
+        .env("GIT_AUTHOR_NAME", "t")
+        .env("GIT_AUTHOR_EMAIL", "t@example.com")
+        .env("GIT_COMMITTER_NAME", "t")
+        .env("GIT_COMMITTER_EMAIL", "t@example.com")
+        .status()
+        .unwrap()
+        .success();
+    assert!(ok, "git {args:?}");
+}
+
+/// A bare repository `<root>/org/sys.git` with a tag `v1.2.3`.
+fn repository(root: &Path) {
+    let work = root.join("work");
+    std::fs::create_dir_all(&work).unwrap();
+    git(&work, &["init", "-q", "-b", "main"]);
+    std::fs::write(work.join("main.go"), "package main\n").unwrap();
+    git(&work, &["add", "."]);
+    git(&work, &["commit", "-qm", "one"]);
+    git(&work, &["tag", "v1.2.3"]);
+    let bare = root.join("org/sys.git");
+    git(
+        root,
+        &[
+            "clone",
+            "-q",
+            "--bare",
+            "--",
+            work.to_str().unwrap(),
+            bare.to_str().unwrap(),
+        ],
+    );
+}
+
+/// One request: its first line, its headers by lowercase name, its body (by Content-Length).
+fn request(s: &TcpStream) -> (String, Vec<(String, String)>, Vec<u8>) {
+    let mut r = BufReader::new(s);
+    let mut first = String::new();
+    r.read_line(&mut first).unwrap_or(0);
+    let mut headers = Vec::new();
+    loop {
+        let mut line = String::new();
+        if r.read_line(&mut line).unwrap_or(0) == 0 || line.trim().is_empty() {
+            break;
+        }
+        if let Some((k, v)) = line.split_once(':') {
+            headers.push((k.trim().to_lowercase(), v.trim().to_owned()));
+        }
+    }
+    let len = headers
+        .iter()
+        .find(|(k, _)| k == "content-length")
+        .and_then(|(_, v)| v.parse().ok())
+        .unwrap_or(0);
+    let mut body = vec![0; len];
+    r.read_exact(&mut body).unwrap_or(());
+    (first, headers, body)
+}
+
+/// `git http-backend` answering one authenticated request, as an HTTP response.
+fn backend(root: &Path, first: &str, headers: &[(String, String)], body: &[u8]) -> Vec<u8> {
+    let mut parts = first.split_whitespace();
+    let (method, target) = (parts.next().unwrap_or("GET"), parts.next().unwrap_or("/"));
+    let (path, query) = target.split_once('?').unwrap_or((target, ""));
+    let header = |name: &str| {
+        headers
+            .iter()
+            .find(|(k, _)| k == name)
+            .map_or("", |(_, v)| v.as_str())
+    };
+    let mut cgi = Command::new("git")
+        .arg("http-backend")
+        .env("GIT_PROJECT_ROOT", root)
+        .env("GIT_HTTP_EXPORT_ALL", "1")
+        .env("REQUEST_METHOD", method)
+        .env("PATH_INFO", path)
+        .env("QUERY_STRING", query)
+        .env("CONTENT_TYPE", header("content-type"))
+        .env("CONTENT_LENGTH", body.len().to_string())
+        .env("HTTP_CONTENT_ENCODING", header("content-encoding"))
+        .env("REMOTE_USER", "craft")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    cgi.stdin.take().unwrap().write_all(body).unwrap();
+    let out = cgi.wait_with_output().unwrap().stdout;
+    let split = out
+        .windows(4)
+        .position(|w| w == b"\r\n\r\n")
+        .map_or(out.len(), |i| i + 4);
+    let head = String::from_utf8_lossy(&out[..split]);
+    let status = head
+        .lines()
+        .find_map(|l| l.strip_prefix("Status: "))
+        .unwrap_or("200 OK")
+        .to_owned();
+    let kept: String = head
+        .lines()
+        .filter(|l| !l.is_empty() && !l.starts_with("Status:"))
+        .map(|l| format!("{l}\r\n"))
+        .collect();
+    let mut answer = format!("HTTP/1.1 {status}\r\n{kept}Connection: close\r\n\r\n").into_bytes();
+    answer.extend_from_slice(&out[split..]);
+    answer
+}
+
+/// A remote on localhost serving the repository under `root` to a request with credentials and
+/// answering 401 to one without; its URL, and the `Authorization` values it was sent.
+fn asking_remote(root: PathBuf) -> (String, Arc<Mutex<Vec<String>>>) {
     let l = TcpListener::bind("127.0.0.1:0").unwrap();
     let url = format!("http://{}/org/sys.git", l.local_addr().unwrap());
     let seen = Arc::new(Mutex::new(Vec::new()));
     let saw = Arc::clone(&seen);
     std::thread::spawn(move || {
         for mut s in l.incoming().flatten() {
-            let mut buf = [0u8; 8192];
-            let n = s.read(&mut buf).unwrap_or(0);
-            let req = String::from_utf8_lossy(&buf[..n]).into_owned();
-            let auth: Vec<String> = req
-                .lines()
-                .filter(|l| l.starts_with("Authorization:"))
-                .map(str::to_owned)
-                .collect();
-            let answer: &[u8] = if auth.is_empty() {
-                b"HTTP/1.1 401 Unauthorized\r\nWWW-Authenticate: Basic realm=\"r\"\r\n\
-                  Content-Length: 0\r\nConnection: close\r\n\r\n"
-            } else {
-                b"HTTP/1.1 200 OK\r\n\
-                  Content-Type: application/x-git-upload-pack-advertisement\r\n\
-                  Content-Length: 34\r\nConnection: close\r\n\r\n\
-                  001e# service=git-upload-pack\n00000000"
+            let (first, headers, body) = request(&s);
+            let auth = headers.iter().find(|(k, _)| k == "authorization");
+            let answer = match auth {
+                Some((_, a)) => {
+                    saw.lock().unwrap().push(a.clone());
+                    backend(&root, &first, &headers, &body)
+                }
+                None => b"HTTP/1.1 401 Unauthorized\r\nWWW-Authenticate: Basic realm=\"r\"\r\n\
+                          Content-Length: 0\r\nConnection: close\r\n\r\n"
+                    .to_vec(),
             };
-            saw.lock().unwrap().extend(auth);
-            let _wrote = s.write_all(answer);
+            let _wrote = s.write_all(&answer);
         }
     });
     (url, seen)
 }
 
-/// An askpass at `dir/askpass` that records each call in `dir/calls`, answers `craft` for a
-/// username and `token` for a password, after `pause` seconds.
-fn askpass(dir: &Path, pause: u32) -> std::path::PathBuf {
+/// An askpass at `dir/askpass` that records each call in `dir/calls` and answers `craft` for a
+/// username and `token` for a password.
+fn askpass(dir: &Path) -> PathBuf {
     let at = dir.join("askpass");
     let script = format!(
-        "#!/bin/sh\necho \"$*\" >> '{}'\nsleep {pause}\n\
+        "#!/bin/sh\necho \"$*\" >> '{}'\n\
          case \"$1\" in Username*) echo craft ;; *) echo token ;; esac\n",
         dir.join("calls").display()
     );
@@ -66,11 +172,16 @@ fn askpass(dir: &Path, pause: u32) -> std::path::PathBuf {
     at
 }
 
-/// git reaching `URL` at the asking remote, no configuration but this test's.
-fn git_to(remote: &str) -> Git {
+#[test]
+fn the_callers_own_askpass_is_used_git_authenticates_and_the_source_is_prepared() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("served");
+    repository(&root);
+    let (remote, seen) = asking_remote(root);
     let mut git = Git::prompt_free();
     git.timeout = Duration::from_secs(15);
     git.env.extend([
+        ("GIT_ASKPASS".into(), askpass(tmp.path()).into_os_string()),
         ("GIT_CONFIG_NOSYSTEM".into(), "1".into()),
         ("GIT_CONFIG_GLOBAL".into(), "/dev/null".into()),
         ("GIT_CONFIG_COUNT".into(), "1".into()),
@@ -80,10 +191,6 @@ fn git_to(remote: &str) -> Git {
         ),
         ("GIT_CONFIG_VALUE_0".into(), URL.into()),
     ]);
-    git
-}
-
-fn prepared_by(git: &Git) -> (Sources, Duration) {
     let point = IntegrationPoint {
         name: "sys".into(),
         repo: URL.into(),
@@ -91,53 +198,23 @@ fn prepared_by(git: &Git) -> (Sources, Duration) {
     };
     let cache = tempfile::tempdir().unwrap();
     let began = Instant::now();
-    let got = prepare(&[point], Ok(cache.path()), git);
-    (got, began.elapsed())
-}
-
-#[test]
-fn a_desktop_askpass_is_never_started_and_git_fails_at_once() {
-    if caller_chooses_prompts("a_desktop_askpass_is_never_started_and_git_fails_at_once") {
-        return;
-    }
-    let tmp = tempfile::tempdir().unwrap();
-    let ask = askpass(tmp.path(), 30).into_os_string();
-    let (remote, _) = asking_remote();
-    let mut git = git_to(&remote);
-    git.env.extend([
-        ("DISPLAY".into(), ":0".into()),
-        ("SSH_ASKPASS".into(), ask.clone()),
-        ("GIT_CONFIG_COUNT".into(), "2".into()),
-        ("GIT_CONFIG_KEY_1".into(), "core.askPass".into()),
-        ("GIT_CONFIG_VALUE_1".into(), ask),
-    ]);
-    let (got, took) = prepared_by(&git);
-    assert!(took < Duration::from_secs(10), "{took:?}: {got:?}");
+    let got = prepare(&[point], Ok(cache.path()), &git);
     assert!(
-        !tmp.path().join("calls").exists(),
-        "askpass was started: {got:?}"
+        began.elapsed() < Duration::from_secs(10),
+        "{:?}",
+        began.elapsed()
     );
-    let error = &got.failed[0].error;
-    assert!(error.starts_with("git failed: "), "{got:?}");
-    assert!(error.contains("credential helper"), "{error}");
-    assert!(section(&got, &[]).contains("- ⚠️ sys: git failed: "));
-}
-
-#[test]
-fn the_callers_own_askpass_is_used_and_git_authenticates() {
-    let tmp = tempfile::tempdir().unwrap();
-    let ask = askpass(tmp.path(), 0).into_os_string();
-    let (remote, seen) = asking_remote();
-    let mut git = git_to(&remote);
-    git.env.push(("GIT_ASKPASS".into(), ask));
-    let (got, took) = prepared_by(&git);
-    assert!(took < Duration::from_secs(10), "{took:?}: {got:?}");
     assert!(
         tmp.path().join("calls").is_file(),
         "askpass never ran: {got:?}"
     );
     assert!(
-        seen.lock().unwrap().iter().any(|a| a.trim() == CRAFT_TOKEN),
+        seen.lock().unwrap().iter().any(|a| a == CRAFT_TOKEN),
         "{seen:?}: {got:?}"
+    );
+    assert_eq!(got.failed, [], "{got:?}");
+    assert!(
+        Path::new(&got.prepared[0].dir).join("main.go").is_file(),
+        "{got:?}"
     );
 }

@@ -6,7 +6,7 @@ use std::ffi::OsString;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use crate::cancel::{Cancel, STOPPED, detached_no_prompt, kill_group};
+use crate::cancel::{Cancel, STOPPED, detached, kill_group, no_prompt_env};
 use spool::Spool;
 
 mod spool;
@@ -38,11 +38,12 @@ const REPO_VARS: [&str; 14] = [
     "GIT_INTERNAL_SUPER_PREFIX",
 ];
 
-/// What a source whose git failed on the remote is told with: git asks nothing here unless the
-/// caller named an askpass (`detached_no_prompt`), so its last line ("Could not read from remote
-/// repository") is all it says of an authentication.
-pub(crate) const AUTH_HINT: &str = "craft runs git with no terminal or password prompt: an ssh key \
-    with a passphrase must be in ssh-agent, https needs a credential helper or a token";
+/// What a source whose git failed on the remote is told with: git asks on no terminal here and
+/// ssh through no askpass the caller did not choose (`no_prompt_env`, `detached`), so git's last
+/// line ("Could not read from remote repository") is all it says of an access failure.
+pub(crate) const AUTH_HINT: &str = "if this is an access failure: craft runs git with no terminal \
+    prompt, so an ssh key with a passphrase must be in ssh-agent, and https needs a credential \
+    helper, a token or an askpass of your own";
 
 /// The failure of a command the budget cut, and of one it left no time for.
 pub(super) const OUT_OF_BUDGET: &str = "the preparation's budget ran out";
@@ -59,6 +60,8 @@ enum Call {
 pub struct Git {
     /// What the commands' environment adds to craft's own.
     pub env: Vec<(OsString, OsString)>,
+    /// What the commands' environment takes out of craft's own.
+    pub unset: Vec<OsString>,
     /// How long one command may run.
     pub timeout: Duration,
     /// How long the whole preparation may run.
@@ -71,9 +74,9 @@ pub struct Git {
 }
 
 impl Git {
-    /// git that never prompts on its own — every command runs detached, with no prompt but an
-    /// askpass the caller named (`detached_no_prompt`) — with batch mode and a connect timeout for
-    /// ssh unless the caller set its own command (`gitEnv`).
+    /// git that never prompts on a terminal — every command runs detached, with craft's no-prompt
+    /// environment (`detached`, `no_prompt_env`) — with batch mode and a connect timeout for ssh
+    /// unless the caller set its own command (`gitEnv`).
     #[must_use]
     pub fn prompt_free() -> Self {
         let mut env = Vec::new();
@@ -82,6 +85,7 @@ impl Git {
         }
         Self {
             env,
+            unset: Vec::new(),
             timeout: GIT_TIMEOUT,
             budget: BUDGET,
             deadline: None,
@@ -144,12 +148,16 @@ impl Git {
         for v in REPO_VARS {
             cmd.env_remove(v);
         }
+        for v in &self.unset {
+            cmd.env_remove(v);
+        }
         // Detached, with no prompt (realm @nick/craft, node #545): a stop or the timeout kills what
         // it runs too (ssh, a helper), and an ssh of the caller's own `GIT_SSH_COMMAND` (no batch
-        // mode) or a remote that asks a password fails at once instead of waiting on a terminal or
-        // a desktop's askpass, unless the caller named one; the report names the source with git's
-        // reason, a remote's failure with the hint [`AUTH_HINT`].
-        detached_no_prompt(&mut cmd);
+        // mode) that asks a passphrase fails at once instead of waiting on a terminal or an ssh
+        // askpass the caller did not choose; the report names the source with git's reason, a
+        // remote's failure with the hint [`AUTH_HINT`].
+        no_prompt_env(&mut cmd);
+        detached(&mut cmd);
         let (mut out, mut err) = (Spool::new()?, Spool::new()?);
         let mut child = cmd
             .stdin(Stdio::null())
