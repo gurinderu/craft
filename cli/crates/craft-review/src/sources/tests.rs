@@ -388,3 +388,17 @@ fn a_local_git_failure_carries_no_authentication_hint_and_a_remote_one_does() {
         "{unreachable:?}"
     );
 }
+
+#[test]
+fn a_commit_the_remote_lacks_fails_its_fetch_with_the_hint() {
+    let (t, _) = remote();
+    let lacked = "0123456789abcdef0123456789abcdef01234567";
+    let got = prepare(
+        &[point(lacked)],
+        Ok(&cache(t.path())),
+        &git_to(Some(t.path())),
+    );
+    let error = &got.failed[0].error;
+    assert!(error.starts_with("git failed: "), "{got:?}");
+    assert!(error.ends_with(super::runner::AUTH_HINT), "{error}");
+}

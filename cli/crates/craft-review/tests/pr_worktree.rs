@@ -315,6 +315,8 @@ fn a_head_that_cannot_be_fetched_is_refused_with_the_manual_way() {
         "does not hold it",
         "git fetch origin pull/7/head",
         "drop `pr=`",
+        // The fetch reaches origin: its failure says git asks for no credentials.
+        "must be in ssh-agent",
     ] {
         assert!(err.contains(want), "{want} missing from: {err}");
     }

@@ -108,3 +108,28 @@ fn the_timeout_kills_the_running_git_and_its_children() {
         std::thread::sleep(Duration::from_millis(20));
     }
 }
+
+#[test]
+fn a_remote_calls_timeout_stop_and_missing_git_carry_no_hint() {
+    let mut git = Git::prompt_free();
+    git.timeout = Duration::from_secs(1);
+    let slow = "alias.slow=!sh -c 'exec sleep 30'";
+    assert_eq!(
+        git.run_remote(&["-c", slow, "slow"]),
+        Err("git timed out after 1s".to_owned())
+    );
+    let mut nowhere = Git::prompt_free();
+    nowhere.env.push(("PATH".into(), "/nonexistent".into()));
+    assert_eq!(
+        nowhere.run_remote(&["--version"]),
+        Err("git not found on PATH".to_owned())
+    );
+    let cancel = Cancel::default();
+    cancel.cancel();
+    assert_eq!(
+        Git::prompt_free()
+            .stopped_by(cancel)
+            .run_remote(&["--version"]),
+        Err(STOPPED.to_owned())
+    );
+}
