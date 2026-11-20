@@ -128,6 +128,26 @@ fn run_key(r: &Obj) -> Option<String> {
     Some(Js::Arr(key).compact())
 }
 
+/// Folds repeated records of the same resumed run, retaining the newest record.
+#[must_use]
+pub fn fold_runs(records: Vec<Obj>) -> Vec<Obj> {
+    let mut kept = Vec::new();
+    let mut newest: Vec<(String, Obj)> = Vec::new();
+    for r in records {
+        let Some(key) = run_key(&r) else {
+            kept.push(r);
+            continue;
+        };
+        match newest.iter_mut().find(|(k, _)| *k == key) {
+            Some((_, seen)) if r.text("ts") > seen.text("ts") => *seen = r,
+            Some(_) => {}
+            None => newest.push((key, r)),
+        }
+    }
+    kept.extend(newest.into_iter().map(|(_, r)| r));
+    kept
+}
+
 /// The version's finished runs among `records`, a resumed run once.
 fn finished_of(
     version: &str,
@@ -135,7 +155,6 @@ fn finished_of(
     retro: &mut Retro,
 ) -> Vec<Obj> {
     let mut kept = Vec::new();
-    let mut newest: Vec<(String, Obj)> = Vec::new();
     for r in records {
         if !r.get("schemaVersion").is_some_and(Js::truthy) || r.text("craftVersion") != version {
             retro.other += 1;
@@ -145,22 +164,12 @@ fn finished_of(
             retro.unfinished += 1;
             continue;
         }
-        let Some(key) = run_key(&r) else {
-            kept.push(r);
-            continue;
-        };
-        match newest.iter_mut().find(|(k, _)| *k == key) {
-            Some((_, seen)) => {
-                retro.folded += 1;
-                if r.text("ts") > seen.text("ts") {
-                    *seen = r;
-                }
-            }
-            None => newest.push((key, r)),
-        }
+        kept.push(r);
     }
-    kept.extend(newest.into_iter().map(|(_, r)| r));
-    kept
+    let before = kept.len();
+    let folded = fold_runs(kept);
+    retro.folded += u64::try_from(before - folded.len()).unwrap_or(u64::MAX);
+    folded
 }
 
 /// The retro of `version` over every record.

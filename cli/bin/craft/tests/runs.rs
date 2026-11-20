@@ -39,12 +39,11 @@ fn review(version: &str, verdict: &str, high: u64) -> Value {
 /// broken index line.
 fn store() -> tempfile::TempDir {
     let d = tempfile::tempdir().unwrap();
-    record(
-        d.path(),
-        "2026-11-01T10-00-00Z",
-        &review("0.9.0", "Block", 2),
-    );
+    let mut finished = review("0.9.0", "Block", 2);
+    finished["phases"] = json!([{ "phase": "start", "ts": "2026-11-01T09:59:00Z" }]);
+    record(d.path(), "2026-11-01T10-00-00Z", &finished);
     let mut dead = review("0.9.0", "INCOMPLETE", 0);
+    dead["phases"] = finished["phases"].clone();
     dead["notRun"] = json!(["the craft binary did not finish the run"]);
     record(d.path(), "2026-11-01T10-05-00Z", &dead);
     record(
@@ -189,5 +188,73 @@ fn check_finds_the_broken_line_the_phantom_incomplete_and_exits_one() {
     assert_eq!(
         String::from_utf8_lossy(&ok.stdout).trim(),
         "the store is clean"
+    );
+}
+
+#[test]
+fn check_rejects_a_corrupt_indexed_record() {
+    let d = tempfile::tempdir().unwrap();
+    record(
+        d.path(),
+        "2026-11-01T10-00-00Z",
+        &review("0.9.0", "Block", 1),
+    );
+    std::fs::write(
+        d.path().join("2026-11-01T10-00-00Z-workflow-review.json"),
+        "{",
+    )
+    .unwrap();
+    let out = craft(d.path(), &["check", "--json"]);
+    assert_eq!(out.status.code(), Some(1));
+    assert!(
+        ndjson(&out)
+            .iter()
+            .any(|r| r["kind"] == "unreadable-record")
+    );
+}
+
+#[test]
+fn check_reports_unfinalized_checkpoints_with_a_failure_exit() {
+    let d = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(d.path().join(".partial/leftover")).unwrap();
+    let out = craft(d.path(), &["check", "--json"]);
+    assert_eq!(out.status.code(), Some(1));
+    assert!(
+        ndjson(&out)
+            .iter()
+            .any(|r| r["kind"] == "unfinalized-checkpoints")
+    );
+}
+
+#[test]
+fn stats_count_a_resumed_run_once() {
+    let d = tempfile::tempdir().unwrap();
+    let mut r = review("0.9.0", "Block", 2);
+    r["filesDigest"] = json!("same-files");
+    r["round"] = json!(2);
+    record(d.path(), "2026-11-01T10-00-00Z", &r);
+    record(d.path(), "2026-11-01T10-01-00Z", &r);
+    let rows = ndjson(&craft(d.path(), &["stats", "--by", "version", "--json"]));
+    assert_eq!(rows[0]["tally"]["runs"], json!(1));
+}
+
+#[test]
+fn check_does_not_call_independent_runs_phantom_twins() {
+    let d = tempfile::tempdir().unwrap();
+    record(
+        d.path(),
+        "2026-11-01T10-00-00Z",
+        &review("0.9.0", "Block", 2),
+    );
+    record(
+        d.path(),
+        "2026-11-01T10-05-00Z",
+        &review("0.9.0", "INCOMPLETE", 0),
+    );
+    let out = craft(d.path(), &["check", "--json"]);
+    assert!(
+        !ndjson(&out)
+            .iter()
+            .any(|r| r["kind"] == "phantom-incomplete")
     );
 }

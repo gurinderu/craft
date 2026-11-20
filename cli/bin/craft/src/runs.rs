@@ -243,12 +243,17 @@ fn stats(
     skipped: &mut Skipped,
 ) -> Result<Vec<(String, Tally)>> {
     let mut groups: std::collections::BTreeMap<String, Tally> = std::collections::BTreeMap::new();
+    let mut records = Vec::new();
     read::records(store, skipped, |_, r| {
         let finished = r.get("schemaVersion").is_some_and(Js::truthy)
             && !r.get("partial").is_some_and(Js::truthy);
         if !finished || !filter.keeps(&r) {
             return;
         }
+        records.push(r);
+    })
+    .with_context(|| format!("reading {}", store.display()))?;
+    for r in craft_store::retro::fold_runs(records) {
         let key = match by {
             By::Version => r.text("craftVersion"),
             By::Name => r.text("name"),
@@ -256,7 +261,6 @@ fn stats(
         };
         let key = if key.is_empty() { "(none)" } else { key };
         groups.entry(key.to_owned()).or_default().add(&r);
-    })
-    .with_context(|| format!("reading {}", store.display()))?;
+    }
     Ok(groups.into_iter().collect())
 }

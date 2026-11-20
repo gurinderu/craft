@@ -34,6 +34,7 @@ impl Found {
             && self.missing.is_empty()
             && self.phantoms.is_empty()
             && self.unfiled.is_empty()
+            && self.partials.is_empty()
     }
 }
 
@@ -69,20 +70,36 @@ fn row_of(r: &Obj) -> Row {
 /// Each INCOMPLETE row's finished twin: a row of the same run filed in the same segment whose
 /// record did not die (`partial`).
 fn phantoms(store: &Path, rows: &[Row]) -> Vec<(String, String)> {
-    let finished = |f: &str| {
-        crate::read::record(store, f).is_ok_and(|r| !r.get("partial").is_some_and(Js::truthy))
-    };
     let mut out = Vec::new();
     for row in rows.iter().filter(|r| r.incomplete) {
         let Some((run, at)) = &row.run else { continue };
+        let Ok(incomplete) = crate::read::record(store, &row.file) else {
+            continue;
+        };
+        let Some(phases) = incomplete
+            .get("phases")
+            .and_then(Js::as_arr)
+            .filter(|p| !p.is_empty())
+        else {
+            continue;
+        };
         let same = |r: &Row| {
             r.run
                 .as_ref()
                 .is_some_and(|(k, t)| k == run && (t - at).abs() <= SEGMENT_MS)
         };
-        let twin = rows
-            .iter()
-            .find(|r| !r.incomplete && r.file != row.file && same(r) && finished(&r.file));
+        let twin = rows.iter().find(|r| {
+            !r.incomplete
+                && r.file != row.file
+                && same(r)
+                && crate::read::record(store, &r.file).is_ok_and(|full| {
+                    !full.get("partial").is_some_and(Js::truthy)
+                        && full
+                            .get("phases")
+                            .and_then(Js::as_arr)
+                            .is_some_and(|all| phases.iter().all(|p| all.contains(p)))
+                })
+        });
         if let Some(t) = twin {
             out.push((row.file.clone(), t.file.clone()));
         }
@@ -100,6 +117,11 @@ pub fn check(store: &Path) -> std::io::Result<Found> {
     index(store, &mut found.skipped, |_, r| rows.push(row_of(&r)))?;
     let named: BTreeSet<String> = rows.iter().map(|r| r.file.clone()).collect();
     let on_disk: BTreeSet<String> = record_names(store)?.into_iter().collect();
+    for name in &on_disk {
+        if let Err(why) = crate::read::record(store, name) {
+            found.skipped.records.push((name.clone(), why));
+        }
+    }
     found.unindexed = on_disk.difference(&named).cloned().collect();
     found.missing = named.difference(&on_disk).cloned().collect();
     found.phantoms = phantoms(store, &rows);
