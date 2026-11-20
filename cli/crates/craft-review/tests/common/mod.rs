@@ -86,6 +86,7 @@ pub fn opts(repo: &Path, run: &Path) -> StartOptions {
         chain_gh: None,
         worktrees: None,
         runtime: None,
+        cancel: craft_review::cancel::Cancel::default(),
     }
 }
 
