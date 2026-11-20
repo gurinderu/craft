@@ -390,11 +390,12 @@ fn listed(heading: Option<&str>, files: &[String], out: &mut String) {
     out.push('\n');
 }
 
-/// How the run was weaker than asked: the host's notes, then the CONSUMERS lines no lens marked
-/// per line and no seam pass read (realm @nick/craft, node #531).
+/// How the run was weaker than asked: the host's notes, the gate's unread changed lines, then the
+/// CONSUMERS lines no lens marked per line and no seam pass read (realm @nick/craft, node #531).
 #[must_use]
 pub fn degraded_notes(state: &RunState) -> Vec<String> {
     let mut notes = state.degraded.clone();
+    notes.extend(state.gate.unread_note());
     notes.extend(
         consumer_lines::all(state)
             .into_iter()

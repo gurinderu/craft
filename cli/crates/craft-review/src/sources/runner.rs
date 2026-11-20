@@ -6,6 +6,8 @@ use std::ffi::OsString;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
+use crate::cancel::{Cancel, STOPPED};
+
 /// How long one git command may run.
 const GIT_TIMEOUT: Duration = Duration::from_secs(120);
 /// How long the whole preparation may run: well under the 600 s the driver gives `review start`
@@ -47,6 +49,8 @@ pub struct Git {
     pub budget: Duration,
     /// When the budget runs out, once a preparation started.
     pub(super) deadline: Option<Instant>,
+    /// A stop asked of the run: the command running is killed and no other starts.
+    pub(super) cancel: Cancel,
 }
 
 impl Git {
@@ -63,6 +67,16 @@ impl Git {
             timeout: GIT_TIMEOUT,
             budget: BUDGET,
             deadline: None,
+            cancel: Cancel::default(),
+        }
+    }
+
+    /// This git, its commands stopped once `cancel` is.
+    #[must_use]
+    pub fn stopped_by(&self, cancel: Cancel) -> Self {
+        Self {
+            cancel,
+            ..self.clone()
         }
     }
 
@@ -88,6 +102,9 @@ impl Git {
     /// is read once git exits: each command here prints a line or two, well under a pipe's
     /// buffer.
     pub(crate) fn run(&self, args: &[&str]) -> Result<String, String> {
+        if self.cancel.is_cancelled() {
+            return Err(STOPPED.into());
+        }
         let (limit, budget) = self.limit();
         if limit.is_zero() {
             return Err(OUT_OF_BUDGET.into());
@@ -111,6 +128,11 @@ impl Git {
             })?;
         let start = Instant::now();
         while child.try_wait().map_err(|e| e.to_string())?.is_none() {
+            if self.cancel.is_cancelled() {
+                child.kill().map_err(|e| e.to_string())?;
+                child.wait().map_err(|e| e.to_string())?;
+                return Err(STOPPED.into());
+            }
             if start.elapsed() > limit {
                 child.kill().map_err(|e| e.to_string())?;
                 child.wait().map_err(|e| e.to_string())?;
@@ -143,3 +165,6 @@ impl Git {
             .any(|l| l.split('\t').nth(1) == Some(want.as_str())))
     }
 }
+
+#[cfg(test)]
+mod tests;
