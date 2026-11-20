@@ -47,7 +47,16 @@ mod corrupt_rejoin_test {
         };
         let error = finalize(&Obj::new(), &w, asked, &mut Said::default()).unwrap_err();
         assert!(error.to_string().contains("01-bad.json"));
-        assert!(dir.join("01-bad.json").exists());
+        assert_eq!(
+            std::fs::read_to_string(dir.join("01-bad.json")).unwrap(),
+            "{"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.join("00-good.json")).unwrap(),
+            r#"{"project":"/p"}"#
+        );
+        assert_eq!(std::fs::read_dir(d.path()).unwrap().count(), 1);
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 2);
     }
 }
 
@@ -80,7 +89,8 @@ pub(crate) fn safe_path(p: &str) -> String {
 /// Files `raw`: the record a finalize files, its lines said into `said`.
 ///
 /// # Errors
-/// When the record itself cannot be written; a warning in `said.err` may come before it.
+/// When the record cannot be written or a rejoin's checkpoints cannot be read; a warning in
+/// `said.err` may come before it.
 pub fn finalize(
     raw: &Obj,
     w: &Writing,
