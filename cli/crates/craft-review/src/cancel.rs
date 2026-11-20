@@ -73,19 +73,39 @@ fn new_session(cmd: &mut Command) {
     }
 }
 
-/// Kills `child` and every process of its group (see [`detached`]), then reaps it.
+/// How long a stopped group has to exit on SIGTERM before SIGKILL.
+#[cfg(unix)]
+const GRACE: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// Kills `child` and every process of its group (see [`detached`]), then reaps it: SIGTERM first,
+/// for git to remove the lock files it holds in the user's repository (the ref lock of a fetch
+/// stopped while updating `origin/<branch>`), which SIGKILL leaves behind, so the next fetch
+/// there fails on it; SIGKILL to what is left once `child` exits or [`GRACE`] runs out.
 pub fn kill_group(child: &mut Child) {
     #[cfg(unix)]
     if let Ok(pid) = i32::try_from(child.id()) {
-        let group = nix::unistd::Pid::from_raw(pid);
-        // The group may be gone already: nothing is left to kill then.
-        nix::sys::signal::killpg(group, nix::sys::signal::Signal::SIGKILL).unwrap_or(());
+        stop_group(child, nix::unistd::Pid::from_raw(pid));
     }
     // Likewise the leader, which the group's kill may have reaped already.
     child.kill().unwrap_or(());
     if child.wait().is_err() {
         // Nothing is left to reap.
     }
+}
+
+#[cfg(unix)]
+fn stop_group(child: &mut Child, group: nix::unistd::Pid) {
+    use nix::sys::signal::{Signal, killpg};
+    // The group may be gone already: nothing is left to stop then.
+    if killpg(group, Signal::SIGTERM).is_err() {
+        return;
+    }
+    let deadline = std::time::Instant::now() + GRACE;
+    while matches!(child.try_wait(), Ok(None)) && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    // What outlived the grace or its leader, if anything.
+    killpg(group, Signal::SIGKILL).unwrap_or(());
 }
 
 #[cfg(test)]
