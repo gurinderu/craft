@@ -165,13 +165,18 @@ Review the diff against these tiers. This skill owns only the review *process*; 
 
 ### MEDIUM — warn, may merge
 
-**Performance** (MEDIUM on a hot path — a loop, a request handler, a per-item or per-request call; LOW elsewhere; one finding per pattern)
-- Allocation inside a hot loop; `clone()`/`to_string()`/`to_owned()`/`format!` only to satisfy a borrow, or inside a loop
+**Performance**
+- Allocation inside a hot loop
 - `Vec::new()` + push loop where the size is known (`with_capacity`)
 - N+1 queries / repeated work in a loop
-- `collect()` into a `Vec` only to iterate it, take its length or call `contains`
-- Returning `Vec`/`String` where `impl Iterator` or a borrow (`&str`) would do
-- A `&[String]`/`&Vec<String>`/`&String` parameter where `&[&str]`, `impl IntoIterator<Item = impl AsRef<str>>` or `&str` serves callers
+
+Needless allocation (`PER-001`, `PER-004`–`PER-007`) is LOW whatever the path — a performance cost
+names no harm above `none`; the finding says whether it sits on a hot path, and one finding per
+pattern lists every site (rules.md, footnote ⁴):
+- `to_string()`/`to_owned()`/`format!`/`clone()` inside a loop (a clone only for the borrow checker is OWN-001)
+- `collect()` into a `Vec` only to iterate it once, take its length or call `contains`
+- Returning `Vec`/`String` where `impl Iterator` or a borrow (`&str`) would do — not on a library's `pub` item
+- A `&[String]`-style parameter where `&[&str]` or `impl IntoIterator<Item = impl AsRef<str>>` serves callers — not on a library's `pub` item; `&String`/`&Vec<T>` is clippy `ptr_arg`
 - A lookup key built into a `String` only for a `get`
 
 **API & quality**
@@ -233,7 +238,7 @@ others (higher recall than one broad pass):
 | safety | injection / secrets / unsafe / untrusted-input limits / build-profile-divergent arithmetic and guards | `rust-security`, `rust-unsafe` |
 | errors | Result-vs-panic, dropped errors, typed-vs-anyhow | `rust-errors` |
 | concurrency | blocking-in-async, lock-across-await, deadlock, Send/Sync | `rust-concurrency` |
-| performance | needless allocation (`collect` only to iterate, owned returns and `&[String]` params where a borrow or iterator fits, clones and `format!` for a borrow or in a loop, `String` lookup keys), hot-loop allocation, N+1 | `rust-performance` |
+| performance | hot-loop allocation, N+1; needless allocation at LOW (`collect` only to iterate, owned returns and `&[String]` params where an iterator or borrow fits, `format!`/clones in a loop, `String` lookup keys) | `rust-performance` |
 | invariants | domain lifecycle/scope rules, derived/effective quantities, eligibility checks that **diverge from an existing sibling gate** (a new capacity/permission predicate dropping a fail-closed dimension), and the **mirror walk** on two-sided contracts (below) | `rust-architecture`, `rust-fintech` |
 | compat | backward compatibility of every contract another version reads, calls or deploys against — serde/JSONB/wire data (rename with no `alias`, `alias` that only covers new-reads-old, unbackfilled migration), CLI/config/env/Helm surface and defaults, CRD/API versions, IDL, rollout order, renamed exports, regression vs last release; reads the language-agnostic `compatibility` catalogue | `compatibility`, `rust-ecosystem` |
 | maintainability | structural simplification (code judo), file-size growth, spaghetti branching, needless optionality/casts | `refactoring`, `rust-idioms` |
@@ -250,8 +255,8 @@ Low/Info volume: `api-idioms` (typed errors, giant fns, wildcard match, missing 
 `#![deny(warnings)]` — `rust-idioms`) and `api-boundary` (error→HTTP-status mapping, OpenAPI
 completeness — `rust-web`). Their findings are real and worth having, so they are not deleted; they
 are bought deliberately with `optional=true` (or a subset: `optional=api-idioms`). `performance`
-was in this pass and now runs in every Rust review, scoped to needless allocation and rated by the
-hot path it sits on. Neither `strict` nor the security-sensitive floor turns the pass on or off —
+was in this pass and now runs in every Rust review (not yet observed live), scoped to needless
+allocation at LOW. Neither `strict` nor the security-sensitive floor turns the pass on or off —
 the request is the only switch. A run that
 skipped it says so in its report and on its run record: that is an absence of a result, never a
 clean one. A run stopped by a red mechanical gate lists only the optional lenses you requested —
