@@ -1,5 +1,6 @@
 //! A run's telemetry lands with no node on the PATH and no plugin root: the binary writes the run
 //! store itself (realm @nick/craft, node #539).
+#![cfg(unix)]
 #![expect(
     clippy::unwrap_used,
     reason = "the fixture fails the test loudly, like the test it serves"

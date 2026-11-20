@@ -37,3 +37,13 @@ fn string_of_a_value_is_javascripts() {
     let got: Vec<String> = v.as_arr().unwrap().iter().map(Js::to_js_string).collect();
     assert_eq!(got, ["null", "true", "3", "s", "1,,2", "[object Object]"]);
 }
+#[test]
+fn lone_surrogates_are_not_silently_replaced() {
+    for input in [r#""\ud800""#, r#""\udc00""#, r#"{"\ud800":1,"\ud801":2}"#] {
+        assert!(super::parse(input).is_err(), "{input}");
+    }
+    assert_eq!(
+        super::parse(r#""\ud83d\ude00""#).unwrap().to_js_string(),
+        "😀"
+    );
+}

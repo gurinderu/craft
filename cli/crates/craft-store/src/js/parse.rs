@@ -242,6 +242,6 @@ impl Parser<'_> {
             }
             self.i = back;
         }
-        Ok(char::from_u32(hi).unwrap_or('\u{fffd}'))
+        char::from_u32(hi).ok_or_else(|| self.err("unpaired unicode surrogate"))
     }
 }
