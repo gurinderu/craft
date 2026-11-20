@@ -1,5 +1,98 @@
 # Changelog
 
+## [0.55.0](https://github.com/gurinderu/craft/compare/v0.54.1...v0.55.0) (2026-11-20)
+
+
+### Features
+
+* check an opened PR for a full craft review after the fact, asking GitHub for its head ([cf3664b](https://github.com/gurinderu/craft/commit/cf3664bd3fbd3e6a047b8c6638f467f222d8f2ee))
+* count a finished rust-audit on HEAD as a full review in the pre-PR check ([a98af93](https://github.com/gurinderu/craft/commit/a98af93e3ef0b9a0848fe5df1c2cec8797170092))
+* hand every lens a consumers list of the changed symbols ([3c58464](https://github.com/gurinderu/craft/commit/3c584642ac9535609c575e42b1ca1aeb44105df2))
+* hand every lens the consumers of the symbols a change touches ([84881a4](https://github.com/gurinderu/craft/commit/84881a42fd0e1613bff2a7a2430a176e00a413de))
+* make develop's final full review always a fresh craft:review over the branch diff ([dca59eb](https://github.com/gurinderu/craft/commit/dca59ebeb8ff214d6409d8bbea3f642686aeac46))
+* run a declared reviewer beside develop's final full craft:review, never instead of it ([c0207d9](https://github.com/gurinderu/craft/commit/c0207d9d10aca93d459391b1f1fa1ffc3f721d42))
+* say in the SessionStart hook that a repo's roles run beside the final full craft:review, never replace it ([8c01ca1](https://github.com/gurinderu/craft/commit/8c01ca1b7bd40509add2e0db9f9d15042a2c15fc))
+* warn after a PR is opened with no full craft review of its head ([5b88626](https://github.com/gurinderu/craft/commit/5b8862613cb2a47a3442f3bd7cb1fcea3c9643f2))
+* warn before gh pr create when HEAD has no full craft review ([6080120](https://github.com/gurinderu/craft/commit/6080120d733d4e64c03a3c2704307b3876420644))
+
+
+### Bug Fixes
+
+* ask a lens again when its answer leaves a CONSUMERS line unmarked ([642766a](https://github.com/gurinderu/craft/commit/642766abbc27217d10978c79c90770b107591207))
+* ask for a fresh review after a stop during a review run's start ([db89979](https://github.com/gurinderu/craft/commit/db899795a26c652d8507da73f41d8acf30790d78))
+* ask the graph for a symbol's own callers, within a bound that keeps its answers ([28b93ca](https://github.com/gurinderu/craft/commit/28b93ca79cc2ca403df83eadc8b65378a0862c39))
+* ask the graph only of an index of this repository whose root holds the base, and read its callers only inside the repository ([45572cc](https://github.com/gurinderu/craft/commit/45572cc41f668d973c58c452576ab078f76639ef))
+* close open issues — flaky test, fixtures, step split, prompt stop in start, loud unread changed lines ([90fc705](https://github.com/gurinderu/craft/commit/90fc7055d0b76da43e3cc8f65ed7ef6c60955461))
+* count a nothing-to-review full review and read a bare trunk base against origin in the pre-PR check ([38170e0](https://github.com/gurinderu/craft/commit/38170e0861b71fc5cec7d0c70f1162d853f54477))
+* count only a full review of the PR's head and whole change in the pre-PR check, and say every doubt ([5bc40c7](https://github.com/gurinderu/craft/commit/5bc40c7440850cbe50c526f5338b4d5baad95f23))
+* drop a CRLF line's carriage return in the streamed name search ([3821a3b](https://github.com/gurinderu/craft/commit/3821a3b5d4aff27bbac238d828dc3d681386f714))
+* drop a kept marks-only answer only once the state saying it answered is saved ([e2d2542](https://github.com/gurinderu/craft/commit/e2d2542c986e99b335695279328ec58acf63fd95))
+* fall back on a lens answer refused only for unmarked CONSUMERS lines ([1263239](https://github.com/gurinderu/craft/commit/1263239f0e387a51e8dc05503102ce03e60458e4))
+* file a finished review round once, even when its step is too large to relay ([e664736](https://github.com/gurinderu/craft/commit/e664736307acd599783fe8ed1f250a38aae13641))
+* grade a weak test assertion by the regression it lets through, and keep harm 'text' for text alone ([6eb993a](https://github.com/gurinderu/craft/commit/6eb993a5244a8f9902360066883ab3f64a3aefde))
+* hand a confined lens only its units' consumers, the seam pass every line, and no other profile the Rust list ([c3a6c4e](https://github.com/gurinderu/craft/commit/c3a6c4e6a7d6349d9be1107b0d0a29195e3b4c0c))
+* hand the lenses every consumers gap they can act on, from one list of the gap fields ([5d45244](https://github.com/gurinderu/craft/commit/5d45244bdcc089b1ac7b9237bb51d97416eb1c83))
+* hold a critic-admitted lens to the CONSUMERS lines its prompt shows ([0bcca60](https://github.com/gurinderu/craft/commit/0bcca60747390dad69a687637854112f9c8d5702))
+* judge a weak assertion's reach on its regression and hold every weak assertion to should-fix ([f2cb7b2](https://github.com/gurinderu/craft/commit/f2cb7b29392e15b921d33aa169d67e9abbcb103a))
+* judge the CONSUMERS lines left to the seam pass by their own track's seam pass ([06bc73a](https://github.com/gurinderu/craft/commit/06bc73ab77c6982ccd9871393b6c76e30dad107b))
+* keep a briefly read run's degraded, stop and worktree lines, and brief any unreadable status ([05dde00](https://github.com/gurinderu/craft/commit/05dde00f07392e8ff1e35e3caca4f12f31a23c90))
+* keep a symbol's non-test callers when its test question fails, and bound the graph's program with its process group ([18563fb](https://github.com/gurinderu/craft/commit/18563fbfe3fbcfe0ab1940b779a677e169afee81))
+* keep a usable code graph a write cannot reach, say the live graph against the held one, and name the write that records an indexed graph ([6f5648a](https://github.com/gurinderu/craft/commit/6f5648a89211d3b31c40b0dd73ed24416182ef43))
+* keep the caller's own askpass and block only the implicit fallbacks ([03d51a8](https://github.com/gurinderu/craft/commit/03d51a88f229d76a7116ea40bbcf4d86d12352f4)), closes [#417](https://github.com/gurinderu/craft/issues/417)
+* keep the CONSUMERS lines a stopped lens round's answers left unmarked ([bc99b83](https://github.com/gurinderu/craft/commit/bc99b836633a79c85c073fae985a37f6bb3a943f))
+* keep the review going on a changed path that is not UTF-8 ([106f332](https://github.com/gurinderu/craft/commit/106f33292fc83736cfe08df8f109c9a75786674e))
+* kill a source git's whole process group on a stop or timeout ([e406458](https://github.com/gurinderu/craft/commit/e4064589512c7f66a089f40816284f01fb4adf94))
+* kill the group on every early exit and open the spool reader by its handle ([ae2709e](https://github.com/gurinderu/craft/commit/ae2709e1e072774e732e3ccd7f00e50a4e45e5c2)), closes [#417](https://github.com/gurinderu/craft/issues/417)
+* kill what a finished git or gate tool left behind in its session ([e64ba76](https://github.com/gurinderu/craft/commit/e64ba76c0e072245d799717c81473bbd744fedc9)), closes [#417](https://github.com/gurinderu/craft/issues/417)
+* leave a changed path that is not UTF-8 out of the review whole ([1c58fec](https://github.com/gurinderu/craft/commit/1c58fec5bbae18cfc6149e90e4ab4f5af1a5fb3a))
+* leave a finished gate tool's children be and hint only remote failures ([6301355](https://github.com/gurinderu/craft/commit/63013554589eab525f6b05afc08724e6269c6983)), closes [#417](https://github.com/gurinderu/craft/issues/417)
+* let the binary find its own installed plugin copy to file the run record ([84e4907](https://github.com/gurinderu/craft/commit/84e4907fdd24b9cc123122a56db4ae194cb1a044))
+* list every consumer the change reaches, and say what the list misses ([14fd3df](https://github.com/gurinderu/craft/commit/14fd3df0ee0269143ff5f769b51df9ce0d90e0f1))
+* make the git output spool private, unlinked at once and bounded ([8e302f9](https://github.com/gurinderu/craft/commit/8e302f9d2b111f9e5bd1aafd4dfda9e7d9d282de)), closes [#417](https://github.com/gurinderu/craft/issues/417)
+* name a changed symbol in a file the graph's index left out, page the project listing, and say a non-string error ([7e2f4a3](https://github.com/gurinderu/craft/commit/7e2f4a30b7b10a771ff9369192ba52ecc7d5d188))
+* name CONSUMERS lines no lens or seam pass actually read ([091af3f](https://github.com/gurinderu/craft/commit/091af3f7d8fc89add7f0662272e502593117d284))
+* name craft's full review host-neutrally in the SessionStart hook's first line ([c542135](https://github.com/gurinderu/craft/commit/c54213521bdc8107cbfa9e8544d3a12d3cbddf59))
+* name every changed symbol the consumers list leaves out, keep a name per file, read only regular files and leave test items out ([ec1210b](https://github.com/gurinderu/craft/commit/ec1210b9d28553e4c79070d68a6fe6d5d99f0e03))
+* name the CONSUMERS lines only the seam pass read ([b9ab64b](https://github.com/gurinderu/craft/commit/b9ab64bd22571ec897c9fa8d91fd1f6b54e259a8))
+* narrow the no-prompt environment to craft's own git and detach the hook's fetch ([f544e1b](https://github.com/gurinderu/craft/commit/f544e1b1e11d6ab9b5603842b5ef49247a52192a)), closes [#417](https://github.com/gurinderu/craft/issues/417)
+* print a finished step without the chain's ledger, so a re-review round is filed once ([add8254](https://github.com/gurinderu/craft/commit/add82544f77170cdec688cec350da30c6ae74e63))
+* rank Critical above must-fix and set Pre-existing aside in the external findings match ([3c826de](https://github.com/gurinderu/craft/commit/3c826dee643cb1eab06d96092b85818409ed05be))
+* rate a weak assertion by its regression's harm and keep text harm for text alone ([5991b16](https://github.com/gurinderu/craft/commit/5991b160306992086a60dfd07f3bcae843d0a2d2))
+* read a changed path holding a space, a quote or a non-ASCII byte as its own name ([5c2c72e](https://github.com/gurinderu/craft/commit/5c2c72ed9a25e21780e29c546f5636c9bbefeb98))
+* read a finished run's end from a bounded brief status, so no size files an INCOMPLETE twin ([64be583](https://github.com/gurinderu/craft/commit/64be583b025205d89f7bdd22899cb4164c0b08d4))
+* read fluence-review's current format in the external findings match ([b7e6472](https://github.com/gurinderu/craft/commit/b7e6472c15087e77e02e115253d1d77f2c6be75a))
+* read fluence-review's current format in the external-findings matcher ([a2d5df6](https://github.com/gurinderu/craft/commit/a2d5df66756a2420281ce677f43f8696f0f2dd0c))
+* read the sources' git output from files and bound the hook's reads ([bbc478d](https://github.com/gurinderu/craft/commit/bbc478dd9773aa15b2663b4b6866a59d40ba3ff9)), closes [#417](https://github.com/gurinderu/craft/issues/417)
+* refuse --delta over a base older than the branch point, judged on the round's own base ([ab37ab6](https://github.com/gurinderu/craft/commit/ab37ab6b2551c5c68d4e8d931a4dfbe13f325b46))
+* refuse --delta over the branch point before any task ([642a6fb](https://github.com/gurinderu/craft/commit/642a6fbca74c4a98f3670d2ff627e97fc5197e7f))
+* refuse --delta when the round reaches back to the branch point ([d207e5a](https://github.com/gurinderu/craft/commit/d207e5a4f6f8ff61995a57c896e88f8e1f5f92d5))
+* run the gate's tools in a session of their own, with no terminal ([ef1c31a](https://github.com/gurinderu/craft/commit/ef1c31a8a2a76f575bba3796548f3355f7befa7c)), closes [#417](https://github.com/gurinderu/craft/issues/417)
+* run the sources' git in a session of its own, with no terminal ([4ac69a9](https://github.com/gurinderu/craft/commit/4ac69a94e996a86be022a305aa0bdd5b95c943cf)), closes [#417](https://github.com/gurinderu/craft/issues/417)
+* say an unfiled run record aloud and find the plugin root from the installed copy ([47f09ee](https://github.com/gurinderu/craft/commit/47f09eeb5dd21cccf48a896385ad7e9d8a3fc58c))
+* say an unfiled run record among the run's degraded notes, in its report and verdict ([1ac107a](https://github.com/gurinderu/craft/commit/1ac107a7292a2bf58f4755d813e97f8f1bc75972))
+* say nothing about the pre-PR check's binary unless the Bash call opened a PR ([b2e7b13](https://github.com/gurinderu/craft/commit/b2e7b1371355821dd235465278e2027cb9f1a645))
+* say the credential hint where a remote git call fails, not by its text ([e66619c](https://github.com/gurinderu/craft/commit/e66619c47c5b491f3598f275a67a191adc69c9ea)), closes [#417](https://github.com/gurinderu/craft/issues/417)
+* say when the gate or the publication could not read the change's lines ([1009f06](https://github.com/gurinderu/craft/commit/1009f066d7d9637167a79836883507004504dca3)), closes [#414](https://github.com/gurinderu/craft/issues/414)
+* say why no consumers list was built, name the item a pure deletion changes, read the diff from the recorded merge-base and start the list before the gate ([d9c1707](https://github.com/gurinderu/craft/commit/d9c1707efe811a2c74c78f164a018ad6f6153888))
+* search a name in Rust sources only, streamed and bounded in lines and time ([6f694bc](https://github.com/gurinderu/craft/commit/6f694bcc029ec69a146d010384c7bd0dcf7308ab))
+* stop a review run's start promptly on a stopping signal ([f6aabe5](https://github.com/gurinderu/craft/commit/f6aabe549a36e8bbfb0e97eff8c5ee083c020859)), closes [#411](https://github.com/gurinderu/craft/issues/411)
+* take a lens answer that leaves CONSUMERS lines unmarked at once and report the lines ([21236dd](https://github.com/gurinderu/craft/commit/21236dd0e8e7b1ec3e2df3245f772a5c9e6e8647))
+* take a lens's kept marks-only answer on every path that would fail it ([b0c2367](https://github.com/gurinderu/craft/commit/b0c2367ac2e1b2ecd932eda77cbbfee7c90de7d5))
+* take a lens's last answer that still leaves CONSUMERS lines unmarked and report the lines ([848d7b6](https://github.com/gurinderu/craft/commit/848d7b6782291a12af129fe958c9029580a298ff))
+* the binary's subprocesses never ask on a terminal ([953c751](https://github.com/gurinderu/craft/commit/953c751bdd0d97aee15bdd3512aa4a41bfb3b692))
+* turn off git's and ssh's askpass and name why a source's git failed ([547d3e8](https://github.com/gurinderu/craft/commit/547d3e8312163629dec3c97efb9df37c07e1a184)), closes [#417](https://github.com/gurinderu/craft/issues/417)
+* write the fluence marker regex without a literal '&lt;!--' so semgrep parses the file ([e927867](https://github.com/gurinderu/craft/commit/e92786756322544719419d29d172490190280677))
+
+
+### Performance Improvements
+
+* find a file's test modules once, not once per changed line ([c487d0b](https://github.com/gurinderu/craft/commit/c487d0b8da4d3830eefc8b6fda01d05610804e9e))
+
+
+### Reverts
+
+* drop the rust-audit reviews field the pre-PR check read ([d610823](https://github.com/gurinderu/craft/commit/d6108231654a21499ba09b9ca9e7c1c6e962ed1a))
+
 ## [0.54.1](https://github.com/gurinderu/craft/compare/v0.54.0...v0.54.1) (2026-11-15)
 
 
