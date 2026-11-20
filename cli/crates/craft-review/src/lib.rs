@@ -7,6 +7,7 @@
 
 pub mod absorbed;
 pub mod agent;
+mod anchor;
 pub mod blocked;
 pub mod cancel;
 pub mod chain;
