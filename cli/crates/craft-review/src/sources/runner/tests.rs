@@ -65,25 +65,73 @@ fn a_stop_kills_the_running_git_and_its_children_and_starts_no_other() {
     }
 }
 
+/// Kills `pid`, a process a test left running, whatever the verdict.
+fn reap(pid: &str) {
+    let _killed = std::process::Command::new("kill")
+        .args(["-KILL", pid])
+        .status();
+}
+
 #[test]
-fn a_git_that_exits_leaving_a_child_on_its_output_returns_at_once_and_the_child_is_killed() {
+#[cfg(target_os = "linux")]
+fn a_git_whose_detached_grandchild_holds_its_output_returns_at_once_and_a_stop_still_counts() {
     let tmp = tempfile::tempdir().unwrap();
     let pid = tmp.path().join("pid");
-    // The background sleep holds git's stdout open after git exits.
-    let alias = format!(
-        "alias.leave=!sh -c 'sleep 20 & echo $! > {}; echo done'",
+    // `setsid` takes the sleep out of git's group and session, still holding git's output.
+    let leave = format!(
+        "alias.leave=!sh -c 'setsid sleep 20 & echo $! > {}; echo done'",
         pid.display()
     );
     let began = Instant::now();
-    let ran = Git::prompt_free().run(&["-c", &alias, "leave"]);
+    let ran = Git::prompt_free().run(&["-c", &leave, "leave"]);
+    reap(&pid_in(&pid));
     assert!(
         began.elapsed() < Duration::from_secs(5),
         "{:?}",
         began.elapsed()
     );
     assert_eq!(ran, Ok("done\n".to_owned()));
+    std::fs::remove_file(&pid).unwrap();
+    let cancel = Cancel::default();
+    let git = Git::prompt_free().stopped_by(cancel.clone());
+    let watched = pid.clone();
+    let stopper = std::thread::spawn(move || {
+        let left = pid_in(&watched);
+        cancel.cancel();
+        left
+    });
+    let hold = format!(
+        "alias.hold=!sh -c 'setsid sleep 20 & echo $! > {}; exec sleep 30'",
+        pid.display()
+    );
+    let began = Instant::now();
+    let ran = git.run(&["-c", &hold, "hold"]);
+    reap(&stopper.join().unwrap());
+    assert!(
+        began.elapsed() < Duration::from_secs(5),
+        "{:?}",
+        began.elapsed()
+    );
+    assert_eq!(ran, Err(STOPPED.to_owned()));
+}
+
+#[test]
+fn a_child_git_leaves_in_its_group_after_a_normal_exit_is_left_running() {
+    // A daemon git starts for later (a credential cache) is not the preparation's to kill.
+    let tmp = tempfile::tempdir().unwrap();
+    let pid = tmp.path().join("pid");
+    let alias = format!(
+        "alias.leave=!sh -c 'sleep 30 >/dev/null 2>&1 & echo $! > {}; echo done'",
+        pid.display()
+    );
+    let ran = Git::prompt_free().run(&["-c", &alias, "leave"]);
     let child = pid_in(&pid);
-    assert!(gone(&child), "git's child {child} outlived git");
+    // A kill is not seen at once: alive still after a while is alive.
+    std::thread::sleep(Duration::from_millis(300));
+    let alive = !gone(&child);
+    reap(&child);
+    assert_eq!(ran, Ok("done\n".to_owned()));
+    assert!(alive, "git's child {child} was killed after git exited");
 }
 
 #[test]

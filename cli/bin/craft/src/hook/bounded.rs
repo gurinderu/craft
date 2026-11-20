@@ -3,6 +3,7 @@
 
 use std::io::{ErrorKind, Read};
 use std::process::{Command, Output, Stdio};
+use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -19,15 +20,19 @@ pub fn output(mut cmd: Command, limit: Duration) -> Result<Output, String> {
             format!("{name} could not start ({e})")
         }
     })?;
-    // Read apart from the wait, so a full pipe never holds the command past its limit.
+    // Read apart from the wait, so a full pipe never holds the command past its limit; each
+    // reader answers on a channel, so one a leftover child keeps open is waited for no longer.
     let drain = |pipe: Option<Box<dyn Read + Send>>| {
+        let (tx, rx) = mpsc::channel();
         thread::spawn(move || {
             let mut buf = Vec::new();
             if let Some(mut p) = pipe {
                 p.read_to_end(&mut buf).unwrap_or_default();
             }
-            buf
-        })
+            // The waiter gave up on it: nobody to answer.
+            tx.send(buf).unwrap_or(());
+        });
+        rx
     };
     let out = drain(child.stdout.take().map(|p| Box::new(p) as _));
     let err = drain(child.stderr.take().map(|p| Box::new(p) as _));
@@ -48,10 +53,20 @@ pub fn output(mut cmd: Command, limit: Duration) -> Result<Output, String> {
             Err(e) => return Err(format!("{name} could not be waited for ({e})")),
         }
     };
+    // A child the command left may still hold the pipes: read until the same limit, no longer.
+    let read = |rx: &mpsc::Receiver<Vec<u8>>| {
+        rx.recv_timeout(deadline.saturating_duration_since(Instant::now()))
+            .map_err(|e: mpsc::RecvTimeoutError| {
+                format!(
+                    "{name} did not answer within {} ms ({e})",
+                    limit.as_millis()
+                )
+            })
+    };
     Ok(Output {
         status,
-        stdout: out.join().unwrap_or_default(),
-        stderr: err.join().unwrap_or_default(),
+        stdout: read(&out)?,
+        stderr: read(&err)?,
     })
 }
 

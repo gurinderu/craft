@@ -37,3 +37,17 @@ fn a_missing_program_is_said() {
     .unwrap_err();
     assert!(why.contains("not found"), "{why}");
 }
+
+#[test]
+fn a_command_whose_child_holds_its_output_past_the_limit_is_said() {
+    let mut c = Command::new("sh");
+    c.args(["-c", "sleep 5 & echo out"]);
+    let began = Instant::now();
+    let why = output(c, Duration::from_secs(1)).unwrap_err();
+    assert!(
+        began.elapsed() < Duration::from_secs(3),
+        "{:?}",
+        began.elapsed()
+    );
+    assert!(why.contains("did not answer within"), "{why}");
+}
