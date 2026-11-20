@@ -86,6 +86,8 @@ fn a_tool_that_exits_leaving_a_child_leaves_the_child_running() {
     );
     let ran = runner(d.path()).run(d.path(), "sh", &["-c", &script]);
     let pid = nix::unistd::Pid::from_raw(pid_in(&pid));
+    // A kill is not seen at once: alive still after a while is alive.
+    std::thread::sleep(Duration::from_millis(300));
     let alive = nix::sys::signal::kill(pid, None).is_ok();
     // Not left behind by the test, whatever the verdict.
     nix::sys::signal::kill(pid, nix::sys::signal::Signal::SIGKILL).unwrap_or(());

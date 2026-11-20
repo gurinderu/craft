@@ -7,6 +7,9 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use crate::cancel::{Cancel, STOPPED, detached_no_prompt, kill_group};
+use spool::Spool;
+
+mod spool;
 
 /// How long one git command may run.
 const GIT_TIMEOUT: Duration = Duration::from_secs(120);
@@ -126,8 +129,8 @@ impl Git {
         self.call(args, Call::Remote)
     }
 
-    /// Runs `git args` as `call` says. The output is read once git exits: each command here
-    /// prints a line or two, well under a pipe's buffer.
+    /// Runs `git args` as `call` says. Its output goes to files ([`Spool`]) read once git exits,
+    /// so nothing it left running holds the read past the timeout or the stop.
     fn call(&self, args: &[&str], call: Call) -> Result<String, String> {
         if self.cancel.is_cancelled() {
             return Err(STOPPED.into());
@@ -147,10 +150,11 @@ impl Git {
         // a desktop's askpass, unless the caller named one; the report names the source with git's
         // reason, a remote's failure with the hint [`AUTH_HINT`].
         detached_no_prompt(&mut cmd);
+        let (mut out, mut err) = (Spool::new()?, Spool::new()?);
         let mut child = cmd
             .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            .stdout(out.to()?)
+            .stderr(err.to()?)
             .spawn()
             .map_err(|e| {
                 if e.kind() == std::io::ErrorKind::NotFound {
@@ -175,14 +179,11 @@ impl Git {
             }
             std::thread::sleep(Duration::from_millis(20));
         }
-        // What it left behind goes with it: a child still holding its output would keep the read
-        // below open past the timeout and the stop.
-        kill_group(&mut child);
-        let out = child.wait_with_output().map_err(|e| e.to_string())?;
-        if out.status.success() {
-            return Ok(String::from_utf8_lossy(&out.stdout).into_owned());
+        let status = child.wait().map_err(|e| e.to_string())?;
+        if status.success() {
+            return out.text();
         }
-        let err = String::from_utf8_lossy(&out.stderr);
+        let err = err.text()?;
         let line = err.lines().map(str::trim).rfind(|l| !l.is_empty());
         let failed: String = format!("git failed: {}", line.unwrap_or("no message"))
             .chars()
