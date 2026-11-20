@@ -36,6 +36,8 @@ fn a_passphrase_asked_on_the_terminal_fails_at_once_and_is_named() {
         "{:?}: {got:?}",
         began.elapsed()
     );
-    assert!(got.failed[0].error.starts_with("git failed: "), "{got:?}");
+    let error = &got.failed[0].error;
+    assert!(error.starts_with("git failed: "), "{got:?}");
+    assert!(error.contains("ssh-agent"), "{error}");
     assert!(section(&got, &[]).contains("- ⚠️ sys: git failed: "));
 }

@@ -26,12 +26,25 @@ impl Cancel {
     }
 }
 
-/// `cmd` spawned as the leader of a session of its own: a process group of its own, so
-/// [`kill_group`] reaches what it starts in turn, and no controlling terminal, so nothing it
-/// starts can ask on the terminal — an ssh asking a passphrase on `/dev/tty` fails at once,
-/// where in a background group of the caller's session it would stop (SIGTTIN) until the
-/// timeout.
+/// What turns off the prompts git and ssh would still try with no terminal: git's askpass
+/// (an empty `GIT_ASKPASS` stops its search before `core.askPass` and `SSH_ASKPASS`, and with
+/// terminal prompts off git fails at once) and ssh's (`SSH_ASKPASS_REQUIRE=never`, read by
+/// OpenSSH 8.4 and later).
+const NO_PROMPT: [(&str, &str); 3] = [
+    ("GIT_TERMINAL_PROMPT", "0"),
+    ("GIT_ASKPASS", ""),
+    ("SSH_ASKPASS_REQUIRE", "never"),
+];
+
+/// `cmd` spawned unattended (realm @nick/craft, node #545): the leader of a session of its own —
+/// a process group of its own, so [`kill_group`] reaches what it starts in turn, and no
+/// controlling terminal — with git's and ssh's askpass turned off ([`NO_PROMPT`], over the
+/// caller's environment). So neither git nor an ssh it starts asks for a passphrase or a
+/// password: on the terminal it would stop (SIGTTIN) in a background group of the caller's
+/// session, and through a desktop's askpass dialog it would wait, either until the timeout;
+/// here it fails at once.
 pub(crate) fn own_session(cmd: &mut Command) {
+    cmd.envs(NO_PROMPT);
     #[cfg(unix)]
     new_session(cmd);
     #[cfg(not(unix))]

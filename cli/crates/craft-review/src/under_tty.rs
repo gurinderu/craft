@@ -2,7 +2,7 @@
 //! that might ask on `/dev/tty`. Linux only: `script`'s flags are util-linux's.
 #![cfg(target_os = "linux")]
 
-use std::io::Read;
+use std::io::{Read, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -42,9 +42,37 @@ pub(crate) fn asking(dir: &Path) -> PathBuf {
     at
 }
 
+/// Whether a terminal can be had here: `/dev/ptmx` and a `script` that runs. Without one the
+/// test is skipped, said on stderr — except under CI (`CI` set), where it fails: there the case
+/// must be exercised.
+fn terminal_to_be_had(name: &str) -> bool {
+    let script = Command::new("script")
+        .arg("--version")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success());
+    let had = script && Path::new("/dev/ptmx").exists();
+    assert!(
+        had || std::env::var_os("CI").is_none(),
+        "{name}: no util-linux script or /dev/ptmx under CI, the terminal case unexercised"
+    );
+    if !had {
+        let _noted = writeln!(
+            std::io::stderr(),
+            "{name}: skipped, no util-linux script or /dev/ptmx to give it a terminal"
+        );
+    }
+    had
+}
+
 /// Runs the test `name` (its full path) again under a terminal with `env` added, and checks it
-/// passed — within 60 s, so a hang fails rather than waits.
+/// passed — within 60 s, so a hang fails rather than waits; skipped where no terminal can be had
+/// ([`terminal_to_be_had`]).
 pub(crate) fn rerun(name: &str, env: &[(&str, &Path)]) {
+    if !terminal_to_be_had(name) {
+        return;
+    }
     let exe = std::env::current_exe().unwrap();
     let inner = format!(
         "'{}' '{name}' --exact --nocapture --test-threads=1",
