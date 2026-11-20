@@ -1,9 +1,8 @@
 // The tools craft registers in OpenCode, once for both runtimes: host-v1.ts turns each into a `tool()`,
 // host-v2.ts into a `ctx.tool` definition with a JSON Schema input.
 import type { Host, ToolAnswer, ToolCall, ToolSpec } from './host.ts'
-import { execFile } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import path from 'node:path'
-import { promisify } from 'node:util'
 import { runRustAudit } from './rust-audit.ts'
 import { runTriageFindings } from './triage-findings.ts'
 
@@ -21,11 +20,37 @@ export function nestedUnder(host: Host, parent: string | undefined): Host {
 // checkout the plugin is linked from when the tool runs, as the work hook loads its modules: a plugin copy without
 // lib/ keeps its other tools.
 const hasModels = (words: string[]) => words.some(w => w === '--models' || w.startsWith('--models='))
-const exec = promisify(execFile)
+
+function stopPreflight(pid: number | undefined) {
+  if (!pid || process.platform === 'win32') return
+  try {
+    process.kill(-pid, 'SIGTERM')
+  } catch {
+    // The process may already have exited.
+  }
+}
 
 async function profilePreflight(wrapper: string, cwd: string, signal?: AbortSignal): Promise<string | undefined> {
+  const child = spawn('sh', [wrapper, 'init', '--propose', '--cwd', cwd], { cwd, detached: process.platform !== 'win32', ...(signal ? { signal } : {}) })
+  const stop = () => {
+    stopPreflight(child.pid)
+    child.kill()
+  }
+  signal?.addEventListener('abort', stop, { once: true })
+  const timer = setTimeout(stop, 120_000)
   try {
-    const { stdout } = await exec('sh', [wrapper, 'init', '--propose', '--cwd', cwd], { cwd, timeout: 120_000, ...(signal ? { signal } : {}) })
+    let stdout = ''
+    let stderr = ''
+    child.stdout.setEncoding('utf8').on('data', (chunk: string) => {
+      stdout += chunk
+    })
+    child.stderr.setEncoding('utf8').on('data', (chunk: string) => {
+      stderr += chunk
+    })
+    await new Promise<void>((resolve, reject) => {
+      child.on('error', reject)
+      child.on('close', code => (code === 0 ? resolve() : reject(new Error(`init exited ${String(code)}: ${stderr}`))))
+    })
     const result: unknown = JSON.parse(stdout)
     if (!result || typeof result !== 'object' || !('exists' in result) || typeof result.exists !== 'boolean') {
       return 'The review profile could not be checked: craft init returned an invalid response. Nothing ran.'
@@ -35,6 +60,9 @@ async function profilePreflight(wrapper: string, cwd: string, signal?: AbortSign
       : `No review profile exists for ${cwd}. Ask the user whether to set it up with the review-init skill for that repository or continue without it. To continue without setup, call review again with --without-profile. Nothing ran.`
   } catch (error) {
     return `The review profile could not be checked: ${String(error)}. Nothing ran.`
+  } finally {
+    clearTimeout(timer)
+    signal?.removeEventListener('abort', stop)
   }
 }
 

@@ -85,6 +85,26 @@ test('an aborted preflight does not start the review', async () => {
   assert.equal(fs.existsSync(argv), false)
 })
 
+test.skipIf(process.platform === 'win32')('cancelling a running preflight stops its child processes', async () => {
+  const argv = fakeBinary()
+  const bin = process.env['CRAFT_BIN']
+  assert.ok(bin)
+  const started = path.join(path.dirname(bin), 'started')
+  const late = path.join(path.dirname(bin), 'late')
+  writeExecutable(bin, `#!/bin/sh\necho ready > '${started}'\nsleep 0.3\necho late > '${late}'\n`)
+  const review = TOOLS.find(t => t.name === 'review')
+  assert.ok(review)
+  const controller = new AbortController()
+  const running = review.run(fakeHost(), {}, { signal: controller.signal })
+  for (let i = 0; i < 100 && !fs.existsSync(started); i++) await new Promise(resolve => setTimeout(resolve, 10))
+  assert.ok(fs.existsSync(started))
+  controller.abort()
+  await running
+  await new Promise(resolve => setTimeout(resolve, 400))
+  assert.equal(fs.existsSync(late), false)
+  assert.equal(fs.existsSync(argv), false)
+})
+
 test('the profile prompt names the repository selected with --cwd', async () => {
   fakeBinary()
   const bin = process.env['CRAFT_BIN']
