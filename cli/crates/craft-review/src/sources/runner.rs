@@ -35,7 +35,7 @@ const REPO_VARS: [&str; 14] = [
     "GIT_INTERNAL_SUPER_PREFIX",
 ];
 
-/// What a source whose git failed is told with: git asks nothing here (`own_session`), so its
+/// What a source whose git failed on the remote is told with: git asks nothing here (`own_session`), so its
 /// last line ("Could not read from remote repository") is all it says of an authentication.
 pub(super) const AUTH_HINT: &str = "craft runs git with no terminal or password prompt: an ssh key \
     with a passphrase must be in ssh-agent, https needs a credential helper or a token";
@@ -123,7 +123,8 @@ impl Git {
         // Unattended (realm @nick/craft, node #545): a stop or the timeout kills what it runs too
         // (ssh, a helper), and an ssh of the caller's own `GIT_SSH_COMMAND` (no batch mode) or a
         // remote that asks a password fails at once instead of waiting on a terminal or an
-        // askpass; the report names the source with git's reason and the hint [`AUTH_HINT`].
+        // askpass; the report names the source with git's reason, a remote's failure with the hint
+        // [`AUTH_HINT`].
         own_session(&mut cmd);
         let mut child = cmd
             .stdin(Stdio::null())
@@ -168,10 +169,22 @@ impl Git {
             .collect())
     }
 
+    /// Runs `git args` that reach the remote (`ls-remote`, `fetch`): a failure carries
+    /// [`AUTH_HINT`], a timeout or a stop does not.
+    pub(super) fn run_remote(&self, args: &[&str]) -> Result<String, String> {
+        self.run(args).map_err(|e| {
+            if e.starts_with("git failed: ") {
+                format!("{e} — {AUTH_HINT}")
+            } else {
+                e
+            }
+        })
+    }
+
     /// Whether the remote lists the tag `rev`.
     pub(super) fn lists_tag(&self, url: &str, rev: &str) -> Result<bool, String> {
         let want = format!("refs/tags/{rev}");
-        let listed = self.run(&["ls-remote", "--tags", "--", url, &want])?;
+        let listed = self.run_remote(&["ls-remote", "--tags", "--", url, &want])?;
         Ok(listed
             .lines()
             .any(|l| l.split('\t').nth(1) == Some(want.as_str())))

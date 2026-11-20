@@ -75,17 +75,28 @@ fn a_stop_kills_the_running_tool_with_its_group_and_starts_no_other() {
 }
 
 #[test]
-fn a_tool_that_exits_leaving_a_child_has_the_child_killed() {
+fn a_tool_that_exits_leaving_a_child_leaves_the_child_running() {
+    // A server a tool starts for later (an sccache server through RUSTC_WRAPPER) is not the
+    // gate's to kill once the tool exited: only a stop or the budget kills the group.
     let d = tempfile::tempdir().unwrap();
     let pid = d.path().join("child.pid");
-    let script = format!("sleep 30 & echo $! > '{}'; echo done", pid.display());
+    let script = format!(
+        "sleep 30 >/dev/null 2>&1 & echo $! > '{}'; echo done",
+        pid.display()
+    );
     let ran = runner(d.path()).run(d.path(), "sh", &["-c", &script]);
+    let pid = nix::unistd::Pid::from_raw(pid_in(&pid));
+    let alive = nix::sys::signal::kill(pid, None).is_ok();
+    // Not left behind by the test, whatever the verdict.
+    nix::sys::signal::kill(pid, nix::sys::signal::Signal::SIGKILL).unwrap_or(());
     let Ran::Exited { ok: true, out, .. } = ran else {
         panic!("{ran:?}");
     };
     assert_eq!(out, "done\n");
-    let pid = pid_in(&pid);
-    assert!(gone(pid), "the tool's child {pid} outlived the tool");
+    assert!(
+        alive,
+        "the tool's child {pid} was killed after the tool exited"
+    );
 }
 
 #[test]
