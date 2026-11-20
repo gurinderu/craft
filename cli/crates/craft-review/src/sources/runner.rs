@@ -35,6 +35,11 @@ const REPO_VARS: [&str; 14] = [
     "GIT_INTERNAL_SUPER_PREFIX",
 ];
 
+/// What a source whose git failed is told with: git asks nothing here (`own_session`), so its
+/// last line ("Could not read from remote repository") is all it says of an authentication.
+pub(super) const AUTH_HINT: &str = "craft runs git with no terminal or password prompt: an ssh key \
+    with a passphrase must be in ssh-agent, https needs a credential helper or a token";
+
 /// The failure of a command the budget cut, and of one it left no time for.
 pub(super) const OUT_OF_BUDGET: &str = "the preparation's budget ran out";
 
@@ -55,11 +60,11 @@ pub struct Git {
 }
 
 impl Git {
-    /// git that never prompts: no terminal for https, batch mode and a connect timeout for ssh
-    /// unless the caller set its own command (`gitEnv`).
+    /// git that never prompts — every command runs unattended (`own_session`) — with batch mode
+    /// and a connect timeout for ssh unless the caller set its own command (`gitEnv`).
     #[must_use]
     pub fn prompt_free() -> Self {
-        let mut env = vec![("GIT_TERMINAL_PROMPT".into(), "0".into())];
+        let mut env = Vec::new();
         if std::env::var_os("GIT_SSH_COMMAND").is_none() {
             env.push(("GIT_SSH_COMMAND".into(), SSH.into()));
         }
@@ -115,9 +120,10 @@ impl Git {
         for v in REPO_VARS {
             cmd.env_remove(v);
         }
-        // Its session of its own: a stop or the timeout kills what it runs too (ssh, a helper),
-        // and with no terminal an ssh of the caller's own `GIT_SSH_COMMAND` (no batch mode)
-        // that asks a passphrase fails at once, named, rather than stopping in the background.
+        // Unattended (realm @nick/craft, node #545): a stop or the timeout kills what it runs too
+        // (ssh, a helper), and an ssh of the caller's own `GIT_SSH_COMMAND` (no batch mode) or a
+        // remote that asks a password fails at once instead of waiting on a terminal or an
+        // askpass; the report names the source with git's reason and the hint [`AUTH_HINT`].
         own_session(&mut cmd);
         let mut child = cmd
             .stdin(Stdio::null())
@@ -169,6 +175,8 @@ impl Git {
     }
 }
 
+#[cfg(test)]
+mod askpass_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
