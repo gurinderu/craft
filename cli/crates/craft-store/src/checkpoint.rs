@@ -120,6 +120,10 @@ pub fn contains_path(parent: &Path, child: &Path) -> bool {
 /// # Errors
 /// When `dir` is there and cannot be listed.
 pub fn read_checkpoints(dir: &Path) -> Result<Vec<Obj>, String> {
+    read_checkpoint_files(dir, false)
+}
+
+fn read_checkpoint_files(dir: &Path, strict: bool) -> Result<Vec<Obj>, String> {
     let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
@@ -128,17 +132,26 @@ pub fn read_checkpoints(dir: &Path) -> Result<Vec<Obj>, String> {
     let mut names =
         checkpoint_names(entries.map(|e| e.map(|e| e.file_name().to_string_lossy().into_owned())))?;
     names.sort();
-    Ok(names
+    names
         .into_iter()
         .map(|n| {
             let read = std::fs::read_to_string(dir.join(&n)).map_err(|e| e.to_string());
             match read.and_then(|t| parse(&t).map_err(|e| e.to_string())) {
-                Ok(Js::Obj(o)) => o,
-                Ok(_) => unreadable(&n, "not a JSON object"),
-                Err(why) => unreadable(&n, &why),
+                Ok(Js::Obj(o)) => Ok(o),
+                other => {
+                    let why = match other {
+                        Ok(_) => "not a JSON object".to_owned(),
+                        Err(e) => e,
+                    };
+                    if strict {
+                        Err(format!("{n}: {why}"))
+                    } else {
+                        Ok(unreadable(&n, &why))
+                    }
+                }
             }
         })
-        .collect())
+        .collect()
 }
 
 fn checkpoint_names(
@@ -223,7 +236,7 @@ pub fn find_rejoinable(
         .collect::<Vec<_>>();
     let mut found = Vec::new();
     for d in candidates {
-        let phases = read_checkpoints(&d)
+        let phases = read_checkpoint_files(&d, true)
             .map_err(|e| StoreError::Refused(format!("cannot read {}: {e}", d.display())))?;
         if !phases.is_empty() && agrees(want, &attested(&phases)) {
             found.push(d);
@@ -309,6 +322,37 @@ pub fn write_checkpoint(
 mod enumeration_tests {
     use super::{Identity, checkpoint_dir, checkpoint_names};
     use crate::js::{Js, Obj};
+
+    #[test]
+    fn rejoin_refuses_a_candidate_with_a_corrupt_checkpoint() {
+        for matching in [false, true] {
+            let d = tempfile::tempdir().unwrap();
+            let candidate = d
+                .path()
+                .join(".partial/1970-01-01T00-00-00Z-workflow-review");
+            std::fs::create_dir_all(&candidate).unwrap();
+            if matching {
+                std::fs::write(candidate.join("00-good.json"), r#"{"project":"/p"}"#).unwrap();
+            }
+            std::fs::write(candidate.join("01-bad.json"), "{").unwrap();
+            let record = Obj::new()
+                .with("kind", Js::str("workflow"))
+                .with("name", Js::str("review"));
+            let want = Identity {
+                project: "/p".into(),
+                ..Identity::default()
+            };
+            let error = checkpoint_dir(&record, d.path(), &want, true, 0).unwrap_err();
+            assert!(error.to_string().contains("01-bad.json"));
+            assert!(candidate.join("01-bad.json").exists());
+            assert_eq!(
+                std::fs::read_dir(d.path().join(".partial"))
+                    .unwrap()
+                    .count(),
+                1
+            );
+        }
+    }
 
     #[test]
     fn an_entry_error_refuses_a_partial_checkpoint_listing() {
