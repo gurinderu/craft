@@ -1,0 +1,22 @@
+{
+  "id": "sql",
+  "lang": "SQL",
+  "detect": { "suffixes": [".sql"], "names": [] },
+  "diffGlobs": ["'*.sql'"],
+  "rubricSkill": "sql-review",
+  "fpRules": "",
+  "navSkill": "",
+  "securityHints": "dynamic SQL built from input (EXECUTE format), GRANT/REVOKE, row-level security policies, SECURITY DEFINER functions, or data a tenant must not read",
+  "usesLibrary": false,
+  "alwaysLenses": ["sql-migrations", "sql-queries"],
+  "safetyLens": "sql-queries",
+  "scoutRules": "scout-rules-sql",
+  "scoutModel": "haiku",
+  "dedupModel": "haiku",
+  "rollupRuleIds": [],
+  "lenses": [
+    { "id": "sql-migrations", "brief": "lens-briefs/sql-migrations", "model": "opus" },
+    { "id": "sql-queries", "brief": "lens-briefs/sql-queries", "model": "opus" }
+  ],
+  "floorLenses": []
+}

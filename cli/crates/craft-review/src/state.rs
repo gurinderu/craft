@@ -253,6 +253,10 @@ pub struct Track {
     /// Its last round added nothing new.
     #[serde(default)]
     pub dry: bool,
+    /// Its changed lines hold a query string ([`crate::embedded_sql`]), so its plan takes the
+    /// `sql-queries` lens when its profile holds one.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub embedded_sql: bool,
 }
 
 impl Track {
@@ -264,6 +268,7 @@ impl Track {
             plan: None,
             rounds: 0,
             dry: false,
+            embedded_sql: false,
         }
     }
 
