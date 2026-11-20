@@ -27,6 +27,7 @@ pub(super) fn pr_worktree(
         &opts.chain_lookup(dir),
         opts.worktrees.as_deref(),
         opts.runtime.is_none(),
+        &opts.cancel,
     )
     .map_err(StepError::PrHead)?;
     Ok((laid.as_ref().map_or(cwd, |l| l.dir.clone()), laid))
@@ -41,7 +42,7 @@ pub(super) fn read_change(
         Some(p) => crate::scope::normalize(&git::toplevel(cwd)?, p).map_err(StepError::from)?,
         None => None,
     };
-    let diff = git::read_diff(cwd, opts.base.as_deref(), scope.as_deref())?;
+    let diff = git::warm::read_diff(cwd, opts.base.as_deref(), scope.as_deref(), &opts.cancel)?;
     Ok((scope, diff))
 }
 

@@ -73,19 +73,68 @@ fn new_session(cmd: &mut Command) {
     }
 }
 
-/// Kills `child` and every process of its group (see [`detached`]), then reaps it.
+/// How long a stopped group has to exit on SIGTERM before SIGKILL.
+#[cfg(unix)]
+const GRACE: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// Kills `child` and every process of its group (see [`detached`]), then reaps it: SIGTERM first,
+/// for git to remove the lock files it holds in the user's repository (the ref lock of a fetch
+/// stopped while updating `origin/<branch>`), which SIGKILL leaves behind, so the next fetch
+/// there fails on it; SIGKILL to what is left once the group is gone or [`GRACE`] runs out.
 pub fn kill_group(child: &mut Child) {
     #[cfg(unix)]
     if let Ok(pid) = i32::try_from(child.id()) {
-        let group = nix::unistd::Pid::from_raw(pid);
-        // The group may be gone already: nothing is left to kill then.
-        nix::sys::signal::killpg(group, nix::sys::signal::Signal::SIGKILL).unwrap_or(());
+        stop_group(nix::unistd::Pid::from_raw(pid));
     }
     // Likewise the leader, which the group's kill may have reaped already.
     child.kill().unwrap_or(());
     if child.wait().is_err() {
         // Nothing is left to reap.
     }
+}
+
+/// The group's stop. The leader is not reaped here, so while it lives or is a zombie its id
+/// names no other group; one reaped before (`hook/bounded.rs` waits for its exit, then for its
+/// output) is signalled only while the group still has a member, a later one's id taken only
+/// once it has none.
+#[cfg(unix)]
+fn stop_group(group: nix::unistd::Pid) {
+    use nix::sys::signal::{Signal, killpg};
+    // The group may be gone already: nothing is left to stop then.
+    if killpg(group, Signal::SIGTERM).is_err() {
+        return;
+    }
+    let deadline = std::time::Instant::now() + GRACE;
+    while living(group) && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    if killpg(group, None).is_ok() {
+        // What outlived the grace, or the leader's zombie.
+        killpg(group, Signal::SIGKILL).unwrap_or(());
+    }
+}
+
+/// Whether a process of `group` still runs, a zombie aside: read from `/proc` on Linux, where a
+/// zombie leader is told apart; elsewhere any member counts, so an unreaped leader that exited
+/// waits out the grace.
+#[cfg(unix)]
+fn living(group: nix::unistd::Pid) -> bool {
+    #[cfg(target_os = "linux")]
+    if let Ok(procs) = std::fs::read_dir("/proc") {
+        let want = group.as_raw().to_string();
+        return procs.flatten().any(|p| {
+            std::fs::read_to_string(p.path().join("stat")).is_ok_and(|stat| {
+                // `pid (comm) state ppid pgrp …`, the name may hold anything up to its last `)`.
+                let mut rest = stat
+                    .rsplit_once(')')
+                    .map_or("", |(_, r)| r)
+                    .split_whitespace();
+                let state = rest.next();
+                state.is_some_and(|s| s != "Z") && rest.nth(1) == Some(want.as_str())
+            })
+        });
+    }
+    nix::sys::signal::killpg(group, None).is_ok()
 }
 
 #[cfg(test)]
