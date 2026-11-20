@@ -17,6 +17,7 @@ pub mod content;
 pub mod coverage;
 pub mod critic;
 mod dedup;
+mod embedded_sql;
 mod error;
 pub mod extra;
 pub mod filing;

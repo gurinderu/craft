@@ -67,6 +67,7 @@ mod tests {
             "Dockerfile",
             "flake.lock",
             "x.py",
+            "db/migrations/0001_init.sql",
         ]);
         let parts: Vec<(String, Vec<String>)> = assign(&files, &all)
             .into_iter()
@@ -77,6 +78,7 @@ mod tests {
             [
                 ("rust".into(), owned(&["src/lib.rs", "Cargo.toml"])),
                 ("nix".into(), owned(&["flake.nix", "flake.lock"])),
+                ("sql".into(), owned(&["db/migrations/0001_init.sql"])),
                 ("general".into(), owned(&["web/app.ts", "x.py"])),
             ]
         );
@@ -87,7 +89,7 @@ mod tests {
         let all = Profile::all().unwrap();
         assert_eq!(
             supported(&all),
-            "Rust, Nix and source in any other language, but no project configuration or build recipe"
+            "Rust, Nix, SQL and source in any other language, but no project configuration or build recipe"
         );
         assert_eq!(supported(&all[..1]), "Rust only");
     }

@@ -190,7 +190,7 @@ pub(super) fn common_vars(
     Ok(vars([
         ("lens", lens.to_owned()),
         ("lang", profile.lang.clone()),
-        ("rubricSkill", profile.rubric_skill.clone()),
+        ("rubricSkill", profile.rubric_of(lens).to_owned()),
         ("brief", content::text(&spec.brief)?),
         ("catalogue", catalogue_line(ctx, spec)?),
         ("rules", rules(ctx)?),
@@ -264,7 +264,7 @@ pub(super) fn lens_prompt_in(
             ("slice", slice),
             ("lsp", if nav { " + LSP".into() } else { String::new() }),
             ("dependencySource", content::text("dependency-source")?),
-            ("ruleId", rule_id(profile)?),
+            ("ruleId", rule_id(profile, lens)?),
         ]));
         content::prompt("lens", &v)?
     };
@@ -303,13 +303,13 @@ pub(super) fn re_review(ctx: &PromptContext) -> Result<String, ContentError> {
     content::prompt(name, &vars([("base", base)]))
 }
 
-/// The lens prompt's RULE ID line: cite the rubric's catalog, or, a profile with none, leave it
-/// empty.
-fn rule_id(profile: &Profile) -> Result<String, ContentError> {
-    if profile.rule_catalog {
+/// The lens prompt's RULE ID line: cite the catalog of `lens`'s rubric, or, a rubric with none,
+/// leave it empty.
+fn rule_id(profile: &Profile, lens: &str) -> Result<String, ContentError> {
+    if profile.catalog_of(lens) {
         content::prompt(
             "lens-rule-id",
-            &vars([("rubricSkill", profile.rubric_skill.clone())]),
+            &vars([("rubricSkill", profile.rubric_of(lens).to_owned())]),
         )
     } else {
         content::text("lens-rule-id-none")

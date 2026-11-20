@@ -69,6 +69,9 @@ pub struct PlanInput<'a> {
     /// The optional lenses the run was asked for (`optional`), qualified by profile
     /// ([`crate::optional`]): each is added to the plan; any other optional lens stays out.
     pub optional: &'a [String],
+    /// Whether the profile's changed lines hold a query string ([`crate::embedded_sql`]): the
+    /// signal that adds the conditional `sql-queries` lens (realm @nick/craft, node #536).
+    pub embedded_sql: bool,
 }
 
 /// Rounds and verifier votes by size, as `RIGOR_BY_SIZE`.
@@ -195,7 +198,7 @@ pub fn plan(input: PlanInput<'_>) -> Plan {
         light_skipped: Vec::new(),
         metrics_dropped: Vec::new(),
     };
-    required(p, scout, files, &mut plan);
+    required(p, (scout, input.embedded_sql), files, &mut plan);
     if input.strict && p.offers("maintainability") {
         push_missing(&mut plan.lenses, "maintainability");
     }
@@ -218,8 +221,13 @@ pub fn plan(input: PlanInput<'_>) -> Plan {
 }
 
 /// The lenses the plan carries whatever the scout picked: the always set, `tests` on a change to
-/// production code, `failure-windows` on controller code.
-fn required(p: &Profile, scout: Option<&Value>, files: &[String], plan: &mut Plan) {
+/// production code, `failure-windows` on controller code, `sql-queries` on embedded SQL.
+fn required(
+    p: &Profile,
+    (scout, embedded_sql): (Option<&Value>, bool),
+    files: &[String],
+    plan: &mut Plan,
+) {
     let mut offer = |l: &str| {
         if p.offers(l) {
             push_missing(&mut plan.lenses, l);
@@ -233,6 +241,9 @@ fn required(p: &Profile, scout: Option<&Value>, files: &[String], plan: &mut Pla
     }
     if chose_reconciler(scout) {
         offer("failure-windows");
+    }
+    if embedded_sql {
+        offer("sql-queries");
     }
 }
 
@@ -318,3 +329,5 @@ fn light(
 
 #[cfg(test)]
 mod parity;
+#[cfg(test)]
+mod tests;
