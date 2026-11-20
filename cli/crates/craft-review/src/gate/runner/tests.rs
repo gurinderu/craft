@@ -110,3 +110,22 @@ fn the_budget_kills_the_running_tool_with_its_group() {
     let pid = pid_in(&pid);
     assert!(gone(pid), "the tool's child {pid} outlived the budget");
 }
+
+#[test]
+fn a_tool_runs_with_the_no_prompt_environment() {
+    if crate::cancel::caller_chooses_prompts("a_tool_runs_with_the_no_prompt_environment") {
+        return;
+    }
+    let d = tempfile::tempdir().unwrap();
+    let ran = runner(d.path()).run(d.path(), "env", &[]);
+    let Ran::Exited { ok: true, out, .. } = ran else {
+        panic!("{ran:?}");
+    };
+    for line in [
+        "SSH_ASKPASS_REQUIRE=never",
+        "GIT_ASKPASS=",
+        "GIT_TERMINAL_PROMPT=0",
+    ] {
+        assert!(out.lines().any(|l| l == line), "{line} not in {out}");
+    }
+}

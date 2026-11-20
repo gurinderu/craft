@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
-use crate::cancel::{Cancel, STOPPED, kill_group, own_session};
+use crate::cancel::{Cancel, STOPPED, detached_no_prompt, kill_group};
 
 #[cfg(test)]
 mod tests;
@@ -119,8 +119,9 @@ impl Runner {
         if let Some(p) = &self.path {
             cmd.env("PATH", p);
         }
-        // No terminal: a tool that would ask on it (cargo fetching over ssh) fails at once.
-        own_session(&mut cmd);
+        // No terminal and no prompt (realm @nick/craft, node #545): a tool that would ask (cargo
+        // fetching over ssh or https) fails at once, unless the caller named an askpass.
+        detached_no_prompt(&mut cmd);
         cmd.spawn().map_err(|e| {
             // A working directory that is gone fails the spawn as NotFound too: that is no
             // missing program, and saying so would send its reader after the wrong cause.
