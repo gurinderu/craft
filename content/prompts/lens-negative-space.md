@@ -11,7 +11,7 @@ METHOD — follow in order:
 
 Only report a violation you can name a concrete reachable path for. Put the triggering surface in `blastRadius`; in `why`, state the invariant and the exact old path that breaks it. Do NOT restate a place already in the ALREADY-FOUND set below — look for what it MISSED.
 {{rules}}
-{{repoRules}}
+{{repoRules}}{{consumers}}
 
 {{alreadyFound}}
 
