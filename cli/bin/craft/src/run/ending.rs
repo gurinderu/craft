@@ -18,10 +18,19 @@ pub(crate) enum Ending {
     Finished(Value),
     /// The loop stopped before the binary finished the run, and why.
     Stopped(String),
-    /// A stopping signal ended the loop: its round's tasks stopped, the exit status it asks for.
-    Signalled(u8),
+    /// A stopping signal ended the loop: the exit status it asks for, and where it caught the run.
+    Signalled(u8, Caught),
     /// The binary finished the run but kept no finished step to file its record from.
     Unrecorded(String),
+}
+
+/// Where a stopping signal caught the run.
+#[derive(Debug)]
+pub(crate) enum Caught {
+    /// Past its start (a round's tasks stopped, or a resume): a resume picks it up.
+    Running,
+    /// While the binary opened it, cutting it short; the start's own error when it failed.
+    Starting(Option<String>),
 }
 
 /// The answer, and whether the run finished with its work whole.
@@ -113,7 +122,7 @@ fn ended<P: Protocol>(d: &Driver<'_, P>, ending: Ending, r: &mut Running) -> Ans
                 run,
             }
         }
-        Ending::Signalled(code) => signalled(d, code, r),
+        Ending::Signalled(code, caught) => signalled(d, code, &caught, r),
         Ending::Stopped(why) => {
             let filed = r.run.as_deref().and_then(|run| {
                 d.proto
@@ -135,10 +144,23 @@ fn ended<P: Protocol>(d: &Driver<'_, P>, ending: Ending, r: &mut Running) -> Ans
     }
 }
 
-/// A run a stopping signal ended: filed INCOMPLETE with that reason, answered with how to resume.
-fn signalled<P: Protocol>(d: &Driver<'_, P>, code: u8, r: &mut Running) -> Answer {
+/// A start a stopping signal cut short: a resume would not prepare its gate, sources and consumers
+/// list again (realm @nick/craft, node #544).
+const FRESH: &str = "The start was cut short: its gate, sources and consumers list are incomplete, and a resume does not prepare them again. Start a fresh review: this command again, without `--run`.";
+
+/// A run a stopping signal ended: filed INCOMPLETE with that reason, answered with how to resume —
+/// or, for a stop during the start (with the start's own error when it failed), with a fresh
+/// review.
+fn signalled<P: Protocol>(d: &Driver<'_, P>, code: u8, caught: &Caught, r: &mut Running) -> Answer {
     let log = |l: &str| d.log(l);
-    let why = format!("review run was stopped by a signal (exit {code})");
+    let stopped = format!("review run was stopped by a signal (exit {code})");
+    let why = match caught {
+        Caught::Running => stopped,
+        Caught::Starting(None) => format!("{stopped} while it started"),
+        Caught::Starting(Some(error)) => {
+            format!("{stopped} while it started, and the start failed: {error}")
+        }
+    };
     let run = r.run.as_ref().map(|p| p.display().to_string());
     for line in r
         .run
@@ -149,10 +171,13 @@ fn signalled<P: Protocol>(d: &Driver<'_, P>, code: u8, r: &mut Running) -> Answe
     {
         r.lost.note_line(line, &log);
     }
-    let resume = run
-        .as_deref()
-        .map(|run| resume_hint(run, &(d.again)(run)))
-        .unwrap_or_default();
+    let resume = match caught {
+        Caught::Starting(_) => FRESH.to_owned(),
+        Caught::Running => run
+            .as_deref()
+            .map(|run| resume_hint(run, &(d.again)(run)))
+            .unwrap_or_default(),
+    };
     Answer {
         text: with_notes(&stopped_answer(&why), &[resume, r.lost.section()]),
         finished: false,

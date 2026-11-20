@@ -39,6 +39,8 @@ struct Fake {
     filed: RefCell<Vec<String>>,
     /// The start runs until a stop is asked of it, as a long gate does: whether one was.
     slow_start: Option<std::cell::Cell<bool>>,
+    /// The start fails with this error once it returns.
+    start_fails: Option<&'static str>,
 }
 
 impl Fake {
@@ -52,6 +54,7 @@ impl Fake {
             submits: RefCell::default(),
             filed: RefCell::default(),
             slow_start: None,
+            start_fails: None,
         }
     }
 
@@ -92,6 +95,9 @@ impl Protocol for Fake {
                 std::thread::sleep(Duration::from_millis(20));
             }
             stopped.set(cancel.is_cancelled());
+        }
+        if let Some(why) = self.start_fails {
+            bail!("{why}");
         }
         std::fs::create_dir_all(self.run.join("tasks"))?;
         for s in &self.tasks {

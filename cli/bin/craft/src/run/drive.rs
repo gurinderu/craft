@@ -14,7 +14,7 @@ use tokio::runtime::{Handle, RuntimeFlavor};
 use tokio::task::block_in_place;
 
 use super::HostKind;
-use super::ending::{Ending, recovered};
+use super::ending::{Caught, Ending, recovered};
 use super::events::Event;
 use super::protocol::{Protocol, Said};
 use super::report::resume_hint;
@@ -81,12 +81,17 @@ pub(crate) async fn steps<P: Protocol>(
         ),
         None => start(d),
     };
-    // A stopping signal that came while the binary opened the run ends it here, before any round.
+    // A stopping signal that came while the binary opened the run ends it here, before any round:
+    // a start it cut short asks for a fresh review, a resume for another resume.
     let signalled = *d.round.stop.borrow();
     let doing = if resume.is_some() { "resume" } else { "start" };
+    let ending = |code, error| match resume {
+        Some(_) => Ending::Signalled(code, Caught::Running),
+        None => Ending::Signalled(code, Caught::Starting(error)),
+    };
     let step = match (first, signalled) {
         (Ok(s), _) => s,
-        (Err(_), Some(code)) => return Ending::Signalled(code),
+        (Err(e), Some(code)) => return ending(code, Some(format!("{e:#}"))),
         (Err(e), None) => return Ending::Stopped(format!("review could not {doing}: {e:#}")),
     };
     let Some(run) = step.get("run").and_then(Value::as_str).map(PathBuf::from) else {
@@ -101,7 +106,7 @@ pub(crate) async fn steps<P: Protocol>(
         d.log(line);
     }
     if let Some(code) = signalled {
-        return Ending::Signalled(code);
+        return ending(code, None);
     }
     // The tasks run where the run reviews: craft's own worktree of the PR given, or on a resume
     // the checkout the run recorded (realm `@nick/craft`, node #517).
@@ -134,7 +139,7 @@ pub(crate) async fn steps<P: Protocol>(
 }
 
 /// The run opened by the binary, a stopping signal meanwhile cutting its gate, sources and
-/// consumers list short (realm @nick/craft, node #40): the start blocks this thread, so the stop is
+/// consumers list short (realm @nick/craft, node #544): the start blocks this thread, so the stop is
 /// handed on by a task the runtime's workers run — on a multi-threaded runtime, which `main`'s is;
 /// on a current-thread one the stop is seen only once the start returns.
 fn start<P: Protocol>(d: &Driver<'_, P>) -> anyhow::Result<Value> {
@@ -193,7 +198,7 @@ async fn rounds<P: Protocol>(
         let res = round_of(&d.round, &tasks, round).await;
         // A stopping signal cut the round short (its tasks' groups stopped): nothing is submitted.
         if let Some(code) = *d.round.stop.borrow() {
-            return Ending::Signalled(code);
+            return Ending::Signalled(code, Caught::Running);
         }
         let said = heard(r, res);
         // Not logged in: no task can answer, so nothing is submitted; a resume hands the step's
