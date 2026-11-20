@@ -166,18 +166,7 @@ Review the diff against these tiers. This skill owns only the review *process*; 
 ### MEDIUM — warn, may merge
 
 **Performance**
-- Allocation inside a hot loop
-- `Vec::new()` + push loop where the size is known (`with_capacity`)
-- N+1 queries / repeated work in a loop
-
-Needless allocation (`PER-001`, `PER-004`–`PER-007`) is LOW whatever the path — a performance cost
-names no harm above `none`; the finding says whether it sits on a hot path, and one finding per
-pattern lists every site (rules.md, footnote ⁴):
-- `to_string()`/`to_owned()`/`format!`/`clone()` inside a loop (a clone only for the borrow checker is OWN-001)
-- `collect()` into a `Vec` only to iterate it once, take its length or call `contains`
-- Returning `Vec`/`String` where `impl Iterator` or a borrow (`&str`) would do — not on a library's `pub` item
-- A `&[String]`-style parameter where `&[&str]` or `impl IntoIterator<Item = impl AsRef<str>>` serves callers — not on a library's `pub` item; `&String`/`&Vec<T>` is clippy `ptr_arg`
-- A lookup key built into a `String` only for a `get`
+- N+1 queries / repeated calls against a database or the network that stall a request path or a controller until an operator steps in — the finding naming that load and who recovers (`operator-recovery`); one that names no such harm is LOW (rules.md, footnote ⁵)
 
 **API & quality**
 - Library returning `Box<dyn Error>` / `anyhow::Error` instead of a typed error (API-design concern → `rust-errors`)
@@ -185,6 +174,17 @@ pattern lists every site (rules.md, footnote ⁴):
 - Wildcard `_ =>` on a business enum (hides new variants — prefer exhaustive)
 
 ### LOW — optional, never blocks (unless a harm is named)
+
+**Performance** — LOW whatever the path: a performance cost names no harm above `none`; the finding
+says whether it sits on a hot path, and one finding per pattern lists every site (rules.md,
+footnote ⁴)
+- Allocation inside a hot loop; `to_string()`/`to_owned()`/`format!`/`clone()` inside a loop (a clone only for the borrow checker is OWN-001)
+- `Vec::new()` + push loop where the size is known (`with_capacity`)
+- N+1 queries / repeated work in a loop that names no harm above `none`
+- `collect()` into a `Vec` only to iterate it once, take its length or call `contains`
+- Returning `Vec`/`String` where `impl Iterator` or a borrow (`&str`) would do — not on a library's `pub` item that already exists on the base
+- A `&[String]`-style parameter where `&[&str]` or `impl IntoIterator<Item = impl AsRef<str>>` serves callers — not on a library's `pub` item that already exists on the base; `&String`/`&Vec<T>` is clippy `ptr_arg`
+- A lookup key built into a `String` only for a `get`
 
 **Test coverage** (cross-check with the `rust-testing` skill)
 - New error path or branch with no test

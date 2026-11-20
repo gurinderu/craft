@@ -18,6 +18,8 @@ hook, code path or legacy cohort is a new finding.
    changed symbol outside the changed lines, and a row the list holds is never left out.
 2. Mark the rows a finding already covers.
 3. Report every uncovered row where the defect holds, each as its own finding at its own place.
+   Low findings of one pattern that name no harm above `none` may be rolled up into one finding
+   listing every site, where the language rubric says so; defects are never rolled up.
 
 The same place reported again is a repeat; drop it. Another place of the same class is not.
 
