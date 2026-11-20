@@ -6,6 +6,26 @@ fn runner(dir: &Path) -> Runner {
     Runner::new(Duration::from_secs(30), None, dir.join("out"))
 }
 
+/// The pid a tool left in `file`.
+fn pid_in(file: &Path) -> i32 {
+    std::fs::read_to_string(file)
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap()
+}
+
+/// Whether `pid` is gone: reparented and reaped by init once killed, looked for a little while.
+fn gone(pid: i32) -> bool {
+    (0..100).any(|_| {
+        let gone = nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None).is_err();
+        if !gone {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        gone
+    })
+}
+
 #[test]
 fn a_program_not_on_the_path_is_missing() {
     let d = tempfile::tempdir().unwrap();
@@ -46,22 +66,36 @@ fn a_stop_kills_the_running_tool_with_its_group_and_starts_no_other() {
     );
     assert_eq!(ran, Ran::Broken(crate::cancel::STOPPED.into()));
     // The group's other member, the sleep, was killed with its leader.
-    let pid: i32 = std::fs::read_to_string(&pid)
-        .unwrap()
-        .trim()
-        .parse()
-        .unwrap();
-    // Reparented and reaped by init once killed: looked for a little while.
-    let gone = (0..100).any(|_| {
-        let gone = nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None).is_err();
-        if !gone {
-            std::thread::sleep(Duration::from_millis(20));
-        }
-        gone
-    });
-    assert!(gone, "the tool's child {pid} outlived the stop");
+    let pid = pid_in(&pid);
+    assert!(gone(pid), "the tool's child {pid} outlived the stop");
     assert_eq!(
         r.run(d.path(), "sh", &["-c", "true"]),
         Ran::Broken(crate::cancel::STOPPED.into())
     );
+}
+
+#[test]
+fn a_tool_that_exits_leaving_a_child_has_the_child_killed() {
+    let d = tempfile::tempdir().unwrap();
+    let pid = d.path().join("child.pid");
+    let script = format!("sleep 30 & echo $! > '{}'; echo done", pid.display());
+    let ran = runner(d.path()).run(d.path(), "sh", &["-c", &script]);
+    let Ran::Exited { ok: true, out, .. } = ran else {
+        panic!("{ran:?}");
+    };
+    assert_eq!(out, "done\n");
+    let pid = pid_in(&pid);
+    assert!(gone(pid), "the tool's child {pid} outlived the tool");
+}
+
+#[test]
+fn the_budget_kills_the_running_tool_with_its_group() {
+    let d = tempfile::tempdir().unwrap();
+    let pid = d.path().join("child.pid");
+    let r = Runner::new(Duration::from_secs(1), None, d.path().join("out"));
+    let script = format!("sleep 30 & echo $! > '{}'; wait", pid.display());
+    let ran = r.run(d.path(), "sh", &["-c", &script]);
+    assert!(matches!(ran, Ran::TimedOut(_)), "{ran:?}");
+    let pid = pid_in(&pid);
+    assert!(gone(pid), "the tool's child {pid} outlived the budget");
 }

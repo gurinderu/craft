@@ -19,7 +19,7 @@ fn a_tool_asking_on_the_terminal_fails_at_once() {
     let d = tempfile::tempdir().unwrap();
     let bin = d.path().join("bin");
     std::fs::create_dir_all(&bin).unwrap();
-    under_tty::asking(&bin);
+    let tool = under_tty::asking(&bin);
     // Under the 60 s the outer run waits: a hang fails here, named, rather than there.
     let path = Some(bin.into_os_string());
     let r = Runner::new(Duration::from_secs(15), path, d.path().join("out"));
@@ -30,6 +30,7 @@ fn a_tool_asking_on_the_terminal_fails_at_once() {
         "{:?}: {ran:?}",
         began.elapsed()
     );
+    assert!(under_tty::asked(&tool), "the asking tool never ran");
     let Ran::Exited { ok: false, err, .. } = ran else {
         panic!("{ran:?}");
     };
