@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 
-use super::{holds_sql, in_changed_lines};
+use super::{holds_sql, in_changed_lines, mark};
 use crate::gate::lines::Lines;
+use crate::state::Track;
 
 #[test]
 fn a_query_call_or_a_literal_opening_with_a_statement_holds_sql() {
@@ -34,6 +35,9 @@ fn prose_identifiers_and_lone_keywords_hold_none() {
         r"    msg = 'insert the card'",
         "UPDATE = 1",
         "    SELECT = 'select'",
+        r#"    println!("Select a file from the list");"#,
+        r#"    println!("select one item from the menu, then update its set of tags");"#,
+        r#"    let m = "delete from the cache";"#,
     ] {
         assert!(!holds_sql(l), "{l}");
     }
@@ -65,4 +69,16 @@ fn only_an_added_line_of_the_profiles_files_counts() {
         &gone,
         &["src/gone.rs".to_owned()]
     ));
+}
+
+#[test]
+fn a_change_that_cannot_be_read_marks_none_and_says_so() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut tracks = vec![Track::new("rust", vec!["src/db.rs".into()])];
+    let note = mark(dir.path(), "origin/main", &mut tracks).unwrap();
+    assert!(
+        note.contains("embedded-SQL signal could not be read"),
+        "{note}"
+    );
+    assert!(!tracks[0].embedded_sql);
 }

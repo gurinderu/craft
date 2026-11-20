@@ -34,7 +34,7 @@
       "id": "reconciler", "brief": "lens-briefs/rust-reconciler", "model": "opus",
       "catalogue": { "label": "RACE CATALOGUE", "file": "skills/distributed-races/catalogue.md", "fallback": "R1–R6" }
     },
-    { "id": "sql-queries", "brief": "lens-briefs/sql-queries", "model": "opus", "conditional": true },
+    { "id": "sql-queries", "brief": "lens-briefs/sql-queries", "model": "opus", "conditional": true, "rubric": "sql-review" },
     { "id": "failure-windows", "brief": "lens-briefs/rust-failure-windows", "model": "opus", "conditional": true, "wholeDiff": true },
     {
       "id": "compat", "brief": "lens-briefs/rust-compat", "model": "opus", "surface": "wireForm", "wholeDiff": true,

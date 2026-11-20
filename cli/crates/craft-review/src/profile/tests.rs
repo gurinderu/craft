@@ -144,3 +144,37 @@ fn the_rust_and_general_profiles_hold_the_queries_lens_behind_a_code_signal() {
     }
     assert!(Profile::load("nix").unwrap().lens("sql-queries").is_none());
 }
+
+#[test]
+fn the_embedded_queries_lens_carries_the_sql_rubric_not_its_hosts() {
+    for id in ["rust", "general"] {
+        let p = Profile::load(id).unwrap();
+        assert_eq!(p.rubric_of("sql-queries"), "sql-review", "{id}");
+        assert!(
+            p.catalog_of("sql-queries"),
+            "{id}: sql-review ships rules.md"
+        );
+        assert_eq!(
+            p.fp_rules_of("sql-queries"),
+            "",
+            "{id}: sql-review ships no fp-rules"
+        );
+    }
+    let rust = Profile::rust().unwrap();
+    assert_eq!(
+        (
+            rust.rubric_of("errors"),
+            rust.catalog_of("errors"),
+            rust.fp_rules_of("errors")
+        ),
+        ("rust-review", true, "fp-rules.md")
+    );
+    let general = Profile::load("general").unwrap();
+    assert_eq!(
+        (
+            general.rubric_of("security"),
+            general.catalog_of("security")
+        ),
+        ("review-rules", false)
+    );
+}

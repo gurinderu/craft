@@ -29,14 +29,27 @@ const UPPER: [&str; 6] = [
     "MERGE INTO",
 ];
 
-/// A statement's opening in lower case and a word it must also hold (empty: none), so prose that
-/// opens with the same verb ("update the cache") is not read as a query.
+/// A statement's opening in lower case and a word it must also hold (empty: none). Prose opens
+/// with the same verbs ("select a file from the list"), so a lower-case statement counts only with
+/// SQL structure besides ([`structured`]).
 const LOWER: [(&str, &str); 5] = [
     ("select ", " from "),
     ("insert into ", ""),
     ("update ", " set "),
     ("delete from ", ""),
     ("with ", " as ("),
+];
+
+/// Clauses only a statement goes on with.
+const CLAUSES: [&str; 8] = [
+    " where ",
+    " join ",
+    " order by ",
+    " group by ",
+    " limit ",
+    " values",
+    " returning ",
+    " on conflict",
 ];
 
 /// Whether `line` holds a query string: a query call, a string literal opening with a statement,
@@ -56,7 +69,36 @@ fn statement(text: &str) -> bool {
         LOWER
             .iter()
             .any(|(open, also)| lower.starts_with(open) && lower.contains(also))
+            && structured(&lower)
     }
+}
+
+/// Whether lower-case `text` has a statement's structure: a clause, a bind placeholder (`$1`,
+/// `= ?`, `(?`), or `from <table>` closing the literal or a subquery.
+fn structured(text: &str) -> bool {
+    let placeholder = text.match_indices('$').any(|(at, _)| {
+        text.get(at + 1..)
+            .is_some_and(|r| r.starts_with(|c: char| c.is_ascii_digit()))
+    }) || ["= ?", "=?", "(?"].iter().any(|p| text.contains(p));
+    CLAUSES.iter().any(|c| text.contains(c)) || placeholder || from_closes(text)
+}
+
+/// `from <table>` followed by the end of the literal, the line or a subquery.
+fn from_closes(text: &str) -> bool {
+    text.split(" from ").skip(1).any(|rest| {
+        let mut chars = rest.chars().peekable();
+        let mut table = 0;
+        while chars
+            .next_if(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.'))
+            .is_some()
+        {
+            table += 1;
+        }
+        table > 0
+            && chars
+                .next()
+                .is_none_or(|c| matches!(c, '"' | '\'' | '`' | ')' | ';'))
+    })
 }
 
 /// An upper-case opening, then whitespace, then what a statement goes on with — a word, `*` or
@@ -90,19 +132,25 @@ pub(crate) fn in_changed_lines(top: &Path, lines: &Lines, files: &[String]) -> b
 }
 
 /// Marks each of `tracks` whose changed lines hold a query string, the change read from the
-/// zero-context diff of the checkout `cwd` is in against `merge_base`; a diff that cannot be read
-/// marks none.
-pub(crate) fn mark(cwd: &Path, merge_base: &str, tracks: &mut [Track]) {
-    let (Ok(top), Ok(diff)) = (
-        crate::git::toplevel(cwd),
-        crate::git::zero_context_diff(cwd, merge_base),
-    ) else {
-        return;
+/// zero-context diff of the checkout `cwd` is in against `merge_base`. A change that cannot be read
+/// marks none, and the note it returns says so for the report.
+pub(crate) fn mark(cwd: &Path, merge_base: &str, tracks: &mut [Track]) -> Option<String> {
+    let read = crate::git::toplevel(cwd)
+        .and_then(|top| crate::git::zero_context_diff(cwd, merge_base).map(|diff| (top, diff)));
+    let (top, diff) = match read {
+        Ok(got) => got,
+        Err(e) => {
+            return Some(format!(
+                "the embedded-SQL signal could not be read ({e}): no Rust or other source file was \
+                 given the sql-queries lens for the query strings on its changed lines"
+            ));
+        }
     };
     let lines = Lines::parse(&diff);
     for t in tracks {
         t.embedded_sql = in_changed_lines(&top, &lines, &t.files);
     }
+    None
 }
 
 #[cfg(test)]

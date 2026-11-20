@@ -81,6 +81,11 @@ pub struct Lens {
     /// ([`crate::complexity`]).
     #[serde(default)]
     pub metrics: bool,
+    /// The rubric skill it is judged by when not its profile's — the embedded-SQL `sql-queries`
+    /// lens of the Rust and general profiles takes `sql-review` (realm @nick/craft, node #536). Such
+    /// a skill ships a `rules.md` catalog and no exclusion file of its own.
+    #[serde(default)]
+    pub rubric: Option<String>,
 }
 
 fn with_catalog() -> bool {
@@ -185,6 +190,33 @@ impl Profile {
             .filter(|l| flag(l))
             .map(|l| l.id.clone())
             .collect()
+    }
+
+    /// The rubric skill the lens `lens` (or a finding it raised) is judged by: its own, else the
+    /// profile's.
+    #[must_use]
+    pub fn rubric_of(&self, lens: &str) -> &str {
+        self.own_rubric(lens).unwrap_or(&self.rubric_skill)
+    }
+
+    /// Whether `lens`'s rubric ships a `rules.md` catalog its findings' `ruleId` cites.
+    #[must_use]
+    pub fn catalog_of(&self, lens: &str) -> bool {
+        self.own_rubric(lens).is_some() || self.rule_catalog
+    }
+
+    /// The exclusion file of `lens`'s rubric (`fp-rules.md`), empty when it ships none.
+    #[must_use]
+    pub fn fp_rules_of(&self, lens: &str) -> &str {
+        if self.own_rubric(lens).is_some() {
+            ""
+        } else {
+            &self.fp_rules
+        }
+    }
+
+    fn own_rubric(&self, lens: &str) -> Option<&str> {
+        self.lens(lens).and_then(|l| l.rubric.as_deref())
     }
 
     /// Whether the profile reviews any of `files`.
