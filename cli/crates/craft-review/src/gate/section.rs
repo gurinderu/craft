@@ -23,6 +23,9 @@ pub fn section(gate: &Gate) -> String {
         };
     }
     let mut out = String::from("## Gate\n\n");
+    if let Some(note) = gate.unread_note() {
+        out.push_str(&format!("⚠️ {note}.\n\n"));
+    }
     if !gate.from.is_empty() {
         out.push_str(&format!(
             "Run once for the whole change by the launching run (`{}`), not by this one; its tool seeds on this run's files reached the lenses.\n\n",

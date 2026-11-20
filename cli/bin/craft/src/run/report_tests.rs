@@ -89,3 +89,19 @@ fn a_stopped_answer_is_incomplete_with_why() {
         "## Verdict\n\n⚠️ INCOMPLETE — pi is not logged in"
     );
 }
+
+#[test]
+fn a_publication_whose_changed_lines_were_not_read_says_so_beside_the_pr_comments() {
+    let step = json!({
+        "prComments": {"posted": 1, "already": 0, "requested": 1, "reason": "PR #3 u"},
+        "sorting": {"doubtful": 0, "inDiffJudged": false, "inDiffNote": "git could not list the lines the diff changed (git printed non-UTF-8 output): each defect is posted on its file, not on a line"},
+    });
+    let lines = publication(&step);
+    assert_eq!(
+        lines.get(1).map(String::as_str),
+        Some(
+            "⚠️ git could not list the lines the diff changed (git printed non-UTF-8 output): each defect is posted on its file, not on a line."
+        ),
+        "{lines:?}"
+    );
+}
