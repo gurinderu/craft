@@ -1,0 +1,120 @@
+//! The hooks' trace (realm @nick/craft, nodes #281, #283): one JSON line per run in
+//! `~/.craft/hooks.jsonl` — the event, whether it spoke, on what, or why it stayed silent — which
+//! `lib/analyze-runs.mjs` reads back, and the prompt hook reads for what a session already heard.
+//! Writing never fails the session (#276); the file is bounded by rotation to one older
+//! generation. The fields keep the order the Node hooks wrote them in.
+
+use std::fs;
+use std::io::Write as _;
+use std::path::{Path, PathBuf};
+
+use serde::Serialize;
+use serde_json::Value;
+
+const MAX_BYTES: u64 = 256 * 1024;
+
+/// One line of the log. `kind` is the prompt class, `agent` the subagent type, `readiness` the
+/// readiness lines a Codex start said, `reason` what a line that spoke said when it was not a
+/// request's text — or, on every line of the Agent-tool hook, `reviewer-dispatch`.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct Entry {
+    pub ts: String,
+    pub repo: String,
+    pub source: String,
+    pub event: String,
+    pub harness: String,
+    pub session: String,
+    pub spoke: bool,
+    pub found: Vec<String>,
+    pub silent: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub readiness: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+impl Entry {
+    /// The line silent for `why`.
+    pub fn quiet(mut self, why: &str) -> Self {
+        self.spoke = false;
+        self.silent = Some(why.to_owned());
+        self
+    }
+
+    pub fn because(mut self, reason: &str) -> Self {
+        self.reason = Some(reason.to_owned());
+        self
+    }
+}
+
+/// `~/.craft/hooks.jsonl` under `home`.
+pub fn log_path(home: &Path) -> PathBuf {
+    home.join(".craft").join("hooks.jsonl")
+}
+
+fn older(file: &Path) -> PathBuf {
+    let mut name = file.as_os_str().to_owned();
+    name.push(".1");
+    PathBuf::from(name)
+}
+
+/// Append one entry; past `MAX_BYTES` the file becomes `<file>.1` first. Every error is
+/// swallowed: a lost line is better than a failed session.
+pub fn append(entry: &Entry, file: &Path) {
+    let write = || -> std::io::Result<()> {
+        if let Some(dir) = file.parent() {
+            fs::create_dir_all(dir)?;
+        }
+        if fs::metadata(file).is_ok_and(|m| m.len() > MAX_BYTES) {
+            fs::rename(file, older(file))?;
+        }
+        let line = serde_json::to_string(entry).map_err(std::io::Error::other)?;
+        let mut f = fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(file)?;
+        f.write_all(format!("{line}\n").as_bytes())
+    };
+    write().unwrap_or_default();
+}
+
+/// Both generations, oldest first; a line that does not parse, or lacks a string `repo` and a
+/// boolean `spoke`, is skipped. `None` when neither file is there.
+pub fn read(file: &Path) -> Option<Vec<Value>> {
+    let mut any = false;
+    let mut out = Vec::new();
+    for f in [older(file), file.to_path_buf()] {
+        let Ok(bytes) = fs::read(&f) else { continue };
+        any = true;
+        for line in String::from_utf8_lossy(&bytes).split('\n') {
+            if let Ok(v) = serde_json::from_str::<Value>(line)
+                && v.get("repo").is_some_and(Value::is_string)
+                && v.get("spoke").is_some_and(Value::is_boolean)
+            {
+                out.push(v);
+            }
+        }
+    }
+    any.then_some(out)
+}
+
+/// A string field of a log line.
+pub fn field<'a>(e: &'a Value, key: &str) -> Option<&'a str> {
+    e.get(key).and_then(Value::as_str)
+}
+
+/// Whether a log line has `key` at all (JS's `!== undefined`).
+pub fn has(e: &Value, key: &str) -> bool {
+    e.get(key).is_some()
+}
+
+/// The event a line belongs to; a line from before the field is `SessionStart`'s.
+pub fn event(e: &Value) -> &str {
+    field(e, "event")
+        .filter(|s| !s.is_empty())
+        .unwrap_or("SessionStart")
+}
