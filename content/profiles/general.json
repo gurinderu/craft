@@ -22,6 +22,7 @@
     { "id": "concurrency", "brief": "lens-briefs/general-concurrency", "model": "opus" },
     { "id": "errors", "brief": "lens-briefs/general-errors", "model": "opus" },
     { "id": "performance", "brief": "lens-briefs/general-performance", "model": "opus" },
+    { "id": "sql-queries", "brief": "lens-briefs/sql-queries", "model": "opus", "conditional": true, "rubric": "sql-review" },
     { "id": "complexity", "brief": "lens-complexity", "model": "opus", "metrics": true }
   ],
   "floorLenses": []

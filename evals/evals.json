@@ -402,5 +402,19 @@
       "Does not select codex-review: in OpenCode the review is the /craft-review command (the review tool), or the rust-review skill for a Rust-only pass.",
       "Never runs codex exec or bin/craft review run --backend codex."
     ]
+  },
+  {
+    "skills": ["sql-review"],
+    "query": "This PR adds a Postgres migration: ALTER TABLE orders ADD COLUMN region text NOT NULL; and CREATE INDEX orders_region_idx ON orders(region);. The orders table has 80M rows. Is it safe to deploy?",
+    "expected_behavior": [
+      "Selects sql-review, not rust-review or nix-review.",
+      "Names the failure of ADD COLUMN ... NOT NULL without a default on a table with rows, and the SHARE lock CREATE INDEX holds without CONCURRENTLY.",
+      "Rates them by harm (an outage on deploy is must-fix), not by style."
+    ]
+  },
+  {
+    "skills": ["rust-review"],
+    "query": "Review my Rust change: I refactored the error enum in src/db/error.rs and its From impls; there is no SQL in the diff. Is it mergeable?",
+    "expected_behavior": ["Selects rust-review.", "Does not select sql-review: the diff holds no SQL, only Rust error types."]
   }
 ]

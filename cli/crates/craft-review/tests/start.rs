@@ -147,7 +147,7 @@ fn a_diff_no_profile_takes_takes_the_engines_coverage_exit() {
     let (v, report) = exit_of("Dockerfile", None);
     assert_eq!(v, json!("INCOMPLETE (no language profile)"));
     assert!(
-        report.contains("## Verdict\n\n⚠️ INCOMPLETE — NOTHING WAS REVIEWED — none of the 1 changed file(s) match a supported language profile (this engine reviews Rust, Nix and source in any other language, but no project configuration or build recipe), and 1 of them carry reviewable content"),
+        report.contains("## Verdict\n\n⚠️ INCOMPLETE — NOTHING WAS REVIEWED — none of the 1 changed file(s) match a supported language profile (this engine reviews Rust, Nix, SQL and source in any other language, but no project configuration or build recipe), and 1 of them carry reviewable content"),
         "project configuration alone is still no profile's: {report}"
     );
     assert!(

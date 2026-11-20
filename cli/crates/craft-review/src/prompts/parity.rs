@@ -56,6 +56,8 @@ fn every_prompt_renders_as_the_engines_render_it() {
     for (id, lenses, at) in [
         ("rust", &input["lenses"], "/expected"),
         ("nix", &input["nixLenses"], "/expected/nix"),
+        ("sql", &input["sqlLenses"], "/expected/sql"),
+        ("general", &input["generalLenses"], "/expected/general"),
     ] {
         let profile = Profile::load(id).unwrap();
         g.check(

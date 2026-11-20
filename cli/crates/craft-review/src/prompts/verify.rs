@@ -69,19 +69,20 @@ fn finding_fields(f: &Value, self_contained: &str) -> Vec<(&'static str, String)
 
 /// The exclusions a verifier of `profile`'s finding reads: the shared catalogue, then the
 /// profile's own when it ships one, as `sharedExclusionsLine` and `exclusionCatalogText` join them.
-fn exclusions(ctx: &PromptContext, profile: &Profile) -> Result<String, ContentError> {
+fn exclusions(ctx: &PromptContext, profile: &Profile, lens: &str) -> Result<String, ContentError> {
     let shared = content::prompt(
         "verify-shared-exclusions",
         &vars([("dirs", plugin_candidates(ctx, REVIEW_RULES_DIR))]),
     )?;
-    if profile.fp_rules.is_empty() {
+    let fp_rules = profile.fp_rules_of(lens);
+    if fp_rules.is_empty() {
         return Ok(format!("\n{shared}\n"));
     }
     let catalog = content::prompt(
         "verify-exclusion-catalog",
         &vars([
-            ("rubricSkill", profile.rubric_skill.clone()),
-            ("fpRules", profile.fp_rules.clone()),
+            ("rubricSkill", profile.rubric_of(lens).to_owned()),
+            ("fpRules", fp_rules.to_owned()),
         ]),
     )?;
     Ok(format!("\n{shared}\n\n{catalog}\n"))
@@ -140,7 +141,14 @@ pub fn verify_prompt(
         ("head", head),
         ("gate", gate),
         ("toolFallback", fallback.into()),
-        ("exclusions", exclusions(ctx, profile)?),
+        (
+            "exclusions",
+            exclusions(
+                ctx,
+                profile,
+                f.get("source").and_then(Value::as_str).unwrap_or(""),
+            )?,
+        ),
         ("sources", sources::verify_block(&ctx.sources.prepared)),
         ("refutedRule", refuted.into()),
         ("dependencySource", content::text("dependency-source")?),
