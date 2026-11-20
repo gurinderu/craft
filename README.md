@@ -1,6 +1,6 @@
 # craft
 
-Personal Claude Code collection of opinionated engineering skills and agents.
+Opinionated engineering skills, review agents and workflows for Claude Code, OpenCode, Codex and pi.
 
 craft owns its **Rust** and **Nix** knowledge in full and is **self-contained** — it declares no
 plugin dependencies and carries no generic engineering-process content. Language-agnostic
@@ -34,7 +34,13 @@ cross-linking is the collection's cohesion.
 | skill | `craft:rust-fintech` | Money in Rust — exact decimal, `Money`+currency, rounding/allocation, idempotency, double-entry ledgers |
 | skill | `craft:rust-cloud-native` | Services — gRPC (tonic), tracing/OpenTelemetry, health probes, 12-factor config, graceful shutdown, lean containers |
 | skill | `craft:rust-embedded` | Bare-metal/MCU `no_std` — heapless, peripheral-ownership singletons, embedded-hal drivers, ISR-safe sharing (critical-section), RTIC vs Embassy, defmt/probe-rs |
+| skill | `craft:rust-ml` | Machine learning and numerics in Rust — frameworks, tensors, model loading, inference and serving |
 | skill | `craft:rust-navigation` | Navigate a crate with rust-analyzer over LSP — go-to-definition, find-references (impact before a rename), hover, file/workspace symbols, trait implementors, call hierarchy; text-tool fallbacks when no LSP |
+| skill | `craft:nix-flakes` | Nix flakes — inputs, outputs, pinning and project structure |
+| skill | `craft:nix-packaging` | Nix derivations — build phases, source and dependency hashes, packaging |
+| skill | `craft:nix-dev-env` | Nix development shells, direnv, formatters, linters and pre-commit hooks |
+| skill | `craft:nixos` | NixOS and nix-darwin modules, configurations, secrets and services |
+| skill | `craft:nix-review` | Nix review rubric — flake gate, correctness checklist and verdict |
 | skill | `craft:specs` | Specification by example / BDD / ATDD — requirements → Given/When/Then scenarios, outside-in (language-agnostic) |
 | skill | `craft:debugging` | Rust debugging toolbox — repro shrinking, `git bisect`/`cargo bisect-rustc`, `dbg!`/`tracing`/`RUST_BACKTRACE`, Miri/loom heisenbugs, `rust-gdb`/`rr` |
 | skill | `craft:refactoring` | Disciplined refactoring — structure-not-behavior in tiny steps under green tests (language-agnostic) |
@@ -45,7 +51,8 @@ cross-linking is the collection's cohesion.
 | skill | `craft:review-rules` | Language-independent review rules — severity capped by the harm a finding names, finding classes, the sibling sweep and other search moves, shared exclusions; read by every review lens and verifier beside the language rubric |
 | skill | `craft:memory` | Semantic memory of the project's own facts — decisions on findings, project rules on classes of findings, lessons, open questions — `recall` / `record-decision` / `record-rule` / `record-lesson` / `record-question` over whatever store the project has (explicit setting, a memory MCP server found by capability, the harness's project memory, or `.craft/memory/` files); not craft's run records |
 | skill | `craft:review-init` | `craft init` for the CLI review: your own profile of a repository, kept outside it in `~/.craft/projects/<id>/review.toml` — the integration points (the external systems the code talks to over the network or through their API), each with its source URL and deployed tag or commit; the review fetches each source at that revision into `~/.craft/sources`, and its lifecycle, compatibility and race lenses and its verifiers read it; and the CI map, the checks whose result the gate reads for the head when it cannot build the branch itself — a red one blocks, a green one is reported, never a pass |
-| skill | `craft:addressing-findings` | The fix loop for review findings — gather (craft agents + GitHub PR comments), normalize, triage (accept/reject/defer/needs-decision/conflict), order, fix (delegating how-to-fix to topic skills), verify, re-review, close the GitHub loop; triage always goes through the `triage-findings` workflow |
+| skill | `craft:addressing-findings` | The fix loop for review findings — gather, sift, triage, fix, verify and re-review; the main session uses the `triage-findings` workflow where available, otherwise sifts and validates itself |
+| skill | `craft:codex-review` | Codex review through the craft CLI's Codex backend |
 | skill | `craft:develop` | The development cycle up to a PR with craft's own tools — the project's declared roles and rules take any phase they cover; recall project memory, make the change, review → triage → fix — the first round over the branch diff, each next over the delta the fixes changed — until a round brings no open Medium+ finding (at most 4 rounds, then stop and tell the human), one full review, one record of the cycle in the run store, then the PR; runs in the main session |
 | agent | `rust-reviewer` | Per-lens worker for the `review` workflow's rust profile; run directly for an ad-hoc whole-diff Rust review (runs the gate itself — a CI check only informs — and returns a verdict, at most Warning when the gate could not be established) |
 | agent | `nix-reviewer` | Per-lens worker for the `review` workflow's nix profile; run directly for an ad-hoc whole-diff Nix review (nix flake check / statix / deadnix gate + verdict) |
@@ -72,7 +79,7 @@ craft/
 │   ├── claude-code/       # the Claude Code plugin (what a marketplace install copies)
 │   │   ├── .claude-plugin/plugin.json   # plugin metadata
 │   │   ├── agents/        # diff/structure review agents and the engines' service agent
-│   │   ├── hooks/hooks.json   # SessionStart (lib/session-start-hook.mjs); UserPromptSubmit, SubagentStart (lib/work-hook-entry.mjs); PreToolUse (lib/reviewer-dispatch-hook-entry.mjs)
+│   │   ├── hooks/hooks.json   # SessionStart, UserPromptSubmit, SubagentStart, PreToolUse and PostToolUse
 │   │   ├── workflows/     # multi-agent orchestration scripts, generated from src/ (npm run build:engines)
 │   │   └── skills, lib, content, src, README.md -> ../../…   # symlinks; the release branch holds them as real files
 │   ├── opencode/          # the OpenCode adapter layer (agents, commands, plugin, install.sh)
@@ -112,7 +119,13 @@ craft also runs in [opencode](https://opencode.ai) via a contained adapter layer
 review agents are translated to opencode agent files, and the `rust-audit` / `triage-findings`
 workflows ship as one contained TS/Bun plugin (`/rust-audit`, `/triage-findings`), beside `/craft-review`, which runs the
 `craft` binary's own review (`bin/craft review run --backend opencode`) on the session's model. On OpenCode 2.x it
-installs with one command, from the release's package tag (the package has no npm dependencies):
+installs from the release's package tag (the package has no npm dependencies).
+
+The OpenCode delivery excludes `develop` and `codex-review`. On OpenCode 2.x, `/rust-audit` and
+`/triage-findings` currently refuse to run and return `INCOMPLETE`; `/craft-review` uses the CLI
+driver instead. See the adapter documentation for alternatives and the limits of this observation.
+
+Install on OpenCode 2.x:
 
 <!-- x-release-please-start-version -->
 ```bash
@@ -168,9 +181,22 @@ drives the same review as the `craft:review` workflow and runs each review task 
 On Ubuntu 24.04, Codex's sandbox needs an AppArmor profile for bwrap: see "Sandbox on Ubuntu 24.04" in
 `integrations/codex/README.md`.
 
+## pi
+
+Install the package at a release tag:
+
+<!-- x-release-please-start-version -->
+```sh
+pi install git:github.com/gurinderu/craft@v0.55.0
+```
+<!-- x-release-please-end -->
+
+The package supplies the `craft-review` skill and `craft_review` tool, which runs the CLI review
+with the pi backend. It has been observed from a checkout, not yet as an installed pi package.
+
 ## Workflows
 
-`workflows/review.js` is the diff review for any language. It drives the `craft` binary (the Rust
+`integrations/claude-code/workflows/review.js` is the diff review for any language. It drives the `craft` binary (the Rust
 CLI in `cli/`, fetched from this version's GitHub release unless `craftBin` names a local build), which
 decides every step: each changed file goes to its profile — Rust, Nix, SQL, or the general lenses for
 source in any other language — the mechanical gate runs, a scout per profile picks lenses, the lenses
@@ -183,13 +209,13 @@ check of the project's CI runs clippy, the tests, fmt or the build, on which com
 gate reads for the head when it cannot build the branch itself: a red check blocks, a green one is
 reported and never passes the gate.
 
-`workflows/rust-audit.js` is the full pre-release audit: a scout detects the diff base, `unsafe`,
+`integrations/claude-code/workflows/rust-audit.js` is the full pre-release audit: a scout detects the diff base, `unsafe`,
 the workspace crates and their dependency edges, then many dimensions run in parallel — per-crate
 review, inter-crate contracts, architecture, crate-decomposition, security, Miri (if `unsafe`),
 semver, build-matrix, deps, unused-crate detection (with verification), and test/doc health — and
 a final step synthesizes one severity-ranked report.
 
-`workflows/triage-findings.js` gathers findings (craft agents + GitHub PR comments), sifts out what
+`integrations/claude-code/workflows/triage-findings.js` gathers findings (craft agents + GitHub PR comments), sifts out what
 the project's memory already settled, validates the rest, dedups and conflict-checks them, and
 renders one ordered fix plan + a triage ledger (and the issues to file for findings the PR did not
 introduce) — no edits. A finding counts as not introduced by the PR only when it was shown at the
@@ -203,7 +229,7 @@ validation pins to.
 The workflows and the standalone agents emit a structured run record after each run; see
 `docs/observability.md`.
 
-Run a workflow against a path or fixed diff base:
+From the Claude Code plugin root, run a workflow against a fixed diff base:
 
 ```
 Workflow({ scriptPath: "workflows/rust-audit.js", args: { base: "origin/main" } })

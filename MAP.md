@@ -184,7 +184,7 @@ Plus `rust-architecture` (hexagonal) and the cross-cutting `specs`. Beyond the c
 
 `craft` now covers the `rust-skills` surface (core set complete); `rust-skills` can be
 uninstalled. Remaining gaps: m14 (a deliberate skip — pedagogical/Socratic, against craft's
-action-first stance), `domain-*` beyond web/cli/fintech/cloud-native/embedded (ML, IoT), and the
+action-first stance), `domain-*` beyond web/cli/fintech/cloud-native/embedded/ML (such as IoT), and the
 live-data/news tooling (crate/docs/changelog fetchers). LSP navigation is now covered by
 `rust-navigation`. Rough mapping:
 
@@ -203,7 +203,8 @@ live-data/news tooling (crate/docs/changelog fetchers). LSP navigation is now co
 | m12 (lifecycle: RAII/guards/lazy-init) | `rust-ownership` ([lifecycle.md](skills/rust-ownership/lifecycle.md)); pools → `rust-web` |
 | LSP navigation skills (code-navigator/call-graph/symbol/trait-explorer) | `rust-navigation` |
 | domain-embedded | `rust-embedded` |
-| m14, domain-* (ML/IoT), live-data/news agents | deferred |
+| domain-ml | `rust-ml` |
+| m14, other domain-* (e.g. IoT), live-data/news agents | deferred |
 
 ## opencode adapter
 
