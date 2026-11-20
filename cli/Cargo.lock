@@ -372,6 +372,7 @@ dependencies = [
 name = "craft-store"
 version = "0.55.0"
 dependencies = [
+ "nix 0.31.3",
  "regex",
  "serde_json",
  "sha2",

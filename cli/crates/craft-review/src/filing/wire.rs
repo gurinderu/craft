@@ -113,7 +113,9 @@ pub struct Call<'a> {
 /// Why a write did not come back with an answer.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum WriteError {
-    #[error("HOME is not set, so there is no run store (~/.craft/runs)")]
+    #[error(
+        "neither HOME nor the passwd entry names a home, so there is no run store (~/.craft/runs)"
+    )]
     NoStore,
     #[error("the record writer could not run: {0}")]
     Broken(String),

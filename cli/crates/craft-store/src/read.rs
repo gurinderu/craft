@@ -107,7 +107,42 @@ pub fn records(
 /// The run store under the user's home, `~/.craft/runs`.
 #[must_use]
 pub fn home_store() -> Option<PathBuf> {
-    std::env::var_os("HOME")
-        .filter(|h| !h.is_empty())
-        .map(|h| Path::new(&h).join(".craft/runs"))
+    home_from(std::env::var_os("HOME")).map(|h| h.join(".craft/runs"))
+}
+
+/// The user's home as `os.homedir()` finds it: `home` (`$HOME`) when set and not empty, else the
+/// passwd entry of the user the process runs as.
+#[must_use]
+pub fn home_from(home: Option<std::ffi::OsString>) -> Option<PathBuf> {
+    home.filter(|h| !h.is_empty())
+        .map(PathBuf::from)
+        .or_else(passwd_home)
+}
+
+#[cfg(unix)]
+fn passwd_home() -> Option<PathBuf> {
+    let user = nix::unistd::User::from_uid(nix::unistd::getuid()).ok()??;
+    Some(user.dir).filter(|d| !d.as_os_str().is_empty())
+}
+
+#[cfg(not(unix))]
+fn passwd_home() -> Option<PathBuf> {
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn with_no_home_set_the_store_is_under_the_users_passwd_home() {
+        let given = home_from(Some("/h".into()));
+        assert_eq!(given, Some(PathBuf::from("/h")));
+        let passwd = nix::unistd::User::from_uid(nix::unistd::getuid())
+            .unwrap()
+            .map(|u| u.dir);
+        assert!(passwd.is_some());
+        assert_eq!(home_from(None), passwd);
+        assert_eq!(home_from(Some("".into())), passwd, "an empty HOME is none");
+    }
 }

@@ -14,19 +14,12 @@ pub struct StoreWriter {
     pub store: Option<PathBuf>,
 }
 
-/// The run store under the user's home.
-fn home_store() -> Option<PathBuf> {
-    std::env::var_os("HOME")
-        .filter(|h| !h.is_empty())
-        .map(|h| Path::new(&h).join(".craft/runs"))
-}
-
 impl Writer for StoreWriter {
     fn write(&self, call: &Call<'_>) -> Result<Value, WriteError> {
         let store = self
             .store
             .clone()
-            .or_else(home_store)
+            .or_else(craft_store::read::home_store)
             .ok_or(WriteError::NoStore)?;
         let commit = (!call.root.is_empty())
             .then(|| craft_store::git::git(&["rev-parse", "--short", "HEAD"], Path::new(call.root)))

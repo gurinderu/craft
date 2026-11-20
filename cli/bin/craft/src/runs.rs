@@ -110,7 +110,7 @@ fn store_of(at: &StoreArg) -> Result<PathBuf> {
     at.store
         .clone()
         .or_else(read::home_store)
-        .context("HOME is not set, so there is no ~/.craft/runs; pass --store")
+        .context("neither HOME nor the passwd entry names a home, so there is no ~/.craft/runs; pass --store")
 }
 
 /// Says on stderr what a read passed over.
