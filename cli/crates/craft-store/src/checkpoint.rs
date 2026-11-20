@@ -144,10 +144,10 @@ pub fn read_checkpoints(dir: &Path) -> Result<Vec<Obj>, String> {
 fn checkpoint_names(
     entries: impl Iterator<Item = std::io::Result<String>>,
 ) -> Result<Vec<String>, String> {
-    let names = entries
+    let directory_entries = entries
         .collect::<std::io::Result<Vec<_>>>()
         .map_err(|e| e.to_string())?;
-    Ok(names
+    Ok(directory_entries
         .into_iter()
         .filter(|n| is_slice(n) && n.ends_with(".json"))
         .collect())
@@ -176,26 +176,39 @@ pub fn checkpoint_dir(
     rejoin: bool,
     now: i64,
 ) -> Result<PathBuf, StoreError> {
-    if rejoin && let Some(found) = find_rejoinable(record, store, want, now) {
+    if rejoin && let Some(found) = find_rejoinable(record, store, want, now)? {
         return Ok(found);
     }
     mint(record, store, now)
 }
 
 /// The one unfinalized directory of the same kind and name whose checkpoints prove `want`.
-#[must_use]
-pub fn find_rejoinable(record: &Obj, store: &Path, want: &Identity, now: i64) -> Option<PathBuf> {
+/// # Errors
+/// When a possible run or the directory containing runs cannot be listed.
+pub fn find_rejoinable(
+    record: &Obj,
+    store: &Path,
+    want: &Identity,
+    now: i64,
+) -> Result<Option<PathBuf>, StoreError> {
     let root = store.join(PARTIAL_DIR);
     if want.project.is_empty() {
-        return None;
+        return Ok(None);
     }
     let mut named = record.clone();
     named.set("ts", Js::str(""));
     let suffix = filename(&named);
     let suffix = suffix.trim_start_matches('-').trim_end_matches(".json");
-    let found: Vec<PathBuf> = std::fs::read_dir(&root)
-        .ok()?
-        .flatten()
+    let entries = match std::fs::read_dir(&root) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(StoreError::io(&root, &e)),
+    };
+    let directory_entries = entries
+        .collect::<std::io::Result<Vec<_>>>()
+        .map_err(|e| StoreError::io(&root, &e))?;
+    let candidates = directory_entries
+        .into_iter()
         .map(|e| e.file_name().to_string_lossy().into_owned())
         .filter(|n| n.ends_with(&format!("-{suffix}")))
         .filter(|n| {
@@ -207,14 +220,18 @@ pub fn find_rejoinable(record: &Obj, store: &Path, want: &Identity, now: i64) ->
         })
         .map(|n| root.join(n))
         .filter(|d| !d.join(FINALIZED_MARKER).exists() && !d.join(KEPT_LIVE_MARKER).exists())
-        .filter(|d| {
-            let phases = read_checkpoints(d).unwrap_or_default();
-            !phases.is_empty() && agrees(want, &attested(&phases))
-        })
-        .collect();
+        .collect::<Vec<_>>();
+    let mut found = Vec::new();
+    for d in candidates {
+        let phases = read_checkpoints(&d)
+            .map_err(|e| StoreError::Refused(format!("cannot read {}: {e}", d.display())))?;
+        if !phases.is_empty() && agrees(want, &attested(&phases)) {
+            found.push(d);
+        }
+    }
     match found.as_slice() {
-        [one] => Some(one.clone()),
-        _ => None,
+        [one] => Ok(Some(one.clone())),
+        _ => Ok(None),
     }
 }
 
@@ -290,7 +307,8 @@ pub fn write_checkpoint(
 
 #[cfg(test)]
 mod enumeration_tests {
-    use super::checkpoint_names;
+    use super::{Identity, checkpoint_dir, checkpoint_names};
+    use crate::js::{Js, Obj};
 
     #[test]
     fn an_entry_error_refuses_a_partial_checkpoint_listing() {
@@ -302,5 +320,26 @@ mod enumeration_tests {
             checkpoint_names(entries.into_iter()).unwrap_err(),
             "listing failed"
         );
+    }
+
+    #[test]
+    fn rejoin_does_not_mint_a_new_run_if_a_candidate_cannot_be_read() {
+        let d = tempfile::tempdir().unwrap();
+        let root = d.path().join(".partial");
+        std::fs::create_dir(&root).unwrap();
+        std::fs::write(
+            root.join("1970-01-01T00-00-00Z-workflow-review"),
+            "not a directory",
+        )
+        .unwrap();
+        let record = Obj::new()
+            .with("kind", Js::str("workflow"))
+            .with("name", Js::str("review"));
+        let want = Identity {
+            project: "/p".into(),
+            ..Identity::default()
+        };
+        checkpoint_dir(&record, d.path(), &want, true, 0).unwrap_err();
+        assert_eq!(std::fs::read_dir(root).unwrap().count(), 1);
     }
 }

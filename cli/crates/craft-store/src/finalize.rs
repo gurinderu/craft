@@ -81,7 +81,7 @@ pub fn finalize(
     } else if !asked.dir.is_empty() {
         Some(PathBuf::from(asked.dir))
     } else if asked.rejoin {
-        find_rejoinable(raw, &w.store, &own, w.now)
+        find_rejoinable(raw, &w.store, &own, w.now)?
     } else {
         None
     };

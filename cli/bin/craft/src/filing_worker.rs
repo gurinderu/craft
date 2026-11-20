@@ -141,6 +141,24 @@ mod tests {
         assert!(started.elapsed() < Duration::from_secs(3));
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn a_timed_out_writer_and_its_child_do_not_write_later() {
+        let d = tempfile::tempdir().unwrap();
+        let marker = d.path().join("late");
+        let mut command = Command::new("sh");
+        command.args(["-c", "(sleep 1; printf late > \"$1\") & wait", "sh"]);
+        command.arg(&marker);
+        assert_eq!(
+            run(&mut command, Vec::new(), Duration::from_millis(100))
+                .unwrap_err()
+                .kind(),
+            std::io::ErrorKind::TimedOut
+        );
+        std::thread::sleep(Duration::from_millis(1300));
+        assert!(!marker.exists());
+    }
+
     #[test]
     fn a_large_request_reaches_the_writer_without_blocking_its_output() {
         let input = vec![b'x'; 1_000_000];

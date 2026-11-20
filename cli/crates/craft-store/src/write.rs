@@ -135,17 +135,10 @@ fn claim_record_file(
         let mut record = raw.clone();
         record.spread(&w.computed(w.now + bump * 1000, seen));
         let file = w.store.join(filename(&record));
-        let made = std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&file);
+        let text = Js::Obj(record.clone()).pretty();
+        let made = claim_using(&file, |f| std::io::Write::write_all(f, text.as_bytes()));
         match made {
-            Ok(f) => {
-                finish_claim(&file, f, |f| {
-                    std::io::Write::write_all(f, Js::Obj(record.clone()).pretty().as_bytes())
-                })?;
-                return Ok((file, record));
-            }
+            Ok(()) => return Ok((file, record)),
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
             Err(e) => return Err(StoreError::io(&file, &e)),
         }
@@ -156,20 +149,46 @@ fn claim_record_file(
     )))
 }
 
-fn finish_claim(
+fn claim_using(
     file: &Path,
-    mut f: std::fs::File,
     write: impl FnOnce(&mut std::fs::File) -> std::io::Result<()>,
-) -> Result<(), StoreError> {
+) -> std::io::Result<()> {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let name = file
+        .file_name()
+        .ok_or_else(|| std::io::Error::other("record has no name"))?
+        .to_string_lossy();
+    let mut made = None;
+    for _ in 0..60 {
+        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let tmp = file.with_file_name(format!(".{name}.{}-{n}.tmp", std::process::id()));
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp)
+        {
+            Ok(f) => {
+                made = Some((tmp, f));
+                break;
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(e) => return Err(e),
+        }
+    }
+    let (tmp, mut f) =
+        made.ok_or_else(|| std::io::Error::other("60 temporary record names are taken"))?;
     let result = write(&mut f);
     drop(f);
+    let result = result.and_then(|()| std::fs::hard_link(&tmp, file));
     match result {
-        Ok(()) => Ok(()),
-        Err(e) => match std::fs::remove_file(file) {
-            Ok(()) => Err(StoreError::io(file, &e)),
-            Err(cleanup) => Err(StoreError::Refused(format!(
-                "{}; could not remove partial record: {cleanup}",
-                StoreError::io(file, &e)
+        Ok(()) => {
+            drop(std::fs::remove_file(&tmp));
+            Ok(())
+        }
+        Err(e) => match std::fs::remove_file(&tmp) {
+            Ok(()) => Err(e),
+            Err(cleanup) => Err(std::io::Error::other(format!(
+                "{e}; could not remove partial record: {cleanup}"
             ))),
         },
     }
@@ -244,6 +263,14 @@ fn replace_index_row_locked(store: &Path, record: &Obj, row: &str) -> Result<(),
 /// # Errors
 /// When the temporary file cannot be written or renamed.
 pub fn write_atomically(file: &Path, content: impl AsRef<[u8]>) -> Result<(), StoreError> {
+    write_atomically_using(file, content.as_ref(), |p, b| std::fs::write(p, b))
+}
+
+pub(crate) fn write_atomically_using(
+    file: &Path,
+    content: &[u8],
+    write: impl FnOnce(&Path, &[u8]) -> std::io::Result<()>,
+) -> Result<(), StoreError> {
     let name = file
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
@@ -253,7 +280,7 @@ pub fn write_atomically(file: &Path, content: impl AsRef<[u8]>) -> Result<(), St
         std::process::id(),
         crate::time::now_ms()
     ));
-    let done = std::fs::write(&tmp, content).and_then(|()| std::fs::rename(&tmp, file));
+    let done = write(&tmp, content).and_then(|()| std::fs::rename(&tmp, file));
     done.map_err(|e| {
         drop(std::fs::remove_file(&tmp));
         StoreError::io(file, &e)
@@ -316,12 +343,24 @@ mod tests {
     fn failed_write_removes_the_partial_claim() {
         let d = tempfile::tempdir().unwrap();
         let file = d.path().join("claimed.json");
-        let f = std::fs::File::create(&file).unwrap();
-        let failure = finish_claim(&file, f, |f| {
+        let failure = claim_using(&file, |f| {
             std::io::Write::write_all(f, b"partial")?;
             Err(std::io::Error::other("disk full"))
         });
         assert!(failure.unwrap_err().to_string().contains("disk full"));
+        assert!(!file.exists());
+    }
+
+    #[test]
+    fn interruption_during_claim_does_not_expose_a_partial_record() {
+        let d = tempfile::tempdir().unwrap();
+        let file = d.path().join("claimed.json");
+        let _panic = std::panic::catch_unwind(|| {
+            drop(claim_using(&file, |f| {
+                std::io::Write::write_all(f, b"partial")?;
+                panic!("interrupted")
+            }));
+        });
         assert!(!file.exists());
     }
 

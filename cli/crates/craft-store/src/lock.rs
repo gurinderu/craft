@@ -124,21 +124,46 @@ impl Drop for Held {
 /// # Errors
 /// When the lock cannot be taken or the line cannot be appended.
 pub fn append_index_line(store: &Path, line: &str) -> Result<(), StoreError> {
+    append_using(store, line, |p, b| std::fs::write(p, b))
+}
+
+fn append_using(
+    store: &Path,
+    line: &str,
+    write: impl FnOnce(&Path, &[u8]) -> std::io::Result<()>,
+) -> Result<(), StoreError> {
     with_index_lock(store, || {
         let index = store.join("index.jsonl");
-        let mut f = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&index)
-            .map_err(|e| StoreError::io(&index, &e))?;
-        std::io::Write::write_all(&mut f, format!("{line}\n").as_bytes())
-            .map_err(|e| StoreError::io(&index, &e))
+        let mut bytes = match std::fs::read(&index) {
+            Ok(bytes) => bytes,
+            Err(e) if e.kind() == ErrorKind::NotFound => Vec::new(),
+            Err(e) => return Err(StoreError::io(&index, &e)),
+        };
+        bytes.extend_from_slice(format!("{line}\n").as_bytes());
+        crate::write::write_atomically_using(&index, &bytes, write)
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn interrupted_index_write_does_not_damage_existing_rows() {
+        let d = tempfile::tempdir().unwrap();
+        let index = d.path().join("index.jsonl");
+        std::fs::write(&index, b"existing\n").unwrap();
+        let result = append_using(d.path(), "new", |file, _| {
+            let mut f = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(file)?;
+            std::io::Write::write_all(&mut f, b"partial")?;
+            Err(std::io::Error::other("interrupted"))
+        });
+        result.unwrap_err();
+        assert_eq!(std::fs::read(&index).unwrap(), b"existing\n");
+    }
 
     #[test]
     fn the_lock_is_the_protocol_the_shared_parity_file_names() {
