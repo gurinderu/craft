@@ -152,7 +152,7 @@ fn replace_record_file(
     if over.file_name().is_none_or(|n| *n != *filename(&record)) {
         return Ok(None);
     }
-    write_atomically(over, &Js::Obj(record.clone()).pretty())?;
+    write_atomically(over, Js::Obj(record.clone()).pretty())?;
     Ok(Some((over.to_path_buf(), record)))
 }
 

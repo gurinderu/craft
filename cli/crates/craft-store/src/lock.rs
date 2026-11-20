@@ -11,10 +11,11 @@ use std::time::{Duration, Instant, SystemTime};
 
 use crate::StoreError;
 
-const LOCK: &str = "index.jsonl.lock";
-const STALE: Duration = Duration::from_secs(30);
+/// The protocol both writers hold to (`content/parity/lock-protocol.json`, `lib/index-lock.mjs`).
+pub const LOCK: &str = "index.jsonl.lock";
+pub const STALE: Duration = Duration::from_secs(30);
 const WAIT: Duration = Duration::from_millis(20);
-const TIMEOUT: Duration = Duration::from_secs(45);
+pub const TIMEOUT: Duration = Duration::from_secs(45);
 
 /// A token no other writer holds: this process and a count, mixed with the clock.
 fn token() -> String {
@@ -99,11 +100,23 @@ pub fn with_index_lock<T>(
             std::thread::sleep(WAIT);
         }
     }
-    let out = f();
-    if std::fs::read_to_string(&lock).is_ok_and(|held| held == token) {
-        drop(std::fs::remove_file(&lock));
+    let _held = Held { lock, token };
+    f()
+}
+
+/// The lock this writer holds, released however the writer ends — a panic included — and only
+/// while it still holds this writer's token.
+struct Held {
+    lock: std::path::PathBuf,
+    token: String,
+}
+
+impl Drop for Held {
+    fn drop(&mut self) {
+        if std::fs::read_to_string(&self.lock).is_ok_and(|held| held == self.token) {
+            drop(std::fs::remove_file(&self.lock));
+        }
     }
-    out
 }
 
 /// One line appended to the store's index under its lock.
@@ -126,6 +139,35 @@ pub fn append_index_line(store: &Path, line: &str) -> Result<(), StoreError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_lock_is_the_protocol_the_shared_parity_file_names() {
+        let file = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../content/parity/lock-protocol.json");
+        let want = crate::js::parse(&std::fs::read_to_string(file).unwrap()).unwrap();
+        let want = want.as_obj().unwrap();
+        assert_eq!(want.text("lockFile"), LOCK);
+        let ms = |d: Duration| f64::from(u32::try_from(d.as_millis()).unwrap());
+        assert_eq!(
+            want.get("staleMs").and_then(crate::js::Js::as_num),
+            Some(ms(STALE))
+        );
+        assert_eq!(
+            want.get("timeoutMs").and_then(crate::js::Js::as_num),
+            Some(ms(TIMEOUT))
+        );
+    }
+
+    #[test]
+    fn a_writer_that_panics_holding_the_lock_releases_it() {
+        let d = tempfile::tempdir().unwrap();
+        let store = d.path().to_path_buf();
+        let ran = std::panic::catch_unwind(|| {
+            with_index_lock(&store, || -> Result<(), StoreError> { panic!("mid-write") })
+        });
+        drop(ran.unwrap_err());
+        assert!(!store.join(LOCK).exists(), "released on the way out");
+    }
 
     #[test]
     fn a_fresh_lock_held_by_another_writer_is_waited_for_and_a_stale_one_taken_over() {

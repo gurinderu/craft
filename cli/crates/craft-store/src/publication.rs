@@ -160,7 +160,7 @@ pub fn answer(req: &Obj) -> Obj {
         Err(e) => return fail(not_readable(file, &e)),
     };
     let (amended, dropped) = apply(&record, &publication_kept(step));
-    if let Err(e) = write_atomically(Path::new(file), &Js::Obj(amended).pretty()) {
+    if let Err(e) = write_atomically(Path::new(file), Js::Obj(amended).pretty()) {
         return fail(format!("craft-log-run FAILED: {e}"));
     }
     let reason = if dropped.is_empty() {
