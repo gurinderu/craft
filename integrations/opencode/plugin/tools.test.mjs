@@ -38,10 +38,83 @@ function fakeBinary() {
   const bin = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'craft-oc-')), 'craft')
   const round = JSON.stringify({ type: 'round', round: 1, phase: 'lenses', tasks: 1 })
   const result = JSON.stringify({ type: 'result', verdict: 'Approve', report: '/r/report.md', run: '/r', findings: 0, exit_code: 0 })
-  writeExecutable(bin, `#!/bin/sh\necho "$*" > "$(dirname "$0")/argv"\necho '${round}' >&2\necho '${result}' >&2\nprintf '## Verdict\\n\\n✅ Approve\\n'\n`)
+  writeExecutable(
+    bin,
+    `#!/bin/sh\nif [ "$1" = init ]; then printf '{"exists":true}\\n'; exit 0; fi\necho "$*" > "$(dirname "$0")/argv"\necho '${round}' >&2\necho '${result}' >&2\nprintf '## Verdict\\n\\n✅ Approve\\n'\n`,
+  )
   process.env['CRAFT_BIN'] = bin
   return path.join(path.dirname(bin), 'argv')
 }
+
+test('a missing profile asks before review, and the user can continue without one', async () => {
+  const argv = fakeBinary()
+  const bin = process.env['CRAFT_BIN']
+  assert.ok(bin)
+  writeExecutable(
+    bin,
+    `#!/bin/sh\nif [ "$1" = init ]; then printf '{"exists":false}\\n'; exit 0; fi\necho "$*" > "$(dirname "$0")/argv"\nprintf '## Verdict\\n\\nApprove\\n'\n`,
+  )
+  const review = TOOLS.find(t => t.name === 'review')
+  assert.ok(review)
+  const asked = await review.run(fakeHost(), {}, {})
+  assert.match(typeof asked === 'string' ? asked : asked.output, /No review profile exists/)
+  assert.equal(fs.existsSync(argv), false)
+  await review.run(fakeHost(), { args: '--without-profile --base main' }, {})
+  assert.equal(fs.readFileSync(argv, 'utf8').trim(), 'review run --backend opencode --events json --base main')
+})
+
+test('a profile check error does not look like a missing profile', async () => {
+  fakeBinary()
+  const bin = process.env['CRAFT_BIN']
+  assert.ok(bin)
+  writeExecutable(bin, '#!/bin/sh\necho broken >&2\nexit 1\n')
+  const review = TOOLS.find(t => t.name === 'review')
+  assert.ok(review)
+  const answer = await review.run(fakeHost(), {}, {})
+  assert.match(typeof answer === 'string' ? answer : answer.output, /profile could not be checked/)
+})
+
+test('an aborted preflight does not start the review', async () => {
+  const argv = fakeBinary()
+  const review = TOOLS.find(t => t.name === 'review')
+  assert.ok(review)
+  const controller = new AbortController()
+  controller.abort()
+  const answer = await review.run(fakeHost(), {}, { signal: controller.signal })
+  assert.match(typeof answer === 'string' ? answer : answer.output, /profile could not be checked/)
+  assert.equal(fs.existsSync(argv), false)
+})
+
+test.skipIf(process.platform === 'win32')('cancelling a running preflight stops its child processes', async () => {
+  const argv = fakeBinary()
+  const bin = process.env['CRAFT_BIN']
+  assert.ok(bin)
+  const started = path.join(path.dirname(bin), 'started')
+  const late = path.join(path.dirname(bin), 'late')
+  writeExecutable(bin, `#!/bin/sh\necho ready > '${started}'\nsleep 0.3\necho late > '${late}'\n`)
+  const review = TOOLS.find(t => t.name === 'review')
+  assert.ok(review)
+  const controller = new AbortController()
+  const running = review.run(fakeHost(), {}, { signal: controller.signal })
+  for (let i = 0; i < 100 && !fs.existsSync(started); i++) await new Promise(resolve => setTimeout(resolve, 10))
+  assert.ok(fs.existsSync(started))
+  controller.abort()
+  await running
+  await new Promise(resolve => setTimeout(resolve, 400))
+  assert.equal(fs.existsSync(late), false)
+  assert.equal(fs.existsSync(argv), false)
+})
+
+test('the profile prompt names the repository selected with --cwd', async () => {
+  fakeBinary()
+  const bin = process.env['CRAFT_BIN']
+  assert.ok(bin)
+  writeExecutable(bin, '#!/bin/sh\nprintf \'{"exists":false}\\n\'\n')
+  const review = TOOLS.find(t => t.name === 'review')
+  assert.ok(review)
+  const answer = await review.run(fakeHost(), { args: '--cwd /tmp' }, {})
+  assert.match(typeof answer === 'string' ? answer : answer.output, /No review profile exists for \/tmp\./)
+})
 
 test("the review runs the binary with the opencode backend on the caller's model, its progress the title, its answer titled", async () => {
   const argv = fakeBinary()
