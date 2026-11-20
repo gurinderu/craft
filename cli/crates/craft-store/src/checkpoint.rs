@@ -123,7 +123,7 @@ pub fn read_checkpoints(dir: &Path) -> Result<Vec<Obj>, String> {
     read_checkpoint_files(dir, false)
 }
 
-fn read_checkpoint_files(dir: &Path, strict: bool) -> Result<Vec<Obj>, String> {
+pub(crate) fn read_checkpoint_files(dir: &Path, strict: bool) -> Result<Vec<Obj>, String> {
     let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),

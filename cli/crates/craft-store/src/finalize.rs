@@ -11,12 +11,45 @@ use std::path::{Path, PathBuf};
 use crate::StoreError;
 use crate::checkpoint::{
     FINALIZED_MARKER, Identity, KEPT_LIVE_MARKER, agrees, attested, find_rejoinable, inside_store,
-    read_checkpoints,
+    read_checkpoint_files,
 };
 use crate::git::GitId;
 use crate::js::{Js, Obj};
 use crate::proof::{self, ProofAt};
 use crate::write::{Writing, with_git, write_record};
+
+#[cfg(test)]
+mod corrupt_rejoin_test {
+    use super::*;
+
+    #[test]
+    fn explicit_rejoin_refuses_corrupt_checkpoint_without_removing_it() {
+        let d = tempfile::tempdir().unwrap();
+        let dir = d.path().join(".partial/run");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("00-good.json"), r#"{"project":"/p"}"#).unwrap();
+        std::fs::write(dir.join("01-bad.json"), "{").unwrap();
+        let w = Writing {
+            store: d.path().into(),
+            project: "/p".into(),
+            workdir: d.path().into(),
+            session: String::new(),
+            git_id: GitId::default(),
+            observe: false,
+            craft_commit: None,
+            now: 0,
+        };
+        let path = dir.to_str().unwrap();
+        let asked = Asked {
+            dir: path,
+            rejoin: true,
+            retry: false,
+        };
+        let error = finalize(&Obj::new(), &w, asked, &mut Said::default()).unwrap_err();
+        assert!(error.to_string().contains("01-bad.json"));
+        assert!(dir.join("01-bad.json").exists());
+    }
+}
 
 /// What a finalize asks beyond the record.
 #[derive(Debug, Clone, Copy, Default)]
@@ -85,11 +118,7 @@ pub fn finalize(
     } else {
         None
     };
-    let (phases, read_error) = match target.as_deref().map(read_checkpoints) {
-        Some(Ok(p)) => (p, String::new()),
-        Some(Err(e)) => (Vec::new(), e),
-        None => (Vec::new(), String::new()),
-    };
+    let (phases, read_error) = read_target(target.as_deref(), asked.rejoin)?;
     let have = attested(&phases);
     let own_dir = !asked.dir.is_empty() && refused.is_none() && !asked.rejoin;
     let mine = if target.is_none() || phases.is_empty() || have.project.as_deref() == Some("") {
@@ -150,6 +179,17 @@ pub fn finalize(
     }
     proof::leave(raw, at, &file, &said.err);
     Ok(())
+}
+
+fn read_target(dir: Option<&Path>, rejoin: bool) -> Result<(Vec<Obj>, String), StoreError> {
+    match dir.map(|d| read_checkpoint_files(d, rejoin)) {
+        Some(Ok(phases)) => Ok((phases, String::new())),
+        Some(Err(e)) if rejoin => Err(StoreError::Refused(format!(
+            "cannot read checkpoint directory: {e}"
+        ))),
+        Some(Err(e)) => Ok((Vec::new(), e)),
+        None => Ok((Vec::new(), String::new())),
+    }
 }
 
 /// Per field, the start-of-run observation the checkpoints carry, else the write-time one; `None`
