@@ -63,11 +63,18 @@ pub fn output(mut cmd: Command, limit: Duration) -> Result<Output, String> {
                 )
             })
     };
-    Ok(Output {
-        status,
-        stdout: read(&out)?,
-        stderr: read(&err)?,
-    })
+    match (read(&out), read(&err)) {
+        (Ok(stdout), Ok(stderr)) => Ok(Output {
+            status,
+            stdout,
+            stderr,
+        }),
+        (Err(why), _) | (_, Err(why)) => {
+            // Past the limit with what is left of a detached command's group, as above.
+            craft_review::cancel::kill_group(&mut child);
+            Err(why)
+        }
+    }
 }
 
 #[cfg(test)]

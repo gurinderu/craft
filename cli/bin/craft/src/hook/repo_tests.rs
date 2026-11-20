@@ -10,12 +10,15 @@ fn the_base_fetch_runs_in_a_session_of_its_own_with_no_terminal_prompt() {
     let bin = d.path().join("bin");
     std::fs::create_dir_all(&bin).unwrap();
     let seen = d.path().join("seen");
+    let args = d.path().join("args");
     // A git that says its pid, its session and its terminal prompt.
     std::fs::write(
         bin.join("git"),
         format!(
-            "#!/bin/sh\necho \"$$ $(ps -o sid= -p $$ | tr -d ' ') $GIT_TERMINAL_PROMPT\" > '{}'\n",
-            seen.display()
+            "#!/bin/sh\necho \"$$ $(ps -o sid= -p $$ | tr -d ' ') $GIT_TERMINAL_PROMPT\" > '{}'\n\
+             echo \"$*\" > '{}'\n",
+            seen.display(),
+            args.display()
         ),
     )
     .unwrap();
@@ -30,4 +33,10 @@ fn the_base_fetch_runs_in_a_session_of_its_own_with_no_terminal_prompt() {
     assert_eq!(words.len(), 3, "{seen}");
     assert_eq!(words[0], words[1], "not a session of its own: {seen}");
     assert_eq!(words[2], "0", "{seen}");
+    // No maintenance git would start in the background, for the limit to kill with the group.
+    let args = std::fs::read_to_string(&args).unwrap();
+    assert!(
+        args.contains("-c maintenance.auto=false -c gc.auto=0 "),
+        "{args}"
+    );
 }
