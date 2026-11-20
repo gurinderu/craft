@@ -79,6 +79,7 @@ fn round1(errors: &[Value]) -> Value {
     json!({
         "lens-rust-errors-r1": lens("errors", errors),
         "lens-rust-intent-r1": lens("intent", &[]),
+        "lens-rust-performance-r1": lens("performance", &[]),
         "lens-rust-tests-r1": lens("tests", &[]),
     })
 }
@@ -98,6 +99,7 @@ fn lens_rounds(run: &std::path::Path) {
         json!({
             "lens-rust-errors-r1": lens("errors", &[titled("High", 1, "f returns 1 where 0 is claimed"), titled("Medium", 1, "no doc")]),
             "lens-rust-intent-r1": lens("intent", &[titled("High", 1, "f returns 1, where 0 is claimed!"), titled("Low", 1, "naming")]),
+            "lens-rust-performance-r1": lens("performance", &[]),
             "lens-rust-tests-r1": lens("tests", &[]),
         }),
     );
@@ -106,6 +108,7 @@ fn lens_rounds(run: &std::path::Path) {
         [
             "lens-rust-errors-r2",
             "lens-rust-intent-r2",
+            "lens-rust-performance-r2",
             "lens-rust-tests-r2"
         ]
     );
@@ -125,6 +128,7 @@ fn lens_rounds(run: &std::path::Path) {
         json!({
             "lens-rust-errors-r2": lens("errors", &[titled("Medium", 1, "No  DOC")]),
             "lens-rust-intent-r2": lens("intent", &[]),
+            "lens-rust-performance-r2": lens("performance", &[]),
             "lens-rust-tests-r2": lens("tests", &[]),
         }),
     );
@@ -141,7 +145,7 @@ fn lens_rounds(run: &std::path::Path) {
     );
     assert_eq!(
         st["rounds"][1],
-        json!({"round": 2, "agents": 3, "returned": 3, "newFindings": 0})
+        json!({"round": 2, "agents": 4, "returned": 4, "newFindings": 0})
     );
 }
 
@@ -160,6 +164,7 @@ fn a_full_run_goes_scout_lenses_two_rounds_dedup_verify_done() {
         [
             "lens-rust-errors-r1",
             "lens-rust-intent-r1",
+            "lens-rust-performance-r1",
             "lens-rust-tests-r1"
         ]
     );
@@ -210,9 +215,9 @@ fn a_full_run_goes_scout_lenses_two_rounds_dedup_verify_done() {
     assert_contains_all(
         &report,
         &[
-            "Plan: medium diff, full review, at most 2 round(s). Lenses planned: errors, intent, tests; ran: errors, intent, tests.",
-            "- Round 1: 3 lens(es) dispatched, 3 returned, 4 new finding(s).",
-            "- Round 2: 3 lens(es) dispatched, 3 returned, 0 new finding(s).",
+            "Plan: medium diff, full review, at most 2 round(s). Lenses planned: errors, intent, performance, tests; ran: errors, intent, performance, tests.",
+            "- Round 1: 4 lens(es) dispatched, 4 returned, 4 new finding(s).",
+            "- Round 2: 4 lens(es) dispatched, 4 returned, 0 new finding(s).",
             "## Confirmed findings\n\n- **High** `src/lib.rs:1` — f returns 1 where 0 is claimed (errors, intent)",
             "(same defect also reported by: intent)",
             "## Unverified findings\n\n- **Low** `src/lib.rs:1` — naming (intent)",
@@ -266,6 +271,7 @@ fn finished_telemetry(s: &Value) {
         json!([
             row("errors", true, [1, 0, 1, 0], 1),
             row("intent", true, [0, 0, 0, 1], 0),
+            row("performance", true, [0, 0, 0, 0], 0),
             row("tests", true, [0, 0, 0, 0], 0)
         ])
     );
@@ -276,7 +282,7 @@ fn finished_telemetry(s: &Value) {
     );
     assert_eq!(
         s["lensRounds"][0],
-        json!({"round": 1, "agents": 3, "returned": 3, "newFindings": 4})
+        json!({"round": 1, "agents": 4, "returned": 4, "newFindings": 4})
     );
 }
 
@@ -314,7 +320,10 @@ fn a_lens_asked_again_holds_the_round_and_one_that_never_answers_makes_it_incomp
         ),
         "{report}"
     );
-    assert!(report.contains("ran: intent, tests."), "{report}");
+    assert!(
+        report.contains("ran: intent, performance, tests."),
+        "{report}"
+    );
 }
 
 #[test]
@@ -331,7 +340,7 @@ fn a_scout_that_never_answers_runs_the_conservative_plan_and_says_so() {
     let lenses = ids(&s);
     assert_eq!(
         lenses.len(),
-        10,
+        11,
         "the security floor's roster and negative-space: {lenses:?}"
     );
     let ns = s["tasks"]
@@ -376,6 +385,7 @@ fn a_run_of_low_and_info_findings_ends_unverified_with_no_verifier() {
         json!({
             "lens-rust-errors-r1": lens("errors", &[]),
             "lens-rust-intent-r1": lens("intent", &[titled("Low", 1, "a"), titled("Info", 2, "b")]),
+            "lens-rust-performance-r1": lens("performance", &[]),
             "lens-rust-tests-r1": lens("tests", &[]),
         }),
     );
@@ -485,6 +495,7 @@ fn a_light_pass_runs_one_round_of_the_scoped_lenses() {
         [
             "lens-rust-errors-r1",
             "lens-rust-intent-r1",
+            "lens-rust-performance-r1",
             "lens-rust-tests-r1"
         ]
     );

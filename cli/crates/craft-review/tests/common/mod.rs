@@ -193,7 +193,7 @@ pub fn submit(run: &Path, pairs: Value) -> Value {
 }
 
 /// Starts a run over `repo` and answers its scout with a small plan picking `errors`: the lenses
-/// `errors`, `intent` and `tests`, one round. Returns the run directory and the lens step.
+/// `errors`, `intent`, `performance` and `tests`, one round. Returns the run directory and the lens step.
 pub fn small_run(repo: &Path, out: &Path) -> (std::path::PathBuf, Value) {
     let run = out.join("run");
     step::start(&opts(repo, out)).unwrap();
@@ -203,6 +203,7 @@ pub fn small_run(repo: &Path, out: &Path) -> (std::path::PathBuf, Value) {
         [
             "lens-rust-errors-r1",
             "lens-rust-intent-r1",
+            "lens-rust-performance-r1",
             "lens-rust-tests-r1"
         ]
     );
