@@ -1,7 +1,8 @@
 //! A language profile as data: `content/profiles/<id>.json` names its lenses (each with its brief,
-//! model and flags), its scout rules and its rubric. Beside the Rust and Nix profiles there is
-//! `general`, the retired JS adversarial-review engine's lenses over every file carrying code that
-//! neither takes (realm @nick/craft, nodes #421, #445).
+//! model and flags), its scout rules and its rubric. Beside the Rust, Nix and SQL profiles (SQL:
+//! realm @nick/craft, node #536) there is `general`, the retired JS adversarial-review engine's
+//! lenses over every file carrying code that none of them takes (realm @nick/craft, nodes #421,
+//! #445).
 
 use serde::Deserialize;
 
@@ -9,7 +10,7 @@ use crate::agent::{AgentKind, Model};
 use crate::content::{self, ContentError};
 
 /// The profiles a run may review with, in the order a changed file is offered to them.
-pub const IDS: [&str; 3] = ["rust", "nix", "general"];
+pub const IDS: [&str; 4] = ["rust", "nix", "sql", "general"];
 
 /// What files a profile reviews: a changed path ending in one of `suffixes` or named one of `names`;
 /// with `rest`, every file carrying code no other profile takes, project configuration aside.
@@ -80,6 +81,11 @@ pub struct Lens {
     /// ([`crate::complexity`]).
     #[serde(default)]
     pub metrics: bool,
+    /// The rubric skill it is judged by when not its profile's — the embedded-SQL `sql-queries`
+    /// lens of the Rust and general profiles takes `sql-review` (realm @nick/craft, node #536). Such
+    /// a skill ships a `rules.md` catalog and no exclusion file of its own.
+    #[serde(default)]
+    pub rubric: Option<String>,
 }
 
 fn with_catalog() -> bool {
@@ -184,6 +190,33 @@ impl Profile {
             .filter(|l| flag(l))
             .map(|l| l.id.clone())
             .collect()
+    }
+
+    /// The rubric skill the lens `lens` (or a finding it raised) is judged by: its own, else the
+    /// profile's.
+    #[must_use]
+    pub fn rubric_of(&self, lens: &str) -> &str {
+        self.own_rubric(lens).unwrap_or(&self.rubric_skill)
+    }
+
+    /// Whether `lens`'s rubric ships a `rules.md` catalog its findings' `ruleId` cites.
+    #[must_use]
+    pub fn catalog_of(&self, lens: &str) -> bool {
+        self.own_rubric(lens).is_some() || self.rule_catalog
+    }
+
+    /// The exclusion file of `lens`'s rubric (`fp-rules.md`), empty when it ships none.
+    #[must_use]
+    pub fn fp_rules_of(&self, lens: &str) -> &str {
+        if self.own_rubric(lens).is_some() {
+            ""
+        } else {
+            &self.fp_rules
+        }
+    }
+
+    fn own_rubric(&self, lens: &str) -> Option<&str> {
+        self.lens(lens).and_then(|l| l.rubric.as_deref())
     }
 
     /// Whether the profile reviews any of `files`.

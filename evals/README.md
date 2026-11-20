@@ -33,7 +33,7 @@ The corpus deliberately mixes two kinds of case:
   `expected_behavior` states which skill must **not** fire.
 
 Covered high-traffic skills: `rust-review`, `nix-review`, `debugging`, `addressing-findings`,
-`rust-testing`, `rust-errors`, `rust-ownership`, `rust-concurrency`, `rust-performance`, `specs`,
+`sql-review`, `rust-testing`, `rust-errors`, `rust-ownership`, `rust-concurrency`, `rust-performance`, `specs`,
 `distributed-races`, `compatibility`, `memory`, `develop`, `codex-review` (a Codex session must select it; a Claude Code or OpenCode session must not).
 
 ## Running it

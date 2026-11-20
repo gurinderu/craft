@@ -13,12 +13,13 @@ use crate::profile::Profile;
 use crate::prompts::{self, PromptContext};
 use crate::state::{Task, TaskKind, TaskState};
 
-/// The skill whose rubric judges a finding in `file`: its profile's, the general rules otherwise.
-fn rubric_for(file: &str, profiles: &[Profile]) -> String {
+/// The skill whose rubric judges a finding in `file` raised by the lens `source`: that lens's own
+/// rubric or its profile's, the general rules otherwise.
+fn rubric_for(file: &str, source: &str, profiles: &[Profile]) -> String {
     coverage::assign(&[file.to_owned()], profiles)
         .first()
         .and_then(|(i, _)| profiles.get(*i))
-        .map_or_else(|| "review-rules".into(), |p| p.rubric_skill.clone())
+        .map_or_else(|| "review-rules".into(), |p| p.rubric_of(source).to_owned())
 }
 
 /// One carry-check per prior finding its author set aside, and one adjudicator per prior finding
@@ -36,7 +37,7 @@ pub fn tasks(
         if p.fate != Fate::Pending {
             continue;
         }
-        let rubric = rubric_for(&p.row.file, profiles);
+        let rubric = rubric_for(&p.row.file, &p.row.source, profiles);
         out.push(Task::new(
             format!("adjudicate-{i}"),
             format!("adjudicate:{}:{}", p.row.file, p.row.line),
@@ -150,4 +151,20 @@ pub fn judge(chain: &mut Chain, tasks: &[Task]) -> Vec<String> {
         p.row.why = why;
     }
     notes
+}
+
+#[cfg(test)]
+mod rubric_tests {
+    use super::rubric_for;
+    use crate::profile::Profile;
+
+    #[test]
+    fn a_prior_is_judged_by_its_lens_rubric_then_its_files_profile() {
+        let all = Profile::all().unwrap();
+        assert_eq!(rubric_for("src/db.rs", "sql-queries", &all), "sql-review");
+        assert_eq!(rubric_for("src/db.rs", "errors", &all), "rust-review");
+        assert_eq!(rubric_for("db/1.sql", "sql-migrations", &all), "sql-review");
+        assert_eq!(rubric_for("app/db.py", "sql-queries", &all), "sql-review");
+        assert_eq!(rubric_for("README.md", "sql-queries", &all), "review-rules");
+    }
 }

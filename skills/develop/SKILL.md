@@ -94,7 +94,7 @@ the tree is dirty.
 ## Phase 4 — Review loop until convergence
 
 The review here is the project's declared reviewer or review rule when there is one. Otherwise it is
-the `craft:review` workflow, whatever the stack of the branch diff: it reviews Rust and Nix under their
+the `craft:review` workflow, whatever the stack of the branch diff: it reviews Rust, Nix and SQL under their
 profiles and other source under its general lenses, in one run, with one verdict and one report.
 
 Once each engine run of this cycle has ended (completed, failed or stopped — not while you may still
