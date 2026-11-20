@@ -79,7 +79,7 @@ fn judge(url: &str, cwd: Option<PathBuf>, store: Option<&Path>) -> Result<Option
     let store = store
         .map(Path::to_path_buf)
         .or_else(|| home().map(|h| h.join(".craft/runs")))
-        .ok_or("HOME is not set, so there is no ~/.craft/runs")?;
+        .ok_or("neither HOME nor the passwd entry names a home, so there is no ~/.craft/runs")?;
     Ok(said::said(
         &runs::look(&store, &here, &checkout),
         url,
@@ -87,8 +87,7 @@ fn judge(url: &str, cwd: Option<PathBuf>, store: Option<&Path>) -> Result<Option
     ))
 }
 
+/// The home the run store is under: `HOME`, else the passwd entry (`craft_store::read::home`).
 fn home() -> Option<PathBuf> {
-    std::env::var_os("HOME")
-        .filter(|h| !h.is_empty())
-        .map(PathBuf::from)
+    craft_store::read::home()
 }

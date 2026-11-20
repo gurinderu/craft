@@ -23,7 +23,7 @@ impl Writer for Store {
             call.request.get("retry").cloned().unwrap_or(Value::Null),
         ));
         if !self.up {
-            return Err(WriteError::NoNode);
+            return Err(WriteError::Store("disk full".into()));
         }
         Ok(match call.command {
             "checkpoint" => json!({"phase": "start", "runDir": "/store/.partial/a"}),

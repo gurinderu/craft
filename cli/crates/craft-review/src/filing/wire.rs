@@ -1,6 +1,6 @@
-//! What the adapter (`lib/cli-review-file.mjs`) is handed for a checkpoint or the record, and what
-//! it answers — the field names its `common`, `checkpoint` and `finalize` read — and the writer
-//! that carries them.
+//! What the store writer (`craft_store::answer`) is handed for a checkpoint or the record, and what
+//! it answers — the request the JavaScript adapter read before it (now `lib/binary-filing-replay.mjs`, test infrastructure) (its `common`, `checkpoint` and
+//! `finalize`) — and the writer that carries them.
 
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -103,6 +103,7 @@ pub(super) struct RecordDone {
 #[derive(Debug, Clone, Copy)]
 pub struct Call<'a> {
     pub run: &'a Path,
+    /// craft's plugin root, whose commit the record is stamped with; `""` when the run knows none.
     pub root: &'a str,
     /// `checkpoint`, `finalize` or `publication`.
     pub command: &'a str,
@@ -112,21 +113,19 @@ pub struct Call<'a> {
 /// Why a write did not come back with an answer.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum WriteError {
-    #[error("no craft plugin root is known to the run, so the record writer cannot be found")]
-    NoRoot,
-    #[error("node is not on the PATH")]
-    NoNode,
-    #[error("the record writer did not finish within {0} s")]
-    TimedOut(u64),
+    #[error(
+        "neither HOME nor the passwd entry names a home, so there is no run store (~/.craft/runs)"
+    )]
+    NoStore,
     #[error("the record writer could not run: {0}")]
     Broken(String),
-    #[error("the record writer exited non-zero: {0}")]
-    Exited(String),
-    #[error("the record writer printed no answer: {0}")]
+    #[error("the run store refused the write: {0}")]
+    Store(String),
+    #[error("the record writer gave no answer: {0}")]
     NoAnswer(String),
 }
 
-/// Runs a write: the real one spawns node over the adapter ([`super::NodeWriter`]).
+/// Runs a write: the real one writes the store itself ([`super::StoreWriter`]).
 pub trait Writer {
     /// The JSON object the adapter answered.
     ///

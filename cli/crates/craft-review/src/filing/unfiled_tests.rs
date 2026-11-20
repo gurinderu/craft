@@ -64,25 +64,17 @@ fn report(run: &Path) -> String {
     std::fs::read_to_string(state::report_path(run)).unwrap()
 }
 
+fn fails() -> Answering {
+    Answering(Err(WriteError::Store("disk full".into())))
+}
+
 #[test]
-fn a_run_started_with_no_root_says_among_its_degraded_notes_that_its_record_cannot_be_filed() {
+fn a_run_started_with_no_root_files_its_record_all_the_same() {
     let run = tempfile::tempdir().unwrap();
-    kept_run(run.path(), "lenses");
-    let pending = json!({"run": "/run", "done": false, "tasks": [], "phase": "lenses"});
-    open(run.path(), ctx(None), "", &pending, &lands());
-    let notes = degraded(run.path());
-    assert_eq!(notes[0], "a lens ran on the default agent", "{notes:?}");
-    assert!(
-        notes[1].starts_with("the run record is not filed — no craft plugin root"),
-        "{notes:?}"
-    );
-    assert!(
-        notes[1].contains("--resume --record-root"),
-        "the re-file command: {notes:?}"
-    );
-    assert_eq!(notes.len(), 2);
-    open(run.path(), ctx(None), "", &pending, &lands());
-    assert_eq!(degraded(run.path()).len(), 2, "said once");
+    kept_run(run.path(), "done");
+    let said = open(run.path(), ctx(None), "", &finished(run.path()), &lands());
+    assert_eq!(said["record"], json!("filed"), "{said}");
+    assert_eq!(degraded(run.path()), ["a lens ran on the default agent"]);
 }
 
 #[test]
@@ -90,19 +82,15 @@ fn a_finished_run_whose_record_failed_says_so_in_its_step_its_report_and_its_sta
     let run = tempfile::tempdir().unwrap();
     kept_run(run.path(), "done");
     let step = finished(run.path());
-    let said = open(
-        run.path(),
-        ctx(Some("/plugin")),
-        "",
-        &step,
-        &Answering(Err(WriteError::NoNode)),
-    );
+    let said = open(run.path(), ctx(Some("/plugin")), "", &step, &fails());
     let told = with_filing(step, said);
     let notes = told["degraded"].as_array().unwrap();
     assert_eq!(notes.len(), 2, "{told}");
     let note = notes[1].as_str().unwrap();
     assert!(
-        note.starts_with("the run record is not filed — node is not on the PATH"),
+        note.starts_with(
+            "the run record is not filed — the run store refused the write: disk full"
+        ),
         "{note}"
     );
     assert!(note.contains("craft review submit --run '"), "{note}");
@@ -117,9 +105,8 @@ fn a_finished_run_whose_record_failed_says_so_in_its_step_its_report_and_its_sta
 fn a_record_filed_again_takes_its_note_back_from_the_step_the_state_and_the_report() {
     let run = tempfile::tempdir().unwrap();
     kept_run(run.path(), "done");
-    open(run.path(), ctx(None), "", &finished(run.path()), &lands());
+    open(run.path(), ctx(None), "", &finished(run.path()), &fails());
     assert_eq!(degraded(run.path()).len(), 2);
-    adopt(run.path(), Some("/plugin"));
     let again = file_again(run.path(), Vec::new(), &lands()).unwrap();
     assert_eq!(again["filing"]["record"], json!("filed"));
     assert_eq!(
@@ -135,13 +122,13 @@ fn a_record_filed_again_takes_its_note_back_from_the_step_the_state_and_the_repo
 fn a_run_with_no_state_still_says_its_record_did_not_land_in_its_step() {
     let run = tempfile::tempdir().unwrap();
     let step = finished(run.path());
-    let said = open(run.path(), ctx(None), "", &step, &lands());
+    let said = open(run.path(), ctx(None), "", &step, &fails());
     let told = with_filing(step, said);
     assert!(
         told["degraded"][1]
             .as_str()
             .unwrap()
-            .starts_with("the run record is not filed — no craft plugin root"),
+            .starts_with("the run record is not filed — the run store refused the write"),
         "{told}"
     );
 }

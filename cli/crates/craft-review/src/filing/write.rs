@@ -20,12 +20,7 @@ fn send(
     request: &Value,
     w: &dyn Writer,
 ) -> Result<Value, WriteError> {
-    let root = filing
-        .ctx
-        .root
-        .as_deref()
-        .filter(|r| !r.is_empty())
-        .ok_or(WriteError::NoRoot)?;
+    let root = filing.ctx.root.as_deref().unwrap_or_default();
     w.write(&Call {
         run,
         root,

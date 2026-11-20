@@ -80,6 +80,6 @@ impl Protocol for InProcess {
     }
 
     fn unfinished(&self, run: &Path, why: &str) -> Option<Vec<String>> {
-        filing::unfinished(run, why, &filing::NodeWriter)
+        filing::unfinished(run, why, &crate::filing_worker::BoundedWriter)
     }
 }

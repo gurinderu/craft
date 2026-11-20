@@ -223,13 +223,13 @@ fn a_record_that_does_not_land_never_fails_the_step_and_is_filed_again_as_a_retr
     let run = tempfile::tempdir().unwrap();
     let w = Fake::answering(vec![
         ("checkpoint", Ok(json!({"runDir": "/store/.partial/a"}))),
-        ("finalize", Err(WriteError::NoNode)),
+        ("finalize", Err(WriteError::Store("disk full".into()))),
     ]);
     let said = open(run.path(), ctx(), "", &finished(1), &w);
     assert_eq!(said["record"], json!("failed"));
     assert_eq!(
         said["lost"],
-        json!(["the run record — node is not on the PATH"])
+        json!(["the run record — the run store refused the write: disk full"])
     );
     let again = file_again(run.path(), Vec::new(), &w).unwrap();
     assert_eq!(
@@ -273,7 +273,7 @@ fn a_record_that_landed_with_a_warning_is_filed_and_the_warning_said() {
 }
 
 #[test]
-fn a_run_with_no_plugin_root_says_its_writes_are_lost() {
+fn a_run_with_no_plugin_root_files_its_writes_all_the_same() {
     let run = tempfile::tempdir().unwrap();
     let w = Fake::default();
     let said = open(
@@ -286,13 +286,10 @@ fn a_run_with_no_plugin_root_says_its_writes_are_lost() {
         &finished(1),
         &w,
     );
-    assert!(w.commands().is_empty());
-    assert_eq!(said["record"], json!("failed"));
+    assert_eq!(w.commands(), ["checkpoint", "finalize"]);
     assert_eq!(
-        said["lost"][1],
-        json!(
-            "the run record — no craft plugin root is known to the run, so the record writer cannot be found"
-        )
+        (said["record"].clone(), said["lost"].clone()),
+        (json!("filed"), json!([]))
     );
 }
 
@@ -355,16 +352,16 @@ fn a_stopped_parts_record_is_kept_and_filed_again_on_every_resume_until_it_lands
     let run = tempfile::tempdir().unwrap();
     let w = Fake::answering(vec![
         ("checkpoint", Ok(json!({"runDir": "/store/.partial/a"}))),
-        ("finalize", Err(WriteError::NoNode)),
-        ("finalize", Err(WriteError::NoNode)),
-        ("finalize", Err(WriteError::NoNode)),
+        ("finalize", Err(WriteError::Store("disk full".into()))),
+        ("finalize", Err(WriteError::Store("disk full".into()))),
+        ("finalize", Err(WriteError::Store("disk full".into()))),
     ]);
     stopped_unfiled(run.path(), &w);
     for _ in 0..2 {
         let said = resuming(run.path(), &w);
         assert_eq!(
             said[0],
-            "the record of a stopped part of this run — node is not on the PATH"
+            "the record of a stopped part of this run — the run store refused the write: disk full"
         );
         assert!(
             said[1].starts_with(
@@ -411,8 +408,8 @@ fn an_unreached_writer_says_a_lost_checkpoint_only_for_a_step_that_may_have_ende
     let w = Fake::default();
     open(run.path(), ctx(), "", &pending("lenses", 1), &w);
     let down = Fake::answering(vec![
-        ("checkpoint", Err(WriteError::NoNode)),
-        ("checkpoint", Err(WriteError::NoNode)),
+        ("checkpoint", Err(WriteError::Store("disk full".into()))),
+        ("checkpoint", Err(WriteError::Store("disk full".into()))),
     ]);
     let same = submitted(
         run.path(),
@@ -433,7 +430,7 @@ fn an_unreached_writer_says_a_lost_checkpoint_only_for_a_step_that_may_have_ende
     .unwrap();
     assert_eq!(
         moved["lost"],
-        json!(["phase checkpoint 'lenses' — node is not on the PATH"])
+        json!(["phase checkpoint 'lenses' — the run store refused the write: disk full"])
     );
 }
 
@@ -442,13 +439,13 @@ fn the_summary_carries_why_the_record_did_not_land() {
     let run = tempfile::tempdir().unwrap();
     let w = Fake::answering(vec![
         ("checkpoint", Ok(json!({"runDir": "/d"}))),
-        ("finalize", Err(WriteError::NoNode)),
+        ("finalize", Err(WriteError::Store("disk full".into()))),
     ]);
     open(run.path(), ctx(), "", &finished(1), &w);
     let s = summary(run.path()).unwrap();
     assert_eq!(
         s["finished"]["filing"]["lost"],
-        json!(["the run record — node is not on the PATH"])
+        json!(["the run record — the run store refused the write: disk full"])
     );
 }
 

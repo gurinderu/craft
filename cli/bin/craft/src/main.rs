@@ -1,11 +1,13 @@
 //! `craft`: the command line over craft's review.
 
 mod comment;
+mod filing_worker;
 mod hook;
 mod init;
 mod printed;
 mod review;
 mod run;
+mod runs;
 mod steps;
 
 use std::num::NonZeroUsize;
@@ -33,6 +35,11 @@ enum Command {
     /// craft's hooks that run as this binary, each reading the harness's hook input on stdin.
     #[command(subcommand)]
     Hook(HookCommand),
+    /// The run store (`~/.craft/runs`): list its runs, show one, sum them, check the store, a
+    /// version's retro.
+    Runs(runs::RunsArgs),
+    #[command(name = "__craft-file-run", hide = true)]
+    FileRun,
 }
 
 #[derive(Subcommand)]
@@ -115,6 +122,8 @@ async fn main() -> ExitCode {
         Command::Review(ReviewCommand::Run(args)) => run::run(*args).await,
         Command::Init(args) => init::init(&args),
         Command::Hook(HookCommand::PrOpened(args)) => hook::pr_opened(&args),
+        Command::Runs(args) => runs::runs(&args),
+        Command::FileRun => filing_worker::worker(),
     };
     // Every way out — a stop, an error, a finished run — waits out the grace of the agents'
     // groups, so their SIGKILL is sent before craft is gone.

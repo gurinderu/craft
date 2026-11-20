@@ -287,17 +287,17 @@ fn filing_roots_in(
     (started, submitted, prompts_root)
 }
 
-/// A plugin root as an installed copy holds it, with the run-record writer when `writer`.
-fn plugin_with_writer(d: &Path, writer: bool) {
-    plugin(d, "1.2.3");
-    if writer {
-        std::fs::create_dir_all(d.join("lib")).unwrap();
-        std::fs::write(d.join("lib/cli-review-file.mjs"), "").unwrap();
+/// A plugin root as an installed copy holds it when `is_plugin`, else a directory that is none.
+fn plugin_with_writer(d: &Path, is_plugin: bool) {
+    if is_plugin {
+        plugin(d, "1.2.3");
+    } else {
+        std::fs::create_dir_all(d).unwrap();
     }
 }
 
 #[test]
-fn a_binary_given_no_root_files_through_the_harness_plugin_when_it_holds_the_writer() {
+fn a_binary_given_no_root_stamps_the_harness_plugin_when_it_is_one() {
     let tmp = tempfile::tempdir().unwrap();
     let (held, bare) = (tmp.path().join("held"), tmp.path().join("bare"));
     plugin_with_writer(&held, true);
@@ -307,12 +307,12 @@ fn a_binary_given_no_root_files_through_the_harness_plugin_when_it_holds_the_wri
     assert_eq!(
         filing_roots(Some(&bare), None, None).0,
         Value::Null,
-        "no writer there"
+        "no plugin there"
     );
 }
 
 #[test]
-fn a_binary_under_no_plugin_files_through_its_own_versions_installed_copy() {
+fn a_binary_under_no_plugin_stamps_its_own_versions_installed_copy() {
     let home = tempfile::tempdir().unwrap();
     let copy = home
         .path()
@@ -358,7 +358,7 @@ fn the_usage_limit_help_points_a_stopped_run_at_resume() {
 }
 
 #[test]
-fn a_record_root_files_the_run_and_names_nothing_in_the_prompts() {
+fn a_record_root_stamps_the_run_and_names_nothing_in_the_prompts() {
     let tmp = tempfile::tempdir().unwrap();
     let held = tmp.path().join("held");
     plugin_with_writer(&held, true);
@@ -366,6 +366,6 @@ fn a_record_root_files_the_run_and_names_nothing_in_the_prompts() {
     assert_eq!(
         (started, prompts_root),
         (Value::from(held.display().to_string()), Value::Null),
-        "filed through it; the prompts keep the binary's own root (none above a fetched one)"
+        "stamped with it; the prompts keep the binary's own root (none above a fetched one)"
     );
 }
