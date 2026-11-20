@@ -1,22 +1,101 @@
 //! What the writer reads off git, as `lib/craft-log-run.mjs` and `lib/repo-key.mjs` read it: one
 //! probe at a time, its trimmed stdout, `""` when git fails or is missing — a field that cannot be
-//! resolved is empty and never fails a write.
+//! resolved is empty and never fails a write. Unlike the JavaScript, each probe is bounded: one that
+//! outlives [`BOUND`] is killed, reads as `""`, and is kept for the record to name (`gitTimedOut`).
 
+use std::cell::RefCell;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 
-/// git's trimmed stdout for `args` in `cwd`, `""` when it fails.
+/// How long one git probe may take.
+pub const BOUND: Duration = Duration::from_secs(10);
+
+/// What one bounded probe came to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Probe {
+    /// It exited 0: its trimmed stdout.
+    Said(String),
+    /// It could not run, or exited non-zero.
+    Failed,
+    /// It outlived its bound and was killed.
+    TimedOut,
+}
+
+/// `program args` in `cwd`, killed past `limit`; its stdout read as it runs, so a long one cannot
+/// fill the pipe and stall.
 #[must_use]
-pub fn git(args: &[&str], cwd: &Path) -> String {
-    let mut cmd = Command::new("git");
+pub fn bounded(program: &str, args: &[&str], cwd: &Path, limit: Duration) -> Probe {
+    let mut cmd = Command::new(program);
     cmd.args(args)
         .current_dir(cwd)
         .stdin(Stdio::null())
+        .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .env("GIT_TERMINAL_PROMPT", "0");
-    match cmd.output() {
-        Ok(out) if out.status.success() => String::from_utf8_lossy(&out.stdout).trim().to_owned(),
-        _ => String::new(),
+    let Ok(mut child) = cmd.spawn() else {
+        return Probe::Failed;
+    };
+    let mut pipe = child.stdout.take();
+    let reader = std::thread::spawn(move || {
+        let mut out = Vec::new();
+        if let Some(p) = pipe.as_mut() {
+            drop(p.read_to_end(&mut out));
+        }
+        out
+    });
+    let deadline = Instant::now() + limit;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break Some(status),
+            Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(5)),
+            Ok(None) | Err(_) => {
+                drop(child.kill());
+                drop(child.wait());
+                break None;
+            }
+        }
+    };
+    let out = reader.join().unwrap_or_default();
+    match status {
+        None => Probe::TimedOut,
+        Some(s) if s.success() => Probe::Said(String::from_utf8_lossy(&out).trim().to_owned()),
+        Some(_) => Probe::Failed,
+    }
+}
+
+thread_local! {
+    static TIMED_OUT: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Keeps a git probe that timed out, for the record being written to name.
+pub fn note_timed_out(args: &[&str]) {
+    TIMED_OUT.with(|t| t.borrow_mut().push(format!("git {}", args.join(" "))));
+}
+
+/// The git probes that timed out on this thread since the last [`take_timed_out`].
+#[must_use]
+pub fn timed_out() -> Vec<String> {
+    TIMED_OUT.with(|t| t.borrow().clone())
+}
+
+/// [`timed_out`], forgotten after.
+#[must_use]
+pub fn take_timed_out() -> Vec<String> {
+    TIMED_OUT.with(|t| std::mem::take(&mut *t.borrow_mut()))
+}
+
+/// git's trimmed stdout for `args` in `cwd`, `""` when it fails or outlives [`BOUND`].
+#[must_use]
+pub fn git(args: &[&str], cwd: &Path) -> String {
+    match bounded("git", args, cwd, BOUND) {
+        Probe::Said(out) => out,
+        Probe::Failed => String::new(),
+        Probe::TimedOut => {
+            note_timed_out(args);
+            String::new()
+        }
     }
 }
 
@@ -94,4 +173,37 @@ pub fn short_commit(git_dir: &Path, head: &str) -> String {
         &["--git-dir", &dir, "rev-parse", "--short", head],
         Path::new("/"),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::{Duration, Instant};
+
+    use super::*;
+
+    #[test]
+    fn a_probe_that_outlives_its_bound_is_killed_and_said_timed_out() {
+        let began = Instant::now();
+        let got = bounded("sleep", &["5"], Path::new("/"), Duration::from_millis(200));
+        assert_eq!(got, Probe::TimedOut);
+        assert!(
+            began.elapsed() < Duration::from_secs(3),
+            "killed, not waited out"
+        );
+        let said = bounded("printf", &["  x\n"], Path::new("/"), Duration::from_secs(5));
+        assert_eq!(said, Probe::Said("x".into()));
+        assert_eq!(
+            bounded("false", &[], Path::new("/"), Duration::from_secs(5)),
+            Probe::Failed
+        );
+    }
+
+    #[test]
+    fn a_git_probe_that_timed_out_is_kept_for_the_record_to_name() {
+        drop(take_timed_out());
+        note_timed_out(&["status", "--porcelain"]);
+        assert_eq!(timed_out(), ["git status --porcelain"]);
+        assert_eq!(take_timed_out(), ["git status --porcelain"]);
+        assert!(timed_out().is_empty());
+    }
 }

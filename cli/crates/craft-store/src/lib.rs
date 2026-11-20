@@ -68,6 +68,8 @@ pub fn answer(
 /// # Errors
 /// On a command no write answers to.
 pub fn answer_js(command: &str, req: &js::Obj, env: &adapter::Env) -> Result<js::Obj, StoreError> {
+    // Each write names only the git probes that timed out in it.
+    drop(git::take_timed_out());
     Ok(match command {
         "checkpoint" => adapter::checkpoint(req, env),
         "finalize" => adapter::record(req, env),

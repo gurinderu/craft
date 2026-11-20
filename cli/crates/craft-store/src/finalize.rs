@@ -120,6 +120,7 @@ pub fn finalize(
     }
     let id = start.as_ref().unwrap_or(&w.git_id);
     let (file, _) = write_record(&record, w, id, over.as_deref())?;
+    say_slow_git(said);
     proof::leave(raw, at, &file, &said.err);
     let unreadable = remove_folded(target.as_deref(), mine, &read_error, w.now);
     let tail = if folded.is_empty() {
@@ -214,5 +215,17 @@ fn remove_folded(target: Option<&Path>, mine: bool, unreadable: &str, now: i64) 
     match std::fs::remove_dir_all(t) {
         Ok(()) => String::new(),
         Err(e) => format!("the run directory could not be removed: {e}"),
+    }
+}
+
+/// A git probe killed past its bound said, beside the record that names it (`gitTimedOut`).
+fn say_slow_git(said: &mut Said) {
+    let slow = crate::git::timed_out();
+    if !slow.is_empty() {
+        said.err.push(format!(
+            "craft-log-run WARNING: {} outlived {} s and was killed — record written with those fields empty (gitTimedOut)",
+            slow.join(", "),
+            crate::git::BOUND.as_secs()
+        ));
     }
 }

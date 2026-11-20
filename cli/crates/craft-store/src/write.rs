@@ -50,6 +50,14 @@ impl Writing {
         o.set("craftCommit", craft.map_or(Js::Null, Js::Str));
         let session = (!self.session.is_empty()).then(|| Js::str(&self.session));
         o.set("session", session.unwrap_or(Js::Null));
+        // A git probe this write killed past its bound left its field empty: the record says which.
+        let slow = crate::git::timed_out();
+        if !slow.is_empty() {
+            o.set(
+                "gitTimedOut",
+                Js::Arr(slow.into_iter().map(Js::Str).collect()),
+            );
+        }
         o
     }
 }
@@ -279,6 +287,31 @@ mod tests {
         let mut want = b"{\"ts\":\"a\",\"kind\":\"workflow\",\"name\":\"review\"}\n".to_vec();
         want.extend_from_slice(b"{\"title\":\"\xff\xfe broken\"}\n{\"new\":1}\n");
         assert_eq!(after, want);
+    }
+
+    #[test]
+    fn a_record_names_the_git_probes_that_timed_out_and_only_then() {
+        let d = tempfile::tempdir().unwrap();
+        let w = Writing {
+            store: d.path().to_path_buf(),
+            project: "/p".into(),
+            workdir: d.path().to_path_buf(),
+            session: String::new(),
+            git_id: GitId::default(),
+            observe: false,
+            craft_commit: None,
+            now: 0,
+        };
+        drop(crate::git::take_timed_out());
+        let (_, clean) = write_record(&record("x"), &w, &GitId::default(), None).unwrap();
+        assert!(!clean.has("gitTimedOut"));
+        crate::git::note_timed_out(&["status", "--porcelain"]);
+        let (_, slow) = write_record(&record("x"), &w, &GitId::default(), None).unwrap();
+        drop(crate::git::take_timed_out());
+        assert_eq!(
+            slow.get("gitTimedOut").map(Js::compact).as_deref(),
+            Some(r#"["git status --porcelain"]"#)
+        );
     }
 
     #[test]
