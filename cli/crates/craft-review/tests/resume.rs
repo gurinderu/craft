@@ -88,6 +88,7 @@ fn a_resume_over_the_unchanged_tree_goes_on() {
         [
             "lens-rust-errors-r1",
             "lens-rust-intent-r1",
+            "lens-rust-performance-r1",
             "lens-rust-tests-r1"
         ],
         "the held round is handed out again: {s}"

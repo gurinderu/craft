@@ -59,13 +59,13 @@ fn the_critic_admits_a_lens_and_its_finding_is_verified() {
     let p = prompt_of(&s["tasks"][0]);
     assert!(p.contains("Confirmed: 1, Suspected: 0."), "{p}");
     assert!(
-        p.contains(r#"choose ONLY from: ["safety","concurrency","performance""#),
+        p.contains(r#"choose ONLY from: ["safety","concurrency","api-idioms""#),
         "{p}"
     );
 
     let s = submit(
         &run,
-        json!({"critic-rust": {"missingLenses": ["safety", "performance"], "notes": "the panic path of f is untested"}}),
+        json!({"critic-rust": {"missingLenses": ["safety", "api-idioms"], "notes": "the panic path of f is untested"}}),
     );
     assert_eq!(ids(&s), ["critic-lens-rust-safety"]);
     let p = prompt_of(&s["tasks"][0]);
@@ -95,7 +95,7 @@ fn the_critic_admits_a_lens_and_its_finding_is_verified() {
         "`src/lib.rs:1` — f returns 1 (errors)",
         "`src/lib.rs:1` — unsafe read past the end (safety)",
         "## Coverage gaps\n\nthe panic path of f is untested",
-        "the completeness critic named the optional lens performance",
+        "the completeness critic named the optional lens api-idioms",
         "completeness critic → follow-up lenses: rust:safety",
         "2 finding(s) reported: 2 confirmed",
     ] {

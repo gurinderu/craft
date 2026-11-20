@@ -1,8 +1,8 @@
 //! The optional pass (`optional`), as `parseOptionalRequest` in `lib/review-lens-tallies.mjs`
 //! reads it: off by default; `all` (or `true`) buys every optional lens, a list of names buys
 //! those, and a name that is no optional lens is named in a note rather than silently dropped, the
-//! recognised ones still admitted. A lens is named by its id (`performance`) or qualified by its
-//! profile (`rust-performance`); the request is kept qualified, so a name buys only the lens of the
+//! recognised ones still admitted. A lens is named by its id (`api-idioms`) or qualified by its
+//! profile (`rust-api-idioms`); the request is kept qualified, so a name buys only the lens of the
 //! profile that holds it as optional.
 
 use crate::profile::{Lens, Profile};
@@ -103,25 +103,24 @@ mod tests {
         assert_eq!(request(None, &ps), (vec![], vec![]));
         assert_eq!(request(Some("false"), &ps), (vec![], vec![]));
         let (all, _) = request(Some("all"), &ps);
-        assert_eq!(
-            all,
-            ["rust-performance", "rust-api-idioms", "rust-api-boundary"]
-        );
+        assert_eq!(all, ["rust-api-idioms", "rust-api-boundary"]);
         assert_eq!(request(Some("true"), &ps).0, all);
-        let (got, unknown) = request(Some("rust-performance, api-boundary perf"), &ps);
-        assert_eq!(got, ["rust-performance", "rust-api-boundary"]);
+        let (got, unknown) = request(Some("rust-api-idioms, api-boundary perf"), &ps);
+        assert_eq!(got, ["rust-api-idioms", "rust-api-boundary"]);
         assert_eq!(unknown, ["perf"]);
         let note = unknown_note("perf", &unknown, &ps).unwrap();
-        assert!(note.contains("names perf") && note.contains("rust-api-idioms"));
+        assert!(note.contains("names perf") && note.contains("rust-api-boundary"));
     }
 
     #[test]
     fn only_a_requested_optional_lens_is_admitted() {
         let ps = rust();
         let p = &ps[0];
-        assert!(!admitted(p, "performance", &[]));
-        assert!(admitted(p, "performance", &["rust-performance".into()]));
+        assert!(!admitted(p, "api-idioms", &[]));
+        assert!(admitted(p, "api-idioms", &["rust-api-idioms".into()]));
         assert!(admitted(p, "safety", &[]));
+        // The Rust performance lens runs in every Rust review, not in the optional pass.
+        assert!(admitted(p, "performance", &[]));
         // The general profile's performance lens is no optional one: a request does not touch it.
         assert!(admitted(&ps[1], "performance", &[]));
         assert_eq!(bought(p, &["rust-api-idioms".into()]), ["api-idioms"]);
