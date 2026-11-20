@@ -14,7 +14,7 @@ pub(super) fn tool(dir: &Path, name: &str, script: &str) {
     exe::write_executable(&dir.join(name), &format!("#!/bin/sh\n{script}\n")).unwrap();
 }
 
-fn git(dir: &Path, args: &[&str]) {
+pub(super) fn git(dir: &Path, args: &[&str]) {
     let ok = std::process::Command::new("git")
         .arg("-C")
         .arg(dir)

@@ -67,6 +67,8 @@ mod semgrep;
 #[cfg(test)]
 pub(crate) mod tests;
 pub mod unknown;
+#[cfg(test)]
+mod unread_tests;
 
 use check::{Acc, Cx};
 pub use section::section;
@@ -157,6 +159,12 @@ pub struct Gate {
     /// (`--gate-from`, [`alone::taken`]); empty when the run gated itself or not at all.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub from: String,
+    /// Why the change's lines could not be read (git's zero-context diff failed, as on a changed
+    /// path that is not UTF-8): no tool diagnostic was matched to a changed line, so none of those
+    /// reached the lenses as a seed. Said in the section and as a degraded note, never silent;
+    /// empty when they were read.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub unread_lines: String,
 }
 
 impl Gate {
@@ -169,7 +177,20 @@ impl Gate {
                 "skipped on request (`--no-gate`): no tool built, linted or ran the branch's code"
                     .into(),
             from: String::new(),
+            unread_lines: String::new(),
         }
+    }
+
+    /// What the gate's unread changed lines cost, as the section and the degraded notes say it;
+    /// `None` when they were read.
+    #[must_use]
+    pub fn unread_note(&self) -> Option<String> {
+        (!self.unread_lines.is_empty()).then(|| {
+            format!(
+                "the gate could not read the change's lines ({}): no clippy, statix or deadnix diagnostic was matched to a changed line, so none reached the lenses as a seed — semgrep's results, matched by file, still did",
+                self.unread_lines
+            )
+        })
     }
 
     /// The provenance a verifier of `profile`'s finding is told, '' when its profile had no gate.
@@ -221,12 +242,16 @@ pub fn run(
         return (Gate::default(), Vec::new());
     }
     let top = crate::git::toplevel(cwd).unwrap_or_else(|_| cwd.to_owned());
-    let lines = crate::git::zero_context_diff(cwd, base)
-        .map(|d| lines::Lines::parse(&d))
-        .unwrap_or_default();
+    let (lines, unread_lines) = match crate::git::zero_context_diff(cwd, base) {
+        Ok(d) => (lines::Lines::parse(&d), String::new()),
+        Err(e) => (lines::Lines::default(), e.to_string()),
+    };
     let runner = runner::Runner::new(setup.budget, setup.path.clone(), dir.join("gate"))
         .stopped_by(setup.cancel.clone());
-    let mut gate = Gate::default();
+    let mut gate = Gate {
+        unread_lines,
+        ..Gate::default()
+    };
     let mut seeds = Vec::new();
     for t in gated {
         let cx = Cx {

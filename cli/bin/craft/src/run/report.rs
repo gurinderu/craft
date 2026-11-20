@@ -81,6 +81,13 @@ fn publication(step: &Value) -> Vec<String> {
     let mut out = vec![format!(
         "{mark}PR comments: {posted} of {requested} defect(s) posted, {already} already on the PR — {reason}{gh}."
     )];
+    let unjudged = step
+        .get("sorting")
+        .map(|s| text(s, "inDiffNote"))
+        .unwrap_or_default();
+    if !unjudged.is_empty() {
+        out.push(format!("⚠️ {}.", one_line(unjudged)));
+    }
     let held = tally(step.get("sorting").and_then(|s| s.get("doubtful")));
     if held > 0 {
         out.push(format!("Doubtful: {held} finding(s) held back from the PR — the report's Doubtful section lists them for the human to choose; post a chosen one only through the craft:addressing-findings posting script."));

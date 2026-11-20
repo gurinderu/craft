@@ -29,6 +29,8 @@ mod section;
 mod sort;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod unread_tests;
 
 pub use after::{CommentError, comment};
 pub use gh::PostSetup;
@@ -51,12 +53,13 @@ fn candidates(run: &RunState) -> Vec<Value> {
         .collect()
 }
 
-/// The lines the branch's whole diff changed, from its base to the working tree.
-fn changed_lines(run: &RunState) -> Option<Lines> {
+/// The lines the branch's whole diff changed, from its base to the working tree; `Err` with
+/// git's reason when they could not be read.
+fn changed_lines(run: &RunState) -> Result<Lines, String> {
     let base = crate::finished::base(run);
     crate::git::zero_context_diff(Path::new(&run.context.repo), base)
-        .ok()
         .map(|d| Lines::parse(&d))
+        .map_err(|e| e.to_string())
 }
 
 /// Sorts the finished run's findings when it was asked to publish them, and counts those going
@@ -74,9 +77,14 @@ pub(crate) fn settle(run: &mut RunState) {
     sort_into(run, &found, changed.as_ref());
 }
 
-/// Sorts `found` into the run's publication against the lines the diff `changed` (`None`: unknown),
-/// counting those going against memory.
-fn sort_into(run: &mut RunState, found: &[Value], changed: Option<&Lines>) {
+/// Sorts `found` into the run's publication against the lines the diff `changed` (`Err`: why they
+/// could not be read — then no finding is placed on a line and the note says why), counting those
+/// going against memory.
+fn sort_into(run: &mut RunState, found: &[Value], changed: Result<&Lines, &String>) {
+    let note = changed.err().map_or_else(String::new, |why| {
+        format!("{NOT_JUDGED} ({why}): each defect is posted on its file, not on a line")
+    });
+    let changed = changed.ok();
     let (defect, doubtful) = sort::sort(found, changed);
     let defects: Vec<Defect> = defect
         .iter()
@@ -90,11 +98,10 @@ fn sort_into(run: &mut RunState, found: &[Value], changed: Option<&Lines>) {
         .collect();
     let to_pr = |f: &Value| defect.contains(f);
     run.publish.contradictions = Some(crate::memory::contradiction_record(found, changed, to_pr));
-    let note = if changed.is_none() { NOT_JUDGED } else { "" };
     run.publish.sorting = Some(Sorting {
         defects,
         doubtful,
-        note: note.into(),
+        note,
     });
 }
 
