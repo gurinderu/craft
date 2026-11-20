@@ -49,10 +49,11 @@ pub(super) fn choose_extra(cwd: &Path, opts: &StartOptions, run: &mut RunState) 
     }
 }
 
-/// The integration points' sources, the gate and the consumers list, side by side, none waiting
-/// on another: the sources and the list reach the prompts, the gate's seeds the pool as round-0
-/// findings.
+/// The embedded-SQL signal on each track, then the integration points' sources, the gate and the
+/// consumers list, side by side, none waiting on another: the sources and the list reach the
+/// prompts, the gate's seeds the pool as round-0 findings.
 pub(super) fn prepare(cwd: &Path, dir: &Path, opts: &StartOptions, run: &mut RunState) {
+    crate::embedded_sql::mark(cwd, &run.diff.merge_base, &mut run.tracks);
     let (prepared, gated, listed) = std::thread::scope(|s| {
         let sources = s.spawn(|| {
             opts.sources

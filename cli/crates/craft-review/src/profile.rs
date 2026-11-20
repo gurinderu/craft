@@ -1,7 +1,8 @@
 //! A language profile as data: `content/profiles/<id>.json` names its lenses (each with its brief,
-//! model and flags), its scout rules and its rubric. Beside the Rust and Nix profiles there is
-//! `general`, the retired JS adversarial-review engine's lenses over every file carrying code that
-//! neither takes (realm @nick/craft, nodes #421, #445).
+//! model and flags), its scout rules and its rubric. Beside the Rust, Nix and SQL profiles (SQL:
+//! realm @nick/craft, node #536) there is `general`, the retired JS adversarial-review engine's
+//! lenses over every file carrying code that none of them takes (realm @nick/craft, nodes #421,
+//! #445).
 
 use serde::Deserialize;
 
@@ -9,7 +10,7 @@ use crate::agent::{AgentKind, Model};
 use crate::content::{self, ContentError};
 
 /// The profiles a run may review with, in the order a changed file is offered to them.
-pub const IDS: [&str; 3] = ["rust", "nix", "general"];
+pub const IDS: [&str; 4] = ["rust", "nix", "sql", "general"];
 
 /// What files a profile reviews: a changed path ending in one of `suffixes` or named one of `names`;
 /// with `rest`, every file carrying code no other profile takes, project configuration aside.
