@@ -38,11 +38,18 @@ const REPO_VARS: [&str; 14] = [
 /// What a source whose git failed on the remote is told with: git asks nothing here unless the
 /// caller named an askpass (`detached_no_prompt`), so its last line ("Could not read from remote
 /// repository") is all it says of an authentication.
-pub(super) const AUTH_HINT: &str = "craft runs git with no terminal or password prompt: an ssh key \
+pub(crate) const AUTH_HINT: &str = "craft runs git with no terminal or password prompt: an ssh key \
     with a passphrase must be in ssh-agent, https needs a credential helper or a token";
 
 /// The failure of a command the budget cut, and of one it left no time for.
 pub(super) const OUT_OF_BUDGET: &str = "the preparation's budget ran out";
+
+/// Whether a git command reaches the remote: its failure then says git asks for no credentials.
+#[derive(Debug, Clone, Copy)]
+enum Call {
+    Local,
+    Remote,
+}
 
 /// git as the preparation runs it.
 #[derive(Debug, Clone)]
@@ -106,10 +113,22 @@ impl Git {
         }
     }
 
-    /// Runs `git args`, its stdout; why not, one line, on a failure or the timeout. The output
-    /// is read once git exits: each command here prints a line or two, well under a pipe's
-    /// buffer.
+    /// Runs `git args` on this side only (`init`, `checkout`), its stdout; why not, one line, on a
+    /// failure or the timeout.
     pub(crate) fn run(&self, args: &[&str]) -> Result<String, String> {
+        self.call(args, Call::Local)
+    }
+
+    /// Runs `git args` that reach the remote (`ls-remote`, `fetch`), its stdout; why not, one
+    /// line — git's own failure followed by [`AUTH_HINT`], a timeout, a stop or a git that would
+    /// not start without it.
+    pub(crate) fn run_remote(&self, args: &[&str]) -> Result<String, String> {
+        self.call(args, Call::Remote)
+    }
+
+    /// Runs `git args` as `call` says. The output is read once git exits: each command here
+    /// prints a line or two, well under a pipe's buffer.
+    fn call(&self, args: &[&str], call: Call) -> Result<String, String> {
         if self.cancel.is_cancelled() {
             return Err(STOPPED.into());
         }
@@ -125,8 +144,8 @@ impl Git {
         // Detached, with no prompt (realm @nick/craft, node #545): a stop or the timeout kills what
         // it runs too (ssh, a helper), and an ssh of the caller's own `GIT_SSH_COMMAND` (no batch
         // mode) or a remote that asks a password fails at once instead of waiting on a terminal or
-        // a desktop's askpass, unless the caller named one; the report names the source with git's reason, a remote's failure with the hint
-        // [`AUTH_HINT`].
+        // a desktop's askpass, unless the caller named one; the report names the source with git's
+        // reason, a remote's failure with the hint [`AUTH_HINT`].
         detached_no_prompt(&mut cmd);
         let mut child = cmd
             .stdin(Stdio::null())
@@ -165,21 +184,13 @@ impl Git {
         }
         let err = String::from_utf8_lossy(&out.stderr);
         let line = err.lines().map(str::trim).rfind(|l| !l.is_empty());
-        Err(format!("git failed: {}", line.unwrap_or("no message"))
+        let failed: String = format!("git failed: {}", line.unwrap_or("no message"))
             .chars()
             .take(300)
-            .collect())
-    }
-
-    /// Runs `git args` that reach the remote (`ls-remote`, `fetch`): a failure carries
-    /// [`AUTH_HINT`], a timeout or a stop does not.
-    pub(super) fn run_remote(&self, args: &[&str]) -> Result<String, String> {
-        self.run(args).map_err(|e| {
-            if e.starts_with("git failed: ") {
-                format!("{e} — {AUTH_HINT}")
-            } else {
-                e
-            }
+            .collect();
+        Err(match call {
+            Call::Local => failed,
+            Call::Remote => format!("{failed} — {AUTH_HINT}"),
         })
     }
 
