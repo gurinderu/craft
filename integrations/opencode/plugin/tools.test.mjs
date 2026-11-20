@@ -38,10 +38,41 @@ function fakeBinary() {
   const bin = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'craft-oc-')), 'craft')
   const round = JSON.stringify({ type: 'round', round: 1, phase: 'lenses', tasks: 1 })
   const result = JSON.stringify({ type: 'result', verdict: 'Approve', report: '/r/report.md', run: '/r', findings: 0, exit_code: 0 })
-  writeExecutable(bin, `#!/bin/sh\necho "$*" > "$(dirname "$0")/argv"\necho '${round}' >&2\necho '${result}' >&2\nprintf '## Verdict\\n\\n✅ Approve\\n'\n`)
+  writeExecutable(
+    bin,
+    `#!/bin/sh\nif [ "$1" = init ]; then printf '{"exists":true}\\n'; exit 0; fi\necho "$*" > "$(dirname "$0")/argv"\necho '${round}' >&2\necho '${result}' >&2\nprintf '## Verdict\\n\\n✅ Approve\\n'\n`,
+  )
   process.env['CRAFT_BIN'] = bin
   return path.join(path.dirname(bin), 'argv')
 }
+
+test('a missing profile asks before review, and the user can continue without one', async () => {
+  const argv = fakeBinary()
+  const bin = process.env['CRAFT_BIN']
+  assert.ok(bin)
+  writeExecutable(
+    bin,
+    `#!/bin/sh\nif [ "$1" = init ]; then printf '{"exists":false}\\n'; exit 0; fi\necho "$*" > "$(dirname "$0")/argv"\nprintf '## Verdict\\n\\nApprove\\n'\n`,
+  )
+  const review = TOOLS.find(t => t.name === 'review')
+  assert.ok(review)
+  const asked = await review.run(fakeHost(), {}, {})
+  assert.match(typeof asked === 'string' ? asked : asked.output, /No review profile exists/)
+  assert.equal(fs.existsSync(argv), false)
+  await review.run(fakeHost(), { args: '--without-profile --base main' }, {})
+  assert.equal(fs.readFileSync(argv, 'utf8').trim(), 'review run --backend opencode --events json --base main')
+})
+
+test('a profile check error does not look like a missing profile', async () => {
+  fakeBinary()
+  const bin = process.env['CRAFT_BIN']
+  assert.ok(bin)
+  writeExecutable(bin, '#!/bin/sh\necho broken >&2\nexit 1\n')
+  const review = TOOLS.find(t => t.name === 'review')
+  assert.ok(review)
+  const answer = await review.run(fakeHost(), {}, {})
+  assert.match(typeof answer === 'string' ? answer : answer.output, /profile could not be checked/)
+})
 
 test("the review runs the binary with the opencode backend on the caller's model, its progress the title, its answer titled", async () => {
   const argv = fakeBinary()
