@@ -60,6 +60,13 @@ fn a_symbol_absent_from_the_file_stays() {
     assert_eq!(to(&finding(603, "nowhere", &json!({}))), None);
     assert_eq!(to(&finding(603, "", &json!({}))), None, "no symbol");
     assert_eq!(to(&finding(603, "x", &json!({}))), None, "too short a name");
+    for sym in ["head_lines::id", "head_lines::to", "head_lines.ok"] {
+        assert_eq!(
+            to(&finding(603, sym, &json!({}))),
+            None,
+            "{sym}: never its parent's line"
+        );
+    }
     assert_eq!(
         to(&finding(603, "head_line", &json!({}))),
         None,

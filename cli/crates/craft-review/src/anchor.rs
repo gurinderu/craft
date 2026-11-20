@@ -62,14 +62,16 @@ fn is_ident(c: char) -> bool {
 }
 
 /// The name `symbol` points at — the last segment of one path (`Type::method`, `fn parse`,
-/// `a.b()`) — or `None` when it names several items (`a / b`, `a, b`) or none long enough.
+/// `a.b()`) — or `None` when it names several items (`a / b`, `a, b`) or its last segment is too
+/// short: an earlier one would be the parent's name, not the item's.
 fn name_of(symbol: &str) -> Option<&str> {
     if symbol.contains(['/', ',', '|', ';']) {
         return None;
     }
     symbol
         .split(|c: char| !is_ident(c))
-        .rfind(|w| w.chars().count() >= MIN_NAME)
+        .rfind(|w| !w.is_empty())
+        .filter(|w| w.chars().count() >= MIN_NAME)
 }
 
 /// Whether `word` stands in `line` as a whole identifier.
@@ -92,13 +94,21 @@ fn only_line(t: &str, word: &str) -> Option<usize> {
     hits.next().is_none().then_some(first)
 }
 
+fn line_of(f: &Value) -> i64 {
+    f.get("line").and_then(Value::as_i64).unwrap_or(0)
+}
+
+/// Whether the step would read `f`'s file: a lens's finding on a line of a named file.
+fn examined(f: &Value) -> bool {
+    line_of(f) > 0 && !text(f, "file").is_empty() && !is_seed(f)
+}
+
 /// The line `f` belongs at, or `None` when it stays; `root` is the repository's top.
 pub(crate) fn target(f: &Value, root: &str, tree: &dyn Tree) -> Option<i64> {
-    let line = f.get("line").and_then(Value::as_i64).unwrap_or(0);
-    let file = text(f, "file");
-    if line <= 0 || file.is_empty() || is_seed(f) {
+    if !examined(f) {
         return None;
     }
+    let (line, file) = (line_of(f), text(f, "file"));
     let name = name_of(text(f, "symbol"))?;
     let path = within(file, root)?;
     let Blob::Text(t) = tree.at_head(&path) else {
@@ -116,7 +126,10 @@ pub(crate) fn target(f: &Value, root: &str, tree: &dyn Tree) -> Option<i64> {
 /// them; none on a tree with uncommitted changes, whose files the head does not hold.
 pub(crate) fn reanchor(run: &mut RunState) -> Vec<String> {
     if run.diff.dirty {
-        return vec!["the mechanical re-anchor step did not run: the tree had uncommitted changes, which the head commit does not hold".into()];
+        // Said once, and only when some finding is one the step would have read.
+        let note = "the mechanical re-anchor step did not run: the tree had uncommitted changes, which the head commit does not hold";
+        let due = run.findings.iter().any(examined) && !run.notes.iter().any(|n| n == note);
+        return due.then(|| note.to_owned()).into_iter().collect();
     }
     let tree = GitTree::new(&run.context.repo, &run.diff.head);
     reanchor_with(run, &tree)
@@ -130,7 +143,7 @@ pub(crate) fn reanchor_with(run: &mut RunState, tree: &dyn Tree) -> Vec<String> 
         let Some(to) = target(f, &root, tree) else {
             continue;
         };
-        let from = f.get("line").and_then(Value::as_i64).unwrap_or(0);
+        let from = line_of(f);
         listed.push(format!("`{}:{from}` → line {to}", text(f, "file")));
         if let Some(o) = f.as_object_mut() {
             o.insert(FIELD.into(), from.into());
