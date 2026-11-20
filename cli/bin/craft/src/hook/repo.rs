@@ -92,15 +92,25 @@ fn short(sha: &str) -> &str {
     sha.get(..12).unwrap_or(sha)
 }
 
-/// `origin`'s branch `base` into `origin/<base>`, bounded and with no prompt for credentials.
-fn fetch(dir: &Path, base: &str) -> Result<(), String> {
+/// The fetch of `origin`'s branch `base` into `origin/<base>`.
+fn fetch_command(dir: &Path, base: &str) -> Command {
     let mut cmd = Command::new("git");
+    // No maintenance started in the background, for the limit to kill with the group.
     cmd.arg("-C")
         .arg(dir)
+        .args(["-c", "maintenance.auto=false", "-c", "gc.auto=0"])
         .args(["fetch", "--quiet", "--no-tags", "origin"])
-        .arg(format!("+refs/heads/{base}:refs/remotes/origin/{base}"))
-        .env("GIT_TERMINAL_PROMPT", "0");
-    let out = bounded::output(cmd, FETCH_LIMIT)?;
+        .arg(format!("+refs/heads/{base}:refs/remotes/origin/{base}"));
+    // As craft's own git runs (realm @nick/craft, node #545): no terminal prompt, no ssh askpass
+    // the caller did not choose, a session of its own the limit kills whole ([`bounded`]).
+    craft_review::cancel::no_prompt_env(&mut cmd);
+    craft_review::cancel::detached(&mut cmd);
+    cmd
+}
+
+/// `origin`'s branch `base` into `origin/<base>`, bounded and with no prompt for credentials.
+fn fetch(dir: &Path, base: &str) -> Result<(), String> {
+    let out = bounded::output(fetch_command(dir, base), FETCH_LIMIT)?;
     if out.status.success() {
         return Ok(());
     }
@@ -134,3 +144,7 @@ fn repo_key(dir: &Path) -> String {
         .display()
         .to_string()
 }
+
+#[cfg(test)]
+#[path = "repo_tests.rs"]
+mod tests;

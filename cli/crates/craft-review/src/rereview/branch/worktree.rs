@@ -102,7 +102,8 @@ fn fetch(cwd: &Path, n: u64, pr_head: &str) -> Result<(), String> {
     }
     let refspec = format!("pull/{n}/head");
     let at = cwd.display().to_string();
-    Git::prompt_free().run(&[&["-C", at.as_str()][..], &FETCH, &["origin", &refspec]].concat())?;
+    let args = [&["-C", at.as_str()][..], &FETCH, &["origin", &refspec]].concat();
+    Git::prompt_free().run_remote(&args)?;
     let missing = || format!("origin's `{refspec}` does not hold `{}`", short(pr_head));
     git::has_commit(cwd, pr_head)
         .then_some(())

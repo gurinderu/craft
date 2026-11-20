@@ -362,3 +362,43 @@ fn a_hooks_repository_variables_do_not_reach_the_preparation() {
     assert!(Path::new(&got.prepared[0].dir).join("main.go").is_file());
     assert!(!elsewhere.exists());
 }
+
+#[test]
+fn a_local_git_failure_carries_no_authentication_hint_and_a_remote_one_does() {
+    use std::os::unix::fs::PermissionsExt;
+    let (t, _) = remote();
+    let parent = copy_at(t.path(), "v1.2.3").parent().unwrap().to_path_buf();
+    std::fs::create_dir_all(&parent).unwrap();
+    // The remote answers; the init of the temporary copy cannot write beside the target.
+    std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o555)).unwrap();
+    let got = prepare(
+        &[point("v1.2.3")],
+        Ok(&cache(t.path())),
+        &git_to(Some(t.path())),
+    );
+    std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let error = &got.failed[0].error;
+    assert!(error.starts_with("git failed: "), "{got:?}");
+    assert!(!error.contains(super::runner::AUTH_HINT), "{error}");
+    let unreachable = prepare(&[point("v1.2.3")], Ok(&cache(t.path())), &git_to(None));
+    assert!(
+        unreachable.failed[0]
+            .error
+            .ends_with(super::runner::AUTH_HINT),
+        "{unreachable:?}"
+    );
+}
+
+#[test]
+fn a_commit_the_remote_lacks_fails_its_fetch_with_the_hint() {
+    let (t, _) = remote();
+    let lacked = "0123456789abcdef0123456789abcdef01234567";
+    let got = prepare(
+        &[point(lacked)],
+        Ok(&cache(t.path())),
+        &git_to(Some(t.path())),
+    );
+    let error = &got.failed[0].error;
+    assert!(error.starts_with("git failed: "), "{got:?}");
+    assert!(error.ends_with(super::runner::AUTH_HINT), "{error}");
+}

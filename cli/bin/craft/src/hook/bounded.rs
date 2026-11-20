@@ -1,8 +1,9 @@
 //! A command run with a time limit, so the hook answers inside the harness's own: past it the
-//! command is killed and the hook says so.
+//! command is killed, with its process group, and the hook says so.
 
 use std::io::{ErrorKind, Read};
 use std::process::{Command, Output, Stdio};
+use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -19,15 +20,19 @@ pub fn output(mut cmd: Command, limit: Duration) -> Result<Output, String> {
             format!("{name} could not start ({e})")
         }
     })?;
-    // Read apart from the wait, so a full pipe never holds the command past its limit.
+    // Read apart from the wait, so a full pipe never holds the command past its limit; each
+    // reader answers on a channel, so one a leftover child keeps open is waited for no longer.
     let drain = |pipe: Option<Box<dyn Read + Send>>| {
+        let (tx, rx) = mpsc::channel();
         thread::spawn(move || {
             let mut buf = Vec::new();
             if let Some(mut p) = pipe {
                 p.read_to_end(&mut buf).unwrap_or_default();
             }
-            buf
-        })
+            // The waiter gave up on it: nobody to answer.
+            tx.send(buf).unwrap_or(());
+        });
+        rx
     };
     let out = drain(child.stdout.take().map(|p| Box::new(p) as _));
     let err = drain(child.stderr.take().map(|p| Box::new(p) as _));
@@ -37,8 +42,8 @@ pub fn output(mut cmd: Command, limit: Duration) -> Result<Output, String> {
             Ok(Some(status)) => break status,
             Ok(None) if Instant::now() < deadline => thread::sleep(Duration::from_millis(20)),
             Ok(None) => {
-                child.kill().unwrap_or_default();
-                child.wait().map(drop).unwrap_or_default();
+                // With its group: what a detached command started goes too.
+                craft_review::cancel::kill_group(&mut child);
                 // The readers are left behind: a grandchild may still hold the pipes.
                 return Err(format!(
                     "{name} did not answer within {} ms",
@@ -48,11 +53,28 @@ pub fn output(mut cmd: Command, limit: Duration) -> Result<Output, String> {
             Err(e) => return Err(format!("{name} could not be waited for ({e})")),
         }
     };
-    Ok(Output {
-        status,
-        stdout: out.join().unwrap_or_default(),
-        stderr: err.join().unwrap_or_default(),
-    })
+    // A child the command left may still hold the pipes: read until the same limit, no longer.
+    let read = |rx: &mpsc::Receiver<Vec<u8>>| {
+        rx.recv_timeout(deadline.saturating_duration_since(Instant::now()))
+            .map_err(|e: mpsc::RecvTimeoutError| {
+                format!(
+                    "{name} did not answer within {} ms ({e})",
+                    limit.as_millis()
+                )
+            })
+    };
+    match (read(&out), read(&err)) {
+        (Ok(stdout), Ok(stderr)) => Ok(Output {
+            status,
+            stdout,
+            stderr,
+        }),
+        (Err(why), _) | (_, Err(why)) => {
+            // Past the limit with what is left of a detached command's group, as above.
+            craft_review::cancel::kill_group(&mut child);
+            Err(why)
+        }
+    }
 }
 
 #[cfg(test)]
