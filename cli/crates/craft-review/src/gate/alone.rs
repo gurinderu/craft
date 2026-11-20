@@ -68,7 +68,7 @@ pub fn alone(
         path: cwd.to_owned(),
         source,
     })?;
-    let diff = git::read_diff(&cwd, base, None)?;
+    let diff = git::warm::read_diff(&cwd, base, None, &crate::cancel::Cancel::default())?;
     let no_dir = |source| StepError::NoDir {
         path: dir.to_owned(),
         source,
