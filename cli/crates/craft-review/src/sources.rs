@@ -166,11 +166,5 @@ fn prepare_one(p: &IntegrationPoint, root: &Path, git: &Git) -> Result<(String, 
             .iter()
             .fold(root.to_path_buf(), |d, s| d.join(s))
     };
-    fetch::cached_copy(git, &p.repo, &p.rev, &target_of).map_err(|e| {
-        if e.starts_with("git failed: ") {
-            format!("{e} — {}", runner::AUTH_HINT)
-        } else {
-            e
-        }
-    })
+    fetch::cached_copy(git, &p.repo, &p.rev, &target_of)
 }

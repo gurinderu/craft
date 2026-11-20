@@ -42,7 +42,7 @@ impl Git {
             format!("refs/tags/{rev}")
         };
         self.run(&["init", "-q", "--", &dir])?;
-        self.run(&["-C", &dir, "fetch", "-q", "--depth", "1", "--", url, &want])?;
+        self.run_remote(&["-C", &dir, "fetch", "-q", "--depth", "1", "--", url, &want])?;
         let co = [
             "-C",
             &dir,
