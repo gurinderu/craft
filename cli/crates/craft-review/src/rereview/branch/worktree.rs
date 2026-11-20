@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 
 use super::head::{self, short};
 use super::{BUDGET, Lookup, pr};
+use crate::cancel::Cancel;
 use crate::gate::runner::Runner;
 use crate::git;
 use crate::project::project_id;
@@ -29,7 +30,7 @@ pub struct Laid {
 /// PR is given, gh is not asked or cannot tell (the chain notes it, [`super::resolve`]), there is
 /// no `root`, or `HEAD` already holds the PR's head. Its line says how the task agents read it
 /// only when the Claude Code plugin's review engine drives the run (`engine`): `craft review run`
-/// runs its tasks in the worktree itself.
+/// runs its tasks in the worktree itself. A stop (`cancel`) stops the fetch and the laying.
 ///
 /// # Errors
 /// The refusal, when the head cannot be fetched, the worktree cannot be laid, or the place holds a
@@ -39,6 +40,7 @@ pub fn checkout(
     lookup: &Lookup<'_>,
     root: Option<&Path>,
     engine: bool,
+    cancel: &Cancel,
 ) -> Result<Option<Laid>, String> {
     let (Some(n), Some(setup), Some(root)) = (lookup.pr, lookup.gh, root) else {
         return Ok(None);
@@ -67,8 +69,8 @@ pub fn checkout(
         clean(&dir, n)?;
         "reused at that head"
     } else {
-        fetch(cwd, n, &pr_head).map_err(refuse)?;
-        add(cwd, &dir, &pr_head).map_err(refuse)?;
+        fetch(cwd, n, &pr_head, cancel).map_err(refuse)?;
+        add(cwd, &dir, &pr_head, cancel).map_err(refuse)?;
         "laid now"
     };
     let dir = dir.canonicalize().map_err(|e| refuse(e.to_string()))?;
@@ -96,14 +98,16 @@ const FETCH: [&str; 4] = ["fetch", "--no-tags", "--no-write-fetch-head", "--quie
 
 /// PR `n`'s head `pr_head` in this repository: fetched from `origin`'s `pull/<n>/head` when it
 /// lacks it, never prompting, and leaving the user's `FETCH_HEAD` as it was.
-fn fetch(cwd: &Path, n: u64, pr_head: &str) -> Result<(), String> {
+fn fetch(cwd: &Path, n: u64, pr_head: &str, cancel: &Cancel) -> Result<(), String> {
     if git::has_commit(cwd, pr_head) {
         return Ok(());
     }
     let refspec = format!("pull/{n}/head");
     let at = cwd.display().to_string();
     let args = [&["-C", at.as_str()][..], &FETCH, &["origin", &refspec]].concat();
-    Git::prompt_free_in(cwd).run_remote(&args)?;
+    Git::prompt_free_in(cwd)
+        .stopped_by(cancel.clone())
+        .run_remote(&args)?;
     let missing = || format!("origin's `{refspec}` does not hold `{}`", short(pr_head));
     git::has_commit(cwd, pr_head)
         .then_some(())
@@ -147,16 +151,19 @@ fn clean(dir: &Path, n: u64) -> Result<(), String> {
 }
 
 /// A detached worktree of `cwd`'s repository at `dir`, on `pr_head`; its parent made by [`lock`].
-/// Run as the fetch before it is (realm @nick/craft, node #545): in a partial clone the checkout
+/// Run as the fetch before it is (realm @nick/craft, nodes #545, #548): in a partial clone the checkout
 /// fetches the head's blobs the fetch left out, which a lazy fetch turned off would refuse in
 /// every such clone, so it runs detached, with no prompt and bounded in time.
-fn add(cwd: &Path, dir: &Path, pr_head: &str) -> Result<(), String> {
+fn add(cwd: &Path, dir: &Path, pr_head: &str, cancel: &Cancel) -> Result<(), String> {
     let repo = cwd.display().to_string();
     let at = dir.display().to_string();
     let args = [
         "-C", &repo, "worktree", "add", "--quiet", "--detach", &at, pr_head,
     ];
-    Git::prompt_free_in(cwd).run_remote(&args).map(drop)
+    Git::prompt_free_in(cwd)
+        .stopped_by(cancel.clone())
+        .run_lazy(&args)
+        .map(drop)
 }
 
 #[cfg(test)]

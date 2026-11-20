@@ -55,10 +55,13 @@ fn kept(e: &std::io::Error) -> String {
 }
 
 /// Whether a git command reaches the remote: its failure then says git asks for no credentials.
+/// `Lazy` is a local command that may fetch a partial clone's missing objects: its failure says
+/// so only when that fetch is what failed.
 #[derive(Debug, Clone, Copy)]
 enum Call {
     Local,
     Remote,
+    Lazy,
 }
 
 /// git as the preparation runs it.
@@ -146,6 +149,13 @@ impl Git {
         self.call(args, Call::Remote)
     }
 
+    /// Runs `git args` on this side that may fetch the objects a partial clone lacks from its
+    /// promisor remote (`worktree add`, a `diff`), its stdout; why not, one line, with
+    /// [`AUTH_HINT`] only when that fetch is what failed.
+    pub(crate) fn run_lazy(&self, args: &[&str]) -> Result<String, String> {
+        self.call(args, Call::Lazy)
+    }
+
     /// Runs `git args` as `call` says. Its output goes to files ([`Spool`]) read once git exits,
     /// so nothing it left running holds the read past the timeout or the stop.
     fn call(&self, args: &[&str], call: Call) -> Result<String, String> {
@@ -219,9 +229,15 @@ impl Git {
             .chars()
             .take(300)
             .collect();
-        Err(match call {
-            Call::Local => failed,
-            Call::Remote => format!("{failed} — {AUTH_HINT}"),
+        let remote = match call {
+            Call::Local => false,
+            Call::Remote => true,
+            Call::Lazy => err.contains("promisor remote"),
+        };
+        Err(if remote {
+            format!("{failed} — {AUTH_HINT}")
+        } else {
+            failed
         })
     }
 

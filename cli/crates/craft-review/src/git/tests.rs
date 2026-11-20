@@ -3,7 +3,7 @@ use std::process::Command;
 
 use super::unchanged_since;
 
-fn git(dir: &Path, args: &[&str]) -> String {
+pub(crate) fn git(dir: &Path, args: &[&str]) -> String {
     let out = Command::new("git")
         .arg("-C")
         .arg(dir)
@@ -81,7 +81,7 @@ fn a_changed_path_that_is_not_utf8_lists_the_change_as_git_quotes_it() {
 
 /// A blobless clone (`--filter=blob:none`) of a bare repository served over `file://`, its
 /// `base` branch's blobs absent: the base's `f` differs from `main`'s.
-fn blobless(root: &Path) -> (std::path::PathBuf, std::path::PathBuf) {
+pub(crate) fn blobless(root: &Path) -> (std::path::PathBuf, std::path::PathBuf) {
     let src = root.join("src");
     std::fs::create_dir(&src).unwrap();
     git(&src, &["init", "-q", "-b", "main"]);
@@ -101,7 +101,7 @@ fn blobless(root: &Path) -> (std::path::PathBuf, std::path::PathBuf) {
 }
 
 /// The objects the clone `dir` lacks.
-fn missing(dir: &Path) -> usize {
+pub(crate) fn missing(dir: &Path) -> usize {
     let listed = git(dir, &["rev-list", "--objects", "--missing=print", "--all"]);
     listed.lines().filter(|l| l.starts_with('?')).count()
 }
