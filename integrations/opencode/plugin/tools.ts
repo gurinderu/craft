@@ -1,6 +1,8 @@
 // The tools craft registers in OpenCode, once for both runtimes: host-v1.ts turns each into a `tool()`,
 // host-v2.ts into a `ctx.tool` definition with a JSON Schema input.
 import type { Host, ToolAnswer, ToolCall, ToolSpec } from './host.ts'
+import { spawn } from 'node:child_process'
+import path from 'node:path'
 import { runRustAudit } from './rust-audit.ts'
 import { runTriageFindings } from './triage-findings.ts'
 
@@ -19,14 +21,72 @@ export function nestedUnder(host: Host, parent: string | undefined): Host {
 // lib/ keeps its other tools.
 const hasModels = (words: string[]) => words.some(w => w === '--models' || w.startsWith('--models='))
 
+function stopPreflight(pid: number | undefined) {
+  if (!pid || process.platform === 'win32') return
+  try {
+    process.kill(-pid, 'SIGTERM')
+  } catch {
+    // The process may already have exited.
+  }
+}
+
+async function profilePreflight(wrapper: string, cwd: string, signal?: AbortSignal): Promise<string | undefined> {
+  const child = spawn('sh', [wrapper, 'init', '--propose', '--cwd', cwd], { cwd, detached: process.platform !== 'win32', ...(signal ? { signal } : {}) })
+  const stop = () => {
+    stopPreflight(child.pid)
+    child.kill()
+  }
+  signal?.addEventListener('abort', stop, { once: true })
+  const timer = setTimeout(stop, 120_000)
+  try {
+    let stdout = ''
+    let stderr = ''
+    child.stdout.setEncoding('utf8').on('data', (chunk: string) => {
+      stdout += chunk
+    })
+    child.stderr.setEncoding('utf8').on('data', (chunk: string) => {
+      stderr += chunk
+    })
+    await new Promise<void>((resolve, reject) => {
+      child.on('error', reject)
+      child.on('close', code => (code === 0 ? resolve() : reject(new Error(`init exited ${String(code)}: ${stderr}`))))
+    })
+    const result: unknown = JSON.parse(stdout)
+    if (!result || typeof result !== 'object' || !('exists' in result) || typeof result.exists !== 'boolean') {
+      return 'The review profile could not be checked: craft init returned an invalid response. Nothing ran.'
+    }
+    return result.exists
+      ? undefined
+      : `No review profile exists for ${cwd}. Ask the user whether to set it up with the review-init skill for that repository or continue without it. To continue without setup, call review again with --without-profile. Nothing ran.`
+  } catch (error) {
+    return `The review profile could not be checked: ${String(error)}. Nothing ran.`
+  } finally {
+    clearTimeout(timer)
+    signal?.removeEventListener('abort', stop)
+  }
+}
+
+function profileOptions(words: string[], directory: string) {
+  const skip = words.includes('--without-profile')
+  const forwarded = words.filter(w => w !== '--without-profile')
+  const resumed = forwarded.some(w => w === '--run' || w.startsWith('--run='))
+  const cwdIndex = forwarded.indexOf('--cwd')
+  const requestedCwd = cwdIndex >= 0 ? forwarded[cwdIndex + 1] : forwarded.find(w => w.startsWith('--cwd='))?.slice(6)
+  return { forwarded, skip, resumed, cwd: path.resolve(directory, requestedCwd ?? '.') }
+}
+
 async function runReview(host: Host, args: string, call: ToolCall): Promise<ToolAnswer> {
   const review = await import('../../../lib/craft-review-run.mjs')
-  const words = review.flagWords(args)
-  const mapped = hasModels(words) || Boolean(process.env['CRAFT_OPENCODE_MODELS'])
+  const { forwarded, skip, resumed, cwd } = profileOptions(review.flagWords(args), host.directory)
+  if (!skip && !resumed) {
+    const why = await profilePreflight(review.WRAPPER, cwd, call.signal)
+    if (why) return { title: 'craft review: profile', output: why }
+  }
+  const mapped = hasModels(forwarded) || Boolean(process.env['CRAFT_OPENCODE_MODELS'])
   const model = mapped || !call.sessionID ? undefined : await host.callerModel(call.sessionID).catch(() => undefined)
   const outcome = await review.runReview({
     backend: 'opencode',
-    args: model ? [...words, '--models', `${model.providerID}/${model.modelID}`] : words,
+    args: model ? [...forwarded, '--models', `${model.providerID}/${model.modelID}`] : forwarded,
     cwd: host.directory,
     ...(call.signal ? { signal: call.signal } : {}),
     onProgress: p => call.progress?.(review.progressLine(p)),
@@ -94,7 +154,7 @@ export const TOOLS: readonly ToolSpec[] = [
   {
     name: 'review',
     description:
-      "craft's review of the current change by the `craft` binary (`craft review run --backend opencode`): the mechanical gate, review lenses per language profile, verification, one report and the `## Verdict` block; each task runs as its own `opencode run` on craft's read-only agents, on this session's model. It runs long. Arg `args` takes the review's flags as one string (for example `--base main`, `--depth light`, `--pr 123 --comment`, `--run <dir>` to resume, `--models <provider/model>`), or none.",
+      "craft's review of the current change by the `craft` binary (`craft review run --backend opencode`): the mechanical gate, review lenses per language profile, verification, one report and the `## Verdict` block; each task runs as its own `opencode run` on craft's read-only agents, on this session's model. It runs long. When the profile is missing, ask the user to set it up with review-init or continue without it; pass --without-profile only on their choice. Arg `args` takes the review's flags as one string (for example `--base main`, `--depth light`, `--pr 123 --comment`, `--run <dir>` to resume, `--models <provider/model>`), or none.",
     args: { args: { optional: true } },
     run: (host, args, call) => runReview(host, args['args'] ?? '', call),
   },
