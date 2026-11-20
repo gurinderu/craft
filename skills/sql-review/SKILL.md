@@ -21,14 +21,23 @@ review. There is no mechanical SQL gate: the verdict rests on the lenses and the
 
 Lock levels (PostgreSQL docs, "Explicit Locking" and `ALTER TABLE`):
 
-| Statement | Lock on the table | Held for |
+| Statement | Lock on the table | Work done while the lock is held |
 |---|---|---|
-| most `ALTER TABLE` forms (ADD/DROP COLUMN, ALTER TYPE, SET/DROP DEFAULT, SET/DROP NOT NULL, ADD CHECK, ADD UNIQUE/PRIMARY KEY, RENAME) | ACCESS EXCLUSIVE — blocks reads and writes | the statement, plus any scan or rewrite it does |
+| most `ALTER TABLE` forms (ADD/DROP COLUMN, ALTER TYPE, SET/DROP DEFAULT, SET/DROP NOT NULL, ADD CHECK, ADD UNIQUE/PRIMARY KEY, RENAME) | ACCESS EXCLUSIVE — blocks reads and writes | any scan or rewrite the form does |
 | `ADD FOREIGN KEY` | SHARE ROW EXCLUSIVE on both tables | the validating scan, unless `NOT VALID` |
 | `VALIDATE CONSTRAINT` | SHARE UPDATE EXCLUSIVE — reads and writes go on | the scan |
 | `CREATE INDEX` | SHARE — blocks writes | the whole build |
-| `CREATE INDEX CONCURRENTLY` | SHARE UPDATE EXCLUSIVE | the build; cannot run in a transaction block; a failed build leaves an INVALID index to drop |
-| `DROP INDEX`, `DROP TABLE`, `TRUNCATE` | ACCESS EXCLUSIVE | the statement (`DROP INDEX CONCURRENTLY` avoids it) |
+| `CREATE INDEX CONCURRENTLY` | SHARE UPDATE EXCLUSIVE | the build; it cannot run in a transaction block, nor on a partitioned table's parent; a failed build leaves an INVALID index to drop |
+| `DROP INDEX`, `DROP TABLE`, `TRUNCATE` | ACCESS EXCLUSIVE | — (`DROP INDEX CONCURRENTLY` avoids it) |
+
+**A table lock is held until the end of the transaction that took it, not the statement.** The
+safe two-step forms — `ADD CONSTRAINT … NOT VALID`, then `VALIDATE CONSTRAINT`; `CHECK (col IS NOT
+NULL) NOT VALID`, then `VALIDATE`, then `SET NOT NULL` — work only when each step commits in its own
+transaction. Migration tools wrap each file in one transaction by default (sqlx, diesel), so both
+steps in one file keep the first step's ACCESS EXCLUSIVE (SHARE ROW EXCLUSIVE on both tables for a
+foreign key) through the whole validating scan: the safe form is no safer than the plain one. Put the
+steps in separate migration files, or opt the file out of the transaction. Likewise, every statement
+after a lock-taking one in the same transaction runs under that lock.
 
 Any lock waits in the queue behind the transactions already holding a conflicting one, and every
 later query on the table waits behind it: a brief ACCESS EXCLUSIVE behind one long transaction stops
@@ -49,14 +58,23 @@ What rewrites the table and its indexes:
 ## Migrations checklist
 
 - **Lock** (MIG-001): a statement that holds ACCESS EXCLUSIVE or SHARE through a scan, a rewrite or
-  an index build on a table that has traffic. The safe forms: `CREATE INDEX CONCURRENTLY`, then
-  `ADD CONSTRAINT … USING INDEX`; `ADD CONSTRAINT … NOT VALID`, then `VALIDATE CONSTRAINT`.
+  an index build on a table that has traffic — and the lock lasts to the end of its transaction, so
+  everything after it in the same file runs under it. The safe forms: `CREATE INDEX CONCURRENTLY`,
+  then `ADD CONSTRAINT … USING INDEX`; `ADD CONSTRAINT … NOT VALID`, then `VALIDATE CONSTRAINT`.
+- **Two steps, one transaction** (MIG-009): the `NOT VALID` step and its `VALIDATE CONSTRAINT` (or the
+  CHECK, VALIDATE and `SET NOT NULL` sequence) in one migration the tool runs as one transaction — the
+  first step's lock is held through the scan. Must-fix on a large table with traffic.
 - **Rewrite** (MIG-002): a type change or added column from the rewrite table above, on a large table.
 - **NOT NULL** (MIG-003): `ADD COLUMN … NOT NULL` without a `DEFAULT` fails on a table with rows;
   `SET NOT NULL` without the validated CHECK scans under ACCESS EXCLUSIVE.
-- **Index** (MIG-004): `CREATE [UNIQUE] INDEX` on an existing table without `CONCURRENTLY`; with it,
+- **Index** (MIG-004): `CREATE [UNIQUE] INDEX` on an existing table without `CONCURRENTLY`. With it:
   a migration tool that wraps the file in a transaction (sqlx: opt out with a `-- no-transaction`
-  first line; diesel: `run_in_transaction = false` in the migration's `metadata.toml`).
+  first line; diesel: `run_in_transaction = false` in the migration's `metadata.toml`); and, opted out,
+  a file with any other statement beside it — several statements sent as one query string run as an
+  implicit transaction block and fail with "cannot run inside a transaction block", so the concurrent
+  build is the file's only statement. On a partitioned table `CONCURRENTLY` is refused on the parent:
+  build the index concurrently on each partition, then `CREATE INDEX … ON ONLY` the parent and
+  `ALTER INDEX … ATTACH PARTITION` each one.
 - **Backfill** (MIG-005): one `UPDATE` or `INSERT … SELECT` over a large table, or a backfill in the
   same transaction as DDL — long row locks, any DDL lock held to the end, WAL and replica lag. Batch it,
   outside the schema migration.
@@ -96,8 +114,8 @@ A statement on a table the same branch creates has no lock or rollout harm.
 
 By the harm cap of `review-rules` (`severity.md`), never above it:
 
-- **must-fix** — `outage`: a table locked or rewritten under traffic, a migration that fails on
-  deploy, old code broken by the new schema; `data-loss`: data dropped, truncated or corrupted that
+- **must-fix** — `outage`: a table locked or rewritten under traffic (a two-step safe form run in
+  one transaction included), a migration that fails on deploy, old code broken by the new schema; `data-loss`: data dropped, truncated or corrupted that
   no durable source restores; `security`: injection from outside input; `intent-unmet`: a query
   that does not do what the change says.
 - **should-fix** — a missing index or an N+1 whose traffic is not named; a non-reversible down

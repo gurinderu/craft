@@ -78,7 +78,7 @@ not one of them: it is the main session's (→ "Who triages").
                that commit carries the merged code too, not the fix commits only: say so and ask
                the human: the whole PR (`base: <trunk>`, still `fresh: true`), or the fix
                commits named, or a base after the merge. Run the `craft:review` workflow, on a
-               diff in any language — Rust and Nix under their profiles, other source under
+               diff in any language — Rust, Nix and SQL under their profiles, other source under
                its general lenses — with
                `{ base: <that commit>, fresh: true, delta: true, fullEvery: 0 }` when the findings did not
                come from its last round on this branch (a human's PR review, any other review):

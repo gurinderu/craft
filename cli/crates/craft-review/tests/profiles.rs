@@ -340,9 +340,27 @@ fn a_query_string_on_a_changed_rust_line_adds_the_queries_lens() {
         ids(&s)
     );
     let p = prompt_of(task(&s, "lens-rust-sql-queries-r1"));
+    for want in [
+        "Load the sql-review skill for the rubric",
+        "the matching catalog ID from the sql-review skill's rules.md",
+    ] {
+        assert!(p.contains(want), "{want}: {p}");
+    }
+    assert!(!p.contains("rust-review"), "not its host's rubric: {p}");
+    let mut f = titled("High", 2, "count read outside the transaction");
+    f["file"] = json!("src/db.rs");
+    let found = move |id: &str| {
+        if id == "lens-rust-sql-queries-r1" {
+            vec![f.clone()]
+        } else {
+            Vec::new()
+        }
+    };
+    let s = submit(&run, round(&s, &found));
+    let v = prompt_of(task(&s, "verify-0-v0"));
     assert!(
-        p.contains("Load the rust-review skill") && p.contains("sql-review skill"),
-        "{p}"
+        v.contains("SHARED EXCLUSION CATALOG") && !v.contains("rust-review skill's fp-rules.md"),
+        "its verifier reads no Rust exclusions: {v}"
     );
 
     let plain = repo_with(&["src/lib.rs"]);
