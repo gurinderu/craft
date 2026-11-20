@@ -115,3 +115,32 @@ fn a_command_ignoring_the_gentle_stop_is_killed_after_the_grace() {
     );
     assert!(child.try_wait().unwrap().is_some());
 }
+
+/// The leader gone and reaped (`hook/bounded.rs` reads a command's output after its exit) while
+/// what it started still runs: that one, stopping slowly, still gets its grace.
+#[cfg(unix)]
+#[test]
+fn what_outlives_a_reaped_leader_gets_its_grace_too() {
+    use std::time::{Duration, Instant};
+    let t = tempfile::tempdir().unwrap();
+    let lock = t.path().join("lock");
+    let script = format!(
+        "(trap 'sleep 0.3; rm -f {0}; exit 0' TERM; touch {0}; while :; do sleep 0.05; done) & exit 0",
+        lock.display()
+    );
+    let mut cmd = Command::new("sh");
+    cmd.args(["-c", &script]);
+    super::detached(&mut cmd);
+    let mut child = cmd.spawn().unwrap();
+    child.wait().unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !lock.exists() {
+        assert!(Instant::now() < deadline, "the descendant never started");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    super::kill_group(&mut child);
+    assert!(
+        !lock.exists(),
+        "the descendant was killed before it stopped"
+    );
+}
