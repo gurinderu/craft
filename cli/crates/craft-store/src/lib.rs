@@ -5,16 +5,21 @@
 //! and the streaming reader `craft runs` lists, sums and checks the store with (#540).
 
 pub mod adapter;
+pub mod check;
 pub mod checkpoint;
 mod cli_record;
 mod clock;
+pub mod filter;
 pub mod finalize;
 pub mod git;
 pub mod js;
 pub mod lock;
 pub mod proof;
 mod publication;
+pub mod read;
 pub mod record;
+pub mod retro;
+pub mod tally;
 pub mod time;
 pub mod write;
 

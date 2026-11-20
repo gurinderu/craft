@@ -11,6 +11,7 @@ anyhow.workspace = true
 clap.workspace = true
 craft-agent.workspace = true
 craft-review.workspace = true
+craft-store.workspace = true
 craft-tui.workspace = true
 regex.workspace = true
 serde.workspace = true

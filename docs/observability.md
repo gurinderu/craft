@@ -68,7 +68,8 @@ loads the detail files anyway. This is also why every record-filing engine — `
 `lib/craft-log-run.mjs` rather than instructing a model to assemble the record: an engine that
 computes the fields from a prompt cannot produce this one at all, so every record it files is
 excluded from `--engine latest` by construction. The JS engines' shared write path is
-`lib/run-logging.mjs`, bundled into each; the binary's is `lib/cli-review-file.mjs`.
+`lib/run-logging.mjs`, bundled into each; the binary's is its own `crates/craft-store`. `craft runs retro <version>`
+gives a version's per-workflow, per-engine and per-lens numbers as `node lib/analyze-runs.mjs --version <version>` does.
 Records written before these fields carry `null` and are outside any filter.
 
 Workflows add: `scout`, `dimensions[]`, `verification {candidates, judged, confirmed, suspected, refuted, unverified, died, refuteRate}` (`refuteRate` is over what was *judged*. When nothing was, the engines differ: `rust-audit` records `null` — a run whose verifiers all died reports no rate rather than a rate of zero — while `review` records `0`, as the retired `adversarial-review` did (`refuteRate()` in `lib/run-record.mjs`, the binary's `refute_rate` alike), and `lib/analyze-runs.mjs` averages that `0` into the workflow's `avg refute` as it skips a `null`; `unverified` counts candidates no verifier ever judged — an unchecked Low/Info the engine spends no verifier on — and is reported **beside** `candidates`, not inside it, so it is outside the rate),
@@ -215,8 +216,9 @@ per-run `mktemp` file and runs `lib/craft-log-run.mjs`, which computes every fie
 (`ts`/`project`/`commit`/`dirty`/`engineRevision`/`craftCommit`), names the file, appends the index
 line and verifies the readback. `rust-audit` and `triage-findings` go through that one path — the
 prompt itself is built by `lib/run-logging.mjs` and bundled into each. The `review` workflow's record
-is filed by the `craft` binary through `lib/cli-review-file.mjs` and the same `lib/craft-log-run.mjs`,
-with no logger agent; a logger agent files only the INCOMPLETE record of a run the binary never
+is filed by the `craft` binary itself (`cli/crates/craft-store`), byte for byte as `lib/craft-log-run.mjs` files it and
+under the same index lock, with no logger agent and no node (`content/parity/store-cases.json` holds the two writers
+together); a logger agent files only the INCOMPLETE record of a run the binary never
 finished. A write that does not land is asserted, not
 inferred: the agent returns `{ok, error}`, and the engine puts the loss in its own report. The shaping helpers are tested in `lib/run-record.mjs`; the engines import them and the build
 bundles them in (the sandbox can't `import`). Standalone agents self-log via their `.md` Observability
