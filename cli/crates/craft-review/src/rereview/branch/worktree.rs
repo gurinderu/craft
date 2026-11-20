@@ -103,7 +103,7 @@ fn fetch(cwd: &Path, n: u64, pr_head: &str) -> Result<(), String> {
     let refspec = format!("pull/{n}/head");
     let at = cwd.display().to_string();
     let args = [&["-C", at.as_str()][..], &FETCH, &["origin", &refspec]].concat();
-    Git::prompt_free().run_remote(&args)?;
+    Git::prompt_free_in(cwd).run_remote(&args)?;
     let missing = || format!("origin's `{refspec}` does not hold `{}`", short(pr_head));
     git::has_commit(cwd, pr_head)
         .then_some(())
@@ -147,8 +147,17 @@ fn clean(dir: &Path, n: u64) -> Result<(), String> {
 }
 
 /// A detached worktree of `cwd`'s repository at `dir`, on `pr_head`; its parent made by [`lock`].
+/// Run as the fetch before it is (realm @nick/craft, node #545): in a partial clone the checkout
+/// fetches the head's blobs the fetch left out, which a lazy fetch turned off would refuse in
+/// every such clone, so it runs detached, with no prompt and bounded in time.
 fn add(cwd: &Path, dir: &Path, pr_head: &str) -> Result<(), String> {
+    let repo = cwd.display().to_string();
     let at = dir.display().to_string();
-    let args = ["worktree", "add", "--quiet", "--detach", &at, pr_head];
-    git::git(cwd, &args).map(drop).map_err(|e| e.to_string())
+    let args = [
+        "-C", &repo, "worktree", "add", "--quiet", "--detach", &at, pr_head,
+    ];
+    Git::prompt_free_in(cwd).run_remote(&args).map(drop)
 }
+
+#[cfg(test)]
+mod tests;
