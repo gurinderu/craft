@@ -5,8 +5,8 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use super::cbm::{self, Asked, Caller, Cbm, CbmError};
-use super::fresh::{self, Stale};
+use super::cbm::{self, Asked, Caller, Cbm};
+use super::fresh;
 use super::list::{consumer, site};
 use super::symbols::Symbol;
 use super::{GRAPH, Site, names, source};
@@ -14,36 +14,9 @@ use crate::cancel::Cancel;
 use crate::gate::lines::Lines;
 use crate::project::{self, CodeGraph, GraphState};
 
-/// Why the code graph was not asked, or gave no callers; its text is the report's line.
-#[derive(Debug, thiserror::Error)]
-pub enum GraphError {
-    #[error("no review profile directory")]
-    NoProfiles,
-    #[error("the review profile could not be read: {0}")]
-    Profile(String),
-    #[error(
-        "the review profile names no code graph (`craft init --propose` checks for one and \
-         prints the write that records it)"
-    )]
-    NotRecorded,
-    #[error(
-        "`craft init` found {tool} unusable: {note}; once it answers and indexes this repository, {}",
-        cbm::RECORD
-    )]
-    Unusable { tool: String, note: String },
-    #[error("{0}")]
-    Cbm(#[from] CbmError),
-    #[error("the index of {project} names no root it indexes, so whose it is cannot be told")]
-    NoRoot { project: String },
-    #[error("the index of {project} is of {root}, not of this repository ({roots})")]
-    Foreign {
-        project: String,
-        root: String,
-        roots: String,
-    },
-    #[error("{0}")]
-    Stale(#[from] Box<Stale>),
-}
+mod error;
+
+pub use error::GraphError;
 
 /// The graph's callers of `found`, asked until `cancel` is; why the graph was not asked
 /// otherwise: its index not ready, naming no root, of another repository than `top`'s, made of a
