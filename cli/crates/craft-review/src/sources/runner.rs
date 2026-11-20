@@ -6,7 +6,7 @@ use std::ffi::OsString;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use crate::cancel::{Cancel, STOPPED, kill_group, own_group};
+use crate::cancel::{Cancel, STOPPED, kill_group, own_session};
 
 /// How long one git command may run.
 const GIT_TIMEOUT: Duration = Duration::from_secs(120);
@@ -115,8 +115,10 @@ impl Git {
         for v in REPO_VARS {
             cmd.env_remove(v);
         }
-        // Its group of its own: a stop or the timeout kills what it runs too (ssh, a helper).
-        own_group(&mut cmd);
+        // Its session of its own: a stop or the timeout kills what it runs too (ssh, a helper),
+        // and with no terminal an ssh of the caller's own `GIT_SSH_COMMAND` (no batch mode)
+        // that asks a passphrase fails at once, named, rather than stopping in the background.
+        own_session(&mut cmd);
         let mut child = cmd
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -169,3 +171,5 @@ impl Git {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tty_tests;
