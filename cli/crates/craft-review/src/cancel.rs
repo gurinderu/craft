@@ -35,6 +35,35 @@ pub(crate) fn own_group(cmd: &mut Command) {
     let _alone = cmd;
 }
 
+/// `cmd` spawned as the leader of a session of its own: a process group of its own, as
+/// [`own_group`] gives, and no controlling terminal, so nothing it starts can ask on the
+/// terminal — an ssh asking a passphrase on `/dev/tty` fails at once, where in a background
+/// group of the caller's session it would stop (SIGTTIN) until the timeout.
+pub(crate) fn own_session(cmd: &mut Command) {
+    #[cfg(unix)]
+    new_session(cmd);
+    #[cfg(not(unix))]
+    let _alone = cmd;
+}
+
+#[cfg(unix)]
+#[expect(
+    unsafe_code,
+    reason = "a hook between fork and exec is unsafe; std's setsid is not stable"
+)]
+fn new_session(cmd: &mut Command) {
+    use std::os::unix::process::CommandExt;
+    // SAFETY: the hook runs in the forked child before exec and only calls setsid(2), which is
+    // async-signal-safe, allocates nothing and touches no lock.
+    unsafe {
+        cmd.pre_exec(|| {
+            nix::unistd::setsid()
+                .map(drop)
+                .map_err(std::io::Error::from)
+        });
+    }
+}
+
 /// Kills `child` and every process of its group (see [`own_group`]), then reaps it.
 pub(crate) fn kill_group(child: &mut Child) {
     #[cfg(unix)]
