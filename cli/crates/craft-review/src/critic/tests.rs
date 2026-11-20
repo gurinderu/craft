@@ -67,7 +67,7 @@ fn the_critic_admits_a_candidate_and_refuses_an_optional_or_surface_gated_one() 
     );
     critic.state = TaskState::Answered;
     critic.answer = Some(
-        json!({"missingLenses": ["safety", "performance", "invariants", "errors", "nonsense", "safety"],
+        json!({"missingLenses": ["safety", "api-idioms", "invariants", "errors", "nonsense", "safety"],
                                 "notes": "src/lib.rs has no finding"}),
     );
     run.tasks = vec![critic];
@@ -87,7 +87,7 @@ fn the_critic_admits_a_candidate_and_refuses_an_optional_or_surface_gated_one() 
     assert!(
         run.notes
             .iter()
-            .any(|n| n.contains("optional lens performance") && n.contains("NOT dispatched"))
+            .any(|n| n.contains("optional lens api-idioms") && n.contains("NOT dispatched"))
     );
     assert!(
         run.notes

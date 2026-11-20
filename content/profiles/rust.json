@@ -8,7 +8,7 @@
   "navSkill": "rust-navigation",
   "securityHints": "auth, crypto, input parsing, unsafe, FFI, or dependencies",
   "usesLibrary": true,
-  "alwaysLenses": ["intent"],
+  "alwaysLenses": ["intent", "performance"],
   "safetyLens": "safety",
   "scoutRules": "scout-rules-rust",
   "scoutModel": "haiku",
@@ -27,7 +27,7 @@
     { "id": "safety", "brief": "lens-briefs/rust-safety", "model": "opus" },
     { "id": "errors", "brief": "lens-briefs/rust-errors", "model": "opus" },
     { "id": "concurrency", "brief": "lens-briefs/rust-concurrency", "model": "opus" },
-    { "id": "performance", "brief": "lens-briefs/rust-performance", "model": "opus", "optional": true },
+    { "id": "performance", "brief": "lens-briefs/rust-performance", "model": "opus" },
     { "id": "api-idioms", "brief": "lens-briefs/rust-api-idioms", "model": "opus", "optional": true },
     { "id": "api-boundary", "brief": "lens-briefs/rust-api-boundary", "model": "opus", "optional": true },
     {

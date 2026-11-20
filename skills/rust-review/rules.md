@@ -35,9 +35,13 @@ finding maps to a catalog rule (novel issues are fine and encouraged — report 
 | **CON-003** | HIGH | Lock held across an `.await` | `rust-concurrency` |
 | **CON-004** | HIGH | Inconsistent lock acquisition order (deadlock risk) | `rust-concurrency` |
 | **CON-005** | HIGH | Missing `Send`/`Sync` where the type crosses threads | `rust-concurrency` |
-| **PER-001** | MEDIUM | Allocation inside a hot loop; `to_string()`/`to_owned()` where a borrow works | `rust-performance` |
+| **PER-001** | ≤ MEDIUM⁴ | Allocation inside a hot loop; `clone()`/`to_string()`/`to_owned()`/`format!` used only to satisfy a borrow, or inside a loop where the value could be borrowed or built once | `rust-performance` |
 | **PER-002** | MEDIUM | `Vec::new()` + push loop where the size is known (`with_capacity`) | `rust-performance` |
 | **PER-003** | MEDIUM | N+1 queries / repeated work in a loop | `rust-performance` |
+| **PER-004** | ≤ MEDIUM⁴ | `collect()` into a `Vec` only to iterate it, take its `len()` or call `contains` — iterate the iterator, `.count()`, `.any()` | `rust-performance` |
+| **PER-005** | ≤ MEDIUM⁴ | Returns an owned `Vec`/`String` its callers only iterate or read, where `impl Iterator<Item = …>` or a borrow (`&str`, `&[T]`) would do | `rust-performance` |
+| **PER-006** | ≤ MEDIUM⁴ | Parameter typed `&[String]`/`&Vec<String>`/`&String`, forcing callers that hold `&str`s to allocate, where `&[&str]`, `impl IntoIterator<Item = impl AsRef<str>>` or `&str` serves them | `rust-performance`, `rust-ownership` |
+| **PER-007** | ≤ MEDIUM⁴ | Lookup key built into a `String` (`format!`, `to_string`, concatenation) only for a `get`/`contains_key` — look up by `&str` through `Borrow`, a tuple or newtype key, or build the key once outside the loop | `rust-performance` |
 | **API-001** | MEDIUM | Function > ~50 lines or nesting > 4 levels | `refactoring`, `rust-idioms` |
 | **API-002** | MEDIUM | Wildcard `_ =>` on a business enum (hides new variants) | `rust-idioms` |
 | **API-003** | LOW | `pub` item without a `///` doc | `rust-idioms` |
@@ -77,6 +81,12 @@ missing cross-tenant denial test on a new authz-guarded endpoint names a securit
 ³ `TST-004` names the regression it lets through and the production line it breaks, and takes
 that regression's harm, capped at MEDIUM; a text- or style-only regression leaves it LOW, and one
 that names no regression is not a weak assertion.
+
+⁴ `PER-001` and `PER-004`–`PER-007` take their severity from where the allocation runs: on a hot
+path — a loop, a request handler, a function called per item or per request — MEDIUM (should-fix),
+the finding naming that path; elsewhere LOW. A one-off allocation at start-up, in a test or on an
+error path is no finding, nor is a clone the borrow checker genuinely needs. Instances of one
+pattern are rolled into ONE finding with a representative `file:line` and the count.
 
 ## Adding a rule
 

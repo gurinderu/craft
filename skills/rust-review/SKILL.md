@@ -165,10 +165,14 @@ Review the diff against these tiers. This skill owns only the review *process*; 
 
 ### MEDIUM — warn, may merge
 
-**Performance**
-- Allocation inside a hot loop; `to_string()`/`to_owned()` where a borrow works
+**Performance** (MEDIUM on a hot path — a loop, a request handler, a per-item or per-request call; LOW elsewhere; one finding per pattern)
+- Allocation inside a hot loop; `clone()`/`to_string()`/`to_owned()`/`format!` only to satisfy a borrow, or inside a loop
 - `Vec::new()` + push loop where the size is known (`with_capacity`)
 - N+1 queries / repeated work in a loop
+- `collect()` into a `Vec` only to iterate it, take its length or call `contains`
+- Returning `Vec`/`String` where `impl Iterator` or a borrow (`&str`) would do
+- A `&[String]`/`&Vec<String>`/`&String` parameter where `&[&str]`, `impl IntoIterator<Item = impl AsRef<str>>` or `&str` serves callers
+- A lookup key built into a `String` only for a `get`
 
 **API & quality**
 - Library returning `Box<dyn Error>` / `anyhow::Error` instead of a typed error (API-design concern → `rust-errors`)
@@ -229,6 +233,7 @@ others (higher recall than one broad pass):
 | safety | injection / secrets / unsafe / untrusted-input limits / build-profile-divergent arithmetic and guards | `rust-security`, `rust-unsafe` |
 | errors | Result-vs-panic, dropped errors, typed-vs-anyhow | `rust-errors` |
 | concurrency | blocking-in-async, lock-across-await, deadlock, Send/Sync | `rust-concurrency` |
+| performance | needless allocation (`collect` only to iterate, owned returns and `&[String]` params where a borrow or iterator fits, clones and `format!` for a borrow or in a loop, `String` lookup keys), hot-loop allocation, N+1 | `rust-performance` |
 | invariants | domain lifecycle/scope rules, derived/effective quantities, eligibility checks that **diverge from an existing sibling gate** (a new capacity/permission predicate dropping a fail-closed dimension), and the **mirror walk** on two-sided contracts (below) | `rust-architecture`, `rust-fintech` |
 | compat | backward compatibility of every contract another version reads, calls or deploys against — serde/JSONB/wire data (rename with no `alias`, `alias` that only covers new-reads-old, unbackfilled migration), CLI/config/env/Helm surface and defaults, CRD/API versions, IDL, rollout order, renamed exports, regression vs last release; reads the language-agnostic `compatibility` catalogue | `compatibility`, `rust-ecosystem` |
 | maintainability | structural simplification (code judo), file-size growth, spaghetti branching, needless optionality/casts | `refactoring`, `rust-idioms` |
@@ -239,14 +244,15 @@ The workflow runs additional context-dependent lenses the scout selects — `rec
 correctness; reads the language-agnostic `distributed-races` catalogue) and `negative-space` (breakage the diff enables in unchanged code); the Rust profile,
 `content/profiles/rust.json`, is the authoritative lens set.
 
-**The optional pass — off by default.** Three lenses are not part of the standard fan-out, because
+**The optional pass — off by default.** Two lenses are not part of the standard fan-out, because
 on the measured run they returned no High findings at all while producing the bulk of the
-Low/Info volume: `performance` (hot-loop allocation, N+1, needless owning — `rust-performance`),
-`api-idioms` (typed errors, giant fns, wildcard match, missing docs, `#![deny(warnings)]` —
-`rust-idioms`) and `api-boundary` (error→HTTP-status mapping, OpenAPI completeness — `rust-web`).
-Their findings are real and worth having, so they are not deleted; they are bought deliberately with
-`optional=true` (or a subset: `optional=performance,api-boundary`). Neither `strict` nor the
-security-sensitive floor turns the pass on or off — the request is the only switch. A run that
+Low/Info volume: `api-idioms` (typed errors, giant fns, wildcard match, missing docs,
+`#![deny(warnings)]` — `rust-idioms`) and `api-boundary` (error→HTTP-status mapping, OpenAPI
+completeness — `rust-web`). Their findings are real and worth having, so they are not deleted; they
+are bought deliberately with `optional=true` (or a subset: `optional=api-idioms`). `performance`
+was in this pass and now runs in every Rust review, scoped to needless allocation and rated by the
+hot path it sits on. Neither `strict` nor the security-sensitive floor turns the pass on or off —
+the request is the only switch. A run that
 skipped it says so in its report and on its run record: that is an absence of a result, never a
 clean one. A run stopped by a red mechanical gate lists only the optional lenses you requested —
 the gate, not the optional pass, is why the rest did not run.

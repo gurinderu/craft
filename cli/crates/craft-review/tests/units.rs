@@ -124,6 +124,8 @@ fn a_two_crate_change_is_sliced_judged_by_contract_and_seam_and_its_questions_de
             "lens-rust-errors-r1-s0",
             "lens-rust-errors-r1-s1",
             "lens-rust-intent-r1",
+            "lens-rust-performance-r1-s0",
+            "lens-rust-performance-r1-s1",
             "lens-rust-tests-r1-s0",
             "lens-rust-tests-r1-s1",
             "lens-rust-contract-r1-u0",
@@ -217,6 +219,7 @@ fn a_change_unit_mode_cannot_slice_runs_in_the_normal_mode_with_its_warning() {
             [
                 "lens-rust-errors-r1",
                 "lens-rust-intent-r1",
+                "lens-rust-performance-r1",
                 "lens-rust-tests-r1"
             ]
         );
@@ -245,6 +248,7 @@ fn without_the_flag_a_large_change_is_cut_by_directory_and_a_small_one_not_at_al
         [
             "lens-rust-errors-r1",
             "lens-rust-intent-r1",
+            "lens-rust-performance-r1",
             "lens-rust-tests-r1"
         ]
     );
@@ -261,6 +265,8 @@ fn without_the_flag_a_large_change_is_cut_by_directory_and_a_small_one_not_at_al
             "lens-rust-errors-r1-s0",
             "lens-rust-errors-r1-s1",
             "lens-rust-intent-r1",
+            "lens-rust-performance-r1-s0",
+            "lens-rust-performance-r1-s1",
             "lens-rust-tests-r1-s0",
             "lens-rust-tests-r1-s1"
         ]

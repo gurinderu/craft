@@ -215,6 +215,7 @@ fn a_mixed_diff_plans_each_profile_over_its_own_files_and_settles_one_pool() {
         [
             "lens-rust-errors-r1",
             "lens-rust-intent-r1",
+            "lens-rust-performance-r1",
             "lens-rust-tests-r1",
             "lens-nix-purity-r1",
             "lens-nix-intent-r1",
@@ -239,6 +240,7 @@ fn a_mixed_diff_plans_each_profile_over_its_own_files_and_settles_one_pool() {
         [
             "lens-rust-errors-r2",
             "lens-rust-intent-r2",
+            "lens-rust-performance-r2",
             "lens-rust-tests-r2"
         ],
         "only the profile with rounds left and new findings runs again"

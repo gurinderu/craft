@@ -86,6 +86,11 @@ fn a_resume_after_a_stop_in_verification_settles_as_usual() {
     let found = lens("errors", &[titled("High", 1, "decided")]);
     write_answer(&s, "lens-rust-errors-r1", &found.to_string());
     write_answer(&s, "lens-rust-intent-r1", &lens("intent", &[]).to_string());
+    write_answer(
+        &s,
+        "lens-rust-performance-r1",
+        &lens("performance", &[]).to_string(),
+    );
     write_answer(&s, "lens-rust-tests-r1", &lens("tests", &[]).to_string());
     let s = step::submit(&run, None).unwrap();
     assert_eq!(ids(&s), ["verify-0-v0", "verify-0-v1"], "{s}");
