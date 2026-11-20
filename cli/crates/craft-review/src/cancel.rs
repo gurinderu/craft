@@ -26,19 +26,11 @@ impl Cancel {
     }
 }
 
-/// `cmd` spawned as the leader of a process group of its own, so [`kill_group`] reaches what it
-/// starts in turn.
-pub(crate) fn own_group(cmd: &mut Command) {
-    #[cfg(unix)]
-    std::os::unix::process::CommandExt::process_group(cmd, 0);
-    #[cfg(not(unix))]
-    let _alone = cmd;
-}
-
-/// `cmd` spawned as the leader of a session of its own: a process group of its own, as
-/// [`own_group`] gives, and no controlling terminal, so nothing it starts can ask on the
-/// terminal — an ssh asking a passphrase on `/dev/tty` fails at once, where in a background
-/// group of the caller's session it would stop (SIGTTIN) until the timeout.
+/// `cmd` spawned as the leader of a session of its own: a process group of its own, so
+/// [`kill_group`] reaches what it starts in turn, and no controlling terminal, so nothing it
+/// starts can ask on the terminal — an ssh asking a passphrase on `/dev/tty` fails at once,
+/// where in a background group of the caller's session it would stop (SIGTTIN) until the
+/// timeout.
 pub(crate) fn own_session(cmd: &mut Command) {
     #[cfg(unix)]
     new_session(cmd);
@@ -64,7 +56,7 @@ fn new_session(cmd: &mut Command) {
     }
 }
 
-/// Kills `child` and every process of its group (see [`own_group`]), then reaps it.
+/// Kills `child` and every process of its group (see [`own_session`]), then reaps it.
 pub(crate) fn kill_group(child: &mut Child) {
     #[cfg(unix)]
     if let Ok(pid) = i32::try_from(child.id()) {
