@@ -156,31 +156,40 @@ fn replace_record_file(
     Ok(Some((over.to_path_buf(), record)))
 }
 
-/// The record's row of the index replaced — or appended when it has none — under the lock.
+/// The record's row of the index replaced — or appended when it has none — under the lock. Every
+/// other line is kept byte for byte, one that is not UTF-8 or not JSON too; an index that cannot be
+/// read fails the write and is left as it is, never replaced by what a failed read gave.
 fn replace_index_row(store: &Path, record: &Obj, row: &str) -> Result<(), StoreError> {
     let want = filename(record);
     with_index_lock(store, || {
         let file = store.join("index.jsonl");
-        let text = std::fs::read_to_string(&file).unwrap_or_default();
-        let mut lines: Vec<String> = text.split('\n').map(str::to_owned).collect();
-        if lines.last().is_some_and(String::is_empty) {
+        let bytes = match std::fs::read(&file) {
+            Ok(b) => b,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+            Err(e) => return Err(StoreError::io(&file, &e)),
+        };
+        let mut lines: Vec<&[u8]> = bytes.split(|b| *b == b'\n').collect();
+        if lines.last().is_some_and(|l| l.is_empty()) {
             lines.pop();
         }
-        let names = |l: &String| {
-            parse(l)
+        let names = |l: &&[u8]| {
+            std::str::from_utf8(l)
                 .ok()
+                .and_then(|t| parse(t).ok())
                 .and_then(|v| v.as_obj().map(filename))
                 .is_some_and(|n| n == want)
         };
         match lines.iter().position(names) {
             Some(i) => {
                 if let Some(l) = lines.get_mut(i) {
-                    row.clone_into(l);
+                    *l = row.as_bytes();
                 }
             }
-            None => lines.push(row.to_owned()),
+            None => lines.push(row.as_bytes()),
         }
-        write_atomically(&file, &format!("{}\n", lines.join("\n")))
+        let mut out = lines.join(&b'\n');
+        out.push(b'\n');
+        write_atomically(&file, &out)
     })
 }
 
@@ -188,7 +197,7 @@ fn replace_index_row(store: &Path, record: &Obj, row: &str) -> Result<(), StoreE
 ///
 /// # Errors
 /// When the temporary file cannot be written or renamed.
-pub fn write_atomically(file: &Path, content: &str) -> Result<(), StoreError> {
+pub fn write_atomically(file: &Path, content: impl AsRef<[u8]>) -> Result<(), StoreError> {
     let name = file
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
@@ -237,5 +246,53 @@ fn ensure_readme(store: &Path) {
     let file = store.join("README.md");
     if !file.exists() {
         drop(std::fs::write(file, README));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::os::unix::fs::PermissionsExt;
+
+    use super::*;
+    use crate::js::parse;
+
+    fn record(ts: &str) -> Obj {
+        parse(&format!(
+            r#"{{"ts":"{ts}","kind":"workflow","name":"review"}}"#
+        ))
+        .unwrap()
+        .as_obj()
+        .unwrap()
+        .clone()
+    }
+
+    #[test]
+    fn a_replace_keeps_every_row_an_index_holds_invalid_utf8_among_them() {
+        let d = tempfile::tempdir().unwrap();
+        let index = d.path().join("index.jsonl");
+        let mut text = b"{\"ts\":\"a\",\"kind\":\"workflow\",\"name\":\"review\"}\n".to_vec();
+        text.extend_from_slice(b"{\"title\":\"\xff\xfe broken\"}\n");
+        text.extend_from_slice(b"{\"ts\":\"b\",\"kind\":\"workflow\",\"name\":\"review\"}\n");
+        std::fs::write(&index, &text).unwrap();
+        replace_index_row(d.path(), &record("b"), "{\"new\":1}").unwrap();
+        let after = std::fs::read(&index).unwrap();
+        let mut want = b"{\"ts\":\"a\",\"kind\":\"workflow\",\"name\":\"review\"}\n".to_vec();
+        want.extend_from_slice(b"{\"title\":\"\xff\xfe broken\"}\n{\"new\":1}\n");
+        assert_eq!(after, want);
+    }
+
+    #[test]
+    fn an_index_that_cannot_be_read_fails_the_replace_and_is_left_untouched() {
+        let d = tempfile::tempdir().unwrap();
+        let index = d.path().join("index.jsonl");
+        std::fs::write(&index, "{\"ts\":\"a\"}\n").unwrap();
+        std::fs::set_permissions(&index, std::fs::Permissions::from_mode(0o200)).unwrap();
+        if std::fs::read(&index).is_ok() {
+            return; // run as root: a mode cannot make the file unreadable here
+        }
+        let got = replace_index_row(d.path(), &record("a"), "{\"new\":1}");
+        std::fs::set_permissions(&index, std::fs::Permissions::from_mode(0o600)).unwrap();
+        assert!(got.is_err(), "{got:?}");
+        assert_eq!(std::fs::read_to_string(&index).unwrap(), "{\"ts\":\"a\"}\n");
     }
 }
