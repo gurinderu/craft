@@ -4,7 +4,11 @@
 //! already recorded follows its finding — by file, line and title — to its number in the new
 //! sorting; one whose finding is gone is dropped and named.
 
-use crate::js::{Js, Obj};
+use std::path::Path;
+
+use crate::cli_record::{publication_kept, unreadable_step};
+use crate::js::{Js, Obj, parse};
+use crate::write::write_atomically;
 
 fn sorting_of(r: &Obj) -> Option<&Obj> {
     r.get("sorting").and_then(Js::as_obj)
@@ -129,4 +133,86 @@ pub fn apply(record: &Obj, kept: &Obj) -> (Obj, Vec<String>) {
     out.set("memoryContradictions", field("memoryContradictions"));
     out.set("prComments", field("prComments"));
     (out, dropped)
+}
+
+/// The publication of a finished step written into the record already filed.
+#[must_use]
+pub fn answer(req: &Obj) -> Obj {
+    let fail = |why: String| {
+        Obj::new()
+            .with("ok", Js::Bool(false))
+            .with("reason", Js::str(why))
+            .with("file", Js::str(""))
+    };
+    let file = req.text("recordFile");
+    if file.is_empty() {
+        return fail("no record file was named".into());
+    }
+    let none = Obj::new();
+    let step = req.get("step").and_then(Js::as_obj).unwrap_or(&none);
+    if let Some(why) = unreadable_step(step) {
+        return fail(format!("the finished step cannot be read: {why}"));
+    }
+    let read = std::fs::read_to_string(file).map_err(|e| e.to_string());
+    let record = match read.and_then(|t| parse(&t).map_err(|e| e.to_string())) {
+        Ok(Js::Obj(r)) => r,
+        Ok(_) => return fail(not_readable(file, "not a JSON object")),
+        Err(e) => return fail(not_readable(file, &e)),
+    };
+    let (amended, dropped) = apply(&record, &publication_kept(step));
+    if let Err(e) = write_atomically(Path::new(file), &Js::Obj(amended).pretty()) {
+        return fail(format!("craft-log-run FAILED: {e}"));
+    }
+    let reason = if dropped.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "dropped the choices of doubtful findings no longer listed: {}",
+            dropped.join("; ")
+        )
+    };
+    Obj::new()
+        .with("ok", Js::Bool(true))
+        .with("reason", Js::str(reason))
+        .with("file", Js::str(file))
+}
+
+fn not_readable(file: &str, why: &str) -> String {
+    format!("craft-log-run FAILED: record not readable at {file}: {why}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn req(record_file: &str) -> Obj {
+        let step = Obj::new()
+            .with("report", Js::str("/r/report.md"))
+            .with("verdict", Js::str("Approve"));
+        Obj::new()
+            .with("recordFile", Js::str(record_file))
+            .with("step", Js::Obj(step))
+    }
+
+    #[test]
+    fn a_publication_with_no_record_or_one_that_cannot_be_read_is_a_failure_said() {
+        let none = answer(&req(""));
+        assert_eq!(none.text("reason"), "no record file was named");
+        assert_eq!(none.get("ok"), Some(&Js::Bool(false)));
+        let d = tempfile::tempdir().unwrap();
+        let torn = d.path().join("r.json");
+        std::fs::write(&torn, "{\"verdict\":").unwrap();
+        let said = answer(&req(&torn.display().to_string()));
+        assert!(
+            said.text("reason")
+                .starts_with("craft-log-run FAILED: record not readable at"),
+            "{}",
+            said.text("reason")
+        );
+        assert_eq!(
+            std::fs::read_to_string(&torn).unwrap(),
+            "{\"verdict\":",
+            "left as it was"
+        );
+    }
 }

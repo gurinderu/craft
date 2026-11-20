@@ -52,6 +52,7 @@ export default {
         '!lib/engine-harness.mjs!',
         '!lib/sandbox-globals.mjs!',
         '!lib/logger-replay.mjs!',
+        '!lib/binary-filing-replay.mjs!',
         '!lib/write-executable.mjs!',
       ],
       // pi supplies its TUI module to the extensions it loads (lib/pi-extension.mjs, lib/pi-tui.d.ts; realm

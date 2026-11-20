@@ -1,5 +1,5 @@
 //! The Rust writer held to the JavaScript one by `content/parity/store-cases.json`, which
-//! `lib/store-parity.test.mjs` writes from `lib/cli-review-file.mjs` over `lib/craft-log-run.mjs`:
+//! `lib/store-parity.test.mjs` writes from `lib/binary-filing-replay.mjs` over `lib/craft-log-run.mjs`:
 //! each case's requests answered in a fresh repository and store, the answers and every file the
 //! store holds afterwards byte for byte, with the same placeholders put back.
 #![expect(

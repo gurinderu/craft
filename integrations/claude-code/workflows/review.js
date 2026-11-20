@@ -141,7 +141,7 @@ ${gateLine(v)}
 
 The mechanical gate alone over ${textOf(v.base)||"the default base"}..${textOf(v.head).slice(0,12)||"HEAD"}: no lens ran and no run record was filed.${kept}
 
-${section}`}}var FETCHER="lib/craft-bin.mjs",WRITER="lib/cli-review-file.mjs",PRIOR_DECISIONS_EOF="CRAFT_PRIOR_DECISIONS",SUBMIT_TIMEOUT="in one Bash call with a timeout of 420000 ms (it may file the run's telemetry through node and post review comments on the PR)",START_TIMEOUT="in one Bash call with a timeout of 600000 ms (it may fetch the source of each integration point the reviewer's profile names, and may build and lint the branch for the mechanical gate)",RUN_SCHEMA={type:"object",additionalProperties:!1,required:["exitCode","stdout","stderr"],properties:{exitCode:{type:"integer"},stdout:{type:"string"},stderr:{type:"string"}}},servicePrompt=(steps,stdout="one JSON value")=>`${steps}
+${section}`}}var FETCHER="lib/craft-bin.mjs",ROOT_MARK=FETCHER,PRIOR_DECISIONS_EOF="CRAFT_PRIOR_DECISIONS",SUBMIT_TIMEOUT="in one Bash call with a timeout of 420000 ms (it may file the run's telemetry and post review comments on the PR)",START_TIMEOUT="in one Bash call with a timeout of 600000 ms (it may fetch the source of each integration point the reviewer's profile names, and may build and lint the branch for the mechanical gate)",RUN_SCHEMA={type:"object",additionalProperties:!1,required:["exitCode","stdout","stderr"],properties:{exitCode:{type:"integer"},stdout:{type:"string"},stderr:{type:"string"}}},servicePrompt=(steps,stdout="one JSON value")=>`${steps}
 
 Return {exitCode, stdout, stderr}: the last command's exit status, and its stdout and stderr each copied VERBATIM and WHOLE. stdout is ${stdout} the caller parses: never summarize, reformat, pretty-print or shorten it. Run nothing else.`;function resolvePrompt(o,version){let locate=pluginScriptPrelude(o.craftRoot||void 0,version,o.repo,FETCHER,"CRAFT_FETCHER");return servicePrompt(`Run this ONCE, exactly as written, in one Bash call:
 
@@ -151,10 +151,10 @@ CRAFT_BIN_PATH="$(node "$CRAFT_FETCHER" ensure --version ${shq(version)})" || ex
 ${rootAbove("CRAFT_FETCHER")}printf 'root=%s\\nbin=%s\\n' "$CRAFT_ROOT_PATH" "$CRAFT_BIN_PATH"
 \`\`\``,"two lines, root=<the plugin root> and bin=<the binary's path>,")}var rootAbove=varName=>`CRAFT_ROOT_PATH="$(dirname "$(dirname "$${varName}")")"
 if command -v cygpath >/dev/null 2>&1; then CRAFT_ROOT_PATH="$(cygpath -m "$CRAFT_ROOT_PATH")"; fi
-`;function locatePrompt(o,version){let locate=pluginScriptPrelude(void 0,version,o.repo,WRITER,"CRAFT_ADAPTER");return servicePrompt(`Run this ONCE, exactly as written, in one Bash call:
+`;function locatePrompt(o,version){let locate=pluginScriptPrelude(void 0,version,o.repo,ROOT_MARK,"CRAFT_ADAPTER");return servicePrompt(`Run this ONCE, exactly as written, in one Bash call:
 
 \`\`\`sh
-${locate}if [ -z "\${CRAFT_ADAPTER:-}" ]; then printf '%s\\n' "no usable ${WRITER} — \${CRAFT_ADAPTER_WHY}" >&2; exit 1; fi
+${locate}if [ -z "\${CRAFT_ADAPTER:-}" ]; then printf '%s\\n' "no usable ${ROOT_MARK} — \${CRAFT_ADAPTER_WHY}" >&2; exit 1; fi
 ${rootAbove("CRAFT_ADAPTER")}printf 'root=%s\\n' "$CRAFT_ROOT_PATH"
 \`\`\``,"one line, root=<the plugin root>,")}function resolvedBin(got){let out=commandOutput(got);if("error"in out)return out;let bin=printedPath(out.stdout,"bin"),root=printedPath(out.stdout,"root");return bin&&root?{bin:shellWord(bin),root:driveRoot(root,bin)}:{error:`the fetch printed no absolute root= and bin= lines: ${out.stdout.slice(0,200)}`}}var driveRoot=(root,bin)=>{let m=/^[A-Za-z]:[\\/]/.test(bin)?/^\/([A-Za-z])(\/.*)?$/.exec(root):null;return m?.[1]?`${m[1].toUpperCase()}:${m[2]??"/"}`:root},printedPath=(stdout,key)=>absolutePath(stdout.split(`
 `).map(l=>l.trim()).find(l=>l.startsWith(`${key}=`))?.slice(key.length+1)),rootPrompt=o=>servicePrompt(`Run this ONCE, exactly as written, in one Bash call:

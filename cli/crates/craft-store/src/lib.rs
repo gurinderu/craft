@@ -71,7 +71,7 @@ pub fn answer_js(command: &str, req: &js::Obj, env: &adapter::Env) -> Result<js:
     Ok(match command {
         "checkpoint" => adapter::checkpoint(req, env),
         "finalize" => adapter::record(req, env),
-        "publication" => adapter::publication(req),
+        "publication" => publication::answer(req),
         other => return Err(StoreError::Refused(format!("no write is called {other}"))),
     })
 }

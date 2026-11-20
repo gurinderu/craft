@@ -1,4 +1,5 @@
-//! The binary's three writes, answered as `lib/cli-review-file.mjs` answered them over
+//! The binary's three writes, answered as the JavaScript adapter answered them (kept as
+//! `lib/binary-filing-replay.mjs`, the parity cases' source) over
 //! `lib/craft-log-run.mjs` (realm @nick/craft, nodes #456, #539): a checkpoint's `{ phase, runDir }`
 //! or `{ phase, error }`, or `{ skipped: true }` when no phase ended; the record's `{ ok, reason,
 //! file }`; a publication's `{ ok, reason, file }`. The request is the JSON object the binary
@@ -7,11 +8,11 @@
 use std::path::{Path, PathBuf};
 
 use crate::checkpoint::{Identity, checkpoint_dir, inside_store, write_checkpoint};
-use crate::cli_record::{At, checkpoint_payload, cli_record, publication_kept, unreadable_step};
+use crate::cli_record::{At, checkpoint_payload, cli_record, unreadable_step};
 use crate::finalize::{Asked, Said, finalize};
 use crate::git::{GitId, identity, repo_key, short_commit};
-use crate::js::{Js, Obj, parse};
-use crate::write::{Writing, with_git, write_atomically};
+use crate::js::{Js, Obj};
+use crate::write::{Writing, with_git};
 
 /// Where and when the writes land, and the craft that writes them.
 #[derive(Debug, Clone)]
@@ -248,50 +249,4 @@ fn outcome(done: Result<(), crate::StoreError>, said: &Said) -> Obj {
             .with("reason", Js::str(format!("craft-log-run FAILED: {e}")))
             .with("file", Js::str(file)),
     }
-}
-
-/// The publication of a finished step written into the record already filed.
-#[must_use]
-pub fn publication(req: &Obj) -> Obj {
-    let fail = |why: String| {
-        Obj::new()
-            .with("ok", Js::Bool(false))
-            .with("reason", Js::str(why))
-            .with("file", Js::str(""))
-    };
-    let file = req.text("recordFile");
-    if file.is_empty() {
-        return fail("no record file was named".into());
-    }
-    let none = Obj::new();
-    let step = req.get("step").and_then(Js::as_obj).unwrap_or(&none);
-    if let Some(why) = unreadable_step(step) {
-        return fail(format!("the finished step cannot be read: {why}"));
-    }
-    let read = std::fs::read_to_string(file).map_err(|e| e.to_string());
-    let record = match read.and_then(|t| parse(&t).map_err(|e| e.to_string())) {
-        Ok(Js::Obj(r)) => r,
-        Ok(_) => return fail(not_readable(file, "not a JSON object")),
-        Err(e) => return fail(not_readable(file, &e)),
-    };
-    let (amended, dropped) = crate::publication::apply(&record, &publication_kept(step));
-    if let Err(e) = write_atomically(Path::new(file), &Js::Obj(amended).pretty()) {
-        return fail(format!("craft-log-run FAILED: {e}"));
-    }
-    let reason = if dropped.is_empty() {
-        String::new()
-    } else {
-        format!(
-            "dropped the choices of doubtful findings no longer listed: {}",
-            dropped.join("; ")
-        )
-    };
-    Obj::new()
-        .with("ok", Js::Bool(true))
-        .with("reason", Js::str(reason))
-        .with("file", Js::str(file))
-}
-
-fn not_readable(file: &str, why: &str) -> String {
-    format!("craft-log-run FAILED: record not readable at {file}: {why}")
 }
