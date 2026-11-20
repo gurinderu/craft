@@ -229,10 +229,11 @@ validation pins to.
 The workflows and the standalone agents emit a structured run record after each run; see
 `docs/observability.md`.
 
-From the Claude Code plugin root, run a workflow against a fixed diff base:
+From a session in the repository to audit, run the workflow with the absolute path to the
+installed plugin root and a fixed diff base (replace `<plugin-root>` with that path):
 
 ```
-Workflow({ scriptPath: "workflows/rust-audit.js", args: { base: "origin/main" } })
+Workflow({ scriptPath: "<plugin-root>/workflows/rust-audit.js", args: { base: "origin/main", craftRoot: "<plugin-root>" } })
 ```
 
 `args.base` is optional — without it the scout falls back to
