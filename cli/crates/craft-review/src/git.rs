@@ -19,6 +19,12 @@ pub enum GitError {
         "no base given and origin has no default branch (origin/HEAD, origin/main, origin/master)"
     )]
     NoDefaultBase,
+    #[error(
+        "git {command} needs objects this partial clone does not have, and craft fetches none \
+         itself: {stderr} — fetch them (run `git {command}` in your shell, or `git backfill`) \
+         and review again"
+    )]
+    NotFetched { command: String, stderr: String },
     #[error("the base {base} is not a commit in {}", repo.display())]
     NotACommit { base: String, repo: PathBuf },
 }
@@ -56,20 +62,35 @@ pub(crate) fn git(cwd: &Path, args: &[&str]) -> Result<String, GitError> {
 }
 
 /// Runs `git` in `cwd` and returns its stdout as bytes, whatever their encoding.
+///
+/// Local only: in a partial clone git would fetch an object it lacks from the promisor remote
+/// itself, here with no detach and no time limit, so the lazy fetch is off
+/// (`GIT_NO_LAZY_FETCH=1`, observed on git 2.54; a git that predates it ignores it) and a
+/// missing object fails the call as [`GitError::NotFetched`]; craft's no-prompt environment on
+/// top, for an older git that fetches anyway (realm @nick/craft, node #545).
 fn git_bytes(cwd: &Path, args: &[&str]) -> Result<Vec<u8>, GitError> {
-    let out = Command::new("git")
-        .arg("-C")
+    let mut cmd = Command::new("git");
+    cmd.arg("-C")
         .arg(cwd)
         .args(args)
-        .output()
-        .map_err(GitError::Spawn)?;
+        .env("GIT_NO_LAZY_FETCH", "1");
+    crate::cancel::no_prompt_env(&mut cmd);
+    let out = cmd.output().map_err(GitError::Spawn)?;
     if !out.status.success() {
-        return Err(GitError::Failed {
-            command: args.join(" "),
-            stderr: String::from_utf8_lossy(&out.stderr).trim().to_owned(),
+        let command = args.join(" ");
+        let stderr = String::from_utf8_lossy(&out.stderr).trim().to_owned();
+        return Err(if not_fetched(&stderr) {
+            GitError::NotFetched { command, stderr }
+        } else {
+            GitError::Failed { command, stderr }
         });
     }
     Ok(out.stdout)
+}
+
+/// Whether git failed for an object a partial clone lacks and would have to fetch.
+fn not_fetched(stderr: &str) -> bool {
+    stderr.contains("lazy fetching disabled") || stderr.contains("from promisor remote")
 }
 
 /// The fingerprint of the tracked files' changes against `HEAD` in the working tree `cwd` is in
