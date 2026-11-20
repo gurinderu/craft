@@ -1,5 +1,5 @@
 use std::io::Write;
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
 
 use super::{KEEP, Spool};
 
@@ -56,4 +56,12 @@ fn a_large_output_keeps_its_tail() {
         "{:?}",
         text.get(keep - 20..)
     );
+}
+
+#[test]
+fn the_reader_and_the_writer_are_one_file() {
+    let d = tempfile::tempdir().unwrap();
+    let (spool, writer) = Spool::new_in(d.path(), &mut names(&["one"])).unwrap();
+    let (read, write) = (spool.read.metadata().unwrap(), writer.metadata().unwrap());
+    assert_eq!((read.dev(), read.ino()), (write.dev(), write.ino()));
 }

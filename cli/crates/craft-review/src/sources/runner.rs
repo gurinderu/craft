@@ -178,7 +178,15 @@ impl Git {
                 }
             })?;
         let start = Instant::now();
-        while child.try_wait().map_err(|e| e.to_string())?.is_none() {
+        loop {
+            match child.try_wait() {
+                Ok(Some(_)) => break,
+                Ok(None) => {}
+                Err(e) => {
+                    kill_group(&mut child);
+                    return Err(e.to_string());
+                }
+            }
             if self.cancel.is_cancelled() {
                 kill_group(&mut child);
                 return Err(STOPPED.into());

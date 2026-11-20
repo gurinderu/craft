@@ -95,8 +95,10 @@ fn short(sha: &str) -> &str {
 /// The fetch of `origin`'s branch `base` into `origin/<base>`.
 fn fetch_command(dir: &Path, base: &str) -> Command {
     let mut cmd = Command::new("git");
+    // No maintenance started in the background, for the limit to kill with the group.
     cmd.arg("-C")
         .arg(dir)
+        .args(["-c", "maintenance.auto=false", "-c", "gc.auto=0"])
         .args(["fetch", "--quiet", "--no-tags", "origin"])
         .arg(format!("+refs/heads/{base}:refs/remotes/origin/{base}"));
     // As craft's own git runs (realm @nick/craft, node #545): no terminal prompt, no ssh askpass

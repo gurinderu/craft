@@ -51,7 +51,7 @@ impl Spool {
                 Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
                 Err(e) => return Err(e),
             };
-            let read = File::open(&path);
+            let read = reader_of(&write, &path);
             std::fs::remove_file(&path)?;
             return Ok((Self { read: read? }, write));
         }
@@ -69,6 +69,34 @@ impl Spool {
         self.read.read_to_end(&mut bytes)?;
         Ok(String::from_utf8_lossy(&bytes).into_owned())
     }
+}
+
+/// A second handle on `write`'s file, with its own offset. On Linux it is opened through the
+/// handle itself (`/proc/self/fd`), so it is that inode whatever the name now points at;
+/// elsewhere by `path`, refused unless it is the same inode.
+#[cfg(target_os = "linux")]
+fn reader_of(write: &File, _path: &Path) -> io::Result<File> {
+    use std::os::fd::AsRawFd;
+    File::open(format!("/proc/self/fd/{}", write.as_raw_fd()))
+}
+
+#[cfg(all(unix, not(target_os = "linux")))]
+fn reader_of(write: &File, path: &Path) -> io::Result<File> {
+    use std::os::unix::fs::MetadataExt;
+    let read = File::open(path)?;
+    let (r, w) = (read.metadata()?, write.metadata()?);
+    if (r.dev(), r.ino()) == (w.dev(), w.ino()) {
+        Ok(read)
+    } else {
+        Err(io::Error::other(
+            "the spool's name was taken over before it was read",
+        ))
+    }
+}
+
+#[cfg(not(unix))]
+fn reader_of(_write: &File, path: &Path) -> io::Result<File> {
+    File::open(path)
 }
 
 #[cfg(test)]
