@@ -92,7 +92,7 @@ pub struct StartArgs {
     #[arg(long)]
     pub comment: bool,
     /// The optional pass, off by default: `all`, or the optional lenses to run, separated by
-    /// commas (`performance`, or qualified by its profile, `rust-performance`). A name that is no
+    /// commas (`api-idioms`, or qualified by its profile, `rust-api-idioms`). A name that is no
     /// optional lens is named in the report; the recognised ones still run.
     #[arg(long, value_name = "all|lens,…")]
     pub optional: Option<String>,

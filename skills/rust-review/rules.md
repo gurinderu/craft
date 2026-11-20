@@ -35,9 +35,13 @@ finding maps to a catalog rule (novel issues are fine and encouraged — report 
 | **CON-003** | HIGH | Lock held across an `.await` | `rust-concurrency` |
 | **CON-004** | HIGH | Inconsistent lock acquisition order (deadlock risk) | `rust-concurrency` |
 | **CON-005** | HIGH | Missing `Send`/`Sync` where the type crosses threads | `rust-concurrency` |
-| **PER-001** | MEDIUM | Allocation inside a hot loop; `to_string()`/`to_owned()` where a borrow works | `rust-performance` |
-| **PER-002** | MEDIUM | `Vec::new()` + push loop where the size is known (`with_capacity`) | `rust-performance` |
-| **PER-003** | MEDIUM | N+1 queries / repeated work in a loop | `rust-performance` |
+| **PER-001** | LOW⁴ | Allocation inside a hot loop; `to_string()`/`to_owned()`/`format!`/`clone()` inside a loop where the value could be borrowed or built once (a clone only to satisfy the borrow checker is OWN-001) | `rust-performance` |
+| **PER-002** | LOW⁴ | `Vec::new()` + push loop where the size is known (`with_capacity`) | `rust-performance` |
+| **PER-003** | LOW⁵ | N+1 queries / repeated work in a loop | `rust-performance` |
+| **PER-004** | LOW⁴ | `collect()` into a `Vec` only to iterate it once, take its `len()` or call `contains` — iterate the iterator, `.count()`, `.any()`; not when the collect ends a borrow before a mutation, the `Vec` is read twice, or its `len` is taken and then it is iterated | `rust-performance` |
+| **PER-005** | LOW⁴ | Returns an owned `Vec`/`String` its callers only iterate or read, where `impl Iterator<Item = …>` or a borrow (`&str`, `&[T]`) would do — weighing that `impl Iterator` cannot be returned from a dyn-compatible trait method, needs `+ '_` before edition 2024, and takes `len`/indexing/reuse from callers; not on a `pub` item of a library crate that already exists on the base (a signature change to a released item: the compat lens) — a `pub` item the diff adds is unreleased and in scope | `rust-performance` |
+| **PER-006** | LOW⁴ | Parameter typed `&[String]` or another borrowed collection of owned strings (`&[Vec<String>]`), forcing callers that hold `&str`s to allocate, where `&[&str]` or `impl IntoIterator<Item = impl AsRef<str>>` serves them; a `&String`/`&Vec<T>` parameter is clippy `ptr_arg` and an owned `String` parameter OWN-002; not on a `pub` item of a library crate that already exists on the base (a signature change to a released item: the compat lens) — a `pub` item the diff adds is unreleased and in scope | `rust-performance`, `rust-ownership` |
+| **PER-007** | LOW⁴ | Lookup key built into a `String` (`format!`, `to_string`, concatenation) only for a `get`/`contains_key` — a `String` key takes a `&str` lookup; a `(String, String)` key cannot be looked up by `(&str, &str)` through `Borrow`: build the key once outside the loop, split into nested maps looked up by `&str`, or use `hashbrown`'s `Equivalent` | `rust-performance` |
 | **API-001** | MEDIUM | Function > ~50 lines or nesting > 4 levels | `refactoring`, `rust-idioms` |
 | **API-002** | MEDIUM | Wildcard `_ =>` on a business enum (hides new variants) | `rust-idioms` |
 | **API-003** | LOW | `pub` item without a `///` doc | `rust-idioms` |
@@ -77,6 +81,21 @@ missing cross-tenant denial test on a new authz-guarded endpoint names a securit
 ³ `TST-004` names the regression it lets through and the production line it breaks, and takes
 that regression's harm, capped at MEDIUM; a text- or style-only regression leaves it LOW, and one
 that names no regression is not a weak assertion.
+
+⁴ `PER-001`, `PER-002` and `PER-004`–`PER-007` are LOW, held to the harm caps (`review-rules` `severity.md`):
+a performance cost names no harm above `none`. Whether the site is on a hot path — a loop, a request
+handler, a function called per item or per request — is said in the finding as information, not as
+a raise. No finding: a one-off allocation at start-up, in a test, in a CLI's argument handling or on
+an error path; a clone the borrow checker genuinely needs (shared ownership across threads or
+tasks, a value moved into a closure). Instances of one of these patterns are rolled into ONE
+finding, cited at its first site, whose `why` lists every site as `file:line` so a re-review can
+check each. The roll-up is for these LOW needless-allocation findings only: it does not override
+the sibling sweep (`review-rules` `sweeps.md` §1) for defects.
+
+⁵ `PER-003` is LOW unless the finding names a harm above `none`: N+1 queries or repeated calls
+against a database or the network that, at the load the code meets, stall a request path or a
+controller until an operator steps in fill `operator-recovery` and are MEDIUM, the finding naming
+that load and who recovers; one that names no such harm stays LOW.
 
 ## Adding a rule
 

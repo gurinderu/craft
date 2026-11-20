@@ -82,7 +82,7 @@ fn a_confirmed_high_naming_a_self_healing_harm_is_capped_and_does_not_block() {
     f["harmLevel"] = json!("self-healing");
     let s = submit(
         &run,
-        json!({"lens-rust-errors-r1": lens("errors", &[]), "lens-rust-intent-r1": lens("intent", &[f]), "lens-rust-tests-r1": lens("tests", &[])}),
+        json!({"lens-rust-errors-r1": lens("errors", &[]), "lens-rust-intent-r1": lens("intent", &[f]), "lens-rust-performance-r1": lens("performance", &[]), "lens-rust-tests-r1": lens("tests", &[])}),
     );
     assert_eq!(
         ids(&s),
@@ -206,7 +206,7 @@ fn mixed_run(extra: &[&str]) -> (serde_json::Value, String) {
     let (run, _) = small_run(repo.path(), out.path());
     let s = submit(
         &run,
-        json!({"lens-rust-errors-r1": lens("errors", &[]), "lens-rust-intent-r1": lens("intent", &[]), "lens-rust-tests-r1": lens("tests", &[])}),
+        json!({"lens-rust-errors-r1": lens("errors", &[]), "lens-rust-intent-r1": lens("intent", &[]), "lens-rust-performance-r1": lens("performance", &[]), "lens-rust-tests-r1": lens("tests", &[])}),
     );
     let report = std::fs::read_to_string(s["report"].as_str().unwrap()).unwrap();
     (s, report)

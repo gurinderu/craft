@@ -11,7 +11,7 @@ use common::{fixture, ids, opts, scout, submit};
 use craft_review::step::{self, StartOptions};
 use serde_json::json;
 
-/// The first lens round of a run asked for `optional`, its scout picking `errors` and `performance`.
+/// The first lens round of a run asked for `optional`, its scout picking `errors` and `api-boundary`.
 fn first_round(optional: Option<&str>) -> (Vec<String>, tempfile::TempDir, tempfile::TempDir) {
     let repo = fixture(true);
     let out = tempfile::tempdir().unwrap();
@@ -20,7 +20,7 @@ fn first_round(optional: Option<&str>) -> (Vec<String>, tempfile::TempDir, tempf
         ..opts(repo.path(), out.path())
     })
     .unwrap();
-    let picks = scout("small", &["errors", "performance"]);
+    let picks = scout("small", &["errors", "api-boundary"]);
     let s = submit(&out.path().join("run"), json!({"scout-rust": picks}));
     (ids(&s), repo, out)
 }
@@ -29,12 +29,17 @@ fn first_round(optional: Option<&str>) -> (Vec<String>, tempfile::TempDir, tempf
 fn a_requested_optional_lens_runs_and_an_unrequested_one_does_not() {
     let (without, _r, _o) = first_round(None);
     assert!(
-        !without.iter().any(|id| id.contains("performance")),
+        !without.iter().any(|id| id.contains("api-boundary")),
         "{without:?}"
     );
-    let (with, _r, _o) = first_round(Some("rust-performance"));
+    // The performance lens is no optional one: it runs in every Rust review, unasked.
     assert!(
-        with.contains(&"lens-rust-performance-r1".to_owned()),
+        without.contains(&"lens-rust-performance-r1".to_owned()),
+        "{without:?}"
+    );
+    let (with, _r, _o) = first_round(Some("rust-api-boundary"));
+    assert!(
+        with.contains(&"lens-rust-api-boundary-r1".to_owned()),
         "{with:?}"
     );
     // Asked for, it runs whatever the scout picked.
