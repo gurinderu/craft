@@ -32,12 +32,15 @@ Lock levels (PostgreSQL docs, "Explicit Locking" and `ALTER TABLE`):
 
 **A table lock is held until the end of the transaction that took it, not the statement.** The
 safe two-step forms — `ADD CONSTRAINT … NOT VALID`, then `VALIDATE CONSTRAINT`; `CHECK (col IS NOT
-NULL) NOT VALID`, then `VALIDATE`, then `SET NOT NULL` — work only when each step commits in its own
-transaction. Migration tools wrap each file in one transaction by default (sqlx, diesel), so both
-steps in one file keep the first step's ACCESS EXCLUSIVE (SHARE ROW EXCLUSIVE on both tables for a
-foreign key) through the whole validating scan: the safe form is no safer than the plain one. Put the
-steps in separate migration files, or opt the file out of the transaction. Likewise, every statement
-after a lock-taking one in the same transaction runs under that lock.
+NULL) NOT VALID`, then `VALIDATE`, then `SET NOT NULL`; on PG 18+, `ADD CONSTRAINT … NOT NULL col NOT
+VALID`, then `VALIDATE CONSTRAINT` — need the `NOT VALID` step to commit before `VALIDATE` runs.
+Migration tools wrap each file in one transaction by default (sqlx, diesel), so the two in one file
+keep the `NOT VALID` step's ACCESS EXCLUSIVE (SHARE ROW EXCLUSIVE on both tables for a foreign key)
+through the whole validating scan: the safe form is no safer than the plain one. Put the `NOT VALID`
+step in its own migration file, or opt the file out of the transaction. `VALIDATE` and the `SET NOT
+NULL` after it may share one transaction: the scan runs under SHARE UPDATE EXCLUSIVE, and the ACCESS
+EXCLUSIVE `SET NOT NULL` then takes is brief, its scan skipped. Likewise, every statement after a
+lock-taking one in the same transaction runs under that lock.
 
 Any lock waits in the queue behind the transactions already holding a conflicting one, and every
 later query on the table waits behind it: a brief ACCESS EXCLUSIVE behind one long transaction stops
@@ -52,7 +55,7 @@ What rewrites the table and its indexes:
 | `ALTER COLUMN TYPE` to a binary-coercible type (`varchar(n)` → `varchar(m)`, m > n, or → `text`) | no |
 | `ALTER COLUMN TYPE` otherwise (`int` → `bigint`, `text` → `int`, `varchar` narrowed) | yes |
 | `timestamp` ↔ `timestamptz` | no rewrite from PG 12 when the session time zone is UTC; a rewrite otherwise |
-| `SET NOT NULL` | no rewrite, but a full scan under ACCESS EXCLUSIVE — skipped (PG 12+) when a validated `CHECK (col IS NOT NULL)` exists |
+| `SET NOT NULL` | no rewrite, but a full scan under ACCESS EXCLUSIVE — skipped (PG 12+) when a validated `CHECK (col IS NOT NULL)` exists; on PG 18+ a `NOT NULL` constraint can instead be added `NOT VALID` and validated under SHARE UPDATE EXCLUSIVE |
 | `DROP COLUMN` | no (the column is only marked dropped) |
 
 ## Migrations checklist
@@ -66,7 +69,10 @@ What rewrites the table and its indexes:
   first step's lock is held through the scan. Must-fix on a large table with traffic.
 - **Rewrite** (MIG-002): a type change or added column from the rewrite table above, on a large table.
 - **NOT NULL** (MIG-003): `ADD COLUMN … NOT NULL` without a `DEFAULT` fails on a table with rows;
-  `SET NOT NULL` without the validated CHECK scans under ACCESS EXCLUSIVE.
+  `SET NOT NULL` without the validated CHECK scans under ACCESS EXCLUSIVE. The safe routes: the CHECK
+  trick (CHECK `NOT VALID`, `VALIDATE`, `SET NOT NULL`, drop the CHECK), or on PG 18+
+  `ADD CONSTRAINT … NOT NULL col NOT VALID`, then `VALIDATE CONSTRAINT` — each with its `NOT VALID`
+  step committed first (MIG-009).
 - **Index** (MIG-004): `CREATE [UNIQUE] INDEX` on an existing table without `CONCURRENTLY`. With it:
   a migration tool that wraps the file in a transaction (sqlx: opt out with a `-- no-transaction`
   first line; diesel: `run_in_transaction = false` in the migration's `metadata.toml`); and, opted out,
