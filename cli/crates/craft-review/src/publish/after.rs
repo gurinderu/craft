@@ -84,11 +84,11 @@ pub fn comment(dir: &Path, pr: Option<u64>, setup: &PostSetup) -> Result<Value, 
 
 /// The lines the run's diff changed, from its base to the reviewed head — not to the working tree,
 /// which may have moved on since.
-fn lines_at_head(run: &RunState) -> Option<Lines> {
+pub(super) fn lines_at_head(run: &RunState) -> Result<Lines, String> {
     let base = crate::finished::base(run);
     git::zero_context_between(Path::new(&run.context.repo), base, &run.diff.head, true)
-        .ok()
         .map(|d| Lines::parse(&d))
+        .map_err(|e| e.to_string())
 }
 
 /// What a PR whose head is `pr_head`, not the reviewed head, does: the defects are posted on the

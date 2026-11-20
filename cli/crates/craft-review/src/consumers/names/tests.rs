@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 
 use super::stream::{Ended, stream};
 use super::{HITS_MAX, search};
+use crate::cancel::{Cancel, STOPPED};
 
 fn git(dir: &Path, args: &[&str]) {
     let ok = Command::new("git")
@@ -40,7 +41,7 @@ fn far() -> Instant {
 fn a_name_common_outside_rust_sources_is_searched_in_them_and_listed() {
     let t = tempfile::tempdir().unwrap();
     let repo = repo(t.path(), HITS_MAX + 50);
-    let mut found: Vec<(String, u32)> = search(&repo, "wanted_name", far())
+    let mut found: Vec<(String, u32)> = search(&repo, "wanted_name", far(), &Cancel::default())
         .unwrap()
         .into_iter()
         .map(|h| (h.file, h.line))
@@ -55,7 +56,7 @@ fn a_search_that_passes_the_line_cap_is_stopped_there() {
     let mut cmd = Command::new("sh");
     cmd.args(["-c", "yes 'f.rs:1:x' | tr : '\\000'"]);
     let start = Instant::now();
-    let ended = stream(cmd, start + Duration::from_secs(20)).unwrap();
+    let ended = stream(cmd, start + Duration::from_secs(20), &Cancel::default()).unwrap();
     assert!(matches!(ended, Ended::Capped));
     assert!(start.elapsed() < Duration::from_secs(10));
 }
@@ -65,7 +66,7 @@ fn a_search_past_its_deadline_is_killed_and_says_so() {
     let mut cmd = Command::new("sh");
     cmd.args(["-c", "sleep 30"]);
     let start = Instant::now();
-    let Err(why) = stream(cmd, start + Duration::from_millis(200)) else {
+    let Err(why) = stream(cmd, start + Duration::from_millis(200), &Cancel::default()) else {
         panic!("a search past its deadline returned");
     };
     assert!(why.contains("no time left"), "{why}");
@@ -76,7 +77,7 @@ fn a_search_past_its_deadline_is_killed_and_says_so() {
 fn a_name_reached_after_the_deadline_is_not_searched() {
     let t = tempfile::tempdir().unwrap();
     let repo = repo(t.path(), 1);
-    let Err(why) = search(&repo, "wanted_name", Instant::now()) else {
+    let Err(why) = search(&repo, "wanted_name", Instant::now(), &Cancel::default()) else {
         panic!("a search after its deadline ran");
     };
     assert!(why.contains("no time left"), "{why}");
@@ -85,7 +86,7 @@ fn a_name_reached_after_the_deadline_is_not_searched() {
 #[test]
 fn git_s_failure_is_named() {
     let t = tempfile::tempdir().unwrap();
-    let Err(why) = search(t.path(), "wanted_name", far()) else {
+    let Err(why) = search(t.path(), "wanted_name", far(), &Cancel::default()) else {
         panic!("a search outside a repository succeeded");
     };
     assert!(why.starts_with("git grep failed"), "{why}");
@@ -95,8 +96,35 @@ fn git_s_failure_is_named() {
 fn a_crlf_line_s_text_ends_without_its_carriage_return() {
     let mut cmd = Command::new("printf");
     cmd.arg("f.rs\\0001\\000x()\\r\\n");
-    let Ok(Ended::Exited(_, hits, _)) = stream(cmd, far()) else {
+    let Ok(Ended::Exited(_, hits, _)) = stream(cmd, far(), &Cancel::default()) else {
         panic!("printf did not exit");
     };
     assert_eq!(hits[0].text, "x()");
+}
+
+#[test]
+fn a_search_stopped_with_the_run_is_killed_and_says_so() {
+    let mut cmd = Command::new("sh");
+    cmd.args(["-c", "sleep 30"]);
+    let cancel = Cancel::default();
+    let stopper = {
+        let cancel = cancel.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(200));
+            cancel.cancel();
+        })
+    };
+    let start = Instant::now();
+    let Err(why) = stream(cmd, far(), &cancel) else {
+        panic!("a stopped search returned");
+    };
+    stopper.join().unwrap();
+    assert_eq!(why, STOPPED);
+    assert!(start.elapsed() < Duration::from_secs(5));
+    let t = tempfile::tempdir().unwrap();
+    let repo = repo(t.path(), 1);
+    assert_eq!(
+        search(&repo, "wanted_name", far(), &cancel),
+        Err(STOPPED.to_owned())
+    );
 }

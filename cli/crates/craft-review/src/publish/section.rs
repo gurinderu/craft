@@ -19,6 +19,13 @@ pub(crate) fn section(run: &RunState) -> String {
         None => format!("- {} defect(s) to post; not posted yet", s.defects.len()),
         Some(p) => posted_line(p),
     };
+    // Where the defects were placed hangs on the changed lines: one that could not be read is said
+    // beside what was posted, not only among the doubtful findings.
+    let posted = if s.note.is_empty() {
+        posted
+    } else {
+        format!("{posted}\n- ⚠️ {}", s.note)
+    };
     format!("{doubtful}\n\n## PR comments\n{posted}\n")
 }
 

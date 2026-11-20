@@ -452,16 +452,8 @@ fn an_absorbed_host_comes_back_next_round_to_be_adjudicated_with_its_absorbed_si
     let next = chained(serde_json::from_str(&filed).unwrap());
     assert_eq!(next.priors[0].fate, Fate::Pending);
     let ctx = crate::prompts::PromptContext {
-        strict: false,
-        repo: "/r".into(),
-        base: "abc".into(),
-        spec: String::new(),
-        craft_root: None,
-        craft_version: None,
         re_review: crate::prompts::ReScope::Fixes,
-        sources: crate::sources::Sources::default(),
-        consumers: crate::consumers::Consumers::default(),
-        scope: None,
+        ..crate::prompts::PromptContext::fixture("/r", "abc")
     };
     let profiles = crate::profile::Profile::all().unwrap();
     let t = tasks(&ctx, &next, &profiles).unwrap();
@@ -482,16 +474,8 @@ fn an_absorbed_host_comes_back_next_round_to_be_adjudicated_with_its_absorbed_si
 fn a_red_team_runs_on_the_model_it_is_handed_not_a_fixed_one() {
     let c = chained(vec![row("open one", "R1", "open", "confirmed")]);
     let ctx = crate::prompts::PromptContext {
-        strict: false,
-        repo: "/r".into(),
-        base: "abc".into(),
-        spec: String::new(),
-        craft_root: None,
-        craft_version: None,
         re_review: crate::prompts::ReScope::Fixes,
-        sources: crate::sources::Sources::default(),
-        consumers: crate::consumers::Consumers::default(),
-        scope: None,
+        ..crate::prompts::PromptContext::fixture("/r", "abc")
     };
     let answered = [adjudicated(0, Some(said("resolved", 3, "")))];
     for model in [Model::Sonnet, Model::Opus] {

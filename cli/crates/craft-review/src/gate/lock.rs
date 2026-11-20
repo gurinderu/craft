@@ -2,8 +2,9 @@
 //! engine's gate runs it, so a branch that edited a `Cargo.toml` or a crate that commits no lockfile
 //! still builds — and cargo may then write the lockfile; the review reads the branch, it never edits
 //! it, so each lockfile cargo could write is put back as it was, or removed when there was none,
-//! however the run ended inside craft: a tool killed by the budget, an error, a panic. Not when
-//! craft itself is killed (a host's Bash timeout, a signal): cargo then lives on in its own process
+//! however the run ended inside craft: a tool killed by the budget or by a stop `craft review run`
+//! handed on from a signal ([`crate::cancel`]), an error, a panic. Not when craft itself is killed
+//! (a host's Bash timeout, a signal to `craft review start`): cargo then lives on in its own process
 //! group (`runner.rs`) and the lockfile stays as it wrote it — `git status` in the reviewed
 //! checkout shows it. No signal handler is installed for that case. Nor when two runs share one
 //! tree, as runs on one head share craft's own worktree of a PR: their saves and restores

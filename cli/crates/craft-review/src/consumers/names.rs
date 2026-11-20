@@ -6,6 +6,8 @@ use std::path::Path;
 use std::process::Command;
 use std::time::{Duration, Instant};
 
+use crate::cancel::Cancel;
+
 mod stream;
 
 use stream::{Ended, stream};
@@ -84,8 +86,14 @@ pub(super) fn skip(name: &str) -> bool {
 }
 
 /// The lines of the working tree's Rust sources at `top` that name `name` as a whole word; `Err`
-/// once more than [`HITS_MAX`] do, when `deadline` passes first, or with git's reason.
-pub(super) fn search(top: &Path, name: &str, deadline: Instant) -> Result<Vec<Hit>, String> {
+/// once more than [`HITS_MAX`] do, when `deadline` passes or `cancel` is first, or with git's
+/// reason.
+pub(super) fn search(
+    top: &Path,
+    name: &str,
+    deadline: Instant,
+    cancel: &Cancel,
+) -> Result<Vec<Hit>, String> {
     let mut cmd = Command::new("git");
     cmd.arg("-C")
         .arg(top)
@@ -103,7 +111,7 @@ pub(super) fn search(top: &Path, name: &str, deadline: Instant) -> Result<Vec<Hi
             RUST,
         ])
         .args(EXCLUDE);
-    match stream(cmd, deadline)? {
+    match stream(cmd, deadline, cancel)? {
         Ended::Capped => Err(format!("over {HITS_MAX} lines")),
         Ended::Exited(Some(0), hits, _) => Ok(hits),
         Ended::Exited(Some(1), ..) => Ok(Vec::new()),

@@ -241,11 +241,11 @@ fn default_run_dir() -> Result<PathBuf> {
 }
 
 pub fn start(args: &StartArgs) -> Result<ExitCode> {
-    print(&start_step(args)?)
+    print(&start_step(args, &craft_review::cancel::Cancel::default())?)
 }
 
 /// The step `start` prints, its telemetry opened when `--record` asks for it.
-pub(crate) fn start_step(args: &StartArgs) -> Result<Value> {
+pub(crate) fn start_step(args: &StartArgs, cancel: &craft_review::cancel::Cancel) -> Result<Value> {
     let began = Instant::now();
     let root = args.craft_root.clone().or_else(find_craft_root);
     let (craft_root, craft_version) = match root {
@@ -300,6 +300,7 @@ pub(crate) fn start_step(args: &StartArgs) -> Result<Value> {
         chain_gh: Some(craft_review::publish::PostSetup::default()),
         worktrees: crate::init::worktrees_dir(),
         runtime: args.runtime.clone(),
+        cancel: cancel.clone(),
     };
     let step = stamped(step::start(&opts)?, began);
     Ok(match &args.record {
