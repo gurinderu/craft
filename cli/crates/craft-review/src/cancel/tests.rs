@@ -1,7 +1,7 @@
 use std::ffi::OsStr;
 use std::process::Command;
 
-use super::no_prompt;
+use super::no_prompt_env;
 
 /// The value `cmd` sets `var` to, `None` when it sets none.
 fn env_of<'a>(cmd: &'a Command, var: &str) -> Option<&'a OsStr> {
@@ -9,13 +9,11 @@ fn env_of<'a>(cmd: &'a Command, var: &str) -> Option<&'a OsStr> {
 }
 
 #[test]
-fn the_callers_askpass_choices_are_kept_on_the_command_and_the_terminal_prompt_is_off() {
+fn the_callers_ssh_askpass_rule_is_kept_and_the_terminal_prompt_is_off() {
     let mut cmd = Command::new("git");
-    cmd.env("GIT_ASKPASS", "/ci/token")
-        .env("SSH_ASKPASS_REQUIRE", "force")
+    cmd.env("SSH_ASKPASS_REQUIRE", "force")
         .env("GIT_TERMINAL_PROMPT", "1");
-    no_prompt(&mut cmd);
-    assert_eq!(env_of(&cmd, "GIT_ASKPASS"), Some(OsStr::new("/ci/token")));
+    no_prompt_env(&mut cmd);
     assert_eq!(
         env_of(&cmd, "SSH_ASKPASS_REQUIRE"),
         Some(OsStr::new("force"))
@@ -24,15 +22,14 @@ fn the_callers_askpass_choices_are_kept_on_the_command_and_the_terminal_prompt_i
 }
 
 #[test]
-fn with_no_choice_git_has_no_askpass_and_ssh_never_asks() {
-    if super::caller_chooses_prompts("with_no_choice_git_has_no_askpass_and_ssh_never_asks") {
-        return;
-    }
+fn with_no_rule_of_the_callers_ssh_never_asks_and_git_askpass_is_left_alone() {
     let mut cmd = Command::new("git");
-    no_prompt(&mut cmd);
-    assert_eq!(env_of(&cmd, "GIT_ASKPASS"), Some(OsStr::new("")));
+    cmd.env_remove("SSH_ASKPASS_REQUIRE")
+        .env_remove("GIT_ASKPASS");
+    no_prompt_env(&mut cmd);
     assert_eq!(
         env_of(&cmd, "SSH_ASKPASS_REQUIRE"),
         Some(OsStr::new("never"))
     );
+    assert_eq!(env_of(&cmd, "GIT_ASKPASS"), None);
 }

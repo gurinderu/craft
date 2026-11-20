@@ -26,36 +26,29 @@ impl Cancel {
     }
 }
 
-/// Turns off the prompts git and ssh would still try with no terminal (realm @nick/craft, node
-/// #545), keeping what the caller chose — on `cmd` or in craft's own environment — and blocking
-/// only the implicit fallbacks:
-/// - git's terminal prompt, always (`GIT_TERMINAL_PROMPT=0`);
-/// - git's askpass, unless the caller names one (a CI token script): an empty `GIT_ASKPASS`
-///   stops git's search before `core.askPass` and a desktop's `SSH_ASKPASS`, and git fails at once;
-/// - ssh's askpass, unless the caller set its rule: `SSH_ASKPASS_REQUIRE=never`, read by OpenSSH
-///   8.4 and later.
-pub fn no_prompt(cmd: &mut Command) {
+/// The environment craft's own git runs with (realm @nick/craft, node #545), keeping what the
+/// caller chose on `cmd` or in craft's own environment: git's terminal prompt off, always
+/// (`GIT_TERMINAL_PROMPT=0`), and ssh's askpass off unless the caller set its rule
+/// (`SSH_ASKPASS_REQUIRE=never`, read by OpenSSH 8.4 and later). Git's own askpass
+/// (`GIT_ASKPASS`, `core.askPass`) is left alone, so a CI token script works: a desktop askpass
+/// for an https remote may still ask — a known limit. For git only: a gate tool gets none of it.
+pub fn no_prompt_env(cmd: &mut Command) {
     cmd.env("GIT_TERMINAL_PROMPT", "0");
-    for (var, unless_chosen) in [("GIT_ASKPASS", ""), ("SSH_ASKPASS_REQUIRE", "never")] {
-        let on_cmd = cmd
-            .get_envs()
-            .find(|(k, _)| *k == var)
-            .map(|(_, v)| v.is_some());
-        if !on_cmd.unwrap_or_else(|| std::env::var_os(var).is_some()) {
-            cmd.env(var, unless_chosen);
-        }
+    let on_cmd = cmd
+        .get_envs()
+        .find(|(k, _)| *k == "SSH_ASKPASS_REQUIRE")
+        .map(|(_, v)| v.is_some());
+    if !on_cmd.unwrap_or_else(|| std::env::var_os("SSH_ASKPASS_REQUIRE").is_some()) {
+        cmd.env("SSH_ASKPASS_REQUIRE", "never");
     }
 }
 
-/// `cmd` spawned detached and with no prompt (realm @nick/craft, node #545): the leader of a
-/// session of its own — a process group of its own, so [`kill_group`] reaches what it starts in
-/// turn, and no controlling terminal — with [`no_prompt`]'s environment. So neither git nor an
-/// ssh it starts asks for a passphrase or a password on its own: on the terminal it would stop
-/// (SIGTTIN) in a background group of the caller's session, and through a desktop's askpass
-/// dialog it would wait, either until the timeout; here it fails at once, or asks the askpass
-/// the caller named.
-pub(crate) fn detached_no_prompt(cmd: &mut Command) {
-    no_prompt(cmd);
+/// `cmd` spawned detached (realm @nick/craft, node #545): the leader of a session of its own — a
+/// process group of its own, so [`kill_group`] reaches what it starts in turn, and no controlling
+/// terminal, so nothing it starts asks on one: an ssh asking a passphrase on `/dev/tty` fails at
+/// once, where in a background group of the caller's session it would stop (SIGTTIN) until the
+/// timeout.
+pub fn detached(cmd: &mut Command) {
     #[cfg(unix)]
     new_session(cmd);
     #[cfg(not(unix))]
@@ -80,8 +73,8 @@ fn new_session(cmd: &mut Command) {
     }
 }
 
-/// Kills `child` and every process of its group (see [`detached_no_prompt`]), then reaps it.
-pub(crate) fn kill_group(child: &mut Child) {
+/// Kills `child` and every process of its group (see [`detached`]), then reaps it.
+pub fn kill_group(child: &mut Child) {
     #[cfg(unix)]
     if let Ok(pid) = i32::try_from(child.id()) {
         let group = nix::unistd::Pid::from_raw(pid);
@@ -93,30 +86,6 @@ pub(crate) fn kill_group(child: &mut Child) {
     if child.wait().is_err() {
         // Nothing is left to reap.
     }
-}
-
-/// Whether the test process's own environment chooses git's askpass or ssh's askpass rule, so a
-/// test of the defaults would see the caller's choice instead: said on stderr and skipped, except
-/// under CI (`CI` set), where the defaults must be exercised and it fails.
-#[cfg(test)]
-pub(crate) fn caller_chooses_prompts(name: &str) -> bool {
-    use std::io::Write;
-    let chosen: Vec<&str> = ["GIT_ASKPASS", "SSH_ASKPASS_REQUIRE"]
-        .into_iter()
-        .filter(|v| std::env::var_os(v).is_some())
-        .collect();
-    if chosen.is_empty() {
-        return false;
-    }
-    assert!(
-        std::env::var_os("CI").is_none(),
-        "{name}: {chosen:?} set under CI, the defaults unexercised"
-    );
-    let _noted = writeln!(
-        std::io::stderr(),
-        "{name}: skipped, {chosen:?} set in the test's own environment"
-    );
-    true
 }
 
 #[cfg(test)]

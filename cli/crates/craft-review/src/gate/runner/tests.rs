@@ -114,20 +114,19 @@ fn the_budget_kills_the_running_tool_with_its_group() {
 }
 
 #[test]
-fn a_tool_runs_with_the_no_prompt_environment() {
-    if crate::cancel::caller_chooses_prompts("a_tool_runs_with_the_no_prompt_environment") {
-        return;
-    }
+fn a_tool_sees_the_callers_prompt_environment_unchanged() {
+    // The gate runs the reviewed project's own tools and tests: craft's no-prompt environment is
+    // for its own git only (realm @nick/craft, node #545).
     let d = tempfile::tempdir().unwrap();
     let ran = runner(d.path()).run(d.path(), "env", &[]);
     let Ran::Exited { ok: true, out, .. } = ran else {
         panic!("{ran:?}");
     };
-    for line in [
-        "SSH_ASKPASS_REQUIRE=never",
-        "GIT_ASKPASS=",
-        "GIT_TERMINAL_PROMPT=0",
-    ] {
-        assert!(out.lines().any(|l| l == line), "{line} not in {out}");
+    for var in ["SSH_ASKPASS_REQUIRE", "GIT_ASKPASS", "GIT_TERMINAL_PROMPT"] {
+        let seen = out
+            .lines()
+            .find_map(|l| l.strip_prefix(&format!("{var}=")).map(str::to_owned));
+        let callers = std::env::var(var).ok();
+        assert_eq!(seen, callers, "{var}");
     }
 }
