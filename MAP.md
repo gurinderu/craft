@@ -236,8 +236,13 @@ any other language, `content/profiles/`; a Rust or general file whose changed li
 for Rust, nix flake check, statix and deadnix for Nix: a red check blocks, a diagnostic on a changed line is a seed the
 lenses and verifiers see, a tool not installed is named), a scout per profile whose answer plans its lenses over its own files, the
 consumers list, built at start beside the gate (`src/consumers/`: for each changed Rust symbol the lines outside the diff that name it —
-callers, implementors and same-named declarations, places passing it as a value — from a name search; the whole list
-saved as `consumers.json` in the run directory, each lens given a budgeted part to go through line by line), the
+callers, implementors and same-named declarations, places passing it as a value — from a name search, always run, and,
+when the reviewer's profile says codebase-memory answers (`src/consumers/cbm/`, `graph.rs`) and its index is of this
+repository and was made of a commit holding the base (`fresh.rs`, by the root's HEAD reflog at the index's time), the
+graph's callers merged in, the report naming which sources built it; the whole list
+saved as `consumers.json` in the run directory, each lens given a budgeted part to go through line by line; `craft
+init` probes codebase-memory and writes `[code_graph]` into the profile, keeping a usable one it held while the graph
+does not answer, a section of a shape it does not read taken as unusable rather than as an unreadable profile), the
 lenses round after round until each profile's round finds nothing new or its plan's rounds are spent, the
 floor, roll-up and dedup of their one pool, the mechanical re-anchor step (`src/anchor.rs`: a finding whose line is past
 its file's end in the head, naming a symbol the file holds on exactly one line, is moved to that line, the report saying

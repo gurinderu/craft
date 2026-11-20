@@ -18,13 +18,13 @@ const TRIES: usize = 8;
 static NEXT: AtomicUsize = AtomicUsize::new(0);
 
 /// The reading side of a spool.
-pub(super) struct Spool {
+pub(crate) struct Spool {
     read: File,
 }
 
 impl Spool {
     /// A spool in the temporary directory, and the handle git writes to.
-    pub(super) fn new() -> io::Result<(Self, File)> {
+    pub(crate) fn new() -> io::Result<(Self, File)> {
         let pid = std::process::id();
         let mut names = std::iter::repeat_with(|| {
             let n = NEXT.fetch_add(1, Ordering::Relaxed);
@@ -62,12 +62,24 @@ impl Spool {
     }
 
     /// What git wrote, its last [`KEEP`] bytes.
-    pub(super) fn text(&mut self) -> io::Result<String> {
+    pub(crate) fn text(&mut self) -> io::Result<String> {
         let len = self.read.metadata()?.len();
         self.read.seek(SeekFrom::Start(len.saturating_sub(KEEP)))?;
         let mut bytes = Vec::new();
         self.read.read_to_end(&mut bytes)?;
         Ok(String::from_utf8_lossy(&bytes).into_owned())
+    }
+
+    /// All that was written, as UTF-8; refused when it is over `max` bytes or not UTF-8.
+    pub(crate) fn whole(&mut self, max: u64) -> io::Result<String> {
+        let len = self.read.metadata()?.len();
+        if len > max {
+            return Err(io::Error::other(format!("over {max} bytes")));
+        }
+        self.read.seek(SeekFrom::Start(0))?;
+        let mut bytes = Vec::new();
+        (&mut self.read).take(max).read_to_end(&mut bytes)?;
+        String::from_utf8(bytes).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
     }
 }
 

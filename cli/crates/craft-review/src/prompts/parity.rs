@@ -173,8 +173,8 @@ fn sources(g: &mut Golden, ctx: &PromptContext, plan: &Plan, prior: &str, input:
     );
 }
 
-/// The consumers list in a judging lens and the negative-space lens: two lines of one symbol, a
-/// symbol with none, one too common to search, and lines cut.
+/// The consumers list in a judging lens and the negative-space lens: two lines of one symbol, one
+/// found by both sources, a symbol with none, one too common to search, and lines cut.
 fn consumers(g: &mut Golden, ctx: &PromptContext, plan: &Plan, prior: &str) {
     use crate::consumers::{Consumers, Listed, Site};
     let site = |line: u32, text: &str, from: &[&str]| Site {
@@ -185,7 +185,7 @@ fn consumers(g: &mut Golden, ctx: &PromptContext, plan: &Plan, prior: &str) {
         kind: String::new(),
     };
     let listed = Consumers {
-        sources: vec!["name search".into()],
+        sources: vec!["name search".into(), "codebase-memory".into()],
         symbols: vec![
             Listed {
                 name: "rule_to_api".into(),
@@ -193,7 +193,11 @@ fn consumers(g: &mut Golden, ctx: &PromptContext, plan: &Plan, prior: &str) {
                 line: 12,
                 sites: vec![
                     site(33, ".map(rule_to_api)", &["name search"]),
-                    site(41, "let a = rule_to_api(r);", &["name search"]),
+                    site(
+                        41,
+                        "let a = rule_to_api(r);",
+                        &["name search", "codebase-memory"],
+                    ),
                 ],
             },
             Listed {

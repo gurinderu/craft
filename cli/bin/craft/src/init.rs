@@ -14,6 +14,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Stdio};
 
 use anyhow::{Context, Result};
+use craft_review::consumers::cbm;
 use craft_review::git;
 use craft_review::project::{self, IntegrationPoint, ProjectProfile};
 use craft_review::sources::{self, Git, SourcesSetup};
@@ -22,6 +23,7 @@ use serde_json::{Value, json};
 use crate::review::find_craft_root;
 
 mod ci;
+mod graph;
 mod memory;
 
 #[derive(Debug, clap::Args)]
@@ -100,11 +102,20 @@ pub fn init(args: &InitArgs) -> Result<ExitCode> {
             .map(|p| IntegrationPoint::parse(p).map_err(anyhow::Error::msg))
             .collect::<Result<Vec<_>>>()?;
         let entries = ci::confirmed(&args.ci, &args.cwd)?;
-        let profile = ProjectProfile::new(common, points, entries)?;
+        let mut profile = ProjectProfile::new(common, points, entries)?;
+        let held = project::load(&path)
+            .map(|p| p.and_then(|p| p.code_graph))
+            .map_err(|e| e.to_string());
+        let (graph, says) = graph::recorded(cbm::look(cbm::TOOL, &args.cwd), held);
+        profile.code_graph.clone_from(&graph);
         project::save(&path, &profile)?;
-        return print(
-            &json!({"profile": path, "integrations": profile.integrations, "ci": profile.ci}),
-        );
+        return print(&json!({
+            "profile": path,
+            "integrations": profile.integrations,
+            "ci": profile.ci,
+            "codeGraph": graph,
+            "codeGraphSays": says,
+        }));
     }
     let held = project::load(&path)?;
     let integrations = held
@@ -124,6 +135,11 @@ pub fn init(args: &InitArgs) -> Result<ExitCode> {
         "discovery": discovery,
         "ci": ci::held(&held_ci, &args.cwd),
         "ciCandidates": ci::proposed(&args.cwd),
+        "codeGraph": held.as_ref().and_then(|p| p.code_graph.clone()),
+        "codeGraphSays": graph::live_says(
+            cbm::look(cbm::TOOL, &args.cwd),
+            held.as_ref().and_then(|p| p.code_graph.as_ref()),
+        ),
         "write": "craft init --write --point <name>=<git url>@<tag or full commit> … --ci '<entry JSON>' … (every point and CI entry to keep, a held entry as `ci` prints it, one with `unusable` dropped or replaced; a branch is refused when a review prepares the sources)",
     }))
 }

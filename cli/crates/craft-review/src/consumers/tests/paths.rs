@@ -1,7 +1,7 @@
 //! A changed Rust file is read whatever characters its path holds: git quotes a non-ASCII byte
 //! in a listing, ends a header's path holding a space with a tab, and quotes one holding a quote.
 
-use super::{diff_of, git};
+use super::{diff_of, git, no_graph};
 use crate::consumers::build;
 
 #[test]
@@ -28,7 +28,7 @@ fn a_changed_file_under_any_path_has_its_symbols_listed() {
     }
     git(&repo, &["add", "."]);
     git(&repo, &["commit", "-qm", "feat: change"]);
-    let c = build(&repo, &diff_of(&repo));
+    let c = build(&repo, &diff_of(&repo), no_graph());
     let mut listed: Vec<(String, String)> = c
         .symbols
         .iter()

@@ -14,6 +14,7 @@ use crate::project::{self, IntegrationPoint};
 
 mod fetch;
 mod runner;
+pub(crate) use runner::spool;
 pub mod spec;
 #[cfg(test)]
 mod tests;

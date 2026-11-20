@@ -49,6 +49,17 @@ pub(super) fn choose_extra(cwd: &Path, opts: &StartOptions, run: &mut RunState) 
     }
 }
 
+/// The consumers list of the change (realm @nick/craft, node #529), the code graph asked when
+/// the reviewer's profile says it answers, run until the start is stopped.
+fn consumers_of(
+    cwd: &Path,
+    opts: &StartOptions,
+    diff: &crate::git::Diff,
+) -> crate::consumers::Consumers {
+    let projects = opts.sources.as_ref().map(|s| s.projects.as_path());
+    crate::consumers::of_checkout(cwd, projects, diff, &opts.cancel)
+}
+
 /// The embedded-SQL signal on each track, then the integration points' sources, the gate and the
 /// consumers list, side by side, none waiting on another: the sources and the list reach the
 /// prompts, the gate's seeds the pool as round-0 findings.
@@ -66,7 +77,7 @@ pub(super) fn prepare(cwd: &Path, dir: &Path, opts: &StartOptions, run: &mut Run
                 .map(|setup| sources::for_repo(cwd, &setup))
         });
         // Started before the gate, which runs on this thread, so the two overlap.
-        let consumers = s.spawn(|| crate::consumers::of_checkout(cwd, &run.diff, &opts.cancel));
+        let consumers = s.spawn(|| consumers_of(cwd, opts, &run.diff));
         let gated = match &opts.gate_from {
             Some(from) => Some(gate::alone::taken(from, &run.diff)),
             None => opts

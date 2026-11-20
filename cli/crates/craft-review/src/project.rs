@@ -48,6 +48,9 @@ mod ci_scope_tests;
 mod ci_shape;
 #[cfg(test)]
 mod ci_tests;
+mod code_graph;
+#[cfg(test)]
+mod code_graph_tests;
 mod point;
 mod reusable;
 #[cfg(test)]
@@ -62,6 +65,7 @@ mod workflow_steps_tests;
 #[cfg(test)]
 mod workflow_tests;
 pub use ci::{CI_MAX, CiEntry, CiError, Signal};
+pub use code_graph::{CodeGraph, GraphState};
 pub use point::IntegrationPoint;
 
 /// The profile's format; a profile of another is refused, not misread.
@@ -102,6 +106,14 @@ pub struct ProjectProfile {
     /// The CI map: always written, an empty one too, so a write replaces the one it held.
     #[serde(default)]
     pub ci: Vec<CiEntry>,
+    /// The code graph `craft init` found answering for this repository (realm @nick/craft, node
+    /// #529); `None` keeps the one a profile already holds on a write.
+    #[serde(
+        default,
+        deserialize_with = "code_graph::lenient",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub code_graph: Option<CodeGraph>,
 }
 
 impl ProjectProfile {
@@ -120,6 +132,7 @@ impl ProjectProfile {
             repo,
             integrations,
             ci,
+            code_graph: None,
         };
         p.check().map_err(ProjectError::Invalid)?;
         Ok(p)

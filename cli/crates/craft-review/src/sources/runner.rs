@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use crate::cancel::{Cancel, STOPPED, detached, kill_group, no_prompt_env};
 use spool::Spool;
 
-mod spool;
+pub(crate) mod spool;
 
 /// How long one git command may run.
 const GIT_TIMEOUT: Duration = Duration::from_secs(120);

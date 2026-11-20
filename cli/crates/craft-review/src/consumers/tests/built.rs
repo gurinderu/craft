@@ -1,7 +1,7 @@
 //! A list that could not be built says why in both outputs; a hunk that only removes lines names
 //! the item it removes them from; the diff is read from the recorded merge-base.
 
-use super::{diff_of, fixture, git};
+use super::{diff_of, fixture, git, no_graph};
 use crate::consumers::{Consumers, build, lens_block, of_checkout, section};
 
 /// Fails unless both outputs carry `why`.
@@ -22,7 +22,7 @@ fn a_diff_that_cannot_be_read_is_said_not_read_as_no_symbol() {
     let repo = fixture(t.path(), "");
     let mut diff = diff_of(&repo);
     diff.merge_base = "0000000000000000000000000000000000000000".into();
-    let c = build(&repo, &diff);
+    let c = build(&repo, &diff, no_graph());
     assert!(
         c.failed.starts_with("the change's diff could not be read"),
         "{c:?}"
@@ -37,7 +37,7 @@ fn a_checkout_whose_top_cannot_be_read_is_said() {
     let diff = diff_of(&repo);
     let elsewhere = t.path().join("not-a-repo");
     std::fs::create_dir_all(&elsewhere).unwrap();
-    let c = of_checkout(&elsewhere, &diff, &crate::cancel::Cancel::default());
+    let c = of_checkout(&elsewhere, None, &diff, &crate::cancel::Cancel::default());
     said_in_both(&c, "the checkout's top could not be read");
 }
 
@@ -56,7 +56,7 @@ fn the_diff_is_read_from_the_recorded_merge_base_not_the_base_ref() {
     let diff = diff_of(&repo);
     // The base ref moves after the run recorded its merge-base.
     git(&repo, &["branch", "-f", "base", "HEAD"]);
-    let c = build(&repo, &diff);
+    let c = build(&repo, &diff, no_graph());
     assert!(c.failed.is_empty(), "{}", c.failed);
     assert!(
         c.symbols.iter().any(|s| s.name == "k8s_rule_to_api"),
@@ -81,7 +81,7 @@ fn a_hunk_that_only_removes_lines_names_the_item_it_removes_them_from() {
         "\npub fn guarded_call(x: u8) -> u8 {\n    x\n}\n\npub fn last() -> u8 {\n    2\n}\n";
     std::fs::write(repo.join("src/lib.rs"), head).unwrap();
     git(&repo, &["commit", "-qam", "fix: drop the guard"]);
-    let c = build(&repo, &diff_of(&repo));
+    let c = build(&repo, &diff_of(&repo), no_graph());
     let names: Vec<&str> = c.symbols.iter().map(|s| s.name.as_str()).collect();
     assert_eq!(names, vec!["guarded_call"], "{c:?}");
     assert_eq!(c.unplaced, vec!["src/lib.rs:5 (lines removed after it)"]);
