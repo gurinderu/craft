@@ -13,7 +13,7 @@ use serde_json::Value;
 
 use super::kind::{Kind, prompt_kind};
 use super::readiness::{Probe, Probed};
-use super::{Ctx, Hook, Run, dispatch, entry, iso, start, work};
+use super::{Ctx, Hook, Run, dispatch, entry, iso, opencode, start, work};
 
 const CASES: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -97,7 +97,7 @@ fn lay_out(c: &Value, p: &Places) {
         write(&root.join(rel), text.as_str().unwrap());
     }
     for (rel, target) in c["links"].as_object().into_iter().flatten() {
-        std::os::unix::fs::symlink(target.as_str().unwrap(), root.join(rel)).unwrap();
+        std::os::unix::fs::symlink(p.fill(target.as_str().unwrap()), root.join(rel)).unwrap();
     }
     for d in c["dirs"].as_array().into_iter().flatten() {
         fs::create_dir_all(root.join(d.as_str().unwrap())).unwrap();
@@ -134,6 +134,8 @@ fn hook_of(command: &str) -> Hook {
         "user-prompt" => Hook::UserPrompt,
         "subagent-start" => Hook::SubagentStart,
         "reviewer-dispatch" => Hook::ReviewerDispatch,
+        "opencode-message" => Hook::OpencodeMessage,
+        "opencode-compacted" => Hook::OpencodeCompacted,
         other => panic!("no hook {other}"),
     }
 }
@@ -164,14 +166,19 @@ fn run_case(c: &Value, p: &Places) -> Run {
         Hook::UserPrompt => work::prompt(&input, &ctx),
         Hook::SubagentStart => work::subagent(&input, &ctx),
         Hook::ReviewerDispatch => dispatch::run(&input, &ctx),
+        Hook::OpencodeMessage => opencode::message(&input, &ctx),
+        Hook::OpencodeCompacted => opencode::compacted(&input, &ctx),
     }
 }
 
 #[test]
 fn every_hook_case_gives_the_node_hooks_stdout_and_log_line() {
     let file: Value = serde_json::from_str(CASES).unwrap();
-    let cases = file["cases"].as_array().unwrap();
-    assert!(cases.len() >= 100, "{} cases", cases.len());
+    let cases: Vec<&Value> = ["cases", "opencode"]
+        .iter()
+        .flat_map(|k| file[k].as_array().unwrap())
+        .collect();
+    assert!(cases.len() >= 120, "{} cases", cases.len());
     let mut failed = Vec::new();
     for c in cases {
         let name = c["name"].as_str().unwrap();

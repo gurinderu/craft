@@ -15,7 +15,8 @@ const MAX_BYTES: u64 = 256 * 1024;
 
 /// One line of the log. `kind` is the prompt class, `agent` the subagent type, `readiness` the
 /// readiness lines a Codex start said, `reason` what a line that spoke said when it was not a
-/// request's text — or, on every line of the Agent-tool hook, `reviewer-dispatch`.
+/// request's text — or, on every line of the Agent-tool hook, `reviewer-dispatch`. The fields keep
+/// the order each Node hook wrote them in.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct Entry {
     pub ts: String,
@@ -31,6 +32,9 @@ pub struct Entry {
     pub kind: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agent: Option<String>,
+    /// `kind` where a line names it after its agent: an OpenCode subagent's line.
+    #[serde(rename = "kind", skip_serializing_if = "Option::is_none")]
+    pub agent_kind: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub readiness: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -117,4 +121,61 @@ pub fn event(e: &Value) -> &str {
     field(e, "event")
         .filter(|s| !s.is_empty())
         .unwrap_or("SessionStart")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn line(repo: &str) -> Entry {
+        Entry {
+            ts: "2026-10-30T12:00:00.000Z".to_owned(),
+            repo: repo.to_owned(),
+            source: String::new(),
+            event: "UserPromptSubmit".to_owned(),
+            harness: "claude-code".to_owned(),
+            session: "s".to_owned(),
+            spoke: true,
+            found: Vec::new(),
+            silent: None,
+            kind: None,
+            agent: None,
+            agent_kind: None,
+            readiness: None,
+            reason: None,
+        }
+    }
+
+    #[test]
+    fn past_its_cap_the_log_rotates_to_one_older_generation_read_first() {
+        let d = tempfile::tempdir().unwrap();
+        let file = log_path(d.path());
+        append(&line("/old"), &file);
+        fs::write(
+            &file,
+            format!(
+                "{}\n{}\n",
+                serde_json::to_string(&line("/old")).unwrap(),
+                "x".repeat(300 * 1024)
+            ),
+        )
+        .unwrap();
+        append(&line("/new"), &file);
+        assert!(fs::metadata(&file).unwrap().len() < 1024);
+        let repos: Vec<String> = read(&file)
+            .unwrap()
+            .iter()
+            .map(|e| e["repo"].as_str().unwrap().to_owned())
+            .collect();
+        assert_eq!(repos, ["/old", "/new"]);
+    }
+
+    #[test]
+    fn appending_never_fails_even_where_the_log_cannot_be_made() {
+        let d = tempfile::tempdir().unwrap();
+        let blocker = d.path().join("file");
+        fs::write(&blocker, "").unwrap();
+        append(&line("/r"), &log_path(&blocker));
+        assert_eq!(read(&log_path(&blocker)), None);
+    }
 }

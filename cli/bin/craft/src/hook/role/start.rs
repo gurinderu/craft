@@ -27,7 +27,7 @@ fn name_list(names: &[String]) -> String {
 
 fn cycle(who: Harness) -> [String; 2] {
     match who {
-        Harness::ClaudeCode => [
+        Harness::ClaudeCode | Harness::OpenCode => [
             "craft: whichever declared role develops here runs its cycle with craft's tools: recall project memory (craft:memory) before the work; before a PR, the review loop to convergence and one full review (craft:develop).".to_owned(),
             "craft: only the main session can run craft's workflow engines (a session started with --agent counts if its tools allow Workflow); a role running as a subagent hands the review loop back to the main session.".to_owned(),
         ],
@@ -64,7 +64,7 @@ pub fn run(input: &str, ctx: &Ctx, probe: &dyn Probe) -> Run {
     };
     let off = matches!(entry.silent.as_deref(), Some("off-env" | "off-line"));
     if who == Harness::Codex && !off {
-        let lines = readiness::lines(ctx, probe);
+        let lines = readiness::lines(probe);
         if !lines.is_empty() {
             let mut all: Vec<&str> = vec![&text];
             all.extend(lines.iter().map(|(_, t)| t.as_str()));

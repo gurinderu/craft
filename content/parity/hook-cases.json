@@ -535,41 +535,6 @@
       "entryLine": "{\"ts\":\"2026-10-30T12:00:00.000Z\",\"repo\":\"<root>\",\"source\":\"startup\",\"event\":\"SessionStart\",\"harness\":\"claude-code\",\"session\":\"s1\",\"spoke\":true,\"found\":[\".claude/agents/dev.md\"],\"silent\":null}"
     },
     {
-      "name": "codex: role text, sandbox fine, binary missing",
-      "command": "session-start",
-      "input": {
-        "session_id": "s1",
-        "cwd": "<root>",
-        "source": "startup",
-        "hook_event_name": "SessionStart"
-      },
-      "files": {
-        ".claude/agents/dev.md": ""
-      },
-      "env": {
-        "PLUGIN_ROOT": "<plugin>"
-      },
-      "pluginVersion": "0.55.0",
-      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":\"craft: this repo declares its own roles or work rules (.claude/agents/dev.md); they win on every step they cover, except the final full review, where they run beside craft's full review and never replace it.\\ncraft: whichever declared role develops here runs its cycle with craft's skills, reading each one's SKILL.md (its path is listed among your skills): recall project memory (craft:memory) before the work; before a PR, a review, its findings worked with craft:addressing-findings.\\ncraft: run craft:codex-review in this session, not in a subagent: read its SKILL.md and run the one command it gives (it drives craft's review through codex exec), then relay its verdict and findings; it is new and not yet observed in a real Codex session, so when that command cannot run here or fails, review the diff yourself: apply the checklist of craft:rust-review (Rust) or craft:nix-review (Nix), otherwise read the diff for defects, and report the findings by severity with file:line.\\ncraft: to silence this, set CRAFT_ROLE_HOOK=0 or add a line `craft-role-hook: off` to AGENTS.md or CLAUDE.md.\\ncraft: the craft binary 0.55.0 is not in ~/.craft/bin yet. When you run craft's review (the codex-review skill), its first run downloads it, which needs the network and writes outside the workspace: then run `sh \\\"<plugin>/bin/craft\\\" review run --backend codex …` with escalated permissions and ask the user to approve it. This is not a request to start a review now.\"}}",
-      "entry": {
-        "ts": "2026-10-30T12:00:00.000Z",
-        "repo": "<root>",
-        "source": "startup",
-        "event": "SessionStart",
-        "harness": "codex",
-        "session": "s1",
-        "spoke": true,
-        "found": [
-          ".claude/agents/dev.md"
-        ],
-        "silent": null,
-        "readiness": [
-          "binary"
-        ]
-      },
-      "entryLine": "{\"ts\":\"2026-10-30T12:00:00.000Z\",\"repo\":\"<root>\",\"source\":\"startup\",\"event\":\"SessionStart\",\"harness\":\"codex\",\"session\":\"s1\",\"spoke\":true,\"found\":[\".claude/agents/dev.md\"],\"silent\":null,\"readiness\":[\"binary\"]}"
-    },
-    {
       "name": "codex: role text, binary cached",
       "command": "session-start",
       "input": {
@@ -643,46 +608,6 @@
       "entryLine": "{\"ts\":\"2026-10-30T12:00:00.000Z\",\"repo\":\"<root>\",\"source\":\"startup\",\"event\":\"SessionStart\",\"harness\":\"codex\",\"session\":\"s1\",\"spoke\":true,\"found\":[],\"silent\":null,\"readiness\":[\"sandbox\"],\"reason\":\"codex-readiness\"}"
     },
     {
-      "name": "codex: role and sandbox and binary",
-      "command": "session-start",
-      "input": {
-        "session_id": "s1",
-        "cwd": "<root>",
-        "source": "startup",
-        "hook_event_name": "SessionStart"
-      },
-      "files": {
-        ".claude/agents/dev.md": ""
-      },
-      "env": {
-        "PLUGIN_ROOT": "<plugin>"
-      },
-      "pluginVersion": "0.55.0",
-      "probe": {
-        "status": 2,
-        "stderr": "unshare failed: Operation not permitted"
-      },
-      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":\"craft: this repo declares its own roles or work rules (.claude/agents/dev.md); they win on every step they cover, except the final full review, where they run beside craft's full review and never replace it.\\ncraft: whichever declared role develops here runs its cycle with craft's skills, reading each one's SKILL.md (its path is listed among your skills): recall project memory (craft:memory) before the work; before a PR, a review, its findings worked with craft:addressing-findings.\\ncraft: run craft:codex-review in this session, not in a subagent: read its SKILL.md and run the one command it gives (it drives craft's review through codex exec), then relay its verdict and findings; it is new and not yet observed in a real Codex session, so when that command cannot run here or fails, review the diff yourself: apply the checklist of craft:rust-review (Rust) or craft:nix-review (Nix), otherwise read the diff for defects, and report the findings by severity with file:line.\\ncraft: to silence this, set CRAFT_ROLE_HOOK=0 or add a line `craft-role-hook: off` to AGENTS.md or CLAUDE.md.\\ncraft: before any work, tell the user that Codex's sandbox cannot run commands on this machine (`codex sandbox true` exited 2: unshare failed: Operation not permitted). So craft's review and its review agents (`codex exec -s read-only`) will fail here. The fix is to allow unprivileged user namespaces for bwrap (on Ubuntu: the sysctl kernel.apparmor_restrict_unprivileged_userns, or an AppArmor profile for bwrap), or to run the review from another host.\\ncraft: the craft binary 0.55.0 is not in ~/.craft/bin yet. When you run craft's review (the codex-review skill), its first run downloads it, which needs the network and writes outside the workspace: then run `sh \\\"<plugin>/bin/craft\\\" review run --backend codex …` with escalated permissions and ask the user to approve it. This is not a request to start a review now.\"}}",
-      "entry": {
-        "ts": "2026-10-30T12:00:00.000Z",
-        "repo": "<root>",
-        "source": "startup",
-        "event": "SessionStart",
-        "harness": "codex",
-        "session": "s1",
-        "spoke": true,
-        "found": [
-          ".claude/agents/dev.md"
-        ],
-        "silent": null,
-        "readiness": [
-          "sandbox",
-          "binary"
-        ]
-      },
-      "entryLine": "{\"ts\":\"2026-10-30T12:00:00.000Z\",\"repo\":\"<root>\",\"source\":\"startup\",\"event\":\"SessionStart\",\"harness\":\"codex\",\"session\":\"s1\",\"spoke\":true,\"found\":[\".claude/agents/dev.md\"],\"silent\":null,\"readiness\":[\"sandbox\",\"binary\"]}"
-    },
-    {
       "name": "codex: sandbox fails without a setup error",
       "command": "session-start",
       "input": {
@@ -754,38 +679,6 @@
         "silent": "nothing-declared"
       },
       "entryLine": "{\"ts\":\"2026-10-30T12:00:00.000Z\",\"repo\":\"<root>\",\"source\":\"startup\",\"event\":\"SessionStart\",\"harness\":\"codex\",\"session\":\"s1\",\"spoke\":false,\"found\":[],\"silent\":\"nothing-declared\"}"
-    },
-    {
-      "name": "codex: codex missing",
-      "command": "session-start",
-      "input": {
-        "session_id": "s1",
-        "cwd": "<root>",
-        "source": "startup",
-        "hook_event_name": "SessionStart"
-      },
-      "env": {
-        "PLUGIN_ROOT": "<plugin>"
-      },
-      "pluginVersion": "0.55.0",
-      "probe": "missing",
-      "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":\"craft: the craft binary 0.55.0 is not in ~/.craft/bin yet. When you run craft's review (the codex-review skill), its first run downloads it, which needs the network and writes outside the workspace: then run `sh \\\"<plugin>/bin/craft\\\" review run --backend codex …` with escalated permissions and ask the user to approve it. This is not a request to start a review now.\"}}",
-      "entry": {
-        "ts": "2026-10-30T12:00:00.000Z",
-        "repo": "<root>",
-        "source": "startup",
-        "event": "SessionStart",
-        "harness": "codex",
-        "session": "s1",
-        "spoke": true,
-        "found": [],
-        "silent": null,
-        "readiness": [
-          "binary"
-        ],
-        "reason": "codex-readiness"
-      },
-      "entryLine": "{\"ts\":\"2026-10-30T12:00:00.000Z\",\"repo\":\"<root>\",\"source\":\"startup\",\"event\":\"SessionStart\",\"harness\":\"codex\",\"session\":\"s1\",\"spoke\":true,\"found\":[],\"silent\":null,\"readiness\":[\"binary\"],\"reason\":\"codex-readiness\"}"
     },
     {
       "name": "codex: only WARNING lines",
@@ -7086,6 +6979,553 @@
       "prompt": "x <task-notification> y",
       "recent": "review",
       "kind": null
+    }
+  ],
+  "opencode": [
+    {
+      "name": "findings speaks",
+      "command": "opencode-message",
+      "files": {
+        ".claude/agents/dev.md": ""
+      },
+      "input": {
+        "prompt": "address the review findings",
+        "session": "s1"
+      },
+      "stdout": "craft: before your first tool call on this request, make one call: load the addressing-findings skill with the skill tool. Reading the PRs with gh first does not replace it.\ncraft: right after loading it, before triage (its step 0): load the memory skill with the skill tool and recall(<finding keywords>, <path>) for every path the findings touch; a finding a recalled decision answers is triaged with it cited.\ncraft: after the fixes are in (every fixer returned and pushed) and before posting any reply: run a light re-review of the fix commits only (base: the commit the review was made on; a merge since it, as trunk merged in, means ask the human first), here in this session over git diff <that commit>..HEAD: for Rust code the rust-review skill or the rust-audit tool, otherwise your own review pass, repeating until no Medium-or-higher finding is open (the whole diff only on the human's word); replies wait for it.\ncraft: why: it checks each finding against the code for a verdict, keeps every rejection on record so later reviews know it, drafts each reply for its own thread, and re-reviews until green; that re-review loop stays with this main session even when subagents fix.\ncraft: subagents lack the memory tools, so you hold the memory: put the records the memory skill recalls, verbatim with their ids, into each brief, and record every triage disposition (each finding rejected or deferred) yourself, right after triage, never through a subagent, with the memory skill (record-decision, record-rule or record-question), and check the `memory backend:` line it prints.\ncraft: triage the findings here in this session, never in a subagent, whatever their number: OpenCode has no sift engine, so do the sift steps of addressing-findings (\"Who triages\") yourself (recall; set aside what a recorded decision, deferred question or project rule answers; raise again each Critical/High or scope-changed one; a finding the PR did not introduce → an issue), then validate the rest inline or with the triage-findings tool, which validates and plans but does not sift; record each disposition and file the issues yourself.\ncraft: delegating the fixes is fine: once triage is done and its dispositions are recorded, paste this line verbatim into each fixer's brief with its file group: \"Fix only: patch this file group of the triage plan, its verdicts as given; before your first tool call, load the addressing-findings skill (skill tool) for how to fix and verify (its steps 5 and 6); report each planned fix you find wrong, with its reason, in your result; never re-triage and never write memory: your launcher decides and records it.\" Triage, memory writes, issues and the re-review stay here in the main session.\ncraft: the repo's own roles and rules still win; to silence this, set CRAFT_ROLE_HOOK=0 or add `craft-role-hook: off` to AGENTS.md or CLAUDE.md.",
+      "entryLine": "{\"ts\":\"2026-10-30T12:00:00.000Z\",\"repo\":\"<root>\",\"source\":\"\",\"event\":\"chat.message\",\"harness\":\"opencode\",\"session\":\"s1\",\"spoke\":true,\"found\":[\".claude/agents/dev.md\"],\"silent\":null,\"kind\":\"findings\"}"
+    },
+    {
+      "name": "review speaks",
+      "command": "opencode-message",
+      "files": {
+        ".claude/agents/dev.md": ""
+      },
+      "input": {
+        "prompt": "review the branch",
+        "session": "s1"
+      },
+      "stdout": "craft: before your first tool call on this request, make one call: for Rust code, load the rust-review skill with the skill tool, or call the rust-audit tool (the /rust-audit command) for a whole crate. Reading the PRs with gh first does not replace it.\ncraft: why: rust-review runs the cargo gate and a severity-tiered checklist to an Approve/Warning/Block verdict and dispatches craft's review agents with a crafted brief; the rust-audit tool fans those agents out over the crate into one severity-ranked report.\ncraft: subagents lack the memory tools, so you hold the memory: put the records the memory skill recalls, verbatim with their ids, into each brief, and record every triage disposition (each finding rejected or deferred) yourself, right after triage, never through a subagent, with the memory skill (record-decision, record-rule or record-question), and check the `memory backend:` line it prints.\ncraft: delegating a review to a reviewer agent is fine: paste this line verbatim into its brief: \"Review only: report findings only, change no code and record nothing; return each finding with its severity and file:line.\" Fixing the findings stays here, with addressing-findings.\ncraft: the repo's own roles and rules still win; to silence this, set CRAFT_ROLE_HOOK=0 or add `craft-role-hook: off` to AGENTS.md or CLAUDE.md.",
+      "entryLine": "{\"ts\":\"2026-10-30T12:00:00.000Z\",\"repo\":\"<root>\",\"source\":\"\",\"event\":\"chat.message\",\"harness\":\"opencode\",\"session\":\"s1\",\"spoke\":true,\"found\":[\".claude/agents/dev.md\"],\"silent\":null,\"kind\":\"review\"}"
+    },
+    {
+      "name": "other language speaks",
+      "command": "opencode-message",
+      "files": {
+        ".claude/agents/dev.md": ""
+      },
+      "input": {
+        "prompt": "исправь замечания ревью пожалуйста",
+        "session": "s1"
+      },
+      "stdout": "craft: if this or any later request in this session — in any language — asks to work review findings or PR comments (triage, replies, fixes), before your first tool call load the addressing-findings skill with the skill tool; if it asks for a review, for Rust code load the rust-review skill with the skill tool, or call the rust-audit tool (the /rust-audit command) for a whole crate. These lines apply only to such requests.\ncraft: for findings work, right after loading the skill, before triage (its step 0): load the memory skill with the skill tool and recall(<finding keywords>, <path>) for every path the findings touch; a finding a recalled decision answers is triaged with it cited.\ncraft: after the fixes are in (every fixer returned and pushed) and before posting any reply: run a light re-review of the fix commits only (base: the commit the review was made on; a merge since it, as trunk merged in, means ask the human first), here in this session over git diff <that commit>..HEAD: for Rust code the rust-review skill or the rust-audit tool, otherwise your own review pass, repeating until no Medium-or-higher finding is open (the whole diff only on the human's word); replies wait for it.\ncraft: subagents lack the memory tools, so you hold the memory: put the records the memory skill recalls, verbatim with their ids, into each brief, and record every triage disposition (each finding rejected or deferred) yourself, right after triage, never through a subagent, with the memory skill (record-decision, record-rule or record-question), and check the `memory backend:` line it prints.\ncraft: for findings, triage the findings here in this session, never in a subagent, whatever their number: OpenCode has no sift engine, so do the sift steps of addressing-findings (\"Who triages\") yourself (recall; set aside what a recorded decision, deferred question or project rule answers; raise again each Critical/High or scope-changed one; a finding the PR did not introduce → an issue), then validate the rest inline or with the triage-findings tool, which validates and plans but does not sift; record each disposition and file the issues yourself; then only the fixes may be delegated: paste this line verbatim into each fixer's brief with its file group: \"Fix only: patch this file group of the triage plan, its verdicts as given; before your first tool call, load the addressing-findings skill (skill tool) for how to fix and verify (its steps 5 and 6); report each planned fix you find wrong, with its reason, in your result; never re-triage and never write memory: your launcher decides and records it.\" For a reviewer agent, paste: \"Review only: report findings only, change no code and record nothing; return each finding with its severity and file:line.\" Triage, memory writes, issues and the re-review stay here.\ncraft: the repo's own roles and rules still win; to silence this, set CRAFT_ROLE_HOOK=0 or add `craft-role-hook: off` to AGENTS.md or CLAUDE.md.",
+      "entryLine": "{\"ts\":\"2026-10-30T12:00:00.000Z\",\"repo\":\"<root>\",\"source\":\"\",\"event\":\"chat.message\",\"harness\":\"opencode\",\"session\":\"s1\",\"spoke\":true,\"found\":[\".claude/agents/dev.md\"],\"silent\":null,\"kind\":\"other-language\"}"
+    },
+    {
+      "name": "no class: nothing",
+      "command": "opencode-message",
+      "files": {
+        ".claude/agents/dev.md": ""
+      },
+      "input": {
+        "prompt": "write the parser",
+        "session": "s1"
+      },
+      "stdout": "",
+      "entryLine": null
+    },
+    {
+      "name": "silent repo: logged silent",
+      "command": "opencode-message",
+      "files": {},
+      "input": {
+        "prompt": "review the branch",
+        "session": "s1"
+      },
+      "stdout": "",
+      "entryLine": "{\"ts\":\"2026-10-30T12:00:00.000Z\",\"repo\":\"<root>\",\"source\":\"\",\"event\":\"chat.message\",\"harness\":\"opencode\",\"session\":\"s1\",\"spoke\":false,\"found\":[],\"silent\":\"nothing-declared\",\"kind\":\"review\"}"
+    },
+    {
+      "name": "off env",
+      "command": "opencode-message",
+      "files": {
+        ".claude/agents/dev.md": ""
+      },
+      "env": {
+        "CRAFT_ROLE_HOOK": "0"
+      },
+      "input": {
+        "prompt": "review the branch",
+        "session": "s1"
+      },
+      "stdout": "",
+      "entryLine": "{\"ts\":\"2026-10-30T12:00:00.000Z\",\"repo\":\"<root>\",\"source\":\"\",\"event\":\"chat.message\",\"harness\":\"opencode\",\"session\":\"s1\",\"spoke\":false,\"found\":[],\"silent\":\"off-env\",\"kind\":\"review\"}"
+    },
+    {
+      "name": "repeat: already-said",
+      "command": "opencode-message",
+      "files": {
+        ".claude/agents/dev.md": ""
+      },
+      "log": [
+        {
+          "ts": "2026-10-30T11:00:00.000Z",
+          "repo": "<root>",
+          "source": "",
+          "event": "chat.message",
+          "harness": "opencode",
+          "session": "s1",
+          "spoke": true,
+          "found": [
+            ".claude/agents/dev.md"
+          ],
+          "silent": null,
+          "kind": "findings"
+        }
+      ],
+      "input": {
+        "prompt": "more findings",
+        "session": "s1"
+      },
+      "stdout": "",
+      "entryLine": "{\"ts\":\"2026-10-30T12:00:00.000Z\",\"repo\":\"<root>\",\"source\":\"\",\"event\":\"chat.message\",\"harness\":\"opencode\",\"session\":\"s1\",\"spoke\":false,\"found\":[\".claude/agents/dev.md\"],\"silent\":\"already-said\",\"kind\":\"findings\"}"
+    },
+    {
+      "name": "other class after findings",
+      "command": "opencode-message",
+      "files": {
+        ".claude/agents/dev.md": ""
+      },
+      "log": [
+        {
+          "ts": "2026-10-30T11:00:00.000Z",
+          "repo": "<root>",
+          "source": "",
+          "event": "chat.message",
+          "harness": "opencode",
+          "session": "s1",
+          "spoke": true,
+          "found": [
+            ".claude/agents/dev.md"
+          ],
+          "silent": null,
+          "kind": "findings"
+        }
+      ],
+      "input": {
+        "prompt": "review it",
+        "session": "s1"
+      },
+      "stdout": "craft: before your first tool call on this request, make one call: for Rust code, load the rust-review skill with the skill tool, or call the rust-audit tool (the /rust-audit command) for a whole crate. Reading the PRs with gh first does not replace it.\ncraft: why: rust-review runs the cargo gate and a severity-tiered checklist to an Approve/Warning/Block verdict and dispatches craft's review agents with a crafted brief; the rust-audit tool fans those agents out over the crate into one severity-ranked report.\ncraft: subagents lack the memory tools, so you hold the memory: put the records the memory skill recalls, verbatim with their ids, into each brief, and record every triage disposition (each finding rejected or deferred) yourself, right after triage, never through a subagent, with the memory skill (record-decision, record-rule or record-question), and check the `memory backend:` line it prints.\ncraft: delegating a review to a reviewer agent is fine: paste this line verbatim into its brief: \"Review only: report findings only, change no code and record nothing; return each finding with its severity and file:line.\" Fixing the findings stays here, with addressing-findings.\ncraft: the repo's own roles and rules still win; to silence this, set CRAFT_ROLE_HOOK=0 or add `craft-role-hook: off` to AGENTS.md or CLAUDE.md.",
+      "entryLine": "{\"ts\":\"2026-10-30T12:00:00.000Z\",\"repo\":\"<root>\",\"source\":\"\",\"event\":\"chat.message\",\"harness\":\"opencode\",\"session\":\"s1\",\"spoke\":true,\"found\":[\".claude/agents/dev.md\"],\"silent\":null,\"kind\":\"review\"}"
+    },
+    {
+      "name": "reminder",
+      "command": "opencode-message",
+      "files": {
+        ".claude/agents/dev.md": ""
+      },
+      "log": [
+        {
+          "ts": "2026-10-30T11:00:00.000Z",
+          "repo": "<root>",
+          "source": "",
+          "event": "chat.message",
+          "harness": "opencode",
+          "session": "s1",
+          "spoke": true,
+          "found": [
+            ".claude/agents/dev.md"
+          ],
+          "silent": null,
+          "kind": "other-language"
+        }
+      ],
+      "input": {
+        "prompt": "исправь замечания ревью пожалуйста",
+        "session": "s1"
+      },
+      "stdout": "craft: if this request is about review findings, PR comments or a review, the craft lines above apply: load the addressing-findings skill first for findings; rust-review or the rust-audit tool for a review; recall memory before triage; before posting replies, run a light re-review of the fix commits only (base: the commit the review was made on; a merge since it, as trunk merged in, means ask the human first): the rust-review skill for Rust code, otherwise your own review pass over them in this session.",
+      "entryLine": "{\"ts\":\"2026-10-30T12:00:00.000Z\",\"repo\":\"<root>\",\"source\":\"\",\"event\":\"chat.message\",\"harness\":\"opencode\",\"session\":\"s1\",\"spoke\":true,\"found\":[\".claude/agents/dev.md\"],\"silent\":null,\"reason\":\"language-reminder\"}"
+    },
+    {
+      "name": "after compaction",
+      "command": "opencode-message",
+      "files": {
+        ".claude/agents/dev.md": ""
+      },
+      "log": [
+        {
+          "ts": "2026-10-30T11:00:00.000Z",
+          "repo": "<root>",
+          "source": "",
+          "event": "chat.message",
+          "harness": "opencode",
+          "session": "s1",
+          "spoke": true,
+          "found": [
+            ".claude/agents/dev.md"
+          ],
+          "silent": null,
+          "kind": "findings"
+        },
+        {
+          "ts": "2026-10-30T11:00:00.000Z",
+          "repo": "<root>",
+          "source": "compact",
+          "event": "session.compacted",
+          "harness": "opencode",
+          "session": "s1",
+          "spoke": false,
+          "found": [],
+          "silent": "context-reset"
+        }
+      ],
+      "input": {
+        "prompt": "more findings",
+        "session": "s1"
+      },
+      "stdout": "craft: before your first tool call on this request, make one call: load the addressing-findings skill with the skill tool. Reading the PRs with gh first does not replace it.\ncraft: right after loading it, before triage (its step 0): load the memory skill with the skill tool and recall(<finding keywords>, <path>) for every path the findings touch; a finding a recalled decision answers is triaged with it cited.\ncraft: after the fixes are in (every fixer returned and pushed) and before posting any reply: run a light re-review of the fix commits only (base: the commit the review was made on; a merge since it, as trunk merged in, means ask the human first), here in this session over git diff <that commit>..HEAD: for Rust code the rust-review skill or the rust-audit tool, otherwise your own review pass, repeating until no Medium-or-higher finding is open (the whole diff only on the human's word); replies wait for it.\ncraft: why: it checks each finding against the code for a verdict, keeps every rejection on record so later reviews know it, drafts each reply for its own thread, and re-reviews until green; that re-review loop stays with this main session even when subagents fix.\ncraft: subagents lack the memory tools, so you hold the memory: put the records the memory skill recalls, verbatim with their ids, into each brief, and record every triage disposition (each finding rejected or deferred) yourself, right after triage, never through a subagent, with the memory skill (record-decision, record-rule or record-question), and check the `memory backend:` line it prints.\ncraft: triage the findings here in this session, never in a subagent, whatever their number: OpenCode has no sift engine, so do the sift steps of addressing-findings (\"Who triages\") yourself (recall; set aside what a recorded decision, deferred question or project rule answers; raise again each Critical/High or scope-changed one; a finding the PR did not introduce → an issue), then validate the rest inline or with the triage-findings tool, which validates and plans but does not sift; record each disposition and file the issues yourself.\ncraft: delegating the fixes is fine: once triage is done and its dispositions are recorded, paste this line verbatim into each fixer's brief with its file group: \"Fix only: patch this file group of the triage plan, its verdicts as given; before your first tool call, load the addressing-findings skill (skill tool) for how to fix and verify (its steps 5 and 6); report each planned fix you find wrong, with its reason, in your result; never re-triage and never write memory: your launcher decides and records it.\" Triage, memory writes, issues and the re-review stay here in the main session.\ncraft: the repo's own roles and rules still win; to silence this, set CRAFT_ROLE_HOOK=0 or add `craft-role-hook: off` to AGENTS.md or CLAUDE.md.",
+      "entryLine": "{\"ts\":\"2026-10-30T12:00:00.000Z\",\"repo\":\"<root>\",\"source\":\"\",\"event\":\"chat.message\",\"harness\":\"opencode\",\"session\":\"s1\",\"spoke\":true,\"found\":[\".claude/agents/dev.md\"],\"silent\":null,\"kind\":\"findings\"}"
+    },
+    {
+      "name": "a subagent line does not count",
+      "command": "opencode-message",
+      "files": {
+        ".claude/agents/dev.md": ""
+      },
+      "log": [
+        {
+          "ts": "2026-10-30T11:00:00.000Z",
+          "repo": "<root>",
+          "source": "",
+          "event": "chat.message",
+          "harness": "opencode",
+          "session": "s1",
+          "spoke": true,
+          "found": [
+            ".claude/agents/dev.md"
+          ],
+          "silent": null,
+          "kind": "findings",
+          "agent": "general"
+        }
+      ],
+      "input": {
+        "prompt": "more findings",
+        "session": "s1"
+      },
+      "stdout": "craft: before your first tool call on this request, make one call: load the addressing-findings skill with the skill tool. Reading the PRs with gh first does not replace it.\ncraft: right after loading it, before triage (its step 0): load the memory skill with the skill tool and recall(<finding keywords>, <path>) for every path the findings touch; a finding a recalled decision answers is triaged with it cited.\ncraft: after the fixes are in (every fixer returned and pushed) and before posting any reply: run a light re-review of the fix commits only (base: the commit the review was made on; a merge since it, as trunk merged in, means ask the human first), here in this session over git diff <that commit>..HEAD: for Rust code the rust-review skill or the rust-audit tool, otherwise your own review pass, repeating until no Medium-or-higher finding is open (the whole diff only on the human's word); replies wait for it.\ncraft: why: it checks each finding against the code for a verdict, keeps every rejection on record so later reviews know it, drafts each reply for its own thread, and re-reviews until green; that re-review loop stays with this main session even when subagents fix.\ncraft: subagents lack the memory tools, so you hold the memory: put the records the memory skill recalls, verbatim with their ids, into each brief, and record every triage disposition (each finding rejected or deferred) yourself, right after triage, never through a subagent, with the memory skill (record-decision, record-rule or record-question), and check the `memory backend:` line it prints.\ncraft: triage the findings here in this session, never in a subagent, whatever their number: OpenCode has no sift engine, so do the sift steps of addressing-findings (\"Who triages\") yourself (recall; set aside what a recorded decision, deferred question or project rule answers; raise again each Critical/High or scope-changed one; a finding the PR did not introduce → an issue), then validate the rest inline or with the triage-findings tool, which validates and plans but does not sift; record each disposition and file the issues yourself.\ncraft: delegating the fixes is fine: once triage is done and its dispositions are recorded, paste this line verbatim into each fixer's brief with its file group: \"Fix only: patch this file group of the triage plan, its verdicts as given; before your first tool call, load the addressing-findings skill (skill tool) for how to fix and verify (its steps 5 and 6); report each planned fix you find wrong, with its reason, in your result; never re-triage and never write memory: your launcher decides and records it.\" Triage, memory writes, issues and the re-review stay here in the main session.\ncraft: the repo's own roles and rules still win; to silence this, set CRAFT_ROLE_HOOK=0 or add `craft-role-hook: off` to AGENTS.md or CLAUDE.md.",
+      "entryLine": "{\"ts\":\"2026-10-30T12:00:00.000Z\",\"repo\":\"<root>\",\"source\":\"\",\"event\":\"chat.message\",\"harness\":\"opencode\",\"session\":\"s1\",\"spoke\":true,\"found\":[\".claude/agents/dev.md\"],\"silent\":null,\"kind\":\"findings\"}"
+    },
+    {
+      "name": "claude code lines count too",
+      "command": "opencode-message",
+      "files": {
+        ".claude/agents/dev.md": ""
+      },
+      "log": [
+        {
+          "ts": "2026-10-30T11:00:00.000Z",
+          "repo": "<root>",
+          "source": "",
+          "event": "UserPromptSubmit",
+          "harness": "claude-code",
+          "session": "s1",
+          "spoke": true,
+          "found": [
+            ".claude/agents/dev.md"
+          ],
+          "silent": null,
+          "kind": "findings"
+        }
+      ],
+      "input": {
+        "prompt": "more findings",
+        "session": "s1"
+      },
+      "stdout": "",
+      "entryLine": "{\"ts\":\"2026-10-30T12:00:00.000Z\",\"repo\":\"<root>\",\"source\":\"\",\"event\":\"chat.message\",\"harness\":\"opencode\",\"session\":\"s1\",\"spoke\":false,\"found\":[\".claude/agents/dev.md\"],\"silent\":\"already-said\",\"kind\":\"findings\"}"
+    },
+    {
+      "name": "no part to put it on",
+      "command": "opencode-message",
+      "files": {
+        ".claude/agents/dev.md": ""
+      },
+      "input": {
+        "prompt": "review the branch",
+        "session": "s1",
+        "placeable": false
+      },
+      "stdout": "craft: before your first tool call on this request, make one call: for Rust code, load the rust-review skill with the skill tool, or call the rust-audit tool (the /rust-audit command) for a whole crate. Reading the PRs with gh first does not replace it.\ncraft: why: rust-review runs the cargo gate and a severity-tiered checklist to an Approve/Warning/Block verdict and dispatches craft's review agents with a crafted brief; the rust-audit tool fans those agents out over the crate into one severity-ranked report.\ncraft: subagents lack the memory tools, so you hold the memory: put the records the memory skill recalls, verbatim with their ids, into each brief, and record every triage disposition (each finding rejected or deferred) yourself, right after triage, never through a subagent, with the memory skill (record-decision, record-rule or record-question), and check the `memory backend:` line it prints.\ncraft: delegating a review to a reviewer agent is fine: paste this line verbatim into its brief: \"Review only: report findings only, change no code and record nothing; return each finding with its severity and file:line.\" Fixing the findings stays here, with addressing-findings.\ncraft: the repo's own roles and rules still win; to silence this, set CRAFT_ROLE_HOOK=0 or add `craft-role-hook: off` to AGENTS.md or CLAUDE.md.",
+      "entryLine": "{\"ts\":\"2026-10-30T12:00:00.000Z\",\"repo\":\"<root>\",\"source\":\"\",\"event\":\"chat.message\",\"harness\":\"opencode\",\"session\":\"s1\",\"spoke\":false,\"found\":[\".claude/agents/dev.md\"],\"silent\":\"no-part\",\"kind\":\"review\"}"
+    },
+    {
+      "name": "no part and no text",
+      "command": "opencode-message",
+      "files": {
+        ".claude/agents/dev.md": ""
+      },
+      "input": {
+        "prompt": "write the parser",
+        "session": "s1",
+        "placeable": false
+      },
+      "stdout": "",
+      "entryLine": null
+    },
+    {
+      "name": "own opencode agents count, links do not",
+      "command": "opencode-message",
+      "files": {
+        ".opencode/agents/dev.md": "",
+        ".claude/agents/a.md": ""
+      },
+      "links": {
+        ".opencode/agents/rust-reviewer.md": "<root>/.claude/agents/a.md"
+      },
+      "input": {
+        "prompt": "review the branch",
+        "session": "s1"
+      },
+      "stdout": "craft: before your first tool call on this request, make one call: for Rust code, load the rust-review skill with the skill tool, or call the rust-audit tool (the /rust-audit command) for a whole crate. Reading the PRs with gh first does not replace it.\ncraft: why: rust-review runs the cargo gate and a severity-tiered checklist to an Approve/Warning/Block verdict and dispatches craft's review agents with a crafted brief; the rust-audit tool fans those agents out over the crate into one severity-ranked report.\ncraft: subagents lack the memory tools, so you hold the memory: put the records the memory skill recalls, verbatim with their ids, into each brief, and record every triage disposition (each finding rejected or deferred) yourself, right after triage, never through a subagent, with the memory skill (record-decision, record-rule or record-question), and check the `memory backend:` line it prints.\ncraft: delegating a review to a reviewer agent is fine: paste this line verbatim into its brief: \"Review only: report findings only, change no code and record nothing; return each finding with its severity and file:line.\" Fixing the findings stays here, with addressing-findings.\ncraft: the repo's own roles and rules still win; to silence this, set CRAFT_ROLE_HOOK=0 or add `craft-role-hook: off` to AGENTS.md or CLAUDE.md.",
+      "entryLine": "{\"ts\":\"2026-10-30T12:00:00.000Z\",\"repo\":\"<root>\",\"source\":\"\",\"event\":\"chat.message\",\"harness\":\"opencode\",\"session\":\"s1\",\"spoke\":true,\"found\":[\".claude/agents/a.md\",\".opencode/agents/dev.md\"],\"silent\":null,\"kind\":\"review\"}"
+    },
+    {
+      "name": "subagent whose brief asks for review",
+      "command": "opencode-message",
+      "files": {
+        ".claude/agents/dev.md": ""
+      },
+      "input": {
+        "prompt": "review the parser",
+        "session": "c",
+        "parent": "p",
+        "agent": "general"
+      },
+      "stdout": "craft: if your brief is to work findings (triaging PR comments, drafting or posting replies to review threads and fixing per review comments all count): triage is never yours: the main session triages, doing the sift itself; a brief that asks you to triage: report that back and stop. For a file group of a triage plan: before your first tool call, load addressing-findings with the skill tool and fix the group with it, its verdicts as given; replies are the main session's, posted only on the user's OK.\ncraft: you lack the memory tools and never write memory: the records your launcher recalled are in your brief; report each planned fix you find wrong, with its reason, in your result; never re-triage and never write memory: your launcher decides and records it.\ncraft: if your brief is only to review: report findings only, change no code and record nothing.\ncraft: the re-review loop belongs to the main session: report back and leave it there.\ncraft: the repo's own roles and rules still win; to silence this, set CRAFT_ROLE_HOOK=0 or add `craft-role-hook: off` to AGENTS.md or CLAUDE.md.",
+      "entryLine": "{\"ts\":\"2026-10-30T12:00:00.000Z\",\"repo\":\"<root>\",\"source\":\"\",\"event\":\"chat.message\",\"harness\":\"opencode\",\"session\":\"p\",\"spoke\":true,\"found\":[\".claude/agents/dev.md\"],\"silent\":null,\"agent\":\"general\",\"kind\":\"review\"}"
+    },
+    {
+      "name": "subagent of a parent that heard the lines",
+      "command": "opencode-message",
+      "files": {
+        ".claude/agents/dev.md": ""
+      },
+      "input": {
+        "prompt": "look at the parser",
+        "session": "c",
+        "parent": "s1",
+        "agent": "general"
+      },
+      "log": [
+        {
+          "ts": "2026-10-30T11:00:00.000Z",
+          "repo": "<root>",
+          "source": "",
+          "event": "chat.message",
+          "harness": "opencode",
+          "session": "s1",
+          "spoke": true,
+          "found": [
+            ".claude/agents/dev.md"
+          ],
+          "silent": null,
+          "kind": "review"
+        }
+      ],
+      "stdout": "craft: if your brief is to work findings (triaging PR comments, drafting or posting replies to review threads and fixing per review comments all count): triage is never yours: the main session triages, doing the sift itself; a brief that asks you to triage: report that back and stop. For a file group of a triage plan: before your first tool call, load addressing-findings with the skill tool and fix the group with it, its verdicts as given; replies are the main session's, posted only on the user's OK.\ncraft: you lack the memory tools and never write memory: the records your launcher recalled are in your brief; report each planned fix you find wrong, with its reason, in your result; never re-triage and never write memory: your launcher decides and records it.\ncraft: if your brief is only to review: report findings only, change no code and record nothing.\ncraft: the re-review loop belongs to the main session: report back and leave it there.\ncraft: the repo's own roles and rules still win; to silence this, set CRAFT_ROLE_HOOK=0 or add `craft-role-hook: off` to AGENTS.md or CLAUDE.md.",
+      "entryLine": "{\"ts\":\"2026-10-30T12:00:00.000Z\",\"repo\":\"<root>\",\"source\":\"\",\"event\":\"chat.message\",\"harness\":\"opencode\",\"session\":\"s1\",\"spoke\":true,\"found\":[\".claude/agents/dev.md\"],\"silent\":null,\"agent\":\"general\"}"
+    },
+    {
+      "name": "subagent of a parent that did not",
+      "command": "opencode-message",
+      "files": {
+        ".claude/agents/dev.md": ""
+      },
+      "input": {
+        "prompt": "look at the parser",
+        "session": "c",
+        "parent": "s1",
+        "agent": "general"
+      },
+      "stdout": "",
+      "entryLine": null
+    },
+    {
+      "name": "subagent: the parent heard only through a subagent line",
+      "command": "opencode-message",
+      "files": {
+        ".claude/agents/dev.md": ""
+      },
+      "input": {
+        "prompt": "look at the parser",
+        "session": "c",
+        "parent": "s1",
+        "agent": "general"
+      },
+      "log": [
+        {
+          "ts": "2026-10-30T11:00:00.000Z",
+          "repo": "<root>",
+          "source": "",
+          "event": "chat.message",
+          "harness": "opencode",
+          "session": "s1",
+          "spoke": true,
+          "found": [
+            ".claude/agents/dev.md"
+          ],
+          "silent": null,
+          "kind": "review",
+          "agent": "x"
+        }
+      ],
+      "stdout": "",
+      "entryLine": null
+    },
+    {
+      "name": "craft agent subagent: nothing",
+      "command": "opencode-message",
+      "files": {
+        ".claude/agents/dev.md": ""
+      },
+      "input": {
+        "prompt": "review the parser",
+        "session": "c",
+        "parent": "p",
+        "agent": "rust-reviewer"
+      },
+      "stdout": "",
+      "entryLine": null
+    },
+    {
+      "name": "namespaced craft agent: nothing",
+      "command": "opencode-message",
+      "files": {
+        ".claude/agents/dev.md": ""
+      },
+      "input": {
+        "prompt": "review the parser",
+        "session": "c",
+        "parent": "p",
+        "agent": "craft:rust-miri"
+      },
+      "stdout": "",
+      "entryLine": null
+    },
+    {
+      "name": "subagent with no agent name",
+      "command": "opencode-message",
+      "files": {
+        ".claude/agents/dev.md": ""
+      },
+      "input": {
+        "prompt": "review the parser",
+        "session": "c",
+        "parent": "p"
+      },
+      "stdout": "craft: if your brief is to work findings (triaging PR comments, drafting or posting replies to review threads and fixing per review comments all count): triage is never yours: the main session triages, doing the sift itself; a brief that asks you to triage: report that back and stop. For a file group of a triage plan: before your first tool call, load addressing-findings with the skill tool and fix the group with it, its verdicts as given; replies are the main session's, posted only on the user's OK.\ncraft: you lack the memory tools and never write memory: the records your launcher recalled are in your brief; report each planned fix you find wrong, with its reason, in your result; never re-triage and never write memory: your launcher decides and records it.\ncraft: if your brief is only to review: report findings only, change no code and record nothing.\ncraft: the re-review loop belongs to the main session: report back and leave it there.\ncraft: the repo's own roles and rules still win; to silence this, set CRAFT_ROLE_HOOK=0 or add `craft-role-hook: off` to AGENTS.md or CLAUDE.md.",
+      "entryLine": "{\"ts\":\"2026-10-30T12:00:00.000Z\",\"repo\":\"<root>\",\"source\":\"\",\"event\":\"chat.message\",\"harness\":\"opencode\",\"session\":\"p\",\"spoke\":true,\"found\":[\".claude/agents/dev.md\"],\"silent\":null,\"agent\":\"\",\"kind\":\"review\"}"
+    },
+    {
+      "name": "subagent in a silent repo",
+      "command": "opencode-message",
+      "files": {},
+      "input": {
+        "prompt": "review the parser",
+        "session": "c",
+        "parent": "p",
+        "agent": "general"
+      },
+      "stdout": "",
+      "entryLine": null
+    },
+    {
+      "name": "subagent, no part",
+      "command": "opencode-message",
+      "files": {
+        ".claude/agents/dev.md": ""
+      },
+      "input": {
+        "prompt": "review the parser",
+        "session": "c",
+        "parent": "p",
+        "agent": "general",
+        "placeable": false
+      },
+      "stdout": "craft: if your brief is to work findings (triaging PR comments, drafting or posting replies to review threads and fixing per review comments all count): triage is never yours: the main session triages, doing the sift itself; a brief that asks you to triage: report that back and stop. For a file group of a triage plan: before your first tool call, load addressing-findings with the skill tool and fix the group with it, its verdicts as given; replies are the main session's, posted only on the user's OK.\ncraft: you lack the memory tools and never write memory: the records your launcher recalled are in your brief; report each planned fix you find wrong, with its reason, in your result; never re-triage and never write memory: your launcher decides and records it.\ncraft: if your brief is only to review: report findings only, change no code and record nothing.\ncraft: the re-review loop belongs to the main session: report back and leave it there.\ncraft: the repo's own roles and rules still win; to silence this, set CRAFT_ROLE_HOOK=0 or add `craft-role-hook: off` to AGENTS.md or CLAUDE.md.",
+      "entryLine": "{\"ts\":\"2026-10-30T12:00:00.000Z\",\"repo\":\"<root>\",\"source\":\"\",\"event\":\"chat.message\",\"harness\":\"opencode\",\"session\":\"p\",\"spoke\":false,\"found\":[\".claude/agents/dev.md\"],\"silent\":\"no-part\",\"agent\":\"general\",\"kind\":\"review\"}"
+    },
+    {
+      "name": "compacted where the lines were said",
+      "command": "opencode-compacted",
+      "files": {
+        ".claude/agents/dev.md": ""
+      },
+      "input": {
+        "session": "s1"
+      },
+      "log": [
+        {
+          "ts": "2026-10-30T11:00:00.000Z",
+          "repo": "<root>",
+          "source": "",
+          "event": "chat.message",
+          "harness": "opencode",
+          "session": "s1",
+          "spoke": true,
+          "found": [
+            ".claude/agents/dev.md"
+          ],
+          "silent": null,
+          "kind": "findings"
+        }
+      ],
+      "stdout": "",
+      "entryLine": "{\"ts\":\"2026-10-30T12:00:00.000Z\",\"repo\":\"<root>\",\"source\":\"compact\",\"event\":\"session.compacted\",\"harness\":\"opencode\",\"session\":\"s1\",\"spoke\":false,\"found\":[],\"silent\":\"context-reset\"}"
+    },
+    {
+      "name": "compacted where they were not",
+      "command": "opencode-compacted",
+      "files": {
+        ".claude/agents/dev.md": ""
+      },
+      "input": {
+        "session": "s1"
+      },
+      "stdout": "",
+      "entryLine": null
+    },
+    {
+      "name": "compacted ignores the off switch",
+      "command": "opencode-compacted",
+      "files": {},
+      "input": {
+        "session": "s1"
+      },
+      "env": {
+        "CRAFT_ROLE_HOOK": "0"
+      },
+      "log": [
+        {
+          "ts": "2026-10-30T11:00:00.000Z",
+          "repo": "<root>",
+          "source": "",
+          "event": "chat.message",
+          "harness": "opencode",
+          "session": "s1",
+          "spoke": true,
+          "found": [
+            ".claude/agents/dev.md"
+          ],
+          "silent": null,
+          "kind": "review"
+        }
+      ],
+      "stdout": "",
+      "entryLine": "{\"ts\":\"2026-10-30T12:00:00.000Z\",\"repo\":\"<root>\",\"source\":\"compact\",\"event\":\"session.compacted\",\"harness\":\"opencode\",\"session\":\"s1\",\"spoke\":false,\"found\":[],\"silent\":\"context-reset\"}"
     }
   ]
 }

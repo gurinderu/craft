@@ -4,7 +4,8 @@
 //! puts the recalled records into each brief. Triage is the main session's, never a subagent's
 //! (skills/addressing-findings, "Who triages"). Each text gives one call to make first, one reason
 //! the skill beats doing it by hand, and lets delegation stand with a line to paste into the brief.
-//! The phrases Codex's texts share are here too (`super::text_codex`).
+//! The phrases Codex's and OpenCode's texts share are here too (`super::text_codex`,
+//! `super::text_opencode`).
 
 use super::declared::SWITCH_ENV;
 use super::kind::Kind;
@@ -19,12 +20,14 @@ pub const READ: &str = "SKILL.md (its path is listed among your skills)";
 pub const REPORT: &str = "report each planned fix you find wrong, with its reason, in your result; never re-triage and never write memory: your launcher decides and records it";
 pub const REVIEWER: &str = "report findings only, change no code and record nothing";
 pub const ADDRESS: &str = "Skill(\"craft:addressing-findings\")";
+pub const WHY_FINDINGS: &str = "craft: why: it checks each finding against the code for a verdict, keeps every rejection on record so later reviews know it, drafts each reply for its own thread, and re-reviews until green; that re-review loop stays with this main session even when subagents fix.";
+pub const FOR_FINDINGS: &str = "for findings work, right after loading the skill";
 const LIGHT: &str = "a light re-review of the fix commits only (base: the commit the review was made on; a merge since it, as trunk merged in, means ask the human first)";
 const ROUTES: &str = "on any language (Rust and Nix under their profiles, other source under its general lenses, in one run)";
 const TRIAGE: &str = "triage the findings here in the main session, whatever their number: launch the craft:triage-findings workflow (Workflow tool) with report = the findings written to a file in the session's temporary directory whenever they live in a review report, and pr = the PR number whenever there is a PR (it reads the PR's threads itself), at least one of the two, and prBase = git merge-base origin/<trunk> <reviewed head> together with base = the reviewed head's SHA, only when the reviewed head is a branch diverging from trunk (that merge-base differs from the head; on trunk or with no branch leave prBase out, and the findings claimed not this PR's come to you), even when the recall above failed (it recalls for itself); never hand triage to a subagent, which has no Workflow tool; right after it returns, record each disposition and file its issues yourself";
 pub const CODEX_RE_REVIEW: &str = "craft:codex-review with --base <that commit> --fresh --delta --full-every 0 in this session (if it cannot run or fails, your own pass over git diff <that commit>..HEAD)";
 
-fn review_brief() -> String {
+pub fn review_brief() -> String {
     format!("\"Review only: {REVIEWER}; return each finding with its severity and file:line.\"")
 }
 fn re_review() -> String {
@@ -32,18 +35,44 @@ fn re_review() -> String {
         "here in the main session with the craft:review workflow {{ base: <that commit>, fresh: true, delta: true, fullEvery: 0 }} {ROUTES}"
     )
 }
-fn launcher() -> String {
+/// The main session holds the memory: `skill` names the memory skill, `record` how to record.
+pub fn launcher(skill: &str, record: &str) -> String {
     format!(
-        "craft: subagents lack the memory tools, so you hold the memory: put the records craft:memory recalls, verbatim with their ids, into each brief, and record every triage disposition (each finding rejected or deferred) yourself, right after triage, never through a subagent, with {MEMORY}."
+        "craft: subagents lack the memory tools, so you hold the memory: put the records {skill} recalls, verbatim with their ids, into each brief, and record every triage disposition (each finding rejected or deferred) yourself, right after triage, never through a subagent, with {record}."
     )
 }
-fn fix_brief(load: &str) -> String {
+/// The brief a fixer gets with its file group; `load` names how it loads addressing-findings.
+pub fn fix_brief(load: &str) -> String {
     format!(
         "\"Fix only: patch this file group of the triage plan, its verdicts as given; before your first tool call, load {load} for how to fix and verify (its steps 5 and 6); {REPORT}.\""
     )
 }
 fn findings_brief() -> String {
     fix_brief("the craft:addressing-findings skill (Skill tool)")
+}
+/// The line that hands the fixes, and only them, to subagents.
+pub fn delegate_fixes(brief: &str, after: &str) -> String {
+    format!(
+        "craft: delegating the fixes is fine: {after}, paste this line verbatim into each fixer's brief with its file group: {brief} Triage, memory writes, issues and the re-review stay here in the main session."
+    )
+}
+/// Triage here, then delegation of either kind, in one line.
+pub fn delegate_both(triage: &str, brief: &str) -> String {
+    format!(
+        "craft: for findings, {triage}; then only the fixes may be delegated: paste this line verbatim into each fixer's brief with its file group: {brief} For a reviewer agent, paste: {} Triage, memory writes, issues and the re-review stay here.",
+        review_brief()
+    )
+}
+/// A subagent's findings line: `load` is how it loads addressing-findings, `triager` who triages.
+pub fn subagent_work(load: &str, triager: &str) -> String {
+    format!(
+        "craft: if your brief is to work findings (triaging PR comments, drafting or posting replies to review threads and fixing per review comments all count): triage is never yours: {triager}; a brief that asks you to triage: report that back and stop. For a file group of a triage plan: before your first tool call, {load} and fix the group with it, its verdicts as given; replies are the main session's, posted only on the user's OK."
+    )
+}
+pub fn subagent_memory() -> String {
+    format!(
+        "craft: you lack the memory tools and never write memory: the records your launcher recalled are in your brief; {REPORT}."
+    )
 }
 pub fn recall_line(recall: &str, lead: &str) -> String {
     format!(
@@ -85,12 +114,12 @@ fn findings() -> String {
         ),
         recall_line("Skill(\"craft:memory\") and", "right after loading it"),
         re_review_line(&re_review()),
-        "craft: why: it checks each finding against the code for a verdict, keeps every rejection on record so later reviews know it, drafts each reply for its own thread, and re-reviews until green; that re-review loop stays with this main session even when subagents fix.".to_owned(),
-        launcher(),
+        WHY_FINDINGS.to_owned(),
+        launcher("craft:memory", MEMORY),
         format!("craft: {TRIAGE}."),
-        format!(
-            "craft: delegating the fixes is fine: once the triage workflow has returned and its dispositions are recorded, paste this line verbatim into each fixer's brief with its file group: {} Triage, memory writes, issues and the re-review stay here in the main session.",
-            findings_brief()
+        delegate_fixes(
+            &findings_brief(),
+            "once the triage workflow has returned and its dispositions are recorded",
         ),
         off(),
     ]
@@ -103,7 +132,7 @@ fn review() -> String {
             "craft: before your first tool call on this request, make one call, here in the main session: Skill(\"craft:develop\") for the review loop up to a PR; for one pass, the craft:review workflow {ROUTES}. Never hand either to a subagent: it has no Workflow tool."
         ),
         "craft: why: craft:review runs the mechanical gate and a fan-out of review lenses per profile (Rust, Nix, and general lenses for other source), then verifies each finding into one report with a verdict; develop loops review → fix until no Medium-or-higher finding is open (at most 4 rounds, then it stops and tells you what is left), then one full review before the PR.".to_owned(),
-        launcher(),
+        launcher("craft:memory", MEMORY),
         format!(
             "craft: delegating a review to a reviewer agent is fine: paste this line verbatim into its brief: {} The fix loop stays here.",
             review_brief()
@@ -121,17 +150,10 @@ fn other_language() -> String {
                 "make one call here in the main session: Skill(\"craft:develop\") for the review loop up to a PR, or for one pass the craft:review workflow {ROUTES}; never hand either to a subagent"
             ),
         ),
-        recall_line(
-            "Skill(\"craft:memory\") and",
-            "for findings work, right after loading the skill",
-        ),
+        recall_line("Skill(\"craft:memory\") and", FOR_FINDINGS),
         re_review_line(&re_review()),
-        launcher(),
-        format!(
-            "craft: for findings, {TRIAGE}; then only the fixes may be delegated: paste this line verbatim into each fixer's brief with its file group: {} For a reviewer agent, paste: {} Triage, memory writes, issues and the re-review stay here.",
-            findings_brief(),
-            review_brief()
-        ),
+        launcher("craft:memory", MEMORY),
+        delegate_both(TRIAGE, &findings_brief()),
         off(),
     ]
     .join("\n")
@@ -158,12 +180,11 @@ pub fn reminder() -> String {
 /// What a subagent hears.
 pub fn subagent() -> String {
     [
-        format!(
-            "craft: if your brief is to work findings (triaging PR comments, drafting or posting replies to review threads and fixing per review comments all count): triage is never yours: the main session runs the craft:triage-findings workflow, which you lack (no Workflow tool); a brief that asks you to triage: report that back and stop. For a file group of a triage plan: before your first tool call, run {ADDRESS} and fix the group with it, its verdicts as given; replies are the main session's, posted only on the user's OK."
+        subagent_work(
+            &format!("run {ADDRESS}"),
+            "the main session runs the craft:triage-findings workflow, which you lack (no Workflow tool)",
         ),
-        format!(
-            "craft: you lack the memory tools and never write memory: the records your launcher recalled are in your brief; {REPORT}."
-        ),
+        subagent_memory(),
         format!("craft: if your brief is only to review: {REVIEWER}."),
         "craft: craft's workflow engines (Workflow tool: craft:review, craft:develop's loop) run only in the main session: report back and leave the review loop there.".to_owned(),
         off(),

@@ -68,7 +68,7 @@ fn on_agent_words(prompt: &str, entry: Entry, who: Harness, ctx: &Ctx) -> Run {
 fn work_text(who: Harness, kind: Kind) -> String {
     match who {
         Harness::Codex => text_codex::prompt(kind == Kind::OtherLanguage),
-        Harness::ClaudeCode => text::prompt(kind),
+        Harness::ClaudeCode | Harness::OpenCode => text::prompt(kind),
     }
 }
 
@@ -108,7 +108,7 @@ pub fn prompt(input: &str, ctx: &Ctx) -> Run {
     if repeat == Some(REMINDER) {
         let line = match who {
             Harness::Codex => text_codex::reminder(),
-            Harness::ClaudeCode => text::reminder(),
+            Harness::ClaudeCode | Harness::OpenCode => text::reminder(),
         };
         return Run {
             stdout: context(EVENT, &line),
@@ -151,7 +151,7 @@ pub fn subagent(input: &str, ctx: &Ctx) -> Run {
     }
     let said = match who {
         Harness::Codex => text_codex::subagent(),
-        Harness::ClaudeCode => text::subagent(),
+        Harness::ClaudeCode | Harness::OpenCode => text::subagent(),
     };
     Run {
         stdout: context(EVENT, &said),

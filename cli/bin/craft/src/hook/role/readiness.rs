@@ -1,15 +1,11 @@
 //! What a Codex session must know before it runs craft's review (realm @nick/craft, node #293;
 //! the Codex surface, #292): whether Codex's own sandbox can run a command at all — the review's
-//! agents are `codex exec -s read-only` processes — and whether this plugin version's binary is in
-//! the cache `bin/craft` runs (`~/.craft/bin/<version>/craft`), since fetching it needs the network
-//! and writes outside the workspace. Asked by the start hook under Codex only; any failure is
-//! silence.
+//! agents are `codex exec -s read-only` processes. Asked by the start hook under Codex only; any
+//! failure is silence.
 
-use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
 
-use super::Ctx;
 use super::js::{self, Re, compile};
 use crate::hook::bounded;
 
@@ -80,63 +76,13 @@ fn sandbox_line(probe: &dyn Probe) -> String {
     .join(" ")
 }
 
-/// The plugin version Codex installed, from `<root>/.codex-plugin/plugin.json`.
-fn plugin_version(root: &Path) -> String {
-    std::fs::read(root.join(".codex-plugin").join("plugin.json"))
-        .ok()
-        .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
-        .and_then(|v| v.get("version")?.as_str().map(str::to_owned))
-        .unwrap_or_default()
-}
-
-fn executable(file: &Path) -> bool {
-    std::fs::metadata(file).is_ok_and(|m| {
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            m.is_file() && m.permissions().mode() & 0o111 != 0
-        }
-        #[cfg(not(unix))]
-        m.is_file()
-    })
-}
-
-fn binary_line(ctx: &Ctx) -> String {
-    let root = ctx.var("PLUGIN_ROOT");
-    if root.is_empty() || !ctx.var("CRAFT_BIN").is_empty() {
-        return String::new();
-    }
-    let version = plugin_version(Path::new(root));
-    let Some(home) = ctx.home.as_deref() else {
-        return String::new();
-    };
-    let name = if cfg!(windows) { "craft.exe" } else { "craft" };
-    if version.is_empty() || executable(&home.join(".craft").join("bin").join(&version).join(name))
-    {
-        return String::new();
-    }
-    let wrapper = js::resolve(&Path::new(root).join("bin").join("craft"));
-    [
-        format!(
-            "craft: the craft binary {version} is not in ~/.craft/bin yet. When you run craft's review (the codex-review skill),"
-        ),
-        "its first run downloads it, which needs the network and writes outside the workspace:".to_owned(),
-        format!(
-            "then run `sh \"{}\" review run --backend codex …` with escalated permissions and ask the user to approve it.",
-            wrapper.display()
-        ),
-        "This is not a request to start a review now.".to_owned(),
-    ]
-    .join(" ")
-}
-
 /// The readiness lines for a Codex start, each with its name; none when there is nothing to say.
-pub fn lines(ctx: &Ctx, probe: &dyn Probe) -> Vec<(&'static str, String)> {
-    [
-        ("sandbox", sandbox_line(probe)),
-        ("binary", binary_line(ctx)),
-    ]
-    .into_iter()
-    .filter(|(_, text)| !text.is_empty())
-    .collect()
+/// Whether this plugin version's binary is cached is not asked here: the binary that would say so is
+/// the one running, and `lib/craft-hook.sh` says it while the binary is absent (realm @nick/craft,
+/// node #550).
+pub fn lines(probe: &dyn Probe) -> Vec<(&'static str, String)> {
+    [("sandbox", sandbox_line(probe))]
+        .into_iter()
+        .filter(|(_, text)| !text.is_empty())
+        .collect()
 }

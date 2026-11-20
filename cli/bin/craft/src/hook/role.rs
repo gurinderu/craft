@@ -17,10 +17,12 @@ mod iso;
 mod js;
 mod key;
 mod kind;
+mod opencode;
 mod readiness;
 mod start;
 mod text;
 mod text_codex;
+mod text_opencode;
 mod word;
 mod work;
 
@@ -75,6 +77,8 @@ pub enum Hook {
     UserPrompt,
     SubagentStart,
     ReviewerDispatch,
+    OpencodeMessage,
+    OpencodeCompacted,
 }
 
 /// One run of `hook` over the harness's input.
@@ -84,6 +88,8 @@ pub fn run(hook: Hook, input: &str, ctx: &Ctx) -> Run {
         Hook::UserPrompt => work::prompt(input, ctx),
         Hook::SubagentStart => work::subagent(input, ctx),
         Hook::ReviewerDispatch => dispatch::run(input, ctx),
+        Hook::OpencodeMessage => opencode::message(input, ctx),
+        Hook::OpencodeCompacted => opencode::compacted(input, ctx),
     }
 }
 
@@ -93,6 +99,8 @@ pub fn run(hook: Hook, input: &str, ctx: &Ctx) -> Run {
 enum Harness {
     ClaudeCode,
     Codex,
+    /// The OpenCode plugin, which names itself by the subcommand it runs.
+    OpenCode,
 }
 
 impl Harness {
@@ -108,6 +116,7 @@ impl Harness {
         match self {
             Self::ClaudeCode => "claude-code",
             Self::Codex => "codex",
+            Self::OpenCode => "opencode",
         }
     }
 }

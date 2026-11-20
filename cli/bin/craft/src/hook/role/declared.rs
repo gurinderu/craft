@@ -65,11 +65,14 @@ fn project_agents(root: &Path, dir: &str, ext: &str, own_only: bool) -> Vec<Stri
 }
 
 /// What the repo at `root` declares: `.claude/agents/*.md`, under Codex also the role files
-/// `.codex/agents/*.toml`, and the root rules files, one reached twice (a link) read once.
+/// `.codex/agents/*.toml`, under OpenCode also its own `.opencode/agents/*.md`, and the root rules files, one reached twice (a link) read once.
 pub fn read(root: &Path, who: Harness) -> Declared {
     let mut agents = project_agents(root, ".claude/agents", ".md", false);
-    if who == Harness::Codex {
-        agents.extend(project_agents(root, ".codex/agents", ".toml", false));
+    match who {
+        Harness::ClaudeCode => {}
+        Harness::Codex => agents.extend(project_agents(root, ".codex/agents", ".toml", false)),
+        // Not the links craft's OpenCode installer puts there (#264).
+        Harness::OpenCode => agents.extend(project_agents(root, ".opencode/agents", ".md", true)),
     }
     let mut rules = Vec::new();
     let mut seen = Vec::new();
@@ -140,6 +143,7 @@ pub fn repo_test(cwd: &Path, session: &str, ctx: &Ctx, event: &str, who: Harness
         found: decision.unwrap_or_default(),
         kind: None,
         agent: None,
+        agent_kind: None,
         readiness: None,
         reason: None,
     }

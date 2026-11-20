@@ -59,6 +59,11 @@ enum HookCommand {
     /// When the main session dispatches the repo's own reviewer agent: run craft's review beside
     /// it. Prints the `PreToolUse` output or nothing, never blocks, and always exits 0.
     ReviewerDispatch,
+    /// The OpenCode plugin's work hook on one user message: prints the lines to add, or nothing,
+    /// and always exits 0.
+    OpencodeMessage,
+    /// The OpenCode plugin's work hook on a session's compaction: logs it, prints nothing.
+    OpencodeCompacted,
 }
 
 #[derive(Subcommand)]
@@ -141,6 +146,12 @@ async fn main() -> ExitCode {
         Command::Hook(HookCommand::SubagentStart) => hook::role_hook(hook::RoleHook::SubagentStart),
         Command::Hook(HookCommand::ReviewerDispatch) => {
             hook::role_hook(hook::RoleHook::ReviewerDispatch)
+        }
+        Command::Hook(HookCommand::OpencodeMessage) => {
+            hook::role_hook(hook::RoleHook::OpencodeMessage)
+        }
+        Command::Hook(HookCommand::OpencodeCompacted) => {
+            hook::role_hook(hook::RoleHook::OpencodeCompacted)
         }
     };
     // Every way out — a stop, an error, a finished run — waits out the grace of the agents'
