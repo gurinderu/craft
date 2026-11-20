@@ -360,7 +360,13 @@ fn opened(
             ctx.root = filing::found_root([given])
                 .or(ctx.root)
                 .or_else(|| filing_root(None));
-            filing::open(run, ctx, &session(), &step, &filing::StoreWriter::default())
+            filing::open(
+                run,
+                ctx,
+                &session(),
+                &step,
+                &crate::filing_worker::BoundedWriter,
+            )
         }
         Err(e) => {
             json!({"runDir": "", "rejoin": false, "lost": [format!("the run's telemetry — {e}")]})
@@ -439,12 +445,13 @@ pub(crate) fn submit_step(args: &SubmitArgs) -> Result<Value> {
     // stopped parts that did not land are filed again; a finished run whose own record did not land
     // is filed again rather than refused.
     let earlier = if args.resume {
-        filing::resuming(&run, &filing::StoreWriter::default())
+        filing::resuming(&run, &crate::filing_worker::BoundedWriter)
     } else {
         Vec::new()
     };
     if args.resume
-        && let Some(step) = filing::refile(&run, earlier.clone(), &filing::StoreWriter::default())
+        && let Some(step) =
+            filing::refile(&run, earlier.clone(), &crate::filing_worker::BoundedWriter)
     {
         return Ok(step);
     }
@@ -473,7 +480,13 @@ pub(crate) fn submit_step(args: &SubmitArgs) -> Result<Value> {
         session: session(),
     };
     Ok(
-        match filing::submitted(&run, &step, &host, earlier, &filing::StoreWriter::default()) {
+        match filing::submitted(
+            &run,
+            &step,
+            &host,
+            earlier,
+            &crate::filing_worker::BoundedWriter,
+        ) {
             Some(filed) => filing::with_filing(step, filed),
             None => step,
         },

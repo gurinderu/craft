@@ -62,14 +62,43 @@ pub fn index(
 /// # Errors
 /// When the store cannot be listed.
 pub fn record_names(store: &Path) -> std::io::Result<Vec<String>> {
-    let mut names: Vec<String> = std::fs::read_dir(store)?
-        .flatten()
-        .filter(|e| e.file_type().is_ok_and(|t| t.is_file()))
-        .map(|e| e.file_name().to_string_lossy().into_owned())
-        .filter(|n| n.ends_with(".json"))
-        .collect();
+    let mut names = list_names(std::fs::read_dir(store)?.map(|entry| {
+        let entry = entry?;
+        Ok((
+            entry.file_name().to_string_lossy().into_owned(),
+            entry.file_type()?.is_file(),
+        ))
+    }))?;
     names.sort();
     Ok(names)
+}
+
+fn list_names(
+    entries: impl Iterator<Item = std::io::Result<(String, bool)>>,
+) -> std::io::Result<Vec<String>> {
+    Ok(entries
+        .collect::<std::io::Result<Vec<_>>>()?
+        .into_iter()
+        .filter(|(name, file)| *file && name.ends_with(".json"))
+        .map(|(name, _)| name)
+        .collect())
+}
+
+#[cfg(test)]
+mod enumeration_tests {
+    use super::list_names;
+
+    #[test]
+    fn listing_error_is_not_a_successful_partial_result() {
+        let entries = vec![
+            Ok(("a.json".to_owned(), true)),
+            Err(std::io::Error::other("listing failed")),
+        ];
+        assert_eq!(
+            list_names(entries.into_iter()).unwrap_err().to_string(),
+            "listing failed"
+        );
+    }
 }
 
 /// One detail record by its file name in `store`, or why it does not read.

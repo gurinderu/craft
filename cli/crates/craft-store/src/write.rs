@@ -140,9 +140,10 @@ fn claim_record_file(
             .create_new(true)
             .open(&file);
         match made {
-            Ok(mut f) => {
-                std::io::Write::write_all(&mut f, Js::Obj(record.clone()).pretty().as_bytes())
-                    .map_err(|e| StoreError::io(&file, &e))?;
+            Ok(f) => {
+                finish_claim(&file, f, |f| {
+                    std::io::Write::write_all(f, Js::Obj(record.clone()).pretty().as_bytes())
+                })?;
                 return Ok((file, record));
             }
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
@@ -153,6 +154,25 @@ fn claim_record_file(
         "cannot claim a record name under {} — 60 consecutive stamps taken",
         w.store.display()
     )))
+}
+
+fn finish_claim(
+    file: &Path,
+    mut f: std::fs::File,
+    write: impl FnOnce(&mut std::fs::File) -> std::io::Result<()>,
+) -> Result<(), StoreError> {
+    let result = write(&mut f);
+    drop(f);
+    match result {
+        Ok(()) => Ok(()),
+        Err(e) => match std::fs::remove_file(file) {
+            Ok(()) => Err(StoreError::io(file, &e)),
+            Err(cleanup) => Err(StoreError::Refused(format!(
+                "{}; could not remove partial record: {cleanup}",
+                StoreError::io(file, &e)
+            ))),
+        },
+    }
 }
 
 /// The record written over the one `recover` filed for this run, keeping its `ts`; `None` when that
@@ -184,37 +204,39 @@ fn replace_record_file(
 /// other line is kept byte for byte, one that is not UTF-8 or not JSON too; an index that cannot be
 /// read fails the write and is left as it is, never replaced by what a failed read gave.
 fn replace_index_row(store: &Path, record: &Obj, row: &str) -> Result<(), StoreError> {
+    with_index_lock(store, || replace_index_row_locked(store, record, row))
+}
+
+fn replace_index_row_locked(store: &Path, record: &Obj, row: &str) -> Result<(), StoreError> {
     let want = filename(record);
-    with_index_lock(store, || {
-        let file = store.join("index.jsonl");
-        let bytes = match std::fs::read(&file) {
-            Ok(b) => b,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
-            Err(e) => return Err(StoreError::io(&file, &e)),
-        };
-        let mut lines: Vec<&[u8]> = bytes.split(|b| *b == b'\n').collect();
-        if lines.last().is_some_and(|l| l.is_empty()) {
-            lines.pop();
-        }
-        let names = |l: &&[u8]| {
-            std::str::from_utf8(l)
-                .ok()
-                .and_then(|t| parse(t).ok())
-                .and_then(|v| v.as_obj().map(filename))
-                .is_some_and(|n| n == want)
-        };
-        match lines.iter().position(names) {
-            Some(i) => {
-                if let Some(l) = lines.get_mut(i) {
-                    *l = row.as_bytes();
-                }
+    let file = store.join("index.jsonl");
+    let bytes = match std::fs::read(&file) {
+        Ok(b) => b,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(e) => return Err(StoreError::io(&file, &e)),
+    };
+    let mut lines: Vec<&[u8]> = bytes.split(|b| *b == b'\n').collect();
+    if lines.last().is_some_and(|l| l.is_empty()) {
+        lines.pop();
+    }
+    let names = |l: &&[u8]| {
+        std::str::from_utf8(l)
+            .ok()
+            .and_then(|t| parse(t).ok())
+            .and_then(|v| v.as_obj().map(filename))
+            .is_some_and(|n| n == want)
+    };
+    match lines.iter().position(names) {
+        Some(i) => {
+            if let Some(l) = lines.get_mut(i) {
+                *l = row.as_bytes();
             }
-            None => lines.push(row.as_bytes()),
         }
-        let mut out = lines.join(&b'\n');
-        out.push(b'\n');
-        write_atomically(&file, &out)
-    })
+        None => lines.push(row.as_bytes()),
+    }
+    let mut out = lines.join(&b'\n');
+    out.push(b'\n');
+    write_atomically(&file, &out)
 }
 
 /// `writeFileAtomically`: a temporary file beside `file`, renamed over it; removed when that fails.
@@ -288,6 +310,64 @@ mod tests {
         .as_obj()
         .unwrap()
         .clone()
+    }
+
+    #[test]
+    fn failed_write_removes_the_partial_claim() {
+        let d = tempfile::tempdir().unwrap();
+        let file = d.path().join("claimed.json");
+        let f = std::fs::File::create(&file).unwrap();
+        let failure = finish_claim(&file, f, |f| {
+            std::io::Write::write_all(f, b"partial")?;
+            Err(std::io::Error::other("disk full"))
+        });
+        assert!(failure.unwrap_err().to_string().contains("disk full"));
+        assert!(!file.exists());
+    }
+
+    #[test]
+    fn failed_index_replacement_keeps_the_new_record_for_a_retry() {
+        let d = tempfile::tempdir().unwrap();
+        let previous = record("2026-03-04T05-00-00Z");
+        let file = d.path().join(filename(&previous));
+        let old = Js::Obj(previous).pretty();
+        std::fs::write(&file, &old).unwrap();
+        std::fs::create_dir(d.path().join("index.jsonl")).unwrap();
+        let w = Writing {
+            store: d.path().to_path_buf(),
+            project: "/p".into(),
+            workdir: d.path().to_path_buf(),
+            session: String::new(),
+            git_id: GitId::default(),
+            observe: false,
+            craft_commit: None,
+            now: 0,
+        };
+        let result = write_record(&record("x"), &w, &GitId::default(), Some(&file));
+        result.unwrap_err();
+        let after = std::fs::read_to_string(&file).unwrap();
+        assert_ne!(after, old);
+        assert_eq!(
+            parse(&after).unwrap().as_obj().unwrap().text("project"),
+            "/p"
+        );
+        std::fs::remove_dir(d.path().join("index.jsonl")).unwrap();
+        std::fs::write(
+            d.path().join("index.jsonl"),
+            format!("{}\n", Js::Obj(record("2026-03-04T05-00-00Z")).compact()),
+        )
+        .unwrap();
+        write_record(&record("x"), &w, &GitId::default(), Some(&file)).unwrap();
+        let index = std::fs::read_to_string(d.path().join("index.jsonl")).unwrap();
+        assert_eq!(index.lines().count(), 1);
+        assert_eq!(
+            parse(index.trim())
+                .unwrap()
+                .as_obj()
+                .unwrap()
+                .text("project"),
+            "/p"
+        );
     }
 
     #[test]

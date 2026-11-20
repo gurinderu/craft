@@ -78,6 +78,40 @@ fn ndjson(out: &Output) -> Vec<Value> {
         .collect()
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn stats_does_not_keep_large_unfoldable_records_in_memory() {
+    if Command::new("prlimit").arg("--version").output().is_err() {
+        return;
+    }
+    let d = tempfile::tempdir().unwrap();
+    let mut r = review("0.9.0", "Approve", 0);
+    r["payload"] = json!("x".repeat(500_000));
+    let bytes = serde_json::to_vec(&r).unwrap();
+    for n in 0..64 {
+        std::fs::write(
+            d.path().join(format!("{n:03}-workflow-review.json")),
+            &bytes,
+        )
+        .unwrap();
+    }
+    let out = Command::new("prlimit")
+        .arg("--as=40000000")
+        .arg("--")
+        .arg(env!("CARGO_BIN_EXE_craft"))
+        .args(["runs", "stats", "--json", "--store"])
+        .arg(d.path())
+        .env("TOKIO_WORKER_THREADS", "1")
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(ndjson(&out)[0]["tally"]["runs"], json!(64));
+}
+
 #[test]
 fn ls_filters_the_index_says_what_it_passed_over_and_prints_ndjson() {
     let d = store();
@@ -109,6 +143,17 @@ fn show_names_a_record_by_a_unique_prefix_of_its_time() {
     let many = craft(d.path(), &["show", "2026-11-01"]);
     assert!(!many.status.success());
     assert!(String::from_utf8_lossy(&many.stderr).contains("names 2 records"));
+}
+
+#[test]
+fn check_refuses_an_unreadable_checkpoint_directory() {
+    for name in [".partial", "cli"] {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::write(d.path().join(name), "not a directory").unwrap();
+        let out = craft(d.path(), &["check"]);
+        assert!(!out.status.success(), "{name}");
+        assert!(!String::from_utf8_lossy(&out.stdout).contains("clean"));
+    }
 }
 
 #[test]

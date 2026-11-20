@@ -125,21 +125,26 @@ pub fn check(store: &Path) -> std::io::Result<Found> {
     found.unindexed = on_disk.difference(&named).cloned().collect();
     found.missing = named.difference(&on_disk).cloned().collect();
     found.phantoms = phantoms(store, &rows);
-    found.unfiled = unfiled_runs(store);
-    found.partials = dirs(&store.join(".partial"));
+    found.unfiled = unfiled_runs(store)?;
+    found.partials = dirs(&store.join(".partial"))?;
     Ok(found)
 }
 
-fn dirs(at: &Path) -> Vec<String> {
-    let mut out: Vec<String> = std::fs::read_dir(at)
-        .into_iter()
-        .flatten()
-        .flatten()
-        .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
-        .map(|e| e.file_name().to_string_lossy().into_owned())
-        .collect();
+fn dirs(at: &Path) -> std::io::Result<Vec<String>> {
+    let entries = match std::fs::read_dir(at) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(e),
+    };
+    let mut out = Vec::new();
+    for entry in entries {
+        let entry = entry?;
+        if entry.file_type()?.is_dir() {
+            out.push(entry.file_name().to_string_lossy().into_owned());
+        }
+    }
     out.sort();
-    out
+    Ok(out)
 }
 
 fn json(path: &Path) -> Option<Obj> {
@@ -148,9 +153,9 @@ fn json(path: &Path) -> Option<Obj> {
 }
 
 /// The CLI's run directories whose state is done and whose filing kept a record that is not filed.
-fn unfiled_runs(store: &Path) -> Vec<String> {
+fn unfiled_runs(store: &Path) -> std::io::Result<Vec<String>> {
     let root = store.join("cli");
-    dirs(&root)
+    Ok(dirs(&root)?
         .into_iter()
         .filter(|d| {
             let done =
@@ -158,5 +163,5 @@ fn unfiled_runs(store: &Path) -> Vec<String> {
             let filing = json(&root.join(d).join("filing.json"));
             done && filing.is_some_and(|f| f.text("record") != "filed")
         })
-        .collect()
+        .collect())
 }

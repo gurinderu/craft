@@ -77,7 +77,8 @@ pub fn engine_key(r: &Obj) -> String {
 }
 
 /// The key a resumed run's two records share (`runKey`), `None` when the record is not foldable.
-fn run_key(r: &Obj) -> Option<String> {
+#[must_use]
+pub fn run_key(r: &Obj) -> Option<String> {
     let first = |ks: &[&str]| {
         ks.iter()
             .find_map(|k| r.get(k).filter(|v| v.truthy()))

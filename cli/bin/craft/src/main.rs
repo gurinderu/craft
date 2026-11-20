@@ -1,6 +1,7 @@
 //! `craft`: the command line over craft's review.
 
 mod comment;
+mod filing_worker;
 mod hook;
 mod init;
 mod printed;
@@ -37,6 +38,8 @@ enum Command {
     /// The run store (`~/.craft/runs`): list its runs, show one, sum them, check the store, a
     /// version's retro.
     Runs(runs::RunsArgs),
+    #[command(name = "__craft-file-run", hide = true)]
+    FileRun,
 }
 
 #[derive(Subcommand)]
@@ -120,6 +123,7 @@ async fn main() -> ExitCode {
         Command::Init(args) => init::init(&args),
         Command::Hook(HookCommand::PrOpened(args)) => hook::pr_opened(&args),
         Command::Runs(args) => runs::runs(&args),
+        Command::FileRun => filing_worker::worker(),
     };
     // Every way out — a stop, an error, a finished run — waits out the grace of the agents'
     // groups, so their SIGKILL is sent before craft is gone.

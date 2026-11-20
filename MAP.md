@@ -229,7 +229,7 @@ a host (the `review` engine above) runs its agents. The step protocol was observ
 in a live session (craft 0.41.0, a Rust diff, finished with Approve); the full-lens review it runs
 now is not yet observed live. `bin/craft` (the command: `craft review start | submit | status`, the step
 protocol; `craft review run --backend codex|pi|opencode`, which drives that protocol itself to the verdict, each task its own
-`codex exec`, `pi -p` or `opencode run` process, its progress as lines or `--events json`; `craft review probe`, one agent end to end; and `craft runs ls | show | stats | check | retro`, the run store read by streaming its files, a table or NDJSON), `crates/craft-agent` (one agent run through a
+`codex exec`, `pi -p` or `opencode run` process, its progress as lines or `--events json`; `craft review probe`, one agent end to end; `filing_worker.rs` isolates a run-store write in a time-bounded child of the same binary; and `craft runs ls | show | stats | check | retro`, the run store read by streaming its files, a table or NDJSON), `crates/craft-agent` (one agent run through a
 backend — the `claude`, `codex`, `pi` or `opencode` CLI — and many under a concurrency cap), `crates/craft-review` (the steps — each changed file to one profile (Rust, Nix, SQL, or the general lenses for source in
 any other language, `content/profiles/`; a Rust or general file whose changed lines hold a query string also gets the
 `sql-queries` lens, `src/embedded_sql.rs`), the mechanical gate the binary runs itself before any lens (clippy and semgrep

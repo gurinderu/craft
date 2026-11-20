@@ -34,34 +34,55 @@ pub fn bounded(program: &str, args: &[&str], cwd: &Path, limit: Duration) -> Pro
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .env("GIT_TERMINAL_PROMPT", "0");
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.process_group(0);
+    }
     let Ok(mut child) = cmd.spawn() else {
         return Probe::Failed;
     };
     let mut pipe = child.stdout.take();
-    let reader = std::thread::spawn(move || {
+    let (send, receive) = std::sync::mpsc::sync_channel(1);
+    std::thread::spawn(move || {
         let mut out = Vec::new();
         if let Some(p) = pipe.as_mut() {
             drop(p.read_to_end(&mut out));
         }
-        out
+        drop(send.send(out));
     });
     let deadline = Instant::now() + limit;
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break Some(status),
-            Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(5)),
-            Ok(None) | Err(_) => {
-                drop(child.kill());
-                drop(child.wait());
-                break None;
+    let mut status = None;
+    loop {
+        if status.is_none() {
+            match child.try_wait() {
+                Ok(s) => status = s,
+                Err(_) => break Probe::Failed,
             }
         }
-    };
-    let out = reader.join().unwrap_or_default();
-    match status {
-        None => Probe::TimedOut,
-        Some(s) if s.success() => Probe::Said(String::from_utf8_lossy(&out).trim().to_owned()),
-        Some(_) => Probe::Failed,
+        if let Some(s) = status
+            && let Ok(out) = receive.try_recv()
+        {
+            break if s.success() {
+                Probe::Said(String::from_utf8_lossy(&out).trim().to_owned())
+            } else {
+                Probe::Failed
+            };
+        }
+        if Instant::now() >= deadline {
+            #[cfg(unix)]
+            if let Ok(pid) = i32::try_from(child.id())
+                && nix::sys::signal::killpg(
+                    nix::unistd::Pid::from_raw(pid),
+                    nix::sys::signal::Signal::SIGKILL,
+                )
+                .is_err()
+            {}
+            drop(child.kill());
+            drop(child.wait());
+            break Probe::TimedOut;
+        }
+        std::thread::sleep(Duration::from_millis(5));
     }
 }
 
@@ -188,6 +209,20 @@ mod tests {
     use std::time::{Duration, Instant};
 
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn a_descendant_holding_stdout_does_not_defeat_the_deadline() {
+        let began = Instant::now();
+        let got = bounded(
+            "sh",
+            &["-c", "sleep 2 & exit 0"],
+            Path::new("/"),
+            Duration::from_millis(100),
+        );
+        assert_eq!(got, Probe::TimedOut);
+        assert!(began.elapsed() < Duration::from_secs(1));
+    }
 
     #[test]
     fn a_probe_that_outlives_its_bound_is_killed_and_said_timed_out() {

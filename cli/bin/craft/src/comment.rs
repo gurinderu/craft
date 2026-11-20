@@ -43,7 +43,7 @@ pub(crate) fn comment_step(args: &CommentArgs) -> Result<Value> {
         began,
     );
     Ok(
-        match filing::republished(&run, &step, &filing::StoreWriter::default()) {
+        match filing::republished(&run, &step, &crate::filing_worker::BoundedWriter) {
             Some(filed) => filing::with_filing(step, filed),
             None => step,
         },

@@ -125,11 +125,8 @@ pub fn read_checkpoints(dir: &Path) -> Result<Vec<Obj>, String> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
         Err(e) => return Err(e.to_string()),
     };
-    let mut names: Vec<String> = entries
-        .flatten()
-        .map(|e| e.file_name().to_string_lossy().into_owned())
-        .filter(|n| is_slice(n) && n.ends_with(".json"))
-        .collect();
+    let mut names =
+        checkpoint_names(entries.map(|e| e.map(|e| e.file_name().to_string_lossy().into_owned())))?;
     names.sort();
     Ok(names
         .into_iter()
@@ -141,6 +138,18 @@ pub fn read_checkpoints(dir: &Path) -> Result<Vec<Obj>, String> {
                 Err(why) => unreadable(&n, &why),
             }
         })
+        .collect())
+}
+
+fn checkpoint_names(
+    entries: impl Iterator<Item = std::io::Result<String>>,
+) -> Result<Vec<String>, String> {
+    let names = entries
+        .collect::<std::io::Result<Vec<_>>>()
+        .map_err(|e| e.to_string())?;
+    Ok(names
+        .into_iter()
+        .filter(|n| is_slice(n) && n.ends_with(".json"))
         .collect())
 }
 
@@ -246,9 +255,12 @@ pub fn write_checkpoint(
     now: i64,
 ) -> Result<PathBuf, StoreError> {
     std::fs::create_dir_all(dir).map_err(|e| StoreError::io(dir, &e))?;
-    let seq = std::fs::read_dir(dir)
+    let entries = std::fs::read_dir(dir)
         .map_err(|e| StoreError::io(dir, &e))?
-        .flatten()
+        .collect::<std::io::Result<Vec<_>>>()
+        .map_err(|e| StoreError::io(dir, &e))?;
+    let seq = entries
+        .into_iter()
         .filter(|e| is_slice(&e.file_name().to_string_lossy()))
         .count();
     let safe: String = phase
@@ -274,4 +286,21 @@ pub fn write_checkpoint(
     slice.set("engineRevision", Js::Num(ENGINE_REVISION));
     std::fs::write(&file, Js::Obj(slice).pretty()).map_err(|e| StoreError::io(&file, &e))?;
     Ok(file)
+}
+
+#[cfg(test)]
+mod enumeration_tests {
+    use super::checkpoint_names;
+
+    #[test]
+    fn an_entry_error_refuses_a_partial_checkpoint_listing() {
+        let entries = vec![
+            Ok("00-start.json".to_owned()),
+            Err(std::io::Error::other("listing failed")),
+        ];
+        assert_eq!(
+            checkpoint_names(entries.into_iter()).unwrap_err(),
+            "listing failed"
+        );
+    }
 }

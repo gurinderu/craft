@@ -243,24 +243,51 @@ fn stats(
     skipped: &mut Skipped,
 ) -> Result<Vec<(String, Tally)>> {
     let mut groups: std::collections::BTreeMap<String, Tally> = std::collections::BTreeMap::new();
-    let mut records = Vec::new();
-    read::records(store, skipped, |_, r| {
+    let mut newest: std::collections::BTreeMap<String, (String, String)> =
+        std::collections::BTreeMap::new();
+    read::records(store, skipped, |name, r| {
         let finished = r.get("schemaVersion").is_some_and(Js::truthy)
             && !r.get("partial").is_some_and(Js::truthy);
         if !finished || !filter.keeps(&r) {
             return;
         }
-        records.push(r);
+        if let Some(key) = craft_store::retro::run_key(&r) {
+            let ts = r.text("ts").to_owned();
+            let entry = newest
+                .entry(key)
+                .or_insert_with(|| (ts.clone(), name.to_owned()));
+            if ts > entry.0 {
+                *entry = (ts, name.to_owned());
+            }
+        } else {
+            tally_record(&mut groups, by, &r);
+        }
     })
     .with_context(|| format!("reading {}", store.display()))?;
-    for r in craft_store::retro::fold_runs(records) {
-        let key = match by {
-            By::Version => r.text("craftVersion"),
-            By::Name => r.text("name"),
-            By::Project => r.text("project"),
-        };
-        let key = if key.is_empty() { "(none)" } else { key };
-        groups.entry(key.to_owned()).or_default().add(&r);
+    for (key, (ts, name)) in newest {
+        match read::record(store, &name) {
+            Ok(r)
+                if r.text("ts") == ts
+                    && craft_store::retro::run_key(&r).as_ref() == Some(&key)
+                    && filter.keeps(&r) =>
+            {
+                tally_record(&mut groups, by, &r);
+            }
+            Ok(_) => skipped
+                .records
+                .push((name, "record changed while reading".into())),
+            Err(why) => skipped.records.push((name, why)),
+        }
     }
     Ok(groups.into_iter().collect())
+}
+
+fn tally_record(groups: &mut std::collections::BTreeMap<String, Tally>, by: By, r: &Obj) {
+    let key = match by {
+        By::Version => r.text("craftVersion"),
+        By::Name => r.text("name"),
+        By::Project => r.text("project"),
+    };
+    let key = if key.is_empty() { "(none)" } else { key };
+    groups.entry(key.to_owned()).or_default().add(r);
 }
