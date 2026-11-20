@@ -182,15 +182,58 @@ fn printed(args: &RunsArgs) -> Result<ExitCode> {
             }
         }
         RunsCommand::Retro { version } => {
-            let mut all = Vec::new();
-            read::records(&store, &mut skipped, |_, r| all.push(r))?;
-            let retro = craft_store::retro::retro(version, all);
+            let retro = retro(&store, version, &mut skipped)?;
             render::retro(&mut out, version, &retro, args.at.json)?;
             ExitCode::SUCCESS
         }
     };
     said_skipped(&skipped);
     Ok(code)
+}
+
+fn retro(store: &Path, version: &str, skipped: &mut Skipped) -> Result<craft_store::retro::Retro> {
+    let mut out = craft_store::retro::Retro::default();
+    let mut newest = std::collections::BTreeMap::<String, (String, String)>::new();
+    read::records(store, skipped, |name, r| {
+        if !r.get("schemaVersion").is_some_and(Js::truthy) || r.text("craftVersion") != version {
+            out.other += 1;
+        } else if r.get("partial").is_some_and(Js::truthy) {
+            out.unfinished += 1;
+        } else if let Some(key) = craft_store::retro::run_key(&r) {
+            let ts = r.text("ts").to_owned();
+            match newest.entry(key) {
+                std::collections::btree_map::Entry::Vacant(e) => {
+                    e.insert((ts, name.to_owned()));
+                }
+                std::collections::btree_map::Entry::Occupied(mut e) => {
+                    out.folded += 1;
+                    if ts > e.get().0 {
+                        e.insert((ts, name.to_owned()));
+                    }
+                }
+            }
+        } else {
+            craft_store::retro::add_record(&mut out, &r);
+        }
+    })?;
+    for (key, (ts, name)) in newest {
+        match read::record(store, &name) {
+            Ok(r)
+                if r.text("ts") == ts
+                    && r.text("craftVersion") == version
+                    && r.get("schemaVersion").is_some_and(Js::truthy)
+                    && !r.get("partial").is_some_and(Js::truthy)
+                    && craft_store::retro::run_key(&r).as_ref() == Some(&key) =>
+            {
+                craft_store::retro::add_record(&mut out, &r);
+            }
+            Ok(_) => skipped
+                .records
+                .push((name, "record changed while reading".into())),
+            Err(why) => skipped.records.push((name, why)),
+        }
+    }
+    Ok(out)
 }
 
 fn listed(

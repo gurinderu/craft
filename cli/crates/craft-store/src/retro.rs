@@ -178,33 +178,38 @@ fn finished_of(
 pub fn retro(version: &str, records: impl IntoIterator<Item = Obj>) -> Retro {
     let mut out = Retro::default();
     for r in finished_of(version, records, &mut out) {
-        if r.text("kind") == "develop" {
-            continue;
-        }
-        out.runs += 1;
-        *out.engines.entry(engine_key(&r)).or_default() += 1;
-        let name = match r.get("name") {
-            Some(n) if n.truthy() => n.to_js_string(),
-            _ => "(unknown)".into(),
-        };
-        let name = if name == "review" && is_cli(&r) {
-            "review (cli)".into()
-        } else {
-            name
-        };
-        let w = out.workflows.entry(name).or_default();
-        w.add(&r);
-        let verdict = r
-            .get("verdict")
-            .filter(|v| v.truthy())
-            .map(Js::to_js_string);
-        out.partial_coverage += u64::from(verdict.is_some_and(|v| crate::tally::is_incomplete(&v)));
-        for item in r.get("notRun").and_then(Js::as_arr).unwrap_or(&[]) {
-            *out.not_run.entry(item.to_js_string()).or_default() += 1;
-        }
-        lenses_of(&r, &mut out.lenses);
+        add_record(&mut out, &r);
     }
     out
+}
+
+/// Add one finished, deduplicated record to a retro.
+pub fn add_record(out: &mut Retro, r: &Obj) {
+    if r.text("kind") == "develop" {
+        return;
+    }
+    out.runs += 1;
+    *out.engines.entry(engine_key(r)).or_default() += 1;
+    let name = match r.get("name") {
+        Some(n) if n.truthy() => n.to_js_string(),
+        _ => "(unknown)".into(),
+    };
+    let name = if name == "review" && is_cli(r) {
+        "review (cli)".into()
+    } else {
+        name
+    };
+    let w = out.workflows.entry(name).or_default();
+    w.add(r);
+    let verdict = r
+        .get("verdict")
+        .filter(|v| v.truthy())
+        .map(Js::to_js_string);
+    out.partial_coverage += u64::from(verdict.is_some_and(|v| crate::tally::is_incomplete(&v)));
+    for item in r.get("notRun").and_then(Js::as_arr).unwrap_or(&[]) {
+        *out.not_run.entry(item.to_js_string()).or_default() += 1;
+    }
+    lenses_of(r, &mut out.lenses);
 }
 
 fn lenses_of(r: &Obj, lenses: &mut BTreeMap<String, Lens>) {

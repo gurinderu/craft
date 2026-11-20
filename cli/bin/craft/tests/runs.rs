@@ -112,6 +112,39 @@ fn stats_does_not_keep_large_unfoldable_records_in_memory() {
     assert_eq!(ndjson(&out)[0]["tally"]["runs"], json!(64));
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn retro_does_not_keep_large_unfoldable_records_in_memory() {
+    if Command::new("prlimit").arg("--version").output().is_err() {
+        return;
+    }
+    let d = tempfile::tempdir().unwrap();
+    let mut r = review("0.9.0", "Approve", 0);
+    r["payload"] = json!("x".repeat(500_000));
+    let bytes = serde_json::to_vec(&r).unwrap();
+    for n in 0..64 {
+        std::fs::write(
+            d.path().join(format!("{n:03}-workflow-review.json")),
+            &bytes,
+        )
+        .unwrap();
+    }
+    let out = Command::new("prlimit")
+        .arg("--as=40000000")
+        .arg("--")
+        .arg(env!("CARGO_BIN_EXE_craft"))
+        .args(["runs", "retro", "0.9.0", "--json", "--store"])
+        .arg(d.path())
+        .env("TOKIO_WORKER_THREADS", "1")
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
 #[test]
 fn ls_filters_the_index_says_what_it_passed_over_and_prints_ndjson() {
     let d = store();
