@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::{Context, Result, bail};
+use clap::builder::TypedValueParser;
 use craft_store::filter::Filter;
 use craft_store::js::{Js, Obj};
 use craft_store::read::{self, Skipped};
@@ -17,7 +18,7 @@ use craft_store::tally::Tally;
 #[derive(Debug, clap::Args)]
 pub struct StoreArg {
     /// The run store; `~/.craft/runs` when absent.
-    #[arg(long, global = true)]
+    #[arg(long, global = true, value_parser = path_value())]
     pub store: Option<PathBuf>,
     /// NDJSON, one object per line, instead of a table.
     #[arg(long, global = true)]
@@ -46,6 +47,10 @@ pub struct FilterArgs {
     /// A piece of the verdict, case folded: block, warning, approve, incomplete.
     #[arg(long)]
     pub verdict: Option<String>,
+}
+
+fn path_value() -> impl TypedValueParser<Value = PathBuf> {
+    clap::builder::OsStringValueParser::new().map(PathBuf::from)
 }
 
 impl FilterArgs {
@@ -96,6 +101,15 @@ pub enum RunsCommand {
     Check,
     /// A version's retro: its finished runs per workflow, engine and lens, and what did not run.
     Retro { version: String },
+    /// Confirmed findings recurring across branches of this project; always one JSON object.
+    Recurring {
+        /// The repository (default: the working directory); linked worktrees share its key.
+        #[arg(long, value_parser = path_value())]
+        project: Option<PathBuf>,
+        /// Only findings within this file or directory; repeat to include more paths.
+        #[arg(long = "path")]
+        paths: Vec<String>,
+    },
 }
 
 #[derive(Debug, clap::Args)]
@@ -106,9 +120,10 @@ pub struct RunsArgs {
     pub command: RunsCommand,
 }
 
-fn store_of(at: &StoreArg) -> Result<PathBuf> {
-    at.store
+fn store_of(args: &RunsArgs) -> Result<PathBuf> {
+    args.at.store
         .clone()
+        .filter(|p| !matches!(args.command, RunsCommand::Recurring { .. }) || !p.as_os_str().is_empty())
         .or_else(read::home_store)
         .context("neither HOME nor the passwd entry names a home, so there is no ~/.craft/runs; pass --store")
 }
@@ -147,7 +162,7 @@ pub fn runs(args: &RunsArgs) -> Result<ExitCode> {
 }
 
 fn printed(args: &RunsArgs) -> Result<ExitCode> {
-    let store = store_of(&args.at)?;
+    let store = store_of(args)?;
     let mut out = std::io::stdout().lock();
     let mut skipped = Skipped::default();
     let code = match &args.command {
@@ -184,6 +199,15 @@ fn printed(args: &RunsArgs) -> Result<ExitCode> {
         RunsCommand::Retro { version } => {
             let retro = retro(&store, version, &mut skipped)?;
             render::retro(&mut out, version, &retro, args.at.json)?;
+            ExitCode::SUCCESS
+        }
+        RunsCommand::Recurring { project, paths } => {
+            let project = project
+                .clone()
+                .filter(|p| !p.as_os_str().is_empty())
+                .map_or_else(std::env::current_dir, Ok)?;
+            let result = craft_review::recurring::recurring(&store, &project, paths)?;
+            writeln!(out, "{}", result.pretty())?;
             ExitCode::SUCCESS
         }
     };

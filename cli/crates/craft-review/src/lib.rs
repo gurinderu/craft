@@ -42,6 +42,7 @@ pub mod profile;
 pub mod project;
 pub mod prompts;
 pub mod publish;
+pub mod recurring;
 pub mod report;
 pub mod rereview;
 mod resume;

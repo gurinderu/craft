@@ -310,7 +310,8 @@ one itself). Only a **lesson** waits for the author's yes (below).
   the touched paths:
 
   ```bash
-  node "<this skill's base directory>/../../integrations/shared/recurring-findings.mjs" --path <path> [--path <path> …]
+  CRAFT_BIN="$(node "<this skill's base directory>/../../integrations/shared/craft-bin.mjs" ensure)" || exit $?
+  "$CRAFT_BIN" runs recurring --path <path> [--path <path> …]
   ```
 
   It prints one JSON object: `groups` of `{file, titles, branches, runs, severities, lastSeen}` —
@@ -321,7 +322,8 @@ one itself). Only a **lesson** waits for the author's yes (below).
   an open question) and one no verifier confirmed (unverified or suspected) are left out (the `note`
   says so). `--store <dir>` reads another store (default `~/.craft/runs`), `--project
   <dir>` another checkout. Its `note` names every bound it reached (the newest 500 runs read, 20
-  groups listed) — repeat that line, never present a cut list as whole.
+  groups listed) — repeat that line, never present a cut list as whole. This command always emits
+  JSON; `--json` is optional. Ties use UTF-16 code-unit order, independent of the machine's locale.
   Show each group (file, titles, branches, when last seen) and **ask the author, per group**,
   whether to record a lesson. Yes → `record-lesson` with scope = the file, title = the pattern in one
   line, body = the pattern and what avoids it (in the author's words), links = the runs or PRs.

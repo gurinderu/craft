@@ -115,6 +115,7 @@ test("the checkout's package carries the entries, what they reach, the binary's 
     'integrations/shared/craft-fetch-http.sh',
     'integrations/shared/craft-hook-repo.sh',
     'integrations/shared/craft-externals.mjs',
+    'integrations/shared/recurring-findings.mjs',
     'integrations/opencode/agents/review-task.md',
     'integrations/opencode/commands/craft-review.md',
     'integrations/claude-code/agents/rust-reviewer.md',

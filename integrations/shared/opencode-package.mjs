@@ -14,9 +14,8 @@ import { copyDereferenced } from './materialize-claude-code.mjs'
 export const PACKAGE_NAME = 'craft-opencode'
 const PLUGIN = 'integrations/opencode/plugin'
 export const EXPORTS = { './server': `./${PLUGIN}/index.ts`, './tui': `./${PLUGIN}/tui/tui.mjs` }
-// The integrations/shared/ scripts the craft binary runs from the plugin root: `craft init`'s discovery (the binary files its run records
-// itself, cli/crates/craft-store).
-const BINARY_SCRIPTS = ['integrations/shared/craft-externals.mjs']
+// Explicit command roots, including compatibility entries no longer named by skills (realm @nick/craft, node #515).
+const COMMAND_SCRIPTS = ['integrations/shared/craft-externals.mjs', 'integrations/shared/recurring-findings.mjs']
 // The skills install.sh leaves out too: they drive the review through Claude Code's Workflow tool and `codex exec`.
 export const SKIPPED_SKILLS = ['develop', 'codex-review']
 // Read whole at run time: the review's content, OpenCode's agents and commands, and the Claude Code agents whose
@@ -126,7 +125,7 @@ function skillFiles(root) {
  */
 export function packageFiles(root) {
   const content = [...TREES.flatMap(d => filesUnder(root, d)), ...skillFiles(root)]
-  const modules = moduleClosure(root, [...Object.values(EXPORTS).map(e => e.slice(2)), ...BINARY_SCRIPTS, ...scriptsNamed(root, content)])
+  const modules = moduleClosure(root, [...Object.values(EXPORTS).map(e => e.slice(2)), ...COMMAND_SCRIPTS, ...scriptsNamed(root, content)])
   return [...new Set([...modules, ...content, ...FILES])].sort()
 }
 
