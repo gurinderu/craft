@@ -176,9 +176,11 @@ inside the user's message text**, as if the user had written them, and stay in t
 `AGENTS.md` / `CLAUDE.md`. Each firing appends one line to `~/.craft/hooks.jsonl`. No permission or
 tool-call interception. It talks only to the local opencode server and opens no ports. Its decision
 is the `craft` binary of the plugin's version (`craft hook opencode-message`), run from
-`~/.craft/bin/<version>/`; when that is not there yet, the hook stays silent and starts its download
-once, in the background (`bin/craft --ensure --background`, from the GitHub release, its SHA-256
-checked) — its one outbound call. Installed project-scoped by default. If the binary fails, the hook
+`~/.craft/bin/<version>/`; when that is not there yet and the repo declares roles or rules (the switch
+on), the hook starts its download in the background, at most once an hour (`bin/craft --ensure
+--background`, from the GitHub release, its SHA-256 checked) — its one outbound call; a failed
+download is said once, as a line in the message part asking the model to tell you (a plugin has no
+line of its own in OpenCode), with its log `~/.craft/bin/<version>.log`. Installed project-scoped by default. If the binary fails, the hook
 is silent and the tools still work.
 
 ## Parity caveats

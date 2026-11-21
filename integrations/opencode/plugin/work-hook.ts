@@ -5,7 +5,7 @@
 // `ctx.event`; each says how the lines reach the message (`deliver`) and whether they can (`placeable`). It runs the
 // cached binary of this plugin version (lib/craft-bin.mjs) and never waits for a download: while it is absent the
 // hook is silent and, where the repo has role signs and the switch is on (lib/craft-hook-repo.sh), starts
-// `bin/craft --ensure --background` once (lib/craft-review-run.mjs's wrapper). Any failure
+// `bin/craft --ensure --background` at most once an hour and says a failed try once (lib/craft-review-run.mjs's wrapper). Any failure
 // is silence: the hook must never cost the plugin its tools (realm @nick/craft, #276).
 import { spawn } from 'node:child_process'
 import { homedir } from 'node:os'
@@ -24,23 +24,34 @@ let modules: Promise<Modules | null> | undefined
 const load = (): Promise<Modules | null> =>
   (modules ??= Promise.all([import('../../../lib/craft-bin.mjs'), import('../../../lib/craft-review-run.mjs')]).catch(() => null))
 
-/** The binary to run, or null; when it is absent, its download is started once per hook, in the background. */
-async function binary(where: Where, state: { fetching: boolean }): Promise<string | null> {
+// The background try's own gate is lib/craft-fetch.sh's hour; the hook asks again no sooner either.
+const HOUR_MS = 60 * 60 * 1000
+
+type Fetching = { since: number }
+type Found = { bin: string | null; said: string }
+
+/**
+ * The binary to run, or null with what to say of its absence. Where the repo has role signs and the switch is on, the
+ * hook starts the background try (`bin/craft --ensure --background`, at most once an hour) and, when `say`, asks for
+ * the line of a failed one (`--ensure --failure`, once per failing streak): OpenCode shows a plugin no line of its
+ * own, so it goes into the message part, for the model to tell the user.
+ */
+async function binary(where: Where, fetching: Fetching, say: boolean): Promise<Found> {
   const m = await load()
-  if (!m) return null
+  if (!m) return { bin: null, said: '' }
   const bin = m[0].cachedBinary(where.env, where.home)
-  if (bin || state.fetching || where.env['CRAFT_BIN']) return bin
-  state.fetching = true
+  if (bin || where.env['CRAFT_BIN']) return { bin, said: '' }
   // As in Claude Code: no download where the hooks would say nothing — no role signs, or the switch off (#276).
-  if (!(await speaks(where))) return null
-  const child = spawn('sh', [m[1].WRAPPER, '--ensure', '--background'], {
-    detached: true,
-    stdio: 'ignore',
-    env: { ...where.env, HOME: where.home },
-  })
-  child.on('error', () => undefined)
-  child.unref()
-  return null
+  if (!(await speaks(where))) return { bin: null, said: '' }
+  const env = { ...where.env, HOME: where.home }
+  if (Date.now() - fetching.since >= HOUR_MS) {
+    fetching.since = Date.now()
+    const child = spawn('sh', [m[1].WRAPPER, '--ensure', '--background'], { detached: true, stdio: 'ignore', env })
+    child.on('error', () => undefined)
+    child.unref()
+  }
+  const failed = say ? await output('sh', [m[1].WRAPPER, '--ensure', '--failure'], null, env) : ''
+  return { bin: null, said: failed ? `craft: tell the user: ${failed}.` : '' }
 }
 
 const REPO_TEST = fileURLToPath(new URL('../../../lib/craft-hook-repo.sh', import.meta.url))
@@ -56,12 +67,17 @@ function speaks(where: Where): Promise<boolean> {
 
 /** `craft hook <name>` over `input`: its stdout, '' on any failure. */
 export function runHook(bin: string, name: string, input: object, where: Where): Promise<string> {
+  return output(bin, ['hook', name], input, { ...where.env, HOME: where.home })
+}
+
+/** `cmd args` with `input` as JSON on stdin (none when null): its stdout less the last newline, '' on any failure or past the limit. */
+function output(cmd: string, args: string[], input: object | null, env: Env): Promise<string> {
   return new Promise(resolve => {
-    const child = spawn(bin, ['hook', name], { stdio: ['pipe', 'pipe', 'ignore'], env: { ...where.env, HOME: where.home } })
+    const child = spawn(cmd, args, { stdio: [input ? 'pipe' : 'ignore', 'pipe', 'ignore'], env })
     let out = ''
     const timer = setTimeout(() => child.kill('SIGKILL'), LIMIT_MS)
-    child.stdout.setEncoding('utf8')
-    child.stdout.on('data', (chunk: string) => (out += chunk))
+    child.stdout?.setEncoding('utf8')
+    child.stdout?.on('data', (chunk: string) => (out += chunk))
     child.on('error', () => {
       clearTimeout(timer)
       resolve('')
@@ -70,8 +86,10 @@ export function runHook(bin: string, name: string, input: object, where: Where):
       clearTimeout(timer)
       resolve(code === 0 ? out.replace(/\n$/, '') : '')
     })
-    child.stdin.on('error', () => undefined)
-    child.stdin.end(JSON.stringify(input))
+    if (input) {
+      child.stdin?.on('error', () => undefined)
+      child.stdin?.end(JSON.stringify(input))
+    }
   })
 }
 
@@ -81,7 +99,7 @@ export function runHook(bin: string, name: string, input: object, where: Where):
  */
 export function workHook(directory: string, engineSessions: ReadonlySet<string>, home: string = homedir(), env: Env = process.env): WorkHook {
   const where = { directory, home, env }
-  const state = { fetching: false }
+  const fetching = { since: -Infinity }
   // A subagent's session → its parent (and agent, when the runtime names it at creation) until its first
   // message, then null: later messages stay silent.
   const children = new Map<string, Subagent | null>()
@@ -99,7 +117,7 @@ export function workHook(directory: string, engineSessions: ReadonlySet<string>,
     },
     async compacted(session) {
       try {
-        const bin = await binary(where, state)
+        const { bin } = await binary(where, fetching, false)
         if (bin) await runHook(bin, 'opencode-compacted', { session, cwd: directory }, where)
       } catch {
         /* silence */
@@ -109,8 +127,8 @@ export function workHook(directory: string, engineSessions: ReadonlySet<string>,
       try {
         const subagent = firstOf(session, agent)
         if (subagent === null) return
-        const bin = await binary(where, state)
-        const text = bin ? await runHook(bin, 'opencode-message', { prompt, session, cwd: directory, placeable, ...subagent }, where) : ''
+        const { bin, said } = await binary(where, fetching, placeable)
+        const text = bin ? await runHook(bin, 'opencode-message', { prompt, session, cwd: directory, placeable, ...subagent }, where) : said
         if (text && placeable) deliver(text)
       } catch {
         /* silence */

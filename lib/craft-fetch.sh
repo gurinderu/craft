@@ -5,7 +5,7 @@
 # (the Claude Code delivery has no bin/); lib/craft-bin.mjs ensure, the review engine's fetcher, runs it everywhere sh
 # runs — on Windows, where it does not, that file keeps its own Node download. The cache layout is lib/craft-bin.mjs's.
 #
-#   sh lib/craft-fetch.sh <version> [--background]
+#   sh lib/craft-fetch.sh <version> [--background | --failure]
 #
 #   CRAFT_RELEASE_BASE  the download directory (default https://github.com/<repo>/releases/download/v<version>)
 #   CRAFT_REPO          owner/name of the release (default gurinderu/craft)
@@ -21,6 +21,11 @@
 # minutes is a dead holder's and is taken over, and a holder removes the lock only while it is still its own. A
 # signal or a failure removes the partial fetch and the lock. A failure prints one line on stderr naming what is
 # missing, and exits 127.
+#
+# --background is the try every caller in the background makes (the start hook, OpenCode's work hook through
+# bin/craft --ensure --background): at most once an hour, its output in ~/.craft/bin/<version>.log (cut back past
+# 64 KiB), how it ended in <version>.status. --failure prints the line that says a failed try, once per failing
+# streak: <version>.told stays across the retries until a try succeeds; a new version has its own.
 
 # Fetch the binary of version $1 unless it is there; $2 `--background` leaves when another holds the lock.
 craft_fetch() {
@@ -36,6 +41,8 @@ craft_fetch() {
   _cf_tools
   mkdir -p "$_cf_dir" || _cf_die "cannot create $_cf_dir"
   _cf_lock "$_cf_mode" || return 0
+  # A background try counts from the moment it holds the lock: one that left for another holder is not one.
+  [ "$_cf_mode" != --background ] || : >"$(_cf_state "$_cf_version" attempt)"
   trap '_cf_cleanup; exit 130' INT TERM HUP
   # The holder before us may have installed it.
   if ! { [ -f "$_cf_bin" ] && [ -x "$_cf_bin" ]; }; then
@@ -43,6 +50,48 @@ craft_fetch() {
   fi
   _cf_cleanup
   trap - INT TERM HUP
+}
+
+# The state of version $1's download beside its directory: ~/.craft/bin/<version>.$2.
+_cf_state() {
+  printf '%s/.craft/bin/%s.%s' "$HOME" "$1" "$2"
+}
+
+# 0 when no try of version $1 began within the hour.
+craft_fetch_due() {
+  [ -z "$(find "$(_cf_state "$1" attempt)" -mmin -60 2>/dev/null)" ]
+}
+
+# 0 while version $1 is in a failing streak that was already said.
+craft_fetch_failing() {
+  [ -e "$(_cf_state "$1" told)" ]
+}
+
+# The background try of version $1: at most once an hour, logged, its end kept; a success ends the streak.
+craft_fetch_background() {
+  [ -n "${HOME:-}" ] || return 0
+  craft_fetch_due "$1" || return 0
+  mkdir -p "$HOME/.craft/bin" 2>/dev/null || return 0
+  _cf_log=$(_cf_state "$1" log)
+  [ ! -f "$_cf_log" ] || [ "$(wc -c <"$_cf_log")" -le 65536 ] || : >"$_cf_log"
+  (craft_fetch "$1" --background) >>"$_cf_log" 2>&1 </dev/null
+  _cf_rc=$?
+  if [ -f "$HOME/.craft/bin/$1/craft" ] && [ -x "$HOME/.craft/bin/$1/craft" ]; then
+    echo 0 >"$(_cf_state "$1" status)"
+    rm -f "$(_cf_state "$1" told)"
+  elif [ "$_cf_rc" -ne 0 ]; then
+    echo "$_cf_rc" >"$(_cf_state "$1" status)"
+  fi
+  return 0
+}
+
+# The line that says version $1's last try failed, the first time it is asked in a failing streak; 1 otherwise.
+craft_fetch_failure() {
+  [ -n "${HOME:-}" ] || return 1
+  _cf_status=$(cat "$(_cf_state "$1" status)" 2>/dev/null)
+  [ -n "$_cf_status" ] && [ "$_cf_status" != 0 ] && ! craft_fetch_failing "$1" || return 1
+  : >"$(_cf_state "$1" told)" 2>/dev/null || return 1
+  printf "the craft binary %s could not be downloaded (see ~/.craft/bin/%s.log); craft's hooks stay silent until it is there" "$1" "$1"
 }
 
 _cf_die() {
@@ -140,7 +189,11 @@ _cf_install() {
 # Run as a script (not sourced): fetch the version it is given.
 case ${0##*/} in
   craft-fetch.sh)
-    [ -n "${1:-}" ] || _cf_die "usage: craft-fetch.sh <version> [--background]"
-    craft_fetch "$1" "${2:-}"
+    [ -n "${1:-}" ] || _cf_die "usage: craft-fetch.sh <version> [--background | --failure]"
+    case ${2:-} in
+      --background) craft_fetch_background "$1" ;;
+      --failure) craft_fetch_failure "$1" || : ;;
+      *) craft_fetch "$1" ;;
+    esac
     ;;
 esac

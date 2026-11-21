@@ -66,7 +66,8 @@ if [ "$code" -ne 0 ]; then
     printf 'craft: the %s hook did not run: %s.\n' "$hook" "$why" >&2
   else
     # A marker a day old is pruned as the next is written (realm @nick/craft, node #550).
-    [ -z "$session" ] || { mkdir -p "${mark%/*}" && find "${mark%/*}" -type f -mtime +0 -exec rm -f {} + && : >"$mark"; } 2>/dev/null
+    # The marker is written whatever the prune does: without it the notice would repeat on every call.
+    [ -z "$session" ] || { mkdir -p "${mark%/*}" && { find "${mark%/*}" -type f -mtime +0 -exec rm -f {} + || :; } && : >"$mark"; } 2>/dev/null
     printf '{"systemMessage":"craft: the %s hook did not run: %s."}\n' "$hook" "$why"
   fi
   exit 0

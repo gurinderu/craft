@@ -4,11 +4,8 @@
 # How long `codex sandbox true` may take before the check gives up and says nothing, in tenths of a second.
 SANDBOX_TENTHS=30
 
-# The state of this version's download under ~/.craft/bin: its log, when it was last tried, how it ended, whether
-# its failure was said.
-state() {
-  printf '%s/.craft/bin/%s.%s' "$HOME" "$version" "$1"
-}
+# The background try, its hourly gate and its failure state are lib/craft-fetch.sh's, the same for every caller.
+. "$here/lib/craft-fetch.sh"
 
 # Run $@ in a session of its own where setsid exists (Linux); macOS has none, and there it runs under nohup in the
 # hook's process group: an accepted limit (realm @nick/craft, node #550).
@@ -16,31 +13,18 @@ detached() {
   if command -v setsid >/dev/null 2>&1; then setsid "$@"; else nohup "$@"; fi
 }
 
-# Start the download of this version in the background, its output in ~/.craft/bin/<version>.log (cut back past
-# 64 KiB), its end in <version>.status: the hook returns at once and a later session finds the binary.
-# lib/craft-fetch.sh's lock keeps a second one from starting.
+# Start this version's background try: the hook returns at once and a later session finds the binary.
 fetch_in_background() {
-  mkdir -p "$HOME/.craft/bin" 2>/dev/null || return 0
-  _a_log=$(state log)
-  [ ! -f "$_a_log" ] || [ "$(wc -c <"$_a_log")" -le 65536 ] || : >"$_a_log"
-  : >"$(state attempt)"
-  rm -f "$(state status)" "$(state told)"
-  detached sh -c 'sh "$1" "$2" --background; echo $? >"$3"' sh "$here/lib/craft-fetch.sh" "$version" "$(state status)" \
-    </dev/null >>"$_a_log" 2>&1 &
+  detached sh "$here/lib/craft-fetch.sh" "$version" --background </dev/null >/dev/null 2>&1 &
 }
 
-# What the start says of the download: it starts one unless one was tried within the hour; a failed one is said once
-# (realm @nick/craft, node #550). Empty for silence.
+# What the start says of the download (realm @nick/craft, node #550): a failed try once per failing streak; else,
+# when the hour's try is due, it starts one — and says so unless the streak was already said. Empty for silence.
 download_said() {
-  if [ -n "$(find "$(state attempt)" -mmin -60 2>/dev/null)" ]; then
-    _a_status=$(cat "$(state status)" 2>/dev/null)
-    if [ -n "$_a_status" ] && [ "$_a_status" != 0 ] && [ ! -e "$(state told)" ]; then
-      : >"$(state told)"
-      printf "the craft binary %s could not be downloaded (see ~/.craft/bin/%s.log); craft's hooks stay silent until it is there" "$version" "$version"
-    fi
-    return 0
-  fi
+  craft_fetch_failure "$version" && return 0
+  craft_fetch_due "$version" || return 0
   fetch_in_background
+  craft_fetch_failing "$version" && return 0
   printf "the craft binary %s is not on this machine yet (%s); it is being downloaded in the background (~/.craft/bin/%s.log), and craft's hooks speak once it is there" "$version" "$bin" "$version"
 }
 

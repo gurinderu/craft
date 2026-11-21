@@ -128,6 +128,35 @@ test('with no binary cached the hook is silent and, where the repo has role sign
   assert.equal(await downloadsStarted({ '.claude/agents/dev.md': '' }), 1)
 })
 
+test('a download that failed is said once, in the message part, where the repo has role signs (realm #550)', async () => {
+  const version = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, '../../../.release-please-manifest.json'), 'utf8'))['.']
+  const shim = tmp()
+  writeExecutable(path.join(shim, 'curl'), `#!/bin/sh\necho "$*" >> '${shim}/hits'\nexit 22\n`)
+  const root = tmp()
+  fs.mkdirSync(path.join(root, '.git'))
+  fs.mkdirSync(path.join(root, '.claude', 'agents'), { recursive: true })
+  fs.writeFileSync(path.join(root, '.claude', 'agents', 'dev.md'), '')
+  const home = tmp()
+  fs.mkdirSync(path.join(home, '.craft', 'bin'), { recursive: true })
+  // The hour's try is spent, and it failed.
+  fs.writeFileSync(path.join(home, '.craft', 'bin', `${version}.attempt`), '')
+  fs.writeFileSync(path.join(home, '.craft', 'bin', `${version}.status`), '127\n')
+  const hooks = v1WorkHooks(workHook(root, new Set(), home, { PATH: `${shim}:/usr/bin:/bin`, CRAFT_RELEASE_BASE: 'file:///nonexistent' }))
+  const message = /** @type {(input: any, output: any) => Promise<void>} */ (hooks['chat.message'])
+  const first = output('s1', 'review the branch')
+  await message({ sessionID: 's1' }, first)
+  assert.equal(first.parts.length, 2)
+  assert.match(
+    String(first.parts[1]?.text),
+    new RegExp(`tell the user: the craft binary ${version.replace(/\./g, '\\.')} could not be downloaded \\(see ~/\\.craft/bin/`),
+  )
+  const second = output('s1', 'review again')
+  await message({ sessionID: 's1' }, second)
+  assert.equal(second.parts.length, 1, 'said once')
+  await new Promise(resolve => setTimeout(resolve, 500))
+  assert.equal(fs.existsSync(path.join(shim, 'hits')), false, 'no try within the hour')
+})
+
 test('a binary that fails says nothing', async () => {
   const home = tmp()
   const bin = path.join(home, 'craft')
