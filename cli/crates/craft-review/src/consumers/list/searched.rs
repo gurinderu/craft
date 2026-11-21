@@ -4,7 +4,7 @@
 use std::path::Path;
 use std::time::Instant;
 
-use super::super::names::{Externals, Unfinished};
+use super::super::names::{Unfinished, Workspace};
 use super::super::symbols::Symbol;
 use super::super::{Consumers, NAME_SEARCH, STRUCTURAL, Site, names};
 use super::{consumer, site};
@@ -43,18 +43,26 @@ pub(super) fn searched(
 
 /// The structural search's lines for `sym`, whose name is too common to search by text (`capped`,
 /// why the name search stopped, when it ran); it is noted in `out`'s `unsearched` either way, with
-/// what the search could not reach; `ext`, the workspace's external crates.
+/// what the search could not reach; `ws`, the workspace's packages.
 pub(super) fn by_path(
-    (top, changed, ext): (&Path, &Lines, &Externals),
+    (top, changed, ws): (&Path, &Lines, &Workspace),
     sym: &Symbol,
     (deadline, cancel): (Instant, &Cancel),
     (out, capped): (&mut Consumers, Option<&str>),
 ) -> Vec<Site> {
+    if let Some(why) = ws.unread() {
+        let line = format!(
+            "structural search: {why}; a path matched by its owner's last segment alone, a free function not searched"
+        );
+        if !out.unsearched.contains(&line) {
+            out.unsearched.push(line);
+        }
+    }
     let first = capped.map_or_else(String::new, |c| format!("{c}; "));
     let found = names::by_path(
         top,
         (&sym.file, sym.line),
-        (&sym.name, ext),
+        (&sym.name, ws),
         deadline,
         cancel,
     );
@@ -68,14 +76,11 @@ pub(super) fn by_path(
                 out.sources
                     .insert(1.min(out.sources.len()), STRUCTURAL.to_owned());
             }
-            let unread = if f.unread.is_empty() {
-                String::new()
-            } else {
-                format!("; files not read: {}", f.unread.join(", "))
-            };
             let note = format!(
-                "{} ({first}searched by path only: a call through a value, `x.{}()`, not found{unread})",
-                sym.name, sym.name
+                "{} ({first}searched by path only: a call through a value, `x.{}()`, not found{})",
+                sym.name,
+                sym.name,
+                short_of(&f)
             );
             (note, sites_of(changed, sym, &f.hits, STRUCTURAL))
         }
@@ -86,6 +91,19 @@ pub(super) fn by_path(
     };
     out.unsearched.push(note);
     sites
+}
+
+/// What a structural search could not read: its files unread, and how many of the files naming
+/// the item it read when not all.
+fn short_of(f: &names::Found) -> String {
+    let mut out = String::new();
+    if !f.unread.is_empty() {
+        out.push_str(&format!("; files not read: {}", f.unread.join(", ")));
+    }
+    if let Some(p) = &f.partial {
+        out.push_str(&format!("; {p}"));
+    }
+    out
 }
 
 /// The consumers among `hits` of `sym`, each found by `from`.
