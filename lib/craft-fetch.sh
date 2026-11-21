@@ -45,7 +45,7 @@ craft_fetch() {
   [ "$_cf_mode" != --background ] || : >"$(_cf_state "$_cf_version" attempt)"
   trap '_cf_cleanup; exit 130' INT TERM HUP
   # The holder before us may have installed it.
-  if ! { [ -f "$_cf_bin" ] && [ -x "$_cf_bin" ]; }; then
+  if [ ! -f "$_cf_bin" ] || [ ! -x "$_cf_bin" ]; then
     _cf_install
   fi
   _cf_cleanup

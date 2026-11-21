@@ -25,10 +25,16 @@ _cf_download() {
   if [ "$_cf_rc" -eq 0 ] && { [ "$_cf_code" = 200 ] || [ "$_cf_code" = 000 ]; }; then return 0; fi
   if [ "$_cf_rc" -eq 0 ]; then
     _cf_why="HTTP $_cf_code for $1"
-    case $_cf_code in 5?? | 429) return 2 ;; *) return 1 ;; esac
+    case $_cf_code in
+      5[0-9][0-9] | 429) return 2 ;;
+      *) return 1 ;;
+    esac
   fi
   _cf_why="could not download $1"
-  case $_cf_rc in 5 | 6 | 7 | 28 | 35 | 52 | 55 | 56) return 2 ;; *) return 1 ;; esac
+  case $_cf_rc in
+    5 | 6 | 7 | 28 | 35 | 52 | 55 | 56) return 2 ;;
+    *) return 1 ;;
+  esac
 }
 
 # $1 from the API to $2, accepting $3, following redirects by hand: the token ($4, empty for none) and the API version

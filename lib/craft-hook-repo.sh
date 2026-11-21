@@ -13,10 +13,11 @@ repo_root() {
       printf '%s' "$_r_dir"
       return
     }
-    case $_r_dir in / | '' | .)
-      printf '%s' "$1"
-      return
-      ;;
+    case $_r_dir in
+      / | '' | .)
+        printf '%s' "$1"
+        return
+        ;;
     esac
     _r_dir=$(dirname "$_r_dir")
   done
@@ -38,7 +39,11 @@ switched_off() {
 _r_list() {
   for _r_e in "$1"/* "$1"/.*; do
     _r_n=${_r_e##*/}
-    case $_r_n in . | ..) continue ;; *"$2") ;; *) continue ;; esac
+    case $_r_n in
+      . | ..) continue ;;
+      *"$2") ;;
+      *) continue ;;
+    esac
     [ -e "$_r_e" ] || [ -L "$_r_e" ] || continue
     [ "$3" = own ] && [ -L "$_r_e" ] && continue
     printf '%s/%s\n' "$4" "$_r_n"

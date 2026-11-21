@@ -50,7 +50,7 @@ else
   exit 0
 fi
 
-if ! { [ -f "$bin" ] && [ -x "$bin" ]; }; then
+if [ ! -f "$bin" ] || [ ! -x "$bin" ]; then
   . "$here/lib/craft-hook-absent.sh"
   absent
   exit 0
