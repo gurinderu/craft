@@ -6,7 +6,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::StoreError;
-use crate::js::{Js, Obj, parse};
+use crate::js::{Js, JsString, Obj, parse};
 use crate::record::{ENGINE_REVISION, filename};
 use crate::time::{iso, stamp, stamp_ms};
 
@@ -18,18 +18,18 @@ const REJOIN_WINDOW_MS: i64 = 6 * 60 * 60 * 1000;
 /// What identifies a run inside a checkpoint (`checkpointIdentity`).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Identity {
-    pub project: String,
-    pub branch: String,
-    pub head: String,
+    pub project: JsString,
+    pub branch: JsString,
+    pub head: JsString,
 }
 
 impl Identity {
     #[must_use]
     pub fn of(o: &Obj) -> Self {
         Self {
-            project: o.text("project").to_owned(),
-            branch: o.text("branch").to_owned(),
-            head: o.text("head").to_owned(),
+            project: o.text_units("project"),
+            branch: o.text_units("branch"),
+            head: o.text_units("head"),
         }
     }
 }
@@ -38,17 +38,17 @@ impl Identity {
 /// given, `None` where two disagree.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Attested {
-    pub project: Option<String>,
-    pub branch: Option<String>,
-    pub head: Option<String>,
+    pub project: Option<JsString>,
+    pub branch: Option<JsString>,
+    pub head: Option<JsString>,
 }
 
 #[must_use]
 pub fn attested(phases: &[Obj]) -> Attested {
     let mut out = Attested {
-        project: Some(String::new()),
-        branch: Some(String::new()),
-        head: Some(String::new()),
+        project: Some(JsString::default()),
+        branch: Some(JsString::default()),
+        head: Some(JsString::default()),
     };
     for p in phases {
         let id = Identity::of(p);
@@ -71,11 +71,11 @@ pub fn attested(phases: &[Obj]) -> Attested {
 /// `identityAgrees`: the projects equal and given, branch and head disagreeing on neither side.
 #[must_use]
 pub fn agrees(want: &Identity, have: &Attested) -> bool {
-    let disagrees = |w: &str, h: &Option<String>| match h {
+    let disagrees = |w: &JsString, h: &Option<JsString>| match h {
         None => true,
         Some(h) => !w.is_empty() && !h.is_empty() && w != h,
     };
-    let same_project = have.project.as_deref() == Some(&want.project);
+    let same_project = have.project.as_ref() == Some(&want.project);
     !want.project.is_empty()
         && same_project
         && !disagrees(&want.branch, &have.branch)

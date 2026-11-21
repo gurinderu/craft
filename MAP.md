@@ -282,7 +282,14 @@ record has not landed, which every `--resume` files again first; `craft review s
 record, its file and the step the run ended with — for a host that lost the step that said it), `crates/craft-store` (the run store's writer and its streaming reader, its output held to
 the JavaScript writer's by `content/parity/store-cases.json`) and `crates/craft-tui` (progress as a phases → agents tree
 on a terminal, one line per event otherwise); `test-support/` holds the one copy of a helper every crate's tests
-include by path (an executable a test writes and runs). The toolchain is pinned in `cli/rust-toolchain.toml`;
+include by path (an executable a test writes and runs). In `craft-store`, `js/string.rs` holds lossless JavaScript
+strings, `filing.rs` replays pending writes through `filing_io.rs`'s publication primitives, and `lock/turn.rs` coordinates local writers
+with `lock/ticket.rs` validating immutable names. `process_identity.rs` and its native modules query boot and process incarnations;
+`bin/craft/src/process_identity.rs` exposes them through the hidden `__craft-process-identity` command.
+The JavaScript counterparts are `lib/filing-transaction.mjs`, `lib/index-turn.mjs` and `lib/process-identity.mjs` (direct Linux reads,
+cached-binary queries on macOS/Windows); `tests/lock_interop.rs` exercises both lock callers, and
+`bin/craft/tests/process_identity.rs` exercises the real helper and Node admission across native platforms.
+The toolchain is pinned in `cli/rust-toolchain.toml`;
 CI's `rust` job runs `cargo fmt --check`, `cargo clippy` at zero warnings and `cargo test`, and checks that the
 parity files the CLI owns (`verify-cases.json`, `plan-cases.json`, `prompt-cases.json`) regenerate unchanged, apart
 from `npm run gate`. The CLI's version is the plugin's: release-please moves `cli/Cargo.toml` and

@@ -5,10 +5,12 @@
 
 mod number;
 mod parse;
+mod string;
 mod write;
 
 pub use number::number_text;
 pub use parse::{ParseError, parse};
+pub use string::{JsString, Utf16Error};
 
 /// One JSON value.
 #[derive(Debug, Clone, PartialEq)]
@@ -16,17 +18,18 @@ pub enum Js {
     Null,
     Bool(bool),
     Num(f64),
-    Str(String),
+    Str(JsString),
     Arr(Vec<Js>),
     Obj(Obj),
 }
 
 /// An object, its keys in JavaScript's order.
 #[derive(Debug, Clone, Default, PartialEq)]
-pub struct Obj(Vec<(String, Js)>);
+pub struct Obj(Vec<(JsString, Js)>);
 
 /// Whether `k` is an array index as JavaScript orders object keys: a canonical decimal below 2³²−1.
-fn is_index(k: &str) -> Option<u32> {
+fn is_index(k: &JsString) -> Option<u32> {
+    let k = k.as_str()?;
     let n: u32 = k.parse().ok()?;
     (n != u32::MAX && n.to_string() == k).then_some(n)
 }
@@ -38,7 +41,7 @@ impl Obj {
     }
 
     /// Sets `k` to `v`: in its place when it is there, else where JavaScript puts a new key.
-    pub fn set(&mut self, k: impl Into<String>, v: Js) {
+    pub fn set(&mut self, k: impl Into<JsString>, v: Js) {
         let k = k.into();
         if let Some(slot) = self.0.iter_mut().find(|(have, _)| *have == k) {
             slot.1 = v;
@@ -70,21 +73,30 @@ impl Obj {
     }
 
     #[must_use]
-    pub fn get(&self, k: &str) -> Option<&Js> {
+    pub fn get<K: ?Sized>(&self, k: &K) -> Option<&Js>
+    where
+        JsString: PartialEq<K>,
+    {
         self.0.iter().find(|(have, _)| have == k).map(|(_, v)| v)
     }
 
-    pub fn remove(&mut self, k: &str) -> Option<Js> {
+    pub fn remove<K: ?Sized>(&mut self, k: &K) -> Option<Js>
+    where
+        JsString: PartialEq<K>,
+    {
         let i = self.0.iter().position(|(have, _)| have == k)?;
         Some(self.0.remove(i).1)
     }
 
     #[must_use]
-    pub fn has(&self, k: &str) -> bool {
+    pub fn has<K: ?Sized>(&self, k: &K) -> bool
+    where
+        JsString: PartialEq<K>,
+    {
         self.get(k).is_some()
     }
 
-    pub fn iter(&self) -> impl ExactSizeIterator<Item = (&String, &Js)> {
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = (&JsString, &Js)> {
         self.0.iter().map(|(k, v)| (k, v))
     }
 
@@ -98,23 +110,47 @@ impl Obj {
         self.0.is_empty()
     }
 
-    /// The string at `k`, `""` when it is absent or no string (`typeof … === 'string'`).
+    /// The string at `k`, `""` when absent or not a string.
+    /// # Errors
+    /// When its code units cannot be represented as UTF-8. Use `text_units` for stored data.
+    pub fn text(&self, k: &str) -> Result<&str, Utf16Error> {
+        self.try_text(k)
+    }
+
+    /// `typeof o[k] === 'string' ? o[k] : ''`, without narrowing JavaScript's strings.
     #[must_use]
-    pub fn text(&self, k: &str) -> &str {
-        self.get(k).and_then(Js::as_str).unwrap_or("")
+    pub fn text_units(&self, k: &str) -> JsString {
+        self.get(k)
+            .filter(|v| v.is_string())
+            .map(Js::to_js_text)
+            .unwrap_or_default()
+    }
+
+    /// # Errors
+    /// When the field is a string containing an unpaired surrogate.
+    pub fn try_text(&self, k: &str) -> Result<&str, Utf16Error> {
+        match self.get(k) {
+            Some(Js::Str(s)) => s.as_str().ok_or(Utf16Error),
+            _ => Ok(""),
+        }
     }
 }
 
 impl Js {
     #[must_use]
-    pub fn str(s: impl Into<String>) -> Self {
+    pub fn str(s: impl Into<JsString>) -> Self {
         Self::Str(s.into())
+    }
+
+    #[must_use]
+    pub fn is_string(&self) -> bool {
+        matches!(self, Self::Str(_))
     }
 
     #[must_use]
     pub fn as_str(&self) -> Option<&str> {
         if let Self::Str(s) = self {
-            Some(s)
+            s.as_str()
         } else {
             None
         }
@@ -159,25 +195,34 @@ impl Js {
         }
     }
 
-    /// `String(v)`.
+    /// `String(v)` as UTF-8.
+    ///
+    /// # Errors
+    /// When the JavaScript result contains an unpaired surrogate. Use `to_js_text` to retain it.
+    pub fn to_js_string(&self) -> Result<String, Utf16Error> {
+        self.to_js_text().to_utf8()
+    }
+
+    /// `String(v)` without narrowing JavaScript's string domain.
     #[must_use]
-    pub fn to_js_string(&self) -> String {
+    pub fn to_js_text(&self) -> JsString {
         match self {
             Self::Null => "null".into(),
-            Self::Bool(b) => b.to_string(),
-            Self::Num(n) => number_text(*n),
+            Self::Bool(b) => b.to_string().into(),
+            Self::Num(n) => number_text(*n).into(),
             Self::Str(s) => s.clone(),
-            Self::Arr(a) => a
-                .iter()
-                .map(|v| {
-                    if *v == Self::Null {
-                        String::new()
-                    } else {
-                        v.to_js_string()
-                    }
-                })
-                .collect::<Vec<_>>()
-                .join(","),
+            Self::Arr(a) => JsString::join(
+                &a.iter()
+                    .map(|v| {
+                        if *v == Self::Null {
+                            JsString::default()
+                        } else {
+                            v.to_js_text()
+                        }
+                    })
+                    .collect::<Vec<_>>(),
+                ",",
+            ),
             Self::Obj(_) => "[object Object]".into(),
         }
     }
@@ -203,7 +248,7 @@ impl From<&serde_json::Value> for Js {
             V::Null => Self::Null,
             V::Bool(b) => Self::Bool(*b),
             V::Number(n) => Self::Num(n.as_f64().unwrap_or(f64::NAN)),
-            V::String(s) => Self::Str(s.clone()),
+            V::String(s) => Self::str(s),
             V::Array(a) => Self::Arr(a.iter().map(Self::from).collect()),
             V::Object(m) => {
                 let mut o = Obj::new();
@@ -216,17 +261,23 @@ impl From<&serde_json::Value> for Js {
     }
 }
 
-impl From<&Js> for serde_json::Value {
-    fn from(v: &Js) -> Self {
+impl TryFrom<&Js> for serde_json::Value {
+    type Error = Utf16Error;
+
+    fn try_from(v: &Js) -> Result<Self, Self::Error> {
         use serde_json::Value as V;
-        match v {
+        Ok(match v {
             Js::Null => V::Null,
             Js::Bool(b) => V::Bool(*b),
             Js::Num(n) => number::to_serde(*n),
-            Js::Str(s) => V::String(s.clone()),
-            Js::Arr(a) => V::Array(a.iter().map(V::from).collect()),
-            Js::Obj(o) => V::Object(o.iter().map(|(k, v)| (k.clone(), V::from(v))).collect()),
-        }
+            Js::Str(s) => V::String(s.to_utf8()?),
+            Js::Arr(a) => V::Array(a.iter().map(V::try_from).collect::<Result<_, _>>()?),
+            Js::Obj(o) => V::Object(
+                o.iter()
+                    .map(|(k, v)| Ok((k.to_utf8()?, V::try_from(v)?)))
+                    .collect::<Result<_, Utf16Error>>()?,
+            ),
+        })
     }
 }
 

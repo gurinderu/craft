@@ -7,7 +7,7 @@
 use std::path::Path;
 
 use crate::cli_record::{publication_kept, unreadable_step};
-use crate::js::{Js, Obj, parse};
+use crate::js::{Js, JsString, Obj, Utf16Error, parse};
 use crate::write::write_atomically;
 
 fn sorting_of(r: &Obj) -> Option<&Obj> {
@@ -26,7 +26,9 @@ fn js_number(v: Option<&Js>) -> f64 {
         Some(Js::Bool(b)) => f64::from(u8::from(*b)),
         Some(Js::Num(n)) => *n,
         Some(Js::Str(s)) => {
-            let t = s.trim();
+            let Some(t) = s.as_str().map(str::trim) else {
+                return f64::NAN;
+            };
             if t.is_empty() {
                 0.0
             } else {
@@ -38,16 +40,16 @@ fn js_number(v: Option<&Js>) -> f64 {
 }
 
 /// `String(v ?? '')`.
-fn string_or_empty(v: Option<&Js>) -> String {
+fn string_or_empty(v: Option<&Js>) -> JsString {
     match v {
-        None | Some(Js::Null) => String::new(),
-        Some(v) => v.to_js_string(),
+        None | Some(Js::Null) => JsString::default(),
+        Some(v) => v.to_js_text(),
     }
 }
 
 /// A value in a template literal: `undefined` for what is absent.
-fn templated(v: Option<&Js>) -> String {
-    v.map_or_else(|| "undefined".to_owned(), Js::to_js_string)
+fn templated(v: Option<&Js>) -> JsString {
+    v.map_or_else(|| "undefined".into(), Js::to_js_text)
 }
 
 /// A doubtful finding's identity across two sortings: `JSON.stringify([file, line, title])`.
@@ -66,29 +68,32 @@ fn finding_key(f: &Obj) -> String {
     .compact()
 }
 
-fn dropped_choice(n: &str, f: Option<&Obj>, c: &Js) -> String {
-    let what = f.map_or_else(
-        || "no such finding".to_owned(),
-        |f| {
+fn dropped_choice(n: &JsString, f: Option<&Obj>, c: &Js) -> Result<String, Utf16Error> {
+    let what = match f {
+        None => "no such finding".to_owned(),
+        Some(f) => {
             format!(
                 "{} @ {}:{}",
-                templated(f.get("title")),
-                templated(f.get("file")),
-                templated(f.get("line"))
+                templated(f.get("title")).to_utf8()?,
+                templated(f.get("file")).to_utf8()?,
+                templated(f.get("line")).to_utf8()?
             )
-        },
-    );
-    let choice = string_or_empty(c.as_obj().and_then(|c| c.get("choice")));
-    format!("{n} ({what}): {choice}")
+        }
+    };
+    let choice = string_or_empty(c.as_obj().and_then(|c| c.get("choice"))).to_utf8()?;
+    Ok(format!("{} ({what}): {choice}", n.to_utf8()?))
 }
 
 /// The record's choices renumbered for `next`, `None` when none carries over, and those dropped.
-fn carried_choices(record: &Obj, next: Option<&Obj>) -> (Option<Obj>, Vec<String>) {
+fn carried_choices(
+    record: &Obj,
+    next: Option<&Obj>,
+) -> Result<(Option<Obj>, Vec<String>), Utf16Error> {
     let Some(old) = sorting_of(record)
         .and_then(|s| s.get("choices"))
         .and_then(Js::as_obj)
     else {
-        return (None, Vec::new());
+        return Ok((None, Vec::new()));
     };
     let before = sorted_findings(sorting_of(record));
     let after = sorted_findings(next);
@@ -108,17 +113,18 @@ fn carried_choices(record: &Obj, next: Option<&Obj>) -> (Option<Obj>, Vec<String
         });
         match to {
             Some(to) if !to.is_empty() => choices.set(to, c.clone()),
-            _ => dropped.push(dropped_choice(n, f, c)),
+            _ => dropped.push(dropped_choice(n, f, c)?),
         }
     }
-    ((!choices.is_empty()).then_some(choices), dropped)
+    Ok(((!choices.is_empty()).then_some(choices), dropped))
 }
 
 /// The record with the publication `kept` written in, and the choices dropped.
-#[must_use]
-pub fn apply(record: &Obj, kept: &Obj) -> (Obj, Vec<String>) {
+/// # Errors
+/// When a dropped choice cannot be reported through the Unicode-only warning surface.
+pub fn apply(record: &Obj, kept: &Obj) -> Result<(Obj, Vec<String>), Utf16Error> {
     let next = kept.get("sorting").and_then(Js::as_obj);
-    let (choices, dropped) = carried_choices(record, next);
+    let (choices, dropped) = carried_choices(record, next)?;
     let sorting = match (next, choices) {
         (Some(n), Some(c)) => Js::Obj(n.clone().with("choices", Js::Obj(c))),
         (Some(n), None) => Js::Obj(n.clone()),
@@ -132,7 +138,7 @@ pub fn apply(record: &Obj, kept: &Obj) -> (Obj, Vec<String>) {
     out.set("sorting", sorting);
     out.set("memoryContradictions", field("memoryContradictions"));
     out.set("prComments", field("prComments"));
-    (out, dropped)
+    Ok((out, dropped))
 }
 
 /// The publication of a finished step written into the record already filed.
@@ -144,7 +150,10 @@ pub fn answer(req: &Obj) -> Obj {
             .with("reason", Js::str(why))
             .with("file", Js::str(""))
     };
-    let file = req.text("recordFile");
+    let file = match req.try_text("recordFile") {
+        Ok(file) => file,
+        Err(e) => return fail(e.to_string()),
+    };
     if file.is_empty() {
         return fail("no record file was named".into());
     }
@@ -159,7 +168,10 @@ pub fn answer(req: &Obj) -> Obj {
         Ok(_) => return fail(not_readable(file, "not a JSON object")),
         Err(e) => return fail(not_readable(file, &e)),
     };
-    let (amended, dropped) = apply(&record, &publication_kept(step));
+    let (amended, dropped) = match apply(&record, &publication_kept(step)) {
+        Ok(result) => result,
+        Err(e) => return fail(e.to_string()),
+    };
     if let Err(e) = write_atomically(Path::new(file), Js::Obj(amended).pretty()) {
         return fail(format!("craft-log-run FAILED: {e}"));
     }
@@ -197,7 +209,7 @@ mod tests {
     #[test]
     fn a_publication_with_no_record_or_one_that_cannot_be_read_is_a_failure_said() {
         let none = answer(&req(""));
-        assert_eq!(none.text("reason"), "no record file was named");
+        assert_eq!(none.text("reason").unwrap(), "no record file was named");
         assert_eq!(none.get("ok"), Some(&Js::Bool(false)));
         let d = tempfile::tempdir().unwrap();
         let torn = d.path().join("r.json");
@@ -205,9 +217,10 @@ mod tests {
         let said = answer(&req(&torn.display().to_string()));
         assert!(
             said.text("reason")
+                .unwrap()
                 .starts_with("craft-log-run FAILED: record not readable at"),
             "{}",
-            said.text("reason")
+            said.text("reason").unwrap()
         );
         assert_eq!(
             std::fs::read_to_string(&torn).unwrap(),
