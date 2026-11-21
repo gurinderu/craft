@@ -229,6 +229,15 @@ that shaped this layer has been removed.
 
 ## Rust CLI
 
+`craft runs recurring` reads up to 500 newest detail files and emits one JSON object of findings
+confirmed on at least two branches of one repository. Selection and grouping are in
+`cli/crates/craft-review/src/recurring.rs` and `recurring/`, reached by `cli/bin/craft/src/runs.rs` and tested through the
+built binary in `cli/bin/craft/tests/recurring.rs` and `cli/bin/craft/tests/recurring/`. The old
+`integrations/shared/recurring-findings.mjs` entry is a thin adapter to the binary, with its own
+transport tests. The addressing-findings and develop skills resolve that binary by the package's
+existing downloader and call the native command. Equal groups use UTF-16 code-unit order,
+independent of the host locale.
+
 `cli/` is a Cargo workspace for `craft review`, designed so the binary decides a review's work and
 a host (the `review` engine above) runs its agents. The step protocol was observed end to end
 in a live session (craft 0.41.0, a Rust diff, finished with Approve); the full-lens review it runs

@@ -1,6 +1,6 @@
 // The Node entry points that run in a consumer's repo, where no devDependency is installed: the run-record
 // CLI the engines shell out to, the run-store reader run by hand, the PR-rejection reader addressing-findings
-// runs, the recurrence reader it runs before asking about lessons (integrations/shared/recurring-findings.mjs), the
+// runs, the legacy adapter for the native recurrence reader (integrations/shared/recurring-findings.mjs), the
 // request builder the review skills run to post a doubtful finding the reviewer chose (integrations/shared/finding-post.mjs), the
 // reader a consumer's agent runs to take a failed bundled engine's position back to its source
 // (integrations/shared/engine-source-map.mjs),

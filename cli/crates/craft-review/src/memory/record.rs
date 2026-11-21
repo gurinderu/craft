@@ -94,7 +94,7 @@ fn json(v: Option<&Value>) -> String {
 }
 
 /// Path segments with `.`, empty ones and separators folded; `..` kept literal.
-pub(super) fn scope_parts(p: &str) -> Vec<&str> {
+pub(crate) fn scope_parts(p: &str) -> Vec<&str> {
     p.split(['/', '\\'])
         .filter(|s| !s.is_empty() && *s != ".")
         .collect()
