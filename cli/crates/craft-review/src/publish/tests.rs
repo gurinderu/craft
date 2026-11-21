@@ -176,3 +176,29 @@ fn the_posting_line_says_what_landed_and_what_failed() {
         "- no defect to post · 1 defect(s) name no file and could not be posted"
     );
 }
+
+#[test]
+fn a_design_question_is_doubtful_and_a_design_harm_is_a_defect() {
+    use super::sort::doubt_reasons;
+    let finding = |lens: &str, harm: &str| {
+        json!({"severity": "Info", "title": "Why a new cache?", "file": "src/a.rs", "line": 3,
+               "lens": lens, "harmLevel": harm})
+    };
+    let question = "a design question for the author: the design lens named no harm".to_owned();
+    assert_eq!(
+        doubt_reasons(&finding("design", "none"), None),
+        std::slice::from_ref(&question)
+    );
+    assert_eq!(doubt_reasons(&finding("design", ""), None), [question]);
+    assert!(doubt_reasons(&finding("design", "operator-recovery"), None).is_empty());
+    assert!(
+        doubt_reasons(&finding("correctness", "none"), None).is_empty(),
+        "another lens's harmless finding is not a design question"
+    );
+    let merged = json!({"severity": "Medium", "title": "t", "lens": "design",
+                        "sources": ["design", "correctness"], "harmLevel": "none"});
+    assert!(
+        doubt_reasons(&merged, None).is_empty(),
+        "another lens raised it too"
+    );
+}

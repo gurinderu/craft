@@ -18,14 +18,20 @@ const PUB_LINE: &str = "^[[:space:]]*pub[[:space:](]";
 const DEP_TABLES: [&str; 3] = ["dependencies", "dev-dependencies", "build-dependencies"];
 
 /// Cargo matches a dependency to a package by name with `-` and `_` taken as one character.
-fn name_key(name: &str) -> String {
+pub(crate) fn name_key(name: &str) -> String {
     name.replace('-', "_")
 }
 
 /// The dependencies a manifest's tables name, its `target.<cfg>.*` tables included.
 fn deps_of(manifest: &Table) -> Vec<String> {
+    deps_in(manifest, &DEP_TABLES)
+}
+
+/// The dependencies the manifest's `tables` (of [`DEP_TABLES`]) name, by the names Cargo matches,
+/// their `target.<cfg>.*` copies included, sorted and once each.
+pub(crate) fn deps_in(manifest: &Table, tables: &[&str]) -> Vec<String> {
     let in_table = |t: &Table| -> Vec<String> {
-        DEP_TABLES
+        tables
             .iter()
             .filter_map(|k| t.get(*k).and_then(toml::Value::as_table))
             .flat_map(|deps| {

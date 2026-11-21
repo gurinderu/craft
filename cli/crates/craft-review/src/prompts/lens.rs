@@ -206,6 +206,14 @@ pub(super) fn common_vars(
             rust_only(profile, || crate::consumers::lens_block(&ctx.consumers))?,
         ),
         (
+            "design",
+            if lens == crate::design::LENS {
+                crate::design::lens_block(&ctx.design, &profile.id)?
+            } else {
+                String::new()
+            },
+        ),
+        (
             "mutants",
             if mutants {
                 content::text("lens-mutants")?

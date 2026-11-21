@@ -36,12 +36,17 @@ pub fn git(dir: &Path, args: &[&str]) {
     );
 }
 
-/// A repository whose `origin/main` is its first commit, with `src/lib.rs` added after it.
+/// A repository whose `origin/main` is its first commit, with `src/lib.rs` filled after it: an
+/// edit of a file the base already held, so it adds no module and the design lens stays out.
 pub fn fixture(rust: bool) -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     let d = dir.path();
     git(d, &["init", "-q", "-b", "main"]);
     std::fs::write(d.join("README.md"), "x\n").unwrap();
+    if rust {
+        std::fs::create_dir_all(d.join("src")).unwrap();
+        std::fs::write(d.join("src/lib.rs"), "").unwrap();
+    }
     git(d, &["add", "."]);
     git(d, &["commit", "-qm", "init"]);
     git(d, &["update-ref", "refs/remotes/origin/main", "HEAD"]);

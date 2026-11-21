@@ -41,8 +41,8 @@ fn start_renders_the_scout_over_the_diff() {
     for want in [
         "You are scouting a Rust diff",
         "git diff --stat 'origin/main'...HEAD -- '*.rs'",
-        r#"choose from ["correctness","security","money","concurrency","errors","performance","intent","tests","maintainability","compat","invariants","sql-queries","complexity","safety","api-idioms","api-boundary","reconciler","failure-windows"]"#,
-        r#"EXCEPT ["sql-queries","failure-windows"]"#,
+        r#"choose from ["correctness","security","money","concurrency","errors","performance","intent","tests","maintainability","compat","invariants","design","sql-queries","complexity","safety","api-idioms","api-boundary","reconciler","failure-windows"]"#,
+        r#"EXCEPT ["design","sql-queries","failure-windows"]"#,
         "Decide what is \"in play\" from the diff",
         "Return repo-relative paths, at most 5",
     ] {

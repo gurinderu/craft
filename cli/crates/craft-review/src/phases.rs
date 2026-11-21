@@ -183,6 +183,7 @@ fn plan_tracks(run: &mut RunState, profiles: &[Profile]) {
             metrics,
             optional: &run.optional,
             embedded_sql: track.embedded_sql,
+            design: track.design,
         }));
     }
 }

@@ -198,6 +198,7 @@ fn rust_and_nix_extend_the_general_lenses_and_sql_stays_narrow() {
             "maintainability",
             "compat",
             "invariants",
+            "design",
             "sql-queries",
             "complexity"
         ]
@@ -218,6 +219,7 @@ fn rust_and_nix_extend_the_general_lenses_and_sql_stays_narrow() {
             "maintainability",
             "compat",
             "invariants",
+            "design",
             "sql-queries",
             "complexity",
             "safety",
@@ -266,6 +268,7 @@ fn rust_and_nix_extend_the_general_lenses_and_sql_stays_narrow() {
             "intent",
             "maintainability",
             "compat",
+            "design",
             "purity",
             "reproducibility",
             "injection",
@@ -278,4 +281,15 @@ fn rust_and_nix_extend_the_general_lenses_and_sql_stays_narrow() {
     assert!(!crate::complexity::wanted(&nix));
     let sql = Profile::load("sql").unwrap();
     assert!(sql.lens("correctness").is_none() && sql.lens("negative-space").is_none());
+}
+
+#[test]
+fn every_profile_extending_the_general_one_holds_the_design_lens_optional_and_conditional() {
+    for id in ["general", "rust", "nix"] {
+        let p = Profile::load(id).unwrap();
+        let d = p.lens("design").unwrap();
+        assert!(d.optional && d.conditional && d.whole_diff, "{id}");
+        assert_eq!(d.brief, "lens-briefs/general-design", "{id}");
+    }
+    assert!(Profile::load("sql").unwrap().lens("design").is_none());
 }

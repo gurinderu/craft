@@ -15,6 +15,8 @@ mod adjudicate;
 mod consumers_tests;
 mod critic;
 #[cfg(test)]
+mod design_tests;
+#[cfg(test)]
 mod fixture;
 mod lens;
 #[cfg(test)]
@@ -69,6 +71,10 @@ pub struct PromptContext {
     /// lens. Optional, so a state written before it reads as a run with none.
     #[serde(default, skip_serializing_if = "crate::consumers::Consumers::is_empty")]
     pub consumers: crate::consumers::Consumers,
+    /// The design lens's seed the run prepared ([`crate::design`]): what the change adds, and a
+    /// Rust change's crate delta. Optional, so a state written before it reads as a run with none.
+    #[serde(default, skip_serializing_if = "crate::design::Seed::is_empty")]
+    pub design: crate::design::Seed,
     /// The code graph's project of the repository, craft's own, which the consumers list indexes
     /// and the metrics lenses and their verifier name (realm @nick/craft, node #529); empty when it
     /// could not be named, and then the metrics lenses do not run, the report saying why. Optional, so a state written before it reads

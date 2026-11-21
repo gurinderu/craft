@@ -2,8 +2,9 @@
 //! #277, #282, #423): each finding a PR comment could carry is a defect, posted as it is, or
 //! doubtful — not confirmed; raised by the compat, intent or api-boundary lens; speaking of
 //! rollback, rollout, old replicas, migration or a breaking change; its line outside the lines the
-//! diff changed — and waits for the reviewer. A confirmed finding going against a memory record is
-//! a defect whatever the other signs say; an unconfirmed one is doubtful, the record named first.
+//! diff changed; the design lens's alone with no harm named — and waits for the reviewer. A
+//! confirmed finding going against a memory record is a defect whatever the other signs say; an
+//! unconfirmed one is doubtful, the record named first.
 
 use std::sync::LazyLock;
 
@@ -89,6 +90,9 @@ pub(crate) fn doubt_reasons(f: &Value, changed: Option<&Lines>) -> Vec<String> {
     if !lenses.is_empty() {
         out.push(format!("raised by the {} lens", lenses.join(", ")));
     }
+    if design_question(f) {
+        out.push(DESIGN_REASON.into());
+    }
     let said = format!("{} {}", text(f, "title"), text(f, "why"));
     if DOUBT_WORDS.as_ref().is_some_and(|re| re.is_match(&said)) {
         out.push(
@@ -99,6 +103,20 @@ pub(crate) fn doubt_reasons(f: &Value, changed: Option<&Lines>) -> Vec<String> {
         out.push(OUTSIDE_REASON.into());
     }
     out
+}
+
+/// Why a design finding that names no harm is doubtful: a legitimate trade-off is a question to the
+/// author, not a defect (realm @nick/craft, node #534).
+const DESIGN_REASON: &str = "a design question for the author: the design lens named no harm";
+
+/// Whether `f` is the design lens's alone and names no harm (`harmLevel` none or absent): a
+/// second implementation or a broken boundary names one and stays a defect.
+fn design_question(f: &Value) -> bool {
+    let lenses = finding_lenses(f);
+    let harm = text(f, "harmLevel");
+    !lenses.is_empty()
+        && lenses.iter().all(|l| l == crate::design::LENS)
+        && matches!(harm.trim(), "" | "none")
 }
 
 /// The findings split for publication (`sortFindings`): the defects, and the doubtful ones each

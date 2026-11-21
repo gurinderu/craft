@@ -5,7 +5,7 @@
 /// The path of a header's rest (after `+++ ` or `--- `) without its side's `prefix`; `None` for
 /// `/dev/null`, a path not under `prefix`, or a quoted one that does not close or is not UTF-8
 /// (left out, as before quoted paths were read; issue #414).
-pub(super) fn header_path(rest: &str, prefix: &str) -> Option<String> {
+pub(crate) fn header_path(rest: &str, prefix: &str) -> Option<String> {
     let path = match rest.strip_prefix('"') {
         Some(quoted) => unquote(quoted)?,
         None => rest.strip_suffix('\t').unwrap_or(rest).to_owned(),

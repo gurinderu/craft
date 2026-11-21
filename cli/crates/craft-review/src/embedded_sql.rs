@@ -118,17 +118,9 @@ fn upper(text: &str) -> bool {
 /// `top`, holds a query string; a file that cannot be read holds none.
 #[must_use]
 pub(crate) fn in_changed_lines(top: &Path, lines: &Lines, files: &[String]) -> bool {
-    lines
-        .ranges()
-        .filter(|(f, _)| files.iter().any(|x| x == f))
-        .any(|(f, ranges)| {
-            let Ok(text) = std::fs::read_to_string(top.join(f)) else {
-                return false;
-            };
-            text.lines()
-                .zip(1u32..)
-                .any(|(l, n)| ranges.iter().any(|&(a, b)| (a..=b).contains(&n)) && holds_sql(l))
-        })
+    files
+        .iter()
+        .any(|f| lines.added_text(top, f).iter().any(|(_, l)| holds_sql(l)))
 }
 
 /// Marks each of `tracks` whose changed lines hold a query string, the change read from the

@@ -4,7 +4,7 @@ A review run with `comment` posts only the findings in which there is no doubt �
 whose rightness turns on what the PR author knows (intent, context, a deployment the diff does not
 show) is not posted: the report lists it under **Doubtful — for the reviewer, not posted**, numbered,
 each with why it is doubtful — not confirmed; raised by the `compat`, `intent` or `api-boundary`
-lens; speaking of rollback, rollout, old replicas, migration or a breaking change; or its line
+lens; a `design` question naming no harm; speaking of rollback, rollout, old replicas, migration or a breaking change; or its line
 outside the lines the diff changed. The run's record keeps the same findings by the same numbers.
 The sorting changes nothing in the verdict.
 

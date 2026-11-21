@@ -2,10 +2,11 @@
 //! diagnostic is this change's when it sits on one of them, pre-existing debt otherwise.
 
 use std::collections::BTreeMap;
+use std::path::Path;
 
 mod path;
 
-use path::header_path;
+pub(crate) use path::header_path;
 
 /// Each changed file's added line ranges, inclusive, by its repository-relative path.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -56,6 +57,22 @@ impl Lines {
     /// Each file's added ranges, by path.
     pub(crate) fn ranges(&self) -> impl Iterator<Item = (&str, &[(u32, u32)])> {
         self.0.iter().map(|(f, rs)| (f.as_str(), rs.as_slice()))
+    }
+
+    /// The lines of `file` the change added, as the working tree at `top` holds them, each with
+    /// its number; none when the file cannot be read.
+    pub(crate) fn added_text(&self, top: &Path, file: &str) -> Vec<(u32, String)> {
+        let Some(ranges) = self.0.get(file) else {
+            return Vec::new();
+        };
+        let Ok(text) = std::fs::read_to_string(top.join(file)) else {
+            return Vec::new();
+        };
+        text.lines()
+            .zip(1u32..)
+            .filter(|(_, n)| ranges.iter().any(|&(a, b)| (a..=b).contains(n)))
+            .map(|(l, n)| (n, l.to_owned()))
+            .collect()
     }
 
     /// Whether `line` of `file` is one the change added.

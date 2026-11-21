@@ -18,6 +18,7 @@ fn input<'a>(p: &'a Profile, files: &'a [String], embedded_sql: bool) -> PlanInp
         metrics: false,
         optional: &[],
         embedded_sql,
+        design: false,
     }
 }
 
@@ -259,5 +260,44 @@ fn a_general_plan_counts_only_its_own_files_as_production() {
         !got.lenses.iter().any(|l| l == "tests"),
         "the Rust file is Rust's: {:?}",
         got.lenses
+    );
+}
+
+#[test]
+fn the_design_lens_joins_a_plan_on_its_signal_or_its_request_only() {
+    for id in ["rust", "nix", "general"] {
+        let p = Profile::load(id).unwrap();
+        let files = ["src/x".to_owned()];
+        let has = |got: &super::Plan| got.lenses.iter().any(|l| l == "design");
+        // A large, security-sensitive plan with a scout that picked it: still no signal, no request.
+        let scout = json!({"sizeBucket": "large", "lenses": ["design", "correctness"], "securitySensitive": true});
+        let without = plan(PlanInput {
+            scout: Some(&scout),
+            ..input(&p, &files, false)
+        });
+        assert!(!has(&without), "{id}: {:?}", without.lenses);
+        let signalled = plan(PlanInput {
+            design: true,
+            ..input(&p, &files, false)
+        });
+        assert!(has(&signalled), "{id}: {:?}", signalled.lenses);
+        let asked = [format!("{id}-design")];
+        let bought = plan(PlanInput {
+            optional: &asked,
+            ..input(&p, &files, false)
+        });
+        assert!(has(&bought), "{id}: {:?}", bought.lenses);
+    }
+    let sql = Profile::load("sql").unwrap();
+    let files = ["db/q.sql".to_owned()];
+    assert!(
+        !plan(PlanInput {
+            design: true,
+            ..input(&sql, &files, false)
+        })
+        .lenses
+        .iter()
+        .any(|l| l == "design"),
+        "the SQL profile does not extend the general lenses"
     );
 }
