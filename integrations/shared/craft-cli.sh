@@ -4,7 +4,7 @@
 # except --failure, which says a failed background try once. Native Windows uses craft-bin.mjs.
 set -u
 
-version=0.56.0 # x-release-please-version
+version=0.57.0 # x-release-please-version
 
 die() {
   printf 'craft: %s\n' "$1" >&2

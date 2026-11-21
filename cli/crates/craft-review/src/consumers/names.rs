@@ -13,12 +13,15 @@ mod paths;
 mod stream;
 mod structural;
 mod unfinished;
+mod unit;
 
-pub(super) use crates::externals;
-pub(super) use paths::Externals;
+pub(super) use crates::workspace;
 use stream::{Ended, stream};
-pub(super) use structural::by_path;
+#[cfg(test)]
+pub(super) use structural::FREE_FILES_MAX;
+pub(super) use structural::{Found, by_path};
 pub(super) use unfinished::Unfinished;
+pub(super) use unit::Workspace;
 
 /// Names too common for a whole-word search to tell one symbol's uses from another's.
 const COMMON: [&str; 40] = [
