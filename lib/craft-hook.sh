@@ -16,7 +16,7 @@
 # it always exits 0. Windows is not covered (no sh), as for lib/pr-opened-hook.sh.
 set -u
 
-version=0.55.0 # x-release-please-version
+version=0.56.0 # x-release-please-version
 
 hook=${1:-}
 case $hook in

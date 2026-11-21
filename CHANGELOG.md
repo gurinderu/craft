@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.56.0](https://github.com/gurinderu/craft/compare/v0.55.0...v0.56.0) (2026-11-21)
+
+
+### Features
+
+* index and ask the code graph for the consumers list, under the review's own lock ([a0c3a22](https://github.com/gurinderu/craft/commit/a0c3a22293b9482afdb62c535452a19de8f6c299))
+* move a finding past its file's end to its symbol's line ([7f8a0c2](https://github.com/gurinderu/craft/commit/7f8a0c29d95357b549830d95085c0ee4eb514806))
+* offer review profile setup in OpenCode ([5f64644](https://github.com/gurinderu/craft/commit/5f646441235941455a63ae92212d2980df08f048))
+* review .sql files with a SQL profile and its migrations and queries lenses ([7c981b5](https://github.com/gurinderu/craft/commit/7c981b5515d804e6530e4d3aba5b73dbe5036690))
+* run the plugin hooks as the craft binary, fetched in the background ([ed46c11](https://github.com/gurinderu/craft/commit/ed46c11f7434d1bcdd6f2bc703e00352cd12c2c9))
+* run the Rust performance lens on every review and catch needless allocation ([6c3b445](https://github.com/gurinderu/craft/commit/6c3b44581aa97cde6055f5a5bd09d1cc0f78c3b2))
+* write and inspect run store in the CLI ([58109cd](https://github.com/gurinderu/craft/commit/58109cd9abb9ac75147f8e99f3b68678e397d794))
+
+
+### Bug Fixes
+
+* a checkpoint field two slices disagreed about stays poisoned ([fb590ff](https://github.com/gurinderu/craft/commit/fb590ffc3d030c81a2759f06f16e162dde429579))
+* ask a code graph no profile records, and free a hung index's lock ([98dce96](https://github.com/gurinderu/craft/commit/98dce963b837b245bd9136c64202bbd60feeeb82))
+* keep the caller's GIT_SSH or core.sshCommand in craft's remote git ([f9f487c](https://github.com/gurinderu/craft/commit/f9f487c42b9d92b385fc3be8a7694335c00d0882))
+* lay the PR worktree as craft's remote git runs, detached and prompt-free ([aac6188](https://github.com/gurinderu/craft/commit/aac618882a392ebddcf8ad4ed9084fc96e0762ef))
+* one home for run dirs and the store, git read once per filing, index bytes kept by both writers ([d2593f8](https://github.com/gurinderu/craft/commit/d2593f8b5ba681ddc5a77f4ed98e2b30fce9e292))
+* only the binary indexes the code graph, under one lock with a heartbeat ([147a6b5](https://github.com/gurinderu/craft/commit/147a6b5d7e3656b8242e2a77044787ca60900019))
+* pin a model on every agent the triage and audit engines spawn ([b5285bf](https://github.com/gurinderu/craft/commit/b5285bf149687b7a64b42e4daff511ad66ac2fd1))
+* rate every PER rule by the harm it names and scope the pub exclusion to released items ([9749c56](https://github.com/gurinderu/craft/commit/9749c569f43d0eaaec304c4186edd78dfb61acfa))
+* read a partial clone's objects without a lazy fetch and name the missing ones ([1bc0ec6](https://github.com/gurinderu/craft/commit/1bc0ec64a639d2aae16dc8fe4127611c136e4add))
+* stop a group gently, so a stopped git leaves no lock in the user's repository ([16ad70c](https://github.com/gurinderu/craft/commit/16ad70c79e82fb713ced43b7ae7487cd10cd54e1)), closes [#419](https://github.com/gurinderu/craft/issues/419)
+
 ## [0.55.0](https://github.com/gurinderu/craft/compare/v0.54.1...v0.55.0) (2026-11-20)
 
 
