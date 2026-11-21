@@ -102,7 +102,8 @@ const name = `${process.pid}-${id}-${'0'.repeat(24)}`;
 const peer = path.join(root,name); fs.mkdirSync(peer);
 for (const number of [null,'1']) {
   if(number) fs.writeFileSync(path.join(peer,'number'),number);
-  assert.throws(()=>withIndexTurn(store,()=>assert.fail('entered beside live owner'),options),/deadline/);
+  assert.throws(()=>withIndexTurn(store,()=>assert.fail('entered beside live owner'),options),
+    error=>error.code==='ETIMEDOUT'||/admission deadline/.test(error.message));
   assert.deepEqual(fs.readdirSync(root),[name]);
 }
 fs.rmSync(peer,{recursive:true});
