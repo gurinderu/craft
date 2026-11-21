@@ -35,6 +35,7 @@ pub use record::{PriorDecision, RecordKind};
 pub use source::MemorySource;
 
 pub(crate) use judge::{contradiction_of, contradiction_record};
+pub(crate) use record::scope_parts;
 
 use crate::agent::Model;
 use crate::content::{self, ContentError};

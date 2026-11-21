@@ -23,8 +23,11 @@ function details(store) {
   return fs.readdirSync(store).filter(n => n.endsWith('.json'))
 }
 
-test('failed replacement index has durable intent and recovery never overwrites a later record', () => {
-  const { raw, opts } = fixture()
+/**
+ * A replacement whose index publication failed, its detail then rewritten by a later writer that kept its `ts`.
+ * @param {ReturnType<typeof fixture>} f
+ */
+function retainedConflict({ raw, opts }) {
   const old = writeRecord({ ...raw, verdict: 'Warning' }, opts)
   const rename = fs.renameSync.bind(fs)
   const spy = vi.spyOn(fs, 'renameSync').mockImplementation((a, b) => {
@@ -32,12 +35,57 @@ test('failed replacement index has durable intent and recovery never overwrites 
     rename(a, b)
   })
   expect(() => writeRecord(raw, { ...opts, over: old.file })).toThrow('index unavailable')
-  expect(fs.existsSync(path.join(opts.store, '.filing-intents'))).toBe(true)
   spy.mockRestore()
+  const intent = path.join(opts.store, '.filing-intents', path.basename(old.file))
+  expect(fs.existsSync(intent)).toBe(true)
   const foreign = { ...old.record, verdict: 'Block', foreign: true }
   fs.writeFileSync(old.file, JSON.stringify(foreign))
-  expect(() => writeRecord(raw, opts)).toThrow(/conflict/)
+  return { old, intent, foreign }
+}
+
+test('failed replacement index has durable intent and recovery never overwrites a later record', () => {
+  const f = fixture()
+  const { old, intent, foreign } = retainedConflict(f)
+  /** @type {string[]} */
+  const said = []
+  vi.spyOn(process.stderr, 'write').mockImplementation(chunk => (said.push(String(chunk)), true))
+  expect(() => writeRecord(f.raw, { ...f.opts, over: old.file })).toThrow(`intent ${intent} expected`)
+  // Its own detail's conflict is the failure, never also a warning that the write went on.
+  expect(said.join('')).not.toContain('went on')
   expect(JSON.parse(fs.readFileSync(old.file, 'utf8'))).toEqual(foreign)
+  expect(fs.existsSync(intent)).toBe(true)
+})
+
+test('the remedy the conflict names keeps the run record and the next write completes the intent', () => {
+  const f = fixture()
+  const { old, intent } = retainedConflict(f)
+  expect(() => writeRecord(f.raw, { ...f.opts, over: old.file })).toThrow('jq -j .record <intent> > <detail>')
+  // `mv <detail> <aside>` then `jq -j .record <intent> > <detail>`.
+  fs.renameSync(old.file, `${old.file}.aside`)
+  const record = String(JSON.parse(fs.readFileSync(intent, 'utf8')).record)
+  fs.writeFileSync(old.file, record)
+  writeRecord(f.raw, f.opts)
+  expect(fs.existsSync(intent)).toBe(false)
+  expect(fs.readFileSync(old.file, 'utf8')).toBe(record)
+  const rows = fs.readFileSync(path.join(f.opts.store, 'index.jsonl'), 'utf8').trim().split('\n')
+  const own = rows.map(r => JSON.parse(r)).filter(r => r.ts === JSON.parse(record).ts)
+  expect(own.map(r => r.verdict)).toEqual(['Approve'])
+})
+
+test('a retained conflict never blocks a write to another record, and its warning names the intent', () => {
+  const f = fixture()
+  const { old, intent, foreign } = retainedConflict(f)
+  /** @type {string[]} */
+  const said = []
+  vi.spyOn(process.stderr, 'write').mockImplementation(chunk => (said.push(String(chunk)), true))
+  const other = writeRecord(f.raw, f.opts)
+  expect(other.file).not.toBe(old.file)
+  expect(said.join('')).toMatch(/filing conflict/)
+  expect(said.join('')).toContain(intent)
+  expect(said.join('')).toContain('delete the intent')
+  expect(JSON.parse(fs.readFileSync(old.file, 'utf8'))).toEqual(foreign)
+  expect(fs.existsSync(intent)).toBe(true)
+  expect(fs.readFileSync(path.join(f.opts.store, 'index.jsonl'), 'utf8').trim().split('\n')).toHaveLength(2)
 })
 
 test('crash after index before proof is replayed twice without a duplicate', () => {
@@ -117,7 +165,7 @@ test('partial directory deletion cannot expose a finalized run after removing it
   expect(finalizeRun(raw, { ...opts, retry: true }).file).toBe(result.file)
 })
 
-test('a legacy ordinary claim racing publication is preserved and reported, never unlinked', () => {
+test('a legacy ordinary claim racing publication is preserved and reported, never unlinked, and the retry files apart', () => {
   const { raw, opts } = fixture()
   const link = fs.linkSync.bind(fs)
   const other = '{"legacy":"writer"}'
@@ -127,10 +175,16 @@ test('a legacy ordinary claim racing publication is preserved and reported, neve
   })
   expect(() => finalizeRun(raw, opts)).toThrow()
   vi.restoreAllMocks()
-  expect(() => finalizeRun(raw, { ...opts, retry: true })).toThrow(/conflict/)
+  /** @type {string[]} */
+  const said = []
+  vi.spyOn(process.stderr, 'write').mockImplementation(chunk => (said.push(String(chunk)), true))
+  const retried = finalizeRun(raw, { ...opts, retry: true })
   const files = details(opts.store)
-  expect(files).toHaveLength(1)
-  expect(fs.readFileSync(path.join(opts.store, String(files[0])), 'utf8')).toBe(other)
+  expect(files).toHaveLength(2)
+  const legacy = files.find(n => path.join(opts.store, n) !== retried.file)
+  expect(fs.readFileSync(path.join(opts.store, String(legacy)), 'utf8')).toBe(other)
+  expect(said.join('')).toContain(path.join(opts.store, '.filing-intents', String(legacy)))
+  expect(fs.existsSync(path.join(opts.store, '.filing-intents', String(legacy)))).toBe(true)
 })
 
 test('recover replays a pending filing even when its finalized marker excludes checkpoint promotion', () => {

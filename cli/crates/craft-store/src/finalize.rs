@@ -168,7 +168,8 @@ pub(crate) fn safe_path(p: &str) -> String {
     String::from_utf16_lossy(&units)
 }
 
-/// Files `raw`: the record a finalize files, its lines said into `said`.
+/// Files `raw`: the record a finalize files, its lines said into `said`. A pending intent retained
+/// over a conflicting detail is said as a warning, after the filing so no proof keeps it.
 ///
 /// # Errors
 /// When the record cannot be written or a rejoin's checkpoints cannot be read; a warning in
@@ -179,12 +180,27 @@ pub fn finalize(
     asked: Asked<'_>,
     said: &mut Said,
 ) -> Result<(), StoreError> {
+    let retained = recover_filings(&w.store)?;
+    let done = file_finalized(raw, w, asked, said);
+    said.err.extend(
+        retained
+            .into_iter()
+            .map(|c| format!("craft-log-run WARNING: {c} — this write went on")),
+    );
+    done
+}
+
+fn file_finalized(
+    raw: &Obj,
+    w: &Writing,
+    asked: Asked<'_>,
+    said: &mut Said,
+) -> Result<(), StoreError> {
     let at = ProofAt {
         store: &w.store,
         dir: asked.dir,
         project: &w.project,
     };
-    recover_filings(&w.store)?;
     if say_proven(raw, at, asked.retry, said) {
         return Ok(());
     }

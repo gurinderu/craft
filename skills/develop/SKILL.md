@@ -164,7 +164,9 @@ One **round** is:
    session then writes every disposition to memory and files the workflow's `issues` before any
    fixer starts (`craft:addressing-findings`, "Who triages"). Then, once per round, the
    recurring-findings check that step 3 no longer reaches (addressing-findings' step 0): run
-   `node "<this skill's base directory>/../../integrations/shared/recurring-findings.mjs" --path <path> …` for the paths the round's findings touch, show each group, and offer
+   `"$CRAFT_BIN" runs recurring --path <path> …` for the paths the round's findings touch, resolving
+   `CRAFT_BIN` with `node "<this skill's base directory>/../../integrations/shared/craft-bin.mjs" ensure`
+   first (stop this check and report a failed resolution). Show each group, and offer
    the author a lesson per group — recorded only on their yes (addressing-findings, "Recurring
    findings").
 3. **Address** — `craft:addressing-findings`, entered at its step 5 with step 2's plan in hand (its
