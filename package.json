@@ -1,6 +1,6 @@
 {
   "name": "craft-opencode",
-  "version": "0.56.0",
+  "version": "0.57.0",
   "description": "craft's skills, review agents and review for OpenCode 2.x.",
   "license": "MIT",
   "type": "module",
@@ -12,7 +12,6 @@
     "bin",
     "content",
     "integrations",
-    "lib",
     "skills"
   ]
 }

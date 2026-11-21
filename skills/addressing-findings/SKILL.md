@@ -99,7 +99,7 @@ not one of them: it is the main session's (→ "Who triages").
                rubric where it applies. Once the `craft:review`
                run has ended (completed, failed or stopped — not while you may still resume
                it), fold its real cost into the records it filed:
-               `node "<this skill's base directory>/../../lib/craft-log-run.mjs" enrich-cost --run-id <wf_…>`,
+               `node "<this skill's base directory>/../../integrations/shared/craft-log-run.mjs" enrich-cost --run-id <wf_…>`,
                with the run id the Workflow completion names. Best-effort: if it fails, say
                so in one line and go on.
                PR-thread rejections recorded again; the review workflow recalls the active
@@ -126,11 +126,11 @@ subagent** — not "triage and fix the review", not "triage these findings": the
 the workflow, then briefs subagents with the fix work only (step 5).
 If `craft:triage-findings` or `craft:review` fails with `at workflow.js:<line>:<column>`,
 that place is in the bundled engine:
-`node "<this skill's base directory>/../../lib/engine-source-map.mjs" <engine> workflow.js:<line>:<column>`
+`node "<this skill's base directory>/../../integrations/shared/engine-source-map.mjs" <engine> workflow.js:<line>:<column>`
 gives it in the plugin's source.
 Once a run of either has ended (completed, failed or stopped — not while you may still resume it),
 fold its real cost into the records it filed:
-`node "<this skill's base directory>/../../lib/craft-log-run.mjs" enrich-cost --run-id <wf_…>`, with the
+`node "<this skill's base directory>/../../integrations/shared/craft-log-run.mjs" enrich-cost --run-id <wf_…>`, with the
 run id the Workflow completion names. Best-effort: if it fails, say so in one line and go on.
 
 Launch it with its sources — `report` = a path to the findings whenever they live in a report (one
@@ -310,7 +310,8 @@ one itself). Only a **lesson** waits for the author's yes (below).
   the touched paths:
 
   ```bash
-  node "<this skill's base directory>/../../lib/recurring-findings.mjs" --path <path> [--path <path> …]
+  CRAFT_BIN="$(node "<this skill's base directory>/../../integrations/shared/craft-bin.mjs" ensure)" || exit $?
+  "$CRAFT_BIN" runs recurring --path <path> [--path <path> …]
   ```
 
   It prints one JSON object: `groups` of `{file, titles, branches, runs, severities, lastSeen}` —
@@ -321,7 +322,8 @@ one itself). Only a **lesson** waits for the author's yes (below).
   an open question) and one no verifier confirmed (unverified or suspected) are left out (the `note`
   says so). `--store <dir>` reads another store (default `~/.craft/runs`), `--project
   <dir>` another checkout. Its `note` names every bound it reached (the newest 500 runs read, 20
-  groups listed) — repeat that line, never present a cut list as whole.
+  groups listed) — repeat that line, never present a cut list as whole. This command always emits
+  JSON; `--json` is optional. Ties use UTF-16 code-unit order, independent of the machine's locale.
   Show each group (file, titles, branches, when last seen) and **ask the author, per group**,
   whether to record a lesson. Yes → `record-lesson` with scope = the file, title = the pattern in one
   line, body = the pattern and what avoids it (in the author's words), links = the runs or PRs.
@@ -445,7 +447,7 @@ Which agents to re-dispatch, the fix-to-skill routing, and the "what proves what
 
 A review run with `comment` posts only defects; its **Doubtful — for the reviewer, not posted**
 list goes to the human, who chooses for each: ask the author, post it as a defect, or do not post
-it. A chosen one is posted only through `lib/finding-post.mjs`, with the marker; a "do not post" is
+it. A chosen one is posted only through `integrations/shared/finding-post.mjs`, with the marker; a "do not post" is
 written to memory at once (a decision, or a project rule when the reason is a stance); the author's
 answer on a question thread is read by the thread rules → [doubtful.md](doubtful.md).
 

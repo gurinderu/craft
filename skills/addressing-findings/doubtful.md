@@ -4,7 +4,7 @@ A review run with `comment` posts only the findings in which there is no doubt �
 whose rightness turns on what the PR author knows (intent, context, a deployment the diff does not
 show) is not posted: the report lists it under **Doubtful — for the reviewer, not posted**, numbered,
 each with why it is doubtful — not confirmed; raised by the `compat`, `intent` or `api-boundary`
-lens; speaking of rollback, rollout, old replicas, migration or a breaking change; or its line
+lens; a `design` question naming no harm; speaking of rollback, rollout, old replicas, migration or a breaking change; or its line
 outside the lines the diff changed. The run's record keeps the same findings by the same numbers.
 The sorting changes nothing in the verdict.
 
@@ -19,7 +19,7 @@ The sorting changes nothing in the verdict.
    ```bash
    pr=$(gh pr view --json number --jq .number)
    sha=$(gh pr view --json headRefOid --jq .headRefOid)
-   node "<this skill's base directory>/../../lib/finding-post.mjs" --as question --commit "$sha" <n> \
+   node "<this skill's base directory>/../../integrations/shared/finding-post.mjs" --as question --commit "$sha" <n> \
      | gh api "repos/{owner}/{repo}/pulls/$pr/comments" --input -
    ```
 
@@ -53,7 +53,7 @@ The sorting changes nothing in the verdict.
    branch's it is refused, and `--record <file>` must name the run meant):
 
    ```bash
-   node "<this skill's base directory>/../../lib/craft-log-run.mjs" sorting-choice --n <n> --choice <question|defect|dropped>
+   node "<this skill's base directory>/../../integrations/shared/craft-log-run.mjs" sorting-choice --n <n> --choice <question|defect|dropped>
    ```
 
    It prints the finding it recorded against — check it is the one chosen. A failure is named in

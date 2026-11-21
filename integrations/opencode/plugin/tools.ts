@@ -14,11 +14,11 @@ export function nestedUnder(host: Host, parent: string | undefined): Host {
 }
 
 // The review is the craft binary's own driver with its opencode backend, run through the plugin's bin/craft
-// (lib/craft-review-run.mjs; realm @nick/craft, nodes #499, #503): each task an `opencode run` on craft's read-only
+// (integrations/shared/craft-review-run.mjs; realm @nick/craft, nodes #499, #503): each task an `opencode run` on craft's read-only
 // agents, every tier on the calling session's model unless the flags name `--models` or the environment
-// `CRAFT_OPENCODE_MODELS`, which the binary reads itself. lib/ is loaded from the
+// `CRAFT_OPENCODE_MODELS`, which the binary reads itself. integrations/shared/ is loaded from the
 // checkout the plugin is linked from when the tool runs, as the work hook loads its modules: a plugin copy without
-// lib/ keeps its other tools.
+// integrations/shared/ keeps its other tools.
 const hasModels = (words: string[]) => words.some(w => w === '--models' || w.startsWith('--models='))
 
 function stopPreflight(pid: number | undefined) {
@@ -76,7 +76,7 @@ function profileOptions(words: string[], directory: string) {
 }
 
 async function runReview(host: Host, args: string, call: ToolCall): Promise<ToolAnswer> {
-  const review = await import('../../../lib/craft-review-run.mjs')
+  const review = await import('../../shared/craft-review-run.mjs')
   const { forwarded, skip, resumed, cwd } = profileOptions(review.flagWords(args), host.directory)
   if (!skip && !resumed) {
     const why = await profilePreflight(review.WRAPPER, cwd, call.signal)
@@ -95,7 +95,7 @@ async function runReview(host: Host, args: string, call: ToolCall): Promise<Tool
 }
 
 // What the audit and the triage answer on OpenCode 2.x, before any child session: no 2.x child session was seen
-// answering. Built here, without lib/, so a plugin copy without it still answers. The review is not refused: it runs
+// answering. Built here, without integrations/shared/, so a plugin copy without it still answers. The review is not refused: it runs
 // each task as its own `opencode run` (realm @nick/craft, nodes #499, #502), seen answering on 2.2.7.
 export function refusalOnV2(name: string): string {
   return `⚠️ INCOMPLETE — craft's \`${name}\` does not yet work in OpenCode 2.x: its child sessions never answered in testing (craft 0.50.0, OpenCode 2.2.7). A route through \`opencode run\` is in progress; until it ships, use OpenCode 1.x, Claude Code, Codex or pi. Nothing ran.`

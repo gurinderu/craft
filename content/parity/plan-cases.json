@@ -84,16 +84,16 @@
       "expected": {
         "sizeBucket": "medium",
         "lenses": [
-          "safety",
-          "errors",
+          "correctness",
+          "security",
           "concurrency",
-          "performance",
-          "reconciler",
+          "errors",
           "compat",
-          "maintainability",
-          "tests",
-          "intent",
           "invariants",
+          "safety",
+          "intent",
+          "performance",
+          "tests",
           "negative-space"
         ],
         "maxRounds": 2,
@@ -109,7 +109,7 @@
       }
     },
     {
-      "name": "security-sensitive floors the roster, votes and rounds",
+      "name": "security-sensitive floors the security lenses, votes and rounds",
       "changedFiles": [
         "src/lib.rs"
       ],
@@ -132,12 +132,12 @@
           "intent",
           "performance",
           "tests",
-          "safety",
+          "correctness",
+          "security",
           "concurrency",
-          "reconciler",
           "compat",
-          "maintainability",
           "invariants",
+          "safety",
           "negative-space"
         ],
         "maxRounds": 2,
@@ -153,7 +153,7 @@
       }
     },
     {
-      "name": "large adds negative-space and compat, three rounds",
+      "name": "large adds the security floor, negative-space and compat, three rounds",
       "changedFiles": [
         "src/lib.rs"
       ],
@@ -184,8 +184,10 @@
           "intent",
           "performance",
           "tests",
-          "negative-space",
-          "compat"
+          "correctness",
+          "security",
+          "compat",
+          "negative-space"
         ],
         "maxRounds": 3,
         "verifyVotes": 3,
@@ -310,7 +312,11 @@
           "errors",
           "intent",
           "performance",
-          "tests"
+          "tests",
+          "correctness",
+          "security",
+          "concurrency",
+          "safety"
         ],
         "maxRounds": 3,
         "verifyVotes": 3,
@@ -449,7 +455,10 @@
           "errors",
           "intent",
           "performance",
-          "tests"
+          "tests",
+          "correctness",
+          "security",
+          "concurrency"
         ],
         "maxRounds": 1,
         "verifyVotes": 3,
@@ -631,13 +640,10 @@
       "expected": {
         "sizeBucket": "medium",
         "lenses": [
-          "purity",
-          "reproducibility",
+          "correctness",
+          "security",
+          "compat",
           "injection",
-          "packaging",
-          "dev-env",
-          "modules",
-          "maintainability",
           "intent",
           "negative-space"
         ],
@@ -654,7 +660,7 @@
       }
     },
     {
-      "name": "nix: security-sensitive floors the roster and adds negative-space",
+      "name": "nix: security-sensitive floors the security lenses and adds negative-space",
       "profile": "nix",
       "changedFiles": [
         "modules/a.nix"
@@ -676,12 +682,10 @@
         "lenses": [
           "modules",
           "intent",
-          "purity",
-          "reproducibility",
+          "correctness",
+          "security",
+          "compat",
           "injection",
-          "packaging",
-          "dev-env",
-          "maintainability",
           "negative-space"
         ],
         "maxRounds": 2,
@@ -697,7 +701,7 @@
       }
     },
     {
-      "name": "nix: large adds negative-space but no compat, three rounds",
+      "name": "nix: large adds the security floor, negative-space and compat, three rounds",
       "profile": "nix",
       "changedFiles": [
         "a.nix"
@@ -723,6 +727,10 @@
           "reproducibility",
           "packaging",
           "intent",
+          "correctness",
+          "security",
+          "compat",
+          "injection",
           "negative-space"
         ],
         "maxRounds": 3,
@@ -738,7 +746,7 @@
       }
     },
     {
-      "name": "nix: a surface said absent drops negative-space; tests, compat and reconciler are not offered",
+      "name": "nix: a surface said absent drops negative-space; tests and reconciler are not offered",
       "profile": "nix",
       "changedFiles": [
         "a.nix"
@@ -764,7 +772,11 @@
         "sizeBucket": "large",
         "lenses": [
           "purity",
-          "intent"
+          "intent",
+          "correctness",
+          "security",
+          "compat",
+          "injection"
         ],
         "maxRounds": 3,
         "verifyVotes": 3,
@@ -805,7 +817,10 @@
         "lenses": [
           "purity",
           "dev-env",
-          "intent"
+          "intent",
+          "correctness",
+          "security",
+          "injection"
         ],
         "maxRounds": 1,
         "verifyVotes": 3,
@@ -817,6 +832,7 @@
         "repoRules": [],
         "surfaceDropped": [],
         "lightSkipped": [
+          "compat",
           "negative-space"
         ]
       }
@@ -897,6 +913,123 @@
         "repoRules": [],
         "surfaceDropped": [],
         "lightSkipped": []
+      }
+    },
+    {
+      "name": "general: a small diff keeps the picks and adds correctness, intent and tests",
+      "profile": "general",
+      "changedFiles": [
+        "web/app.ts"
+      ],
+      "scout": {
+        "sizeBucket": "small",
+        "lenses": [
+          "security"
+        ],
+        "isLibrary": false,
+        "securitySensitive": false,
+        "intent": "adds f",
+        "churn": [],
+        "repoRules": [],
+        "notes": "n"
+      },
+      "expected": {
+        "churn": [],
+        "intent": "adds f",
+        "isLibrary": false,
+        "lenses": [
+          "security",
+          "correctness",
+          "intent",
+          "tests"
+        ],
+        "lightSkipped": [],
+        "maxRounds": 1,
+        "repoRules": [],
+        "securitySensitive": false,
+        "sizeBucket": "small",
+        "surfaceDropped": [],
+        "verifyVotes": 1,
+        "lensModel": "opus"
+      }
+    },
+    {
+      "name": "general: a large diff takes the lenses it gained and negative-space",
+      "profile": "general",
+      "changedFiles": [
+        "web/app.ts"
+      ],
+      "scout": {
+        "sizeBucket": "large",
+        "lenses": [
+          "tests",
+          "maintainability",
+          "compat",
+          "invariants"
+        ],
+        "isLibrary": false,
+        "securitySensitive": false,
+        "intent": "adds f",
+        "churn": [],
+        "repoRules": [],
+        "notes": "n"
+      },
+      "expected": {
+        "churn": [],
+        "intent": "adds f",
+        "isLibrary": false,
+        "lenses": [
+          "tests",
+          "maintainability",
+          "compat",
+          "invariants",
+          "correctness",
+          "intent",
+          "security",
+          "concurrency",
+          "errors",
+          "negative-space"
+        ],
+        "lightSkipped": [],
+        "maxRounds": 3,
+        "repoRules": [],
+        "securitySensitive": false,
+        "sizeBucket": "large",
+        "surfaceDropped": [],
+        "verifyVotes": 3,
+        "lensModel": "opus"
+      }
+    },
+    {
+      "name": "general: no scout answer: the conservative plan",
+      "profile": "general",
+      "changedFiles": [
+        "web/app.ts"
+      ],
+      "scout": null,
+      "expected": {
+        "churn": [],
+        "intent": "",
+        "isLibrary": false,
+        "lenses": [
+          "correctness",
+          "security",
+          "concurrency",
+          "errors",
+          "compat",
+          "invariants",
+          "intent",
+          "tests",
+          "negative-space"
+        ],
+        "lightSkipped": [],
+        "maxRounds": 2,
+        "repoRules": [],
+        "securitySensitive": true,
+        "sizeBucket": "medium",
+        "surfaceDropped": [],
+        "verifyVotes": 3,
+        "lensModel": "opus"
       }
     },
     {
