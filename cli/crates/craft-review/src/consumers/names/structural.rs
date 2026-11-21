@@ -1,7 +1,6 @@
-//! The structural search (realm @nick/craft, node #529): for a changed item whose name is too
-//! common to search by text, the lines whose paths reach it through its owner ([`paths`]), over
-//! the files `git grep` finds naming both the owner and the name, each read as the list reads a
-//! file ([`source::read_within`]) and parsed within the name search's deadline.
+//! The structural search (realm @nick/craft, node #529): a too-common name's lines whose paths
+//! reach it through its owner ([`paths`]), over the files `git grep` finds naming both, each read
+//! as the list reads a file ([`source::read_within`]) and parsed within the search's deadline.
 
 use std::path::Path;
 use std::process::Command;
@@ -10,7 +9,8 @@ use std::time::Instant;
 use tree_sitter::Tree;
 
 use super::super::source;
-use super::paths::{self, Owner};
+use super::crates::externals;
+use super::paths;
 use super::stream::{Ended, Format, out_of_time, stream_as};
 use super::{EXCLUDE, HITS_MAX, Hit, RUST};
 use crate::cancel::{Cancel, STOPPED};
@@ -45,9 +45,9 @@ pub(in crate::consumers) fn by_path(
     let Some(own) = paths::owner(&parse_until(&text, until)?, &text, line, name) else {
         return Ok(None);
     };
-    let (Owner::Type(owner) | Owner::Trait(owner)) = &own;
+    let ext = externals(top, until);
     let mut found = Found::default();
-    for f in candidates(top, owner, name, until)? {
+    for f in candidates(top, own.name(), name, until)? {
         let text = match source::read_within(top, &f) {
             Ok(Some(t)) => t,
             Ok(None) => continue,
@@ -59,7 +59,7 @@ pub(in crate::consumers) fn by_path(
         let tree = parse_until(&text, until)?;
         let lines: Vec<&str> = text.lines().collect();
         found.hits.extend(
-            paths::reaching(&tree, &text, name, &own)
+            paths::reaching(&tree, &text, (name, &own), &ext)
                 .into_iter()
                 .map(|n| {
                     let at = usize::try_from(n).ok().and_then(|n| n.checked_sub(1));
@@ -72,7 +72,7 @@ pub(in crate::consumers) fn by_path(
                 }),
         );
         if found.hits.len() > HITS_MAX {
-            return Err(super::capped());
+            return Err(super::Unfinished::Capped.to_string());
         }
     }
     Ok(Some(found))

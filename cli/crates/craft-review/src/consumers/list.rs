@@ -16,7 +16,7 @@ use crate::gate::lines::Lines;
 
 mod searched;
 
-use searched::searched;
+use searched::{Searched, by_path, searched};
 
 /// How many changed symbols are searched.
 pub(super) const SYMBOLS_MAX: usize = 40;
@@ -89,8 +89,21 @@ pub(super) fn assemble(
     };
     let mut files = HashMap::new();
     let deadline = Instant::now() + names::BUDGET;
-    for sym in found {
-        let mut sites = searched((top, changed), sym, (deadline, cancel), &mut out);
+    // Every name search first, so a distinctive name never waits on a common one's structural one.
+    let named: Vec<Searched> = found
+        .iter()
+        .map(|sym| searched((top, changed), sym, (deadline, cancel), &mut out))
+        .collect();
+    for (sym, named) in found.iter().zip(named) {
+        let mut sites = match named {
+            Searched::Sites(sites) => sites,
+            Searched::ByPath(capped) => by_path(
+                (top, changed),
+                sym,
+                (deadline, cancel),
+                (&mut out, capped.as_deref()),
+            ),
+        };
         let theirs = callers.unwrap_or_default().iter();
         let of_sym = theirs.filter(|c| c.symbol == sym.name && c.defined_in == sym.file);
         for c in of_sym {

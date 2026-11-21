@@ -113,3 +113,26 @@ fn a_file_the_list_cannot_read_is_not_parsed_and_is_named() {
         found.unread
     );
 }
+
+#[test]
+fn a_path_through_a_workspace_dependency_is_not_listed() {
+    let t = tempfile::tempdir().unwrap();
+    let uses = "fn f() {\n    tokio::sync::T::new();\n    crate::T::new();\n}\n";
+    let repo = repo(t.path(), uses);
+    std::fs::write(
+        repo.join("Cargo.toml"),
+        "[package]\nname = \"app\"\n[dependencies]\ntokio = \"1\"\n",
+    )
+    .unwrap();
+    git(&repo, &["add", "."]);
+    let found = by_path(&repo, ("src/lib.rs", 3), "new", far(), &Cancel::default())
+        .unwrap()
+        .unwrap();
+    let at: Vec<(&str, u32)> = found
+        .hits
+        .iter()
+        .map(|h| (h.file.as_str(), h.line))
+        .collect();
+    assert!(at.contains(&("src/uses.rs", 3)), "{at:?}");
+    assert!(!at.contains(&("src/uses.rs", 2)), "{at:?}");
+}

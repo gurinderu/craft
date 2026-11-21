@@ -4,33 +4,39 @@
 use std::path::Path;
 use std::time::Instant;
 
+use super::super::names::Unfinished;
 use super::super::symbols::Symbol;
 use super::super::{Consumers, NAME_SEARCH, STRUCTURAL, Site, names};
 use super::{consumer, site};
 use crate::cancel::Cancel;
 use crate::gate::lines::Lines;
 
+/// What the name search came to for one symbol: its lines, or a name to search by path instead
+/// (too common to search, or `Some` why the search stopped at its cap).
+pub(super) enum Searched {
+    Sites(Vec<Site>),
+    ByPath(Option<String>),
+}
+
 /// The name search's lines for `sym`, searched before `deadline` and until `cancel` is; a name too
-/// common to search, or one naming more lines than the search keeps, is searched by path instead
-/// when an `impl` or a trait owns it. A name not searched by name, or one the search could not
-/// finish, is noted in `out`'s `unsearched`.
+/// common to search, or one naming more lines than the search keeps, is left for [`by_path`],
+/// which runs once every symbol's name search has. A search that could not finish otherwise is
+/// noted in `out`'s `unsearched`.
 pub(super) fn searched(
     (top, changed): (&Path, &Lines),
     sym: &Symbol,
     (deadline, cancel): (Instant, &Cancel),
     out: &mut Consumers,
-) -> Vec<Site> {
+) -> Searched {
     if names::skip(&sym.name) {
-        return by_path((top, changed), sym, (deadline, cancel), (out, None));
+        return Searched::ByPath(None);
     }
     match names::search(top, &sym.name, deadline, cancel) {
-        Ok(hits) => sites_of(changed, sym, &hits, NAME_SEARCH),
-        Err(why) if why == names::capped() => {
-            by_path((top, changed), sym, (deadline, cancel), (out, Some(&why)))
-        }
+        Ok(hits) => Searched::Sites(sites_of(changed, sym, &hits, NAME_SEARCH)),
+        Err(why @ Unfinished::Capped) => Searched::ByPath(Some(why.to_string())),
         Err(why) => {
             out.unsearched.push(format!("{} ({why})", sym.name));
-            Vec::new()
+            Searched::Sites(Vec::new())
         }
     }
 }
@@ -38,7 +44,7 @@ pub(super) fn searched(
 /// The structural search's lines for `sym`, whose name is too common to search by text (`capped`,
 /// why the name search stopped, when it ran); it is noted in `out`'s `unsearched` either way, with
 /// what the search could not reach.
-fn by_path(
+pub(super) fn by_path(
     (top, changed): (&Path, &Lines),
     sym: &Symbol,
     (deadline, cancel): (Instant, &Cancel),

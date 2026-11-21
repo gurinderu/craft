@@ -1,57 +1,33 @@
-//! The paths of one file that reach a changed item through its owner: a qualifier that names it
-//! (or a `use … as` alias of it), or `Self` inside an `impl` (or the trait) it is.
+//! The paths of one file that reach a changed item through its owner: a qualifier naming it (or a
+//! `use … as` alias) not through another crate, or `Self` inside an `impl` (or the trait) it is.
 
 use std::collections::BTreeSet;
 
 use tree_sitter::{Node, Tree};
 
-use super::{Owner, segment, text_of, walk};
+use super::imports::{Externals, imports};
+use super::{Owner, first, segment, text_of, walk};
 
-/// The lines (1-based, ascending) of `text` whose paths reach `name` declared in `own`.
+/// The lines (1-based, ascending) of `text` whose paths reach `name` declared in `own`, a path
+/// starting with one of `ext` left out.
 pub(in crate::consumers::names) fn reaching(
     tree: &Tree,
     text: &str,
-    name: &str,
-    own: &Owner,
+    (name, own): (&str, &Owner),
+    ext: &Externals,
 ) -> Vec<u32> {
-    let r = Reach {
-        src: text,
-        name,
-        own,
-        aliases: aliases(tree, text, own),
-    };
+    let r = Reach::new(tree, text, (name, own), ext);
     let mut rows = BTreeSet::new();
-    walk(tree.root_node(), |n| {
-        let hit = match n.kind() {
-            "scoped_identifier" => r.path(n).then_some(n),
-            "token_tree" => r.in_tokens(n),
-            _ => None,
-        };
-        rows.extend(hit.map(|h| h.start_position().row));
+    walk(tree.root_node(), |n| match n.kind() {
+        "scoped_identifier" if r.path(n) => {
+            rows.insert(n.start_position().row);
+        }
+        "token_tree" => rows.extend(r.in_tokens(n)),
+        _ => {}
     });
     rows.into_iter()
         .filter_map(|row| u32::try_from(row + 1).ok())
         .collect()
-}
-
-/// The names the owner goes by in `text`: its own, and each `use … as` alias of it.
-fn aliases(tree: &Tree, text: &str, own: &Owner) -> BTreeSet<String> {
-    let base = match own {
-        Owner::Type(t) | Owner::Trait(t) => t.as_str(),
-    };
-    let mut out = BTreeSet::from([base.to_owned()]);
-    walk(tree.root_node(), |n| {
-        if n.kind() != "use_as_clause" {
-            return;
-        }
-        let path = n.child_by_field_name("path").and_then(|p| segment(p, text));
-        if let (Some(base_of), Some(alias)) = (path, n.child_by_field_name("alias"))
-            && base_of == base
-        {
-            out.insert(text_of(alias, text).to_owned());
-        }
-    });
-    out
 }
 
 /// One file's question: which paths reach `name` declared in `own`.
@@ -59,18 +35,61 @@ struct Reach<'a> {
     src: &'a str,
     name: &'a str,
     own: &'a Owner,
+    ext: &'a Externals,
+    /// The names a single-segment qualifier reaches the owner by: its own, unless the file brings
+    /// that name in from another crate, and each alias a `use` from this one gives it.
     aliases: BTreeSet<String>,
+    /// The local names the file brings in from another crate.
+    foreign: BTreeSet<String>,
 }
 
-impl Reach<'_> {
-    /// Whether a qualifier `seg` read at `at` names the owner: by a name it goes by, or as `Self`
-    /// inside an `impl` (or the trait) it is.
-    fn names_owner(&self, seg: Option<&str>, at: Node<'_>) -> bool {
-        match seg {
-            Some("Self") => self.inside_owner(at),
-            Some(s) => self.aliases.contains(s),
-            None => false,
+impl<'a> Reach<'a> {
+    fn new(
+        tree: &Tree,
+        src: &'a str,
+        (name, own): (&'a str, &'a Owner),
+        ext: &'a Externals,
+    ) -> Self {
+        let base = own.name();
+        let mut aliases = BTreeSet::from([base.to_owned()]);
+        let mut foreign = BTreeSet::new();
+        for i in imports(tree, src) {
+            if ext.leaves(&i.root) {
+                foreign.insert(i.local);
+            } else if i.last == base {
+                aliases.insert(i.local);
+            }
         }
+        if foreign.contains(base) {
+            aliases.remove(base);
+        }
+        Self {
+            src,
+            name,
+            own,
+            ext,
+            aliases,
+            foreign,
+        }
+    }
+
+    /// Whether a qualifier whose last segment is `last`, read at `at`, names the owner: `Self`
+    /// inside it; a single segment it goes by here; or a longer path, not through another crate,
+    /// ending in its name or an alias. `start` is the path's first segment, `None` for one segment.
+    fn names_owner(&self, last: &str, start: Option<&str>, at: Node<'_>) -> bool {
+        match start {
+            None if last == "Self" => self.inside_owner(at),
+            None => self.aliases.contains(last),
+            Some(s) => {
+                let out = self.ext.leaves(s) || self.foreign.contains(s);
+                !out && (last == self.own.name() || self.aliases.contains(last))
+            }
+        }
+    }
+
+    /// Whether the type `t` as written names the owner.
+    fn type_names_owner(&self, t: Node<'_>, at: Node<'_>) -> bool {
+        segment(t, self.src).is_some_and(|last| self.names_owner(last, first(t, self.src), at))
     }
 
     /// Whether `Self` at `at` is the owner: the nearest `impl` around it is of the type (or of
@@ -79,10 +98,10 @@ impl Reach<'_> {
         let mut up = at.parent();
         while let Some(n) = up {
             let field = match (n.kind(), self.own) {
-                ("impl_item", Owner::Type(_)) => "type",
+                ("impl_item", Owner::Type { .. }) => "type",
                 ("impl_item", Owner::Trait(_)) => "trait",
                 ("trait_item", Owner::Trait(_)) => "name",
-                ("trait_item", Owner::Type(_)) => return false,
+                ("trait_item", Owner::Type { .. }) => return false,
                 _ => {
                     up = n.parent();
                     continue;
@@ -91,7 +110,7 @@ impl Reach<'_> {
             let seg = n
                 .child_by_field_name(field)
                 .and_then(|f| segment(f, self.src));
-            return seg.is_some_and(|s| self.aliases.contains(s));
+            return seg.is_some_and(|s| s == self.own.name() || self.aliases.contains(s));
         }
         false
     }
@@ -102,36 +121,30 @@ impl Reach<'_> {
         let Some(path) = n.child_by_field_name("path").filter(|_| named) else {
             return false;
         };
-        let seg = if path.kind() == "bracketed_type" {
-            // `<T as Tr>::name`: the type reaches a type's item, the trait a trait's.
-            path.named_child(0).and_then(|inner| {
-                let field = match self.own {
-                    Owner::Type(_) => "type",
-                    Owner::Trait(_) => "alias",
-                };
-                let part = if inner.kind() == "qualified_type" {
-                    inner.child_by_field_name(field)?
-                } else {
-                    inner
-                };
-                segment(part, self.src)
-            })
-        } else {
-            segment(path, self.src)
-        };
-        self.names_owner(seg, n)
+        if path.kind() == "bracketed_type" {
+            return path.named_child(0).is_some_and(|q| self.qualified(q, n));
+        }
+        self.type_names_owner(path, n)
     }
 
-    /// The first token of a macro's `Owner :: name` in the token tree `n`, which the grammar
-    /// leaves unparsed.
-    fn in_tokens<'t>(&self, n: Node<'t>) -> Option<Node<'t>> {
-        let mut c = n.walk();
-        let kids: Vec<Node<'t>> = n.children(&mut c).collect();
-        kids.windows(3).find_map(|w| {
-            let [q, sep, last] = w else { return None };
-            let shaped = q.kind() == "identifier" && sep.kind() == "::";
-            let named = last.kind() == "identifier" && text_of(*last, self.src) == self.name;
-            (shaped && named && self.names_owner(Some(text_of(*q, self.src)), n)).then_some(*q)
-        })
+    /// Whether `<q>::name` reaches the owner: `<T as Tr>` reaches `impl Tr for T`'s item and the
+    /// trait `Tr`'s, never an inherent item of `T`; `<T>` reaches `T`'s.
+    fn qualified(&self, q: Node<'_>, at: Node<'_>) -> bool {
+        if q.kind() != "qualified_type" {
+            return matches!(self.own, Owner::Type { .. }) && self.type_names_owner(q, at);
+        }
+        let part = |f: &str| q.child_by_field_name(f);
+        let (Some(ty), Some(tr)) = (part("type"), part("alias")) else {
+            return false;
+        };
+        match self.own {
+            Owner::Type { of_trait: None, .. } => false,
+            Owner::Type {
+                of_trait: Some(t), ..
+            } => self.type_names_owner(ty, at) && segment(tr, self.src) == Some(t.as_str()),
+            Owner::Trait(_) => self.type_names_owner(tr, at),
+        }
     }
 }
+
+mod tokens;

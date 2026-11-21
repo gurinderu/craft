@@ -1,18 +1,37 @@
 //! The structural search's reading of one Rust file (realm @nick/craft, node #529): what a changed
 //! item is declared in, and the lines whose paths reach it — `T::name`, `Self::name` inside an
 //! `impl` of `T`, `<T as Tr>::name`, `Tr::name` for a trait's item, a `use … as` alias of the
-//! owner — read from the tree-sitter syntax tree, so comments, strings and other types' items of
-//! the name never match. A call through a value (`x.name()`) carries no type and is not read.
+//! owner — read from the tree-sitter syntax tree, so comments, strings and items of the name
+//! reached through another crate never match. A call through a value (`x.name()`) carries no type
+//! and is not read; a same-named type in another module of the same crate can match (#564).
 
 use tree_sitter::{Node, ParseOptions, ParseState, Parser, Tree};
+
+mod imports;
+mod reach;
+
+pub(super) use imports::Externals;
+pub(super) use reach::reaching;
 
 /// What a changed item is declared in, by the last path segment that names it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum Owner {
-    /// `impl T` or `impl Tr for T`: the type `T`.
-    Type(String),
+    /// `impl T` (`of_trait` none) or `impl Tr for T` (`of_trait` the trait `Tr`): the type `T`.
+    Type {
+        name: String,
+        of_trait: Option<String>,
+    },
     /// `trait Tr`.
     Trait(String),
+}
+
+impl Owner {
+    /// The name the owner is declared by.
+    pub(super) fn name(&self) -> &str {
+        match self {
+            Self::Type { name, .. } | Self::Trait(name) => name,
+        }
+    }
 }
 
 /// The syntax tree of the Rust source `text`; `None` when `stop` asks the parse to end first.
@@ -63,8 +82,42 @@ fn segment<'a>(n: Node<'_>, src: &'a str) -> Option<&'a str> {
     }
 }
 
+/// The first segment of a path or type as written (`a::b::T<X>` is `a`), `::` for a path from the
+/// crate root (`::a::T`), and `None` for a single segment.
+fn first<'a>(n: Node<'_>, src: &'a str) -> Option<&'a str> {
+    let mut at = match n.kind() {
+        "scoped_identifier" | "scoped_type_identifier" => n,
+        "generic_type" => return first(n.child_by_field_name("type")?, src),
+        _ => return None,
+    };
+    loop {
+        let Some(path) = at.child_by_field_name("path") else {
+            return Some("::");
+        };
+        match path.kind() {
+            "scoped_identifier" | "scoped_type_identifier" => at = path,
+            "generic_type" => return first(path, src).or(Some(text_of(path, src))),
+            _ => return Some(text_of(path, src)),
+        }
+    }
+}
+
+/// Whether `ty`, an `impl`'s type, is one of `imp`'s own type parameters (a blanket `impl<T> Tr
+/// for T`).
+fn is_parameter(imp: Node<'_>, ty: &str, src: &str) -> bool {
+    let Some(params) = imp.child_by_field_name("type_parameters") else {
+        return false;
+    };
+    let mut c = params.walk();
+    params.named_children(&mut c).any(|p| {
+        let name = p.child_by_field_name("name").or_else(|| p.named_child(0));
+        name.is_some_and(|n| text_of(n, src) == ty)
+    })
+}
+
 /// What the function `name` declared on `line` (1-based) of `text` is declared in: an `impl`'s
-/// type or a trait; `None` for a free item, or when no function of that name starts there.
+/// type or a trait; `None` for a free item, a blanket `impl` over a type parameter, or when no
+/// function of that name starts there.
 pub(super) fn owner(tree: &Tree, text: &str, line: u32, name: &str) -> Option<Owner> {
     let row = usize::try_from(line).ok()?.checked_sub(1)?;
     let mut found = None;
@@ -77,19 +130,20 @@ pub(super) fn owner(tree: &Tree, text: &str, line: u32, name: &str) -> Option<Ow
     });
     let holder = found?.parent()?.parent()?;
     match holder.kind() {
-        "impl_item" => Some(Owner::Type(
-            segment(holder.child_by_field_name("type")?, text)?.to_owned(),
-        )),
+        "impl_item" => {
+            let ty = segment(holder.child_by_field_name("type")?, text)?;
+            let of_trait = holder.child_by_field_name("trait");
+            (!is_parameter(holder, ty, text)).then(|| Owner::Type {
+                name: ty.to_owned(),
+                of_trait: of_trait.and_then(|t| segment(t, text)).map(str::to_owned),
+            })
+        }
         "trait_item" => Some(Owner::Trait(
             text_of(holder.child_by_field_name("name")?, text).to_owned(),
         )),
         _ => None,
     }
 }
-
-mod reach;
-
-pub(super) use reach::reaching;
 
 #[cfg(test)]
 #[path = "paths_tests.rs"]

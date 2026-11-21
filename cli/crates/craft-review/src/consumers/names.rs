@@ -8,12 +8,15 @@ use std::time::{Duration, Instant};
 
 use crate::cancel::Cancel;
 
+mod crates;
 mod paths;
 mod stream;
 mod structural;
+mod unfinished;
 
 use stream::{Ended, stream};
 pub(super) use structural::by_path;
+pub(super) use unfinished::Unfinished;
 
 /// Names too common for a whole-word search to tell one symbol's uses from another's.
 const COMMON: [&str; 40] = [
@@ -83,11 +86,6 @@ pub(super) struct Hit {
     pub text: String,
 }
 
-/// Why a name search stopped: more lines name it than [`HITS_MAX`].
-pub(super) fn capped() -> String {
-    format!("over {HITS_MAX} lines")
-}
-
 /// Why a name is not searched: a common one, or too short to tell apart.
 pub(super) fn skip(name: &str) -> bool {
     name.len() < 3 || COMMON.contains(&name)
@@ -101,7 +99,7 @@ pub(super) fn search(
     name: &str,
     deadline: Instant,
     cancel: &Cancel,
-) -> Result<Vec<Hit>, String> {
+) -> Result<Vec<Hit>, Unfinished> {
     let mut cmd = Command::new("git");
     cmd.arg("-C")
         .arg(top)
@@ -120,10 +118,10 @@ pub(super) fn search(
         ])
         .args(EXCLUDE);
     match stream(cmd, deadline, cancel)? {
-        Ended::Capped => Err(capped()),
+        Ended::Capped => Err(Unfinished::Capped),
         Ended::Exited(Some(0), hits, _) => Ok(hits),
         Ended::Exited(Some(1), ..) => Ok(Vec::new()),
-        Ended::Exited(_, _, err) => Err(format!("git grep failed: {}", err.trim())),
+        Ended::Exited(_, _, err) => Err(format!("git grep failed: {}", err.trim()).into()),
     }
 }
 
