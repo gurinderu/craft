@@ -6,6 +6,7 @@ import path from 'node:path'
 import { execFileSync, spawnSync } from 'node:child_process'
 import { ROOT } from './repo-root.mjs'
 import { materialize } from './materialize-claude-code.mjs'
+import { binaryName } from './craft-bin.mjs'
 import { layPackage } from './opencode-package.mjs'
 import { checkMutationFloor, floorProblems } from './check-mutation-floor.mjs'
 import { historicalIdentity, layoutPath } from './layout-paths.mjs'
@@ -23,12 +24,29 @@ test('the isolated Claude Code package runs its commands and resolves every engi
   assert.equal(fs.existsSync(path.join(root, 'src')), false)
   assert.equal(fs.existsSync(path.join(root, 'lib')), false)
   const manifest = JSON.parse(fs.readFileSync(path.join(root, '.claude-plugin/plugin.json'), 'utf8'))
+  // `ensure` takes the cached copy of the manifest version, so the test seeds one in its own HOME: the version may be
+  // unreleased (a release PR), and the download any miss would start points at a closed local port, failing fast.
+  const home = temporary()
+  const cached = path.join(home, '.craft', 'bin', manifest.version, binaryName(process.platform))
+  fs.mkdirSync(path.dirname(cached), { recursive: true })
+  fs.writeFileSync(cached, '#!/bin/sh\n', { mode: 0o755 })
+  const closed = 'http://127.0.0.1:9'
+  const offline = {
+    CRAFT_API_BASE: closed,
+    HTTPS_PROXY: closed,
+    https_proxy: closed,
+    HTTP_PROXY: closed,
+    http_proxy: closed,
+    ALL_PROXY: closed,
+    all_proxy: closed,
+  }
   const r = spawnSync(process.execPath, ['integrations/shared/craft-bin.mjs', 'ensure'], {
     cwd: root,
-    env: { ...process.env, CRAFT_BIN: process.execPath, CLAUDE_PLUGIN_ROOT: '/missing/other-plugin' },
+    env: { ...process.env, ...offline, HOME: home, USERPROFILE: home, CLAUDE_PLUGIN_ROOT: '/missing/other-plugin' },
     encoding: 'utf8',
   })
   assert.equal(r.status, 0, r.stderr)
+  assert.equal(r.stdout.trim(), cached)
   assert.match(r.stdout, new RegExp(manifest.version.replaceAll('.', '\\.')))
   for (const name of fs.readdirSync(path.join(root, 'workflows')).filter(f => f.endsWith('.map'))) {
     const map = JSON.parse(fs.readFileSync(path.join(root, 'workflows', name), 'utf8'))
