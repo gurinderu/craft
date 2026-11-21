@@ -8,7 +8,7 @@
   "navSkill": "rust-navigation",
   "securityHints": "auth, crypto, input parsing, unsafe, FFI, or dependencies",
   "usesLibrary": true,
-  "alwaysLenses": ["intent"],
+  "alwaysLenses": ["intent", "performance"],
   "safetyLens": "safety",
   "scoutRules": "scout-rules-rust",
   "scoutModel": "haiku",
@@ -27,13 +27,14 @@
     { "id": "safety", "brief": "lens-briefs/rust-safety", "model": "opus" },
     { "id": "errors", "brief": "lens-briefs/rust-errors", "model": "opus" },
     { "id": "concurrency", "brief": "lens-briefs/rust-concurrency", "model": "opus" },
-    { "id": "performance", "brief": "lens-briefs/rust-performance", "model": "opus", "optional": true },
+    { "id": "performance", "brief": "lens-briefs/rust-performance", "model": "opus" },
     { "id": "api-idioms", "brief": "lens-briefs/rust-api-idioms", "model": "opus", "optional": true },
     { "id": "api-boundary", "brief": "lens-briefs/rust-api-boundary", "model": "opus", "optional": true },
     {
       "id": "reconciler", "brief": "lens-briefs/rust-reconciler", "model": "opus",
       "catalogue": { "label": "RACE CATALOGUE", "file": "skills/distributed-races/catalogue.md", "fallback": "R1–R6" }
     },
+    { "id": "sql-queries", "brief": "lens-briefs/sql-queries", "model": "opus", "conditional": true, "rubric": "sql-review" },
     { "id": "failure-windows", "brief": "lens-briefs/rust-failure-windows", "model": "opus", "conditional": true, "wholeDiff": true },
     {
       "id": "compat", "brief": "lens-briefs/rust-compat", "model": "opus", "surface": "wireForm", "wholeDiff": true,

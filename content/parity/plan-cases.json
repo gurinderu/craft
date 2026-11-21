@@ -22,6 +22,7 @@
         "lenses": [
           "errors",
           "intent",
+          "performance",
           "tests"
         ],
         "maxRounds": 1,
@@ -59,7 +60,8 @@
         "lenses": [
           "errors",
           "safety",
-          "intent"
+          "intent",
+          "performance"
         ],
         "maxRounds": 1,
         "verifyVotes": 1,
@@ -85,6 +87,7 @@
           "safety",
           "errors",
           "concurrency",
+          "performance",
           "reconciler",
           "compat",
           "maintainability",
@@ -127,6 +130,7 @@
         "lenses": [
           "errors",
           "intent",
+          "performance",
           "tests",
           "safety",
           "concurrency",
@@ -178,6 +182,7 @@
           "maintainability",
           "invariants",
           "intent",
+          "performance",
           "tests",
           "negative-space",
           "compat"
@@ -218,6 +223,7 @@
           "reconciler",
           "errors",
           "intent",
+          "performance",
           "tests",
           "failure-windows"
         ],
@@ -257,6 +263,7 @@
       "expected": {
         "sizeBucket": "small",
         "lenses": [
+          "performance",
           "failure-windows",
           "intent",
           "tests"
@@ -302,6 +309,7 @@
         "lenses": [
           "errors",
           "intent",
+          "performance",
           "tests"
         ],
         "maxRounds": 3,
@@ -347,6 +355,7 @@
         "lenses": [
           "errors",
           "intent",
+          "performance",
           "tests",
           "compat"
         ],
@@ -392,6 +401,7 @@
         "lenses": [
           "errors",
           "intent",
+          "performance",
           "tests"
         ],
         "maxRounds": 2,
@@ -438,6 +448,7 @@
           "safety",
           "errors",
           "intent",
+          "performance",
           "tests"
         ],
         "maxRounds": 1,
@@ -479,6 +490,7 @@
         "lenses": [
           "reconciler",
           "intent",
+          "performance",
           "tests",
           "failure-windows"
         ],
@@ -517,6 +529,7 @@
         "lenses": [
           "failure-windows",
           "intent",
+          "performance",
           "tests"
         ],
         "maxRounds": 1,
@@ -552,12 +565,7 @@
       "expected": {
         "sizeBucket": "small",
         "lenses": [
-          "safety",
-          "errors",
-          "concurrency",
-          "reconciler",
-          "maintainability",
-          "tests"
+          "performance"
         ],
         "maxRounds": 1,
         "verifyVotes": 1,
@@ -835,6 +843,7 @@
         "lenses": [
           "errors",
           "intent",
+          "performance",
           "tests",
           "maintainability"
         ],
@@ -850,6 +859,81 @@
         "lightSkipped": []
       },
       "strict": true
+    },
+    {
+      "name": "a query string on a changed Rust line adds the sql-queries lens",
+      "changedFiles": [
+        "src/db.rs"
+      ],
+      "embeddedSql": true,
+      "scout": {
+        "sizeBucket": "small",
+        "lenses": [
+          "errors"
+        ],
+        "isLibrary": false,
+        "securitySensitive": false,
+        "intent": "adds f",
+        "churn": [],
+        "repoRules": [],
+        "notes": "n"
+      },
+      "expected": {
+        "sizeBucket": "small",
+        "lenses": [
+          "errors",
+          "intent",
+          "performance",
+          "tests",
+          "sql-queries"
+        ],
+        "maxRounds": 1,
+        "verifyVotes": 1,
+        "lensModel": "opus",
+        "isLibrary": false,
+        "securitySensitive": false,
+        "intent": "adds f",
+        "churn": [],
+        "repoRules": [],
+        "surfaceDropped": [],
+        "lightSkipped": []
+      }
+    },
+    {
+      "name": "a SQL diff runs both SQL lenses whatever the scout picked",
+      "profile": "sql",
+      "changedFiles": [
+        "db/migrations/0002_add.sql"
+      ],
+      "scout": {
+        "sizeBucket": "small",
+        "lenses": [
+          "sql-queries"
+        ],
+        "isLibrary": false,
+        "securitySensitive": false,
+        "intent": "adds f",
+        "churn": [],
+        "repoRules": [],
+        "notes": "n"
+      },
+      "expected": {
+        "sizeBucket": "small",
+        "lenses": [
+          "sql-queries",
+          "sql-migrations"
+        ],
+        "maxRounds": 1,
+        "verifyVotes": 1,
+        "lensModel": "opus",
+        "isLibrary": false,
+        "securitySensitive": false,
+        "intent": "adds f",
+        "churn": [],
+        "repoRules": [],
+        "surfaceDropped": [],
+        "lightSkipped": []
+      }
     }
   ]
 }
