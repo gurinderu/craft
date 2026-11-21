@@ -5,6 +5,12 @@
 - `.partial/<run>/` — phase checkpoints of a run still in flight. `node integrations/shared/craft-log-run.mjs recover`
   promotes any that never finalized into `partial: true` records; a directory written to within the last
   6 h (`--stale-after <min>`) is kept, its run may be live (`--force` removes it anyway).
+- `.filing-intents/<detail>.json` — a write in flight; every write replays these first. One whose detail
+  was rewritten since (a crash, then another writer) is a `filing conflict`: the intent stays, the newer
+  detail is never overwritten, writes to other records go on, a write to that record refuses, and the
+  warning names both files. The intent's `record` may be the run's only copy: never just delete it.
+  To keep it, move the detail aside and `jq -j .record <intent> > <detail>`; the next write completes
+  the intent. To keep the detail, save that record elsewhere, then delete the intent.
 
 Common fields: schemaVersion, engineRevision, ts, kind (workflow|agent), name, project, commit, dirty, verdict,
 findings{total,bySeverity}, nested, via. Workflows add scout/dimensions/verification/notRun/outputTokens;

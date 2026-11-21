@@ -80,7 +80,7 @@ import { provesRound, reconcileChain } from './loop-state.mjs'
 import { assembleLedgerShards } from './ledger-shards.mjs'
 import { ledgerFromShards, ledgerCountOf } from './ledger-in-shards.mjs'
 import { filedBefore, leaveFilingProof, filingProofs } from './finalize-proof.mjs'
-import { commitFiling, recoverFilings, syncFilingPath } from './filing-transaction.mjs'
+import { commitFiling, recoverFilings, sayRetained, syncFilingPath } from './filing-transaction.mjs'
 import { recordFromParts, isTransportSlice } from './record-parts-assemble.mjs'
 import { RECOVERY_ONLY } from './record-parts-settle.mjs'
 import { recordFromRecoveredParts, recordWithParts } from './record-parts-recover.mjs'
@@ -312,11 +312,16 @@ export function writeRecord(
   return withIndexLock(store, () => {
     /** @param {RunRecord} record */
     const index = record => replaceIndexRowLocked(store, record)
-    recoverFilings(store, index)
+    const retained = recoverFilings(store, index)
     const at = { store, project, dir: proof?.dir || '' }
     const prior = proof && filedBefore(proof.raw, at, { retry: proof.retry, runDir: !!proof.dir })
-    if (prior) return { file: prior.file, record: /** @type {RunRecord} */ (parseJsonObject(fs.readFileSync(prior.file, 'utf8'))) }
+    if (prior) {
+      sayRetained(retained)
+      return { file: prior.file, record: /** @type {RunRecord} */ (parseJsonObject(fs.readFileSync(prior.file, 'utf8'))) }
+    }
     const { file, record, before } = placeRecord(raw, over, { store, project, now, session, workdir, observe })
+    // A conflict on this record's own detail refuses in commitFiling: said as that failure, not as a warning.
+    sayRetained(retained, path.basename(file))
     const proofs = proof ? filingProofs(proof.raw, { ...at, file, warnings: proof.warnings }) : []
     const text = JSON.stringify(record, null, 2)
     verifySerialized(text, record)
@@ -846,8 +851,12 @@ function finalizedRetry(raw, opts) {
   const { store, dir, project, session } = finalizeOptions(opts)
   fs.mkdirSync(store, { recursive: true })
   // A record left to its parts is checked by directory too: its parts went with the directory (realm @nick/craft, node #396).
-  if (fs.existsSync(path.join(store, '.filing-intents'))) withIndexLock(store, () => recoverFilings(store, record => replaceIndexRowLocked(store, record)))
+  const retained = fs.existsSync(path.join(store, '.filing-intents'))
+    ? withIndexLock(store, () => recoverFilings(store, record => replaceIndexRowLocked(store, record)))
+    : []
   const proven = filedBefore(raw, { store, dir, project, session }, { retry: !!opts?.retry, runDir: !!dir })
+  // Not proven: the write that follows recovers again and says what stays retained, its own detail apart.
+  if (proven) sayRetained(retained)
   return proven
     ? { file: proven.file, already: true, alreadyWarned: proven.warnings, folded: 0, dir, kept: false, refusedDir: '', unreadable: '', moved: '' }
     : null
@@ -1160,7 +1169,8 @@ function removeFoldedDir(target, mine, unreadable, store) {
 /** @param {RecoverOpts} [opts] */
 export function recoverPartials(opts) {
   const { store, project, now, claudeHome, staleAfterMs, force } = recoverOptions(opts)
-  if (fs.existsSync(path.join(store, '.filing-intents'))) withIndexLock(store, () => recoverFilings(store, record => replaceIndexRowLocked(store, record)))
+  if (fs.existsSync(path.join(store, '.filing-intents')))
+    sayRetained(withIndexLock(store, () => recoverFilings(store, record => replaceIndexRowLocked(store, record))))
   const root = path.join(store, PARTIAL_DIR)
   if (!fs.existsSync(root)) return []
   const out = []
@@ -1323,7 +1333,7 @@ function fileRecovered(store, record, dir, { witness, consumed }) {
   return withIndexLock(store, () => {
     /** @param {RunRecord} recovered */
     const index = recovered => replaceIndexRowLocked(store, recovered)
-    recoverFilings(store, index)
+    sayRetained(recoverFilings(store, index), path.basename(file))
     if (!fs.existsSync(dir) || fs.existsSync(path.join(dir, FINALIZED_MARKER))) return ''
     const promoted = fs.existsSync(file)
     const keptLive = keptBefore(dir)
@@ -2542,6 +2552,12 @@ function ensureReadme(store) {
 - \`.partial/<run>/\` — phase checkpoints of a run still in flight. \`node integrations/shared/craft-log-run.mjs recover\`
   promotes any that never finalized into \`partial: true\` records; a directory written to within the last
   6 h (\`--stale-after <min>\`) is kept, its run may be live (\`--force\` removes it anyway).
+- \`.filing-intents/<detail>.json\` — a write in flight; every write replays these first. One whose detail
+  was rewritten since (a crash, then another writer) is a \`filing conflict\`: the intent stays, the newer
+  detail is never overwritten, writes to other records go on, a write to that record refuses, and the
+  warning names both files. The intent's \`record\` may be the run's only copy: never just delete it.
+  To keep it, move the detail aside and \`jq -j .record <intent> > <detail>\`; the next write completes
+  the intent. To keep the detail, save that record elsewhere, then delete the intent.
 
 Common fields: schemaVersion, engineRevision, ts, kind (workflow|agent), name, project, commit, dirty, verdict,
 findings{total,bySeverity}, nested, via. Workflows add scout/dimensions/verification/notRun/outputTokens;
@@ -3185,10 +3201,11 @@ function engineRevisionArg(argv) {
 function cmdWrite({ argv, store, project, session, gitId, workdir, parseStdin, o }) {
   const raw = settleEngineRevision(parseStdin(), engineRevisionArg(argv), o.stderr)
   fs.mkdirSync(store, { recursive: true })
-  withIndexLock(store, () => recoverFilings(store, record => replaceIndexRowLocked(store, record)))
+  const retained = withIndexLock(store, () => recoverFilings(store, record => replaceIndexRowLocked(store, record)))
   // The engine's re-dispatch sends the identical payload: filed once, never twice (realm @nick/craft, node #246).
   const filed = filedBefore(raw, { store, project, session }, { retry: argv.includes('--retry'), runDir: false })
   if (filed) {
+    sayRetained(retained)
     alreadyFiled(filed.file, filed.warnings, o)
     return
   }

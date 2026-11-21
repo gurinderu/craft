@@ -1,7 +1,8 @@
 //! One record into the store, as `writeRecord` in `integrations/shared/craft-log-run.mjs` files it: the fields the
 //! writer owns stamped over the caller's. A durable intent precedes publication; staged bytes are
 //! read back before an exclusive link or replacement. Detail, index and proof replay under the index
-//! lock; a conflicting detail is left untouched with its intent retained (#555, #556, #559).
+//! lock; a conflicting detail is left untouched with its intent retained, and only a write to that
+//! detail refuses — writes to any other go on (#555, #556, #559).
 
 use std::path::{Path, PathBuf};
 
@@ -87,11 +88,13 @@ pub fn with_git(raw: &Obj, id: &GitId) -> Obj {
 }
 
 /// Files `input` as a new, independent record, replacing `over` when it still fits. Pending intents
-/// are replayed first under the index lock. A failed publication retains recovery evidence; no
+/// are replayed first under the index lock; one whose detail holds a newer write is retained and
+/// skipped (its warning is said by `finalize`, which recovers first). A failed publication retains recovery evidence; no
 /// published detail is unlinked on error. Explicit retry identity is supplied by `finalize`.
 ///
 /// # Errors
-/// When staging, intent, detail, index or proof publication fails, or replay sees a conflicting detail.
+/// When staging, intent, detail, index or proof publication fails, or the detail it writes is one a
+/// retained intent conflicts on.
 pub fn write_record(
     input: &Obj,
     w: &Writing,
@@ -110,9 +113,10 @@ pub(crate) struct Proof<'a> {
     pub finalizing: Option<&'a Path>,
 }
 
-pub(crate) fn recover_filings(store: &Path) -> Result<(), StoreError> {
+/// Replays the pending intents; the warning of each one retained over a conflicting detail.
+pub(crate) fn recover_filings(store: &Path) -> Result<Vec<String>, StoreError> {
     if !store.join(".filing-intents").exists() {
-        return Ok(());
+        return Ok(Vec::new());
     }
     std::fs::create_dir_all(store).map_err(|e| StoreError::io(store, &e))?;
     with_index_lock(store, || filing::recover(store))
@@ -141,6 +145,7 @@ pub(crate) fn write_proven(
     let raw = with_git(input, git_id);
     let seen = w.observed();
     with_index_lock(&w.store, || {
+        // Retained conflicts are said by `finalize`; a write to one's own detail refuses in `commit`.
         filing::recover(&w.store)?;
         if let Some(p) = &proof
             && let Some((file, _)) = crate::proof::filed_for(p.raw, p.at, p.retry)
