@@ -1,0 +1,10 @@
+{
+  "policies": [
+    {
+      "action": "tool.use",
+      "resource": "question:*",
+      "effect": "deny"
+    }
+  ],
+  "$schema": "https://opencode.ai/config.json"
+}
