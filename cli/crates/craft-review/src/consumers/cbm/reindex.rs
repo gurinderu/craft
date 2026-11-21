@@ -39,6 +39,9 @@ impl Cbm {
     /// the index is not done.
     pub fn reindex(&self, repo: &str, name: &str, deadline: Instant) -> Result<(), CbmError> {
         let lock = lock::take((&self.locks, self.lock_stale), name, deadline, &self.cancel)?;
+        // An accepted limit (realm @nick/craft, node #530): a craft killed here, before the index
+        // run below holds the lock, leaves a lock with no process behind it, and every review
+        // skips the graph as locked until it goes stale, up to the stale age.
         let args = json!({"repo_path": repo, "mode": MODE, "name": name, "format": "json"});
         let started = self.spawn(&args.to_string(), &lock);
         let (child, out, err) = started.inspect_err(|_| lock.release())?;
