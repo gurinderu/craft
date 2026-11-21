@@ -86,14 +86,18 @@ test('helper timeout kills a stuck process and never disables timeout on a sub-m
   assert.throws(() => processIdentity(process.pid, 0), /deadline/)
 })
 
-for (const elapsed of [99, 100, 101]) {
-  test(`helper response arriving at ${elapsed}/100ms is checked against original deadline`, () => {
+// The clock reads 0 before the spawn, so the helper's real timeout is the whole
+// deadline: wide enough that a loaded machine still answers in time. Only the
+// mocked reading after the reply decides the outcome, never the wall clock.
+const DEADLINE = 60_000
+for (const offset of [-1, 0, 1]) {
+  test(`helper response arriving at deadline${offset < 0 ? '' : '+'}${offset}ms is checked against original deadline`, () => {
     fixture(`process.stdout.write(${reply})`)
     let calls = 0
-    vi.spyOn(performance, 'now').mockImplementation(() => (++calls <= 2 ? 0 : elapsed))
-    const run = () => processIdentity(process.pid, 100)
-    if (elapsed < 100) assert.equal(run(), identity)
-    else assert.throws(run, /deadline/)
+    vi.spyOn(performance, 'now').mockImplementation(() => (++calls <= 2 ? 0 : DEADLINE + offset))
+    const run = () => processIdentity(process.pid, DEADLINE)
+    if (offset < 0) assert.equal(run(), identity)
+    else assert.throws(run, /admission deadline\)/)
   })
 }
 
