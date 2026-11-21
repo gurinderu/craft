@@ -2,7 +2,7 @@
 //! `lib/cli-review-clock.mjs` reads them: the phase the last step ended, with its minutes and the
 //! task agents dispatched in it, and the run's `runtimeStats` so far.
 
-use crate::js::{Js, Obj};
+use crate::js::{Js, Obj, Utf16Error};
 
 /// A phase that ended.
 #[derive(Debug, Clone, PartialEq)]
@@ -61,18 +61,18 @@ impl Clock {
         self.last = Some(at);
     }
 
-    fn observe(&mut self, step: &Obj) -> Option<Ended> {
+    fn observe(&mut self, step: &Obj) -> Result<Option<Ended>, Utf16Error> {
         self.stamp(step);
         let next = if step.get("done").is_some_and(Js::truthy) {
             String::new()
         } else {
             match step.get("phase") {
                 None | Some(Js::Null) => String::new(),
-                Some(p) => p.to_js_string(),
+                Some(p) => p.to_js_string()?,
             }
         };
         if next == self.current {
-            return None;
+            return Ok(None);
         }
         let ended = (!self.current.is_empty()).then(|| Ended {
             phase: self.current.clone(),
@@ -85,7 +85,7 @@ impl Clock {
         });
         self.current = next;
         self.agents_at_phase = self.agents;
-        ended
+        Ok(ended)
     }
 
     fn stats(&self) -> Obj {
@@ -114,8 +114,9 @@ fn js_max(a: f64, b: f64) -> f64 {
 }
 
 /// The clock over every step: the phase the last one ended, and the stats.
-#[must_use]
-pub fn replay(steps: &[Js]) -> (Option<Ended>, Obj) {
+/// # Errors
+/// When a phase name cannot be represented as a Unicode path component.
+pub fn replay(steps: &[Js]) -> Result<(Option<Ended>, Obj), Utf16Error> {
     let mut clock = Clock::default();
     let mut ended = None;
     let none = Obj::new();
@@ -123,7 +124,7 @@ pub fn replay(steps: &[Js]) -> (Option<Ended>, Obj) {
         let step = step.as_obj().unwrap_or(&none);
         let n = step.get("agents").and_then(Js::as_num).unwrap_or(f64::NAN);
         clock.agents = js_max(clock.agents, n);
-        ended = clock.observe(step);
+        ended = clock.observe(step)?;
     }
-    (ended, clock.stats())
+    Ok((ended, clock.stats()))
 }

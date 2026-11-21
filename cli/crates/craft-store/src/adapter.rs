@@ -11,7 +11,7 @@ use crate::checkpoint::{Identity, checkpoint_dir, inside_store, write_checkpoint
 use crate::cli_record::{At, checkpoint_payload, cli_record, unreadable_step};
 use crate::finalize::{Asked, Said, finalize};
 use crate::git::{GitId, identity, repo_key, short_commit};
-use crate::js::{Js, Obj};
+use crate::js::{Js, Obj, Utf16Error};
 use crate::write::{Writing, with_git};
 
 /// Where and when the writes land, and the craft that writes them.
@@ -31,32 +31,32 @@ struct Kept {
     fields: Obj,
 }
 
-fn kept_identity(req: &Obj, refile: bool) -> Option<Kept> {
-    let (git_dir, repo) = (req.text("gitDir"), req.text("repo"));
+fn kept_identity(req: &Obj, refile: bool) -> Result<Option<Kept>, Utf16Error> {
+    let (git_dir, repo) = (req.text("gitDir")?, req.text("repo")?);
     let gone = repo.is_empty() || !Path::new(repo).exists();
     if git_dir.is_empty() || !Path::new(git_dir).exists() || !(refile || gone) {
-        return None;
+        return Ok(None);
     }
     let mut fields = Obj::new();
-    if !req.text("branch").is_empty() {
-        fields.set("branch", Js::str(req.text("branch")));
+    if !req.text("branch")?.is_empty() {
+        fields.set("branch", Js::str(req.text("branch")?));
     }
-    let head = req.text("head");
+    let head = req.text("head")?;
     if !head.is_empty() {
         fields.set("head", Js::str(head));
         fields.set("commit", Js::str(short_commit(Path::new(git_dir), head)));
     }
     fields.set("dirty", Js::Bool(req.get("dirty") == Some(&Js::Bool(true))));
-    Some(Kept {
+    Ok(Some(Kept {
         git_dir: git_dir.to_owned(),
         fields,
-    })
+    }))
 }
 
 /// What the logger's flags made of the request: the repository keyed through the kept git
 /// directory when there is one, else the reviewed one.
-fn writing(req: &Obj, env: &Env, kept: Option<&Kept>) -> Writing {
-    let repo = req.text("repo");
+fn writing(req: &Obj, env: &Env, kept: Option<&Kept>) -> Result<Writing, Utf16Error> {
+    let repo = req.text("repo")?;
     let cwd = if repo.is_empty() {
         std::env::current_dir().unwrap_or_default()
     } else {
@@ -65,7 +65,7 @@ fn writing(req: &Obj, env: &Env, kept: Option<&Kept>) -> Writing {
     let named = kept.map_or(repo, |k| k.git_dir.as_str());
     let workdir = crate::git::lexical(&cwd.join(named));
     let from_record = kept.is_some();
-    Writing {
+    Ok(Writing {
         store: env.store.clone(),
         project: repo_key(&workdir).display().to_string(),
         git_id: if from_record {
@@ -74,11 +74,11 @@ fn writing(req: &Obj, env: &Env, kept: Option<&Kept>) -> Writing {
             identity(&workdir)
         },
         workdir,
-        session: req.text("session").to_owned(),
+        session: req.text("session")?.to_owned(),
         observe: !from_record,
         craft_commit: env.craft_commit.clone(),
         now: env.now,
-    }
+    })
 }
 
 fn steps(req: &Obj) -> &[Js] {
@@ -88,22 +88,28 @@ fn steps(req: &Obj) -> &[Js] {
 /// The start's checkpoint, or the one of the phase the last step ended.
 #[must_use]
 pub fn checkpoint(req: &Obj, env: &Env) -> Obj {
+    checkpoint_inner(req, env).unwrap_or_else(|e| Obj::new().with("error", Js::str(e.to_string())))
+}
+
+fn checkpoint_inner(req: &Obj, env: &Env) -> Result<Obj, Utf16Error> {
+    request_text(req)?;
     let start = req.get("start") == Some(&Js::Bool(true));
     let ended = if start {
         None
     } else {
-        match crate::clock::replay(steps(req)).0 {
-            Some(e) => Some(e),
-            None => return Obj::new().with("skipped", Js::Bool(true)),
+        match crate::clock::replay(steps(req)) {
+            Ok((Some(e), _)) => Some(e),
+            Ok((None, _)) => return Ok(Obj::new().with("skipped", Js::Bool(true))),
+            Err(e) => return Err(e),
         }
     };
-    let cv = req.text("craftVersion");
+    let cv = req.text("craftVersion")?;
     let (phase, payload) = match &ended {
         Some(e) => {
             let figures = Obj::new()
                 .with("minutes", e.minutes.map_or(Js::Null, Js::Num))
                 .with("agents", Js::Num(e.agents))
-                .with("head", Js::str(req.text("head")));
+                .with("head", Js::str(req.text("head")?));
             (e.phase.clone(), checkpoint_payload(cv, &e.phase, &figures))
         }
         None => (
@@ -111,10 +117,10 @@ pub fn checkpoint(req: &Obj, env: &Env) -> Obj {
             checkpoint_payload(cv, "start", &Obj::new()),
         ),
     };
-    let kept = kept_identity(req, false);
+    let kept = kept_identity(req, false)?;
     let mut payload = payload;
-    if !req.text("runtime").is_empty() {
-        payload.set("runtime", Js::str(req.text("runtime")));
+    if !req.text("runtime")?.is_empty() {
+        payload.set("runtime", Js::str(req.text("runtime")?));
     }
     if let Some(k) = &kept {
         payload.set(
@@ -123,16 +129,16 @@ pub fn checkpoint(req: &Obj, env: &Env) -> Obj {
         );
         payload.set("head", k.fields.get("head").cloned().unwrap_or(Js::str("")));
     }
-    let w = writing(req, env, kept.as_ref());
+    let w = writing(req, env, kept.as_ref())?;
     let answer = Obj::new().with("phase", Js::str(&phase));
     let mut warned = Vec::new();
-    match write_slice(req, &w, &phase, &payload, &mut warned) {
+    Ok(match write_slice(req, &w, &phase, &payload, &mut warned) {
         Ok(dir) => answer.with("runDir", Js::str(dir.display().to_string())),
         Err(e) => {
             warned.push(format!("craft-log-run FAILED: {e}"));
             answer.with("error", Js::str(warned.join("; ")))
         }
-    }
+    })
 }
 
 fn write_slice(
@@ -143,8 +149,10 @@ fn write_slice(
     warned: &mut Vec<String>,
 ) -> Result<PathBuf, crate::StoreError> {
     let payload = with_git(payload, &w.git_id);
-    let asked = req.text("dir");
-    let asked = (!asked.is_empty()).then(|| resolve(req, asked));
+    let asked = req.text("dir")?;
+    let asked = (!asked.is_empty())
+        .then(|| resolve(req, asked))
+        .transpose()?;
     let refused = asked
         .as_ref()
         .filter(|a| !inside_store(&a.display().to_string(), &w.store))
@@ -160,7 +168,7 @@ fn write_slice(
         d
     } else {
         let mut want = Identity::of(&payload);
-        want.project.clone_from(&w.project);
+        want.project = w.project.clone().into();
         let rejoin = req.get("rejoin") == Some(&Js::Bool(true));
         checkpoint_dir(&payload, &w.store, &want, rejoin, w.now)?
     };
@@ -169,44 +177,59 @@ fn write_slice(
 }
 
 /// A path the request names, resolved against the reviewed repository as the logger's cwd.
-fn resolve(req: &Obj, p: &str) -> PathBuf {
-    let base = PathBuf::from(req.text("repo"));
-    crate::git::lexical(&std::path::absolute(base.join(p)).unwrap_or_else(|_| PathBuf::from(p)))
+fn resolve(req: &Obj, p: &str) -> Result<PathBuf, Utf16Error> {
+    let base = PathBuf::from(req.text("repo")?);
+    Ok(crate::git::lexical(
+        &std::path::absolute(base.join(p)).unwrap_or_else(|_| PathBuf::from(p)),
+    ))
 }
 
 /// The record of the finished step.
 #[must_use]
 pub fn record(req: &Obj, env: &Env) -> Obj {
+    record_inner(req, env).unwrap_or_else(|e| {
+        Obj::new()
+            .with("ok", Js::Bool(false))
+            .with("reason", Js::str(e.to_string()))
+    })
+}
+
+fn record_inner(req: &Obj, env: &Env) -> Result<Obj, Utf16Error> {
+    request_text(req)?;
     let none = Obj::new();
     let step = req.get("step").and_then(Js::as_obj).unwrap_or(&none);
     if let Some(why) = unreadable_step(step) {
-        return Obj::new().with("ok", Js::Bool(false)).with(
+        return Ok(Obj::new().with("ok", Js::Bool(false)).with(
             "reason",
             Js::str(format!("the finished step cannot be read: {why}")),
-        );
+        ));
     }
-    let depth = req.text("depth");
-    let via = req.text("via");
+    let depth = req.text("depth")?;
+    let via = req.text("via")?;
     let at = At {
-        craft_version: req.text("craftVersion"),
+        craft_version: req.text("craftVersion")?,
         depth: if depth.is_empty() { "full" } else { depth },
         strict: req.get("strict") == Some(&Js::Bool(true)),
         via: (!via.is_empty()).then_some(via),
         output_tokens: req.get("outputTokens").and_then(Js::as_num),
-        runtime: req.text("runtime"),
+        runtime: req.text("runtime")?,
     };
     let retry = req.get("retry") == Some(&Js::Bool(true));
-    let kept = kept_identity(req, retry);
-    let mut rec = cli_record(step, crate::clock::replay(steps(req)).1, &at);
+    let kept = kept_identity(req, retry)?;
+    let stats = match crate::clock::replay(steps(req)) {
+        Ok((_, stats)) => stats,
+        Err(e) => return Err(e),
+    };
+    let mut rec = cli_record(step, stats, &at);
     if let Some(k) = &kept {
         rec.spread(&k.fields);
     }
-    let w = writing(req, env, kept.as_ref());
-    let dir = req.text("dir");
+    let w = writing(req, env, kept.as_ref())?;
+    let dir = req.text("dir")?;
     let dir = if dir.is_empty() {
         String::new()
     } else {
-        resolve(req, dir).display().to_string()
+        resolve(req, dir)?.display().to_string()
     };
     let asked = Asked {
         dir: &dir,
@@ -215,7 +238,25 @@ pub fn record(req: &Obj, env: &Env) -> Obj {
     };
     let mut said = Said::default();
     let done = finalize(&rec, &w, asked, &mut said);
-    outcome(done, &said)
+    Ok(outcome(done, &said))
+}
+
+fn request_text(req: &Obj) -> Result<(), crate::js::Utf16Error> {
+    for key in [
+        "gitDir",
+        "repo",
+        "branch",
+        "head",
+        "session",
+        "craftVersion",
+        "runtime",
+        "dir",
+        "depth",
+        "via",
+    ] {
+        req.try_text(key)?;
+    }
+    Ok(())
 }
 
 /// `logRunOutcome` over what the finalize said, with the file it filed.

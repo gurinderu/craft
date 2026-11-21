@@ -1,8 +1,7 @@
 //! The store's index lock, the protocol of `lib/index-lock.mjs` (realm @nick/craft, node #401), so a
-//! JavaScript writer and this one never interleave on `index.jsonl`: a file created exclusively
-//! beside the index, holding its owner's token; one older than 30 s is a writer that died holding
-//! it, renamed aside and put back when what was renamed turns out to be a fresh lock taken in
-//! between; waiting is bounded at 45 s.
+//! JavaScript writer and this one enter through immutable process tickets before the legacy file
+//! lock. Legacy stale recovery is serialized among updated writers (realm @nick/craft, #557).
+//! Earlier releases still use the file lock alone. Waiting is bounded at 45 s across both stages.
 
 use std::io::ErrorKind;
 use std::path::Path;
@@ -10,6 +9,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime};
 
 use crate::StoreError;
+
+mod turn;
+#[cfg(windows)]
+mod windows;
 
 /// The protocol both writers hold to (`content/parity/lock-protocol.json`, `lib/index-lock.mjs`).
 pub const LOCK: &str = "index.jsonl.lock";
@@ -22,10 +25,9 @@ fn token() -> String {
     static N: AtomicU64 = AtomicU64::new(0);
     let nanos = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
-        .map_or(0, |d| d.subsec_nanos());
+        .map_or(0, |d| d.as_nanos());
     let n = N.fetch_add(1, Ordering::Relaxed);
-    let mixed = (u64::from(nanos) << 16 ^ n) & 0xffff_ffff_ffff;
-    format!("{}-{mixed:012x}", std::process::id())
+    format!("{}-{nanos:x}-{n:x}", std::process::id())
 }
 
 fn create(lock: &Path, token: &str) -> std::io::Result<bool> {
@@ -77,10 +79,18 @@ pub fn with_index_lock<T>(
     store: &Path,
     f: impl FnOnce() -> Result<T, StoreError>,
 ) -> Result<T, StoreError> {
+    let deadline = Instant::now() + TIMEOUT;
+    turn::with_turn(store, deadline, || under_legacy_lock(store, deadline, f))
+}
+
+fn under_legacy_lock<T>(
+    store: &Path,
+    deadline: Instant,
+    f: impl FnOnce() -> Result<T, StoreError>,
+) -> Result<T, StoreError> {
     std::fs::create_dir_all(store).map_err(|e| StoreError::io(store, &e))?;
     let lock = store.join(LOCK);
     let token = token();
-    let deadline = Instant::now() + TIMEOUT;
     let mut why = "held by another writer".to_owned();
     while !create(&lock, &token).map_err(|e| StoreError::io(&lock, &e))? {
         let gone = match take_over(&lock, &token) {
@@ -186,7 +196,8 @@ mod tests {
             .join("../../../content/parity/lock-protocol.json");
         let want = crate::js::parse(&std::fs::read_to_string(file).unwrap()).unwrap();
         let want = want.as_obj().unwrap();
-        assert_eq!(want.text("lockFile"), LOCK);
+        assert_eq!(want.text("lockFile").unwrap(), LOCK);
+        assert_eq!(want.text("admissionDirectory").unwrap(), turn::TURNS);
         let ms = |d: Duration| f64::from(u32::try_from(d.as_millis()).unwrap());
         assert_eq!(
             want.get("staleMs").and_then(crate::js::Js::as_num),

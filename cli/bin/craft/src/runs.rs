@@ -194,13 +194,22 @@ fn printed(args: &RunsArgs) -> Result<ExitCode> {
 fn retro(store: &Path, version: &str, skipped: &mut Skipped) -> Result<craft_store::retro::Retro> {
     let mut out = craft_store::retro::Retro::default();
     let mut newest = std::collections::BTreeMap::<String, (String, String)>::new();
+    let mut failure = None;
     read::records(store, skipped, |name, r| {
-        if !r.get("schemaVersion").is_some_and(Js::truthy) || r.text("craftVersion") != version {
+        if !r.get("schemaVersion").is_some_and(Js::truthy)
+            || r.text_units("craftVersion") != version
+        {
             out.other += 1;
         } else if r.get("partial").is_some_and(Js::truthy) {
             out.unfinished += 1;
         } else if let Some(key) = craft_store::retro::run_key(&r) {
-            let ts = r.text("ts").to_owned();
+            let ts = match r.try_text("ts") {
+                Ok(ts) => ts.to_owned(),
+                Err(e) => {
+                    failure = Some(e);
+                    return;
+                }
+            };
             match newest.entry(key) {
                 std::collections::btree_map::Entry::Vacant(e) => {
                     e.insert((ts, name.to_owned()));
@@ -212,20 +221,23 @@ fn retro(store: &Path, version: &str, skipped: &mut Skipped) -> Result<craft_sto
                     }
                 }
             }
-        } else {
-            craft_store::retro::add_record(&mut out, &r);
+        } else if let Err(e) = craft_store::retro::add_record(&mut out, &r) {
+            failure = Some(e);
         }
     })?;
+    if let Some(e) = failure {
+        return Err(e.into());
+    }
     for (key, (ts, name)) in newest {
         match read::record(store, &name) {
             Ok(r)
-                if r.text("ts") == ts
-                    && r.text("craftVersion") == version
+                if r.text_units("ts") == ts
+                    && r.text_units("craftVersion") == version
                     && r.get("schemaVersion").is_some_and(Js::truthy)
                     && !r.get("partial").is_some_and(Js::truthy)
                     && craft_store::retro::run_key(&r).as_ref() == Some(&key) =>
             {
-                craft_store::retro::add_record(&mut out, &r);
+                craft_store::retro::add_record(&mut out, &r)?;
             }
             Ok(_) => skipped
                 .records
@@ -288,6 +300,7 @@ fn stats(
     let mut groups: std::collections::BTreeMap<String, Tally> = std::collections::BTreeMap::new();
     let mut newest: std::collections::BTreeMap<String, (String, String)> =
         std::collections::BTreeMap::new();
+    let mut failure = None;
     read::records(store, skipped, |name, r| {
         let finished = r.get("schemaVersion").is_some_and(Js::truthy)
             && !r.get("partial").is_some_and(Js::truthy);
@@ -295,26 +308,35 @@ fn stats(
             return;
         }
         if let Some(key) = craft_store::retro::run_key(&r) {
-            let ts = r.text("ts").to_owned();
+            let ts = match r.try_text("ts") {
+                Ok(ts) => ts.to_owned(),
+                Err(e) => {
+                    failure = Some(e);
+                    return;
+                }
+            };
             let entry = newest
                 .entry(key)
                 .or_insert_with(|| (ts.clone(), name.to_owned()));
             if ts > entry.0 {
                 *entry = (ts, name.to_owned());
             }
-        } else {
-            tally_record(&mut groups, by, &r);
+        } else if let Err(e) = tally_record(&mut groups, by, &r) {
+            failure = Some(e);
         }
     })
     .with_context(|| format!("reading {}", store.display()))?;
+    if let Some(e) = failure {
+        return Err(e.into());
+    }
     for (key, (ts, name)) in newest {
         match read::record(store, &name) {
             Ok(r)
-                if r.text("ts") == ts
+                if r.text_units("ts") == ts
                     && craft_store::retro::run_key(&r).as_ref() == Some(&key)
                     && filter.keeps(&r) =>
             {
-                tally_record(&mut groups, by, &r);
+                tally_record(&mut groups, by, &r)?;
             }
             Ok(_) => skipped
                 .records
@@ -325,12 +347,17 @@ fn stats(
     Ok(groups.into_iter().collect())
 }
 
-fn tally_record(groups: &mut std::collections::BTreeMap<String, Tally>, by: By, r: &Obj) {
+fn tally_record(
+    groups: &mut std::collections::BTreeMap<String, Tally>,
+    by: By,
+    r: &Obj,
+) -> Result<(), craft_store::js::Utf16Error> {
     let key = match by {
-        By::Version => r.text("craftVersion"),
-        By::Name => r.text("name"),
-        By::Project => r.text("project"),
+        By::Version => r.try_text("craftVersion")?,
+        By::Name => r.try_text("name")?,
+        By::Project => r.try_text("project")?,
     };
     let key = if key.is_empty() { "(none)" } else { key };
     groups.entry(key.to_owned()).or_default().add(r);
+    Ok(())
 }

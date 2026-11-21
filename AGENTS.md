@@ -169,6 +169,7 @@ Layers: `src/` engines and `lib/` modules → built into `integrations/claude-co
 - `evals/` — the skill-triggering corpus (`evals.json`) and its README; `docs/` — `LESSONS.md`, `observability.md`.
 - `.claude/settings.json` — the repo's hooks (committed); role agents in `.claude/agents/` are machine-local projections, not in git.
 - `MAP.md` — a map of the repo's contents; `README.md` — the human-facing entry point.
+- Run-store internals: `lib/index-turn.mjs` and `cli/crates/craft-store/src/lock/turn.rs` share local writer admission (`lock/windows.rs` checks Windows process liveness); `lib/filing-transaction.mjs` and `src/filing.rs` with `src/filing_io.rs` in that crate publish and replay pending writes; `src/js/string.rs` holds JavaScript UTF-16 strings. `cli/crates/craft-store/tests/{lock_interop,filing_interop,utf16}.rs` and `cli/bin/craft/tests/runs_utf16.rs` exercise both writers and the binary's UTF-16 reads.
 
 ## Code conventions
 - **Meaning lives in the realm, code references it**: a comment carrying rationale, discarded alternatives or the shape of an integration is a node; in code — "(realm `@nick/craft`, node #N)", for the discarded too ("not cached: #N"). Mechanics — in words in place. Having cited a node, check it says that; it diverged — fix the node. This repo is public (MIT, marketplace): references belong in `lib/`, `src/` and `cli/` code, not in `README.md`, `MAP.md` or skill bodies.

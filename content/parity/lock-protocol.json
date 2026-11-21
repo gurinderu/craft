@@ -3,5 +3,7 @@
   "lockFile": "index.jsonl.lock",
   "staleMs": 30000,
   "timeoutMs": 45000,
+  "admissionDirectory": ".index-writers",
+  "admission": "local-process bakery tickets; live owners never expire; dead owners are ignored, never renamed",
   "release": "only while the lock holds the writer's own token"
 }

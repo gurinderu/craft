@@ -45,6 +45,12 @@ impl StoreError {
     }
 }
 
+impl From<js::Utf16Error> for StoreError {
+    fn from(e: js::Utf16Error) -> Self {
+        Self::Refused(e.to_string())
+    }
+}
+
 /// Answers one of the binary's writes — `checkpoint`, `finalize` or `publication` — over the
 /// request it built, as the JavaScript adapter answered it.
 ///
@@ -60,7 +66,8 @@ pub fn answer(
             "the request is not a JSON object".into(),
         ));
     };
-    answer_js(command, &req, env).map(|out| serde_json::Value::from(&js::Js::Obj(out)))
+    let out = answer_js(command, &req, env)?;
+    serde_json::Value::try_from(&js::Js::Obj(out)).map_err(|e| StoreError::Refused(e.to_string()))
 }
 
 /// Opens one write of the binary's: the git probes that timed out before it are forgotten, so its
@@ -105,8 +112,11 @@ mod tests {
         };
         let done = answer_js("finalize", &req, &env).unwrap();
         drop(git::take_timed_out());
-        let rec =
-            read::record(store.path(), done.text("file").rsplit('/').next().unwrap()).unwrap();
+        let rec = read::record(
+            store.path(),
+            done.text("file").unwrap().rsplit('/').next().unwrap(),
+        )
+        .unwrap();
         let named = rec
             .get("gitTimedOut")
             .map(js::Js::compact)

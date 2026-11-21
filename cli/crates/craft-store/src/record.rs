@@ -1,7 +1,7 @@
 //! A record's derived parts as `lib/run-record.mjs` computes them: a finding's fingerprint, the
 //! findings counted by severity, the record's index line and its file name.
 
-use crate::js::{Js, Obj};
+use crate::js::{Js, JsString, Obj};
 
 /// The logger's engine revision (`ENGINE_REVISION`), stamped on every record and checkpoint.
 pub const ENGINE_REVISION: f64 = 4.0;
@@ -10,9 +10,9 @@ pub const ENGINE_REVISION: f64 = 4.0;
 pub const SEVERITIES: [&str; 5] = ["Critical", "High", "Medium", "Low", "Info"];
 
 /// `String(v || '')`.
-fn or_empty(v: Option<&Js>) -> String {
+fn or_empty(v: Option<&Js>) -> JsString {
     v.filter(|v| v.truthy())
-        .map(Js::to_js_string)
+        .map(Js::to_js_text)
         .unwrap_or_default()
 }
 
@@ -58,16 +58,16 @@ pub fn normalize_symbol(symbol: &str) -> String {
 pub fn fingerprint(f: Option<&Obj>) -> String {
     let get = |k: &str| f.and_then(|o| o.get(k));
     let file = or_empty(get("file"));
-    let symbol = normalize_symbol(&or_empty(get("symbol")));
+    let symbol = normalize_units(&or_empty(get("symbol")));
     let rule = or_empty(get("ruleId"));
     let basis = if rule.is_empty() {
-        let title = title_shingle(&or_empty(get("title")));
-        [file, symbol, String::new(), title].join("\0")
+        let title = title_units(&or_empty(get("title")));
+        JsString::join(&[file, symbol, JsString::default(), title.into()], "\0")
     } else {
-        [file, symbol, rule].join("\0")
+        JsString::join(&[file, symbol, rule], "\0")
     };
     let mut h: u32 = 5381;
-    for unit in basis.encode_utf16() {
+    for unit in basis.units() {
         h = h
             .wrapping_shl(5)
             .wrapping_add(h)
@@ -106,11 +106,12 @@ pub fn summarize(findings: &[Js]) -> Js {
 pub fn filename(record: &Obj) -> String {
     let safe = |k: &str| -> String {
         let v = match record.get(k) {
-            None | Some(Js::Null) => "unknown".to_owned(),
-            Some(v) => v.to_js_string(),
+            None | Some(Js::Null) => JsString::from("unknown"),
+            Some(v) => v.to_js_text(),
         };
-        v.chars()
+        char::decode_utf16(v.units())
             .map(|c| {
+                let c = c.unwrap_or('-');
                 if c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-') {
                     c
                 } else {
@@ -120,6 +121,85 @@ pub fn filename(record: &Obj) -> String {
             .collect()
     };
     format!("{}-{}-{}.json", safe("ts"), safe("kind"), safe("name"))
+}
+
+fn title_units(s: &JsString) -> String {
+    let lower = s.map_unicode(str::to_lowercase);
+    // A surrogate, like every non-ASCII character, separates the ASCII words of a shingle.
+    let text: String = lower
+        .units()
+        .map(|u| {
+            char::from_u32(u32::from(u))
+                .filter(char::is_ascii)
+                .unwrap_or(' ')
+        })
+        .collect();
+    title_shingle(&text)
+}
+
+fn unit_space(u: u16) -> bool {
+    char::from_u32(u32::from(u)).is_some_and(|c| c.is_whitespace() || c == '\u{feff}')
+}
+
+fn unit_word(u: u16) -> bool {
+    char::from_u32(u32::from(u)).is_some_and(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+fn normalize_units(s: &JsString) -> JsString {
+    if let Some(s) = s.as_str() {
+        return normalize_symbol(s).into();
+    }
+    let lower: Vec<u16> = s.map_unicode(str::to_lowercase).units().collect();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while let Some(&u) = lower.get(i) {
+        let keyword = ["fn", "impl"].into_iter().find(|word| {
+            (i == 0 || lower.get(i - 1).is_some_and(|u| !unit_word(*u)))
+                && lower
+                    .get(i..i + word.len())
+                    .is_some_and(|slice| slice.iter().copied().eq(word.encode_utf16()))
+                && lower.get(i + word.len()).is_some_and(|u| unit_space(*u))
+        });
+        if let Some(word) = keyword {
+            i += word.len();
+            while lower.get(i).is_some_and(|u| unit_space(*u)) {
+                i += 1;
+            }
+        } else {
+            out.push(u);
+            i += 1;
+        }
+    }
+    strip_generics(&mut out);
+    let start = out
+        .iter()
+        .position(|u| !unit_space(*u))
+        .unwrap_or(out.len());
+    let end = out
+        .iter()
+        .rposition(|u| !unit_space(*u))
+        .map_or(start, |i| i + 1);
+    JsString::from_utf16(out.get(start..end).unwrap_or_default().to_vec())
+}
+
+fn strip_generics(out: &mut Vec<u16>) {
+    loop {
+        let mut open = None;
+        let mut pair = None;
+        for (i, &u) in out.iter().enumerate() {
+            if u == u16::from(b'<') {
+                open = Some(i);
+            }
+            if u == u16::from(b'>')
+                && let Some(start) = open
+            {
+                pair = Some(start..=i);
+                break;
+            }
+        }
+        let Some(pair) = pair else { break };
+        out.drain(pair);
+    }
 }
 
 /// `indexProjection`: the record's line in `index.jsonl`; a field the record lacks and the line

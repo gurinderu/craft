@@ -66,6 +66,41 @@ pub fn filed_before(record: &Obj, at: ProofAt<'_>) -> Option<(PathBuf, Vec<Strin
     read_proof(at.store, &by_retry(record, at))
 }
 
+pub(crate) fn filed_for(
+    record: &Obj,
+    at: ProofAt<'_>,
+    retry: bool,
+) -> Option<(PathBuf, Vec<String>)> {
+    by_run_dir(record, at)
+        .and_then(|way| read_proof(at.store, &way))
+        .or_else(|| retry.then(|| filed_before(record, at)).flatten())
+}
+
+pub(crate) fn filing_proofs(
+    record: &Obj,
+    at: ProofAt<'_>,
+    file: &Path,
+    warnings: &[String],
+) -> Vec<Js> {
+    let warnings = warnings
+        .iter()
+        .filter(|l| l.starts_with("craft-log-run WARNING"))
+        .map(Js::str)
+        .collect::<Vec<_>>();
+    let base = file.file_name().unwrap_or_default().to_string_lossy();
+    std::iter::once(by_retry(record, at))
+        .chain(by_run_dir(record, at))
+        .map(|way| {
+            Js::Obj(
+                Obj::new()
+                    .with("file", Js::str(base.as_ref()))
+                    .with("key", Js::str(&way.key))
+                    .with("warnings", Js::Arr(warnings.clone())),
+            )
+        })
+        .collect()
+}
+
 fn read_proof(store: &Path, way: &Way) -> Option<(PathBuf, Vec<String>)> {
     let proof = store.join(PROOF_DIR).join(&way.key);
     let age = std::fs::metadata(&proof).ok()?.modified().ok()?.elapsed();
@@ -74,7 +109,12 @@ fn read_proof(store: &Path, way: &Way) -> Option<(PathBuf, Vec<String>)> {
     }
     let p = parse(&std::fs::read_to_string(&proof).ok()?).ok()?;
     let p = p.as_obj()?;
-    let named = p.get("file").map(Js::to_js_string).unwrap_or_default();
+    let named = p
+        .get("file")
+        .map(Js::to_js_string)
+        .transpose()
+        .ok()?
+        .unwrap_or_default();
     let file = store.join(Path::new(&named).file_name()?);
     if p.get("key").and_then(Js::as_str) != Some(way.key.as_str()) || !file.exists() {
         return None;
@@ -82,18 +122,30 @@ fn read_proof(store: &Path, way: &Way) -> Option<(PathBuf, Vec<String>)> {
     let warnings = p
         .get("warnings")
         .and_then(Js::as_arr)
-        .map(|w| w.iter().map(Js::to_js_string).collect())
+        .map(|w| {
+            w.iter()
+                .map(Js::to_js_string)
+                .collect::<Result<Vec<_>, _>>()
+        })
+        .transpose()
+        .ok()?
         .unwrap_or_default();
     Some((file, warnings))
 }
 
 /// Leaves (or rewrites) the proof of a filed record, both ways when it names a run directory.
-/// Best-effort: a proof that cannot be written costs only a retry's recognition.
-pub fn leave(record: &Obj, at: ProofAt<'_>, file: &Path, warnings: &[String]) {
+/// Atomic updates preserve the proof the filing transaction already left.
+///
+/// # Errors
+/// When a proof cannot be durably published.
+pub fn leave(
+    record: &Obj,
+    at: ProofAt<'_>,
+    file: &Path,
+    warnings: &[String],
+) -> Result<(), crate::StoreError> {
     let root = at.store.join(PROOF_DIR);
-    if std::fs::create_dir_all(&root).is_err() {
-        return;
-    }
+    std::fs::create_dir_all(&root).map_err(|e| crate::StoreError::io(&root, &e))?;
     prune(&root);
     let warnings: Vec<Js> = warnings
         .iter()
@@ -109,10 +161,9 @@ pub fn leave(record: &Obj, at: ProofAt<'_>, file: &Path, warnings: &[String]) {
             .with("file", Js::str(&base))
             .with("key", Js::str(&way.key))
             .with("warnings", Js::Arr(warnings.clone()));
-        if std::fs::write(root.join(&way.key), Js::Obj(body).compact()).is_err() {
-            return;
-        }
+        crate::write::publish_proof(&root.join(&way.key), &Js::Obj(body).compact())?;
     }
+    crate::write::sync_filing_path(at.store)
 }
 
 fn prune(root: &Path) {
@@ -163,7 +214,8 @@ mod tests {
             at,
             &file,
             &["craft-log-run WARNING: x".into(), "other".into()],
-        );
+        )
+        .unwrap();
         assert_eq!(
             filed_before(rec, at),
             Some((file, vec!["craft-log-run WARNING: x".to_owned()]))
