@@ -6,8 +6,9 @@
 use serde_json::{Map, Value};
 
 use super::entry::{Entry, event, field};
-use super::heard::{NUDGE, REMINDER, nudged_in_session, recent_kind, repeat_of, said_in_session};
+use super::heard::{NUDGE, nudged_in_session, recent_kind, said_in_session};
 use super::kind::{Kind, prompt_kind};
+use super::remind::{REMINDER, hushed, repeat_of};
 use super::word::{continuation, not_human, subagent_report};
 use super::{Ctx, Harness, Run, context, cwd_of, declared, fields, text, text_codex, text_of};
 
@@ -74,7 +75,8 @@ fn work_text(who: Harness, kind: Kind) -> String {
 
 /// A `UserPromptSubmit` run: the repo test; a prompt of no class is a silence logged as `no-kind`,
 /// an agent's words `not-human`; the text of a class is said once per session until a compact or
-/// clear, and a later prompt in another script hears one reminder line.
+/// clear, and a later prompt in another script hears one reminder line beside a sign of PR or
+/// review work, nothing without one.
 pub fn prompt(input: &str, ctx: &Ctx) -> Run {
     const EVENT: &str = "UserPromptSubmit";
     let fields = fields(input);
@@ -101,7 +103,14 @@ pub fn prompt(input: &str, ctx: &Ctx) -> Run {
     let mut entry = base.clone();
     entry.kind = Some(kind.name().to_owned());
     let repeat = if entry.spoke && !entry.session.is_empty() {
-        repeat_of(&ctx.logged(), &entry.session, who == Harness::Codex, kind)
+        repeat_of(
+            &ctx.logged(),
+            &entry.session,
+            who == Harness::Codex,
+            kind,
+            prompt,
+            ctx.now,
+        )
     } else {
         None
     };
@@ -116,7 +125,7 @@ pub fn prompt(input: &str, ctx: &Ctx) -> Run {
         };
     }
     if let Some(why) = repeat {
-        entry = entry.quiet(why);
+        entry = hushed(entry, why);
     }
     Run {
         stdout: if entry.spoke {
