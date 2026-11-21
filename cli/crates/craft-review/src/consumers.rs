@@ -83,6 +83,10 @@ pub struct Consumers {
     /// Why the code graph was not one of them.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub graph_skipped: String,
+    /// Whether the binary brought the graph's index to this checkout, ready to ask: the consumers
+    /// list's source, and the metrics lenses' gate (realm @nick/craft, node #529).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub graph_indexed: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub symbols: Vec<Listed>,
     /// The changed symbols not searched by name: too common a name, or the search failed, each with

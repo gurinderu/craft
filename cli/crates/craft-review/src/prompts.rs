@@ -69,9 +69,9 @@ pub struct PromptContext {
     /// lens. Optional, so a state written before it reads as a run with none.
     #[serde(default, skip_serializing_if = "crate::consumers::Consumers::is_empty")]
     pub consumers: crate::consumers::Consumers,
-    /// The code graph's project of the repository, craft's own, which the index warm-up, the
-    /// metrics lenses and their verifier name (realm @nick/craft, node #529); empty when it could
-    /// not be named, and then no warm-up is asked. Optional, so a state written before it reads
+    /// The code graph's project of the repository, craft's own, which the consumers list indexes
+    /// and the metrics lenses and their verifier name (realm @nick/craft, node #529); empty when it
+    /// could not be named, and then the metrics lenses do not run, the report saying why. Optional, so a state written before it reads
     /// as a run with none.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub graph_project: String,

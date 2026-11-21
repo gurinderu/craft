@@ -314,8 +314,7 @@ fn a_profile_is_sliced_over_its_own_files_only() {
     step::start(&opts(d, out.path())).unwrap();
     let s = submit(
         &run,
-        json!({"scout-rust": scout("small", &["errors"]), "scout-general": scout("small", &["security"]),
-               "index-warmup": {"indexed": false, "notes": "not indexed"}}),
+        json!({"scout-rust": scout("small", &["errors"]), "scout-general": scout("small", &["security"])}),
     );
     let all = ids(&s);
     assert!(

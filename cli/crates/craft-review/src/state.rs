@@ -124,7 +124,9 @@ pub enum TaskKind {
     MatchJudge,
     /// The memory's rule judge.
     RuleJudge,
-    /// The warm-up finding whether a code-metrics index covers the repository, beside the scouts.
+    /// The index warm-up agent earlier releases dispatched beside the scouts; none is made now —
+    /// the binary indexes the graph itself (realm @nick/craft, node #529) —, kept so a state
+    /// written before reads.
     Warmup,
     /// The completeness critic of `profile`'s plan.
     Critic {

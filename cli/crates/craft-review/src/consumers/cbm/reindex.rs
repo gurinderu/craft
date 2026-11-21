@@ -25,9 +25,10 @@ const MODE: &str = "full";
 const CAP: u64 = 16 << 20;
 /// How often the index is checked for having exited.
 const POLL: Duration = Duration::from_millis(20);
-/// The index run, under `sh`: the tool, then the lock removed while it is still this run's.
-/// `$0` the tool, `$1` its arguments, `$2` the lock directory, `$3` the lock's token.
-const RUN: &str = r#""$0" cli --quiet index_repository "$1"; s=$?; [ "$(cat "$2/owner" 2>/dev/null)" = "$3" ] && rm -rf "$2"; exit $s"#;
+/// The index run, under `sh`: the lock touched every `$4` seconds while it is this run's, the
+/// tool, then the lock removed while it is still this run's. `$0` the tool, `$1` its arguments,
+/// `$2` the lock directory, `$3` the lock's token.
+const RUN: &str = r#"(while sleep "$4"; do [ "$(cat "$2/owner" 2>/dev/null)" = "$3" ] && touch "$2"; done) & beat=$!; "$0" cli --quiet index_repository "$1"; s=$?; kill "$beat" 2>/dev/null; [ "$(cat "$2/owner" 2>/dev/null)" = "$3" ] && rm -rf "$2"; exit $s"#;
 
 impl Cbm {
     /// Indexes the checkout at `repo` as the project `name`, refused past `deadline`.
@@ -37,7 +38,7 @@ impl Cbm {
     /// stop comes first (it is then left running), or the graph answers with an error or says
     /// the index is not done.
     pub fn reindex(&self, repo: &str, name: &str, deadline: Instant) -> Result<(), CbmError> {
-        let lock = lock::take(&self.locks, name, deadline, &self.cancel)?;
+        let lock = lock::take((&self.locks, self.lock_stale), name, deadline, &self.cancel)?;
         let args = json!({"repo_path": repo, "mode": MODE, "name": name, "format": "json"});
         let started = self.spawn(&args.to_string(), &lock);
         let (child, out, err) = started.inspect_err(|_| lock.release())?;
@@ -58,7 +59,8 @@ impl Cbm {
         let (err, to_err) = Spool::new().map_err(kept)?;
         let mut cmd = Command::new("sh");
         let dir = lock.dir.display().to_string();
-        cmd.args(["-c", RUN, &self.tool, args, &dir, &lock.token]);
+        let beat = format!("{:.3}", self.heartbeat.as_secs_f64());
+        cmd.args(["-c", RUN, &self.tool, args, &dir, &lock.token, &beat]);
         cmd.stdin(Stdio::null()).stdout(to_out).stderr(to_err);
         detached(&mut cmd);
         let child = cmd

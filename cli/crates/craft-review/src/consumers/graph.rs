@@ -52,6 +52,10 @@ pub(super) fn graph_callers(
     let index = cbm.index(&project, deadline)?;
     target::of_this_checkout(&project, &index, top)?;
     fresh::stale(merge_base, &project, &index)?;
+    if found.is_empty() {
+        // Indexed for the metrics lenses alone: nothing to ask.
+        return Ok(Asked::default());
+    }
     let (left_out, asked): (Vec<&Symbol>, Vec<&Symbol>) =
         found.iter().partition(|s| index.leaves_out(&s.file));
     let symbols: Vec<(&str, &str)> = asked

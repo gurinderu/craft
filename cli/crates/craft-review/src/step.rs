@@ -186,7 +186,7 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
     if let Some(exit) = &run.exit {
         run.not_run.extend(exit.not_run.clone());
     } else {
-        prepare(&cwd, dir, opts, &mut run);
+        prepare(&cwd, (dir, &profiles), opts, &mut run);
         // A red gate blocks before any lens, as `gateFailedExit` does.
         run.exit = run.gate.exit();
     }

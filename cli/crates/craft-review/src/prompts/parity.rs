@@ -90,7 +90,7 @@ fn every_prompt_renders_as_the_engines_render_it() {
 }
 
 /// The general profile's complexity lens — the engine's prompt, then what its findings carry here —,
-/// its index warm-up, and the verifier of one of its findings, whose head is the engine's.
+/// and the verifier of one of its findings, whose head is the engine's.
 fn complexity(g: &mut Golden, ctx: &PromptContext, plan: &Plan, prior: &str) {
     let general = Profile::load("general").unwrap();
     let pathspec = general.pathspec(&["web/app.ts".into()]);
@@ -106,14 +106,12 @@ fn complexity(g: &mut Golden, ctx: &PromptContext, plan: &Plan, prior: &str) {
     let shared = lens
         .strip_suffix(&carried)
         .unwrap_or_else(|| panic!("what the findings carry closes it: {lens}"));
-    // The lens, the warm-up and the verifier each name the graph's one project.
+    // The lens and the verifier each name the graph's one project.
     assert!(
         shared.contains("`craft-review-repo-0123456789ab`"),
         "{shared}"
     );
     g.check("/expected/complexity/lens", shared);
-    let warmup = crate::complexity::warmup_task(&ctx.repo, &ctx.graph_project).unwrap();
-    g.check("/expected/complexity/warmup", body(ctx, warmup.prompt));
     let vars = crate::content::vars([("project", ctx.graph_project.clone())]);
     let head = crate::content::prompt("verify-metric", &vars).unwrap();
     let head = head.trim_end_matches('\n').to_owned();

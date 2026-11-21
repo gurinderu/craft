@@ -1,9 +1,9 @@
 //! One review at a time indexes a project (realm @nick/craft, node #530): a lock directory per
 //! project, `<locks>/<project>.lock`, its holder's token in `owner`, as `lib/craft-fetch.sh` locks
-//! a download. A second review waits for it within its deadline; a lock older than [`STALE`] is a
-//! dead holder's and is taken over; a holder removes the lock only while it is still its own. The
-//! index run itself removes it when it exits, so an index left running past a review's budget
-//! keeps it until it ends.
+//! a download. A second review waits for it within its deadline; a lock untouched for [`STALE`] is
+//! a dead holder's and is taken over, moved aside first; a holder removes the lock only while it
+//! is still its own. The index run itself touches it every [`HEARTBEAT`] and removes it when it
+//! exits, so an index left running past a review's budget keeps it until it ends.
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime};
@@ -11,8 +11,10 @@ use std::time::{Duration, Instant, SystemTime};
 use super::CbmError;
 use crate::cancel::Cancel;
 
-/// The age past which a lock is a dead holder's.
-const STALE: Duration = Duration::from_secs(600);
+/// The silence past which a lock is a dead holder's.
+pub(super) const STALE: Duration = Duration::from_secs(600);
+/// How often a running index touches its lock.
+pub(super) const HEARTBEAT: Duration = Duration::from_secs(60);
 /// How often a held lock is looked at again.
 const POLL: Duration = Duration::from_millis(100);
 
@@ -43,7 +45,7 @@ pub(super) struct Lock {
 /// [`CbmError::Locked`] when another holds it past `deadline`, [`CbmError::Stopped`] once
 /// `cancel` is, [`CbmError::Output`] when the lock cannot be made.
 pub(super) fn take(
-    locks: &Path,
+    (locks, stale_after): (&Path, Duration),
     project: &str,
     deadline: Instant,
     cancel: &Cancel,
@@ -52,17 +54,12 @@ pub(super) fn take(
     std::fs::create_dir_all(locks).map_err(failed)?;
     let dir = locks.join(format!("{project}.lock"));
     loop {
-        match std::fs::create_dir(&dir) {
-            Ok(()) => {
-                let token = token();
-                std::fs::write(dir.join("owner"), &token).map_err(failed)?;
-                return Ok(Lock { dir, token });
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
-            Err(e) => return Err(failed(e)),
+        if let Some(lock) = made(locks, &dir).map_err(failed)? {
+            return Ok(lock);
         }
-        if stale(&dir) {
-            std::fs::remove_dir_all(&dir).unwrap_or(());
+        // Its owner is read before its age, so the lock moved aside is the one found stale.
+        let found = std::fs::read_to_string(dir.join("owner")).unwrap_or_default();
+        if stale(&dir, stale_after) && set_aside(&dir, &found) {
             continue;
         }
         if cancel.is_cancelled() {
@@ -88,13 +85,52 @@ impl Lock {
     }
 }
 
-/// Whether the lock at `dir` was made longer than [`STALE`] ago.
-fn stale(dir: &Path) -> bool {
+/// The lock at `dir`, made whole with its owner in a directory of this run's own and renamed into
+/// place, so no lock is ever seen without its owner; `None` when another holds it.
+fn made(locks: &Path, dir: &Path) -> std::io::Result<Option<Lock>> {
+    let token = token();
+    let new = locks.join(format!(".new-{token}"));
+    std::fs::create_dir(&new)?;
+    std::fs::write(new.join("owner"), &token)?;
+    // A rename onto a lock holding its owner fails: the directory is not empty.
+    if std::fs::rename(&new, dir).is_ok() {
+        return Ok(Some(Lock {
+            dir: dir.to_path_buf(),
+            token,
+        }));
+    }
+    std::fs::remove_dir_all(&new).unwrap_or(());
+    Ok(None)
+}
+
+/// Moves the dead holder's lock at `dir`, owned by `found`, aside under a name of this run's own,
+/// an atomic step, and removes it; whether it was moved. A rename that fails is another taker's
+/// win: it waits again. A lock moved that is not `found`'s, one another taker made in between, is
+/// put back; if a third made one in that instant, two hold it, and the graph refuses the second
+/// index of other options (realm @nick/craft, node #530).
+fn set_aside(dir: &Path, found: &str) -> bool {
+    let mut aside = dir.as_os_str().to_owned();
+    aside.push(format!(".stale-{}", token()));
+    let aside = PathBuf::from(aside);
+    if std::fs::rename(dir, &aside).is_err() {
+        return false;
+    }
+    let moved = std::fs::read_to_string(aside.join("owner")).unwrap_or_default();
+    if moved != found {
+        std::fs::rename(&aside, dir).unwrap_or(());
+        return false;
+    }
+    std::fs::remove_dir_all(&aside).unwrap_or(());
+    true
+}
+
+/// Whether the lock at `dir` was last touched longer than `after` ago.
+fn stale(dir: &Path, after: Duration) -> bool {
     std::fs::metadata(dir)
         .and_then(|m| m.modified())
         .ok()
         .and_then(|t| SystemTime::now().duration_since(t).ok())
-        .is_some_and(|age| age > STALE)
+        .is_some_and(|age| age > after)
 }
 
 /// A token no other holder has: this process and the time.
@@ -104,3 +140,7 @@ fn token() -> String {
         .map_or(0, |d| d.as_nanos());
     format!("{}-{nanos}", std::process::id())
 }
+
+#[cfg(test)]
+#[path = "lock_tests.rs"]
+mod tests;

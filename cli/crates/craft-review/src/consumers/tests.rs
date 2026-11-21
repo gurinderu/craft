@@ -19,6 +19,7 @@ mod gaps;
 mod graphs;
 mod half_asked;
 mod heads;
+mod heartbeat;
 mod index;
 mod lists;
 mod lock;

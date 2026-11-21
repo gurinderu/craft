@@ -11,7 +11,7 @@ use crate::consumers::cbm::{Cbm, CbmError};
 use crate::gate::tests::exe;
 
 /// A stand-in whose index takes `secs`, then marks that it finished.
-fn slow(t: &Path, secs: u32) -> Cbm {
+pub(super) fn slow(t: &Path, secs: u32) -> Cbm {
     let tool = t.join("cbm");
     let script = format!(
         "#!/bin/sh\nsleep {secs}; echo done >> {marker}; echo '{{\"status\":\"indexed\"}}'\n",
@@ -21,12 +21,12 @@ fn slow(t: &Path, secs: u32) -> Cbm {
     Cbm::new(&tool.display().to_string()).locked_in(&t.join("locks"))
 }
 
-fn lock(t: &Path) -> std::path::PathBuf {
+pub(super) fn lock(t: &Path) -> std::path::PathBuf {
     t.join("locks").join("proj.lock")
 }
 
 /// Waits up to 10 s for `done`.
-fn eventually(done: impl Fn() -> bool) -> bool {
+pub(super) fn eventually(done: impl Fn() -> bool) -> bool {
     let until = Instant::now() + Duration::from_secs(10);
     while Instant::now() < until {
         if done() {

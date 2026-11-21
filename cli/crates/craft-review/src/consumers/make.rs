@@ -25,14 +25,20 @@ impl Consumers {
 #[must_use]
 pub fn of_checkout(
     cwd: &Path,
-    projects: Option<&Path>,
+    (projects, metrics): (Option<&Path>, bool),
     diff: &crate::git::Diff,
     cancel: &Cancel,
 ) -> Consumers {
+    // Beside the profiles, `~/.craft/cbm-locks` for a review's `~/.craft/projects`.
+    let locks = projects
+        .and_then(Path::parent)
+        .map_or_else(crate::consumers::cbm::scratch_locks, |h| {
+            h.join("cbm-locks")
+        });
     match crate::git::toplevel(cwd) {
         Ok(top) => {
-            let locks = crate::consumers::cbm::review_locks();
-            build_until(&top, diff, (graph_of(projects, &top), &locks), cancel)
+            let graph = (graph_of(projects, &top), locks.as_path(), metrics);
+            build_until(&top, diff, graph, cancel)
         }
         Err(e) => Consumers::failed(format!("the checkout's top could not be read: {e}")),
     }
@@ -48,14 +54,14 @@ pub fn build(
     graph: Result<CodeGraph, GraphError>,
 ) -> Consumers {
     let locks = crate::consumers::cbm::scratch_locks();
-    build_until(top, diff, (graph, &locks), &Cancel::default())
+    build_until(top, diff, (graph, &locks, false), &Cancel::default())
 }
 
 /// [`build`], its name search and the graph's questions run until `cancel` is.
 fn build_until(
     top: &Path,
     diff: &crate::git::Diff,
-    (graph, locks): (Result<CodeGraph, GraphError>, &Path),
+    (graph, locks, metrics): (Result<CodeGraph, GraphError>, &Path, bool),
     cancel: &Cancel,
 ) -> Consumers {
     let text = match crate::git::zero_context_diff(top, &diff.merge_base) {
@@ -65,9 +71,9 @@ fn build_until(
     let changed = crate::gate::lines::Lines::parse(&text);
     let removed = crate::gate::lines::removals(&text);
     let found = changed::changed(top, &diff.files, &changed, &removed, list::SYMBOLS_MAX);
-    // Nothing to ask of it: the graph is not indexed either.
+    // Nothing to ask of it, and no metrics lens to read it: the graph is not indexed either.
     let graph = graph.and_then(|g| {
-        if found.symbols.is_empty() {
+        if found.symbols.is_empty() && !metrics {
             Err(GraphError::NothingToAsk)
         } else {
             Ok(g)
@@ -80,6 +86,7 @@ fn build_until(
         Ok(a) => (Some(a), String::new()),
         Err(why) => (None, why.to_string()),
     };
+    let indexed = asked.is_some();
     let callers = asked.as_ref().map(|a| a.callers.as_slice());
     let mut out = list::assemble(top, &changed, &found.symbols, cancel, callers);
     if let Some(a) = asked {
@@ -87,6 +94,7 @@ fn build_until(
         out.graph_unasked = a.unasked;
     }
     out.graph_skipped = graph_skipped;
+    out.graph_indexed = indexed;
     out.unplaced = found.unplaced;
     out.unlisted = found.unlisted;
     out.unreadable = found.unreadable;

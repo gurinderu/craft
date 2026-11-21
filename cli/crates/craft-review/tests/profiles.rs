@@ -71,8 +71,8 @@ fn a_typescript_only_diff_is_reviewed_by_the_general_lenses() {
     let (run, s) = start(repo.path(), out.path());
     assert_eq!(
         ids(&s),
-        ["scout-general", "index-warmup"],
-        "planned, not INCOMPLETE, and the code-metrics index sought: {s}"
+        ["scout-general"],
+        "planned, not INCOMPLETE, and no agent sent to warm the index: {s}"
     );
     let p = prompt_of(task(&s, "scout-general"));
     for want in [
@@ -85,7 +85,7 @@ fn a_typescript_only_diff_is_reviewed_by_the_general_lenses() {
 
     let s = submit(
         &run,
-        json!({"scout-general": scout("small", &["security"]), "index-warmup": {"indexed": false, "notes": "not indexed"}}),
+        json!({"scout-general": scout("small", &["security"])}),
     );
     assert_eq!(
         ids(&s),
@@ -136,7 +136,7 @@ fn a_typescript_only_diff_is_reviewed_by_the_general_lenses() {
         "{report}"
     );
     assert!(
-        report.contains("codebase-memory index unavailable (not indexed) -> the metrics-or-nothing lenses dropped")
+        report.contains("the complexity lens did not run: the codebase-memory index is unavailable (no review profile directory) -> the metrics-or-nothing lenses dropped")
             && !report.contains("the general profile's complexity lens"),
         "a run without the index says so, and complexity is no longer left out by construction: {report}"
     );
@@ -201,10 +201,7 @@ fn a_mixed_diff_plans_each_profile_over_its_own_files_and_settles_one_pool() {
     ]);
     let out = tempfile::tempdir().unwrap();
     let (run, s) = start(repo.path(), out.path());
-    assert_eq!(
-        ids(&s),
-        ["scout-rust", "scout-nix", "scout-general", "index-warmup"]
-    );
+    assert_eq!(ids(&s), ["scout-rust", "scout-nix", "scout-general"]);
     let general = prompt_of(task(&s, "scout-general"));
     assert!(
         general.contains("-- ':(literal)web/app.ts'") && !general.contains("lib.rs"),
@@ -215,7 +212,7 @@ fn a_mixed_diff_plans_each_profile_over_its_own_files_and_settles_one_pool() {
     let s = submit(
         &run,
         json!({"scout-rust": scout("medium", &["errors"]), "scout-nix": scout("small", &["purity"]),
-               "scout-general": scout("small", &["security"]), "index-warmup": {"indexed": false, "notes": ""}}),
+               "scout-general": scout("small", &["security"])}),
     );
     assert_eq!(
         ids(&s),

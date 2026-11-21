@@ -21,7 +21,7 @@ mod reindex;
 mod rows;
 mod run;
 
-use run::{bounded, last_line};
+use run::{bounded, payload};
 
 pub use error::CbmError;
 pub use index::Index;
@@ -74,6 +74,10 @@ pub struct Cbm {
     /// The directory of the per-project locks that keep two reviews from indexing one project at
     /// once.
     pub locks: PathBuf,
+    /// The silence after which a held lock is a dead holder's.
+    pub lock_stale: Duration,
+    /// How often a running index touches its lock, so only silence ages it.
+    pub heartbeat: Duration,
 }
 
 impl Cbm {
@@ -85,6 +89,8 @@ impl Cbm {
             budget: CALLERS_BUDGET,
             cancel: Cancel::default(),
             locks: scratch_locks(),
+            lock_stale: lock::STALE,
+            heartbeat: lock::HEARTBEAT,
         }
     }
 
@@ -115,24 +121,6 @@ impl Cbm {
         cmd.args(["cli", "--quiet", name, &args.to_string()]);
         let (ok, stdout, stderr) = bounded(cmd, limit, &self.cancel)?;
         payload(name, ok, &stdout, &stderr)
-    }
-}
-
-/// The payload of the tool `name`'s run that exited `ok` with `stdout` and `stderr`; why not,
-/// one line.
-pub(super) fn payload(name: &str, ok: bool, stdout: &str, stderr: &str) -> Result<Value, CbmError> {
-    let payload: Option<Value> = serde_json::from_str(stdout.trim()).ok();
-    let error = payload.as_ref().and_then(|p| p.get("error"));
-    match (ok, payload.as_ref(), error) {
-        (true, Some(p), None) => Ok(p.clone()),
-        (_, _, Some(e)) => Err(CbmError::Graph(format!(
-            "{name}: {}",
-            e.as_str().map_or_else(|| e.to_string(), str::to_owned)
-        ))),
-        _ => Err(CbmError::Graph(format!(
-            "{name}: {}",
-            last_line(stderr, stdout)
-        ))),
     }
 }
 

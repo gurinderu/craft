@@ -5,6 +5,8 @@
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
+use serde_json::Value;
+
 use super::CbmError;
 use crate::cancel::{Cancel, detached, kill_group};
 use crate::sources::spool::Spool;
@@ -18,6 +20,24 @@ pub(super) fn last_line(stderr: &str, stdout: &str) -> String {
     let all = format!("{stderr}\n{stdout}");
     let line = all.lines().map(str::trim).rfind(|l| !l.is_empty());
     line.unwrap_or("no message").chars().take(200).collect()
+}
+
+/// The payload of the tool `name`'s run that exited `ok` with `stdout` and `stderr`; why not,
+/// one line.
+pub(super) fn payload(name: &str, ok: bool, stdout: &str, stderr: &str) -> Result<Value, CbmError> {
+    let payload: Option<Value> = serde_json::from_str(stdout.trim()).ok();
+    let error = payload.as_ref().and_then(|p| p.get("error"));
+    match (ok, payload.as_ref(), error) {
+        (true, Some(p), None) => Ok(p.clone()),
+        (_, _, Some(e)) => Err(CbmError::Graph(format!(
+            "{name}: {}",
+            e.as_str().map_or_else(|| e.to_string(), str::to_owned)
+        ))),
+        _ => Err(CbmError::Graph(format!(
+            "{name}: {}",
+            last_line(stderr, stdout)
+        ))),
+    }
 }
 
 fn kept(name: &str, e: &std::io::Error) -> CbmError {

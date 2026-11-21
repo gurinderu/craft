@@ -151,7 +151,9 @@ fn lens_model(run: &RunState, profiles: &[Profile]) -> Model {
 /// Plans each track from its scout's answer, the conservative fallback where it gave none; the
 /// metrics-or-nothing lenses only when the warm-up found an index.
 fn plan_tracks(run: &mut RunState, profiles: &[Profile]) {
-    let index = complexity::indexed(&run.tasks);
+    let taking_part = |p: &&Profile| run.tracks.iter().any(|t| t.profile == p.id);
+    let wanted = profiles.iter().filter(taking_part).any(complexity::wanted);
+    let index = complexity::indexed(&run.context, wanted);
     let metrics = index.as_ref().is_some_and(|(found, _)| *found);
     run.notes.extend(index.and_then(|(_, note)| note));
     for (track, p) in run.tracks.iter_mut().zip(profiles) {
