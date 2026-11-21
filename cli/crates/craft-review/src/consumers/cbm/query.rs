@@ -42,8 +42,8 @@ pub(super) fn callers(name: &str, file: &str, which: Callers, limit: usize) -> S
     };
     format!(
         "MATCH (c)-[r:CALLS]->(f) WHERE f.name = '{name}' AND f.file_path = {file} AND \
-         {which}{TEST_CALLER} RETURN f.name, f.file_path, c.file_path, c.start_line, c.end_line \
-         LIMIT {limit}"
+         {which}{TEST_CALLER} RETURN f.name, f.file_path, \
+         c.file_path, c.start_line, c.end_line, r.line LIMIT {limit}"
     )
 }
 

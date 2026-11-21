@@ -37,7 +37,7 @@ pub fn probe(tool: &str, roots: &[String]) -> CodeGraph {
 pub fn look(tool: &str, cwd: &Path) -> (CodeGraph, String) {
     let roots = roots_of(cwd);
     let graph = probe(tool, &roots);
-    let says = said(&graph, &roots);
+    let says = said(&graph);
     (graph, says)
 }
 
@@ -57,20 +57,10 @@ pub fn roots_of(cwd: &Path) -> Vec<String> {
     out
 }
 
-/// The command that indexes (or refreshes the index of) the repository at `root`, quoted for a
-/// POSIX shell; craft never runs it.
+/// What `craft init` says of `g`, a line for the reviewer: a review indexes the checkout it reads
+/// itself, so a graph that indexes no project of the repository yet is asked too.
 #[must_use]
-pub fn refresh_hint(root: &str) -> String {
-    let args = serde_json::json!({"repo_path": root, "mode": "fast"});
-    let quoted = args.to_string().replace('\'', r"'\''");
-    format!("`{} cli index_repository '{quoted}'`", super::TOOL)
-}
-
-/// What `craft init` says of `g` for the repository whose roots are `roots`, a line for the
-/// reviewer; a repository no project indexes is to be indexed at its main checkout, the last
-/// root.
-#[must_use]
-pub fn said(g: &CodeGraph, roots: &[String]) -> String {
+pub fn said(g: &CodeGraph) -> String {
     match &g.state {
         GraphState::Indexed { project } => format!(
             "{} answers and indexes this repository as {project}: a review adds its callers to \
@@ -78,11 +68,9 @@ pub fn said(g: &CodeGraph, roots: &[String]) -> String {
             g.tool
         ),
         GraphState::Unindexed { note } => format!(
-            "{} answers but does not index this repository ({note}): the consumers list is built \
-             from name search alone; index it with {}, then {}",
-            g.tool,
-            refresh_hint(roots.last().map_or("<repository root>", String::as_str)),
-            RECORD
+            "{} answers and indexes no project of this repository yet ({note}): a review indexes \
+             the checkout it reads itself and adds its callers to the consumers list",
+            g.tool
         ),
         GraphState::Unavailable { note } => format!(
             "{} is not available ({note}): the consumers list is built from name search alone",

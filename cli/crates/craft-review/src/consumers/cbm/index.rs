@@ -1,6 +1,8 @@
 //! What the graph says of its projects: which one indexes the repository, and how ready, fresh
 //! and whole its index is.
 
+use std::time::Instant;
+
 use serde_json::{Value, json};
 
 use super::{Cbm, CbmError};
@@ -10,14 +12,19 @@ const PAGE: usize = 1000;
 /// How many pages are read before the listing counts as cut.
 const PAGES: usize = 20;
 
-/// What `index_status` says of a ready project: when it was indexed (`indexed_at`, UTC, as the
-/// graph prints it), the root it indexes, and the files and directories (ending in `/`) it left
-/// out or could not parse, relative to that root.
+/// What `index_status` says of a ready project: when its graph last changed (`indexed_at`, UTC, as
+/// the graph prints it: an index run that finds nothing changed keeps it), the root it indexes,
+/// the commit that root's HEAD names now (`git.head_sha`, empty when it names none: not the
+/// commit the index was made of, which the graph does not name — the same once craft has just
+/// indexed the root itself), and the files and directories (ending in `/`) it left out or could
+/// not parse, relative to that root, and whether that list was cut.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Index {
     pub at: String,
     pub root: String,
+    pub head: String,
     pub unindexed: Vec<String>,
+    pub unindexed_cut: bool,
 }
 
 impl Index {
@@ -60,12 +67,15 @@ impl Cbm {
     }
 
     /// When `project` was indexed, the root it indexes and what it left out, refused unless its
-    /// status is `ready`.
+    /// status is `ready`; asked within what is left until `deadline`.
     ///
     /// # Errors
-    /// When the graph does not answer or the project is not ready.
-    pub fn index(&self, project: &str) -> Result<Index, CbmError> {
-        let s = self.call("index_status", json!({"project": project}), self.timeout)?;
+    /// When the graph does not answer in time or the project is not ready.
+    pub fn index(&self, project: &str, deadline: Instant) -> Result<Index, CbmError> {
+        let limit = super::left(deadline)?.min(self.timeout);
+        // Without `diagnostics` the graph names how many files it left out, not which.
+        let args = json!({"project": project, "verbose": true, "diagnostics": "full"});
+        let s = self.call("index_status", args, limit)?;
         let status = text(s.get("status"));
         if status != "ready" {
             return Err(CbmError::Graph(format!(
@@ -83,10 +93,18 @@ impl Cbm {
             .iter()
             .flat_map(|&(group, kind, end)| paths(&s, group, kind, &root, end))
             .collect();
+        let unindexed_cut = listed.iter().any(|&(group, _, _)| {
+            s.get(group)
+                .and_then(|g| g.get("truncated"))
+                .and_then(Value::as_bool)
+                == Some(true)
+        });
         Ok(Index {
             at: text(s.get("indexed_at")),
             root,
+            head: text(s.get("git").and_then(|g| g.get("head_sha"))),
             unindexed,
+            unindexed_cut,
         })
     }
 }

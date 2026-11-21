@@ -62,7 +62,6 @@ fn an_index_made_before_the_base_came_in_is_stale_though_the_base_is_older() {
     assert!(matches!(*why, Stale::Older { .. }), "{why}");
     let said = why.to_string();
     assert!(said.contains("does not hold the base"), "{said}");
-    assert!(said.contains("cli index_repository"), "{said}");
     // Made at 4000, of B: it holds the base.
     fresh::stale(&b, "p", &index(&root, "1970-01-01T01:06:40Z")).unwrap();
 }
@@ -88,8 +87,30 @@ fn a_base_outside_the_indexed_root_s_history_is_stale() {
     fresh::stale(&base, "p", &index(&repo, later)).unwrap();
     let why = fresh::stale(&base, "p", &index(&other, later)).unwrap_err();
     assert!(matches!(*why, Stale::Older { .. }), "{why}");
-    let hint = format!(r#""repo_path":"{}""#, other.display());
-    assert!(why.to_string().contains(&hint), "{why}");
     let gone = fresh::stale(&base, "p", &index(&t.path().join("none"), later)).unwrap_err();
     assert!(matches!(*gone, Stale::History { .. }), "{gone}");
+}
+
+#[test]
+fn the_commit_the_index_names_is_read_before_the_reflog() {
+    let t = tempfile::tempdir().unwrap();
+    let (root, a, b) = pulled_late(t.path());
+    // Made at 4000, when HEAD was at B by the reflog, but the index says it was made of A.
+    let named = |head: &str| Index {
+        head: head.into(),
+        ..index(&root, "1970-01-01T01:06:40Z")
+    };
+    let why = fresh::stale(&b, "p", &named(&a)).unwrap_err();
+    assert!(matches!(*why, Stale::Older { .. }), "{why}");
+    fresh::stale(&b, "p", &named(&b)).unwrap();
+    // A commit named, the time is not read.
+    fresh::stale(
+        &a,
+        "p",
+        &Index {
+            head: a.clone(),
+            ..index(&root, "yesterday")
+        },
+    )
+    .unwrap();
 }

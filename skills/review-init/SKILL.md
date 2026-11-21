@@ -43,9 +43,8 @@ them. With nothing recalled, drop the heredoc and `--memory-externals -`. A loca
 (the file's path, outside the repository), `exists`, `integrations` (what the profile holds now:
 `name`, `repo`, `ref`), `memory`, `discovery`, `ci` (the CI map the profile holds now),
 `ciCandidates`, `codeGraph` (the code graph the profile holds) and `codeGraphSays`. It writes
-nothing. Tell the user `codeGraphSays` as it is, in one line: whether codebase-memory answers
-and indexes this repository, so the review adds its callers to the consumers list, and the
-command that indexes it when it does not.
+nothing. Tell the user `codeGraphSays` as it is, in one line: whether codebase-memory answers,
+so the review indexes the checkout it reads and adds the graph's callers to the consumers list.
 
 - `memory` — the recalled records as candidates, each with `system`, `repo` (its source), `ref`
   (the revision read now from its `versionFrom` file with its `versionMatch` pattern, or its

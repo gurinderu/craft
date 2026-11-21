@@ -15,7 +15,7 @@ use crate::project::CodeGraph;
 pub(super) fn stand_in(t: &Path, answer: &str) -> CodeGraph {
     let tool = t.join("cbm");
     let script = format!(
-        "#!/bin/sh\ncase \"$3\" in\n index_status) echo '{{\"status\":\"ready\",\"indexed_at\":\"2099-01-01T00:00:00Z\",\"root_path\":\"{root}\"}}';;\n query_graph) echo \"$4\" >> {log}; {answer};;\nesac\n",
+        "#!/bin/sh\ncase \"$3\" in\n index_repository) echo '{{\"status\":\"indexed\"}}';;\n index_status) echo '{{\"status\":\"ready\",\"indexed_at\":\"2099-01-01T00:00:00Z\",\"root_path\":\"{root}\"}}';;\n query_graph) echo \"$4\" >> {log}; {answer};;\nesac\n",
         log = t.join("queries").display(),
         root = repo_root(t)
     );
@@ -69,7 +69,7 @@ fn a_symbol_whose_non_test_callers_fill_the_rows_asks_no_more() {
     let full = r#"echo '{"has_more":true,"rows":[["a","src/a.rs","src/x.rs","1","2"]]}'"#;
     let g = stand_in(t.path(), full);
     let asked = Cbm::new(&g.tool)
-        .callers("p", &[("a", "src/a.rs")])
+        .callers("p", &[("a", "src/a.rs")], far())
         .unwrap();
     assert_eq!(asked.truncated, vec!["a"]);
     assert_eq!(queries(t.path()).len(), 1);
@@ -89,7 +89,9 @@ fn the_time_bound_keeps_what_was_answered_and_names_what_was_not_asked() {
     };
     let start = Instant::now();
     let symbols = [("a", "src/a.rs"), ("b", "src/b.rs"), ("c", "src/c.rs")];
-    let asked = cbm.callers("p", &symbols).unwrap();
+    let asked = cbm
+        .callers("p", &symbols, std::time::Instant::now() + cbm.budget)
+        .unwrap();
     assert!(
         start.elapsed() < Duration::from_millis(2500),
         "{:?}",
@@ -121,4 +123,9 @@ fn the_symbols_the_graph_was_not_asked_of_are_said() {
     // The name search ran for `b`: what the graph was not asked stays in the report.
     let block = lens_block(&c).unwrap();
     assert!(!block.contains("b (time bound)"), "{block}");
+}
+
+/// A deadline no test reaches.
+fn far() -> std::time::Instant {
+    std::time::Instant::now() + std::time::Duration::from_secs(600)
 }

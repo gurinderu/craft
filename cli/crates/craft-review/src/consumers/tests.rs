@@ -20,7 +20,9 @@ mod half_asked;
 mod heads;
 mod index;
 mod lists;
+mod nested;
 mod paths;
+mod reindex;
 mod stale;
 mod walk;
 
@@ -147,7 +149,7 @@ fn the_run_budget_takes_each_symbol_in_turn() {
 pub(super) fn graph(t: &Path, indexed_at: &str) -> CodeGraph {
     let tool = t.join("cbm");
     let script = format!(
-        "#!/bin/sh\ncase \"$3\" in\n index_status) echo '{{\"status\":\"ready\",\"indexed_at\":\"{indexed_at}\",\"root_path\":\"{root}\"}}';;\n query_graph) echo \"$4\" >> {log}; case \"$4\" in *k8s_rule_to_api*) echo '{{\"has_more\":true,\"rows\":[[\"k8s_rule_to_api\",\"src/lib.rs\",\"src/uses.rs\",\"3\",\"5\"],[\"k8s_rule_to_api\",\"src/lib.rs\",\"src/uses.rs\",\"7\",\"8\"],[\"k8s_rule_to_api\",\"src/elsewhere.rs\",\"src/uses.rs\",\"1\",\"1\"]]}}';; *) echo '{{\"rows\":[]}}';; esac;;\n list_projects) echo '{{\"projects\":[{{\"name\":\"p\",\"root_path\":\"/r\"}}]}}';;\n *) echo '{{\"error\":\"unknown\"}}'; exit 1;;\nesac\n",
+        "#!/bin/sh\ncase \"$3\" in\n index_repository) echo '{{\"status\":\"indexed\"}}';;\n index_status) echo '{{\"status\":\"ready\",\"indexed_at\":\"{indexed_at}\",\"root_path\":\"{root}\"}}';;\n query_graph) echo \"$4\" >> {log}; case \"$4\" in *k8s_rule_to_api*) echo '{{\"has_more\":true,\"rows\":[[\"k8s_rule_to_api\",\"src/lib.rs\",\"src/uses.rs\",\"3\",\"5\"],[\"k8s_rule_to_api\",\"src/lib.rs\",\"src/uses.rs\",\"7\",\"8\"],[\"k8s_rule_to_api\",\"src/elsewhere.rs\",\"src/uses.rs\",\"1\",\"1\"]]}}';; *) echo '{{\"rows\":[]}}';; esac;;\n list_projects) echo '{{\"projects\":[{{\"name\":\"p\",\"root_path\":\"/r\"}}]}}';;\n *) echo '{{\"error\":\"unknown\"}}'; exit 1;;\nesac\n",
         log = t.join("queries").display(),
         root = repo_root(t)
     );
@@ -190,9 +192,6 @@ fn a_stale_or_absent_graph_leaves_the_name_search_alone_and_says_why() {
     assert!(
         c.graph_skipped
             .contains("so which commit it was made of is unknown")
-            && c.graph_skipped.contains("cli index_repository")
-            && c.graph_skipped
-                .contains(&format!(r#""repo_path":"{}""#, repo_root(t.path())))
             && !c.graph_skipped.contains("warmup"),
         "{}",
         c.graph_skipped
@@ -200,7 +199,7 @@ fn a_stale_or_absent_graph_leaves_the_name_search_alone_and_says_why() {
     let s = section(&c);
     assert!(s.contains("Built from: name search."), "{s}");
     assert!(
-        s.contains("codebase-memory not used: the HEAD history of"),
+        s.contains("codebase-memory not used: the index of p names no commit"),
         "{s}"
     );
 

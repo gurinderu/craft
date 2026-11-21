@@ -32,4 +32,11 @@ pub enum GraphError {
     },
     #[error("{0}")]
     Stale(#[from] Box<Stale>),
+    #[error("the graph could not index this checkout ({checkout}) in time for the list: {why}")]
+    Reindex { checkout: String, why: CbmError },
+    #[error(
+        "the index of {project} changed while its callers were asked (another run indexed it): \
+         its answers are not used"
+    )]
+    Moved { project: String },
 }

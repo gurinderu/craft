@@ -1,10 +1,10 @@
 //! The code graph as the binary asks it: `codebase-memory-mcp cli --quiet <tool> '<json>'`, one
 //! process per question, its payload JSON on stdout (`"format": "json"`), bounded in time
-//! (realm @nick/craft, node #529). Never indexes: an index older than the review's base is
-//! named, with the command that refreshes it.
+//! (realm @nick/craft, node #529). A review indexes the checkout it reads before it asks
+//! ([`Cbm::reindex`]).
 
 use std::process::Command;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
@@ -15,6 +15,7 @@ mod error;
 mod index;
 mod probe;
 mod query;
+mod reindex;
 mod rows;
 mod run;
 
@@ -23,7 +24,7 @@ use run::{bounded, last_line};
 pub use error::CbmError;
 pub use index::Index;
 
-pub use probe::{RECORD, look, probe, refresh_hint, roots_of, said};
+pub use probe::{RECORD, look, probe, roots_of, said};
 
 /// The program `craft init` asks.
 pub const TOOL: &str = "codebase-memory-mcp";
@@ -34,8 +35,8 @@ const CALLERS_BUDGET: Duration = Duration::from_secs(90);
 /// How many caller rows one symbol's query keeps.
 pub(super) const ROWS_PER_SYMBOL: usize = 50;
 
-/// One caller the graph names: the called symbol, the file it is defined in, and the calling
-/// function's file and line span.
+/// One caller the graph names: the called symbol, the file it is defined in, the calling
+/// function's file and line span, and the call's own line when the edge names one.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Caller {
     pub symbol: String,
@@ -43,6 +44,7 @@ pub struct Caller {
     pub file: String,
     pub start: u32,
     pub end: u32,
+    pub line: Option<u32>,
 }
 
 /// The graph's callers of a review's symbols, and the symbols whose callers were cut at
@@ -109,6 +111,18 @@ impl Cbm {
             ))),
         }
     }
+}
+
+/// What is left until `deadline`.
+///
+/// # Errors
+/// [`CbmError::TimeBound`] once it has passed.
+pub(super) fn left(deadline: Instant) -> Result<Duration, CbmError> {
+    let left = deadline.saturating_duration_since(Instant::now());
+    if left.is_zero() {
+        return Err(CbmError::TimeBound);
+    }
+    Ok(left)
 }
 
 /// Whether `s` is an identifier, so it can be quoted into a query as it is.

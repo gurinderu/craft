@@ -93,7 +93,7 @@ pub(super) fn all(c: &Consumers) -> Vec<Gap> {
             "graphUnlocated",
             (c.graph_unlocated > 0).then(|| {
                 format!(
-                    "- {} {GRAPH} caller(s) not located in head: no line of the span names the symbol\n",
+                    "- {} {GRAPH} caller(s) not located in head: no line of the span names the symbol, or only as another type's item of that name\n",
                     c.graph_unlocated
                 )
             }),

@@ -237,9 +237,12 @@ for Rust, nix flake check, statix and deadnix for Nix: a red check blocks, a dia
 lenses and verifiers see, a tool not installed is named), a scout per profile whose answer plans its lenses over its own files, the
 consumers list, built at start beside the gate (`src/consumers/`: for each changed Rust symbol the lines outside the diff that name it —
 callers, implementors and same-named declarations, places passing it as a value — from a name search, always run, and,
-when the reviewer's profile says codebase-memory answers (`src/consumers/cbm/`, `graph.rs`) and its index is of this
-repository and was made of a commit holding the base (`fresh.rs`, by the root's HEAD reflog at the index's time), the
-graph's callers merged in, the report naming which sources built it; the whole list
+when the reviewer's profile says codebase-memory answers (`src/consumers/cbm/`, `graph.rs`), the checkout the review
+reads indexed first within the list's graph budget (`cbm/reindex.rs`; the profile's project when it is of this checkout,
+else one project of craft's own per repository moved to each checkout reviewed: `graph/target.rs`), its index checked to
+be of this checkout and of a commit holding the base (`fresh.rs`) and read again after the questions (answers dropped
+when it moved), the graph's callers merged in (`graph/sites.rs`: none from a checkout nested in this one), the report
+naming which sources built it and why the graph was not asked; the whole list
 saved as `consumers.json` in the run directory, each lens given a budgeted part to go through line by line; `craft
 init` probes codebase-memory and writes `[code_graph]` into the profile, keeping a usable one it held while the graph
 does not answer, a section of a shape it does not read taken as unusable rather than as an unreadable profile), the

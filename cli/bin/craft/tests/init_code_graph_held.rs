@@ -37,15 +37,14 @@ fn a_write_while_the_graph_does_not_answer_keeps_the_usable_graph_held() {
 }
 
 #[test]
-fn a_graph_that_indexes_nothing_names_the_write_that_records_it_once_indexed() {
+fn a_graph_that_indexes_nothing_is_recorded_for_a_review_to_index_itself() {
     let tmp = tempfile::tempdir().unwrap();
     let t = tmp.path();
     let repo = repo(t);
     let (v, profile) = init(t, &stub(t, NONE), &repo, "--write");
     let says = v["codeGraphSays"].as_str().unwrap();
-    assert!(says.contains("cli index_repository"), "{says}");
     assert!(
-        says.contains("then record it with `craft init --write`"),
+        says.contains("a review indexes the checkout it reads itself"),
         "{says}"
     );
     assert!(profile.contains("state = \"unindexed\""), "{profile}");
@@ -69,7 +68,7 @@ fn a_read_only_init_says_the_graph_now_and_where_the_profile_holds_otherwise() {
     assert_eq!(v["codeGraph"]["project"], "mine", "{v}");
     let says = v["codeGraphSays"].as_str().unwrap();
     assert!(
-        says.starts_with("now: codebase-memory-mcp answers but does not index"),
+        says.starts_with("now: codebase-memory-mcp answers and indexes no project"),
         "{says}"
     );
     assert!(

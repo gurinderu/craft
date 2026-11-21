@@ -1,11 +1,14 @@
 //! Whether the code graph's index can serve a review: it was made of a commit holding the
-//! review's base (realm @nick/craft, node #529). The graph names no commit it indexed, only when
-//! (`indexed_at`), so the commit is the one its root's HEAD was at then, read from that HEAD's
-//! reflog — written by the same clock as the index, unlike a commit's own time.
+//! review's base (realm @nick/craft, node #529). A review indexes its checkout first, so this
+//! holds by construction; it stays as the guard. The commit is the one the root's HEAD names now
+//! (`git.head_sha`: the graph names no commit of the index itself, so this holds only right after
+//! the review indexed that root), or, when it names none, the one its root's HEAD was at when it
+//! was made (`indexed_at`), read from that HEAD's reflog — written by the same clock as the index,
+//! unlike a commit's own time (realm @nick/craft, node #530).
 
 use std::path::Path;
 
-use super::cbm::{Index, refresh_hint};
+use super::cbm::Index;
 use crate::git::GitError;
 
 /// How many of the root's HEAD moves are read back.
@@ -26,26 +29,22 @@ pub enum Stale {
         source: GitError,
     },
     #[error(
-        "the HEAD history of {root} reaches back to no time before the index of {project} was \
-         made ({at}), so which commit it was made of is unknown; craft never reindexes — refresh \
-         it with {refresh}"
+        "the index of {project} names no commit, and the HEAD history of {root} reaches back to no \
+         time before it was made ({at}), so which commit it was made of is unknown"
     )]
     Unknown {
         project: String,
         root: String,
         at: String,
-        refresh: String,
     },
     #[error(
-        "the index of {project} (made {at}) is of {commit}, which does not hold the base {base}; \
-         craft never reindexes — refresh it with {refresh}"
+        "the index of {project} (made {at}) is of {commit}, which does not hold the base {base}"
     )]
     Older {
         project: String,
         at: String,
         commit: String,
         base: String,
-        refresh: String,
         /// git's answer to whether that commit holds the base: its exit, or why it could not tell.
         #[source]
         source: GitError,
@@ -81,13 +80,12 @@ pub(super) fn head_at(moves: &str, at: i64) -> Option<String> {
     })
 }
 
-/// Why `index` (of the graph's `project`, its root not empty) cannot serve a review whose base
-/// is `base`; `Ok` when the commit its root's HEAD was at when it was made holds the base.
-///
-/// # Errors
-/// When it names no time, its root's HEAD history cannot be read or does not reach back to it,
-/// or that commit does not hold the base.
-pub(super) fn stale(base: &str, project: &str, index: &Index) -> Result<(), Box<Stale>> {
+/// The commit `index` (of the graph's `project`, its root not empty, just indexed) was made of:
+/// its root's HEAD now, else the one that HEAD was at when it was made.
+fn made_of(project: &str, index: &Index) -> Result<String, Box<Stale>> {
+    if !index.head.is_empty() {
+        return Ok(index.head.clone());
+    }
     let at = iso_unix(&index.at).ok_or_else(|| Stale::NoTime {
         project: project.to_owned(),
         at: index.at.clone(),
@@ -108,15 +106,24 @@ pub(super) fn stale(base: &str, project: &str, index: &Index) -> Result<(), Box<
         root: index.root.clone(),
         source,
     })?;
-    let refresh = refresh_hint(&index.root);
-    let Some(commit) = head_at(&moves, at) else {
-        return Err(Box::new(Stale::Unknown {
+    head_at(&moves, at).ok_or_else(|| {
+        Box::new(Stale::Unknown {
             project: project.to_owned(),
             root: index.root.clone(),
             at: index.at.clone(),
-            refresh,
-        }));
-    };
+        })
+    })
+}
+
+/// Why `index` (of the graph's `project`, its root not empty) cannot serve a review whose base
+/// is `base`; `Ok` when the commit it was made of holds the base.
+///
+/// # Errors
+/// When it names no commit and no time, or its root's HEAD history cannot be read or does not
+/// reach back to it, or that commit does not hold the base.
+pub(super) fn stale(base: &str, project: &str, index: &Index) -> Result<(), Box<Stale>> {
+    let commit = made_of(project, index)?;
+    let root = Path::new(&index.root);
     let holds = crate::git::git(root, &["merge-base", "--is-ancestor", base, &commit]);
     holds.map(drop).map_err(|source| {
         Box::new(Stale::Older {
@@ -124,7 +131,6 @@ pub(super) fn stale(base: &str, project: &str, index: &Index) -> Result<(), Box<
             at: index.at.clone(),
             commit: commit.chars().take(12).collect(),
             base: base.chars().take(12).collect(),
-            refresh,
             source,
         })
     })

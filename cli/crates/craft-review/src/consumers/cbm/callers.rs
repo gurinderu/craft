@@ -43,15 +43,19 @@ impl Asked {
 impl Cbm {
     /// The functions that call each of `symbols` (a name, an identifier, and the file it is
     /// defined in), by a `CALLS` edge: per symbol its non-test callers, then its test callers in
-    /// the room left of [`ROWS_PER_SYMBOL`]. Past the budget, or when a later question fails, the
+    /// the room left of [`ROWS_PER_SYMBOL`]. Past `deadline`, or when a later question fails, the
     /// answers so far are kept and the symbols left are named as not asked; a symbol whose test
     /// callers were not asked, or some of whose rows did not read, is named with why.
     ///
     /// # Errors
     /// When the graph does not answer the first question.
-    pub fn callers(&self, project: &str, symbols: &[(&str, &str)]) -> Result<Asked, CbmError> {
+    pub fn callers(
+        &self,
+        project: &str,
+        symbols: &[(&str, &str)],
+        deadline: Instant,
+    ) -> Result<Asked, CbmError> {
         let mut out = Asked::default();
-        let deadline = Instant::now() + self.budget;
         let mut todo = Vec::new();
         for &(name, file) in symbols.iter().filter(|s| is_ident(s.0)) {
             match query::quoted(file) {

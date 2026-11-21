@@ -49,13 +49,10 @@ fn the_probe_finds_the_project_by_root_or_says_the_graph_is_not_there() {
         matches!(&unindexed.state, GraphState::Unindexed { note } if note.contains("no project indexes")),
         "{unindexed:?}"
     );
-    let says = cbm::said(&unindexed, &["/elsewhere".into()]);
+    let says = cbm::said(&unindexed);
     assert!(
-        says.contains(r#"`codebase-memory-mcp cli index_repository '{"mode":"fast","repo_path":"/elsewhere"}'`"#),
-        "{says}"
-    );
-    assert!(
-        says.contains("then record it with `craft init --write`"),
+        says.contains("indexes no project of this repository yet")
+            && says.contains("a review indexes the checkout it reads itself"),
         "{says}"
     );
     assert!(!says.contains("warmup"), "{says}");
@@ -64,41 +61,16 @@ fn the_probe_finds_the_project_by_root_or_says_the_graph_is_not_there() {
         matches!(&missing.state, GraphState::Unavailable { note } if note.contains("could not run")),
         "{missing:?}"
     );
-    let index = Cbm::new(&g.tool).index("p").unwrap();
+    let index = Cbm::new(&g.tool)
+        .index(
+            "p",
+            std::time::Instant::now() + std::time::Duration::from_secs(600),
+        )
+        .unwrap();
     let root = repo_root(t.path());
     assert_eq!(
         (index.at.as_str(), index.root.as_str()),
         ("x", root.as_str())
-    );
-}
-
-#[test]
-fn a_linked_worktree_is_told_to_index_its_main_checkout() {
-    let unindexed = CodeGraph {
-        tool: cbm::TOOL.into(),
-        state: GraphState::Unindexed {
-            note: "no project indexes /wt or /main".into(),
-        },
-    };
-    let says = cbm::said(&unindexed, &["/wt".into(), "/main".into()]);
-    assert!(says.contains(r#""repo_path":"/main""#), "{says}");
-    assert!(!says.contains(r#""repo_path":"/wt""#), "{says}");
-}
-
-#[test]
-fn a_root_with_a_quote_is_quoted_for_the_shell() {
-    let hint = cbm::refresh_hint("/it's here");
-    let command = hint.trim_matches('`');
-    let arg = command
-        .strip_prefix("codebase-memory-mcp cli index_repository ")
-        .unwrap();
-    let out = Command::new("sh")
-        .args(["-c", &format!("printf %s {arg}")])
-        .output()
-        .unwrap();
-    assert_eq!(
-        String::from_utf8(out.stdout).unwrap(),
-        r#"{"mode":"fast","repo_path":"/it's here"}"#
     );
 }
 

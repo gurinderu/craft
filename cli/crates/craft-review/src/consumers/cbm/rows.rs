@@ -27,10 +27,7 @@ impl Cbm {
         max: usize,
         deadline: Instant,
     ) -> Result<Rows, CbmError> {
-        let left = deadline.saturating_duration_since(Instant::now());
-        if left.is_zero() {
-            return Err(CbmError::TimeBound);
-        }
+        let left = super::left(deadline)?;
         // When what is left is the shorter limit, a question that runs out of it ran out of the
         // budget.
         let budget_bound = left <= self.timeout;
@@ -63,7 +60,8 @@ impl Cbm {
     }
 }
 
-/// One `query_graph` row as a [`Caller`]; the graph prints numbers as strings.
+/// One `query_graph` row as a [`Caller`]; the graph prints numbers as strings, and an edge with no
+/// call line leaves its cell empty.
 fn caller(row: &Value) -> Option<Caller> {
     let cell = |i: usize| row.get(i);
     let num = |i: usize| -> Option<u32> {
@@ -78,5 +76,6 @@ fn caller(row: &Value) -> Option<Caller> {
         file: cell(2)?.as_str()?.to_owned(),
         start: num(3)?,
         end: num(4)?,
+        line: num(5),
     })
 }

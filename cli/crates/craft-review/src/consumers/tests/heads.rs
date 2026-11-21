@@ -14,7 +14,7 @@ use crate::project::CodeGraph;
 fn index_of(t: &Path, root: &str, rows: &str) -> CodeGraph {
     let tool = t.join("cbm");
     let script = format!(
-        "#!/bin/sh\ncase \"$3\" in\n index_status) echo '{{\"status\":\"ready\",\"indexed_at\":\"2099-01-01T00:00:00Z\",\"root_path\":\"{root}\"}}';;\n query_graph) case \"$4\" in *\"AND NOT (\"*k8s_rule_to_api*|*k8s_rule_to_api*\"AND NOT (\"*) echo '{{\"rows\":[{rows}]}}';; *) echo '{{\"rows\":[]}}';; esac;;\nesac\n"
+        "#!/bin/sh\ncase \"$3\" in\n index_repository) echo '{{\"status\":\"indexed\"}}';;\n index_status) echo '{{\"status\":\"ready\",\"indexed_at\":\"2099-01-01T00:00:00Z\",\"root_path\":\"{root}\"}}';;\n query_graph) case \"$4\" in *\"AND NOT (\"*k8s_rule_to_api*|*k8s_rule_to_api*\"AND NOT (\"*) echo '{{\"rows\":[{rows}]}}';; *) echo '{{\"rows\":[]}}';; esac;;\nesac\n"
     );
     exe::write_executable(&tool, &script).unwrap();
     CodeGraph::indexed(&tool.display().to_string(), "p")

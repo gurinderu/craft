@@ -1,6 +1,6 @@
 //! What `index_status` and `list_projects` say is read whole: a project not ready is never
-//! asked, a file the index left out is named, the listing is paged to its end, and an error
-//! that is not a string is still said.
+//! asked, a file the index left out is named (a symbol with no callers too, when that list was
+//! cut), the listing is paged to its end, and an error that is not a string is still said.
 
 use std::path::Path;
 
@@ -16,7 +16,7 @@ use crate::project::CodeGraph;
 fn stand_in(t: &Path, status: &str, listed: &str) -> CodeGraph {
     let tool = t.join("cbm");
     let script = format!(
-        "#!/bin/sh\ncase \"$3\" in\n index_status) echo '{{{status}}}';;\n list_projects) {listed};;\n query_graph) echo \"$4\" >> {log}; echo '{{\"rows\":[]}}';;\nesac\n",
+        "#!/bin/sh\ncase \"$3\" in\n index_repository) echo '{{\"status\":\"indexed\"}}';;\n index_status) echo '{{{status}}}';;\n list_projects) {listed};;\n query_graph) echo \"$4\" >> {log}; echo '{{\"rows\":[]}}';;\nesac\n",
         log = t.join("queries").display()
     );
     exe::write_executable(&tool, &script).unwrap();
@@ -37,8 +37,7 @@ fn a_project_not_ready_is_refused_and_never_asked_for_callers() {
     let g = stand_in(t.path(), r#""status":"indexing""#, "true");
     let c = build(&repo, &diff_of(&repo), Ok(g));
     assert!(
-        c.graph_skipped
-            .contains(r#"the index of p is "indexing", not ready"#),
+        c.graph_skipped.contains(r#"is "indexing", not ready"#),
         "{}",
         c.graph_skipped
     );
@@ -63,6 +62,23 @@ fn a_changed_symbol_in_a_file_the_index_left_out_is_named_not_asked() {
 }
 
 #[test]
+fn a_cut_list_of_left_out_paths_names_each_symbol_the_graph_gave_no_caller() {
+    let t = tempfile::tempdir().unwrap();
+    let repo = fixture(t.path(), "");
+    let cut = r#","not_indexed":{"files":[],"dirs":[],"truncated":true}"#;
+    let g = stand_in(t.path(), &ready(t.path(), cut), "true");
+    let c = build(&repo, &diff_of(&repo), Ok(g));
+    let why = "no callers, and the graph's list of the files it left out was cut";
+    assert!(
+        c.graph_unasked
+            .iter()
+            .any(|u| u.starts_with("k8s_rule_to_api (") && u.contains(why)),
+        "{:?}",
+        c.graph_unasked
+    );
+}
+
+#[test]
 fn every_list_of_left_out_paths_is_read_relative_to_the_root() {
     let t = tempfile::tempdir().unwrap();
     let root = repo_root(t.path());
@@ -70,7 +86,12 @@ fn every_list_of_left_out_paths_is_read_relative_to_the_root() {
         r#","not_indexed":{{"files":["a.rs"],"dirs":["{root}/gen/"]}},"parse_unusable":{{"files":[{{"path":"b.rs"}}]}},"skipped":{{"files":["{root}/c.rs"]}}"#
     );
     let g = stand_in(t.path(), &ready(t.path(), &lists), "true");
-    let index = Cbm::new(&g.tool).index("p").unwrap();
+    let index = Cbm::new(&g.tool)
+        .index(
+            "p",
+            std::time::Instant::now() + std::time::Duration::from_secs(600),
+        )
+        .unwrap();
     assert_eq!(index.unindexed, vec!["a.rs", "gen/", "b.rs", "c.rs"]);
     assert!(index.leaves_out("gen/x.rs") && index.leaves_out("c.rs"));
     assert!(
