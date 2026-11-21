@@ -21,7 +21,7 @@ function forward(binary, args, env) {
  */
 export async function run(argv, env) {
   try {
-    const binary = env['CRAFT_BIN'] || (await ensure(parseArgs(['ensure'], env)))
+    const binary = env['CRAFT_BIN'] || (await ensure({ ...parseArgs(['ensure'], env), token: env['GITHUB_TOKEN'] || env['GH_TOKEN'] || '' }))
     const exitCode = await forward(binary, argv, env)
     return { exitCode, stdout: [], stderr: [] }
   } catch (error) {

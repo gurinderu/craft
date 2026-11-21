@@ -16,7 +16,7 @@ const GROUPS_MAX: usize = 20;
 const TITLES_MAX: usize = 5;
 const REAL_FINDING_RULE: &str = "rejected, refuted, justified, covered, deferred and dismissed findings are not counted, nor unverified and suspected ones — only findings verified real and not already settled";
 
-/// A store that cannot be listed is not an empty store.
+/// Errors from listing the store or representing its paths.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("listing run store {}: {source}", path.display())]
@@ -35,6 +35,7 @@ pub enum Error {
 ///
 /// # Errors
 /// When the store cannot be listed, or an output path is not representable as Unicode.
+/// The initial existence probe can hide metadata errors as absence (realm @nick/craft, #568).
 pub fn recurring(store: &Path, project: &Path, paths: &[String]) -> Result<Js, Error> {
     let project = craft_store::git::repo_key(project);
     let project = path_text(&project)?;

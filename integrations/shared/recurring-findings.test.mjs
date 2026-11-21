@@ -60,3 +60,22 @@ test('an unavailable explicit binary fails without downloading or showing empty 
   assert.equal(result.stdout, '')
   assert.match(result.stderr, /recurring-findings:.*ENOENT/)
 })
+
+test.skipIf(process.platform === 'win32').each([
+  ['github wins', 'github-token', 'gh-token', 'github-token'],
+  ['gh fallback', '', 'gh-token', 'gh-token'],
+  ['anonymous', '', '', ''],
+])('uncached adapter forwards downloader credentials: %s', (_name, github, gh, expected) => {
+  // Stop at the download process boundary: no network or real credentials involved.
+  fs.writeFileSync(path.join(tmp, 'sh'), '#!/bin/sh\nprintf "credential:%s:%s\\n" "$GITHUB_TOKEN" "$GH_TOKEN" >&2\nexit 23\n', { mode: 0o755 })
+  const result = spawnSync(process.execPath, [entry], {
+    cwd: tmp,
+    env: { ...process.env, HOME: tmp, PATH: tmp, CRAFT_BIN: '', GITHUB_TOKEN: github, GH_TOKEN: gh },
+    encoding: 'utf8',
+    timeout: 10_000,
+  })
+  assert.equal(result.error, undefined)
+  assert.equal(result.status, 1)
+  assert.equal(result.stdout, '')
+  assert.equal(result.stderr, `recurring-findings: credential:${expected}:\n`)
+})
