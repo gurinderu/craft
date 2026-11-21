@@ -1,5 +1,5 @@
 //! Every finding matched to the record that answers it, with the match judge's verdicts
-//! (`matchFindings`, `surePairsToAsk`, `askJudge` in `lib/prior-decision-match.mjs`; realm
+//! (`matchFindings`, `surePairsToAsk`, `askJudge` in `integrations/shared/prior-decision-match.mjs`; realm
 //! @nick/craft, nodes #230, #236, #282): the candidate pairs ranked and cut at the judge's bound,
 //! then the outright matches the split will raise again, asked about `violates` only; a pair the
 //! judge gave no verdict falls back to the title rule, and what it could not decide is named.

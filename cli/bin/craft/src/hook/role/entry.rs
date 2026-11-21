@@ -1,6 +1,6 @@
 //! The hooks' trace (realm @nick/craft, nodes #281, #283): one JSON line per run in
 //! `~/.craft/hooks.jsonl` — the event, whether it spoke, on what, or why it stayed silent — which
-//! `lib/analyze-runs.mjs` reads back, and the prompt hook reads for what a session already heard.
+//! `integrations/shared/analyze-runs.mjs` reads back, and the prompt hook reads for what a session already heard.
 //! Writing never fails the session (#276); the file is bounded by rotation to one older
 //! generation. The fields keep the order the Node hooks wrote them in.
 

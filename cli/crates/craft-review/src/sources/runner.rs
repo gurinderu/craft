@@ -15,7 +15,7 @@ pub(crate) mod spool;
 /// How long one git command may run.
 const GIT_TIMEOUT: Duration = Duration::from_secs(120);
 /// How long the whole preparation may run: well under the 600 s the driver gives `review start`
-/// (`lib/cli-review-steps.mjs`), so points past it are named and the review still starts.
+/// (`integrations/shared/cli-review-steps.mjs`), so points past it are named and the review still starts.
 const BUDGET: Duration = Duration::from_secs(240);
 /// How long ssh waits to connect, unless the caller chose its own ssh ([`callers_ssh`]).
 const SSH: &str = "ssh -o BatchMode=yes -o ConnectTimeout=20";

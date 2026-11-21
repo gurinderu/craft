@@ -1,4 +1,4 @@
-//! A passed record the memory opposes, as `blockedPassed` in `lib/memory-recall.mjs` judges it
+//! A passed record the memory opposes, as `blockedPassed` in `integrations/shared/memory-recall.mjs` judges it
 //! (realm @nick/craft, nodes #224, #229): a record the store withdrew or superseded (the recall's
 //! `inactive`), or an active recalled successor that supersedes or answers it, holds a passed copy
 //! back — unless the passed record is dated later than every one of them; then it is applied over

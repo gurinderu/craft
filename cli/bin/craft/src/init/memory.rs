@@ -1,7 +1,7 @@
 //! The project memory's `external` records proposed as integration points — the owner's decision on
 //! realm @nick/craft node #470, option (a). The binary reads no memory store itself: the session
 //! recalls the records with the craft:memory skill and pipes them in (`--memory-externals -`), and
-//! `lib/craft-externals.mjs memory` reads each one's revision from its version file and pattern,
+//! `integrations/shared/craft-externals.mjs memory` reads each one's revision from its version file and pattern,
 //! or takes the version stated, as a review reads it (node #431). Each candidate carries its
 //! system, its source and that revision, and the `--point` that writes it; the reviewer confirms
 //! it. Nothing here fails the proposal: a missing plugin root, node or readable list is named.

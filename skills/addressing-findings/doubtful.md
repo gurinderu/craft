@@ -19,7 +19,7 @@ The sorting changes nothing in the verdict.
    ```bash
    pr=$(gh pr view --json number --jq .number)
    sha=$(gh pr view --json headRefOid --jq .headRefOid)
-   node "<this skill's base directory>/../../lib/finding-post.mjs" --as question --commit "$sha" <n> \
+   node "<this skill's base directory>/../../integrations/shared/finding-post.mjs" --as question --commit "$sha" <n> \
      | gh api "repos/{owner}/{repo}/pulls/$pr/comments" --input -
    ```
 
@@ -53,7 +53,7 @@ The sorting changes nothing in the verdict.
    branch's it is refused, and `--record <file>` must name the run meant):
 
    ```bash
-   node "<this skill's base directory>/../../lib/craft-log-run.mjs" sorting-choice --n <n> --choice <question|defect|dropped>
+   node "<this skill's base directory>/../../integrations/shared/craft-log-run.mjs" sorting-choice --n <n> --choice <question|defect|dropped>
    ```
 
    It prints the finding it recorded against — check it is the one chosen. A failure is named in

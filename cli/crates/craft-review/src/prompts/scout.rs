@@ -1,5 +1,5 @@
-//! The scout's prompt (`scoutPrompt` in `lib/review-lens-prompts.mjs`) and the dedup pass's
-//! (`dedupModelGroups` in `lib/review-dedup.mjs`).
+//! The scout's prompt (`scoutPrompt` in `integrations/shared/review-lens-prompts.mjs`) and the dedup pass's
+//! (`dedupModelGroups` in `integrations/shared/review-dedup.mjs`).
 
 use serde_json::Value;
 

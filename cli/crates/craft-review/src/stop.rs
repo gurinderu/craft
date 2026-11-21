@@ -1,5 +1,5 @@
 //! Stopping a run on the account's usage limit (realm @nick/craft, nodes #299, #300), as
-//! `lib/usage-limit.mjs` stops the engines: every dispatch after a limit fails the same way until
+//! `integrations/shared/usage-limit.mjs` stops the engines: every dispatch after a limit fails the same way until
 //! it resets, so a run that keeps handing out tasks spends them on agents that cannot answer.
 //!
 //! Two stops. The host saw the limit's own text — an agent's error or short answer — and says so on
@@ -48,7 +48,7 @@ pub struct Stop {
 
 impl Stop {
     /// The stop as a parent reads it back from a report (`limitInReport`, `deathsInReport` in
-    /// `lib/limit-report.mjs`).
+    /// `integrations/shared/limit-report.mjs`).
     #[must_use]
     pub fn note(&self) -> String {
         match self.cause {
@@ -95,7 +95,7 @@ pub(crate) fn open(run: &mut RunState) {
 
 /// Whether the round settled with every task in it dead: none pending, none answered alive. A task
 /// the host abandoned at its deadline was a live agent that took too long, as the engine reads a
-/// deadline fire (`lib/usage-limit.mjs`, realm @nick/craft, #299): a round with one is not dead, and
+/// deadline fire (`integrations/shared/usage-limit.mjs`, realm @nick/craft, #299): a round with one is not dead, and
 /// goes on with its failed tasks.
 pub(crate) fn round_died(run: &RunState) -> Option<String> {
     let settled = run.tasks.iter().all(|t| t.state != TaskState::Pending);

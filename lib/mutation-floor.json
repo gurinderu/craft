@@ -1,4 +1,0 @@
-{
-  "break": 70,
-  "mutate": ["lib/**/*.mjs", "!lib/**/*.test.mjs", "!lib/engine-harness.mjs", "!lib/sandbox-globals.mjs"]
-}

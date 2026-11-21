@@ -1,4 +1,4 @@
-//! Unit mode's tasks beside the lens rounds (`lib/review-unit-scope.mjs`): the contract lens of each
+//! Unit mode's tasks beside the lens rounds (`integrations/shared/review-unit-scope.mjs`): the contract lens of each
 //! touched unit in the first round (realm @nick/craft, #327), and the questions the confined lenses
 //! leave in their answers for the coordinator after the last round ([`super::coordinator`]).
 

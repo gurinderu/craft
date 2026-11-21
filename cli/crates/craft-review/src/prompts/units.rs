@@ -1,5 +1,5 @@
-//! Unit mode's prompts (`lib/review-unit-prompts.mjs` and `confinedLensPrompt` in
-//! `lib/review-lens-prompts.mjs`; realm @nick/craft, #316, #321, #327): a lens over a directory
+//! Unit mode's prompts (`integrations/shared/review-unit-prompts.mjs` and `confinedLensPrompt` in
+//! `integrations/shared/review-lens-prompts.mjs`; realm @nick/craft, #316, #321, #327): a lens over a directory
 //! slice, a lens confined to a unit batch, the contract lens of one unit and the seam pass — each
 //! rendered from the templates the engine renders, held equal by the prompt parity cases.
 //!

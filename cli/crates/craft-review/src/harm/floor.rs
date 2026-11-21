@@ -1,4 +1,4 @@
-//! The deletion/recovery-path floor (`lib/path-severity-floor.mjs`): a catalogue lens's finding on
+//! The deletion/recovery-path floor (`integrations/shared/path-severity-floor.mjs`): a catalogue lens's finding on
 //! a deletion or recovery path, below Medium, naming a harm of operator recovery or worse, is
 //! raised to Medium before verification, with a note saying so.
 

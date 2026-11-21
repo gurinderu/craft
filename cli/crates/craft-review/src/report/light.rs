@@ -1,5 +1,5 @@
 //! What a report says about the review it does not claim: the light pass's mark and section, as
-//! `markVerdictLight` and `lightSection` in `lib/review-depth.mjs` word them (realm @nick/craft,
+//! `markVerdictLight` and `lightSection` in `integrations/shared/review-depth.mjs` word them (realm @nick/craft,
 //! node #295), and the parts of craft:review this CLI does not run.
 
 use crate::plan::Plan;

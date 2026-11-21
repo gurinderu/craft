@@ -1,5 +1,5 @@
 //! What a finding a record answers carries (`priorDecisionMark`, `reraiseReason`, `reraisedNote` in
-//! `lib/prior-decision-apply.mjs`): set aside, the record's mark; raised again, why.
+//! `integrations/shared/prior-decision-apply.mjs`): set aside, the record's mark; raised again, why.
 
 use serde_json::{Map, Value, json};
 

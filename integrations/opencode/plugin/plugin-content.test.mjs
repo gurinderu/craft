@@ -8,7 +8,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseMarkdown } from './frontmatter.ts'
 import { isPackage, PACKAGE_NAME, permissionsOf, registerOrSay } from './plugin-content.ts'
-import { PACKAGE_NAME as LAID_OUT_AS } from '../../../lib/opencode-package.mjs'
+import { PACKAGE_NAME as LAID_OUT_AS } from '../../shared/opencode-package.mjs'
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 /** @type {string[]} */

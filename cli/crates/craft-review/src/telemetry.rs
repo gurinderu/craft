@@ -1,6 +1,6 @@
 //! What the finished step hands the host for the run's record beside the verdict, in the shape
 //! review's record keeps it (`dimensions`, `verification` and `lensRounds` in
-//! `lib/review-ledger.mjs` and `lib/review-record.mjs`), so the run-store report reads a CLI run's
+//! `integrations/shared/review-ledger.mjs` and `integrations/shared/review-record.mjs`), so the run-store report reads a CLI run's
 //! lens yield and refutation as it reads the engine's: one row per lens with what verification
 //! made of its findings, and the run's verification counts. Counted as each verification pass
 //! settles, before the project's memory sets any finding aside, as the engine counts its tiers.
@@ -235,7 +235,7 @@ pub fn verification(run: &RunState) -> Value {
     })
 }
 
-/// `refuted / candidates` to two places, 0 over none (`refuteRate` in `lib/run-record.mjs`).
+/// `refuted / candidates` to two places, 0 over none (`refuteRate` in `integrations/shared/run-record.mjs`).
 fn refute_rate(refuted: usize, candidates: usize) -> f64 {
     if candidates == 0 {
         return 0.0;

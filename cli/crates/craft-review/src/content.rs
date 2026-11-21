@@ -1,6 +1,6 @@
 //! The review's knowledge as data (realm @nick/craft, node #452): prompt templates under
 //! `content/prompts/` and answer schemas under `content/schemas/`, read here exactly as
-//! `lib/content.mjs` reads them for the engines. A template is plain text with `{{name}}`
+//! `integrations/shared/content.mjs` reads them for the engines. A template is plain text with `{{name}}`
 //! placeholders, rendered in one pass (a value is never itself rendered); a placeholder with no
 //! value is an error; a content file's final newline is not part of its text. A schema's
 //! `{"$ref": "<file>"}` node is replaced by that sibling schema, itself resolved.
@@ -71,7 +71,7 @@ pub fn render(template: &str, vars: &Vars) -> Result<String, ContentError> {
 }
 
 /// The name and byte length of the `{{name}}` that `s` starts with, where a name is
-/// `[A-Za-z][A-Za-z0-9]*` as in `lib/content.mjs`.
+/// `[A-Za-z][A-Za-z0-9]*` as in `integrations/shared/content.mjs`.
 fn placeholder(s: &str) -> Option<(&str, usize)> {
     let body = s.strip_prefix("{{")?;
     let len = body

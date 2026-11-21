@@ -1,4 +1,4 @@
-//! Where a run's remembered records came from (`MemorySource` in `lib/memory-recall.mjs`; realm
+//! Where a run's remembered records came from (`MemorySource` in `integrations/shared/memory-recall.mjs`; realm
 //! @nick/craft, node #250): the line the report names it in, and the run record's copy.
 
 use serde::{Deserialize, Serialize};

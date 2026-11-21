@@ -1,4 +1,4 @@
-//! The memory skill's record id (`skills/memory`, "Record shape"), as `lib/memory-record-id.mjs`
+//! The memory skill's record id (`skills/memory`, "Record shape"), as `integrations/shared/memory-record-id.mjs`
 //! computes it: `<kind>-` and the first 10 hex characters of sha256 of `<kind>\n<title>\n<scope>`,
 //! the title trimmed, its inner whitespace collapsed and lower-cased, the scope without a leading
 //! `./` or a trailing `/` (realm @nick/craft, node #222).

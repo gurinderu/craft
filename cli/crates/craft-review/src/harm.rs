@@ -1,6 +1,6 @@
 //! The harm a finding names, held in code as the engines hold it (realm @nick/craft, node #379):
-//! the ceiling each harm level allows (`lib/harm-levels.mjs`) and the cap that lowers a finding to
-//! its level's ceiling (`lib/harm-cap.mjs`); the verified-harm raise is [`raise`].
+//! the ceiling each harm level allows (`integrations/shared/harm-levels.mjs`) and the cap that lowers a finding to
+//! its level's ceiling (`integrations/shared/harm-cap.mjs`); the verified-harm raise is [`raise`].
 //! `content/parity/verify-cases.json` holds both ports to the same answers.
 
 mod floor;

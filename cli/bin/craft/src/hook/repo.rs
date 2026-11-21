@@ -122,7 +122,7 @@ fn fetch(dir: &Path, base: &str) -> Result<(), String> {
         .to_owned())
 }
 
-/// The repository as run records name it, `repoKey` in `lib/repo-key.mjs`: the parent of a common
+/// The repository as run records name it, `repoKey` in `integrations/shared/repo-key.mjs`: the parent of a common
 /// git directory named `.git` (a plain checkout and its linked worktrees share it), else the work
 /// tree's top level, else the common directory, else the directory itself.
 fn repo_key(dir: &Path) -> String {

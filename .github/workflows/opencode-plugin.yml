@@ -4,7 +4,7 @@ name: opencode-plugin
 # installs it. 2.x installs a git package with npm (scripts off) and refuses one whose package.json has a `prepare`
 # script — the repository root has one — so each release lays out a tree of its own, with its own package.json and no
 # scripts, as the next commit of the opencode-plugin branch, and tags that commit opencode-vX.Y.Z
-# (lib/materialize-opencode.mjs, lib/opencode-package.mjs). OpenCode 1.x keeps integrations/opencode/install.sh.
+# (integrations/shared/materialize-opencode.mjs, integrations/shared/opencode-package.mjs). OpenCode 1.x keeps integrations/opencode/install.sh.
 #
 # release-please.yml calls this with the tag of each release it cuts; the first release to carry this file creates the
 # branch. By hand (`gh workflow run opencode-plugin.yml -f ref=vX.Y.Z`) it only re-publishes from a release tag once
@@ -56,7 +56,10 @@ jobs:
           tagged="$(git ls-remote --tags origin "refs/tags/$REF" "refs/tags/$REF^{}" | tail -n1 | cut -f1)"
           [ -n "$tagged" ] || fail "no tag '$REF' on origin"
           [ "$tagged" = "$(git rev-parse HEAD)" ] || fail "tag '$REF' ($tagged) is not the checked-out commit"
-          [ -f lib/materialize-opencode.mjs ] || fail "tag '$REF' has no lib/materialize-opencode.mjs"
+          materializer=integrations/shared/materialize-opencode.mjs
+          [ -f "$materializer" ] || materializer=lib/materialize-opencode.mjs
+          [ -f "$materializer" ] || fail "tag '$REF' has no materializer"
+          echo "MATERIALIZER=$materializer" >> "$GITHUB_ENV"
           version="$(node -p "require('./.release-please-manifest.json')['.']")"
           [ "$version" = "${REF#v}" ] || fail "tag '$REF' carries manifest version '$version', not '${REF#v}'"
           echo "TAG=opencode-$REF" >> "$GITHUB_ENV"
@@ -76,7 +79,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          node lib/materialize-opencode.mjs --branch "$BRANCH" --message "craft $REF ($(git rev-parse HEAD)): the OpenCode 2.x package"
+          node "$MATERIALIZER" --branch "$BRANCH" --message "craft $REF ($(git rev-parse HEAD)): the OpenCode 2.x package"
       # What is about to be pushed, read back out of the commit: no symlink, no scripts (2.x refuses a `prepare`), and
       # every entry the package.json exports is in the tree. A failure here pushes nothing.
       - name: validate the committed tree
@@ -86,12 +89,10 @@ jobs:
           git archive "refs/tags/$TAG" | tar -x -C "$tree"
           links="$(find "$tree" -type l)"
           [ -z "$links" ] || { echo "::error::symlinks in the materialized tree:"; echo "$links"; exit 1; }
-          node -e '
-            const fs = require("fs"), path = require("path"), root = process.argv[1]
-            const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"))
-            if (pkg.scripts) throw new Error("the package has scripts")
-            for (const entry of Object.values(pkg.exports)) if (!fs.existsSync(path.join(root, entry))) throw new Error(`no ${entry}`)
-          ' "$tree"
+          jq -e '(.scripts | not) and (.exports | type == "object")' "$tree/package.json"
+          while IFS= read -r entry; do
+            [ -f "$tree/$entry" ] || { echo "::error::no $entry"; exit 1; }
+          done < <(jq -r '.exports[]' "$tree/package.json")
       # The checkout keeps no credential; the token reaches git for this push alone.
       - name: push
         env:

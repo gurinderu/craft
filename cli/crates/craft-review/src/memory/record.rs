@@ -1,6 +1,6 @@
-//! One remembered record read and checked, as `lib/prior-decision-record.mjs` reads it (realm
+//! One remembered record read and checked, as `integrations/shared/prior-decision-record.mjs` reads it (realm
 //! @nick/craft, nodes #177, #204, #222, #230, #236, #273), and a list of them as
-//! `parsePriorDecisions` in `lib/prior-decisions.mjs` reads it (node #218): a decision, a question
+//! `parsePriorDecisions` in `integrations/shared/prior-decisions.mjs` reads it (node #218): a decision, a question
 //! (a deferred finding) or a project rule, its fields as trimmed strings, refused by name when a
 //! field is missing, past its ceiling, or unfit for the git line its scope check runs.
 

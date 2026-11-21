@@ -1,4 +1,4 @@
-//! What a critic's answer admits, as `refuseCriticNames` in `lib/review-critic.mjs` decides it: a
+//! What a critic's answer admits, as `refuseCriticNames` in `integrations/shared/review-critic.mjs` decides it: a
 //! named lens outside the candidates is ignored; one of the optional pass is refused (it is bought
 //! by an explicit `optional` request, which plans it, never by a model mid-run), and one the surface gate dropped
 //! is refused (realm @nick/craft, node #102) — each said in a note as an uncovered surface — and

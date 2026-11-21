@@ -91,7 +91,7 @@ pub struct Units {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub notices: Vec<String>,
     /// The normal mode's directory slices of each profile unit mode is not in effect for, by
-    /// profile (`sliceDiff` in `lib/lens-scope.mjs`, as `lib/review-unit-slicing.mjs` cuts a change
+    /// profile (`sliceDiff` in `integrations/shared/lens-scope.mjs`, as `integrations/shared/review-unit-slicing.mjs` cuts a change
     /// with the mode off or fallen back); a profile whose change is not sliced has none.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub directory: BTreeMap<String, Vec<Slice>>,

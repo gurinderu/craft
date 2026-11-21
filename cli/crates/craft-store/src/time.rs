@@ -1,5 +1,5 @@
 //! The store's clock, in milliseconds since the epoch as JavaScript's `Date` counts them, and the two
-//! spellings it writes: `Date.toISOString()` and `stamp` (`lib/craft-log-run.mjs`), the ISO time to
+//! spellings it writes: `Date.toISOString()` and `stamp` (`integrations/shared/craft-log-run.mjs`), the ISO time to
 //! the second with `-` for `:`, which names files and sorts as it reads.
 
 use std::time::{SystemTime, UNIX_EPOCH};

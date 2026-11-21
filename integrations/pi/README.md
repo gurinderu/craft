@@ -9,7 +9,7 @@ The route is new: it has been seen running end to end from a checkout, not yet a
 ## Install
 
 The repository is a pi package. Its manifest — the `pi` key of the root `package.json` — loads two resources, the
-extension `lib/pi-extension.mjs` and the `craft-review` skill in `skills/craft-review/` here, and nothing else (none
+extension `integrations/pi/pi-extension.mjs` and the `craft-review` skill in `skills/craft-review/` here, and nothing else (none
 of craft's other skills):
 
 <!-- x-release-please-start-version -->

@@ -113,7 +113,7 @@ fn rejected_run(repo: &Path, out: &Path) -> Value {
 }
 
 /// The finished step's memory part (`memorySections`), held to `content/parity/memory-sections.json`
-/// — the shape rust-audit lifts, read by `lib/rust-audit-engine.test.mjs` as the binary's own output;
+/// — the shape rust-audit lifts, read by `integrations/shared/rust-audit-engine.test.mjs` as the binary's own output;
 /// written there instead with `CRAFT_UPDATE_PARITY=1`.
 #[test]
 fn memory_sections_parity() {

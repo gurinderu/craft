@@ -1,4 +1,4 @@
-//! A finished run's record, as `finalizeRun` in `lib/craft-log-run.mjs` files it: a proven retry
+//! A finished run's record, as `finalizeRun` in `integrations/shared/craft-log-run.mjs` files it: a proven retry
 //! answered with the file the first attempt filed; else the run's checkpoints folded in when their
 //! directory is proven this run's, the record filed under the identity its checkpoints observed near
 //! the start. Its durable intent marks the directory before publication; cleanup retires it outside

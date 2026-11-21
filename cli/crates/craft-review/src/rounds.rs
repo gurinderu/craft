@@ -1,4 +1,4 @@
-//! The lens rounds (`lensRoundsPhase` in `lib/review-lens-rounds.mjs`): every planned lens over
+//! The lens rounds (`lensRoundsPhase` in `integrations/shared/review-lens-rounds.mjs`): every planned lens over
 //! its profile's part of the diff, round after round, each told what the pool already holds, until
 //! a round adds nothing new to its profile or the profile's plan's rounds are spent (loop until
 //! dry). The profiles of a run share each round and the pool. A finding is new when no pooled
@@ -59,7 +59,7 @@ pub struct Rounds {
 }
 
 /// The exact key of a finding: its file and title folded, and its line, as `key` in
-/// `lib/review-run.mjs`.
+/// `integrations/shared/review-run.mjs`.
 #[must_use]
 pub fn key(f: &Value) -> String {
     let s = |k: &str| {
@@ -74,7 +74,7 @@ pub fn key(f: &Value) -> String {
 }
 
 /// What parts a sliced dispatch's key from its slice's, as `dispatchKey` in
-/// `lib/review-lens-dispatch.mjs`: each slice of a lens is a dispatch of its own, and one that
+/// `integrations/shared/review-lens-dispatch.mjs`: each slice of a lens is a dispatch of its own, and one that
 /// never returned is a hole whatever its siblings did.
 const SLICE_SEP: &str = " :: ";
 
@@ -113,7 +113,7 @@ pub fn tasks(
             pathspec: &pathspec,
             prior: &prior,
         };
-        // A lens that judges the change as a whole (`WHOLE_DIFF_LENSES` in lib/lens-scope.mjs, the
+        // A lens that judges the change as a whole (`WHOLE_DIFF_LENSES` in integrations/shared/lens-scope.mjs, the
         // profile's `wholeDiff`) or reads metrics is never sliced.
         let whole = profile.lens(lens).is_none_or(|l| l.metrics || l.whole_diff);
         if slices.is_empty() || whole {
@@ -168,7 +168,7 @@ fn lens_task(
         },
     );
     // Only the lenses run on the profile's agent, as the engine dispatches them
-    // (lib/review-lens-dispatch.mjs); the scout, the dedup and the verifiers keep the default.
+    // (integrations/shared/review-lens-dispatch.mjs); the scout, the dedup and the verifiers keep the default.
     task.agent_type = profile.lens_agent;
     task.consumers = crate::validate::listed(&task.prompt, &ctx.consumers);
     Ok(task)

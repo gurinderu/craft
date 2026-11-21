@@ -2,7 +2,7 @@
 //! agent session, where the binary cannot prompt. `--propose` prints what the profile holds, the
 //! project memory's `external` records the session pipes in, each with the revision its version
 //! file names now (node #470, option (a); [`memory`]), and the candidates the repository's
-//! deployment manifests name (the discovery of `lib/craft-externals.mjs`, node #435) as JSON; the
+//! deployment manifests name (the discovery of `integrations/shared/craft-externals.mjs`, node #435) as JSON; the
 //! host session asks the reviewer which systems the code talks to and at which deployed tag or
 //! commit, then `--write` stores exactly those. Beside them, the CI map (node #482): the checks
 //! of the repository's workflows that carry clippy, test, fmt or build, which the gate reads when
@@ -53,7 +53,7 @@ pub struct InitArgs {
     /// proposed as an integration point with the revision its version file names now.
     #[arg(long = "memory-externals", requires = "propose", value_name = "-")]
     pub memory_externals: Option<String>,
-    /// craft's plugin root, whose `lib/craft-externals.mjs` finds the candidates; found above the
+    /// craft's plugin root, whose `integrations/shared/craft-externals.mjs` finds the candidates; found above the
     /// executable when absent.
     #[arg(long, env = "CRAFT_ROOT")]
     pub craft_root: Option<PathBuf>,
@@ -181,14 +181,15 @@ fn discover(
     ))
 }
 
-/// What `lib/craft-externals.mjs <verb> --repo-root <top> <rest…>` prints, `stdin` handed to it as
+/// What `integrations/shared/craft-externals.mjs <verb> --repo-root <top> <rest…>` prints, `stdin` handed to it as
 /// JSON; its `{"error"}` is an error.
 fn externals(root: Option<&Path>, cwd: &Path, args: &[&str], stdin: &Value) -> Result<Value> {
     let root = root.context("no craft plugin root: pass --craft-root")?;
-    let script = craft_review::prompts::plugin_path(root, "lib/craft-externals.mjs");
+    let script =
+        craft_review::prompts::plugin_path(root, "integrations/shared/craft-externals.mjs");
     anyhow::ensure!(
         script.is_file(),
-        "no lib/craft-externals.mjs under {}",
+        "no integrations/shared/craft-externals.mjs under {}",
         root.display()
     );
     let top = git::toplevel(cwd)?;
@@ -209,12 +210,12 @@ fn externals(root: Option<&Path>, cwd: &Path, args: &[&str], stdin: &Value) -> R
     let out = child.wait_with_output()?;
     let answer: Value = serde_json::from_slice(&out.stdout).with_context(|| {
         format!(
-            "lib/craft-externals.mjs {verb} printed no JSON: {}",
+            "integrations/shared/craft-externals.mjs {verb} printed no JSON: {}",
             String::from_utf8_lossy(&out.stderr).trim()
         )
     })?;
     match answer.get("error") {
-        Some(e) => anyhow::bail!("lib/craft-externals.mjs {verb} refused: {e}"),
+        Some(e) => anyhow::bail!("integrations/shared/craft-externals.mjs {verb} refused: {e}"),
         None => Ok(answer),
     }
 }

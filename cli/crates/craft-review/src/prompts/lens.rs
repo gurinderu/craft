@@ -1,6 +1,6 @@
-//! A lens's prompt, as `lensPrompt` and `negativeSpacePrompt` in `lib/review-lens-prompts.mjs`
+//! A lens's prompt, as `lensPrompt` and `negativeSpacePrompt` in `integrations/shared/review-lens-prompts.mjs`
 //! render it for an unsliced dispatch, and the ALREADY-FOUND list a later round carries
-//! (`priorFoundSummary` in `lib/review-coverage.mjs`).
+//! (`priorFoundSummary` in `integrations/shared/review-coverage.mjs`).
 
 use serde_json::Value;
 

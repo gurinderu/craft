@@ -8,7 +8,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { workHook } from './work-hook.ts'
 import { v1WorkHooks } from './host-v1.ts'
-import { writeExecutable } from '../../../lib/write-executable.mjs'
+import { writeExecutable } from '../../shared/write-executable.mjs'
 
 vi.mock('node:child_process', async importOriginal => {
   const actual = /** @type {typeof import('node:child_process')} */ (await importOriginal())
@@ -87,7 +87,7 @@ test.each([
   assert.equal(launches().length, count)
   if (count === 0) {
     assert.ok(
-      vi.mocked(spawn).mock.calls.every(([, args]) => args[0] === path.join(ROOT, 'lib/craft-hook-repo.sh')),
+      vi.mocked(spawn).mock.calls.every(([, args]) => args[0] === path.join(ROOT, 'integrations/shared/craft-hook-repo.sh')),
       'only the repo probe ran',
     )
   }

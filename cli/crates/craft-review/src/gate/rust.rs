@@ -1,4 +1,4 @@
-//! The Rust gate (`rustGate` in `lib/review-profiles.mjs`, its deterministic part): clippy on each
+//! The Rust gate (`rustGate` in `integrations/shared/review-profiles.mjs`, its deterministic part): clippy on each
 //! changed package with the project's own lint levels — a compile error or a lint the project
 //! denies is red, a warning on a line the change added a `clippy` seed — then a pedantic and
 //! nursery pass whose new warnings there are `clippy-pedantic` seeds, then semgrep with the

@@ -20,7 +20,7 @@ record is filed by the `craft` binary the workflow drives, under the name `revie
 Common: `ts`, `runtime` (`"claude-code"` | `"opencode"`), `kind` (`workflow`|`agent`), `name`, `project`, `commit`, `dirty`, `verdict`,
 `findings: {total, bySeverity:{Critical,High,Medium,Low,Info}}`, `nested`, `via`.
 
-**`branch` and `head` are computed, not carried.** `lib/craft-log-run.mjs` reads them itself
+**`branch` and `head` are computed, not carried.** `integrations/shared/craft-log-run.mjs` reads them itself
 (`git rev-parse --abbrev-ref HEAD` / `git rev-parse HEAD`) off the working copy named by
 `--project`, and they overwrite whatever the payload carried — a workflow's own `branch`/`head`
 survive only for the fields git could not resolve. They used to arrive exclusively from a model's
@@ -34,7 +34,7 @@ checkout so the two share one round chain, and reading the branch from the colla
 a worktree's run under the main checkout's branch.
 
 **Engine identity** — `craftVersion` (the plugin release, stamped from a `CRAFT_VERSION` const that
-`lib/check-workflows.mjs` keeps in sync with `integrations/claude-code/.claude-plugin/plugin.json`) and `craftCommit`
+`integrations/shared/check-workflows.mjs` keeps in sync with `integrations/claude-code/.claude-plugin/plugin.json`) and `craftCommit`
 (craft's own git HEAD, best-effort via `$CLAUDE_PLUGIN_ROOT`). Distinct from `commit`, which is the
 **reviewed project's** HEAD, and from `schemaVersion`, which versions this record format.
 
@@ -46,7 +46,7 @@ help?" cannot be answered.
 `engineRevision` field.** One version can span a behaviour change — the run that made rigor
 deterministic shipped under `0.16.0` and no release followed, so records of two different engines
 carry the same string and only a timestamp separates them. `engineRevision` is the discriminator:
-a hand-bumped integer in `lib/run-record.mjs`, stamped at the single write choke point, forming an
+a hand-bumped integer in `integrations/shared/run-record.mjs`, stamped at the single write choke point, forming an
 engine identity of `runtime + craftVersion + rN`. Bump it in the same commit that changes what the
 telemetry means. Nothing can enforce that, and a missed bump asserts sameness — which is why a
 record carrying no revision reads as `r?` and is never folded into the current engine.
@@ -57,7 +57,7 @@ a prior round's fingerprints compare to this round's is decided by `FP_BASIS_SIN
 tombstones. Change that table, not only the revision, when `fingerprint()` changes what an `fp` means.
 The retired JS review engine decided that comparability itself, with the same table bundled into it — it was the side that computed the fingerprints — so its `review` records and each of their checkpoints also carry `workflowEngineRevision`, the engine's revision, next to the logger's `engineRevision` stamp; the CLI review chains its rounds in the binary, under `~/.craft/runs/cli`. The analyzer's engine identity (`rN`) uses the engine's revision when a record carries it, and the logger's otherwise. The loader prints `priorFpRevisions` together with `priorFpRevisionsCheck` (the same list as a string), and that engine trusted the list only when the two still matched after the model relay; a mismatch is recorded as `reReview.basisMismatch`.
 
-`node lib/analyze-runs.mjs --engine latest` (or `--engine "claude-code 0.16.0 r2"`) slices to one
+`node integrations/shared/analyze-runs.mjs --engine latest` (or `--engine "claude-code 0.16.0 r2"`) slices to one
 engine; `--version` still exists and still filters, but a version slice is not an engine slice.
 With no flag the report names the engines it spans **before** any rate, and says so plainly when it
 cannot separate them — a caveat under the numbers arrives after they have been read as a
@@ -65,19 +65,19 @@ before/after. `engineRevision` is not in `indexProjection`: nothing outside the 
 an index column it would only ever be whatever a caller guessed, and the one engine-aware reader
 loads the detail files anyway. This is also why every record-filing engine — `review` (through the
 `craft` binary), `rust-audit`, `triage-findings` — writes through
-`lib/craft-log-run.mjs` rather than instructing a model to assemble the record: an engine that
+`integrations/shared/craft-log-run.mjs` rather than instructing a model to assemble the record: an engine that
 computes the fields from a prompt cannot produce this one at all, so every record it files is
 excluded from `--engine latest` by construction. The JS engines' shared write path is
-`lib/run-logging.mjs`, bundled into each; the binary's is its own `crates/craft-store`. `craft runs retro <version>`
-gives a version's per-workflow, per-engine and per-lens numbers as `node lib/analyze-runs.mjs --version <version>` does.
+`integrations/shared/run-logging.mjs`, bundled into each; the binary's is its own `crates/craft-store`. `craft runs retro <version>`
+gives a version's per-workflow, per-engine and per-lens numbers as `node integrations/shared/analyze-runs.mjs --version <version>` does.
 Records written before these fields carry `null` and are outside any filter.
 
-Workflows add: `scout`, `dimensions[]`, `verification {candidates, judged, confirmed, suspected, refuted, unverified, died, refuteRate}` (`refuteRate` is over what was *judged*. When nothing was, the engines differ: `rust-audit` records `null` — a run whose verifiers all died reports no rate rather than a rate of zero — while `review` records `0`, as the retired `adversarial-review` did (`refuteRate()` in `lib/run-record.mjs`, the binary's `refute_rate` alike), and `lib/analyze-runs.mjs` averages that `0` into the workflow's `avg refute` as it skips a `null`; `unverified` counts candidates no verifier ever judged — an unchecked Low/Info the engine spends no verifier on — and is reported **beside** `candidates`, not inside it, so it is outside the rate),
+Workflows add: `scout`, `dimensions[]`, `verification {candidates, judged, confirmed, suspected, refuted, unverified, died, refuteRate}` (`refuteRate` is over what was *judged*. When nothing was, the engines differ: `rust-audit` records `null` — a run whose verifiers all died reports no rate rather than a rate of zero — while `review` records `0`, as the retired `adversarial-review` did (`refuteRate()` in `integrations/shared/run-record.mjs`, the binary's `refute_rate` alike), and `integrations/shared/analyze-runs.mjs` averages that `0` into the workflow's `avg refute` as it skips a `null`; `unverified` counts candidates no verifier ever judged — an unchecked Low/Info the engine spends no verifier on — and is reported **beside** `candidates`, not inside it, so it is outside the rate),
 `notRun[]`, `outputTokens` (the whole-run token **pool** — `budget.spent()`: input + output +
 parent-driver + cache, **not** output tokens. Its size tracks run TYPE: a re-review (`round > 1`)
 runs an extra Adjudicate phase (and periodically a whole-diff re-scan), so its pool is structurally larger than a
 first-pass's. It is therefore not a clean output-cost figure and must not be compared across run
-types — `lib/analyze-runs.mjs` splits it three ways on the PRESENCE and value of `round`: a
+types — `integrations/shared/analyze-runs.mjs` splits it three ways on the PRESENCE and value of `round`: a
 first-pass pool (`round <= 1`), a re-review pool (`round > 1`), and a round-less pool for runs that
 carry no `round`. That third pool is keyed on the ABSENCE of the field, not on a cause the analyzer
 cannot know: only `review` stamps `round`, so every `rust-audit` / `triage-findings` run (and a retired
@@ -95,7 +95,7 @@ JS `review` did, the same way: `agentUnavailable[]` (the agent types the run lea
 empty or with an unrecognised "not found"). `rust-audit` also folds in what each nested review said in
 its "Reviewer agent unavailable" section. Records written before this by `review` carry
 `reviewerAgentUnavailable[]` (profile ids) and `reviewerAgentFallbacks` (per profile id);
-`lib/analyze-runs.mjs` reads both shapes and ranks the result in its AGENT UNAVAILABLE section.
+`integrations/shared/analyze-runs.mjs` reads both shapes and ranks the result in its AGENT UNAVAILABLE section.
 `triage-findings` is not a review: it carries `verdict: ""` and `findings` summarizing the findings
 it *triaged* (total + severity mix of the gathered raw findings, not findings it produced). It adds
 `sources[]` (`{source, count}` per gathered source), `triage {gathered, validated, accept,
@@ -123,7 +123,7 @@ counts in each corroborating lens's row, so per-dimension counts may sum to more
 
 A lens row carries `{dimension, ran, findingCount, bySeverity, confirmedCount, suspectedCount,
 refutedCount, unverifiedCount}`. `unverifiedCount` is the per-lens share of the `unverified` tier and
-is **excluded** from the per-dimension refute denominator that `lib/analyze-runs.mjs` computes
+is **excluded** from the per-dimension refute denominator that `integrations/shared/analyze-runs.mjs` computes
 (`refuted / (confirmed + suspected + refuted)`) — the same stance the run-level `candidates` takes.
 That stance is newer than `schemaVersion: 1`, though: before the tier existed the same unjudged items
 were filed under `suspectedCount` and so sat *inside* that denominator. The records cannot say which
@@ -143,7 +143,7 @@ runs sandboxed with no filesystem, so no engine can ever record them from inside
 summed **after** the run instead, by the party that holds the runId (the launcher):
 
 ```bash
-node lib/craft-log-run.mjs enrich-cost --run-id <wf_…>
+node integrations/shared/craft-log-run.mjs enrich-cost --run-id <wf_…>
 ```
 
 The launcher reads the run id (`wf_…`) off the Workflow completion and runs this once the run has
@@ -174,7 +174,7 @@ before any is written, so a refusal leaves them all as they were.
 The older form names the directory and one record by hand and sums every transcript into it:
 
 ```bash
-node lib/craft-log-run.mjs enrich-cost --run-dir <run-dir> --record <detail-record.json>
+node integrations/shared/craft-log-run.mjs enrich-cost --run-dir <run-dir> --record <detail-record.json>
 ```
 
 It sums every `agent-*.jsonl` under the run directory over the `type:"assistant"` records'
@@ -190,12 +190,12 @@ It exits non-zero if the run directory is missing, holds no `agent-*.jsonl`, has
 transcript unreadable, or the record is missing/unparseable. `cost` is **optional** — absent until a
 run is enriched — and it does not enter the `index.jsonl` projection.
 
-`node lib/analyze-runs.mjs` surfaces it per workflow beside the three-state pool, leading with
+`node integrations/shared/analyze-runs.mjs` surfaces it per workflow beside the three-state pool, leading with
 `cacheRead` because that IS the spend. A record with no `cost` was never enriched: it contributes
 nothing to the cost average and is **not** read as a zero-cost run (`costRuns` counts the usable
 enriched runs apart), the same "not measured is not zero" stance the pool split takes for a missing
 `round`. A cost is judged by one rule shared with `--round-pairs` (`costProblem` in
-`lib/run-record.mjs`), which follows what enrich-cost writes — all four token parts, `agents`, a
+`integrations/shared/run-record.mjs`), which follows what enrich-cost writes — all four token parts, `agents`, a
 `total` equal to their sum, a `source`: **missing** means never enriched; **malformed** means not an
 object, none of the measured fields, a field that is not a non-negative number, a `source` that is not
 a string, a `slice` that is not `{index, of, tail?}` with `1 ≤ index ≤ of`, or a `total` that is not the sum of its parts; **empty** means written but measured nothing
@@ -212,15 +212,15 @@ are counted in `costMalformedRuns` / `costEmptyRuns` / `costOvercountedRuns` / `
 
 Workflow scripts are sandboxed (no filesystem, no clock), so they assemble the record object and
 hand it to a cheap **logger agent** whose whole job is transport: it stages the record through a
-per-run `mktemp` file and runs `lib/craft-log-run.mjs`, which computes every field
+per-run `mktemp` file and runs `integrations/shared/craft-log-run.mjs`, which computes every field
 (`ts`/`project`/`commit`/`dirty`/`engineRevision`/`craftCommit`), names the file, appends the index
 line and verifies the readback. `rust-audit` and `triage-findings` go through that one path — the
-prompt itself is built by `lib/run-logging.mjs` and bundled into each. The `review` workflow's record
-is filed by the `craft` binary itself (`cli/crates/craft-store`), byte for byte as `lib/craft-log-run.mjs` files it and
+prompt itself is built by `integrations/shared/run-logging.mjs` and bundled into each. The `review` workflow's record
+is filed by the `craft` binary itself (`cli/crates/craft-store`), byte for byte as `integrations/shared/craft-log-run.mjs` files it and
 under the same index lock, with no logger agent and no node (`content/parity/store-cases.json` holds the two writers
 together); a logger agent files only the INCOMPLETE record of a run the binary never
 finished. A write that does not land is asserted, not
-inferred: the agent returns `{ok, error}`, and the engine puts the loss in its own report. The shaping helpers are tested in `lib/run-record.mjs`; the engines import them and the build
+inferred: the agent returns `{ok, error}`, and the engine puts the loss in its own report. The shaping helpers are tested in `integrations/shared/run-record.mjs`; the engines import them and the build
 bundles them in (the sandbox can't `import`). Standalone agents self-log via their `.md` Observability
 section, suppressed when run as a workflow sub-agent.
 
@@ -244,7 +244,7 @@ directory could not be folded into it. A run with both keeps the louder heading.
 fixed string will therefore miss the other.
 
 `review.js`, `rust-audit` and `triage-findings` render that section (from `telemetryLostSection` in
-`lib/review-coverage.mjs`, bundled into each).
+`integrations/shared/review-coverage.mjs`, bundled into each).
 
 ### Launching an engine from a checkout
 
@@ -278,7 +278,7 @@ run, because the transcripts are outside the workflow sandbox's reach.
 
 ## Three edits that deliberately did not refactor their host
 
-`lib/analyze-runs.mjs`'s aggregation loop, `lib/craft-log-run.mjs`'s
+`integrations/shared/analyze-runs.mjs`'s aggregation loop, `integrations/shared/craft-log-run.mjs`'s
 `finalizeRun`, and the retired JS review engine's `verifyPool` (gone with it) were each long and each
 mixed concerns. Fixes landed inside all three anyway, without extraction, and
 that was a decision rather than an oversight: refactoring the hot review engine
@@ -292,7 +292,7 @@ behaviour-preserving move can be checked as one.
 
 ## Does a re-review get cheaper? — the round-pair measurement
 
-`node lib/analyze-runs.mjs --round-pairs [store]` pairs consecutive top-level `review` rounds of one
+`node integrations/shared/analyze-runs.mjs --round-pairs [store]` pairs consecutive top-level `review` rounds of one
 project and branch (round n+1 with the newest round n before it) and compares them **only** when
 nothing but re-review memory differs between them. Each pair that fails a condition is listed with the
 reason and no numbers: a round whose engine is unknown, or a different engine; a moved `head`; a dirty

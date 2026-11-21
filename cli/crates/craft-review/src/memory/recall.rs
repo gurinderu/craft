@@ -1,4 +1,4 @@
-//! The recall of the project's memory, as `lib/memory-recall.mjs` runs it (realm @nick/craft,
+//! The recall of the project's memory, as `integrations/shared/memory-recall.mjs` runs it (realm @nick/craft,
 //! nodes #203, #204, #215, #250, #273): one read-only agent recalls, through the craft:memory skill,
 //! the active decisions, questions and project rules for the diff's paths; its answer is read here,
 //! each record given the skill's id where the store keeps its own, and the source it came from is

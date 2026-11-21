@@ -16,7 +16,7 @@ staged=$(git diff --cached --name-only --diff-filter=ACMR)
 pick() { printf '%s\n' "$staged" | grep -E "$1"; }
 
 formattable=$(pick '\.(js|mjs|cjs|ts|mts|cts|json|yml|yaml)$')
-lintable=$(pick '^((lib|integrations/opencode/plugin)/.*\.(js|mjs|cjs|ts)|knip\.config\.js|\.dependency-cruiser\.mjs)$' | grep -v '/node_modules/')
+lintable=$(pick '^(integrations/(shared|pi|opencode/plugin)/.*\.(js|mjs|cjs|ts))$' | grep -v '/node_modules/')
 rust=$(pick '^cli/.*\.rs$')
 
 bin=node_modules/.bin
@@ -42,7 +42,7 @@ fi
 if [ -n "$lintable" ]; then
   need eslint
   # shellcheck disable=SC2086
-  if ! "$bin/eslint" --max-warnings 0 --no-warn-ignored $lintable; then
+  if ! "$bin/eslint" --config integrations/shared/config/eslint.config.mjs --max-warnings 0 --no-warn-ignored $lintable; then
     echo "pre-commit: lint — fix the findings above, then: npm run lint" >&2
     failed=1
   fi

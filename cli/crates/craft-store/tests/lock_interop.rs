@@ -18,7 +18,7 @@ impl Drop for Worker {
 
 fn javascript(store: &Path, body: &str) -> Worker {
     let module = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../lib/index-lock.mjs")
+        .join("../../../integrations/shared/index-lock.mjs")
         .canonicalize()
         .unwrap();
     let mut worker = Worker(
@@ -123,7 +123,7 @@ fn stopped_owner_excludes_both_writers_until_killed() {
     let pid = Pid::from_raw(i32::try_from(js.0.id()).unwrap());
     kill(pid, Signal::SIGSTOP).unwrap();
     let module = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../lib/index-lock.mjs")
+        .join("../../../integrations/shared/index-lock.mjs")
         .canonicalize()
         .unwrap();
     let refused = Command::new("node").args(["--input-type=module", "-e", r"

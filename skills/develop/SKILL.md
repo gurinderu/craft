@@ -99,7 +99,7 @@ profiles and other source under its general lenses, in one run, with one verdict
 
 Once each engine run of this cycle has ended (completed, failed or stopped — not while you may still
 resume it), fold its real cost into the records it filed:
-`node "<this skill's base directory>/../../lib/craft-log-run.mjs" enrich-cost --run-id <wf_…>`, with the
+`node "<this skill's base directory>/../../integrations/shared/craft-log-run.mjs" enrich-cost --run-id <wf_…>`, with the
 run id the Workflow completion names. Best-effort: if it fails, say so in one line and go on.
 
 **The loop is light by default.** The first round reviews the whole branch diff; every later round
@@ -164,7 +164,7 @@ One **round** is:
    session then writes every disposition to memory and files the workflow's `issues` before any
    fixer starts (`craft:addressing-findings`, "Who triages"). Then, once per round, the
    recurring-findings check that step 3 no longer reaches (addressing-findings' step 0): run
-   `node "<this skill's base directory>/../../lib/recurring-findings.mjs" --path <path> …` for the paths the round's findings touch, show each group, and offer
+   `node "<this skill's base directory>/../../integrations/shared/recurring-findings.mjs" --path <path> …` for the paths the round's findings touch, show each group, and offer
    the author a lesson per group — recorded only on their yes (addressing-findings, "Recurring
    findings").
 3. **Address** — `craft:addressing-findings`, entered at its step 5 with step 2's plan in hand (its
@@ -196,7 +196,7 @@ record named first.
   not convergence and does not count as a clean round. Say what did not run. Retry the review once
   if the cause is transient (the retry is the same round); still no verdict → stop as above and
   tell the human. A craft engine that died with `at workflow.js:<line>:<column>`:
-  `node "<this skill's base directory>/../../lib/engine-source-map.mjs" <engine> workflow.js:<line>:<column>`
+  `node "<this skill's base directory>/../../integrations/shared/engine-source-map.mjs" <engine> workflow.js:<line>:<column>`
   gives the place in the plugin's source (or, for an engine without a map, the line of
   `workflows/<engine>.js`) — quote it when you report the failure.
 
@@ -228,7 +228,7 @@ When the cycle ends — converged with a clean full review, capped at round 4, o
 verdict — file one record of it in craft's run store, from the reviewed repository on the branch:
 
 ```bash
-node "<this skill's base directory>/../../lib/craft-log-run.mjs" develop-cycle <<'JSON'
+node "<this skill's base directory>/../../integrations/shared/craft-log-run.mjs" develop-cycle <<'JSON'
 {"mode": "light", "outcome": "converged",
  "rounds": [{"engine": "craft:review", "scope": "full", "verdict": "Warning", "mediumPlus": 2},
             {"engine": "craft:review", "scope": "delta", "verdict": "Warning", "mediumPlus": 0}],

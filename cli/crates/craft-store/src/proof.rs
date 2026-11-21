@@ -1,4 +1,4 @@
-//! The proof that a write already filed a record, as `lib/finalize-proof.mjs` leaves and reads it
+//! The proof that a write already filed a record, as `integrations/shared/finalize-proof.mjs` leaves and reads it
 //! (realm @nick/craft, nodes #245, #246): under `<store>/.finalize-proofs/<key>`, the key a hash of
 //! what a re-dispatch sends again — so a retry by either writer finds the other's proof.
 

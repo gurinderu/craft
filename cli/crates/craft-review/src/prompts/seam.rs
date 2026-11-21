@@ -1,5 +1,5 @@
 //! Unit mode's contract lens and the coordinator after the lens round (`contractPrompt` and
-//! `seamPrompt` in `lib/review-unit-prompts.mjs`), rendered from the templates the engine renders.
+//! `seamPrompt` in `integrations/shared/review-unit-prompts.mjs`), rendered from the templates the engine renders.
 
 use serde_json::Value;
 

@@ -1,4 +1,4 @@
-//! The pool before verification (`lib/review-dedup.mjs`): the path floor, the mechanical roll-up of
+//! The pool before verification (`integrations/shared/review-dedup.mjs`): the path floor, the mechanical roll-up of
 //! low-value rule floods, then the cross-lens dedup — a model pass groups findings that word one
 //! defect differently, a deterministic pass groups those at one `file:line` with near-identical
 //! titles, and each connected component of both merges into one finding.

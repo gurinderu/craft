@@ -1,4 +1,4 @@
-//! The unit graph the batching walks (`lib/unit-graph.mjs`): each unit as discovery sized it, the
+//! The unit graph the batching walks (`integrations/shared/unit-graph.mjs`): each unit as discovery sized it, the
 //! dependency edges among the touched ones by name, and the public-signature lines a batch may read
 //! in the units it depends on.
 

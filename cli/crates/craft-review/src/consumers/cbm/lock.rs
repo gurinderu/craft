@@ -1,5 +1,5 @@
 //! One review at a time indexes a project (realm @nick/craft, node #530): a lock directory per
-//! project, `<locks>/<project>.lock`, its holder's token in `owner`, as `lib/craft-fetch.sh` locks
+//! project, `<locks>/<project>.lock`, its holder's token in `owner`, as `integrations/shared/craft-fetch.sh` locks
 //! a download. A second review waits for it within its deadline; a lock untouched for [`STALE`] is
 //! a dead holder's and is taken over, moved aside first; a holder removes the lock only while it
 //! is still its own. The index run itself touches it every [`HEARTBEAT`] and removes it when it

@@ -1,6 +1,6 @@
 //! The planner held to `content/parity/plan-cases.json` (each case of its profile, Rust when it
-//! names none), a golden file this crate owns ([`crate::golden`]; `lib/review-profile-parity.test.mjs`
-//! holds `lib/review-plan.mjs` to it too while the engines ship).
+//! names none), a golden file this crate owns ([`crate::golden`]; `integrations/shared/review-profile-parity.test.mjs`
+//! holds `integrations/shared/review-plan.mjs` to it too while the engines ship).
 
 use serde_json::json;
 

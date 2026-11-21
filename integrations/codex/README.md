@@ -4,13 +4,13 @@ The Codex delivery does not live in this directory: its manifest stays at the re
 `.codex-plugin/plugin.json`, with its marketplace in `.agents/plugins/marketplace.json` (plugin source `.`).
 
 Why the root. Codex copies only the plugin root into its cache, and leaves out every symlink in it (observed
-on codex-cli 0.167.0: a plugin root here, with `skills/` and `lib/` linked in, installed as `.codex-plugin/`
+on codex-cli 0.167.0: a plugin root here, with `skills/` and `integrations/shared/` linked in, installed as `.codex-plugin/`
 alone). The skills and the hooks' scripts must therefore be real directories inside the plugin root, which
 only the repository root gives without a second copy of them.
 
 The manifest names the Claude Code delivery's hooks file, `./integrations/claude-code/hooks/hooks.json`, through
 its `hooks` field; Codex runs those hooks with `${CLAUDE_PLUGIN_ROOT}` set to its cached copy of the repository
-root, so the commands reach `lib/` there.
+root, so the commands reach `integrations/shared/` there.
 
 The review has a Codex route, new and not yet observed running in a real Codex session: the `codex-review` skill has
 the session run `sh <plugin root>/bin/craft review run --backend codex`. `bin/craft` runs the `craft` binary of the
@@ -38,7 +38,7 @@ Fix: add a profile for the bwrap Codex actually runs, as `/etc/apparmor.d/codex-
 ```
 abi <abi/4.0>,
 include <tunables/global>
-profile codex-bwrap /nix/store/*-{codex-*/lib/codex/codex-resources,bubblewrap-*/bin}/bwrap flags=(unconfined) {
+profile codex-bwrap /nix/store/*-{codex-*/integrations/shared/codex/codex-resources,bubblewrap-*/bin}/bwrap flags=(unconfined) {
   userns,
   include if exists <local/codex-bwrap>
 }

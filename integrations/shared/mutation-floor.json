@@ -1,0 +1,12 @@
+{
+  "break": 70,
+  "mutate": [
+    "integrations/shared/**/*.mjs",
+    "integrations/pi/pi-extension.mjs",
+    "!integrations/shared/config/**",
+    "!integrations/shared/fixtures/**",
+    "!integrations/shared/**/*.test.mjs",
+    "!integrations/shared/engine-harness.mjs",
+    "!integrations/shared/sandbox-globals.mjs"
+  ]
+}

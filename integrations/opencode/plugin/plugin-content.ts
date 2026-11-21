@@ -3,7 +3,7 @@
 // inside a package (#514), so the plugin hands each one to the runtime's editors (opencode-v2.d.ts).
 // An install.sh install (a checkout linked into .opencode/) is left to 2.x's own config loader, which reads the same
 // files from the links: the plugin registers only when the root above it is the package — its package.json names
-// PACKAGE_NAME (lib/opencode-package.mjs writes it) — so the two never both write one agent, and a user's own file of
+// PACKAGE_NAME (integrations/shared/opencode-package.mjs writes it) — so the two never both write one agent, and a user's own file of
 // that name in a config folder keeps its place.
 import fs from 'node:fs'
 import path from 'node:path'

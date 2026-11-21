@@ -1,5 +1,5 @@
 //! Held to `content/parity/prompt-cases.json`, a golden file this crate owns ([`crate::golden`];
-//! `lib/review-prompt-parity.test.mjs` holds the engines to it too while they ship): the critic over
+//! `integrations/shared/review-prompt-parity.test.mjs` holds the engines to it too while they ship): the critic over
 //! the Rust plan of the input's lenses, an `errors` follow-up it admitted, the extra lens `reviewer`,
 //! and the scout and extra lens of a review scoped to one directory.
 

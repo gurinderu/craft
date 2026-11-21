@@ -1,4 +1,4 @@
-//! The red team's prompt, as `redTeamPrompt` in `lib/review-adjudicate-priors.mjs` renders it:
+//! The red team's prompt, as `redTeamPrompt` in `integrations/shared/review-adjudicate-priors.mjs` renders it:
 //! the prior finding as the adjudicator saw it, and the invariant it named — its own rationale when
 //! it named none (`redTeamInvariant`).
 

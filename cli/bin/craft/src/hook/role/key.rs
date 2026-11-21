@@ -1,5 +1,5 @@
 //! The repo's key as run records spell `project` (realm @nick/craft, #283): the one `repoKey` of
-//! `lib/repo-key.mjs`, as `craft hook pr-opened` reads it too, with each git call bounded for a
+//! `integrations/shared/repo-key.mjs`, as `craft hook pr-opened` reads it too, with each git call bounded for a
 //! hook.
 
 use std::path::Path;

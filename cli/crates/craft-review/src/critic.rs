@@ -1,4 +1,4 @@
-//! The completeness critic, as `criticPhase` in `lib/review-critic.mjs` runs it: once the pool is
+//! The completeness critic, as `criticPhase` in `integrations/shared/review-critic.mjs` runs it: once the pool is
 //! verified, a profile whose plan is large or security-sensitive asks one critic which lenses of
 //! its roster that did not run should have; each it names runs once, unless the optional pass or
 //! the surface gate refuses it (said in a note, never dispatched); what those lenses find that the

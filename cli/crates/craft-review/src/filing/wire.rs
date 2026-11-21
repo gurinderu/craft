@@ -1,5 +1,5 @@
 //! What the store writer (`craft_store::answer`) is handed for a checkpoint or the record, and what
-//! it answers — the request the JavaScript adapter read before it (now `lib/binary-filing-replay.mjs`, test infrastructure) (its `common`, `checkpoint` and
+//! it answers — the request the JavaScript adapter read before it (now `integrations/shared/binary-filing-replay.mjs`, test infrastructure) (its `common`, `checkpoint` and
 //! `finalize`) — and the writer that carries them.
 
 use serde::{Deserialize, Serialize};

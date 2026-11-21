@@ -1,5 +1,5 @@
-//! What a changed path is, as the planner reads it: a test (`lib/test-paths.mjs`) or a contract
-//! another version deploys or calls against (`lib/contract-paths.mjs`).
+//! What a changed path is, as the planner reads it: a test (`integrations/shared/test-paths.mjs`) or a contract
+//! another version deploys or calls against (`integrations/shared/contract-paths.mjs`).
 
 /// Directories whose files are tests or fixtures, never production code or a contract.
 const NON_CONTRACT_DIRS: [&str; 7] = [

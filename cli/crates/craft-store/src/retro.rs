@@ -1,6 +1,6 @@
 //! A version's retro: the finished runs of one craft version summed as the run-store report
-//! (`lib/analyze-runs.mjs --version <v>`) sums them — records that carry a schema version and did
-//! not die, a resumed run's second record folded into its newest (`lib/run-duplicates.mjs`), develop
+//! (`integrations/shared/analyze-runs.mjs --version <v>`) sums them — records that carry a schema version and did
+//! not die, a resumed run's second record folded into its newest (`integrations/shared/run-duplicates.mjs`), develop
 //! cycles apart — per workflow, per engine, per lens, and what did not run.
 
 use std::collections::BTreeMap;

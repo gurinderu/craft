@@ -1,4 +1,4 @@
-//! A JSON value as JavaScript holds it, so the store's bytes come out as `lib/craft-log-run.mjs`
+//! A JSON value as JavaScript holds it, so the store's bytes come out as `integrations/shared/craft-log-run.mjs`
 //! writes them: every number a double, and an object's keys in JavaScript's own order — the keys
 //! that are array indices first, ascending, then the rest in the order they were first set. A key
 //! set again keeps its place. `serde_json`'s map sorts its keys, so it cannot carry that order.

@@ -1,7 +1,7 @@
 //! The run's own telemetry (realm @nick/craft, node #456): when the host asks for it at start
 //! (`--record`), the binary files a checkpoint as each of its phases ends and the run record when
 //! the run finishes, through its own store writer (`craft-store`, node #539), which writes them byte
-//! for byte as `lib/craft-log-run.mjs` does. What it needs between steps is kept in `filing.json` ([`Filing`]). A write that
+//! for byte as `integrations/shared/craft-log-run.mjs` does. What it needs between steps is kept in `filing.json` ([`Filing`]). A write that
 //! does not land never fails a step: it is said in the step's `filing`, and a finished run whose
 //! record failed files it again on `--resume` ([`refile`]), marked a retry so the store answers
 //! `already filed` for an attempt that did land. A stopped segment whose record did not land is

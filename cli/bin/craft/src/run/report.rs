@@ -1,4 +1,4 @@
-//! The answer `craft review run` prints, as the review's other drivers print it (lib/cli-review-verdict.mjs):
+//! The answer `craft review run` prints, as the review's other drivers print it (integrations/shared/cli-review-verdict.mjs):
 //! a `## Verdict` block whose first line is the verdict, marked with its glyph, then where the report
 //! is, what publishing on the PR did, how the run ran weaker than asked, its stop and how to resume
 //! it; the report's memory part verbatim; and a `## Findings` list, one line each. A parent reads

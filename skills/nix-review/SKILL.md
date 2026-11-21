@@ -15,11 +15,11 @@ it sends each changed Nix file to the Nix profile, scout-scales depth to the dif
 grounds findings in tool output, and verifies each one. This skill is the rubric its Nix lenses and the
 `nix-reviewer` lens worker apply.
 If the workflow fails with `at workflow.js:<line>:<column>`, that place is in the bundled engine:
-`node "<this skill's base directory>/../../lib/engine-source-map.mjs" review workflow.js:<line>:<column>`
+`node "<this skill's base directory>/../../integrations/shared/engine-source-map.mjs" review workflow.js:<line>:<column>`
 gives it in the plugin's source.
 Once a workflow run has ended (completed, failed or stopped — not while you may still resume it),
 fold its real cost into the records it filed:
-`node "<this skill's base directory>/../../lib/craft-log-run.mjs" enrich-cost --run-id <wf_…>`, with the
+`node "<this skill's base directory>/../../integrations/shared/craft-log-run.mjs" enrich-cost --run-id <wf_…>`, with the
 run id the Workflow completion names. Best-effort: if it fails, say so in one line and go on.
 
 The workflow recalls the project's active decisions, open questions and project rules for the diff's paths

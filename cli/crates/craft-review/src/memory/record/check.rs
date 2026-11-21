@@ -1,4 +1,4 @@
-//! What refuses a record (`decisionProblem` in `lib/prior-decision-record.mjs`): a kind a review
+//! What refuses a record (`decisionProblem` in `integrations/shared/prior-decision-record.mjs`): a kind a review
 //! does not apply, a status other than active, a missing field, a field past its ceiling, or an
 //! anchor unfit for the git line its scope check runs.
 

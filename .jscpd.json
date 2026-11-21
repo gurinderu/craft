@@ -1,7 +1,7 @@
 {
-  "path": ["lib", "integrations/opencode/plugin", "src"],
+  "path": ["integrations/shared", "integrations/pi", "integrations/opencode/plugin", "integrations/claude-code/src"],
   "format": ["javascript", "typescript"],
-  "ignore": ["**/*.test.mjs", "**/node_modules/**"],
+  "ignore": ["**/*.test.mjs", "**/node_modules/**", "integrations/shared/config/**", "integrations/shared/fixtures/**"],
   "crossFormats": ["js-ts"],
   "minTokens": 50,
   "minLines": 5,

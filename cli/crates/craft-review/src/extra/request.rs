@@ -1,4 +1,4 @@
-//! The extra lenses a run is asked for, as `parseExtraLenses` in `lib/review-extra-lenses.mjs`
+//! The extra lenses a run is asked for, as `parseExtraLenses` in `integrations/shared/review-extra-lenses.mjs`
 //! reads `extraLenses`.
 
 use super::{Extra, Failed, How};

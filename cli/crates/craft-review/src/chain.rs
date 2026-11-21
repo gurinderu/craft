@@ -1,7 +1,7 @@
 //! The chain of a branch's review rounds: each finished run files a
 //! small round record, `round.json`, beside its state — the repository and branch it reviewed, the
 //! head it read, its round and its ledger — and a later run of the same branch builds on the newest
-//! one whose head is still on its history, as `findPriorRound` in `lib/craft-log-run.mjs` picks a
+//! one whose head is still on its history, as `findPriorRound` in `integrations/shared/craft-log-run.mjs` picks a
 //! round from the run store. The binary reads its own records, so no ledger crosses a model.
 
 use std::path::{Path, PathBuf};

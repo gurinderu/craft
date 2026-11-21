@@ -1,6 +1,6 @@
 //! craft's run store (`~/.craft/runs`): the one writer of its run records, the phase checkpoints a
 //! run leaves on the way and the index line each record gets, byte for byte as the JavaScript
-//! writer (`lib/craft-log-run.mjs`) writes them and under the same index lock, so both can write one
+//! writer (`integrations/shared/craft-log-run.mjs`) writes them and under the same index lock, so both can write one
 //! store while the Workflow engine still files through it (realm @nick/craft, nodes #401, #539);
 //! and the streaming reader `craft runs` lists, sums and checks the store with (#540).
 

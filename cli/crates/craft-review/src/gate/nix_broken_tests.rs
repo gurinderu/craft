@@ -117,7 +117,7 @@ fn with_a_flake_a_broken_linter_is_named_and_the_flake_check_still_sets_the_trac
 }
 
 /// The provenance of a flakeless Nix gate whose linters both ran clean, held to
-/// `content/parity/gate-provenance.json`: `lib/cli-review-gate.mjs` reads its reason off it.
+/// `content/parity/gate-provenance.json`: `integrations/shared/cli-review-gate.mjs` reads its reason off it.
 #[test]
 fn the_flakeless_linted_provenance_is_held_for_parity() {
     let gate = bare(&[("statix", "exit 0"), ("deadnix", "exit 0")]);

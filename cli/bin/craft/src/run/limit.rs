@@ -1,4 +1,4 @@
-//! An account's usage limit in what a host CLI said when it failed (lib/usage-limit.mjs; realm
+//! An account's usage limit in what a host CLI said when it failed (integrations/shared/usage-limit.mjs; realm
 //! @nick/craft, nodes #298, #299): every task after it fails the same way until the limit resets,
 //! so the run stops. Only an account limit with a reset matches; a transient rate limit ("hit your
 //! rate limit", 429) is an ordinary failure the binary hands out again.

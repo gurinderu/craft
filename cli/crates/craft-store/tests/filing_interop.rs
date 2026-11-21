@@ -11,7 +11,7 @@ use std::{
 };
 
 fn logger() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../lib/craft-log-run.mjs")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../integrations/shared/craft-log-run.mjs")
 }
 fn raw() -> Obj {
     Obj::new()

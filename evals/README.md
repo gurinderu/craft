@@ -59,7 +59,7 @@ Skill-triggering evals need a live model/API, so they are **intentionally not wi
 `.github/workflows/ci.yml`** — they're a manual/local harness you run when a description changes or a
 skill is added.
 
-What CI *does* guard is the corpus's **shape**, statically, via `lib/check-evals.mjs`
-(`node lib/check-evals.mjs`, also asserted by the unit tests, `npm test`): valid JSON, well-formed cases, and
+What CI *does* guard is the corpus's **shape**, statically, via `integrations/shared/check-evals.mjs`
+(`node integrations/shared/check-evals.mjs`, also asserted by the unit tests, `npm test`): valid JSON, well-formed cases, and
 every referenced skill id resolves to a real `skills/<id>/`. That catches a renamed/deleted skill
 leaving a dangling pointer — without needing a model.

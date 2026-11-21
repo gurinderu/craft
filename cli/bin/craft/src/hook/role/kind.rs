@@ -72,7 +72,7 @@ static FILE: Re = Re::new(|| compile(r"^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*\.[a-
 static EXT: Re = Re::new(|| compile(r"\.[a-z][a-z0-9]{0,5}$"));
 static HOME_OR_DOT: Re = Re::new(|| compile(r"^(?:\.{1,2}|~)/"));
 
-/// Whether a whitespace-free token is a path or a file name ("lib/pr/x.mjs", "./review",
+/// Whether a whitespace-free token is a path or a file name ("integrations/shared/pr/x.mjs", "./review",
 /// "review.js"); two words joined by one slash ("PR/MR") stay words.
 fn pathlike(token: &str) -> bool {
     let t = token

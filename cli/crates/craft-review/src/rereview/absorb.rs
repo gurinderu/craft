@@ -1,5 +1,5 @@
 //! This round's verified findings reconciled with the prior round, as `reconcilePhase` in
-//! `lib/review-reconcile-priors.mjs` does: one repeating a still-live prior is absorbed into it —
+//! `integrations/shared/review-reconcile-priors.mjs` does: one repeating a still-live prior is absorbed into it —
 //! written onto its rationale, which the ledger carries and its next adjudicator is handed — and
 //! one matching a tombstone is marked as a defect that came back. Only a judged finding (confirmed
 //! or suspected) is absorbed: an unverified one may not hold a prior open. The CLI also keeps a

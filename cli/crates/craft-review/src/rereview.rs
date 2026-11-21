@@ -1,7 +1,7 @@
 //! A re-review — one of the parts of the engine's review the CLI carries before the engine goes
 //! (realm @nick/craft, node #445) — as the review engine's Scout, Adjudicate and
-//! Synthesize phases run one (`lib/review-prior-round.mjs`, `lib/review-prior-basis.mjs`,
-//! `lib/review-adjudicate-priors.mjs`, `lib/review-reconcile-priors.mjs`, `lib/review-ledger.mjs`):
+//! Synthesize phases run one (`integrations/shared/review-prior-round.mjs`, `integrations/shared/review-prior-basis.mjs`,
+//! `integrations/shared/review-adjudicate-priors.mjs`, `integrations/shared/review-reconcile-priors.mjs`, `integrations/shared/review-ledger.mjs`):
 //! a run of a branch builds on its newest earlier round ([`crate::chain`]); its lenses review the
 //! fix commits since that round's head, or the whole diff again every `fullEvery`-th round; each
 //! finding that round left open is adjudicated again; a lens finding repeating a still-live prior

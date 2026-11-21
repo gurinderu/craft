@@ -1,5 +1,5 @@
 //! What the rule judge said of each finding (`ruleVerdicts`, `ruleContradictions` in
-//! `lib/project-rule-apply.mjs`).
+//! `integrations/shared/project-rule-apply.mjs`).
 
 use std::collections::BTreeMap;
 

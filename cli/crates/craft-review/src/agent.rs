@@ -1,6 +1,6 @@
 //! What a task asks of the host's agent, in host-neutral tokens: which agent kind it runs on and
 //! which model. Each host's driver maps a token to its own name (the Claude Code driver,
-//! `lib/cli-review-task.mjs`: `rust-reviewer` is `craft:rust-reviewer`, `nix-reviewer` is
+//! `integrations/shared/cli-review-task.mjs`: `rust-reviewer` is `craft:rust-reviewer`, `nix-reviewer` is
 //! `craft:nix-reviewer`); a profile naming a token this enum lacks is refused when it is read.
 
 use serde::{Deserialize, Serialize};

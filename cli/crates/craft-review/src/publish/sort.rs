@@ -1,4 +1,4 @@
-//! The sorting before publication, as `lib/finding-sort.mjs` sorts (realm @nick/craft, nodes #270,
+//! The sorting before publication, as `integrations/shared/finding-sort.mjs` sorts (realm @nick/craft, nodes #270,
 //! #277, #282, #423): each finding a PR comment could carry is a defect, posted as it is, or
 //! doubtful — not confirmed; raised by the compat, intent or api-boundary lens; speaking of
 //! rollback, rollout, old replicas, migration or a breaking change; its line outside the lines the
@@ -161,7 +161,7 @@ pub(super) fn sort(
 }
 
 /// A doubtful finding as the run record keeps it, numbered from 1 (`postable`): what
-/// `lib/finding-post.mjs` builds its comment from.
+/// `integrations/shared/finding-post.mjs` builds its comment from.
 pub(super) fn postable(f: &Value, i: usize, reasons: &[String]) -> Value {
     json!({
         "n": i + 1, "severity": text(f, "severity"), "title": text(f, "title"), "file": text(f, "file"),

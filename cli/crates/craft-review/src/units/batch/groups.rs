@@ -1,5 +1,5 @@
 //! The touched units within the budget grouped into batches (`batchGroups` and `growAlongEdges` in
-//! `lib/unit-batches.mjs`): a dependency-connected component whole when it fits, else grown along
+//! `integrations/shared/unit-batches.mjs`): a dependency-connected component whole when it fits, else grown along
 //! its edges; what is left alone is bin-packed by volume.
 
 use std::collections::{BTreeMap, BTreeSet};

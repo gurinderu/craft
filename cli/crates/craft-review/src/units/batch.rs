@@ -1,4 +1,4 @@
-//! Unit batches (`batchByUnit` in `lib/unit-batches.mjs`; realm @nick/craft, #354, #355): the
+//! Unit batches (`batchByUnit` in `integrations/shared/unit-batches.mjs`; realm @nick/craft, #354, #355): the
 //! touched units packed into batches of lens work under a volume budget. Units joined by a
 //! dependency go together, so one agent sees the seam between them whole; a component over the
 //! budget is grown along its edges; what is left, and the unconnected units, is bin-packed by

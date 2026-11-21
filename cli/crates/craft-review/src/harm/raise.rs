@@ -1,4 +1,4 @@
-//! The raise of a confirmed finding whose verified harm is must-fix, as `lib/harm-verify.mjs`
+//! The raise of a confirmed finding whose verified harm is must-fix, as `integrations/shared/harm-verify.mjs`
 //! decides it (realm @nick/craft, node #407): the verifier is shown the harms a finding claims and
 //! says which one the code shows.
 
