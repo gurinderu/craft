@@ -107,7 +107,8 @@ fn complexity(g: &mut Golden, ctx: &PromptContext, plan: &Plan, prior: &str) {
         .strip_suffix(&carried)
         .unwrap_or_else(|| panic!("what the findings carry closes it: {lens}"));
     g.check("/expected/complexity/lens", shared);
-    let warmup = crate::complexity::warmup_task(&ctx.repo).unwrap();
+    let warmup =
+        crate::complexity::warmup_task(&ctx.repo, "craft-review-repo-0123456789ab").unwrap();
     g.check("/expected/complexity/warmup", body(ctx, warmup.prompt));
     let head = crate::content::text("verify-metric").unwrap();
     g.check("/expected/complexity/verify", head.clone());

@@ -28,7 +28,7 @@ mod symbols;
 mod tests;
 mod text;
 
-pub use graph::{GraphError, graph_of};
+pub use graph::{GraphError, craft_project, graph_of};
 pub use make::{build, of_checkout};
 pub use save::{keep, prepare};
 pub use section::{gap_line, section};
@@ -83,6 +83,10 @@ pub struct Consumers {
     /// Why the code graph was not one of them.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub graph_skipped: String,
+    /// The graph's project the list indexed and asked, which the complexity lens's warm-up
+    /// indexes and names too (realm @nick/craft, node #529).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub graph_project: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub symbols: Vec<Listed>,
     /// The changed symbols not searched by name: too common a name, or the search failed, each with

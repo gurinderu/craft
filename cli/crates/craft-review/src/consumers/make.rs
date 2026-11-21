@@ -71,6 +71,7 @@ fn build_until(
     let mut out = list::assemble(top, &changed, &found.symbols, cancel, callers);
     if let Some(a) = asked {
         out.graph_truncated = a.truncated;
+        out.graph_project = a.project;
         out.graph_unasked = a.unasked;
     }
     out.graph_skipped = graph_skipped;

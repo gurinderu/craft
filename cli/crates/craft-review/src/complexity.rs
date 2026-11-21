@@ -23,18 +23,20 @@ pub fn wanted(profile: &Profile) -> bool {
     profile.lenses.iter().any(|l| l.metrics)
 }
 
-/// The warm-up's task: whether a usable code-metrics index covers the repository at `repo`.
+/// The warm-up's task: whether a usable code-metrics index covers the repository at `repo`, under
+/// the graph's `project` the consumers list asks too (realm @nick/craft, node #529).
 ///
 /// # Errors
 /// When its prompt is missing.
-pub fn warmup_task(repo: &str) -> Result<Task, ContentError> {
+pub fn warmup_task(repo: &str, project: &str) -> Result<Task, ContentError> {
+    let vars = content::Vars::from([("project".to_owned(), project.to_owned())]);
     Ok(Task::new(
         "index-warmup".into(),
         "index-warmup".into(),
         format!(
             "{}{}",
             prompts::repo_directive(repo),
-            content::text("index-warmup")?
+            content::prompt("index-warmup", &vars)?.trim_end_matches('\n')
         ),
         Model::Sonnet,
         json!({

@@ -51,6 +51,8 @@ pub struct Caller {
 /// [`ROWS_PER_SYMBOL`].
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Asked {
+    /// The project asked.
+    pub project: String,
     pub callers: Vec<Caller>,
     pub truncated: Vec<String>,
     /// The symbols whose callers were not asked, each with why: `name (why)`.

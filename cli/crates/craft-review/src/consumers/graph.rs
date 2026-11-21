@@ -16,6 +16,8 @@ mod owner;
 mod sites;
 mod target;
 
+pub use target::own as craft_project;
+
 /// The part of the graph's budget kept for reading its index again once its callers are asked.
 const RECHECK: Duration = Duration::from_secs(5);
 
@@ -68,6 +70,7 @@ pub(super) fn graph_callers(
         .iter()
         .map(|s| format!("{} (file not indexed by the graph)", s.name));
     out.unasked.extend(not_indexed);
+    out.project.clone_from(&project);
     if index.unindexed_cut {
         out.unasked.extend(unanswered(&asked, &out));
     }

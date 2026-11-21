@@ -12,8 +12,11 @@ use super::GraphError;
 use crate::consumers::cbm::{self, Cbm, Index};
 use crate::project::CodeGraph;
 
-/// The name of craft's own project for the repository at `top`.
-fn own(top: &Path) -> Result<String, GraphError> {
+/// The name of craft's own project for the repository at `top`, one for all its checkouts.
+///
+/// # Errors
+/// When the repository's shared git directory cannot be read.
+pub fn own(top: &Path) -> Result<String, GraphError> {
     let common = crate::git::common_dir(top).map_err(|e| GraphError::Profile(e.to_string()))?;
     Ok(format!(
         "craft-review-{}",

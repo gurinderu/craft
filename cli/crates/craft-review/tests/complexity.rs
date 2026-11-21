@@ -41,7 +41,13 @@ fn planned(repo: &Path, out: &Path, indexed: bool) -> Value {
     let run = out.join("run");
     let s = step::start(&opts(repo, out)).unwrap();
     assert_eq!(ids(&s), ["scout-general", "index-warmup"]);
-    assert!(prompt_of(&s["tasks"][1]).contains("You are warming up the codebase-memory index"));
+    let warmup = prompt_of(&s["tasks"][1]);
+    assert!(warmup.contains("You are warming up the codebase-memory index"));
+    // No graph in the profile: craft's own project for the repository, indexed in full.
+    assert!(
+        warmup.contains("name `craft-review-") && warmup.contains("mode=full"),
+        "{warmup}"
+    );
     submit(
         &run,
         json!({"scout-general": scout("medium", &["complexity"]),
