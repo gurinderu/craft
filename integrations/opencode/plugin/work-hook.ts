@@ -4,10 +4,12 @@
 // hosts. host-v1.ts feeds it from `chat.message` and `event`, host-v2.ts from the session `prompt` hook and
 // `ctx.event`; each says how the lines reach the message (`deliver`) and whether they can (`placeable`). It runs the
 // cached binary of this plugin version (lib/craft-bin.mjs) and never waits for a download: while it is absent the
-// hook is silent and starts `bin/craft --ensure --background` once (lib/craft-review-run.mjs's wrapper). Any failure
+// hook is silent and, where the repo has role signs and the switch is on (lib/craft-hook-repo.sh), starts
+// `bin/craft --ensure --background` once (lib/craft-review-run.mjs's wrapper). Any failure
 // is silence: the hook must never cost the plugin its tools (realm @nick/craft, #276).
 import { spawn } from 'node:child_process'
 import { homedir } from 'node:os'
+import { fileURLToPath } from 'node:url'
 import type { WorkHook } from './host.ts'
 
 type Env = Record<string, string | undefined>
@@ -22,15 +24,15 @@ let modules: Promise<Modules | null> | undefined
 const load = (): Promise<Modules | null> =>
   (modules ??= Promise.all([import('../../../lib/craft-bin.mjs'), import('../../../lib/craft-review-run.mjs')]).catch(() => null))
 
-let fetching = false
-
-/** The binary to run, or null; when it is absent, its download is started once, in the background. */
-async function binary(where: Where): Promise<string | null> {
+/** The binary to run, or null; when it is absent, its download is started once per hook, in the background. */
+async function binary(where: Where, state: { fetching: boolean }): Promise<string | null> {
   const m = await load()
   if (!m) return null
   const bin = m[0].cachedBinary(where.env, where.home)
-  if (bin || fetching || where.env['CRAFT_BIN']) return bin
-  fetching = true
+  if (bin || state.fetching || where.env['CRAFT_BIN']) return bin
+  state.fetching = true
+  // As in Claude Code: no download where the hooks would say nothing — no role signs, or the switch off (#276).
+  if (!(await speaks(where))) return null
   const child = spawn('sh', [m[1].WRAPPER, '--ensure', '--background'], {
     detached: true,
     stdio: 'ignore',
@@ -39,6 +41,17 @@ async function binary(where: Where): Promise<string | null> {
   child.on('error', () => undefined)
   child.unref()
   return null
+}
+
+const REPO_TEST = fileURLToPath(new URL('../../../lib/craft-hook-repo.sh', import.meta.url))
+
+/** Whether the hooks would speak in the hook's directory: lib/craft-hook-repo.sh, the repo test while the binary is absent. */
+function speaks(where: Where): Promise<boolean> {
+  return new Promise(resolve => {
+    const child = spawn('sh', [REPO_TEST, 'speaks', where.directory, 'opencode'], { stdio: 'ignore', env: { ...where.env, HOME: where.home } })
+    child.on('error', () => resolve(false))
+    child.on('close', code => resolve(code === 0))
+  })
 }
 
 /** `craft hook <name>` over `input`: its stdout, '' on any failure. */
@@ -68,6 +81,7 @@ export function runHook(bin: string, name: string, input: object, where: Where):
  */
 export function workHook(directory: string, engineSessions: ReadonlySet<string>, home: string = homedir(), env: Env = process.env): WorkHook {
   const where = { directory, home, env }
+  const state = { fetching: false }
   // A subagent's session → its parent (and agent, when the runtime names it at creation) until its first
   // message, then null: later messages stay silent.
   const children = new Map<string, Subagent | null>()
@@ -85,7 +99,7 @@ export function workHook(directory: string, engineSessions: ReadonlySet<string>,
     },
     async compacted(session) {
       try {
-        const bin = await binary(where)
+        const bin = await binary(where, state)
         if (bin) await runHook(bin, 'opencode-compacted', { session, cwd: directory }, where)
       } catch {
         /* silence */
@@ -95,7 +109,7 @@ export function workHook(directory: string, engineSessions: ReadonlySet<string>,
       try {
         const subagent = firstOf(session, agent)
         if (subagent === null) return
-        const bin = await binary(where)
+        const bin = await binary(where, state)
         const text = bin ? await runHook(bin, 'opencode-message', { prompt, session, cwd: directory, placeable, ...subagent }, where) : ''
         if (text && placeable) deliver(text)
       } catch {

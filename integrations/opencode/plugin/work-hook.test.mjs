@@ -99,18 +99,33 @@ test('a message with nothing to build the part on is asked as not placeable, and
   await event({ event: null })
 })
 
-test('with no binary cached the hook is silent and starts the background download once (realm #550)', async () => {
+/** A run with no binary cached in a repo with `files`; how many downloads it started. @param {Record<string, string>} files @param {Record<string, string>} [more] */
+async function downloadsStarted(files, more = {}) {
   const shim = tmp()
   writeExecutable(path.join(shim, 'curl'), `#!/bin/sh\necho "$*" >> '${shim}/hits'\nexit 22\n`)
-  const env = { PATH: `${shim}:/usr/bin:/bin`, CRAFT_RELEASE_BASE: 'file:///nonexistent' }
-  const { message } = setup(env)
+  const root = tmp()
+  fs.mkdirSync(path.join(root, '.git'))
+  for (const [rel, text] of Object.entries(files)) {
+    fs.mkdirSync(path.dirname(path.join(root, rel)), { recursive: true })
+    fs.writeFileSync(path.join(root, rel), text)
+  }
+  const env = { PATH: `${shim}:/usr/bin:/bin`, CRAFT_RELEASE_BASE: 'file:///nonexistent', ...more }
+  const hooks = v1WorkHooks(workHook(root, new Set(), tmp(), env))
+  const message = /** @type {(input: any, output: any) => Promise<void>} */ (hooks['chat.message'])
   const out = output('s1', 'review the branch')
   await message({ sessionID: 's1' }, out)
   await message({ sessionID: 's1' }, output('s1', 'review again'))
-  assert.equal(out.parts.length, 1)
-  const until = Date.now() + 5000
-  while (!fs.existsSync(path.join(shim, 'hits')) && Date.now() < until) await new Promise(resolve => setTimeout(resolve, 50))
-  assert.equal(fs.readFileSync(path.join(shim, 'hits'), 'utf8').trim().split('\n').length, 1)
+  assert.equal(out.parts.length, 1, 'silent while the binary is absent')
+  await new Promise(resolve => setTimeout(resolve, 1500))
+  return fs.existsSync(path.join(shim, 'hits')) ? fs.readFileSync(path.join(shim, 'hits'), 'utf8').trim().split('\n').length : 0
+}
+
+test('with no binary cached the hook is silent and, where the repo has role signs and the switch is on, starts the download once (realm #550)', async () => {
+  // The silent cases first: a hook that started a download in an earlier one must not pass them by having done so.
+  assert.equal(await downloadsStarted({ 'AGENTS.md': '# Build\nnpm test\n' }), 0, 'no role signs: no download')
+  assert.equal(await downloadsStarted({ '.claude/agents/dev.md': '' }, { CRAFT_ROLE_HOOK: '0' }), 0, 'switched off: no download')
+  assert.equal(await downloadsStarted({ '.claude/agents/dev.md': '', 'CLAUDE.md': 'craft-role-hook: off\n' }), 0, 'switched off by the repo: no download')
+  assert.equal(await downloadsStarted({ '.claude/agents/dev.md': '' }), 1)
 })
 
 test('a binary that fails says nothing', async () => {

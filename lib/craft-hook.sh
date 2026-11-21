@@ -7,8 +7,9 @@
 # waits for a download: a hook has its time limit. While the binary is absent (realm @nick/craft, node #550):
 #   - in a repo with role signs and the switch on (the repo test below, the binary's own in
 #     cli/bin/craft/src/hook/role/declared.rs, held to it by lib/craft-hook.test.mjs), the start hook starts the
-#     download in the background (lib/craft-fetch.sh, a session of its own, its output in ~/.craft/bin/<version>.log)
-#     and tells the human in one line; the others say so on stderr; elsewhere it says nothing (#276);
+#     download in the background (lib/craft-fetch.sh, a session of its own where setsid exists — not on macOS, an
+#     accepted limit —, its output in ~/.craft/bin/<version>.log) and tells the human in one line; it tries at most once
+#     an hour, and a failed try is said once; the others say so on stderr; elsewhere it says nothing (#276);
 #   - under Codex with the switch on, the start hook says the sandbox line itself when `codex sandbox true` fails to set
 #     up its sandbox, as the binary's readiness line does (cli/bin/craft/src/hook/role/readiness.rs).
 # When the binary fails, the human hears it once per session (a marker under ~/.craft/hook-failed/). It never blocks:
@@ -64,7 +65,8 @@ if [ "$code" -ne 0 ]; then
   if [ -n "$session" ] && [ -e "$mark" ]; then
     printf 'craft: the %s hook did not run: %s.\n' "$hook" "$why" >&2
   else
-    [ -z "$session" ] || { mkdir -p "${mark%/*}" && : >"$mark"; } 2>/dev/null
+    # A marker a day old is pruned as the next is written (realm @nick/craft, node #550).
+    [ -z "$session" ] || { mkdir -p "${mark%/*}" && find "${mark%/*}" -type f -mtime +0 -exec rm -f {} + && : >"$mark"; } 2>/dev/null
     printf '{"systemMessage":"craft: the %s hook did not run: %s."}\n' "$hook" "$why"
   fi
   exit 0

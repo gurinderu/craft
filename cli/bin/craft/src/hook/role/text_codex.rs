@@ -10,7 +10,7 @@ use super::text::{
 
 /// How Codex reviews: craft's review through the craft binary with its Codex backend, run in the
 /// session; by hand when that command cannot run or fails (#499).
-pub const CODEX_REVIEW: &str = "run craft:codex-review in this session, not in a subagent: read its SKILL.md and run the one command it gives (it drives craft's review through codex exec), then relay its verdict and findings; it is new and not yet observed in a real Codex session, so when that command cannot run here or fails, review the diff yourself: apply the checklist of craft:rust-review (Rust) or craft:nix-review (Nix), otherwise read the diff for defects, and report the findings by severity with file:line";
+pub const CODEX_REVIEW: &str = "run craft:codex-review in this session, not in a subagent: read its SKILL.md and run the one command it gives (it drives craft's review through codex exec), then relay its verdict and findings; it is new and not yet observed in a real Codex session, so when that command cannot run here or fails, review the diff yourself: apply the checklist of craft:rust-review (Rust), craft:nix-review (Nix) or craft:sql-review (SQL), otherwise read the diff for defects, and report the findings by severity with file:line";
 
 /// The start hook's cycle lines in Codex.
 pub fn cycle() -> [String; 2] {

@@ -281,7 +281,9 @@ which the `review` engine runs when no `craftBin` is given. The other hosts reac
 at the repository root, a POSIX `sh` wrapper carrying the plugin version (release-please moves it): it runs
 `~/.craft/bin/<version>/craft`, first downloading the release archive and its `.sha256` with `curl` or `wget` and
 checking it with `sha256sum` or `shasum` when the cache lacks it (no Windows), `CRAFT_BIN` naming a local build,
-and `CRAFT_ROOT` defaulting to the plugin root. The download itself is `lib/craft-fetch.sh`, which `bin/craft` sources (`--ensure` only fetches). `lib/craft-hook.sh <name>`
+and `CRAFT_ROOT` defaulting to the plugin root. The download itself is `lib/craft-fetch.sh` with `lib/craft-fetch-http.sh` — the release URL, the REST API fallback, the SHA-256,
+the lock and the cache layout in one place —, which `bin/craft` sources (`--ensure` only fetches) and `lib/craft-bin.mjs ensure`
+runs (its own Node download kept for Windows only). `lib/craft-hook.sh <name>`
 runs the start, prompt, subagent and reviewer-dispatch hooks as `craft hook <name>` from the same cache, never waiting for
 a download: while the binary is absent it makes the repo test itself (`lib/craft-hook-repo.sh`) and, where the repo has
 role signs and the switch is on, the start fetches it in the background and says so (`lib/craft-hook-absent.sh`; release-please
