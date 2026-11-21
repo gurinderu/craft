@@ -83,7 +83,7 @@ fn rust_replays_every_javascript_process_crash_window_twice() {
             if (window === 'index' && b.endsWith('/index.jsonl')) kill();
             if (window === 'proof' && path.dirname(b).endsWith('.finalize-proofs')) kill();
           };
-          fs.unlinkSync = p => { if (window === 'intent-unlink' && path.dirname(p).endsWith('.filing-intents')) kill(); unlink(p); };
+          fs.unlinkSync = p => { if (window === 'intent-unlink' && path.dirname(String(p)).endsWith('.filing-intents')) kill(); unlink(p); };
           finalizeRun(raw,{store,dir,project:'/p',observe:false});
         ";
         let result = Command::new("node")
@@ -94,6 +94,16 @@ fn rust_replays_every_javascript_process_crash_window_twice() {
             .output()
             .unwrap();
         assert!(!result.status.success(), "{window}");
+        assert!(
+            result.stderr.is_empty(),
+            "{window}: unexpected child error: {}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::ExitStatusExt;
+            assert_eq!(result.status.signal(), Some(9), "{window}");
+        }
         assert!(
             d.path().join(".filing-intents").exists(),
             "{window}: {}",
