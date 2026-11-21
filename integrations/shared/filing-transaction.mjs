@@ -48,14 +48,27 @@ function current(file) {
   }
 }
 
-/** @param {string} store @param {FilingIntent} intent @param {(record: Record<string, unknown>) => void} index */
+/**
+ * The words of a retained conflict: which detail, which intent, and how to clear it.
+ * @param {string} detail @param {string} intent
+ */
+const conflict = (detail, intent) =>
+  `filing conflict: ${detail} is not what intent ${intent} expected; intent retained, the detail left as it is — inspect the detail, then delete the intent (safe once the detail is checked)`
+
+/** Retained intents already warned of in this process. @type {Set<string>} */
+const warned = new Set()
+
+/**
+ * Replays `intent`; false when its detail holds a newer write, left untouched.
+ * @param {string} store @param {FilingIntent} intent @param {(record: Record<string, unknown>) => void} index
+ */
 function replay(store, intent, index) {
   if (path.basename(intent.file) !== intent.file) throw new Error('invalid filing intent filename')
   const file = path.join(store, intent.file)
   markFinalizing(store, intent.finalizing)
   const now = current(file)
   if (now !== intent.record) {
-    if (now !== intent.before) throw new Error(`filing conflict: ${file}; intent retained`)
+    if (now !== intent.before) return false
     publishVerified(file, intent.record, intent.before !== null)
   }
   index(parseJsonObject(intent.record))
@@ -68,6 +81,7 @@ function replay(store, intent, index) {
     publishVerified(path.join(root, proof.key), JSON.stringify(proof))
     syncFilingPath(store)
   }
+  return true
 }
 
 /** @param {string} store @param {string | undefined} dir */
@@ -82,7 +96,11 @@ function markFinalizing(store, dir) {
   syncFilingPath(dir)
 }
 
-/** @param {string} store @param {(record: Record<string, unknown>) => void} index */
+/**
+ * Replays every pending intent; a conflicting one is retained and skipped, so it never blocks a write to another
+ * detail — it is warned of on stderr once per process, and a write to its own detail refuses in `commitFiling`.
+ * @param {string} store @param {(record: Record<string, unknown>) => void} index
+ */
 export function recoverFilings(store, index) {
   const root = path.join(store, INTENTS)
   if (!fs.existsSync(root)) return
@@ -92,7 +110,11 @@ export function recoverFilings(store, index) {
     .sort()) {
     const file = path.join(root, name)
     const intent = /** @type {FilingIntent} */ (/** @type {unknown} */ (parseJsonObject(fs.readFileSync(file, 'utf8'))))
-    replay(store, intent, index)
+    if (!replay(store, intent, index)) {
+      if (!warned.has(file)) process.stderr.write(`craft-log-run WARNING: ${conflict(path.join(store, intent.file), file)} — this write went on\n`)
+      warned.add(file)
+      continue
+    }
     fs.unlinkSync(file)
     syncFilingPath(root)
   }
@@ -104,8 +126,11 @@ export function commitFiling(store, intent, index) {
   fs.mkdirSync(root, { recursive: true })
   syncFilingPath(store)
   const file = path.join(root, intent.file)
+  // Under the lock, after `recoverFilings`: an intent still here is a retained conflict on this detail.
+  const refused = () => new Error(conflict(path.join(store, intent.file), file))
+  if (fs.existsSync(file)) throw refused()
   publishVerified(file, JSON.stringify(intent), false)
-  replay(store, intent, index)
+  if (!replay(store, intent, index)) throw refused()
   fs.unlinkSync(file)
   syncFilingPath(root)
 }

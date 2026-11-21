@@ -231,22 +231,40 @@ fn concurrent_javascript_and_rust_ordinary_filings_preserve_every_run() {
     );
 }
 
+/// A replacement whose index publication failed, its detail then rewritten by a later writer: the
+/// detail and retained intent paths, and the replacement payload.
+fn retained_conflict(
+    store: &Path,
+    foreign: &str,
+) -> Result<(PathBuf, PathBuf, Obj), Box<dyn std::error::Error>> {
+    let w = writing(store);
+    let (file, _) = write_record(&raw(), &w, &GitId::default(), None)?;
+    let index = store.join("index.jsonl");
+    std::fs::remove_file(&index)?;
+    std::fs::create_dir(&index)?;
+    let mut changed = raw();
+    changed.set("verdict", Js::str("Block"));
+    if write_record(&changed, &w, &GitId::default(), Some(&file)).is_ok() {
+        return Err("the replacement's index publication did not fail".into());
+    }
+    std::fs::write(&file, foreign)?;
+    std::fs::remove_dir(&index)?;
+    let name = file.file_name().ok_or("a detail with no name")?;
+    let intent = store.join(".filing-intents").join(name);
+    Ok((file, intent, changed))
+}
+
 #[test]
 fn replacement_replay_never_overwrites_a_newer_detail() {
     let d = tempfile::tempdir().unwrap();
+    // The later writer kept the run's `ts`, so the replacement still targets this very detail.
+    let foreign = r#"{"ts":"1970-01-01T00-00-00Z","kind":"workflow","name":"review","a":"later"}"#;
+    let (file, intent, changed) = retained_conflict(d.path(), foreign).unwrap();
     let w = writing(d.path());
-    let (file, _) = write_record(&raw(), &w, &GitId::default(), None).unwrap();
-    let index = d.path().join("index.jsonl");
-    std::fs::remove_file(&index).unwrap();
-    std::fs::create_dir(&index).unwrap();
-    let mut changed = raw();
-    changed.set("verdict", Js::str("Block"));
-    write_record(&changed, &w, &GitId::default(), Some(&file)).unwrap_err();
-    let foreign = r#"{"a":"later writer"}"#;
-    std::fs::write(&file, foreign).unwrap();
-    std::fs::remove_dir(&index).unwrap();
     let error = write_record(&changed, &w, &GitId::default(), Some(&file)).unwrap_err();
-    assert!(error.to_string().contains("filing conflict"));
+    assert!(error.to_string().contains("filing conflict"), "{error}");
+    let named = intent.display().to_string();
+    assert!(error.to_string().contains(&named), "{error}");
     assert_eq!(std::fs::read_to_string(&file).unwrap(), foreign);
     assert_eq!(
         std::fs::read_dir(d.path().join(".filing-intents"))
@@ -254,5 +272,41 @@ fn replacement_replay_never_overwrites_a_newer_detail() {
             .count(),
         1
     );
-    assert!(!index.exists());
+    assert!(!d.path().join("index.jsonl").exists());
+}
+
+/// A retained conflict blocks only its own detail: a later unrelated write and finalize go on,
+/// the intent stays, the newer detail is never overwritten, and the warning names the intent.
+#[test]
+fn a_retained_conflict_never_blocks_a_write_to_another_detail() {
+    let d = tempfile::tempdir().unwrap();
+    let foreign = r#"{"a":"later writer"}"#;
+    let (file, intent, _) = retained_conflict(d.path(), foreign).unwrap();
+    let w = writing(d.path());
+    let (other, _) = write_record(&raw(), &w, &GitId::default(), None).unwrap();
+    assert_ne!(other, file);
+    let mut said = Said::default();
+    finalize(&raw(), &w, Asked::default(), &mut said).unwrap();
+    let warned = said.err.join("\n");
+    assert!(warned.contains("filing conflict"), "{warned}");
+    assert!(warned.contains(&intent.display().to_string()), "{warned}");
+    assert!(warned.contains("delete the intent"), "{warned}");
+    let script = r"
+      const [logger, store] = process.argv.slice(2); const {writeRecord} = await import(logger);
+      writeRecord({kind:'workflow',name:'review',verdict:'Approve'}, {store,project:'/p',observe:false,now:new Date(0)});
+    ";
+    let js = Command::new("node")
+        .args(["--input-type=module", "-e", script, "filing-test"])
+        .arg(logger())
+        .arg(d.path())
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&js.stderr);
+    assert!(js.status.success(), "{stderr}");
+    assert!(stderr.contains(&intent.display().to_string()), "{stderr}");
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), foreign);
+    assert!(intent.exists());
+    assert_eq!(detail_count(d.path()).unwrap(), 4);
+    let index = std::fs::read_to_string(d.path().join("index.jsonl")).unwrap();
+    assert_eq!(index.lines().count(), 3);
 }
