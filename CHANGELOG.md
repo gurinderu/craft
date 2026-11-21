@@ -1,5 +1,45 @@
 # Changelog
 
+## [0.57.0](https://github.com/gurinderu/craft/compare/v0.56.0...v0.57.0) (2026-11-21)
+
+
+### Features
+
+* add a design lens that judges the decisions a change makes ([a9a4b99](https://github.com/gurinderu/craft/commit/a9a4b99d62192e4c6a4e9081b810a896a17a5f42))
+* add a design lens that judges the decisions a change makes ([7bcdc19](https://github.com/gurinderu/craft/commit/7bcdc19245753827265f7de0b364729f29379e8d))
+* **consumers:** search a too-common name by path through its owner ([6a134f8](https://github.com/gurinderu/craft/commit/6a134f85f39b20f7caa86262705da038103af79e))
+* find calls of too-common names through their owner's path, with tree-sitter in the binary ([3f2a572](https://github.com/gurinderu/craft/commit/3f2a572969187b34bda235f84c2f34635cd2c897))
+* language profiles extend the general lenses ([2befcee](https://github.com/gurinderu/craft/commit/2befceed314ad2278f73cb20002799e2c3e2abf3))
+* language profiles extend the general lenses ([b28cbe1](https://github.com/gurinderu/craft/commit/b28cbe1395bc49ddf26ed6dcc2213fe2c8e4e004))
+* move recurring findings reader into the Rust CLI ([b818e6f](https://github.com/gurinderu/craft/commit/b818e6fdf1f4a20343f82543e58ff391c1ad1852))
+* move recurring findings reader into the Rust CLI ([80c7a28](https://github.com/gurinderu/craft/commit/80c7a289ac47055bf252b617d0d05404ce78fc35))
+* the security floor adds only the profile's security lenses ([2a65786](https://github.com/gurinderu/craft/commit/2a65786c4dea1ee69c4d62df5f29380ed75d7e12))
+
+
+### Bug Fixes
+
+* a retained filing conflict no longer blocks writes to other records ([7c0edad](https://github.com/gurinderu/craft/commit/7c0edad3f1aba537835093718cbc3b8019ad14d2))
+* a retained filing conflict no longer blocks writes to other records ([acd9570](https://github.com/gurinderu/craft/commit/acd9570c20f943fb5d23140c2ca56252b956d7df))
+* compare mutation head globs without legacy aliases ([e2f989f](https://github.com/gurinderu/craft/commit/e2f989ff4a0418051ab534d07d9e33ab42aa573e))
+* **consumers:** keep the structural search to paths that can reach the item ([784ef3b](https://github.com/gurinderu/craft/commit/784ef3b06a91defecd236192b0cf78b28f18252a))
+* fence writer admission by native process identity ([bbab5ea](https://github.com/gurinderu/craft/commit/bbab5ea1c0f696ee96eeafd92355f8ec48db752d))
+* give documented invariants an owner and keep the critic off a missing index ([f4e824e](https://github.com/gurinderu/craft/commit/f4e824e02b69febc1f054f7f293eb3040f32320d))
+* keep the recurring malformed-UTF-8 test off the temporary path ([d7e8f50](https://github.com/gurinderu/craft/commit/d7e8f5006528c957cba1e66a2a48f1a0ac7e94a0))
+* keep the recurring malformed-UTF-8 test off the temporary path ([33a0a55](https://github.com/gurinderu/craft/commit/33a0a55eacbeabfff12b08e5f2b34feb286cbe49))
+* make run-store filing recoverable and preserve UTF-16 ([846e26c](https://github.com/gurinderu/craft/commit/846e26ce26c614346ad7104b0e16c69463f41608))
+* make run-store filing recoverable and preserve UTF-16 ([4e5da2a](https://github.com/gurinderu/craft/commit/4e5da2aba719f1f83b974aea7c824cd64bb0dec6))
+* make the helper deadline test independent of machine load ([ae4f019](https://github.com/gurinderu/craft/commit/ae4f019f622c4f6f280c7fbe31bd4ec1c979125b))
+* make the helper deadline test independent of machine load ([3699c18](https://github.com/gurinderu/craft/commit/3699c18a86b0f712c4e617a35d58507acb69ba85)), closes [#443](https://github.com/gurinderu/craft/issues/443)
+* name a filing-conflict remedy that keeps the run record ([a5ec83e](https://github.com/gurinderu/craft/commit/a5ec83ebf9860132b16bff5be30bf65dc25caa69))
+* narrow the design signal and seed each profile's design lens with its own ([b3c6ca4](https://github.com/gurinderu/craft/commit/b3c6ca44d52e32ab058d4cc5f673b028aa15c37b))
+* preserve mutation coverage ratchet after relocation ([493ceba](https://github.com/gurinderu/craft/commit/493cebaf6025811e8d38b815df02c45d9bc9a371))
+* preserve recurrence adapter download credentials ([4bb882a](https://github.com/gurinderu/craft/commit/4bb882a395c406e2d060b33bfbbb92885eda090a))
+* read production code from the profile's own files and only &lt;name&gt;.spec.&lt;ext&gt; as a test ([682a01c](https://github.com/gurinderu/craft/commit/682a01cafc1fc2e6afb10f3a5e15ac1cc9c18cb6))
+* remind a stale or plain non-Latin request, per dispatch variant ([cdff6c1](https://github.com/gurinderu/craft/commit/cdff6c1c07108afb80be119ebc259c3693a7443b))
+* say craft's hook lines once, not on every message or reviewer launch ([02338d7](https://github.com/gurinderu/craft/commit/02338d79ff8df554da0afaa9de77146bc7e1ec04))
+* stop the hooks repeating their reminder and dispatch lines ([514b485](https://github.com/gurinderu/craft/commit/514b48524123d4799142e665a8eafe526597c94a))
+* time the reminder from any craft text, background covers foreground ([b3b7421](https://github.com/gurinderu/craft/commit/b3b742100ab6c360168e44cfbae1399aaa70283e))
+
 ## [0.56.0](https://github.com/gurinderu/craft/compare/v0.55.0...v0.56.0) (2026-11-21)
 
 

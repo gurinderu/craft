@@ -368,6 +368,6 @@ The pi package installs at the release tag:
 
 <!-- x-release-please-start-version -->
 ```sh
-pi install git:github.com/gurinderu/craft@v0.56.0
+pi install git:github.com/gurinderu/craft@v0.57.0
 ```
 <!-- x-release-please-end -->
