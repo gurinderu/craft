@@ -18,8 +18,9 @@ export function historicalIdentity(value) {
 /** Mutation scopes in the canonical layout: the old broad include also included pi. @param {string[]} globs */
 export function mutationScope(globs) {
   return globs.flatMap(g => {
-    if (g === 'lib/**/*.mjs') return ['integrations/shared/**/*.mjs', 'integrations/pi/pi-extension.mjs']
-    if (g === '!integrations/shared/config/**' || g === '!integrations/shared/fixtures/**') return []
+    if (g === 'lib/**/*.mjs') {
+      return ['integrations/shared/**/*.mjs', 'integrations/pi/pi-extension.mjs', '!integrations/shared/config/**', '!integrations/shared/fixtures/**']
+    }
     return [g.replace(/^(!?)lib\//, '$1integrations/shared/')]
   })
 }

@@ -40,6 +40,19 @@ test('floorProblems: no floor on the base (the file is new) passes', () => {
   assert.deepEqual(floorProblems(at(70), null), [])
 })
 
+for (const directory of ['config', 'fixtures']) {
+  test(`floorProblems: ${directory} coverage cannot be removed after widening in the new layout`, () => {
+    const wide = at(70)
+    const exclusion = `!integrations/shared/${directory}/**`
+    const narrow = { ...wide, mutate: [...wide.mutate, exclusion] }
+    assert.deepEqual(floorProblems(wide, narrow), [])
+    assert.deepEqual(floorProblems(narrow, narrow), [])
+    assert.deepEqual(floorProblems(narrow, wide), [
+      `integrations/shared/mutation-floor.json adds the exclusion ${exclusion} to \`mutate\` — what the floor is measured over may only widen`,
+    ])
+  })
+}
+
 test('parseFloor: reads `break` as a percentage and `mutate` as globs, and refuses anything else', () => {
   // Both ends of the range are percentages, and so is a fraction: Stryker's `thresholds.break` takes any.
   for (const b of [0, 70, 72.5, 100]) assert.deepEqual(parseFloor(JSON.stringify(at(b))), at(b), String(b))
