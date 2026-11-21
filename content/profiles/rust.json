@@ -1,6 +1,7 @@
 {
   "id": "rust",
   "lang": "Rust",
+  "extends": "general",
   "detect": { "suffixes": [".rs"], "names": ["Cargo.toml"] },
   "diffGlobs": ["'*.rs'"],
   "rubricSkill": "rust-review",
@@ -34,16 +35,9 @@
       "id": "reconciler", "brief": "lens-briefs/rust-reconciler", "model": "opus",
       "catalogue": { "label": "RACE CATALOGUE", "file": "skills/distributed-races/catalogue.md", "fallback": "R1–R6" }
     },
-    { "id": "sql-queries", "brief": "lens-briefs/sql-queries", "model": "opus", "conditional": true, "rubric": "sql-review" },
     { "id": "failure-windows", "brief": "lens-briefs/rust-failure-windows", "model": "opus", "conditional": true, "wholeDiff": true },
-    {
-      "id": "compat", "brief": "lens-briefs/rust-compat", "model": "opus", "surface": "wireForm", "wholeDiff": true,
-      "catalogue": { "label": "COMPATIBILITY CATALOGUE", "file": "skills/compatibility/catalogue.md", "fallback": "C1–C4, C8, C9 and C11–C13" }
-    },
     { "id": "maintainability", "brief": "lens-briefs/rust-maintainability", "model": "opus" },
-    { "id": "tests", "brief": "lens-briefs/rust-tests", "model": "opus" },
-    { "id": "intent", "brief": "lens-briefs/rust-intent", "model": "opus", "wholeDiff": true },
-    { "id": "invariants", "brief": "lens-briefs/rust-invariants", "model": "opus", "surface": "invariantType", "wholeDiff": true }
+    { "id": "intent", "brief": "lens-briefs/rust-intent", "model": "opus", "wholeDiff": true }
   ],
   "floorLenses": [
     { "id": "negative-space", "brief": "lens-briefs/rust-negative-space", "model": "opus", "surface": "crossBoundarySymbol", "wholeDiff": true }

@@ -1,6 +1,8 @@
 {
   "id": "nix",
   "lang": "Nix",
+  "extends": "general",
+  "exclude": ["money", "concurrency", "errors", "performance", "tests", "invariants", "sql-queries", "complexity"],
   "detect": { "suffixes": [".nix"], "names": ["flake.lock"] },
   "diffGlobs": ["'*.nix'", "'flake.lock'"],
   "rubricSkill": "nix-review",

@@ -84,16 +84,19 @@
       "expected": {
         "sizeBucket": "medium",
         "lenses": [
-          "safety",
-          "errors",
+          "correctness",
+          "security",
+          "money",
           "concurrency",
+          "errors",
           "performance",
-          "reconciler",
-          "compat",
-          "maintainability",
-          "tests",
           "intent",
+          "tests",
+          "maintainability",
+          "compat",
           "invariants",
+          "safety",
+          "reconciler",
           "negative-space"
         ],
         "maxRounds": 2,
@@ -132,12 +135,15 @@
           "intent",
           "performance",
           "tests",
-          "safety",
+          "correctness",
+          "security",
+          "money",
           "concurrency",
-          "reconciler",
-          "compat",
           "maintainability",
+          "compat",
           "invariants",
+          "safety",
+          "reconciler",
           "negative-space"
         ],
         "maxRounds": 2,
@@ -631,14 +637,17 @@
       "expected": {
         "sizeBucket": "medium",
         "lenses": [
+          "correctness",
+          "security",
+          "intent",
+          "maintainability",
+          "compat",
           "purity",
           "reproducibility",
           "injection",
           "packaging",
           "dev-env",
           "modules",
-          "maintainability",
-          "intent",
           "negative-space"
         ],
         "maxRounds": 2,
@@ -676,12 +685,15 @@
         "lenses": [
           "modules",
           "intent",
+          "correctness",
+          "security",
+          "maintainability",
+          "compat",
           "purity",
           "reproducibility",
           "injection",
           "packaging",
           "dev-env",
-          "maintainability",
           "negative-space"
         ],
         "maxRounds": 2,
@@ -697,7 +709,7 @@
       }
     },
     {
-      "name": "nix: large adds negative-space but no compat, three rounds",
+      "name": "nix: large adds negative-space and compat, three rounds",
       "profile": "nix",
       "changedFiles": [
         "a.nix"
@@ -723,7 +735,8 @@
           "reproducibility",
           "packaging",
           "intent",
-          "negative-space"
+          "negative-space",
+          "compat"
         ],
         "maxRounds": 3,
         "verifyVotes": 3,
@@ -738,7 +751,7 @@
       }
     },
     {
-      "name": "nix: a surface said absent drops negative-space; tests, compat and reconciler are not offered",
+      "name": "nix: a surface said absent drops negative-space; tests and reconciler are not offered",
       "profile": "nix",
       "changedFiles": [
         "a.nix"
@@ -764,7 +777,8 @@
         "sizeBucket": "large",
         "lenses": [
           "purity",
-          "intent"
+          "intent",
+          "compat"
         ],
         "maxRounds": 3,
         "verifyVotes": 3,
@@ -817,7 +831,8 @@
         "repoRules": [],
         "surfaceDropped": [],
         "lightSkipped": [
-          "negative-space"
+          "negative-space",
+          "compat"
         ]
       }
     },
@@ -897,6 +912,122 @@
         "repoRules": [],
         "surfaceDropped": [],
         "lightSkipped": []
+      }
+    },
+    {
+      "name": "general: a small diff keeps the picks and adds correctness and intent",
+      "profile": "general",
+      "changedFiles": [
+        "web/app.ts"
+      ],
+      "scout": {
+        "sizeBucket": "small",
+        "lenses": [
+          "security"
+        ],
+        "isLibrary": false,
+        "securitySensitive": false,
+        "intent": "adds f",
+        "churn": [],
+        "repoRules": [],
+        "notes": "n"
+      },
+      "expected": {
+        "churn": [],
+        "intent": "adds f",
+        "isLibrary": false,
+        "lenses": [
+          "security",
+          "correctness",
+          "intent"
+        ],
+        "lightSkipped": [],
+        "maxRounds": 1,
+        "repoRules": [],
+        "securitySensitive": false,
+        "sizeBucket": "small",
+        "surfaceDropped": [],
+        "verifyVotes": 1,
+        "lensModel": "opus"
+      }
+    },
+    {
+      "name": "general: a large diff takes the lenses it gained and negative-space",
+      "profile": "general",
+      "changedFiles": [
+        "web/app.ts"
+      ],
+      "scout": {
+        "sizeBucket": "large",
+        "lenses": [
+          "tests",
+          "maintainability",
+          "compat",
+          "invariants"
+        ],
+        "isLibrary": false,
+        "securitySensitive": false,
+        "intent": "adds f",
+        "churn": [],
+        "repoRules": [],
+        "notes": "n"
+      },
+      "expected": {
+        "churn": [],
+        "intent": "adds f",
+        "isLibrary": false,
+        "lenses": [
+          "tests",
+          "maintainability",
+          "compat",
+          "invariants",
+          "correctness",
+          "intent",
+          "negative-space"
+        ],
+        "lightSkipped": [],
+        "maxRounds": 3,
+        "repoRules": [],
+        "securitySensitive": false,
+        "sizeBucket": "large",
+        "surfaceDropped": [],
+        "verifyVotes": 3,
+        "lensModel": "opus"
+      }
+    },
+    {
+      "name": "general: no scout answer: the conservative plan",
+      "profile": "general",
+      "changedFiles": [
+        "web/app.ts"
+      ],
+      "scout": null,
+      "expected": {
+        "churn": [],
+        "intent": "",
+        "isLibrary": false,
+        "lenses": [
+          "correctness",
+          "security",
+          "money",
+          "concurrency",
+          "errors",
+          "performance",
+          "intent",
+          "tests",
+          "maintainability",
+          "compat",
+          "invariants",
+          "negative-space"
+        ],
+        "lightSkipped": [],
+        "maxRounds": 2,
+        "repoRules": [],
+        "securitySensitive": true,
+        "sizeBucket": "medium",
+        "surfaceDropped": [],
+        "verifyVotes": 3,
+        "lensModel": "opus"
       }
     },
     {

@@ -11,6 +11,11 @@ whatever the language: how bad a finding is, what kind it is, where to look for 
 when it may be dropped. A review lens reads them together with its language's rubric; when the two
 disagree on severity, the harm cap here wins.
 
+The general lenses — correctness, security, money, concurrency, errors, performance, intent, tests,
+maintainability, compat, invariants, negative-space and complexity — are judged by these rules
+alone on source no language profile takes. The Rust and Nix profiles run the same lenses that fit
+them, under their own rubric beside these rules, some with a brief of their own.
+
 ## Files
 
 | File | What it settles |

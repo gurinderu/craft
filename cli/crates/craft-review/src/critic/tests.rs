@@ -41,7 +41,7 @@ fn a_critic_is_asked_only_on_a_large_or_security_sensitive_full_review() {
     assert!(
         asked[0]
             .prompt
-            .contains("choose ONLY from: [\"safety\",\"concurrency\"")
+            .contains("choose ONLY from: [\"correctness\",\"security\",\"money\"")
     );
     let mut light = run_with(&plan("small", true, &["errors"], &[]));
     light.light = true;

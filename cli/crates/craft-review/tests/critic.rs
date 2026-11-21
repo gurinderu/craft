@@ -59,7 +59,7 @@ fn the_critic_admits_a_lens_and_its_finding_is_verified() {
     let p = prompt_of(&s["tasks"][0]);
     assert!(p.contains("Confirmed: 1, Suspected: 0."), "{p}");
     assert!(
-        p.contains(r#"choose ONLY from: ["safety","concurrency","api-idioms""#),
+        p.contains(r#"choose ONLY from: ["correctness","security","money","concurrency""#),
         "{p}"
     );
 

@@ -41,7 +41,7 @@ fn start_renders_the_scout_over_the_diff() {
     for want in [
         "You are scouting a Rust diff",
         "git diff --stat 'origin/main'...HEAD -- '*.rs'",
-        r#"choose from ["safety","errors","concurrency","performance","api-idioms","api-boundary","reconciler","sql-queries","failure-windows","compat","maintainability","tests","intent","invariants"]"#,
+        r#"choose from ["correctness","security","money","concurrency","errors","performance","intent","tests","maintainability","compat","invariants","sql-queries","complexity","safety","api-idioms","api-boundary","reconciler","failure-windows"]"#,
         r#"EXCEPT ["sql-queries","failure-windows"]"#,
         "Decide what is \"in play\" from the diff",
         "Return repo-relative paths, at most 5",
@@ -340,8 +340,8 @@ fn a_scout_that_never_answers_runs_the_conservative_plan_and_says_so() {
     let lenses = ids(&s);
     assert_eq!(
         lenses.len(),
-        11,
-        "the security floor's roster and negative-space: {lenses:?}"
+        14,
+        "the security floor's roster less complexity, which has no index, and negative-space: {lenses:?}"
     );
     let ns = s["tasks"]
         .as_array()

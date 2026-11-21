@@ -62,13 +62,20 @@ fn without_a_code_metrics_index_the_lens_is_dropped_and_said_so() {
     // No profile entry, and no program answering where the review looks for one.
     let missing = out.path().join("no-codebase-memory-mcp");
     let s = planned(repo.path(), out.path(), (None, &missing));
-    assert_eq!(ids(&s), ["lens-general-correctness-r1"]);
+    assert_eq!(
+        ids(&s),
+        ["lens-general-correctness-r1", "lens-general-intent-r1"]
+    );
     let run = out.path().join("run");
     let mut s = s;
     while s["done"] == json!(false) {
         let answers: serde_json::Map<String, Value> = ids(&s)
             .into_iter()
-            .map(|id| (id, lens("correctness", &[])))
+            .map(|id| {
+                let name = id.strip_prefix("lens-general-").unwrap();
+                let name = name.split('-').next().unwrap().to_owned();
+                (id, lens(&name, &[]))
+            })
             .collect();
         s = submit(&run, Value::Object(answers));
     }
@@ -103,7 +110,11 @@ fn with_an_index_a_finding_stands_on_the_metrics_it_carries_and_the_verifier_rer
     );
     assert_eq!(
         ids(&s),
-        ["lens-general-complexity-r1", "lens-general-correctness-r1"]
+        [
+            "lens-general-complexity-r1",
+            "lens-general-correctness-r1",
+            "lens-general-intent-r1"
+        ]
     );
     let p = prompt_of(&s["tasks"][0]);
     assert_contains_all(
@@ -128,7 +139,8 @@ fn with_an_index_a_finding_stands_on_the_metrics_it_carries_and_the_verifier_rer
     let s = submit(
         &run,
         json!({"lens-general-complexity-r1": lens("complexity", &[metric("f is hard to follow", &json!({"function": "f", "cognitive": 3, "loop_depth": 1, "unguarded_recursion": false})), metric("f is a bit long", &json!({"function": "f"}))]),
-               "lens-general-correctness-r1": lens("correctness", &[])}),
+               "lens-general-correctness-r1": lens("correctness", &[]),
+               "lens-general-intent-r1": lens("intent", &[])}),
     );
     // Round 2 adds nothing; then the one finding with metrics goes to one metric verifier.
     let quiet: serde_json::Map<String, Value> = ids(&s)
@@ -171,6 +183,10 @@ fn a_graph_answering_where_no_profile_records_one_is_indexed_and_the_lens_runs()
     assert_eq!(calls.lines().count(), 1, "{calls}");
     assert_eq!(
         ids(&s),
-        ["lens-general-complexity-r1", "lens-general-correctness-r1"]
+        [
+            "lens-general-complexity-r1",
+            "lens-general-correctness-r1",
+            "lens-general-intent-r1"
+        ]
     );
 }

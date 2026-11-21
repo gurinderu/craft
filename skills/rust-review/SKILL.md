@@ -235,6 +235,10 @@ others (higher recall than one broad pass):
 
 | Lens | Slice | Owning skill for the fix |
 |---|---|---|
+| correctness | logic: wrong behaviour behind correct-looking code — off-by-one, inverted or incomplete conditions, a missed case, state updated in the wrong order (a general lens) | `rust-idioms` |
+| security | authn/authz, tenant or owner isolation, session/token handling, crypto use, SSRF, untrusted input reaching a sink (a general lens; `unsafe`, panics and injection stay `safety`'s) | `rust-security` |
+| money | float arithmetic on amounts, lost cents in splits or rounding, payment idempotency, double-charge windows, currency mixups, ledger imbalance (a general lens) | `rust-fintech` |
+| complexity | the code-graph metrics of the functions the diff touches (cognitive and cyclomatic complexity, loop depth, a scan or allocation in a loop, unguarded recursion), each finding carrying the numbers it stands on; runs only when the binary's code-graph index is ready (a general lens) | `refactoring` |
 | safety | injection / secrets / unsafe / untrusted-input limits / build-profile-divergent arithmetic and guards | `rust-security`, `rust-unsafe` |
 | errors | Result-vs-panic, dropped errors, typed-vs-anyhow | `rust-errors` |
 | concurrency | blocking-in-async, lock-across-await, deadlock, Send/Sync | `rust-concurrency` |
@@ -247,7 +251,10 @@ others (higher recall than one broad pass):
 
 The workflow runs additional context-dependent lenses the scout selects — `reconciler` (controller
 correctness; reads the language-agnostic `distributed-races` catalogue) and `negative-space` (breakage the diff enables in unchanged code); the Rust profile,
-`content/profiles/rust.json`, is the authoritative lens set.
+`content/profiles/rust.json`, extends the general profile (`content/profiles/general.json`): its
+lenses are the general ones — the Rust brief replacing the general one where both name a lens
+(`errors`, `concurrency`, `performance`, `maintainability`, `intent`, `negative-space`) — then
+Rust's own. The two files are the authoritative lens set.
 
 **The optional pass — off by default.** Two lenses are not part of the standard fan-out, because
 on the measured run they returned no High findings at all while producing the bulk of the

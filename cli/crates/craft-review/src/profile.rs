@@ -2,7 +2,7 @@
 //! model and flags), its scout rules and its rubric. Beside the Rust, Nix and SQL profiles (SQL:
 //! realm @nick/craft, node #536) there is `general`, the retired JS adversarial-review engine's
 //! lenses over every file carrying code that none of them takes (realm @nick/craft, nodes #421,
-//! #445).
+//! #445). Rust and Nix extend it, merged once at load ([`inherit`]; realm @nick/craft, node #552).
 
 use serde::Deserialize;
 
@@ -101,6 +101,8 @@ pub struct Profile {
     pub detect: Detect,
     pub diff_globs: Vec<String>,
     pub rubric_skill: String,
+    /// Its rubric's exclusion file; empty, or absent, when it ships none.
+    #[serde(default)]
     pub fp_rules: String,
     /// Whether its rubric skill ships a `rules.md` catalog whose IDs a finding's `ruleId` cites;
     /// without one its lenses are told to leave `ruleId` empty, not to hunt for an ID.
@@ -142,14 +144,31 @@ impl Profile {
         Self::load("rust")
     }
 
-    /// The profile `id`, `content/profiles/<id>.json`.
+    /// The profile `id`, `content/profiles/<id>.json`, merged with what it extends.
     ///
     /// # Errors
-    /// When the profile file is missing or not of this shape.
+    /// When the profile file is missing or not of this shape, or its merge is refused
+    /// ([`ContentError::BadProfile`]).
     pub fn load(id: &str) -> Result<Self, ContentError> {
+        Self::load_with(id, &|id: &str| {
+            content::raw(&format!("profiles/{id}.json")).map(str::to_owned)
+        })
+    }
+
+    /// The profile `id`, each profile's text read by `read`, resolved through what it extends
+    /// ([`inherit`]).
+    ///
+    /// # Errors
+    /// As [`Profile::load`].
+    pub(crate) fn load_with(
+        id: &str,
+        read: &dyn Fn(&str) -> Result<String, ContentError>,
+    ) -> Result<Self, ContentError> {
         let path = format!("profiles/{id}.json");
-        serde_json::from_str(content::raw(&path)?)
-            .map_err(|e| ContentError::NotJson(path, e.to_string()))
+        let profile: Self = serde_json::from_value(inherit::resolve(id, read)?)
+            .map_err(|e| ContentError::NotJson(path, e.to_string()))?;
+        inherit::check(&profile)?;
+        Ok(profile)
     }
 
     /// Every profile of [`IDS`], in its order.
@@ -263,5 +282,6 @@ pub fn literal_pathspec(files: &[String]) -> String {
         .join(" ")
 }
 
+mod inherit;
 #[cfg(test)]
 mod tests;
