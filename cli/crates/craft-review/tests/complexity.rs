@@ -67,7 +67,8 @@ fn without_a_code_metrics_index_the_lens_is_dropped_and_said_so() {
         [
             "lens-general-correctness-r1",
             "lens-general-intent-r1",
-            "lens-general-tests-r1"
+            "lens-general-tests-r1",
+            "lens-general-design-r1"
         ]
     );
     let run = out.path().join("run");
@@ -118,7 +119,8 @@ fn with_an_index_a_finding_stands_on_the_metrics_it_carries_and_the_verifier_rer
             "lens-general-complexity-r1",
             "lens-general-correctness-r1",
             "lens-general-intent-r1",
-            "lens-general-tests-r1"
+            "lens-general-tests-r1",
+            "lens-general-design-r1"
         ]
     );
     let p = prompt_of(&s["tasks"][0]);
@@ -146,7 +148,8 @@ fn with_an_index_a_finding_stands_on_the_metrics_it_carries_and_the_verifier_rer
         json!({"lens-general-complexity-r1": lens("complexity", &[metric("f is hard to follow", &json!({"function": "f", "cognitive": 3, "loop_depth": 1, "unguarded_recursion": false})), metric("f is a bit long", &json!({"function": "f"}))]),
                "lens-general-correctness-r1": lens("correctness", &[]),
                "lens-general-intent-r1": lens("intent", &[]),
-               "lens-general-tests-r1": lens("tests", &[])}),
+               "lens-general-tests-r1": lens("tests", &[]),
+               "lens-general-design-r1": lens("design", &[])}),
     );
     // Round 2 adds nothing; then the one finding with metrics goes to one metric verifier.
     let quiet: serde_json::Map<String, Value> = ids(&s)
@@ -193,7 +196,8 @@ fn a_graph_answering_where_no_profile_records_one_is_indexed_and_the_lens_runs()
             "lens-general-complexity-r1",
             "lens-general-correctness-r1",
             "lens-general-intent-r1",
-            "lens-general-tests-r1"
+            "lens-general-tests-r1",
+            "lens-general-design-r1"
         ]
     );
 }

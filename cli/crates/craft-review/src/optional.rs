@@ -103,11 +103,24 @@ mod tests {
         assert_eq!(request(None, &ps), (vec![], vec![]));
         assert_eq!(request(Some("false"), &ps), (vec![], vec![]));
         let (all, _) = request(Some("all"), &ps);
-        assert_eq!(all, ["rust-api-idioms", "rust-api-boundary"]);
+        assert_eq!(
+            all,
+            [
+                "rust-design",
+                "rust-api-idioms",
+                "rust-api-boundary",
+                "general-design"
+            ]
+        );
         assert_eq!(request(Some("true"), &ps).0, all);
         let (got, unknown) = request(Some("rust-api-idioms, api-boundary perf"), &ps);
         assert_eq!(got, ["rust-api-idioms", "rust-api-boundary"]);
         assert_eq!(unknown, ["perf"]);
+        // The design lens is every profile's: its bare id buys it in each.
+        assert_eq!(
+            request(Some("design"), &ps).0,
+            ["rust-design", "general-design"]
+        );
         let note = unknown_note("perf", &unknown, &ps).unwrap();
         assert!(note.contains("names perf") && note.contains("rust-api-boundary"));
     }

@@ -75,6 +75,10 @@ pub struct PlanInput<'a> {
     /// Whether the profile's changed lines hold a query string ([`crate::embedded_sql`]): the
     /// signal that adds the conditional `sql-queries` lens (realm @nick/craft, node #536).
     pub embedded_sql: bool,
+    /// Whether the profile's part of the change adds a module, a crate, a public type or a format
+    /// ([`crate::design`]): the signal that adds the `design` lens, optional otherwise (realm
+    /// @nick/craft, node #534).
+    pub design: bool,
 }
 
 /// Rounds and verifier votes by size, as `RIGOR_BY_SIZE`.
@@ -224,7 +228,7 @@ pub fn plan(input: PlanInput<'_>) -> Plan {
     };
     required(
         p,
-        (scout, input.embedded_sql),
+        (scout, input.embedded_sql, input.design),
         input.profile_files,
         &mut plan,
     );
@@ -255,10 +259,11 @@ pub fn plan(input: PlanInput<'_>) -> Plan {
 }
 
 /// The lenses the plan carries whatever the scout picked: the always set, `tests` on a change to
-/// production code, `failure-windows` on controller code, `sql-queries` on embedded SQL.
+/// production code, `failure-windows` on controller code, `sql-queries` on embedded SQL, `design`
+/// on new structure — the signal buys it though it is optional.
 fn required(
     p: &Profile,
-    (scout, embedded_sql): (Option<&Value>, bool),
+    (scout, embedded_sql, design): (Option<&Value>, bool, bool),
     own: &[String],
     plan: &mut Plan,
 ) {
@@ -278,6 +283,9 @@ fn required(
     }
     if embedded_sql {
         offer("sql-queries");
+    }
+    if design {
+        offer(crate::design::LENS);
     }
 }
 

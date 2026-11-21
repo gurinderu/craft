@@ -20,6 +20,7 @@ impl PromptContext {
             sources: super::Sources::default(),
             consumers: crate::consumers::Consumers::default(),
             graph_project: String::new(),
+            design: crate::design::Seed::default(),
             scope: None,
         }
     }

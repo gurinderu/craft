@@ -12,9 +12,11 @@ when it may be dropped. A review lens reads them together with its language's ru
 disagree on severity, the harm cap here wins.
 
 The general lenses — correctness, security, money, concurrency, errors, performance, intent, tests,
-maintainability, compat, invariants, negative-space and complexity — are judged by these rules
+maintainability, compat, invariants, negative-space, design and complexity — are judged by these rules
 alone on source no language profile takes. The Rust and Nix profiles run the same lenses that fit
-them, under their own rubric beside these rules, some with a brief of their own.
+them, under their own rubric beside these rules, some with a brief of their own. The `design` lens
+rates by the same cap: a second implementation or a broken boundary names its harm and is
+should-fix; a legitimate trade-off names none and is a question to the author, listed as doubtful.
 
 ## Files
 

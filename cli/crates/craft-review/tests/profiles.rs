@@ -93,7 +93,8 @@ fn a_typescript_only_diff_is_reviewed_by_the_general_lenses() {
             "lens-general-security-r1",
             "lens-general-correctness-r1",
             "lens-general-intent-r1",
-            "lens-general-tests-r1"
+            "lens-general-tests-r1",
+            "lens-general-design-r1"
         ]
     );
     assert!(
@@ -122,7 +123,8 @@ fn a_typescript_only_diff_is_reviewed_by_the_general_lenses() {
     let s = submit(
         &run,
         json!({"lens-general-security-r1": lens("security", &[f]), "lens-general-correctness-r1": lens("correctness", &[]),
-               "lens-general-intent-r1": lens("intent", &[]), "lens-general-tests-r1": lens("tests", &[])}),
+               "lens-general-intent-r1": lens("intent", &[]), "lens-general-tests-r1": lens("tests", &[]),
+               "lens-general-design-r1": lens("design", &[])}),
     );
     assert_eq!(ids(&s), ["verify-0-v0", "verify-0-v1"]);
     let v = prompt_of(task(&s, "verify-0-v0"));
@@ -196,6 +198,21 @@ fn round(step: &Value, found: &dyn Fn(&str) -> Vec<Value>) -> Value {
     Value::Object(pairs)
 }
 
+/// What the first round of the mixed diff finds: one Rust finding, one general.
+fn mixed_found(id: &str) -> Vec<Value> {
+    match id {
+        "lens-rust-errors-r1" => vec![titled("High", 1, "f returns 1")],
+        "lens-general-security-r1" => {
+            let mut f = titled("Medium", 1, "token logged");
+            if let Some(o) = f.as_object_mut() {
+                o.insert("file".into(), json!("web/app.ts"));
+            }
+            vec![f]
+        }
+        _ => Vec::new(),
+    }
+}
+
 #[test]
 fn a_mixed_diff_plans_each_profile_over_its_own_files_and_settles_one_pool() {
     let repo = repo_with(&[
@@ -227,33 +244,25 @@ fn a_mixed_diff_plans_each_profile_over_its_own_files_and_settles_one_pool() {
             "lens-rust-intent-r1",
             "lens-rust-performance-r1",
             "lens-rust-tests-r1",
+            "lens-rust-design-r1",
             "lens-nix-purity-r1",
             "lens-nix-intent-r1",
             "lens-general-security-r1",
             "lens-general-correctness-r1",
             "lens-general-intent-r1",
-            "lens-general-tests-r1"
+            "lens-general-tests-r1",
+            "lens-general-design-r1"
         ]
     );
-    let found = |id: &str| -> Vec<Value> {
-        match id {
-            "lens-rust-errors-r1" => vec![titled("High", 1, "f returns 1")],
-            "lens-general-security-r1" => {
-                let mut f = titled("Medium", 1, "token logged");
-                f["file"] = json!("web/app.ts");
-                vec![f]
-            }
-            _ => Vec::new(),
-        }
-    };
-    let s = submit(&run, round(&s, &found));
+    let s = submit(&run, round(&s, &mixed_found));
     assert_eq!(
         ids(&s),
         [
             "lens-rust-errors-r2",
             "lens-rust-intent-r2",
             "lens-rust-performance-r2",
-            "lens-rust-tests-r2"
+            "lens-rust-tests-r2",
+            "lens-rust-design-r2"
         ],
         "only the profile with rounds left and new findings runs again"
     );

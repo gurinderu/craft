@@ -62,9 +62,10 @@ fn consumers_of(
     crate::consumers::of_checkout(cwd, (projects, probe, metrics), diff, &opts.cancel)
 }
 
-/// The embedded-SQL signal on each track, then the integration points' sources, the gate and the
-/// consumers list, side by side, none waiting on another: the sources and the list reach the
-/// prompts, the gate's seeds the pool as round-0 findings.
+/// The embedded-SQL and design signals on each track (the design lens's seed beside them), then
+/// the integration points' sources, the gate and the consumers list, side by side, none waiting on
+/// another: the sources and the list reach the prompts, the gate's seeds the pool as round-0
+/// findings.
 pub(super) fn prepare(
     cwd: &Path,
     (dir, profiles): (&Path, &[Profile]),
@@ -75,6 +76,9 @@ pub(super) fn prepare(
     let metrics = profiles.iter().filter(taking_part).any(complexity::wanted);
     let sql = crate::embedded_sql::mark(cwd, &run.diff.merge_base, &mut run.tracks);
     run.notes.extend(sql);
+    let (seed, design) = crate::design::mark(cwd, &run.diff, &mut run.tracks);
+    run.context.design = seed;
+    run.notes.extend(design);
     let (prepared, gated, listed) = std::thread::scope(|s| {
         let sources = s.spawn(|| {
             opts.sources

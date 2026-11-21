@@ -32,6 +32,7 @@
       "catalogue": { "label": "COMPATIBILITY CATALOGUE", "file": "skills/compatibility/catalogue.md", "fallback": "C1–C4, C8, C9 and C11–C13" }
     },
     { "id": "invariants", "brief": "lens-briefs/general-invariants", "model": "opus", "surface": "invariantType", "wholeDiff": true },
+    { "id": "design", "brief": "lens-briefs/general-design", "model": "opus", "optional": true, "conditional": true, "wholeDiff": true },
     { "id": "sql-queries", "brief": "lens-briefs/sql-queries", "model": "opus", "conditional": true, "rubric": "sql-review" },
     { "id": "complexity", "brief": "lens-complexity", "model": "opus", "metrics": true }
   ],
