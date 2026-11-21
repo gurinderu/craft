@@ -8,9 +8,17 @@ use std::time::{Duration, Instant};
 
 use crate::cancel::Cancel;
 
+mod crates;
+mod paths;
 mod stream;
+mod structural;
+mod unfinished;
 
+pub(super) use crates::externals;
+pub(super) use paths::Externals;
 use stream::{Ended, stream};
+pub(super) use structural::by_path;
+pub(super) use unfinished::Unfinished;
 
 /// Names too common for a whole-word search to tell one symbol's uses from another's.
 const COMMON: [&str; 40] = [
@@ -93,7 +101,7 @@ pub(super) fn search(
     name: &str,
     deadline: Instant,
     cancel: &Cancel,
-) -> Result<Vec<Hit>, String> {
+) -> Result<Vec<Hit>, Unfinished> {
     let mut cmd = Command::new("git");
     cmd.arg("-C")
         .arg(top)
@@ -112,10 +120,10 @@ pub(super) fn search(
         ])
         .args(EXCLUDE);
     match stream(cmd, deadline, cancel)? {
-        Ended::Capped => Err(format!("over {HITS_MAX} lines")),
+        Ended::Capped => Err(Unfinished::Capped),
         Ended::Exited(Some(0), hits, _) => Ok(hits),
         Ended::Exited(Some(1), ..) => Ok(Vec::new()),
-        Ended::Exited(_, _, err) => Err(format!("git grep failed: {}", err.trim())),
+        Ended::Exited(_, _, err) => Err(format!("git grep failed: {}", err.trim()).into()),
     }
 }
 

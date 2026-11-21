@@ -27,6 +27,7 @@ mod nested;
 mod paths;
 mod reindex;
 mod stale;
+mod structural;
 mod walk;
 
 pub(super) fn git(dir: &Path, args: &[&str]) -> String {

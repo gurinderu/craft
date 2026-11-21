@@ -6,7 +6,7 @@
 
 use serde_json::Value;
 
-use super::{candidates, lens_task};
+use super::{candidates, lens_task, metrics_ready};
 use crate::content::ContentError;
 use crate::profile::Profile;
 use crate::state::{RunState, Task, TaskKind, TaskState};
@@ -68,6 +68,7 @@ pub(crate) fn followups(
     let mut notes = Vec::new();
     let mut gaps = Vec::new();
     let mut lenses_run = Vec::new();
+    let metrics = metrics_ready(run);
     for t in &run.tasks {
         let TaskKind::Critic { profile } = &t.kind else {
             continue;
@@ -87,7 +88,7 @@ pub(crate) fn followups(
         if !note.is_empty() && note != "coverage complete" {
             gaps.push(note);
         }
-        let open = candidates(p, plan);
+        let open = candidates(p, plan, metrics);
         let named: Vec<String> = lenses.into_iter().filter(|l| open.contains(l)).collect();
         for lens in admitted(p, &plan.surface_dropped, &named, &mut notes) {
             tasks.push(lens_task(run, p, plan, &lens)?);

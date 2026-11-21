@@ -3,7 +3,8 @@
 //! adds outside the changed lines — callers, implementors, places passing it as a value — with
 //! file and line, within a per-symbol and a per-run budget. It unions the code graph's callers,
 //! when the reviewer's profile says the graph answers and its index is not older than the base,
-//! with a name search, always run, because the graph loses edges. Each lens gets the list and
+//! with a name search, always run, because the graph loses edges, and, for a name too common to
+//! search by text, a structural search of the paths that reach it. Each lens gets the list and
 //! marks every line; the report says which sources built it. Rust symbols only.
 
 use serde::{Deserialize, Serialize};
@@ -38,6 +39,9 @@ pub use text::{confined_block, lens_block, seam_block};
 pub const NAME_SEARCH: &str = "name search";
 /// The one profile whose lenses and seam pass are handed the list: its lines are that track's.
 pub const PROFILE: &str = "rust";
+/// The structural search's: the paths that reach a changed item whose name is too common to
+/// search by text.
+pub const STRUCTURAL: &str = "structural search";
 /// The code graph's.
 pub const GRAPH: &str = "codebase-memory";
 /// The run directory's file holding the whole list.

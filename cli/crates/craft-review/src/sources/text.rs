@@ -6,10 +6,11 @@ use serde_json::Value;
 use super::{Prepared, Sources};
 
 /// The lenses that judge another system's behaviour — lifecycle, compatibility and races
-/// (`EXTERNAL_LENSES`); the general profile (the retired adversarial-review engine's catalogue) has races and what a
-/// failed call leaves behind (`ADVERSARIAL_EXTERNAL_LENSES`).
+/// (`EXTERNAL_LENSES`); the general profile (the retired adversarial-review engine's catalogue) has races, what a
+/// failed call leaves behind (`ADVERSARIAL_EXTERNAL_LENSES`) and, since it holds one, compatibility (realm @nick/craft,
+/// node #552).
 const EXTERNAL_LENSES: [&str; 4] = ["reconciler", "compat", "concurrency", "failure-windows"];
-const GENERAL_EXTERNAL_LENSES: [&str; 2] = ["concurrency", "errors"];
+const GENERAL_EXTERNAL_LENSES: [&str; 3] = ["concurrency", "errors", "compat"];
 
 /// Whether `profile`'s lens `lens` reads the external sources.
 #[must_use]

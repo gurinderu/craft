@@ -200,7 +200,10 @@ with the pi backend. It has been observed from a checkout, not yet as an install
 `integrations/claude-code/workflows/review.js` is the diff review for any language. It drives the `craft` binary (the Rust
 CLI in `cli/`, fetched from this version's GitHub release unless `craftBin` names a local build), which
 decides every step: each changed file goes to its profile — Rust, Nix, SQL, or the general lenses for
-source in any other language — the mechanical gate runs, a scout per profile picks lenses, the lenses
+source in any other language (correctness, security, money, concurrency, errors, performance, intent,
+tests, maintainability, compat, invariants, negative-space and, behind a code-metrics index,
+complexity; the Rust and Nix profiles extend them with their own lenses, Nix leaving out those that
+do not fit) — the mechanical gate runs, a scout per profile picks lenses, the lenses
 loop until dry, the findings are deduplicated and verified, and the binary writes one report with a
 verdict; the workflow only runs the agents each step hands out. A later run of the same branch builds
 on the earlier one (reviewing the fix commits, re-judging the findings it left open) unless `fresh`.
