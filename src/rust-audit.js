@@ -391,6 +391,9 @@ function baseInstruction() {
 // dead agent of the audit's round. No nested review launches once the stop is seen. The audit then
 // reports the stop as INCOMPLETE and still attempts its record.
 const auditLimit = makeLimitStop(log)
+// Every dispatch below names its model: with none it runs on the launching session's model. The scout on haiku,
+// the recall and the tool-running dimensions on sonnet, the judgement steps, the verifier and the synthesis on opus
+// (realm `@nick/craft`, node #553).
 const auditAgent = stopAtLimit(agent, auditLimit)
 phase('Scout')
 const scout = /** @type {ScoutResult | null} */ (await auditAgent(
@@ -851,7 +854,7 @@ NO EVIDENCE (agent claimed a green but showed no work, so its verdict is not tru
 
 RESULTS:
 ${JSON.stringify(stripped, null, 2)}`,
-  // Synthesis is merge/dedup/rank of given verdicts — moderate reasoning, not a deep judgement call.
+  // Synthesis writes the report the human reads: on opus, at medium effort (realm `@nick/craft`, node #553).
   { label: 'synthesis', model: 'opus', effort: 'medium' },
 )
 

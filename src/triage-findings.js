@@ -48,6 +48,8 @@ const unknownRefused = unknownOptionsRefusal(A, ['pr', 'report', 'base', 'prBase
 // recall and the sift its memory, the PR gatherer its forge, and the logger files the record under it.
 const { repo: repoArg, refused: repoRefused } = readRepoArg(A['repo'])
 const REPO_DIRECTIVE = repoDirective(repoArg, 'triage')
+// Every dispatch below names its model: with none it runs on the launching session's model. Extraction and lookup
+// on sonnet, judgement against the code and the plan on opus (realm `@nick/craft`, node #553).
 /**
  * The sandbox's agent(), pointed at `repo` when one is given.
  * @param {string} prompt @param {Parameters<typeof agent>[1]} [opts] @returns {Promise<unknown>}
