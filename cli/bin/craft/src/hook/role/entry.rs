@@ -15,8 +15,8 @@ const MAX_BYTES: u64 = 256 * 1024;
 
 /// One line of the log. `kind` is the prompt class, `agent` the subagent type, `readiness` the
 /// readiness lines a Codex start said, `reason` what a line that spoke said when it was not a
-/// request's text — or, on every line of the Agent-tool hook, `reviewer-dispatch`. The fields keep
-/// the order each Node hook wrote them in.
+/// request's text — or, on a prompt's silent line, `no-work-sign`, and on every line of the
+/// Agent-tool hook, `reviewer-dispatch`. The fields keep the order each Node hook wrote them in.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct Entry {
     pub ts: String,
@@ -39,6 +39,10 @@ pub struct Entry {
     pub readiness: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
+    /// Whether a reviewer dispatch the Agent-tool hook spoke on, or kept silent on as already said,
+    /// runs in the background.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub background: Option<bool>,
 }
 
 impl Entry {
@@ -143,6 +147,7 @@ mod tests {
             agent_kind: None,
             readiness: None,
             reason: None,
+            background: None,
         }
     }
 
