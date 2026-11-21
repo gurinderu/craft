@@ -174,9 +174,14 @@ arrive as a synthetic part after the message (`chat.message`). 2.x has no such h
 appended to the prompt's own text through the session `prompt` hook: **on 2.x the lines appear
 inside the user's message text**, as if the user had written them, and stay in the history. Silent everywhere else, off with `CRAFT_ROLE_HOOK=0` or a `craft-role-hook: off` line in
 `AGENTS.md` / `CLAUDE.md`. Each firing appends one line to `~/.craft/hooks.jsonl`. No permission or
-tool-call interception. It talks only to the local opencode server, opens no ports, and makes no
-outbound calls. Installed project-scoped by default. The hook loads craft's `lib/` from the checkout
-the plugin directory is linked from; if that fails, the hook is silent and the tools still work.
+tool-call interception. It talks only to the local opencode server and opens no ports. Its decision
+is the `craft` binary of the plugin's version (`craft hook opencode-message`), run from
+`~/.craft/bin/<version>/`; when that is not there yet and the repo declares roles or rules (the switch
+on), the hook starts its download in the background, at most once an hour (`bin/craft --ensure
+--background`, from the GitHub release, its SHA-256 checked) — its one outbound call; a failed
+download is said once, as a line in the message part asking the model to tell you (a plugin has no
+line of its own in OpenCode), with its log `~/.craft/bin/<version>.log`. Installed project-scoped by default. If the binary fails, the hook
+is silent and the tools still work.
 
 ## Parity caveats
 

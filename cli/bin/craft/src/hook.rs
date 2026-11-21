@@ -14,6 +14,7 @@ mod github;
 mod input;
 mod record;
 mod repo;
+mod role;
 mod runs;
 mod said;
 
@@ -86,6 +87,39 @@ fn judge(url: &str, cwd: Option<PathBuf>, store: Option<&Path>) -> Result<Option
         &here,
     ))
 }
+
+/// `craft hook session-start|user-prompt|subagent-start|reviewer-dispatch`: one run of a role hook
+/// ([`role`]) over the hook input on stdin, its output printed, its line appended to the hook log.
+/// Whatever goes wrong is silence and exit 0: these hooks never fail a session.
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "every subcommand returns Result to main"
+)]
+pub fn role_hook(hook: role::Hook) -> Result<ExitCode> {
+    let mut stdin = String::new();
+    // No input reads as an empty one: the hook's directory and nothing else.
+    std::io::stdin()
+        .read_to_string(&mut stdin)
+        .unwrap_or_default();
+    let ctx = role::Ctx {
+        env: std::env::vars().collect(),
+        home: home(),
+        fallback_cwd: std::env::current_dir().unwrap_or_default(),
+        now: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX)),
+    };
+    let run = role::run(hook, &stdin, &ctx);
+    if !run.stdout.is_empty() {
+        writeln!(std::io::stdout().lock(), "{}", run.stdout).unwrap_or_default();
+    }
+    if let (Some(entry), Some(home)) = (run.entry, ctx.home.as_deref()) {
+        role::append(&entry, &role::log_path(home));
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+pub use role::Hook as RoleHook;
 
 /// The home the run store is under: `HOME`, else the passwd entry (`craft_store::read::home`).
 fn home() -> Option<PathBuf> {

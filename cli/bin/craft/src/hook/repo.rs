@@ -126,18 +126,24 @@ fn fetch(dir: &Path, base: &str) -> Result<(), String> {
 /// git directory named `.git` (a plain checkout and its linked worktrees share it), else the work
 /// tree's top level, else the common directory, else the directory itself.
 fn repo_key(dir: &Path) -> String {
-    let common = git::common_dir(dir)
-        .ok()
-        .filter(|c| !c.contains('\n') && Path::new(c).is_absolute());
+    key_of(dir, git::common_dir(dir).ok(), || git::toplevel(dir).ok())
+}
+
+/// [`repo_key`] from git's answers: `common`, `git rev-parse --git-common-dir` as an absolute
+/// path, and `toplevel`, `--show-toplevel`, asked only when needed.
+pub fn key_of(
+    dir: &Path,
+    common: Option<String>,
+    toplevel: impl FnOnce() -> Option<PathBuf>,
+) -> String {
+    let common = common.filter(|c| !c.contains('\n') && Path::new(c).is_absolute());
     if let Some(c) = &common
         && Path::new(c).file_name().is_some_and(|n| n == ".git")
         && let Some(parent) = Path::new(c).parent()
     {
         return parent.display().to_string();
     }
-    let found = git::toplevel(dir)
-        .ok()
-        .or_else(|| common.map(PathBuf::from));
+    let found = toplevel().or_else(|| common.map(PathBuf::from));
     found
         .or_else(|| std::fs::canonicalize(dir).ok())
         .unwrap_or_else(|| dir.to_path_buf())

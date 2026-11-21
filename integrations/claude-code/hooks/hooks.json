@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "command -v node >/dev/null 2>&1 && node \"${CLAUDE_PLUGIN_ROOT}/lib/reviewer-dispatch-hook-entry.mjs\" || true",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/lib/craft-hook.sh\" reviewer-dispatch || true",
             "timeout": 10
           }
         ]
@@ -31,7 +31,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "command -v node >/dev/null 2>&1 && node \"${CLAUDE_PLUGIN_ROOT}/lib/session-start-hook.mjs\" || true",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/lib/craft-hook.sh\" session-start || true",
             "timeout": 10
           }
         ]
@@ -42,7 +42,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "command -v node >/dev/null 2>&1 && node \"${CLAUDE_PLUGIN_ROOT}/lib/work-hook-entry.mjs\" || true",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/lib/craft-hook.sh\" user-prompt || true",
             "timeout": 10
           }
         ]
@@ -53,7 +53,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "command -v node >/dev/null 2>&1 && node \"${CLAUDE_PLUGIN_ROOT}/lib/work-hook-entry.mjs\" || true",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/lib/craft-hook.sh\" subagent-start || true",
             "timeout": 10
           }
         ]

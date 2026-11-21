@@ -65,11 +65,12 @@ export interface ToolSpec {
 }
 
 // craft's hook at the moment of work, as the runtimes feed it (work-hook.ts). `deliver` places the lines the
-// hook wants said into the message and answers whether it could.
+// hook wants said into the message and answers whether it could; `placeable` says beforehand whether it can, so the
+// decision's log line is written once, by the craft binary (realm @nick/craft, node #550).
 export interface WorkHook {
   childCreated(id: string, parent: string, agent?: string): void
   compacted(session: string): Promise<void>
-  message(session: string, prompt: string, agent: string | undefined, deliver: (text: string) => boolean): Promise<void>
+  message(session: string, prompt: string, agent: string | undefined, deliver: (text: string) => boolean, placeable?: boolean): Promise<void>
 }
 
 // The tool's arguments as the runtime hands them over: only the declared string fields survive.
