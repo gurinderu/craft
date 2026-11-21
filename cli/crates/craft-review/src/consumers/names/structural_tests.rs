@@ -6,6 +6,8 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use super::super::HITS_MAX;
+use super::super::crates::externals;
+use super::super::paths::Externals;
 use super::by_path;
 use crate::cancel::Cancel;
 
@@ -43,9 +45,15 @@ fn only_the_paths_through_the_owner_are_listed() {
     let t = tempfile::tempdir().unwrap();
     let uses = "use crate::T;\nfn f() {\n    let a = T::new();\n    let m = HashMap::new();\n    // T::new()\n    let s = \"T::new()\";\n    a.new();\n}\n";
     let repo = repo(t.path(), uses);
-    let found = by_path(&repo, ("src/lib.rs", 3), "new", far(), &Cancel::default())
-        .unwrap()
-        .unwrap();
+    let found = by_path(
+        &repo,
+        ("src/lib.rs", 3),
+        ("new", &Externals::default()),
+        far(),
+        &Cancel::default(),
+    )
+    .unwrap()
+    .unwrap();
     let mut at: Vec<(String, u32, String)> = found
         .hits
         .into_iter()
@@ -66,7 +74,14 @@ fn only_the_paths_through_the_owner_are_listed() {
 fn a_free_item_is_not_searched_by_path() {
     let t = tempfile::tempdir().unwrap();
     let repo = repo(t.path(), "fn f() { crate::run() }\n");
-    let found = by_path(&repo, ("src/lib.rs", 7), "run", far(), &Cancel::default()).unwrap();
+    let found = by_path(
+        &repo,
+        ("src/lib.rs", 7),
+        ("run", &Externals::default()),
+        far(),
+        &Cancel::default(),
+    )
+    .unwrap();
     assert!(found.is_none());
 }
 
@@ -77,7 +92,14 @@ fn a_search_past_the_line_cap_is_stopped_and_says_so() {
         .map(|i| format!("fn f{i}() {{ T::new(); }}\n"))
         .collect();
     let repo = repo(t.path(), &uses);
-    let why = by_path(&repo, ("src/lib.rs", 3), "new", far(), &Cancel::default()).unwrap_err();
+    let why = by_path(
+        &repo,
+        ("src/lib.rs", 3),
+        ("new", &Externals::default()),
+        far(),
+        &Cancel::default(),
+    )
+    .unwrap_err();
     assert_eq!(why, format!("over {HITS_MAX} lines"));
 }
 
@@ -88,7 +110,7 @@ fn a_search_reached_after_the_deadline_does_not_run() {
     let why = by_path(
         &repo,
         ("src/lib.rs", 3),
-        "new",
+        ("new", &Externals::default()),
         Instant::now(),
         &Cancel::default(),
     )
@@ -102,9 +124,15 @@ fn a_file_the_list_cannot_read_is_not_parsed_and_is_named() {
     let repo = repo(t.path(), "fn f() { T::new(); }\n");
     std::fs::write(repo.join("src/bad.rs"), b"fn g() { T::new(); } // \xff\n").unwrap();
     git(&repo, &["add", "."]);
-    let found = by_path(&repo, ("src/lib.rs", 3), "new", far(), &Cancel::default())
-        .unwrap()
-        .unwrap();
+    let found = by_path(
+        &repo,
+        ("src/lib.rs", 3),
+        ("new", &Externals::default()),
+        far(),
+        &Cancel::default(),
+    )
+    .unwrap()
+    .unwrap();
     assert!(found.hits.iter().all(|h| h.file != "src/bad.rs"));
     assert_eq!(found.unread.len(), 1, "{:?}", found.unread);
     assert!(
@@ -125,9 +153,15 @@ fn a_path_through_a_workspace_dependency_is_not_listed() {
     )
     .unwrap();
     git(&repo, &["add", "."]);
-    let found = by_path(&repo, ("src/lib.rs", 3), "new", far(), &Cancel::default())
-        .unwrap()
-        .unwrap();
+    let found = by_path(
+        &repo,
+        ("src/lib.rs", 3),
+        ("new", &externals(&repo, (far(), &Cancel::default()))),
+        far(),
+        &Cancel::default(),
+    )
+    .unwrap()
+    .unwrap();
     let at: Vec<(&str, u32)> = found
         .hits
         .iter()

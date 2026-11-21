@@ -20,7 +20,10 @@ const TABLES: [&str; 3] = ["dependencies", "dev-dependencies", "build-dependenci
 
 /// The external crates of the workspace at `top`; a manifest that cannot be read or parsed adds
 /// none, so only the standard crates are known then.
-pub(super) fn externals(top: &Path, (deadline, cancel): (Instant, &Cancel)) -> Externals {
+pub(in crate::consumers) fn externals(
+    top: &Path,
+    (deadline, cancel): (Instant, &Cancel),
+) -> Externals {
     let mut cmd = Command::new("git");
     cmd.arg("-C").arg(top).args([
         "ls-files",

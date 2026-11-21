@@ -10,7 +10,7 @@ use tree_sitter::{Node, ParseOptions, ParseState, Parser, Tree};
 mod imports;
 mod reach;
 
-pub(super) use imports::Externals;
+pub(in crate::consumers) use imports::Externals;
 pub(super) use reach::reaching;
 
 /// What a changed item is declared in, by the last path segment that names it.

@@ -10,7 +10,7 @@ use super::{first, segment, text_of, walk};
 /// The crates outside the workspace a path can start with: the standard ones and the workspace's
 /// dependencies that are not its own members.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(in crate::consumers::names) struct Externals {
+pub(in crate::consumers) struct Externals {
     crates: BTreeSet<String>,
 }
 

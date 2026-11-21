@@ -94,11 +94,17 @@ pub(super) fn assemble(
         .iter()
         .map(|sym| searched((top, changed), sym, (deadline, cancel), &mut out))
         .collect();
+    // The workspace's external crates, read once for every structural search.
+    let ext = std::cell::OnceCell::new();
     for (sym, named) in found.iter().zip(named) {
         let mut sites = match named {
             Searched::Sites(sites) => sites,
             Searched::ByPath(capped) => by_path(
-                (top, changed),
+                (
+                    top,
+                    changed,
+                    ext.get_or_init(|| names::externals(top, (deadline, cancel))),
+                ),
                 sym,
                 (deadline, cancel),
                 (&mut out, capped.as_deref()),

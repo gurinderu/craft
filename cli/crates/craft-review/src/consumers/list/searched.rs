@@ -4,7 +4,7 @@
 use std::path::Path;
 use std::time::Instant;
 
-use super::super::names::Unfinished;
+use super::super::names::{Externals, Unfinished};
 use super::super::symbols::Symbol;
 use super::super::{Consumers, NAME_SEARCH, STRUCTURAL, Site, names};
 use super::{consumer, site};
@@ -43,15 +43,21 @@ pub(super) fn searched(
 
 /// The structural search's lines for `sym`, whose name is too common to search by text (`capped`,
 /// why the name search stopped, when it ran); it is noted in `out`'s `unsearched` either way, with
-/// what the search could not reach.
+/// what the search could not reach; `ext`, the workspace's external crates.
 pub(super) fn by_path(
-    (top, changed): (&Path, &Lines),
+    (top, changed, ext): (&Path, &Lines, &Externals),
     sym: &Symbol,
     (deadline, cancel): (Instant, &Cancel),
     (out, capped): (&mut Consumers, Option<&str>),
 ) -> Vec<Site> {
     let first = capped.map_or_else(String::new, |c| format!("{c}; "));
-    let found = names::by_path(top, (&sym.file, sym.line), &sym.name, deadline, cancel);
+    let found = names::by_path(
+        top,
+        (&sym.file, sym.line),
+        (&sym.name, ext),
+        deadline,
+        cancel,
+    );
     let (note, sites) = match found {
         Ok(None) => match capped {
             Some(c) => (format!("{} ({c})", sym.name), Vec::new()),

@@ -14,6 +14,8 @@ mod stream;
 mod structural;
 mod unfinished;
 
+pub(super) use crates::externals;
+pub(super) use paths::Externals;
 use stream::{Ended, stream};
 pub(super) use structural::by_path;
 pub(super) use unfinished::Unfinished;

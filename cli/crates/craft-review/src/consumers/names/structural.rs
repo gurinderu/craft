@@ -9,8 +9,7 @@ use std::time::Instant;
 use tree_sitter::Tree;
 
 use super::super::source;
-use super::crates::externals;
-use super::paths;
+use super::paths::{self, Externals};
 use super::stream::{Ended, Format, out_of_time, stream_as};
 use super::{EXCLUDE, HITS_MAX, Hit, RUST};
 use crate::cancel::{Cancel, STOPPED};
@@ -26,13 +25,13 @@ pub(in crate::consumers) struct Found {
 }
 
 /// The lines of the working tree's Rust sources at `top` whose paths reach `name`, declared at
-/// `declared` (`file`, 1-based line); `None` when it is no item of an `impl` or a trait, or its file
+/// `declared` (`file`, 1-based line), a path starting with one of `ext` left out; `None` when it is no item of an `impl` or a trait, or its file
 /// is absent; `Err` once more than [`HITS_MAX`] lines do, when its own file cannot be read, when
 /// `deadline` passes or `cancel` is first, or with git's reason.
 pub(in crate::consumers) fn by_path(
     top: &Path,
     (file, line): (&str, u32),
-    name: &str,
+    (name, ext): (&str, &Externals),
     deadline: Instant,
     cancel: &Cancel,
 ) -> Result<Option<Found>, String> {
@@ -45,7 +44,6 @@ pub(in crate::consumers) fn by_path(
     let Some(own) = paths::owner(&parse_until(&text, until)?, &text, line, name) else {
         return Ok(None);
     };
-    let ext = externals(top, until);
     let mut found = Found::default();
     for f in candidates(top, own.name(), name, until)? {
         let text = match source::read_within(top, &f) {
@@ -59,7 +57,7 @@ pub(in crate::consumers) fn by_path(
         let tree = parse_until(&text, until)?;
         let lines: Vec<&str> = text.lines().collect();
         found.hits.extend(
-            paths::reaching(&tree, &text, (name, &own), &ext)
+            paths::reaching(&tree, &text, (name, &own), ext)
                 .into_iter()
                 .map(|n| {
                     let at = usize::try_from(n).ok().and_then(|n| n.checked_sub(1));
