@@ -1,4 +1,4 @@
-//! A run's phase checkpoints, as `lib/craft-log-run.mjs` keeps them: `<store>/.partial/<ts>-<kind>-<name>/NN-<phase>.json`,
+//! A run's phase checkpoints, as `integrations/shared/craft-log-run.mjs` keeps them: `<store>/.partial/<ts>-<kind>-<name>/NN-<phase>.json`,
 //! the directory minted by the first and rejoined by a later one only on proof that it is this
 //! run's — the project, branch and head its checkpoints attest to agree, exactly one directory
 //! does, it was written within six hours and it is neither finalized nor kept by `recover`.

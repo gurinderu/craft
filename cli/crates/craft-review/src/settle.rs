@@ -1,6 +1,6 @@
 //! What a panel of verifier votes makes of its finding, as `tierFromVotes`, `decideTier`,
-//! `votePanel`, `panelHarm`, `harmRaise` and the harm cap of `lib/review-verify.mjs`,
-//! `lib/harm-verify.mjs` and `lib/harm-cap.mjs` decide it: off-schema votes discarded before the
+//! `votePanel`, `panelHarm`, `harmRaise` and the harm cap of `integrations/shared/review-verify.mjs`,
+//! `integrations/shared/harm-verify.mjs` and `integrations/shared/harm-cap.mjs` decide it: off-schema votes discarded before the
 //! majority, the tier by majority, the premise and reach demotions, the verified-harm raise, then
 //! the cap (realm @nick/craft, nodes #379, #407). `content/parity/verify-cases.json` holds both
 //! ports to the same answers.
@@ -45,7 +45,7 @@ impl Tier {
     }
 }
 
-/// One step lower, as `DEMOTE` in `lib/review-verify.mjs`; an unknown severity is kept.
+/// One step lower, as `DEMOTE` in `integrations/shared/review-verify.mjs`; an unknown severity is kept.
 pub(crate) fn demote(severity: &str) -> Option<&'static str> {
     match severity {
         "Critical" => Some("High"),

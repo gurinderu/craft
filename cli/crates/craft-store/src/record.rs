@@ -1,4 +1,4 @@
-//! A record's derived parts as `lib/run-record.mjs` computes them: a finding's fingerprint, the
+//! A record's derived parts as `integrations/shared/run-record.mjs` computes them: a finding's fingerprint, the
 //! findings counted by severity, the record's index line and its file name.
 
 use crate::js::{Js, JsString, Obj};

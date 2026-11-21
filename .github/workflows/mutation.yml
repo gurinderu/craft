@@ -1,9 +1,9 @@
 name: Mutation testing
 
-# Weekly Stryker run over lib/ (realm @nick/craft, #146): how much of lib/'s logic the unit tests pin.
+# Weekly Stryker run over integrations/shared/ (realm @nick/craft, #146): how much of integrations/shared/'s logic the unit tests pin.
 # Not a PR check and not a gate: it runs on a schedule and by hand, never on push or pull_request, so a
-# red run here blocks no merge. It turns red when the score falls below the floor in lib/mutation-floor.json
-# (stryker.config.mjs's `thresholds.break`; it may only rise, which CI's `test` job holds on pull requests),
+# red run here blocks no merge. It turns red when the score falls below the floor in integrations/shared/mutation-floor.json
+# (integrations/shared/config/stryker.config.mjs's `thresholds.break`; it may only rise, which CI's `test` job holds on pull requests),
 # and a red run opens an issue — that is the signal, read in the report artifact, not a failure to fix in place.
 on:
   schedule:
@@ -45,7 +45,7 @@ jobs:
         run: npm ci --prefix integrations/opencode/plugin
       # ubuntu-latest has 4 vCPUs; four Vitest workers keep them busy while each test runner idles on
       # the child processes (git, tsc) its tests spawn.
-      - name: Stryker over lib/
+      - name: Stryker over integrations/shared/
         id: stryker
         timeout-minutes: 260
         run: npm run test:mutation -- --concurrency 4
@@ -62,9 +62,9 @@ jobs:
             reports/mutation/mutation.json
           if-no-files-found: warn
           retention-days: 90
-      # A red Stryker step — below lib/mutation-floor.json, or cut by its own timeout — is reported in one open
+      # A red Stryker step — below integrations/shared/mutation-floor.json, or cut by its own timeout — is reported in one open
       # issue: while one titled "Weekly mutation run failed (…)" is open, the run and its score are a comment
-      # on it; only when none is open is one created, titled with the score (lib/mutation-issue.mjs).
+      # on it; only when none is open is one created, titled with the score (integrations/shared/mutation-issue.mjs).
       # Only the Stryker step's own failure reports here: an upload that fails after a green Stryker step
       # makes the job red too, and `failure()` alone would file it with a score above the floor; a failed setup
       # or install leaves the Stryker step `skipped`, which the job `report-lost-runner` files, so filing it here
@@ -75,7 +75,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: node lib/mutation-issue.mjs reports/mutation/mutation.json
+        run: node integrations/shared/mutation-issue.mjs reports/mutation/mutation.json
 
   # A runner lost mid-run ("The runner has received a shutdown signal") runs nothing after the step it cut:
   # on run 40423145899 the Stryker step ended `cancelled`, every later step — the `always()` post-steps too —
@@ -106,4 +106,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: node lib/mutation-issue.mjs --lost-runner "${{ github.run_id }}"
+        run: node integrations/shared/mutation-issue.mjs --lost-runner "${{ github.run_id }}"

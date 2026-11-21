@@ -10,7 +10,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { v1WorkHooks } from './host-v1.ts'
 import { workHook } from './work-hook.ts'
-import { writeExecutable } from '../../../lib/write-executable.mjs'
+import { writeExecutable } from '../../shared/write-executable.mjs'
 
 /** @type {string[]} */
 const made = []

@@ -1,5 +1,5 @@
 //! A run's ledger: one row per finding the next round of the same branch has to know about, in
-//! the shape `toLedgerEntry` in `lib/review-ledger-entry.mjs` writes it (the fingerprint aside,
+//! the shape `toLedgerEntry` in `integrations/shared/review-ledger-entry.mjs` writes it (the fingerprint aside,
 //! which the record's writer computes), and the identities a re-review matches findings by.
 
 use serde::{Deserialize, Serialize};
@@ -38,7 +38,7 @@ pub struct LedgerRow {
     pub deferral: Option<Deferral>,
 }
 
-/// A question's deferral as a ledger row carries it (`deferralOf` in `lib/ledger-deferral.mjs`).
+/// A question's deferral as a ledger row carries it (`deferralOf` in `integrations/shared/ledger-deferral.mjs`).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Deferral {
@@ -214,7 +214,7 @@ fn fold_symbol(symbol: &str) -> String {
 }
 
 /// Whether `f` is the defect the tombstone `t` closed, as `flagReturningDefects` matches it: the
-/// same fingerprint (file, folded symbol and rule; `fingerprint` in `lib/run-record.mjs` keys no
+/// same fingerprint (file, folded symbol and rule; `fingerprint` in `integrations/shared/run-record.mjs` keys no
 /// line, so without a symbol it is file and rule) and not told apart by a tool. A finding without a
 /// rule has no stable identity and matches none. The match only labels a finding (REGRESSION, or a
 /// re-raised dismissal); it neither moves it nor changes what the verdict counts.

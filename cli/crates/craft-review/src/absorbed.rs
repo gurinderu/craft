@@ -1,4 +1,4 @@
-//! A prior finding's rationale and what it carries beyond it, as `lib/review-adjudicate.mjs` keeps
+//! A prior finding's rationale and what it carries beyond it, as `integrations/shared/review-adjudicate.mjs` keeps
 //! them: the marker a round appends (`baseWhy`), and the sites of later findings absorbed into the
 //! prior (`absorbInto`, `splitAbsorbed`, `withoutAbsorbed`, `absorbedPromptBlock`). Absorbed is not
 //! discarded: the site rides the prior's `why` into the ledger and is handed to its next

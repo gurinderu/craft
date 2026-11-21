@@ -1,5 +1,5 @@
 //! The report section of what the project rules covered (`projectRuleSection` in
-//! `lib/project-rule-apply.mjs`).
+//! `integrations/shared/project-rule-apply.mjs`).
 
 use serde_json::Value;
 

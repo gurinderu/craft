@@ -1,4 +1,4 @@
-//! The memory's two judges, as `lib/prior-decision-match.mjs` and `lib/project-rule-judge.mjs`
+//! The memory's two judges, as `integrations/shared/prior-decision-match.mjs` and `integrations/shared/project-rule-judge.mjs`
 //! ask them (realm @nick/craft, nodes #230, #231, #273, #282): ONE cheap agent per run is handed
 //! every record–finding pair as one JSON block of quoted data, never a record's body, and returns
 //! one verdict per pair — the same defect (`same`) or under the rule (`covered`), and whether the

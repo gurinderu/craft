@@ -1,5 +1,5 @@
 //! The run store's records as this check reads them: an `index.jsonl` line, and the detail file
-//! beside it, `<ts>-<kind>-<name>.json` as `recordFilename` in `lib/craft-log-run.mjs` names it.
+//! beside it, `<ts>-<kind>-<name>.json` as `recordFilename` in `integrations/shared/craft-log-run.mjs` names it.
 //! Only the fields the check reads; a detail file that does not parse in this shape is unread.
 
 use std::path::Path;
@@ -22,7 +22,7 @@ pub struct Line {
     pub dirty: Option<bool>,
 }
 
-/// A CLI review's detail file (`lib/cli-review-record.mjs`).
+/// A CLI review's detail file (`integrations/shared/cli-review-record.mjs`).
 #[derive(Deserialize, Default)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Detail {
@@ -47,7 +47,7 @@ pub fn detail(store: &Path, line: &Line) -> Option<Detail> {
     serde_json::from_slice(&bytes).ok()
 }
 
-/// `recordFilename` in `lib/craft-log-run.mjs`.
+/// `recordFilename` in `integrations/shared/craft-log-run.mjs`.
 fn record_filename(line: &Line) -> String {
     let safe = |s: Option<&str>| -> String {
         s.unwrap_or("unknown")

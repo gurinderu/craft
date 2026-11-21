@@ -1,6 +1,6 @@
 //! The completeness critic's prompt and what a lens it admitted is told, as `criticPrompt` and
-//! `criticPrior` in `lib/review-critic.mjs` render them; and a consumer's own agent run as an extra
-//! lens, as `extraLensPrompt` in `lib/review-lens-prompts.mjs` renders it (realm @nick/craft, node
+//! `criticPrior` in `integrations/shared/review-critic.mjs` render them; and a consumer's own agent run as an extra
+//! lens, as `extraLensPrompt` in `integrations/shared/review-lens-prompts.mjs` renders it (realm @nick/craft, node
 //! #295): the whole change, no profile pathspec.
 
 use serde_json::Value;

@@ -397,7 +397,7 @@ pub(crate) fn filing_root(given: Option<&Path>) -> Option<String> {
 
 /// This binary's version of the plugin as Claude Code installs it, under `config` (the session's
 /// `CLAUDE_CONFIG_DIR`) else `home`'s `.claude`: the last place every plugin script is looked for
-/// (lib/plugin-script.mjs), so a fetched binary under no plugin finds its root without the engine's
+/// (integrations/shared/plugin-script.mjs), so a fetched binary under no plugin finds its root without the engine's
 /// locate step (realm @nick/craft, node #524). The cache layout is the harness's (realm @nick/craft,
 /// node #48), so a miss is ordinary.
 fn installed_copy(config: Option<PathBuf>, home: Option<PathBuf>) -> Option<PathBuf> {

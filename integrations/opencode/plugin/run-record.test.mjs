@@ -164,7 +164,7 @@ test('buildAuditRecord rolls the top-level verdict up worst-wins over the dimens
 
 test('buildAuditRecord suffixes the verdict so partial coverage survives worst-wins', () => {
   // worstOf ranks INCOMPLETE below Warning, so a partial run collapsed to the bare token "Warning"
-  // and lib/analyze-runs.mjs — which counts partial coverage with /INCOMPLETE/i over the verdict
+  // and integrations/shared/analyze-runs.mjs — which counts partial coverage with /INCOMPLETE/i over the verdict
   // string — scored it as fully covered. The suffix is the shape that file already understands.
   const warned = buildAuditRecord({
     results: [
@@ -267,7 +267,7 @@ test('hasEvidence reads the marker with content after it, and rejects the empty 
 
 test('the runtime marker is the one the opencode rubrics emit', () => {
   // Pin the marker this engine READS to the marker the rubrics WRITE, so the two halves cannot drift
-  // — the opencode-side counterpart of lib/audit-evidence.test.mjs's EVIDENCE.field[0] tripwire.
+  // — the opencode-side counterpart of integrations/shared/audit-evidence.test.mjs's EVIDENCE.field[0] tripwire.
   const here = dirname(fileURLToPath(import.meta.url))
   const rubric = readFile(joinPath(here, '..', 'agents', 'rust-reviewer.md'), 'utf8')
   assert.ok(rubric.includes(EVIDENCE_MARKER), 'rust-reviewer.md must carry the marker the gate reads')

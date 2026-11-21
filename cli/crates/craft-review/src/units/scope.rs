@@ -1,4 +1,4 @@
-//! Which unit owns a changed file (`lib/unit-scope.mjs`): the deepest root that is a directory
+//! Which unit owns a changed file (`integrations/shared/unit-scope.mjs`): the deepest root that is a directory
 //! prefix of it, segment by segment; the key of a unit slice; and the directory slicing of the files
 //! in no unit.
 

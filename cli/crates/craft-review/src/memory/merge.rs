@@ -1,5 +1,5 @@
 //! The recalled records and the launcher's own (`priorDecisions`) as one list, as `mergeRecall` in
-//! `lib/memory-recall.mjs` merges them (realm @nick/craft, node #218): a passed record adds to the
+//! `integrations/shared/memory-recall.mjs` merges them (realm @nick/craft, node #218): a passed record adds to the
 //! recall, never replaces it — one whose id a well-formed recalled record holds is dropped, the
 //! recalled one being the store's state — and the merged list is read once, under one cap, each
 //! refusal naming its part.

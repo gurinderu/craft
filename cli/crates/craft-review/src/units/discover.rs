@@ -1,5 +1,5 @@
 //! The Rust profile's unit discovery, run by the binary itself (the engine's probe agent and its
-//! units CLI, `lib/craft-units.mjs`; realm @nick/craft, #362, #377): a unit is a Cargo package —
+//! units CLI, `integrations/shared/craft-units.mjs`; realm @nick/craft, #362, #377): a unit is a Cargo package —
 //! every tracked `Cargo.toml` with a `[package]` table, never a `[workspace]` alone — with its name,
 //! its dependencies by the names Cargo matches (`-` taken as `_`, a `package = "…"` rename winning)
 //! and the `pub` lines git lists under its directory; and the diff's changed lines by file.

@@ -5,7 +5,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { writeExecutable } from '../../../lib/write-executable.mjs'
+import { writeExecutable } from '../../shared/write-executable.mjs'
 import { TOOLS, nestedUnder, withoutContent } from './tools.ts'
 
 /** @param {import('./host.ts').ModelRef} [model] @returns {import('./host.ts').Host & { asked: import('./host.ts').ChildRequest[] }} */

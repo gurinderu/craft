@@ -1,10 +1,10 @@
 //! `craft review run` against craft as each host installs it, every symlink gone (realm @nick/craft,
 //! node #500): Codex copies the repository root and drops the Claude Code delivery's links to
-//! `skills/`, `lib/`, `content/` and `src/`, leaving only `integrations/claude-code/agents/` real; the
+//! `skills/`, `integrations/shared/`, `content/` and `integrations/claude-code/src/`, leaving only `integrations/claude-code/agents/` real; the
 //! Claude Code release branch holds the delivery with those links made real directories. On both, a
 //! review run by a stand-in `codex` (the smallest answer each task's schema allows) reaches its
 //! verdict, the tasks are told of skills that exist and given the agents' bodies, and the run is
-//! filed through the plugin's own `lib/`. The OpenCode 2.x package (`lib/opencode-package.mjs`) is
+//! filed through the plugin's own `integrations/shared/`. The OpenCode 2.x package (`integrations/shared/opencode-package.mjs`) is
 //! a third layout: `bin/craft` hands the binary the package root, which holds the Claude Code
 //! manifest under `integrations/claude-code` and the shared parts at its own root.
 #![expect(
@@ -198,9 +198,14 @@ fn the_materialized_claude_code_delivery_resolves_under_itself() {
     let copy = tmp.path().join("copy");
     codex_copy(&copy);
     let delivery = copy.join("integrations/claude-code");
-    for shared in ["skills", "lib", "content", "src"] {
+    for shared in ["skills", "integrations/shared", "content"] {
         copy_dir(&copy.join(shared), &delivery.join(shared));
     }
+    copy_dir(
+        &delivery.join("src"),
+        &delivery.join("integrations/claude-code/src"),
+    );
+    std::fs::remove_dir_all(delivery.join("src")).unwrap();
     let root = tmp.path().join("delivery");
     std::fs::rename(&delivery, &root).unwrap();
     std::fs::remove_dir_all(&copy).unwrap();
@@ -215,7 +220,7 @@ fn the_opencode_package_is_a_plugin_root_the_review_runs_over() {
     let script = "const [lib, root, into] = process.argv.slice(1); \
                   const { layPackage } = await import(lib); \
                   process.stdout.write(layPackage(root, into))";
-    let lib = checkout().join("lib/opencode-package.mjs");
+    let lib = checkout().join("integrations/shared/opencode-package.mjs");
     let out = Command::new("node")
         .args(["--input-type=module", "-e", script])
         .arg(url_of(&lib))

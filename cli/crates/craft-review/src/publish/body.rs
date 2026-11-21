@@ -1,4 +1,4 @@
-//! The inline PR comment of a defect, as `findingCommentBody` in `lib/finding-comment.mjs` writes
+//! The inline PR comment of a defect, as `findingCommentBody` in `integrations/shared/finding-comment.mjs` writes
 //! it: `[Severity] title`, the reason and the fix, the hidden lens and tool-rule lines when they fit,
 //! and the craft-finding marker last (realm @nick/craft, nodes #194, #230, #236) — what lets a later
 //! session tie a reply in the thread to its finding, and a later run see it is posted already.

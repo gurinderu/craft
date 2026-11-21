@@ -1,4 +1,4 @@
-//! The prior round's open findings adjudicated, as `adjudicateOne` in `lib/review-adjudicate.mjs`
+//! The prior round's open findings adjudicated, as `adjudicateOne` in `integrations/shared/review-adjudicate.mjs`
 //! judges each answer.
 
 use serde_json::Value;
@@ -87,7 +87,7 @@ fn fate_of(row: &LedgerRow, answer: Option<&Value>) -> (Fate, String) {
 }
 
 /// Settles each prior carried as Known and deferred (`deferralHeld` in
-/// `lib/review-adjudicate-priors.mjs`; realm @nick/craft, node #204) once the memory is recalled:
+/// `integrations/shared/review-adjudicate-priors.mjs`; realm @nick/craft, node #204) once the memory is recalled:
 /// one whose question still `holds` stays deferred, out of the verdict; one a record releases counts
 /// again, kept still open until the next round adjudicates it. A deferred prior whose code changed
 /// since its question's commit was never carried: it is adjudicated and counted by its answer.

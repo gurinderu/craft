@@ -1,5 +1,5 @@
 //! A finished run published on its PR after the fact (`craft review comment`), written into its
-//! record as `applyPublication` in `lib/sorting-choice.mjs` writes it: the sorting, the findings
+//! record as `applyPublication` in `integrations/shared/sorting-choice.mjs` writes it: the sorting, the findings
 //! going against memory and what was posted replace the record's own, and each choice the reviewer
 //! already recorded follows its finding — by file, line and title — to its number in the new
 //! sorting; one whose finding is gone is dropped and named.

@@ -1,5 +1,5 @@
 //! How the directory groups are merged down to the slice count (`mergeNearestGroups` and its
-//! helpers in `lib/lens-scope.mjs`): the cap outranks kinship, and among the merges under it the
+//! helpers in `integrations/shared/lens-scope.mjs`): the cap outranks kinship, and among the merges under it the
 //! nearest siblings, then the smallest, go first.
 
 /// How many leading path segments two keys share.

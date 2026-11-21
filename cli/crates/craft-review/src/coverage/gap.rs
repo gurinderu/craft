@@ -1,5 +1,5 @@
 //! What a run that did review code still left out, as `materialUncovered`, `coverageGapFiles`,
-//! `isAncillaryConfig` and `uncoveredNotRunNote` in `lib/review-coverage.mjs`: the changed files no
+//! `isAncillaryConfig` and `uncoveredNotRunNote` in `integrations/shared/review-coverage.mjs`: the changed files no
 //! profile covers that carry something to review, and of them the ones that void a green verdict —
 //! all but project configuration and build recipes, which no lens ever claimed to read. The CLI
 //! also names the package manifests and toolchain files of other ecosystems

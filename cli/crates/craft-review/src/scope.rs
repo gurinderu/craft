@@ -1,5 +1,5 @@
 //! The `--path` scope: a review of one directory (or file) of the change, as review.js's `path`
-//! (a crate of a rust-audit, `lib/review-run-args.mjs`). It is read once at the start and spelled
+//! (a crate of a rust-audit, `integrations/shared/review-run-args.mjs`). It is read once at the start and spelled
 //! repository-relative, the way every changed path is: an absolute path inside the repository is
 //! taken as that directory, one outside it is refused rather than widened to the whole repository
 //! (realm @nick/craft, node #65), and a path that climbs out with `..` is refused too.

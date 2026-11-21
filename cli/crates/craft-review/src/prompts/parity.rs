@@ -1,5 +1,5 @@
 //! The prompts held to `content/parity/prompt-cases.json`, a golden file this crate owns
-//! ([`crate::golden`]; `lib/review-prompt-parity.test.mjs` holds the engines' renderers to it too
+//! ([`crate::golden`]; `integrations/shared/review-prompt-parity.test.mjs` holds the engines' renderers to it too
 //! while they ship): the same inputs give the same text, the working-directory line aside.
 
 use serde_json::Value;

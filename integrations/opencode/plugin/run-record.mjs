@@ -489,7 +489,7 @@ function tailEvidence(tail) {
   }
   // Nothing decided it. The READER still answers Approve here on purpose — this reads an agent's
   // whole prose report, where a clean dimension legitimately contains no keyword at all (contrast
-  // worstVerdict() in lib/run-record.mjs, which receives already-parsed tokens and rightly refuses
+  // worstVerdict() in integrations/shared/run-record.mjs, which receives already-parsed tokens and rightly refuses
   // to default) — while the GATE reads the same absence as "did not answer".
   return null
 }
@@ -509,7 +509,7 @@ export function worstOf(verdicts) {
 }
 
 // Positive proof of work (invariant #53) — the runtime half on the opencode side, the port of
-// lib/audit-evidence.mjs's demoteUnsupportedGreen. A self-reported green verdict is a claim about what
+// integrations/shared/audit-evidence.mjs's demoteUnsupportedGreen. A self-reported green verdict is a claim about what
 // was NOT found, and it only holds if something was actually looked at, so a passing dimension must
 // SHOW its work: a line beginning `Evidence:` naming the commands run and files read. The marker is
 // held identical to the one the four opencode/agents/*.md rubrics and the tool-dimension prompts in
@@ -523,7 +523,7 @@ export const EVIDENCE_MARKER = 'Evidence:'
 // ('Evidence :') because models vary the label without changing its meaning — the same variance the
 // decoration tolerance answers on one axis, left unaddressed on this one. A test pins
 // EVIDENCE_LINE.test(EVIDENCE_MARKER) so the canon can never fall outside what the reader accepts. Held
-// identical to lib/audit-evidence.mjs's copy (node #53).
+// identical to integrations/shared/audit-evidence.mjs's copy (node #53).
 export const EVIDENCE_LINE = /^evidence\s*:/i
 // Line-anchored, mirroring the rubric "emit one line beginning `Evidence:`": whether some LINE of the
 // report begins with the marker and carries content after it. A bare indexOf over the whole report
@@ -536,7 +536,7 @@ export const EVIDENCE_LINE = /^evidence\s*:/i
 // emphasis is the norm, so it was the more exposed of the two; anchoring on the first NON-decoration
 // column (not the first non-whitespace one, round 2's overshoot) reads a decorated marker while still
 // rejecting one buried after real prose, and a marker with only decoration after it is still empty. Held
-// identical to lib/audit-evidence.mjs's copy (the Claude engine); both pinned to EVIDENCE_MARKER by a
+// identical to integrations/shared/audit-evidence.mjs's copy (the Claude engine); both pinned to EVIDENCE_MARKER by a
 // test on each side (node #53).
 /** @param {unknown} text */
 export function hasEvidence(text) {
@@ -645,7 +645,7 @@ export function buildAuditRecord({ results, baseRef, hasUnsafe, synthesisText, s
   // noEvidence bucket. Both still make the audit partial below.
   const noEvidence = dimensions.filter(d => d.ran && d.verdict.startsWith('INCOMPLETE (no evidence')).map(d => d.dimension)
   // Worst-wins ranks INCOMPLETE below Warning, so partial coverage vanishes from the top-level
-  // token whenever anything else is worse. The SUFFIXED form is the shape lib/analyze-runs.mjs
+  // token whenever anything else is worse. The SUFFIXED form is the shape integrations/shared/analyze-runs.mjs
   // already reads (`/INCOMPLETE/i` over the verdict string, severity-first bucketing), so emitting
   // `Warning (INCOMPLETE)` keeps both readers working: the severity is still the severity, and the
   // run is still counted as partial coverage.
@@ -784,15 +784,15 @@ function tsStamp(d) {
  */
 
 // The index line goes through the same lock the Claude Code delivery's craft-log-run takes for every
-// writer of index.jsonl (lib/index-lock.mjs, realm @nick/craft, node #401): both deliveries share one
-// store. Loaded lazily, like the work hook's lib modules: a plugin copy without lib/ still appends, unlocked,
+// writer of index.jsonl (integrations/shared/index-lock.mjs, realm @nick/craft, node #401): both deliveries share one
+// store. Loaded lazily, like the work hook's lib modules: a plugin copy without integrations/shared/ still appends, unlocked,
 // rather than lose the line. The lock waits SYNCHRONOUSLY, so while another writer holds it this blocks the
 // plugin's event loop, up to the lock's timeout (45 s). And unlike the Claude Code writer, which removes a
 // record whose index line failed, a failed append here leaves the detail file behind unindexed — this
 // writer is best-effort and never throws (realm @nick/craft, node #119).
 /** @param {string} dir @param {string} line */
 async function appendIndex(dir, line) {
-  const lock = await import('../../../lib/index-lock.mjs').catch(() => null)
+  const lock = await import('../../shared/index-lock.mjs').catch(() => null)
   if (lock) lock.appendIndexLine(dir, line)
   else appendFileSync(join(dir, 'index.jsonl'), `${line}\n`)
 }

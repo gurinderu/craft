@@ -1,5 +1,5 @@
 //! The plan of a profile's review from its scout's answer, as `planFromScout` and
-//! `applyLightProfile` in `lib/review-plan.mjs` build it: rigor by size, the scout's picks, the
+//! `applyLightProfile` in `integrations/shared/review-plan.mjs` build it: rigor by size, the scout's picks, the
 //! required lenses, the rigor floors, the surface gate and the light pass, in that order.
 //! `content/parity/plan-cases.json` holds both ports to the same plans.
 

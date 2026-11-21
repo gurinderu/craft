@@ -1,9 +1,9 @@
 //! Publishing findings on the PR (`comment`; realm @nick/craft, nodes #194, #270, #271, #281), as
-//! the review engine's sorting phase does (`lib/review-sorting.mjs`): when the run finishes, the
+//! the review engine's sorting phase does (`integrations/shared/review-sorting.mjs`): when the run finishes, the
 //! findings a comment could carry — confirmed, and suspected the reviewer may still ask about —
 //! are sorted into defects and doubtful ones ([`sort`]); the defects are posted on the branch's PR
 //! with the craft-finding marker ([`gh`]), the doubtful ones listed for the reviewer, numbered as
-//! the run record keeps them for `lib/finding-post.mjs`. Every run, asked or not, counts the
+//! the run record keeps them for `integrations/shared/finding-post.mjs`. Every run, asked or not, counts the
 //! findings going against a memory record. The binary reads the changed lines with git, where the
 //! engine asks an agent for them. A run already finished is published the same way after the fact
 //! ([`comment`]).

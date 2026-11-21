@@ -1,4 +1,4 @@
-//! The mechanical gate before the lenses (the `Gate` phase of `lib/review-profile.mjs`; the tool
+//! The mechanical gate before the lenses (the `Gate` phase of `integrations/shared/review-profile.mjs`; the tool
 //! distinction of realm @nick/craft, node #238): per language profile, the binary runs the tools
 //! itself — clippy and semgrep for Rust; `nix flake check`, statix and deadnix for Nix — each
 //! bounded by one time budget, as stage 5 runs git. The engine hands this to an agent only because
@@ -74,7 +74,7 @@ use check::{Acc, Cx};
 pub use section::section;
 
 /// How long the whole gate may run: with the sources' 240 s beside it, well under the 600 s the
-/// driver gives `review start` (`lib/cli-review-steps.mjs`).
+/// driver gives `review start` (`integrations/shared/cli-review-steps.mjs`).
 const BUDGET: Duration = Duration::from_secs(300);
 
 /// How a run's gate is run.

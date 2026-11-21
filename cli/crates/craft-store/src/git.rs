@@ -1,4 +1,4 @@
-//! What the writer reads off git, as `lib/craft-log-run.mjs` and `lib/repo-key.mjs` read it: one
+//! What the writer reads off git, as `integrations/shared/craft-log-run.mjs` and `integrations/shared/repo-key.mjs` read it: one
 //! probe at a time, its trimmed stdout, `""` when git fails or is missing — a field that cannot be
 //! resolved is empty and never fails a write. Unlike the JavaScript, each probe is bounded: one that
 //! outlives [`BOUND`] is killed, reads as `""`, and is kept for the record to name (`gitTimedOut`).

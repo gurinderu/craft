@@ -1,5 +1,5 @@
 //! The driver's clock replayed over the steps a run segment kept, as `replay` in
-//! `lib/cli-review-clock.mjs` reads them: the phase the last step ended, with its minutes and the
+//! `integrations/shared/cli-review-clock.mjs` reads them: the phase the last step ended, with its minutes and the
 //! task agents dispatched in it, and the run's `runtimeStats` so far.
 
 use crate::js::{Js, Obj, Utf16Error};

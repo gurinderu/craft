@@ -1,4 +1,4 @@
-//! Local-process admission, shared with `lib/index-turn.mjs` (realm @nick/craft, #557).
+//! Local-process admission, shared with `integrations/shared/index-turn.mjs` (realm @nick/craft, #557).
 //! A ticket has one writer and an immutable name. A dead owner's ticket is ignored, not stolen.
 
 use std::io::{Error, ErrorKind};

@@ -47,7 +47,7 @@ pub fn tier_counts(state: &RunState) -> [usize; 4] {
 /// failed to judge is named), INCOMPLETE in place of Approve and a red or capped verdict marked
 /// ` (INCOMPLETE)`, as `honestVerdict`; otherwise, when changed
 /// files that carry code went unreviewed (`coverage::gap`), marked ` (PARTIAL COVERAGE)`, as
-/// `verdictSuffix` in `lib/review-coverage.mjs`: a hole a re-run will not fill.
+/// `verdictSuffix` in `integrations/shared/review-coverage.mjs`: a hole a re-run will not fill.
 #[must_use]
 pub fn verdict(state: &RunState) -> String {
     let worst = severity_verdict(state);

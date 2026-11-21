@@ -20,11 +20,11 @@ jobs:
       # `npm ci` here is what makes the typecheck step below possible.
       - name: Install opencode plugin deps
         run: npm ci --prefix integrations/opencode/plugin
-      # The gate as one call (lib/gate.mjs): lint, the three typechecks, the unit tests, the workflow,
+      # The gate as one call (integrations/shared/gate.mjs): lint, the three typechecks, the unit tests, the workflow,
       # skill, delivery-parity, OpenCode-frontmatter and eval checkers, dependency-cruiser, both Knip runs,
       # jscpd, the mutation floor and the plugin manifest validator — the same command an agent runs before
-      # pushing, so a check dropped from it is dropped from both at once, and lib/gate-steps.test.mjs fails
-      # when a check package.json, lib/check-*.mjs, this job or AGENTS.md "Commands" names is not in it.
+      # pushing, so a check dropped from it is dropped from both at once, and integrations/shared/gate-steps.test.mjs fails
+      # when a check package.json, integrations/shared/check-*.mjs, this job or AGENTS.md "Commands" names is not in it.
       # Every step runs, a failed one included, and the log names each one's result. On a pull request the
       # checkout holds only the merge commit, so the base is fetched for the mutation floor to compare with
       # (a base that cannot be read fails that step); on a push it compares with origin/main.
@@ -56,7 +56,7 @@ jobs:
         if: ${{ !cancelled() }}
         run: |
           npm audit --json > dev-audit.json 2> dev-audit.err || true
-          if n=$(node -e 'const v=JSON.parse(require("fs").readFileSync("dev-audit.json","utf8")).metadata.vulnerabilities; const n=v.high+v.critical; if(!Number.isInteger(n)) process.exit(1); console.log(n)' 2>/dev/null); then
+          if n=$(node integrations/shared/audit-count.mjs dev-audit.json 2>/dev/null); then
             if [ "$n" -gt 0 ]; then
               echo "::warning title=npm audit (dev tooling)::$n dev-tooling package(s) with a high/critical advisory; fix with npm audit fix in its own PR"
               { echo '### npm audit (dev tooling, not blocking)'; echo '```'; npm audit --audit-level=high 2>&1 | tail -n 40; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
@@ -68,7 +68,7 @@ jobs:
 
   # The Rust CLI in cli/ (realm @nick/craft, #445): format, lint at zero warnings (the workspace
   # lints in cli/Cargo.toml become hard here), and the tests. A job of its own, not a gate step:
-  # `npm run gate` covers the Node side, and lib/gate-steps.test.mjs reads only the `test` job.
+  # `npm run gate` covers the Node side, and integrations/shared/gate-steps.test.mjs reads only the `test` job.
   rust:
     runs-on: ubuntu-latest
     defaults:
@@ -121,7 +121,7 @@ jobs:
         run: cargo test -p craft --locked --test process_identity
 
   # Static analysis with semgrep's public registry rule sets, plus craft's own shell-command rule, over
-  # lib/, integrations/opencode/plugin/ and integrations/claude-code/workflows/ (not integrations/opencode/install.sh or
+  # integrations/shared/, integrations/opencode/plugin/ and integrations/claude-code/workflows/ (not integrations/opencode/install.sh or
   # .github/). It found nothing real on adoption — it is here for code
   # not yet written (realm @nick/craft, #138). A separate job, not a step in `test`: it is a Python
   # tool in its own pinned image and fails on its own. Not reproducible, like the dependency audit
@@ -141,14 +141,15 @@ jobs:
       - uses: actions/checkout@v4
       - name: semgrep (craft's own rules match their fixtures)
         run: >-
-          semgrep --test --metrics=off --config .semgrep/child-process.yml .semgrep/child-process.mjs &&
-          semgrep --test --metrics=off --config .semgrep/child-process.yml .semgrep/child-process-cjs.js
+          semgrep --test --metrics=off --config .semgrep/child-process.yml integrations/shared/fixtures/semgrep/child-process.mjs &&
+          semgrep --test --metrics=off --config .semgrep/child-process.yml integrations/shared/fixtures/semgrep/child-process-cjs.js
       - name: semgrep (public rule sets and craft's own)
         run: >-
           semgrep scan --metrics=off --error --strict --timeout 0 --max-target-bytes 0
           --config .semgrep/child-process.yml --config p/javascript --config p/typescript --config p/nodejs
           --config p/security-audit --config p/secrets --config p/default
-          lib integrations/opencode/plugin integrations/claude-code/workflows
+          --exclude integrations/shared/config --exclude integrations/shared/fixtures
+          integrations/shared integrations/pi integrations/opencode/plugin integrations/claude-code/workflows
 
   # How quality moved between the PR's base and head — complexity, lint and type errors, tests, Knip,
   # import cycles — written to the job summary as a signal for review, never a gate (realm @nick/craft,
@@ -172,7 +173,7 @@ jobs:
         with:
           node-version: '22'
       # One step that never fails: install and measuring errors go into the summary, then exit 0.
-      # The measuring code is head's (lib/quality-delta.mjs); each side is measured with its own tooling.
+      # The measuring code is head's (integrations/shared/quality-delta.mjs); each side is measured with its own tooling.
       - name: Measure base and head, write the quality delta to the job summary
         run: |
           set +e
@@ -186,7 +187,7 @@ jobs:
               fi
             done
           done
-          if ! node head/lib/quality-delta.mjs --base base --head head > quality-delta.md 2> quality-delta.err; then
+          if ! node head/integrations/shared/quality-delta.mjs --base base --head head > quality-delta.md 2> quality-delta.err; then
             { echo '### Quality delta: the measuring tool itself failed (not blocking)'; echo '```'; tail -n 20 quality-delta.err; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           fi
           cat quality-delta.md >> "$GITHUB_STEP_SUMMARY"

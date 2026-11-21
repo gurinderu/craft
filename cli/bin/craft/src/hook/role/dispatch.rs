@@ -46,7 +46,7 @@ fn said(kind: &str, file: &str, background: bool, ctx: &Ctx) -> String {
         "launch the engine now, on the range the reviewer was given"
     };
     let logger = Path::new(ctx.var("CLAUDE_PLUGIN_ROOT"))
-        .join("lib")
+        .join("integrations/shared")
         .join("craft-log-run.mjs");
     [
         format!(

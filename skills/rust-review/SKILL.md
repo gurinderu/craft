@@ -45,11 +45,11 @@ verdict is **Approve** (or **Warning** with each remaining item justified in the
 then open the PR. A one-shot review whose findings never loop back into fixes is not a gate; the
 PR isn't ready until the loop is green.
 If the workflow fails with `at workflow.js:<line>:<column>`, that place is in the bundled engine:
-`node "<this skill's base directory>/../../lib/engine-source-map.mjs" review workflow.js:<line>:<column>`
+`node "<this skill's base directory>/../../integrations/shared/engine-source-map.mjs" review workflow.js:<line>:<column>`
 gives it in the plugin's source.
 Once a workflow run has ended (completed, failed or stopped — not while you may still resume it),
 fold its real cost into the records it filed:
-`node "<this skill's base directory>/../../lib/craft-log-run.mjs" enrich-cost --run-id <wf_…>`, with the
+`node "<this skill's base directory>/../../integrations/shared/craft-log-run.mjs" enrich-cost --run-id <wf_…>`, with the
 run id the Workflow completion names. Best-effort: if it fails, say so in one line and go on.
 
 ## Step 1 — Establish the gate (CI informs, never certifies)

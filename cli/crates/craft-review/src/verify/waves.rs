@@ -16,7 +16,7 @@ use crate::state::{RunState, Task, TaskKind, TaskState, finding_profile};
 /// The cheap model of the cull votes and the batches, as `CULL_MODEL`.
 const CULL_MODEL: Model = Model::Sonnet;
 /// The model of a Critical or High panel's one authoritative vote: the plan's `lensModel`, a
-/// constant in `lib/review-plan.mjs`.
+/// constant in `integrations/shared/review-plan.mjs`.
 const AUTH_MODEL: Model = Model::Opus;
 
 /// Whether `f` gets the authoritative vote and may escalate: a Critical or High — but a metrics

@@ -1,6 +1,6 @@
 //! The packing a unit batch is cut by: first-fit decreasing into bins of a volume, and a unit over
 //! the budget alone split by module directory (`binPack`, `splitModules` and `moduleUnits` in
-//! `lib/unit-batches.mjs`).
+//! `integrations/shared/unit-batches.mjs`).
 
 use std::collections::BTreeMap;
 

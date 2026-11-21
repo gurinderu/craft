@@ -1,6 +1,6 @@
 //! The binary's three writes, answered as the JavaScript adapter answered them (kept as
-//! `lib/binary-filing-replay.mjs`, the parity cases' source) over
-//! `lib/craft-log-run.mjs` (realm @nick/craft, nodes #456, #539): a checkpoint's `{ phase, runDir }`
+//! `integrations/shared/binary-filing-replay.mjs`, the parity cases' source) over
+//! `integrations/shared/craft-log-run.mjs` (realm @nick/craft, nodes #456, #539): a checkpoint's `{ phase, runDir }`
 //! or `{ phase, error }`, or `{ skipped: true }` when no phase ended; the record's `{ ok, reason,
 //! file }`; a publication's `{ ok, reason, file }`. The request is the JSON object the binary
 //! builds (`craft-review`'s `filing/wire.rs`).

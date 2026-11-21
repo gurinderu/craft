@@ -1,4 +1,4 @@
-//! A list of records read (`parsePriorDecisions` in `lib/prior-decisions.mjs`; realm @nick/craft,
+//! A list of records read (`parsePriorDecisions` in `integrations/shared/prior-decisions.mjs`; realm @nick/craft,
 //! node #218): under one cap, each refusal named by its label, a repeated id refused.
 
 use serde_json::Value;

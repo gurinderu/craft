@@ -1,5 +1,5 @@
 //! The consumer repository's own reviewing agents run as extra lenses (realm @nick/craft, nodes
-//! #295, #414, #264), as `lib/review-extra-lenses.mjs` and `lib/review-extra-lens-run.mjs` run them:
+//! #295, #414, #264), as `integrations/shared/review-extra-lenses.mjs` and `integrations/shared/review-extra-lens-run.mjs` run them:
 //! named by the caller, or — on a light pass with none named — discovered among the roles the
 //! session's project declares under `.claude/agents`; each runs once beside the first lens round on
 //! its own agent, reviews the whole change, and its findings join the pool after the rounds, under

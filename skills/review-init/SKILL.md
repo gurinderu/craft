@@ -31,7 +31,7 @@ go on without it.
 ## 2. Get the binary and propose
 
 ```sh
-CRAFT_BIN="$(node "<this skill's base directory>/../../lib/craft-bin.mjs" ensure)" || exit $?
+CRAFT_BIN="$(node "<this skill's base directory>/../../integrations/shared/craft-bin.mjs" ensure)" || exit $?
 "$CRAFT_BIN" init --propose --cwd "$(git rev-parse --show-toplevel)" --craft-root "<this skill's base directory>/../.." --memory-externals - <<'CRAFT_MEMORY_EXTERNALS'
 <the recalled records as one JSON list, on one line>
 CRAFT_MEMORY_EXTERNALS

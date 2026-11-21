@@ -1,4 +1,4 @@
-//! The coordinator's dispositions (`lib/unit-seam.mjs`; realm @nick/craft, #315, #321): which
+//! The coordinator's dispositions (`integrations/shared/unit-seam.mjs`; realm @nick/craft, #315, #321): which
 //! pooled findings an open cross-unit question named, what the coordinator did with each, and the
 //! report's list of what it set aside — a finding never leaves a review silently.
 
@@ -116,7 +116,7 @@ fn verdict_of<'a>(
 /// finding the coordinator reports), `confirm` keeps it; a disposition naming any other finding, or
 /// an unknown action, is ignored. A disposition matches a pooled finding filed by its lens under
 /// `source` or under `sources`, and each finding a disposition matched is counted once, under the
-/// action that won — unlike `applyDispositions` in `lib/unit-seam.mjs`, which matches `source`
+/// action that won — unlike `applyDispositions` in `integrations/shared/unit-seam.mjs`, which matches `source`
 /// alone and counts every disposition it reads, so a drop of the second lens's exact copy left the
 /// finding in the pool and still counted.
 #[must_use]

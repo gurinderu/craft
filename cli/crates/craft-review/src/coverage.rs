@@ -1,5 +1,5 @@
 //! The coverage exits a run takes before any lens, as `resolveCoverage` and the exits of
-//! `lib/review-coverage-phase.mjs` decide them from the changed files alone: an empty diff and a
+//! `integrations/shared/review-coverage-phase.mjs` decide them from the changed files alone: an empty diff and a
 //! diff whose reviewable files no profile takes (project configuration alone, once the general
 //! profile takes every other file carrying code) are INCOMPLETE, never an Approve; a diff of
 //! nothing but prose, assets, lockfiles and generated output is an honest green.

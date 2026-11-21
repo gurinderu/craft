@@ -235,7 +235,7 @@ fn propose_imports_the_memorys_external_records_with_the_revision_their_file_nam
     let repo = repo_arg(t);
     std::fs::create_dir_all(t.join("repo/deploy")).unwrap();
     std::fs::write(t.join("repo/deploy/values.yaml"), "sys:\n  tag: v1.2.3\n").unwrap();
-    // craft's own checkout: its lib/craft-externals.mjs reads the records.
+    // craft's own checkout: its integrations/shared/craft-externals.mjs reads the records.
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
     let root = root.canonicalize().unwrap().display().to_string();
     let records = serde_json::json!([

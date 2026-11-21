@@ -78,7 +78,7 @@ fn sandbox_line(probe: &dyn Probe) -> String {
 
 /// The readiness lines for a Codex start, each with its name; none when there is nothing to say.
 /// Whether this plugin version's binary is cached is not asked here: the binary that would say so is
-/// the one running, and `lib/craft-hook.sh` says it while the binary is absent (realm @nick/craft,
+/// the one running, and `integrations/shared/craft-hook.sh` says it while the binary is absent (realm @nick/craft,
 /// node #550).
 pub fn lines(probe: &dyn Probe) -> Vec<(&'static str, String)> {
     [("sandbox", sandbox_line(probe))]

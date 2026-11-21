@@ -1,4 +1,4 @@
-//! The Nix gate (`nixGate` in `lib/review-profiles.mjs`, its deterministic part): `nix flake
+//! The Nix gate (`nixGate` in `integrations/shared/review-profiles.mjs`, its deterministic part): `nix flake
 //! check` when the repository is a flake — red is a gate failure, unless what stopped it is this
 //! machine (no network, flakes off), which leaves the signal unknown — then statix (anti-idioms)
 //! and deadnix (dead bindings) on the changed `.nix` files, each diagnostic on a line the change

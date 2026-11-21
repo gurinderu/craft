@@ -1,4 +1,4 @@
-//! The project memory's part of a run's end, as `setAsidePhase` in `lib/review-set-aside.mjs`
+//! The project memory's part of a run's end, as `setAsidePhase` in `integrations/shared/review-set-aside.mjs`
 //! orders it: a lens finding repeating a live prior absorbed into it, then the decisions — the
 //! match judge handed out first when a near miss needs it — then the project rules, the rule judge
 //! handed out first when a finding sits in a rule's scope; each judge a step of its own.

@@ -1,6 +1,6 @@
 //! Whether the run store holds a finished, full craft review of a pull request's head — a
 //! craft:review run ([`counts`]; realm @nick/craft, node #541). The store is
-//! the one the record writer files into, `lib/craft-log-run.mjs`: its `index.jsonl`, one JSON line
+//! the one the record writer files into, `integrations/shared/craft-log-run.mjs`: its `index.jsonl`, one JSON line
 //! per run, read line by line with a malformed line counted and passed over; a run's detail file is
 //! read only for the runs on the head and the PR branch's newest, since the index carries no scope.
 

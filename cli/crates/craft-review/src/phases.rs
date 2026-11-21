@@ -1,5 +1,5 @@
 //! How a run moves on once no task of its phase is pending, as `reviewProfile` in
-//! `lib/review-profile.mjs` orders it for each profile: each profile's scout plans its lenses; the
+//! `integrations/shared/review-profile.mjs` orders it for each profile: each profile's scout plans its lenses; the
 //! lens rounds run until each profile's last round adds nothing new or its plan's rounds are spent;
 //! the one pool goes through the floor, the roll-up and the dedup; the verifiers judge it; the
 //! project's memory sets aside what it answers, its match judge and then its rule judge asked when

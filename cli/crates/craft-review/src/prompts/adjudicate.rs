@@ -1,4 +1,4 @@
-//! The adjudicator's prompt, as `adjudicatePrompt` in `lib/review-adjudicate-priors.mjs` renders
+//! The adjudicator's prompt, as `adjudicatePrompt` in `integrations/shared/review-adjudicate-priors.mjs` renders
 //! it: whether a prior round's finding is still present, its model-authored fields flattened and
 //! its rationale sanitized as `sanitizeAttack` sanitizes it, and the sites of later findings
 //! absorbed into it handed over on lines of their own.

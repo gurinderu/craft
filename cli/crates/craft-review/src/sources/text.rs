@@ -1,4 +1,4 @@
-//! What the prepared sources give a run's text, as `lib/external-source-text.mjs` words it: the
+//! What the prepared sources give a run's text, as `integrations/shared/external-source-text.mjs` words it: the
 //! lenses' block, the verifiers' block, and the report's section.
 
 use serde_json::Value;

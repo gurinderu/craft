@@ -86,7 +86,7 @@ pub(super) fn checkpoint(
 
 /// The phase the last of `steps` may have ended, when the adapter could not be reached to replay
 /// the driver's clock: the phase of the step before it, when it named one and the last step finished
-/// the run or names another — the clock's rule (`observe`, `lib/cli-review-clock.mjs`), used here
+/// the run or names another — the clock's rule (`observe`, `integrations/shared/cli-review-clock.mjs`), used here
 /// only so an unreached writer's loss is said for a step that can have lost a checkpoint, and no
 /// other.
 fn ended_maybe(steps: &[Told]) -> Option<String> {

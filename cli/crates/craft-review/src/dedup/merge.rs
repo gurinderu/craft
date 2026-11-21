@@ -1,5 +1,5 @@
-//! The dedup's groups as one graph (`dedupPool`, `lib/review-same-spot.mjs`,
-//! `lib/dedup-components.mjs`, realm @nick/craft, node #405): the same-spot groups and the model's
+//! The dedup's groups as one graph (`dedupPool`, `integrations/shared/review-same-spot.mjs`,
+//! `integrations/shared/dedup-components.mjs`, realm @nick/craft, node #405): the same-spot groups and the model's
 //! groups are edges over the pool, each connected component one finding, merged onto its strictest
 //! member (`mergedGroup`). The CLI runs no gate, so no finding is a tool's and the engines'
 //! tool-distinct rules have nothing to hold apart.

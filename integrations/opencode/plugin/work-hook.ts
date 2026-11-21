@@ -3,9 +3,9 @@
 // opencode.rs), the one writer of ~/.craft/hooks.jsonl; this file is the runtime-free core between it and the two
 // hosts. host-v1.ts feeds it from `chat.message` and `event`, host-v2.ts from the session `prompt` hook and
 // `ctx.event`; each says how the lines reach the message (`deliver`) and whether they can (`placeable`). It runs the
-// cached binary of this plugin version (lib/craft-bin.mjs) and never waits for a download: while it is absent the
-// hook is silent and, where the repo has role signs and the switch is on (lib/craft-hook-repo.sh), starts
-// `bin/craft --ensure --background` at most once an hour and says a failed try once (lib/craft-review-run.mjs's wrapper). Any failure
+// cached binary of this plugin version (integrations/shared/craft-bin.mjs) and never waits for a download: while it is absent the
+// hook is silent and, where the repo has role signs and the switch is on (integrations/shared/craft-hook-repo.sh), starts
+// `bin/craft --ensure --background` at most once an hour and says a failed try once (integrations/shared/craft-review-run.mjs's wrapper). Any failure
 // is silence: the hook must never cost the plugin its tools (realm @nick/craft, #276).
 import { spawn } from 'node:child_process'
 import { homedir } from 'node:os'
@@ -19,12 +19,12 @@ type Subagent = { parent: string; agent: string }
 // Within OpenCode's own message handling: past it the hook gives up and says nothing.
 const LIMIT_MS = 10_000
 
-type Modules = [typeof import('../../../lib/craft-bin.mjs'), typeof import('../../../lib/craft-review-run.mjs')]
+type Modules = [typeof import('../../shared/craft-bin.mjs'), typeof import('../../shared/craft-review-run.mjs')]
 let modules: Promise<Modules | null> | undefined
 const load = (): Promise<Modules | null> =>
-  (modules ??= Promise.all([import('../../../lib/craft-bin.mjs'), import('../../../lib/craft-review-run.mjs')]).catch(() => null))
+  (modules ??= Promise.all([import('../../shared/craft-bin.mjs'), import('../../shared/craft-review-run.mjs')]).catch(() => null))
 
-// The background try's own gate is lib/craft-fetch.sh's hour; the hook asks again no sooner either.
+// The background try's own gate is integrations/shared/craft-fetch.sh's hour; the hook asks again no sooner either.
 const HOUR_MS = 60 * 60 * 1000
 
 type Fetching = { since: number }
@@ -54,9 +54,9 @@ async function binary(where: Where, fetching: Fetching, say: boolean): Promise<F
   return { bin: null, said: failed ? `craft: tell the user: ${failed}.` : '' }
 }
 
-const REPO_TEST = fileURLToPath(new URL('../../../lib/craft-hook-repo.sh', import.meta.url))
+const REPO_TEST = fileURLToPath(new URL('../../shared/craft-hook-repo.sh', import.meta.url))
 
-/** Whether the hooks would speak in the hook's directory: lib/craft-hook-repo.sh, the repo test while the binary is absent. */
+/** Whether the hooks would speak in the hook's directory: integrations/shared/craft-hook-repo.sh, the repo test while the binary is absent. */
 function speaks(where: Where): Promise<boolean> {
   return new Promise(resolve => {
     const child = spawn('sh', [REPO_TEST, 'speaks', where.directory, 'opencode'], { stdio: 'ignore', env: { ...where.env, HOME: where.home } })

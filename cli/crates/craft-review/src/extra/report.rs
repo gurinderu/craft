@@ -1,5 +1,5 @@
 //! The report's account of the extra lenses, as `extraLensSection` in
-//! `lib/review-extra-lenses.mjs` words it: which ran, how they were chosen, and each gap.
+//! `integrations/shared/review-extra-lenses.mjs` words it: which ran, how they were chosen, and each gap.
 
 use super::{DISCOVERY_SKIPPED, ExitNote, Extra, Failed, How};
 use crate::state::RunState;

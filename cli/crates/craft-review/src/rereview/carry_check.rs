@@ -1,5 +1,5 @@
 //! The carry-check of a prior finding its author set aside (`rejected`, `justified`), as the
-//! engine's adjudicate track runs it (`applyCarry` in `lib/review-adjudicate-priors.mjs`): one
+//! engine's adjudicate track runs it (`applyCarry` in `integrations/shared/review-adjudicate-priors.mjs`): one
 //! agent decides only whether the code around it changed since the prior round's head. Changed, the
 //! author's word no longer covers it and it is reopened — still open, counted by its severity, and
 //! adjudicated by the next round. Unchanged, it has had its one confirmation and retires, leaving a

@@ -1,4 +1,4 @@
-//! One record into the store, as `writeRecord` in `lib/craft-log-run.mjs` files it: the fields the
+//! One record into the store, as `writeRecord` in `integrations/shared/craft-log-run.mjs` files it: the fields the
 //! writer owns stamped over the caller's. A durable intent precedes publication; staged bytes are
 //! read back before an exclusive link or replacement. Detail, index and proof replay under the index
 //! lock; a conflicting detail is left untouched with its intent retained (#555, #556, #559).

@@ -100,8 +100,8 @@ agents (would duplicate).
 ## Workflows
 
 Multi-agent orchestration scripts that compose the agents above (referencing them by `agentType` —
-internal to the plugin, no external dependency). They are authored under `src/`; `integrations/claude-code/workflows/` holds the
-copies the harness loads, generated from `src/` without their line comments (`npm run build:engines`) and
+internal to the plugin, no external dependency). They are authored under `integrations/claude-code/src/`; `integrations/claude-code/workflows/` holds the
+copies the harness loads, generated from `integrations/claude-code/src/` without their line comments (`npm run build:engines`) and
 committed. The review's knowledge — lens briefs and prompt templates (`content/prompts/`, `{{name}}`
 placeholders), the schemas its agents answer in (`content/schemas/<name>.schema.json`) and the Rust, Nix, SQL and
 general profiles' rosters (`content/profiles/rust.json`, `nix.json`, `sql.json`, `general.json`: the SQL
@@ -111,7 +111,7 @@ templates an engine still renders itself (memory recall among them) are inlined 
 
 | Workflow | Composes | Output |
 |---|---|---|
-| `review` | the review of a diff in any language, the driver of the Rust CLI's step protocol: the binary decides every step (each changed file to its profile — Rust, Nix, SQL or the general lenses —, the gate, the scouts, the lens rounds, verification, memory, re-review rounds chained under `~/.craft/runs/cli`); the protocol was observed end to end in a live session (craft 0.41.0, a Rust diff, finished with Approve), the full-lens review that followed it not yet; by design `engine-service` runs `craft review start`/`submit`, the tasks each step hands out run in parallel, each reading its prompt file and writing its answer file in the run directory, and the engine holds no review logic of its own; the binary files the run's telemetry itself (`--record`: a checkpoint as each phase ends, the record when the run finishes, written by its own store writer, byte for byte as `lib/craft-log-run.mjs` writes them; not yet observed live), the engine only the INCOMPLETE record of a run the binary never finished | a `## Verdict` block with the verdict line the binary printed, and the path of the report it wrote |
+| `review` | the review of a diff in any language, the driver of the Rust CLI's step protocol: the binary decides every step (each changed file to its profile — Rust, Nix, SQL or the general lenses —, the gate, the scouts, the lens rounds, verification, memory, re-review rounds chained under `~/.craft/runs/cli`); the protocol was observed end to end in a live session (craft 0.41.0, a Rust diff, finished with Approve), the full-lens review that followed it not yet; by design `engine-service` runs `craft review start`/`submit`, the tasks each step hands out run in parallel, each reading its prompt file and writing its answer file in the run directory, and the engine holds no review logic of its own; the binary files the run's telemetry itself (`--record`: a checkpoint as each phase ends, the record when the run finishes, written by its own store writer, byte for byte as `integrations/shared/craft-log-run.mjs` writes them; not yet observed live), the engine only the INCOMPLETE record of a run the binary never finished | a `## Verdict` block with the verdict line the binary printed, and the path of the report it wrote |
 | `rust-audit` | gate once + per-crate CLI review (gate off) + inter-crate contracts + architecture + crate-decomposition + security + miri + semver + build-matrix + deps + unused-crates (verified) + tests-cov (parallel) | one synthesized severity-ranked report |
 | `triage-findings` | gather → sift by project memory → validate (parallel, per finding) → plan (barrier) | one ordered fix plan (writing-plans format) + triage ledger; no edits |
 
@@ -212,7 +212,7 @@ live-data/news tooling (crate/docs/changelog fetchers). LSP navigation is now co
 (skills shared verbatim by symlink; 4 translated agent files and `review-task`, the read-only agent of the review's tasks; one TS plugin for OpenCode 1.x and 2.x —
 its default export carries both entries, and a host layer (`host.ts`, with `host-v1.ts` and `host-v2.ts`)
 gives the `rust-audit` and `triage-findings` workflows, the `review` tool (`bin/craft review run --backend opencode --events json`
-through `lib/craft-review-run.mjs`, on the calling session's model, each task its own `opencode run` on `review-task`; the
+through `integrations/shared/craft-review-run.mjs`, on the calling session's model, each task its own `opencode run` on `review-task`; the
 on 1.x without `--archived` and with subagent tasks on `review-task`; the tool is not yet seen in a real OpenCode session) and craft's work hook one surface on either runtime; on 2.x the review's progress also
 reaches the TUI's prompt footer through the `craft.review` RPC — `progress-rpc.ts` emits it, `review-footer.mjs` draws it, loaded by the TUI
 from `plugin/tui/`, the directory `install.sh` links as `plugins/craft-review-footer`;
@@ -273,7 +273,7 @@ from `content/`, which it compiles in, its plans, prompts and verification rules
 `content/parity/`, with the run's state in `state.json` of its run directory, each task's prompt and
 schema in its `tasks/` and each answer in its `answers/`, so no model copies them; with `start --record` the run files its own telemetry
 into the run store through `crates/craft-store`, which writes the checkpoints, the record and its index line byte for byte as
-`lib/craft-log-run.mjs` does, with no node, keeping what it needs between steps in `filing.json`, including the stopped parts whose
+`integrations/shared/craft-log-run.mjs` does, with no node, keeping what it needs between steps in `filing.json`, including the stopped parts whose
 record has not landed, which every `--resume` files again first; `craft review status` carries that `filing` — the
 record, its file and the step the run ended with — for a host that lost the step that said it), `crates/craft-store` (the run store's writer and its streaming reader, its output held to
 the JavaScript writer's by `content/parity/store-cases.json`) and `crates/craft-tui` (progress as a phases → agents tree
@@ -282,7 +282,7 @@ include by path (an executable a test writes and runs). In `craft-store`, `js/st
 strings, `filing.rs` replays pending writes through `filing_io.rs`'s publication primitives, and `lock/turn.rs` coordinates local writers
 with `lock/ticket.rs` validating immutable names. `process_identity.rs` and its native modules query boot and process incarnations;
 `bin/craft/src/process_identity.rs` exposes them through the hidden `__craft-process-identity` command.
-The JavaScript counterparts are `lib/filing-transaction.mjs`, `lib/index-turn.mjs` and `lib/process-identity.mjs` (direct Linux reads,
+The JavaScript counterparts are `integrations/shared/filing-transaction.mjs`, `integrations/shared/index-turn.mjs` and `integrations/shared/process-identity.mjs` (direct Linux reads,
 cached-binary queries on macOS/Windows); `tests/lock_interop.rs` exercises both lock callers, and
 `bin/craft/tests/process_identity.rs` exercises the real helper and Node admission across native platforms.
 The toolchain is pinned in `cli/rust-toolchain.toml`;
@@ -291,20 +291,20 @@ parity files the CLI owns (`verify-cases.json`, `plan-cases.json`, `prompt-cases
 from `npm run gate`. The CLI's version is the plugin's: release-please moves `cli/Cargo.toml` and
 `cli/Cargo.lock` with the manifest, and its `cli-binaries` job attaches `craft-<target>.tar.gz` (the
 binary at the archive root, `craft.exe` for Windows) and its `.sha256` to each release for Linux and macOS on x64
-and arm64 and Windows on x64; `lib/craft-bin.mjs ensure` fetches the one for this platform and version into
-`~/.craft/bin/<version>/` (through the REST API, `lib/release-asset.mjs`, when the download URL answers 5xx or
+and arm64 and Windows on x64; `integrations/shared/craft-bin.mjs ensure` fetches the one for this platform and version into
+`~/.craft/bin/<version>/` (through the REST API, `integrations/shared/release-asset.mjs`, when the download URL answers 5xx or
 not at all; `GITHUB_TOKEN` or `GH_TOKEN`, if set, is sent to the API only),
 which the `review` engine runs when no `craftBin` is given. The other hosts reach the same cache through `bin/craft`
 at the repository root, a POSIX `sh` wrapper carrying the plugin version (release-please moves it): it runs
 `~/.craft/bin/<version>/craft`, first downloading the release archive and its `.sha256` with `curl` or `wget` and
 checking it with `sha256sum` or `shasum` when the cache lacks it (no Windows), `CRAFT_BIN` naming a local build,
-and `CRAFT_ROOT` defaulting to the plugin root. The download itself is `lib/craft-fetch.sh` with `lib/craft-fetch-http.sh` — the release URL, the REST API fallback, the SHA-256,
-the lock and the cache layout in one place —, which `bin/craft` sources (`--ensure` only fetches) and `lib/craft-bin.mjs ensure`
-runs (its own Node download kept for Windows only). `lib/craft-hook.sh <name>`
+and `CRAFT_ROOT` defaulting to the plugin root. The download itself is `integrations/shared/craft-fetch.sh` with `integrations/shared/craft-fetch-http.sh` — the release URL, the REST API fallback, the SHA-256,
+the lock and the cache layout in one place —, which `bin/craft` sources (`--ensure` only fetches) and `integrations/shared/craft-bin.mjs ensure`
+runs (its own Node download kept for Windows only). `integrations/shared/craft-hook.sh <name>`
 runs the start, prompt, subagent and reviewer-dispatch hooks as `craft hook <name>` from the same cache, never waiting for
-a download: while the binary is absent it makes the repo test itself (`lib/craft-hook-repo.sh`) and, where the repo has
-role signs and the switch is on, the start fetches it in the background and says so (`lib/craft-hook-absent.sh`; release-please
-moves its version too). The OpenCode work hook runs `craft hook opencode-message` the same way. `lib/pr-opened-hook.sh`, the PostToolUse hook on the Bash tool (Claude Code;
+a download: while the binary is absent it makes the repo test itself (`integrations/shared/craft-hook-repo.sh`) and, where the repo has
+role signs and the switch is on, the start fetches it in the background and says so (`integrations/shared/craft-hook-absent.sh`; release-please
+moves its version too). The OpenCode work hook runs `craft hook opencode-message` the same way. `integrations/shared/pr-opened-hook.sh`, the PostToolUse hook on the Bash tool (Claude Code;
 Codex: unobserved), hands a call that says `pr create` or `pr new` and prints a pull request's numbered URL to `craft hook pr-opened` — the cached binary of
 its own version (release-please moves it), never downloaded. When the command said `pr create` or `pr new` and printed
 a PR's URL, the binary asks `gh pr view` for the PR's head and base and warns when the run store holds no finished
@@ -323,21 +323,26 @@ task names (`integrations/claude-code/agents/`) before the task's prompt.
 
 ## Deliveries
 
-`integrations/` holds one directory per harness. `integrations/claude-code/` is the Claude Code plugin: its
-manifest, `agents/`, `hooks/` and the built `workflows/`, with `skills`, `lib`, `content`, `src` and `README.md` as
-symlinks to the shared ones at the root; a load in place (`--plugin-dir`) follows them into the checkout. The root
+`integrations/` holds all tracked JavaScript and TypeScript: one directory per harness and `shared/` for cross-host modules.
+`integrations/shared/config/` holds the five JS tool configs, `fixtures/semgrep/` the rule examples;
+`layout-paths.mjs` reconciles known historical paths for floor and quality comparisons, `check-js-boundary.mjs`
+holds the tracked-file boundary, and `audit-count.mjs` summarizes CI's development-dependency audit. `integrations/claude-code/` is the Claude Code plugin: its
+manifest, `agents/`, `hooks/` and the built `workflows/`, with `skills`, `content` and `README.md` as
+symlinks to the shared ones at the root; nested `integrations/shared` and `integrations/claude-code/src`
+project the shared modules and authored engines at their canonical paths. The package omits the checkout-only
+top-level `src`, so each engine source has one packaged home; a load in place (`--plugin-dir`) follows them into the checkout. The root
 marketplace (`.claude-plugin/marketplace.json`) installs it from the `claude-code-plugin` branch (a `url` source over
 HTTPS), which each release rebuilds from this directory with the links dereferenced into real files
-(`lib/materialize-claude-code.mjs`, run by `.github/workflows/claude-code-plugin.yml`, which release-please calls),
+(`integrations/shared/materialize-claude-code.mjs`, run by `.github/workflows/claude-code-plugin.yml`, which release-please calls),
 so a clone without symlinks (Windows) installs it whole. `integrations/opencode/` is the OpenCode adapter; on 2.x it
 installs as a package from the `opencode-plugin` branch, each release's commit tagged `opencode-v<version>`
-(`lib/opencode-package.mjs` lays it out with its own `package.json`, no scripts and no dependencies — it refuses a
-shipped module that imports an npm package at run time —, `lib/materialize-opencode.mjs` commits
+(`integrations/shared/opencode-package.mjs` lays it out with its own `package.json`, no scripts and no dependencies — it refuses a
+shipped module that imports an npm package at run time —, `integrations/shared/materialize-opencode.mjs` commits
 and tags it, run by `.github/workflows/opencode-plugin.yml`, which release-please calls); `integrations/codex/` explains the
 Codex delivery's place at the root, and `integrations/pi/` holds the pi package's `craft-review` skill: the repository is a pi
 package whose manifest, the root `package.json`'s `pi` key, loads that
-skill and one extension, `lib/pi-extension.mjs`, whose `craft_review` tool runs `bin/craft review run --backend pi
---events json` (`lib/craft-review-run.mjs`, shared with the OpenCode tool), streams its progress and draws the verdict,
+skill and one extension, `integrations/pi/pi-extension.mjs`, whose `craft_review` tool runs `bin/craft review run --backend pi
+--events json` (`integrations/shared/craft-review-run.mjs`, shared with the OpenCode tool), streams its progress and draws the verdict,
 findings and report — new, seen running end to end from a checkout, not yet as an installed pi package.
 The pi package installs at the release tag:
 

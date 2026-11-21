@@ -38,7 +38,7 @@ fn lenses_ran(verdict: Option<&str>, rounds: Option<&[Value]>) -> bool {
 /// A verdict that claims its whole scope: not empty, and with neither of the markers the review
 /// writers put on a verdict that did not cover it — INCOMPLETE (`honestVerdict`, the CLI's
 /// `report::verdict` and its coverage exits, `INCOMPLETE (<why>)` among them) and PARTIAL COVERAGE
-/// (`report::verdict`, `verdictSuffix` in `lib/review-coverage.mjs`).
+/// (`report::verdict`, `verdictSuffix` in `integrations/shared/review-coverage.mjs`).
 fn clean(verdict: Option<&str>) -> bool {
     let v = verdict.unwrap_or_default().to_ascii_uppercase();
     !v.trim().is_empty() && !v.contains("INCOMPLETE") && !v.contains("PARTIAL COVERAGE")

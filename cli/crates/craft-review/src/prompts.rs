@@ -1,6 +1,6 @@
 //! The prompts of a review: the scout, every lens, the dedup pass and the verifiers, each rendered
-//! from `content/prompts/` with the values `lib/review-lens-prompts.mjs`, `lib/review-dedup.mjs`
-//! and `lib/review-verify.mjs` compute for the same template — what is chosen or joined is chosen
+//! from `content/prompts/` with the values `integrations/shared/review-lens-prompts.mjs`, `integrations/shared/review-dedup.mjs`
+//! and `integrations/shared/review-verify.mjs` compute for the same template — what is chosen or joined is chosen
 //! here and passed in.
 
 use std::path::{Path, PathBuf};
@@ -58,7 +58,7 @@ pub struct PromptContext {
     #[serde(default, skip_serializing_if = "ReScope::is_first")]
     pub re_review: ReScope,
     /// Strict mode: the maintainability bar is a presumption of block (`strict` in
-    /// `lib/review-run-args.mjs`). Optional, so a state written before it reads as a default review.
+    /// `integrations/shared/review-run-args.mjs`). Optional, so a state written before it reads as a default review.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub strict: bool,
     /// The integration points' sources the run prepared, for the lenses and verifiers that read
@@ -96,7 +96,7 @@ impl PromptContext {
     }
 }
 
-/// What a round's lenses review, as `reReviewBlock` in `lib/review-lens-prompts.mjs` frames it.
+/// What a round's lenses review, as `reReviewBlock` in `integrations/shared/review-lens-prompts.mjs` frames it.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ReScope {
@@ -116,7 +116,7 @@ impl ReScope {
     }
 }
 
-/// `s` single-quoted for a shell, as `shq` in `lib/run-logging.mjs`.
+/// `s` single-quoted for a shell, as `shq` in `integrations/shared/run-logging.mjs`.
 fn shq(s: &str) -> String {
     format!("'{}'", s.replace('\'', r"'\''"))
 }
@@ -175,16 +175,15 @@ pub fn plugin_root_at(dir: &Path) -> Option<PathBuf> {
         .find(|d| d.join(".claude-plugin/plugin.json").is_file())
 }
 
-/// Where `rel` (`skills/…`, `agents`, `lib/…`) really is for the plugin `root`: under `root` itself when
-/// its first part is there, else in the other half of a checkout's layout — the repository root's
-/// own `skills/`, `lib/`, `content/` beside the delivery `integrations/claude-code/agents/`. A copy
+/// Where `rel` (`skills/…`, `agents`, `integrations/shared/…`) really is for the plugin `root`: under `root` itself when
+/// the requested path is there, else in the other half of a checkout's layout — the repository root's
+/// own `skills/`, `integrations/shared/`, `content/` beside the delivery `integrations/claude-code/agents/`. A copy
 /// that dropped the delivery's symlinks (Codex installs the repository root without them) has the
 /// shared directories only at the repository root; a materialized delivery has everything under
 /// itself. Nowhere found, `root/rel` as given (realm @nick/craft, node #500).
 #[must_use]
 pub fn plugin_path(root: &Path, rel: &str) -> PathBuf {
     let rel = rel.trim_start_matches('/');
-    let top = rel.split('/').next().unwrap_or_default();
     let checkout = root
         .ends_with(DELIVERY)
         .then(|| root.ancestors().nth(2))
@@ -197,7 +196,7 @@ pub fn plugin_path(root: &Path, rel: &str) -> PathBuf {
     ]
     .into_iter()
     .flatten()
-    .find(|base| !top.is_empty() && base.join(top).exists())
+    .find(|base| !rel.is_empty() && base.join(rel).exists())
     .unwrap_or_else(|| root.to_path_buf())
     .join(rel)
 }

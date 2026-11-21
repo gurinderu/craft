@@ -1,5 +1,5 @@
 //! The directory slicing files outside every unit keep (`sliceDiff` and its helpers in
-//! `lib/lens-scope.mjs`): shared files ride on every slice, the owned ones are grouped by directory,
+//! `integrations/shared/lens-scope.mjs`): shared files ride on every slice, the owned ones are grouped by directory,
 //! a group over the cap is split deeper, and the nearest groups are merged down to the slice count.
 
 use std::collections::BTreeMap;

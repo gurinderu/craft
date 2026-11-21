@@ -1,5 +1,5 @@
-//! Strict mode's maintainability bar, as `lib/review-run.mjs` holds it (`isMaintainability`,
-//! `finalVerdict`) and `lib/review-verify-pool.mjs` spares it from the harm cap: a maintainability
+//! Strict mode's maintainability bar, as `integrations/shared/review-run.mjs` holds it (`isMaintainability`,
+//! `finalVerdict`) and `integrations/shared/review-verify-pool.mjs` spares it from the harm cap: a maintainability
 //! finding keeps the severity its lens raised it to, and a confirmed one at Medium or above blocks.
 
 use serde_json::Value;

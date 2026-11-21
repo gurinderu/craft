@@ -1,5 +1,5 @@
 //! A task's deadline by its kind, as the review engine sets an agent's by its phase
-//! (lib/cli-review-deadline.mjs, lib/review-deadlines.mjs): the scout's 15 minutes, a lens's 90 —
+//! (integrations/shared/cli-review-deadline.mjs, integrations/shared/review-deadlines.mjs): the scout's 15 minutes, a lens's 90 —
 //! a single lens legitimately ran 46 — and 30 for the rest. A task past it is abandoned.
 
 use std::time::Duration;

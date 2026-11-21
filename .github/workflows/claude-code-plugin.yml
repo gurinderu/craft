@@ -3,7 +3,7 @@ name: claude-code-plugin
 # The Claude Code plugin without symlinks, for consumers whose clone does not make them (core.symlinks=false, the
 # Windows default, turns each of integrations/claude-code's links into a one-line text file the harness then caches
 # as it is). One ref's delivery, every link dereferenced, becomes the next commit of the claude-code-plugin branch,
-# which the marketplace entry's `url` source names (lib/materialize-claude-code.mjs). Its plugin.json carries that
+# which the marketplace entry's `url` source names (integrations/shared/materialize-claude-code.mjs). Its plugin.json carries that
 # ref's version, so an install or update moves with release-please.
 #
 # release-please.yml calls this with the tag of each release it cuts; the first release to carry this file (0.42.0)
@@ -74,7 +74,9 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          node lib/materialize-claude-code.mjs --branch "$BRANCH" --message "craft $REF ($(git rev-parse HEAD)): the Claude Code plugin with its symlinks dereferenced"
+          materializer=integrations/shared/materialize-claude-code.mjs
+          [ -f "$materializer" ] || materializer=lib/materialize-claude-code.mjs
+          node "$materializer" --branch "$BRANCH" --message "craft $REF ($(git rev-parse HEAD)): the Claude Code plugin with its symlinks dereferenced"
       # What is about to be pushed, read back out of the commit: no symlink in it, and the plugin manifest with its
       # hooks valid as the harness reads them. A failure here pushes nothing.
       - name: validate the committed tree

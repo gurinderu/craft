@@ -1,6 +1,6 @@
-//! A CLI review's record and checkpoints in the store's own format, as `lib/cli-review-record.mjs`
+//! A CLI review's record and checkpoints in the store's own format, as `integrations/shared/cli-review-record.mjs`
 //! builds them from the finished step the binary printed, read field by field as
-//! `lib/cli-review-step.mjs` reads it (`finishedStep`): each field checked and defaulted the one way.
+//! `integrations/shared/cli-review-step.mjs` reads it (`finishedStep`): each field checked and defaulted the one way.
 
 use crate::js::{Js, JsString, Obj};
 use crate::record::{fingerprint, summarize};

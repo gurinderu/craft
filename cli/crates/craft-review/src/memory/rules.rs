@@ -1,6 +1,6 @@
 //! The project rules applied to a run's findings once the decisions set theirs aside, as
-//! `applyProjectRules` in `lib/project-rule-apply.mjs` and `rulePairs` in
-//! `lib/project-rule-judge.mjs` apply them (realm @nick/craft, nodes #273, #282): a rule is a
+//! `applyProjectRules` in `integrations/shared/project-rule-apply.mjs` and `rulePairs` in
+//! `integrations/shared/project-rule-judge.mjs` apply them (realm @nick/craft, nodes #273, #282): a rule is a
 //! stance on a whole class of findings, so its candidates are the findings inside its scope — and
 //! of its lens, when it names one — and the rule judge says of each pair whether the finding's
 //! concern is exactly what the rule declares acceptable. A finding it puts under a rule leaves the

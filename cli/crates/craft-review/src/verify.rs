@@ -16,7 +16,7 @@ pub(crate) use stopped::stood;
 use waves::{awaits_escalation, culls, is_high, panel, returned};
 pub(crate) use waves::{escalation, tasks};
 
-/// How many findings one batch verifier judges, as `BATCH_SIZE` in `lib/review-verify.mjs`.
+/// How many findings one batch verifier judges, as `BATCH_SIZE` in `integrations/shared/review-verify.mjs`.
 pub(crate) const BATCH_SIZE: usize = 6;
 /// Rules that block on sight: a finding citing one is verified on its own whatever its severity.
 pub(crate) const CRITICAL_TIER_RULES: &[&str] = &[
@@ -24,7 +24,7 @@ pub(crate) const CRITICAL_TIER_RULES: &[&str] = &[
     "ERR-002",
 ];
 
-/// How a finding is verified, as `verifyTier` in `lib/review-verify.mjs` routes it.
+/// How a finding is verified, as `verifyTier` in `integrations/shared/review-verify.mjs` routes it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Route {
     /// A verifier of its own: Critical or High, or citing a rule that blocks on sight.
@@ -101,7 +101,7 @@ fn lens_agreed(f: &Value) -> bool {
     lenses(f).len() >= 2
 }
 
-/// The route `f` takes in a run, as `routeOf` in `lib/review-verify-pool.mjs`: a light pass
+/// The route `f` takes in a run, as `routeOf` in `integrations/shared/review-verify-pool.mjs`: a light pass
 /// verifies only Medium and above (`depthVerifyTier`), and two or more lenses on one defect buy a
 /// verifier when the harm it names could make it must-fix (realm @nick/craft, node #407).
 pub(crate) fn route_in(f: &Value, light: bool) -> Route {

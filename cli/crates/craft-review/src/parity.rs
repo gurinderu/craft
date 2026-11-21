@@ -1,5 +1,5 @@
 //! The verification rules held to `content/parity/verify-cases.json`, a golden file this crate owns
-//! ([`crate::golden`]; `lib/verify-parity.test.mjs` holds the engines to it too while they ship).
+//! ([`crate::golden`]; `integrations/shared/verify-parity.test.mjs` holds the engines to it too while they ship).
 
 use serde_json::{Value, json};
 

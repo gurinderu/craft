@@ -32,7 +32,7 @@ pub struct NegativeSpace {
 }
 
 /// What a profile's units are called and what a confined lens, the contract lens and the seam pass
-/// read of a unit they may not open (`RUST_UNITS` in `lib/rust-units.mjs`): another unit's
+/// read of a unit they may not open (`RUST_UNITS` in `integrations/shared/rust-units.mjs`): another unit's
 /// signatures (`<its path>` its directory), the public surface at `{{root}}`, what a public contract
 /// is made of, and the public items the seam pass follows. The Rust profile's units are its Cargo
 /// packages, which the binary discovers itself ([`crate::units`]).

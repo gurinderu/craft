@@ -1,5 +1,5 @@
 //! Unit mode's prompts held to `content/parity/prompt-cases.json`, a golden file this crate owns
-//! ([`crate::golden`]; `lib/review-prompt-parity.test.mjs` holds the engine to it too while it ships):
+//! ([`crate::golden`]; `integrations/shared/review-prompt-parity.test.mjs` holds the engine to it too while it ships):
 //! a lens confined to a batch of two crates, a lens over a directory slice of files in no crate, the
 //! contract lens of one crate, and the coordinator over an open question.
 

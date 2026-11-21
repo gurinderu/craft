@@ -1,4 +1,4 @@
-//! A gate tool's finding and its own identity, as `lib/prior-decision-match.mjs` reads them
+//! A gate tool's finding and its own identity, as `integrations/shared/prior-decision-match.mjs` reads them
 //! (`isToolFinding`, `ruleKey`, `titleKey`, `toolDistinct`; realm @nick/craft, nodes #236, #238):
 //! two findings a tool tells apart are never one finding, whatever key they share.
 

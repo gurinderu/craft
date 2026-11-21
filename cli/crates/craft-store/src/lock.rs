@@ -1,4 +1,4 @@
-//! The store's index lock, the protocol of `lib/index-lock.mjs` (realm @nick/craft, node #401), so a
+//! The store's index lock, the protocol of `integrations/shared/index-lock.mjs` (realm @nick/craft, node #401), so a
 //! JavaScript writer and this one enter through immutable process tickets before the legacy file
 //! lock. Legacy stale recovery is serialized among updated writers (realm @nick/craft, #557).
 //! Earlier releases still use the file lock alone. Waiting is bounded at 45 s across both stages.
@@ -13,7 +13,7 @@ use crate::StoreError;
 mod ticket;
 mod turn;
 
-/// The protocol both writers hold to (`content/parity/lock-protocol.json`, `lib/index-lock.mjs`).
+/// The protocol both writers hold to (`content/parity/lock-protocol.json`, `integrations/shared/index-lock.mjs`).
 pub const LOCK: &str = "index.jsonl.lock";
 pub const STALE: Duration = Duration::from_secs(30);
 const WAIT: Duration = Duration::from_millis(20);

@@ -23,7 +23,7 @@ use super::task::{Task, tasks_of};
 use super::telemetry::Lost;
 
 /// A backstop only — the binary decides when the run is done: sixteen steps, each asked at most
-/// three times, and three spare (lib/cli-review-commands.mjs, `MAX_ROUNDS`).
+/// three times, and three spare (integrations/shared/cli-review-commands.mjs, `MAX_ROUNDS`).
 pub(crate) const MAX_ROUNDS: usize = 51;
 
 /// What the loop runs with.

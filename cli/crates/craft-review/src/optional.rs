@@ -1,4 +1,4 @@
-//! The optional pass (`optional`), as `parseOptionalRequest` in `lib/review-lens-tallies.mjs`
+//! The optional pass (`optional`), as `parseOptionalRequest` in `integrations/shared/review-lens-tallies.mjs`
 //! reads it: off by default; `all` (or `true`) buys every optional lens, a list of names buys
 //! those, and a name that is no optional lens is named in a note rather than silently dropped, the
 //! recognised ones still admitted. A lens is named by its id (`api-idioms`) or qualified by its

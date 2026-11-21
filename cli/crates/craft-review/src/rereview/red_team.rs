@@ -1,6 +1,6 @@
 //! The red team on a prior Critical or High finding its adjudicator called resolved, as the
-//! adjudicate track of `lib/review-adjudicate-priors.mjs` sends it (`shouldRedTeam`,
-//! `classifyRedTeam` in `lib/review-adjudicate.mjs`): an independent agent that never sees the
+//! adjudicate track of `integrations/shared/review-adjudicate-priors.mjs` sends it (`shouldRedTeam`,
+//! `classifyRedTeam` in `integrations/shared/review-adjudicate.mjs`): an independent agent that never sees the
 //! adjudicator's verdict attacks the fix under the invariant it named. A concrete attack reopens
 //! the finding; a dead red team, or one claiming defeat with no attack, leaves it resolved on the
 //! adjudicator's own attack pass, and says so.
