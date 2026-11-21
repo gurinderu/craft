@@ -79,14 +79,14 @@ fn unpaired_matching_fields_survive_and_never_collapse_into_replacement_characte
 fn malformed_utf8_is_decoded_like_node_without_discarding_valid_records() {
     let s = Store::new();
     for (i, branch) in ["a", "b"].iter().enumerate() {
-        let raw = format!(
-            r#"{{"project":{},"branch":"{branch}","unrelated":"X","ledger":[{{"file":"f","title":"same","tier":"confirmed"}}]}}"#,
+        // The invalid byte goes only into `unrelated`: the project path is a
+        // random temporary directory and may hold any ASCII letter.
+        let head = format!(
+            r#"{{"project":{},"branch":"{branch}","unrelated":""#,
             serde_json::to_string(&s.project).unwrap()
         );
-        let bytes: Vec<_> = raw
-            .bytes()
-            .map(|b| if b == b'X' { 0xff } else { b })
-            .collect();
+        let tail = r#"","ledger":[{"file":"f","title":"same","tier":"confirmed"}]}"#;
+        let bytes = [head.as_bytes(), &[0xff], tail.as_bytes()].concat();
         std::fs::write(s.store.join(format!("{i}.json")), bytes).unwrap();
     }
     assert_eq!(s.read(&[])["groups"].as_array().unwrap().len(), 1);
