@@ -58,27 +58,28 @@ pub fn ls(out: &mut dyn Write, rows: &[Obj], json: bool) -> io::Result<()> {
         .to_vec(),
     ];
     for r in rows {
-        let name = match r.text("driver") {
-            "" => r.text("name").to_owned(),
-            d => format!("{} ({d})", r.text("name")),
+        let text = |k| {
+            r.try_text(k)
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
         };
-        let project = r
-            .text("project")
-            .rsplit('/')
-            .next()
-            .unwrap_or("")
-            .to_owned();
+        let name = match text("driver")? {
+            "" => text("name")?.to_owned(),
+            d => format!("{} ({d})", text("name")?),
+        };
+        let project = text("project")?.rsplit('/').next().unwrap_or("").to_owned();
         let findings = r
             .get("findingsTotal")
             .map(Js::to_js_string)
+            .transpose()
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?
             .unwrap_or_default();
         cells.push(vec![
-            r.text("ts").to_owned(),
+            text("ts")?.to_owned(),
             name,
-            r.text("craftVersion").to_owned(),
-            r.text("verdict").to_owned(),
+            text("craftVersion")?.to_owned(),
+            text("verdict")?.to_owned(),
             findings,
-            r.text("branch").to_owned(),
+            text("branch")?.to_owned(),
             project,
         ]);
     }

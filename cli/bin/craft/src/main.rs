@@ -5,6 +5,7 @@ mod filing_worker;
 mod hook;
 mod init;
 mod printed;
+mod process_identity;
 mod review;
 mod run;
 mod runs;
@@ -40,6 +41,8 @@ enum Command {
     Runs(runs::RunsArgs),
     #[command(name = "__craft-file-run", hide = true)]
     FileRun,
+    #[command(name = "__craft-process-identity", hide = true)]
+    ProcessIdentity(process_identity::Args),
 }
 
 #[derive(Subcommand)]
@@ -141,6 +144,7 @@ async fn main() -> ExitCode {
         Command::Hook(HookCommand::PrOpened(args)) => hook::pr_opened(&args),
         Command::Runs(args) => runs::runs(&args),
         Command::FileRun => filing_worker::worker(),
+        Command::ProcessIdentity(args) => process_identity::run(&args),
         Command::Hook(HookCommand::SessionStart) => hook::role_hook(hook::RoleHook::SessionStart),
         Command::Hook(HookCommand::UserPrompt) => hook::role_hook(hook::RoleHook::UserPrompt),
         Command::Hook(HookCommand::SubagentStart) => hook::role_hook(hook::RoleHook::SubagentStart),

@@ -1,8 +1,7 @@
 //! `JSON.parse`: the text as JavaScript reads it — every number a double, a key set twice holding
-//! its last value at its first place. A lone surrogate escape, which no Rust string can hold, reads
-//! as U+FFFD.
+//! its last value at its first place. Strings retain every UTF-16 code unit (realm @nick/craft, #560).
 
-use super::{Js, Obj};
+use super::{Js, JsString, Obj};
 
 /// Why a text is not JSON, and where.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -71,7 +70,7 @@ impl Parser<'_> {
         match self.peek() {
             Some(b'{') => self.object(depth),
             Some(b'[') => self.array(depth),
-            Some(b'"') => self.string().map(Js::Str),
+            Some(b'"') => self.string().map(Js::str),
             Some(b't') => self.eat("true").map(|()| Js::Bool(true)),
             Some(b'f') => self.eat("false").map(|()| Js::Bool(false)),
             Some(b'n') => self.eat("null").map(|()| Js::Null),
@@ -177,19 +176,19 @@ impl Parser<'_> {
         }
     }
 
-    fn string(&mut self) -> Result<String, ParseError> {
+    fn string(&mut self) -> Result<JsString, ParseError> {
         self.i += 1;
-        let mut out = String::new();
+        let mut out = Vec::new();
         loop {
             let run = self.i;
             while matches!(self.peek(), Some(c) if c != b'"' && c != b'\\' && c >= 0x20) {
                 self.i += 1;
             }
-            out.push_str(self.text.get(run..self.i).unwrap_or(""));
+            out.extend(self.text.get(run..self.i).unwrap_or("").encode_utf16());
             match self.peek() {
                 Some(b'"') => {
                     self.i += 1;
-                    return Ok(out);
+                    return Ok(JsString::from_utf16(out));
                 }
                 Some(b'\\') => {
                     self.i += 1;
@@ -201,47 +200,32 @@ impl Parser<'_> {
         }
     }
 
-    fn escape(&mut self) -> Result<char, ParseError> {
+    fn escape(&mut self) -> Result<u16, ParseError> {
         let c = self.peek().ok_or_else(|| self.err("unterminated string"))?;
         self.i += 1;
         Ok(match c {
-            b'"' => '"',
-            b'\\' => '\\',
-            b'/' => '/',
-            b'b' => '\u{8}',
-            b'f' => '\u{c}',
-            b'n' => '\n',
-            b'r' => '\r',
-            b't' => '\t',
-            b'u' => return self.unicode(),
+            b'"' => u16::from(b'"'),
+            b'\\' => u16::from(b'\\'),
+            b'/' => u16::from(b'/'),
+            b'b' => 8,
+            b'f' => 12,
+            b'n' => 10,
+            b'r' => 13,
+            b't' => 9,
+            b'u' => return self.hex4(),
             _ => return Err(self.err("bad escaped character")),
         })
     }
 
-    fn hex4(&mut self) -> Result<u32, ParseError> {
+    fn hex4(&mut self) -> Result<u16, ParseError> {
         let h = self
             .text
             .get(self.i..self.i + 4)
             .ok_or_else(|| self.err("bad unicode escape"))?;
-        let n = u32::from_str_radix(h, 16)
+        let n = u16::from_str_radix(h, 16)
             .ok()
             .ok_or_else(|| self.err("bad unicode escape"))?;
         self.i += 4;
         Ok(n)
-    }
-
-    fn unicode(&mut self) -> Result<char, ParseError> {
-        let hi = self.hex4()?;
-        if (0xD800..0xDC00).contains(&hi) && self.s.get(self.i..self.i + 2) == Some(b"\\u") {
-            let back = self.i;
-            self.i += 2;
-            let lo = self.hex4()?;
-            if (0xDC00..0xE000).contains(&lo) {
-                let c = 0x10000 + ((hi - 0xD800) << 10) + (lo - 0xDC00);
-                return Ok(char::from_u32(c).unwrap_or('\u{fffd}'));
-            }
-            self.i = back;
-        }
-        char::from_u32(hi).ok_or_else(|| self.err("unpaired unicode surrogate"))
     }
 }

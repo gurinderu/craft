@@ -224,6 +224,12 @@ inferred: the agent returns `{ok, error}`, and the engine puts the loss in its o
 bundles them in (the sandbox can't `import`). Standalone agents self-log via their `.md` Observability
 section, suppressed when run as a workflow sub-agent.
 
+Concurrent writers use `.index-writers/` admission before `index.jsonl.lock`. They must share
+one local filesystem and process namespace; a live process is never displaced merely because
+its write is slow. Upgrade every writer sharing a store before relying on this protection:
+older releases ignore admission and can still take a live writer's legacy lock by age. The
+legacy lock remains for ordinary coexistence, not as a cure for the older writer's race.
+
 ### When a record is missing
 
 The write can fail while the review itself is fine — a `craftRoot` that has moved, a dead logger
