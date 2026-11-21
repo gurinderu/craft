@@ -10,6 +10,7 @@
   "usesLibrary": false,
   "alwaysLenses": ["sql-migrations", "sql-queries"],
   "safetyLens": "sql-queries",
+  "securityFloor": ["sql-migrations", "sql-queries"],
   "scoutRules": "scout-rules-sql",
   "scoutModel": "haiku",
   "dedupModel": "haiku",

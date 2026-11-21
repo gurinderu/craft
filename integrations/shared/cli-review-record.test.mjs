@@ -1,0 +1,617 @@
+// What a review run leaves behind for the rest of craft (integrations/shared/cli-review-record.mjs): the engine runs in the
+// harness with the binary's steps scripted, and the binary's own filing of the run (the start checkpoint, the record)
+// is replayed through the JavaScript writer the binary's own is held to, integrations/shared/binary-filing-replay.mjs, into the real craft-log-run against a real git
+// repository (integrations/shared/logger-replay.mjs, asBinaryFiling). The run-store report and the ledger then read what that filing
+// produced; the answer opens with a verdict block the report readers parse.
+import { afterAll, test } from 'vitest'
+import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { run as analyzeRuns } from './analyze-runs.mjs'
+import { runEngine } from './engine-harness.mjs'
+import { asBinaryFiling } from './logger-replay.mjs'
+import { repoKey } from './repo-key.mjs'
+import { fingerprint } from './run-record.mjs'
+import { branchRuns } from './match-external-runs.mjs'
+import { reviewResult, verdictLine } from './rust-audit-verdict.mjs'
+import { cliDegraded } from './rust-audit-nested.mjs'
+import { limitInReport } from './limit-report.mjs'
+
+/** @type {string[]} */
+const made = []
+afterAll(() => {
+  for (const dir of made) fs.rmSync(dir, { recursive: true, force: true })
+})
+
+/** @param {string} prefix @returns {string} */
+function tmp(prefix) {
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)))
+  made.push(dir)
+  return dir
+}
+
+/** @param {string[]} args @param {string} cwd @returns {string} */
+function git(args, cwd) {
+  const r = spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false', ...args], { cwd, encoding: 'utf8' })
+  assert.equal(r.status, 0, r.stderr)
+  return r.stdout.trim()
+}
+
+const FINDINGS = [
+  { severity: 'High', file: 'src/lib.rs', line: 3, title: 'f returns 1 where 0 is claimed', ruleId: '', tier: 'confirmed' },
+  { severity: 'Low', file: 'src/lib.rs', line: 1, title: 'naming', ruleId: '', tier: 'unverified' },
+]
+
+/** The engine's version, the one its record is filed under. */
+const VERSION = JSON.parse(fs.readFileSync(new URL('../claude-code/.claude-plugin/plugin.json', import.meta.url), 'utf8')).version
+/** The record as the binary says it filed it. */
+const FILED = { runDir: '', rejoin: false, lost: [], record: 'filed' }
+
+/** The step the binary prints when its run is done. @param {string} run @param {string} head @param {Record<string, unknown>} [over] */
+const doneStep = (run, head, over = {}) => ({
+  run,
+  done: true,
+  report: `${run}/report.md`,
+  verdict: 'Block',
+  line: 'Block',
+  head,
+  base: 'origin/main',
+  findings: FINDINGS,
+  uncovered: ['app.py'],
+  notRun: [],
+  filing: FILED,
+  ...over,
+})
+/** @param {string} run @param {string} head @param {Record<string, unknown>} [over] */
+const finished = (run, head, over = {}) => ({ exitCode: 0, stderr: '', stdout: JSON.stringify(doneStep(run, head, over)) })
+
+/** The start command the engine had a service agent run. @param {{ calls: { label: string, prompt: string }[] }} engine */
+const startOf = engine => String(engine.calls.find(c => c.label === 'step:start')?.prompt)
+
+/**
+ * One review of a one-commit repository whose binary is done at once, its filing replayed as the binary does it;
+ * `args` add to the engine's.
+ * @param {{ args?: Record<string, unknown>, over?: Record<string, unknown> }} [o]
+ */
+async function cliRun({ args = {}, over = {} } = {}) {
+  const repo = tmp('craft-cli-repo-')
+  const store = tmp('craft-cli-store-')
+  const runDir = tmp('craft-cli-run-')
+  git(['init', '-q', '-b', 'feat/x'], repo)
+  fs.writeFileSync(path.join(repo, 'lib.rs'), 'pub fn f() -> u8 { 1 }\n')
+  git(['add', 'lib.rs'], repo)
+  git(['commit', '-q', '-m', 'a'], repo)
+  const first = git(['rev-parse', 'HEAD'], repo)
+  const engine = await runEngine('review', {
+    args: { repo, craftBin: '/opt/craft', ...args },
+    script: { 'step:locate': { exitCode: 0, stdout: 'root=/opt/plugin\n', stderr: '' }, 'step:start': finished(runDir, first, over) },
+  })
+  const depth = typeof args['depth'] === 'string' ? args['depth'] : 'full'
+  await asBinaryFiling([[doneStep(runDir, first, over), 0]], { repo, store, craftVersion: VERSION, depth, strict: args['strict'] === true })
+  const lines = fs
+    .readFileSync(path.join(store, 'index.jsonl'), 'utf8')
+    .trim()
+    .split('\n')
+    .map(l => JSON.parse(l))
+  return { repo, store, first, engine, lines }
+}
+
+test('a finished review files one record under the branch and head it started on', async () => {
+  const { repo, first, engine, lines } = await cliRun()
+  assert.deepEqual(
+    engine.calls.map(c => c.label),
+    ['step:locate', 'step:start'],
+    'the binary filed it: no logger agent',
+  )
+  assert.equal(lines.length, 1)
+  assert.deepEqual([lines[0]?.['name'], lines[0]?.['kind'], lines[0]?.['verdict'], lines[0]?.['nested']], ['review', 'workflow', 'Block', false])
+  assert.deepEqual([lines[0]?.['branch'], lines[0]?.['head']], ['feat/x', first])
+  assert.equal(lines[0]?.['project'], repoKey(repo))
+  assert.ok(!engine.logs.some(l => /telemetry/.test(l)), engine.logs.join('\n'))
+})
+
+test('the record carries the findings by severity, a ledger row each and the uncovered files; the run-store report reads it', async () => {
+  const { store } = await cliRun({ args: { depth: 'light' } })
+  const file = fs.readdirSync(store).find(f => f.endsWith('.json'))
+  const rec = JSON.parse(fs.readFileSync(path.join(store, String(file)), 'utf8'))
+  assert.equal(rec.findings.total, 2)
+  assert.deepEqual([rec.findings.bySeverity.High, rec.findings.bySeverity.Low], [1, 1])
+  assert.deepEqual(
+    rec.ledger.map((/** @type {Record<string, unknown>} */ r) => [r['severity'], r['file'], r['line'], r['title'], r['tier']]),
+    FINDINGS.map(f => [f.severity, f.file, f.line, f.title, f.tier]),
+  )
+  assert.ok(
+    rec.ledger.every((/** @type {Record<string, unknown>} */ r) => /^[0-9a-f]{8}$/.test(String(r['fp']))),
+    "each row is fingerprinted as review's are",
+  )
+  assert.deepEqual([rec.uncoveredFiles, rec.notRun, rec.base, rec.depth], [['app.py'], [], 'origin/main', 'light'])
+  const out = analyzeRuns([store], process.env).stdout.join('\n')
+  assert.match(out, /- review \(cli\): 1 run\(s\)/, out)
+})
+
+test('the answer opens with a verdict block the report readers parse, naming why when nothing was reviewed', async () => {
+  const red = await cliRun()
+  assert.equal(verdictLine(red.engine.report), '⛔ Block')
+  assert.equal(reviewResult('d', red.engine.report).verdict, 'Block')
+  const why = '⚠️ INCOMPLETE — NOTHING WAS REVIEWED — none of the 1 changed file(s) match a supported language profile (this engine reviews Rust only)'
+  const none = await cliRun({ over: { verdict: 'INCOMPLETE (no language profile)', line: why, findings: [], uncovered: ['main.py'] } })
+  assert.equal(verdictLine(none.engine.report), why, "the binary's own line, not a bare INCOMPLETE")
+  assert.equal(none.lines[0]?.['verdict'], 'INCOMPLETE (no language profile)')
+  const partial =
+    'Approve (PARTIAL COVERAGE) — 1 changed file(s) matched no language profile and were NOT reviewed (app.py): this verdict covers only the files the Rust profile reviewed'
+  const some = await cliRun({ over: { verdict: 'Approve (PARTIAL COVERAGE)', line: partial, findings: [] } })
+  assert.equal(verdictLine(some.engine.report), `⚠️ ${partial}`)
+  assert.equal(reviewResult('d', some.engine.report).verdict, 'Warning', 'a partial coverage voids a green verdict')
+})
+
+test("the caller's depth reaches `craft review start`; without one the binary's default stands", async () => {
+  const light = await cliRun({ args: { depth: 'light' } })
+  assert.match(startOf(light.engine), /review start --cwd '[^']+' --depth light --record-root '\/opt\/plugin' --record '[^']+'$/m)
+  const none = await cliRun()
+  assert.doesNotMatch(startOf(none.engine), /--depth/)
+  const file = fs.readdirSync(none.store).find(f => f.endsWith('.json'))
+  assert.equal(JSON.parse(fs.readFileSync(path.join(none.store, String(file)), 'utf8')).depth, 'full', 'the record names the depth the binary ran at')
+})
+
+test('a run the binary never finished files an INCOMPLETE record without a reviewed head', async () => {
+  const run = await runEngine('review', {
+    args: { craftBin: '/opt/craft' },
+    script: { 'step:start': { exitCode: 1, stdout: '', stderr: 'craft: no base' }, 'log-run': { ok: true, output: ['wrote /store/r.json'] } },
+  })
+  const rec = JSON.parse(String(run.calls.find(c => c.label === 'log-run')?.prompt).split(/\nRECORD:\n/)[1] ?? 'null')
+  assert.deepEqual([rec.name, rec.verdict, rec.notRun], ['review', 'INCOMPLETE', ['the craft binary did not finish the run']])
+  assert.ok(!run.calls.some(c => c.label.startsWith('checkpoint')), 'no checkpoint: the binary read no diff')
+})
+
+test('a record the binary could not file is said after the verdict block, which still parses, with how to file it again', async () => {
+  const failed = { runDir: '/store/.partial/run-A', rejoin: false, lost: ['the run record — craft-log-run FAILED: boom'], record: 'failed' }
+  const run = await runEngine('review', {
+    args: { craftBin: '/opt/craft' },
+    script: { 'step:locate': { exitCode: 0, stdout: 'root=/opt/plugin\n', stderr: '' }, 'step:start': finished('/tmp/run-x', 'abc1234', { filing: failed }) },
+  })
+  assert.equal(verdictLine(run.report), '⛔ Block')
+  assert.match(run.report, /read that file for the findings \(run \/tmp\/run-x\)\.\n\n## Findings\n\n(- .*\n)+\n## ⚠️ Telemetry lost\n/)
+  assert.match(run.report, /- the run record — craft-log-run FAILED: boom/)
+  assert.match(run.report, /The run record can be filed again: the Workflow `craft:review run=\/tmp\/run-x`/)
+  assert.deepEqual(
+    run.calls.map(c => c.label),
+    ['step:locate', 'step:start'],
+    'the driver files nothing in its place',
+  )
+})
+
+test('a finished run whose binary reported no filing says its record is missing, never leaves it to be inferred', async () => {
+  const run = await runEngine('review', {
+    args: { craftBin: '/opt/craft' },
+    script: { 'step:start': finished('/tmp/run-x', 'abc1234', { filing: undefined }) },
+  })
+  assert.match(run.report, /## ⚠️ Telemetry lost\n/)
+  assert.match(run.report, /- the run record — the craft binary reported no telemetry write/)
+})
+
+test("a re-review round files its round, the binary's ledger with each row's disposition and how it built on the last", async () => {
+  const ledger = [
+    {
+      file: 'src/lib.rs',
+      line: 4,
+      symbol: '',
+      severity: 'High',
+      tier: 'confirmed',
+      disposition: 'open',
+      source: 'errors',
+      ruleId: 'RS-Y',
+      title: 'Y',
+      why: 'w — fix incomplete: still',
+      toolRule: 'clippy::a',
+      sources: ['clippy', 'errors'],
+    },
+    {
+      file: 'src/lib.rs',
+      line: 1,
+      symbol: '',
+      severity: 'High',
+      tier: 'confirmed',
+      disposition: 'closed',
+      source: 'errors',
+      ruleId: 'RS-X',
+      title: 'X',
+      why: 'resolved in round 2',
+    },
+  ]
+  const reReview = { chained: true, priorRound: 1, scope: 'fixes', resolved: 1, stillOpen: 1 }
+  const { store, lines } = await cliRun({ over: { findings: [], round: 2, ledger, reReview } })
+  const file = fs.readdirSync(store).find(f => f.endsWith('.json'))
+  const rec = JSON.parse(fs.readFileSync(path.join(store, String(file)), 'utf8'))
+  assert.deepEqual([rec.round, lines[0]?.['round'], rec.findings.total], [2, 2, 0])
+  assert.deepEqual(
+    rec.ledger.map((/** @type {Record<string, unknown>} */ r) => [r['ruleId'], r['disposition'], r['why']]),
+    ledger.map(r => [r.ruleId, r.disposition, r.why]),
+  )
+  assert.ok(rec.ledger.every((/** @type {Record<string, unknown>} */ r) => /^[0-9a-f]{8}$/.test(String(r['fp']))))
+  assert.deepEqual(rec.reReview, reReview)
+  assert.deepEqual(
+    [rec.ledger[0].toolRule, rec.ledger[0].sources, 'toolRule' in rec.ledger[1]],
+    ['clippy::a', ['clippy', 'errors'], false],
+    "a tool's rule and the sources ride the ledger as the engine's do",
+  )
+})
+
+test('a round over the fix commits alone files lensScope delta, which the external-findings matcher does not count as coverage', async () => {
+  const delta = await cliRun({ over: { round: 2, lensScope: 'delta' } })
+  const full = await cliRun()
+  /** @param {{ store: string, repo: string, first: string }} r */
+  const runOf = r => {
+    const file = fs.readdirSync(r.store).find(f => f.endsWith('.json'))
+    const rec = JSON.parse(fs.readFileSync(path.join(r.store, String(file)), 'utf8'))
+    return branchRuns([rec], { headRefName: 'feat/x', commits: [{ oid: r.first }], reviews: [] }, new Set([repoKey(r.repo)]))
+  }
+  assert.deepEqual(
+    runOf(delta).map(r => r.delta),
+    [true],
+  )
+  assert.deepEqual(
+    runOf(full).map(r => r.delta),
+    [false],
+    'a first round, or a full re-scan, covers the whole diff',
+  )
+})
+
+test('fresh, delta and fullEvery reach `craft review start`; the binary picks the round to build on; a bad one runs nothing', async () => {
+  const chained = await cliRun({ args: { fresh: true, fullEvery: 0 } })
+  assert.match(startOf(chained.engine), /review start --cwd '[^']+' --fresh --full-every 0 --record-root '\/opt\/plugin' --record '[^']+'$/m)
+  // addressing-findings' re-review of the fix commits says it is a delta, so the binary never approves it.
+  const delta = await cliRun({ args: { fresh: true, fullEvery: 0, delta: true } })
+  assert.match(startOf(delta.engine), /review start --cwd '[^']+' --fresh --delta --full-every 0 --record-root/m)
+  const plain = await cliRun()
+  assert.doesNotMatch(startOf(plain.engine), /--fresh|--delta|--full-every/)
+  const file = fs.readdirSync(plain.store).find(f => f.endsWith('.json'))
+  assert.equal(JSON.parse(fs.readFileSync(path.join(plain.store, String(file)), 'utf8')).round, 1, 'a binary that names no round files round 1')
+  for (const bad of [{ fullEvery: -1 }, { fullEvery: 'often' }, { fresh: 'yes' }, { delta: 'yes' }]) {
+    const run = await runEngine('review', { args: { craftBin: '/opt/craft', ...bad }, script: { 'log-run': { ok: true, output: ['wrote /store/r.json'] } } })
+    assert.match(run.report, /^## Verdict\n\n⚠️ INCOMPLETE — review: (fullEvery|fresh|delta)=.* Nothing ran\.$/, run.report)
+    assert.deepEqual(
+      run.calls.map(c => c.label),
+      ['log-run'],
+    )
+  }
+})
+
+test("strict and the launcher's priorDecisions reach `craft review start`, the list on its stdin; the record keeps the memory and strict", async () => {
+  const rejected = [{ kind: 'decision', title: "it's fine", body: 'line one\nline two', scope: 'src', commit: 'abc1234' }]
+  const memory = { source: 'none', count: 0, why: 'no memory configured (backend none)', backend: 'none', passed: 1, added: 1 }
+  const run = await cliRun({ args: { strict: true, priorDecisions: rejected }, over: { memory, strict: true } })
+  const prompt = startOf(run.engine)
+  assert.match(
+    prompt,
+    /review start --cwd '[^']+' --strict --record-root '\/opt\/plugin' --record '[^']+' --prior-decisions - <<'CRAFT_PRIOR_DECISIONS'\n.*\nCRAFT_PRIOR_DECISIONS$/m,
+  )
+  assert.deepEqual(JSON.parse(String(/<<'CRAFT_PRIOR_DECISIONS'\n(.*)\n/.exec(prompt)?.[1])), rejected, 'the list reaches the binary whole, one line of JSON')
+  const file = fs.readdirSync(run.store).find(f => f.endsWith('.json'))
+  const rec = JSON.parse(fs.readFileSync(path.join(run.store, String(file)), 'utf8'))
+  assert.deepEqual([rec.memory, rec.strict], [memory, true])
+  const plain = await cliRun()
+  assert.doesNotMatch(startOf(plain.engine), /--strict|--prior-decisions/)
+  const bad = await runEngine('review', {
+    args: { craftBin: '/opt/craft', strict: 'yes' },
+    script: { 'log-run': { ok: true, output: ['wrote /store/r.json'] } },
+  })
+  assert.match(bad.report, /^## Verdict\n\n⚠️ INCOMPLETE — review: strict="yes" is not true or false\. Nothing ran\.$/, bad.report)
+})
+
+test('unitScope reaches `craft review start` as --unit-scope only when true; anything but a boolean is refused', async () => {
+  const on = await cliRun({ args: { unitScope: true } })
+  assert.match(startOf(on.engine), /review start --cwd '[^']+' --unit-scope --record-root '\/opt\/plugin' --record '[^']+'$/m)
+  const off = await cliRun({ args: { unitScope: false } })
+  assert.doesNotMatch(startOf(off.engine), /--unit-scope/)
+  const bad = await runEngine('review', {
+    args: { craftBin: '/opt/craft', unitScope: 'yes' },
+    script: { 'log-run': { ok: true, output: ['wrote /store/r.json'] } },
+  })
+  assert.match(bad.report, /^## Verdict\n\n⚠️ INCOMPLETE — review: unitScope="yes" is not true or false\. Nothing ran\.$/, bad.report)
+})
+
+test('extraLenses reaches `craft review start` as --extra-lenses: a list joined, false or [] as off, absent as nothing', async () => {
+  const named = await cliRun({ args: { extraLenses: ['reviewer', "it's"] } })
+  assert.match(startOf(named.engine), /review start --cwd '[^']+' --extra-lenses 'reviewer,it'\\''s' --record-root '\/opt\/plugin' --record '[^']+'$/m)
+  for (const off of [false, []]) {
+    const run = await cliRun({ args: { extraLenses: off } })
+    assert.match(startOf(run.engine), /review start --cwd '[^']+' --extra-lenses 'off' --record-root '\/opt\/plugin' --record '[^']+'$/m)
+  }
+  const plain = await cliRun()
+  assert.doesNotMatch(startOf(plain.engine), /--extra-lenses/, 'absent: the binary decides, discovering on a light pass')
+  const bad = await runEngine('review', {
+    args: { craftBin: '/opt/craft', extraLenses: { a: 1 } },
+    script: { 'log-run': { ok: true, output: ['wrote /store/r.json'] } },
+  })
+  assert.match(bad.report, /^## Verdict\n\n⚠️ INCOMPLETE — review: extraLenses=\{"a":1\} is not a list of agent names\. Nothing ran\.$/, bad.report)
+})
+
+test('gate=false starts the binary with --no-gate, so no tool builds the branch; any other value is refused', async () => {
+  const off = await cliRun({ args: { gate: false } })
+  assert.match(startOf(off.engine), /review start --cwd '[^']+' --no-gate --record-root '\/opt\/plugin' --record '[^']+'$/m)
+  const on = await cliRun({ args: { gate: true } })
+  assert.doesNotMatch(startOf(on.engine), /--no-gate/)
+  const bad = await runEngine('review', { args: { craftBin: '/opt/craft', gate: 'off' }, script: { 'log-run': { ok: true, output: ['wrote /store/r.json'] } } })
+  assert.match(bad.report, /^## Verdict\n\n⚠️ INCOMPLETE — review: gate="off" is not true or false\. Nothing ran\.$/, bad.report)
+})
+
+test('comment reaches `craft review start` as --comment; the record keeps the sorting, the fingerprinted contradictions and what was posted, and the answer says what landed', async () => {
+  const key = { file: 'src/lib.rs', symbol: 'fn f', ruleId: '', title: 'f returns 1 where 0 is claimed' }
+  const sorting = {
+    defect: 1,
+    doubtful: 1,
+    inDiffJudged: true,
+    findings: [{ n: 1, severity: 'Medium', title: 'g', file: 'src/lib.rs', line: 9, why: 'w', fix: 'x', source: 'intent', toolRule: '', outsideDiff: false }],
+  }
+  const item = { record: 'D-1', kind: 'decision', severity: 'High', title: key.title, file: key.file, line: 3, doubtSigns: [], toPr: true }
+  const memoryContradictions = { count: 1, doubtSignsAlone: 0, inDiffJudged: true, findings: [{ key, ...item }] }
+  const prComments = {
+    pr: 7,
+    url: 'u',
+    requested: 1,
+    posted: 0,
+    already: 0,
+    failed: 0,
+    noFile: 0,
+    reason: 'gh pr view failed: HTTP 401',
+    error: 'gh pr view failed: HTTP 401',
+  }
+  const run = await cliRun({ args: { comment: true }, over: { sorting, memoryContradictions, prComments } })
+  assert.match(startOf(run.engine), /review start --cwd '[^']+' --comment --record-root '\/opt\/plugin' --record '[^']+'$/m)
+  const file = fs.readdirSync(run.store).find(f => f.endsWith('.json'))
+  const rec = JSON.parse(fs.readFileSync(path.join(run.store, String(file)), 'utf8'))
+  assert.deepEqual([rec.sorting, rec.prComments], [sorting, prComments])
+  assert.deepEqual(rec.memoryContradictions, { ...memoryContradictions, findings: [{ fp: fingerprint(key), ...item }] }, 'fingerprinted as the ledger rows are')
+  assert.match(
+    run.engine.report,
+    /\n\n⚠️ PR comments: 0 of 1 defect\(s\) posted, 0 already on the PR — gh pr view failed: HTTP 401\.\n\nDoubtful: 1 finding\(s\) held back from the PR/,
+  )
+  const plain = await cliRun()
+  assert.doesNotMatch(startOf(plain.engine), /--comment/)
+  assert.doesNotMatch(plain.engine.report, /PR comments|Doubtful/)
+  const bad = await runEngine('review', {
+    args: { craftBin: '/opt/craft', comment: 'yes' },
+    script: { 'log-run': { ok: true, output: ['wrote /store/r.json'] } },
+  })
+  assert.match(bad.report, /^## Verdict\n\n⚠️ INCOMPLETE — review: comment="yes" is not true or false\. Nothing ran\.$/, bad.report)
+})
+
+// A submit whose output the driver could not read may still have finished the run and filed its record
+// (integrations/shared/cli-review-steps.mjs, recovered): the binary's status is asked before the driver files anything.
+const TASK = {
+  id: 'lens-a',
+  label: 'lens:a',
+  model: 'opus',
+  promptFile: '/tmp/run-x/tasks/a.md',
+  schemaFile: '/tmp/run-x/tasks/a.schema.json',
+  answerFile: '/tmp/run-x/answers/a.json',
+}
+/**
+ * `craft review status` as the binary prints it (cli/crates/craft-review/src/status.rs, filing/said.rs): its `filing`
+ * names the record, its file, the step the segment ended with — that step's own `filing` carrying what its writes lost
+ * — and how many stopped parts still wait for theirs.
+ * @param {{ record: string, lost?: string[], finished?: boolean }} said @param {boolean} done
+ */
+const statusSays = ({ record, lost = [], finished = true }, done) => {
+  const recordFile = record === 'filed' ? '/store/r.json' : ''
+  const ended = finished
+    ? doneStep('/tmp/run-x', 'abc1234', { filing: { runDir: '', rejoin: false, lost, record, ...(recordFile ? { recordFile } : {}) } })
+    : null
+  const status = {
+    run: '/tmp/run-x',
+    phase: done ? 'done' : 'verify',
+    done,
+    ...(done ? { verdict: 'Block', report: '/tmp/run-x/report.md' } : {}),
+    filing: { record, recordFile, finished: ended, pending: 0 },
+  }
+  return { exitCode: 0, stderr: '', stdout: JSON.stringify(status) }
+}
+/** @param {Record<string, unknown>} script */
+const lostSubmit = script =>
+  runEngine('review', {
+    args: { craftBin: '/opt/craft', repo: '/work/repo' },
+    script: {
+      'step:locate': { exitCode: 0, stdout: 'root=/opt/plugin\n', stderr: '' },
+      'step:start': { exitCode: 0, stderr: '', stdout: JSON.stringify({ run: '/tmp/run-x', done: false, phase: 'lenses', tasks: [TASK] }) },
+      lens: 'done',
+      'step:submit:1': { exitCode: 0, stderr: '', stdout: 'Error: the output was cut' },
+      'log-run': { ok: true, output: ['wrote /store/r.json'] },
+      ...script,
+    },
+  })
+
+test('a lost submit whose run the binary finished and filed ends as the binary left it, with no second record', async () => {
+  const run = await lostSubmit({ 'step:status': statusSays({ record: 'filed' }, true) })
+  assert.deepEqual(
+    run.calls.map(c => c.label),
+    ['step:locate', 'step:start', 'lens:a', 'step:submit:1', 'step:status'],
+    'no record filed by the driver',
+  )
+  assert.match(String(run.calls.at(-1)?.prompt), /\/opt\/craft review status --run '\/tmp\/run-x'$/m)
+  assert.equal(verdictLine(run.report), '⛔ Block')
+  assert.doesNotMatch(run.report, /Telemetry lost|stopped at round/)
+})
+
+test("a lost submit whose finished run's record did not land has it filed again by a resume", async () => {
+  const failed = { runDir: '', rejoin: false, lost: ['the run record — node is not on the PATH'], record: 'failed' }
+  const run = await lostSubmit({
+    'step:status': statusSays({ record: 'failed', lost: failed.lost }, true),
+    'step:refile': finished('/tmp/run-x', 'abc1234'),
+  })
+  assert.deepEqual(
+    run.calls.map(c => c.label),
+    ['step:locate', 'step:start', 'lens:a', 'step:submit:1', 'step:status', 'step:refile'],
+  )
+  assert.match(String(run.calls.at(-1)?.prompt), /review submit --run '\/tmp\/run-x' --resume --agents 1/)
+  assert.equal(verdictLine(run.report), '⛔ Block')
+  assert.doesNotMatch(run.report, /Telemetry lost/)
+  const cut = await lostSubmit({
+    'step:status': statusSays({ record: 'failed', lost: failed.lost }, true),
+    'step:refile': { exitCode: 124, stdout: '', stderr: '' },
+  })
+  assert.ok(!cut.calls.some(c => c.label === 'log-run'), 'no INCOMPLETE record of a run the binary finished')
+  assert.equal(verdictLine(cut.report), '⛔ Block')
+  assert.match(cut.report, /- the run record — node is not on the PATH/)
+  assert.match(cut.report, /The run record can be filed again/)
+})
+
+test('a lost submit whose run the binary did not finish is filed INCOMPLETE by the driver, as before', async () => {
+  // Where it stood is the binary's to say: the phase its status names, nothing when it says none (realm @nick/craft, node #479).
+  for (const [status, at] of /** @type {Array<[unknown, string]>} */ ([
+    [statusSays({ record: 'none', finished: false }, false), ' (the binary reports phase verify)'],
+    [{ exitCode: 1, stdout: '', stderr: 'craft: no run' }, ''],
+  ])) {
+    const run = await lostSubmit({ 'step:status': status })
+    assert.deepEqual(
+      run.calls.map(c => c.label),
+      ['step:locate', 'step:start', 'lens:a', 'step:submit:1', 'step:status', 'log-run'],
+    )
+    assert.ok(run.report.includes(`review stopped${at}: the command printed no JSON`), run.report)
+  }
+})
+
+test('a lost submit whose run the binary finished without keeping its finished step says so, and files no INCOMPLETE record', async () => {
+  const run = await lostSubmit({ 'step:status': statusSays({ record: 'none', finished: false }, true) })
+  assert.deepEqual(
+    run.calls.map(c => c.label),
+    ['step:locate', 'step:start', 'lens:a', 'step:submit:1', 'step:status'],
+    'no record filed by the driver',
+  )
+  assert.doesNotMatch(run.report, /did not finish the run/)
+  assert.match(
+    run.report,
+    /the craft binary finished the run \(Block; its report is \/tmp\/run-x\/report\.md\) but kept no finished step to file its record from/,
+  )
+  assert.match(run.report, /## ⚠️ Telemetry lost\n/)
+})
+
+// A status too large for the service agent to copy whole (realm @nick/craft, node #522): its findings, memory and
+// sorting are unbounded, so the driver asks the binary's brief status, whose size does not grow with them.
+/** `craft review status` cut off where a service agent gave up copying it. */
+const cutStatus = () => {
+  const whole = statusSays({ record: 'filed' }, true).stdout
+  return { exitCode: 0, stderr: '', stdout: whole.slice(0, Math.floor(whole.length / 2)) }
+}
+/**
+ * `craft review status --brief` as the binary prints it (cli/crates/craft-review/src/status.rs, brief).
+ * @param {string} record @param {Record<string, unknown>} [over]
+ */
+const briefSays = (record, over = {}) => ({
+  exitCode: 0,
+  stderr: '',
+  stdout: JSON.stringify({
+    run: '/tmp/run-x',
+    brief: true,
+    phase: 'done',
+    round: 2,
+    done: true,
+    stopped: false,
+    head: 'abc1234',
+    verdict: 'Block',
+    line: 'Block — 1 High',
+    report: '/tmp/run-x/report.md',
+    filing: { record, recordFile: record === 'filed' ? '/store/r.json' : '', kept: true, pending: 0 },
+    ...over,
+  }),
+})
+
+test('a finished run whose step and status are too large to copy files no INCOMPLETE record, and says it read neither', async () => {
+  const run = await lostSubmit({ 'step:status': cutStatus(), 'step:brief': briefSays('filed') })
+  assert.deepEqual(
+    run.calls.map(c => c.label),
+    ['step:locate', 'step:start', 'lens:a', 'step:submit:1', 'step:status', 'step:brief'],
+    'one record, the binary’s: none filed by the driver',
+  )
+  assert.match(String(run.calls.at(-1)?.prompt), /\/opt\/craft review status --run '\/tmp\/run-x' --brief$/m)
+  assert.equal(verdictLine(run.report), '⛔ Block — 1 High')
+  assert.match(run.report, /The report is \/tmp\/run-x\/report\.md/)
+  assert.match(run.report, /could not be read back/)
+  assert.doesNotMatch(run.report, /did not finish the run|None reported/)
+})
+
+test('a finished run read only briefly, whose record did not land, has it filed again and confirmed by the brief status', async () => {
+  let asked = 0
+  const run = await lostSubmit({
+    'step:status': cutStatus(),
+    'step:brief': () => briefSays(asked++ ? 'filed' : 'failed'),
+    'step:refile': { exitCode: 0, stderr: '', stdout: 'cut' },
+  })
+  assert.deepEqual(
+    run.calls.map(c => c.label),
+    ['step:locate', 'step:start', 'lens:a', 'step:submit:1', 'step:status', 'step:brief', 'step:refile', 'step:brief'],
+  )
+  assert.equal(verdictLine(run.report), '⛔ Block — 1 High')
+  assert.doesNotMatch(run.report, /Telemetry lost/)
+  asked = 0
+  const still = await lostSubmit({ 'step:status': cutStatus(), 'step:brief': briefSays('failed'), 'step:refile': { exitCode: 124, stdout: '', stderr: '' } })
+  assert.ok(!still.calls.some(c => c.label === 'log-run'), 'no INCOMPLETE record of a run the binary finished')
+  assert.match(still.report, /## ⚠️ Telemetry lost\n/)
+  assert.match(still.report, /The run record can be filed again/)
+})
+
+test('a lost submit whose status the service agent returned empty or not at all is asked in brief, and files no INCOMPLETE twin', async () => {
+  for (const status of [{ exitCode: 0, stderr: '', stdout: '' }, { ok: true }]) {
+    const run = await lostSubmit({ 'step:status': status, 'step:brief': briefSays('filed') })
+    const labels = run.calls.map(c => c.label)
+    assert.equal(labels.at(-1), 'step:brief', 'the brief status asked after the unread one')
+    assert.ok(!labels.includes('log-run'), 'one record, the binary’s: none filed by the driver')
+    assert.equal(verdictLine(run.report), '⛔ Block — 1 High')
+    assert.doesNotMatch(run.report, /did not finish the run|INCOMPLETE/)
+  }
+})
+
+test('a run read only briefly keeps what a parent reads a weaker run by: degraded notes, the stop and the worktree', async () => {
+  const note = 'round 1: 2 task(s) on `rust-reviewer` ran on the default agent type instead, without its rubric (no type) — the report says so'
+  const run = await lostSubmit({
+    'step:status': cutStatus(),
+    'step:brief': briefSays('filed', {
+      degraded: [note],
+      stopped: true,
+      stop: { cause: 'limit', text: "You've hit your session limit · resets 5pm" },
+      worktree: "reviewed in craft's own worktree /w",
+      prComments: { requested: 2, posted: 1, already: 0, reason: 'posted on PR #7', error: '' },
+      sorting: { defect: 2, doubtful: 1 },
+    }),
+  })
+  assert.match(run.report, /⚠️ Degraded: /)
+  assert.deepEqual(cliDegraded(run.report), [{ agent: 'rust-reviewer', count: 2, error: 'no type' }])
+  assert.match(limitInReport(run.report), /limit/i)
+  assert.match(run.report, /reviewed in craft's own worktree \/w\./)
+  assert.match(run.report, /⚠️ PR comments: 1 of 2 defect\(s\) posted/)
+  assert.match(run.report, /Doubtful: 1 finding\(s\) held back/)
+  assert.match(run.report, /craft review submit --run '\/tmp\/run-x' --resume/)
+})
+
+test("a run read only briefly relays what its telemetry's writes lost and the stopped parts still waiting", async () => {
+  const run = await lostSubmit({
+    'step:status': cutStatus(),
+    'step:brief': briefSays('filed', {
+      filing: { record: 'filed', recordFile: '/store/r.json', kept: true, pending: 2, lost: ['the run directory — disk full'] },
+    }),
+  })
+  assert.match(run.report, /## ⚠️ Telemetry lost\n/)
+  assert.match(run.report, /the run directory — disk full/)
+  assert.match(run.report, /2 stopped part\(s\) of the run/)
+})
+
+test('a run read only briefly whose re-file is read whole ends as the binary finished it, its findings listed', async () => {
+  const run = await lostSubmit({ 'step:status': cutStatus(), 'step:brief': briefSays('failed'), 'step:refile': finished('/tmp/run-x', 'abc1234') })
+  assert.deepEqual(
+    run.calls.map(c => c.label),
+    ['step:locate', 'step:start', 'lens:a', 'step:submit:1', 'step:status', 'step:brief', 'step:refile'],
+  )
+  assert.doesNotMatch(run.report, /not read back|Telemetry lost/)
+  assert.match(run.report, /## Findings\n/)
+})
+
+test('a run confined to a path files that path, which the pre-PR check reads to tell it from a review of the whole change', async () => {
+  /** @param {{ store: string }} r */
+  const recordOf = r => {
+    const file = fs.readdirSync(r.store).find(f => f.endsWith('.json'))
+    return JSON.parse(fs.readFileSync(path.join(r.store, String(file)), 'utf8'))
+  }
+  assert.equal(recordOf(await cliRun({ over: { path: 'cli/a' } })).path, 'cli/a')
+  assert.equal(recordOf(await cliRun({ over: { path: null } })).path, '', 'the whole change')
+})

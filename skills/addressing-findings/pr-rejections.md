@@ -71,7 +71,7 @@ gh api graphql --paginate --slurp -f query='
       }
     }
   }' -F owner=<owner> -F name=<name> -F pr=<PR> > "$f"
-node "<this skill's base directory>/../../lib/pr-rejections.mjs" "$f"
+node "<this skill's base directory>/../../integrations/shared/pr-rejections.mjs" "$f"
 ```
 
 The script prints `{ decisions, skipped }`. Each decision is already a `memory` record —

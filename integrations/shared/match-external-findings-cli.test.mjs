@@ -1,0 +1,270 @@
+// The command over integrations/shared/match-external-findings.mjs, with `gh` replaced by fixtures: no network.
+import { test, afterEach } from 'vitest'
+import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { run, USAGE } from './match-external-findings-cli.mjs'
+
+const sha = (/** @type {number} */ i) => String(i).repeat(40).slice(0, 40)
+const PR_VIEW = {
+  author: { login: 'pr-author' },
+  headRefName: 'feat/x',
+  commits: [{ oid: sha(1) }, { oid: sha(2) }],
+  reviews: [{ author: { login: 'ext-reviewer' }, body: 'round', submittedAt: '2026-10-02T12:01:00Z', commit: { oid: sha(2) } }],
+}
+const COMMENTS = [
+  [
+    {
+      id: 1,
+      user: { login: 'ext-reviewer' },
+      body: 'FR-RACE-abc123 must-fix: lock guard dropped before write',
+      path: 'src/a.rs',
+      line: 41,
+      original_commit_id: sha(2),
+      created_at: '2026-10-02T12:00:00Z',
+    },
+    { id: 2, user: { login: 'pr-author' }, body: 'not a finding', path: 'src/a.rs', line: 1, original_commit_id: sha(2), created_at: '2026-10-02T12:00:00Z' },
+  ],
+]
+const LEDGER = [
+  { fp: 'fp000001', file: 'src/a.rs', line: 40, severity: 'High', tier: 'confirmed', disposition: 'open', title: 'lock guard dropped before write', why: '' },
+  { fp: 'fp000002', file: 'src/z.rs', line: 9, severity: 'Medium', tier: 'confirmed', disposition: 'open', title: 'unrelated', why: '' },
+]
+
+// Every fixture directory goes when its test ends, passed or failed: they used to pile up in the temp directory.
+/** @type {string[]} */
+const made = []
+afterEach(() => {
+  for (const d of made.splice(0)) fs.rmSync(d, { recursive: true, force: true })
+})
+
+function setup() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'match-ext-'))
+  made.push(dir)
+  const runs = path.join(dir, 'runs')
+  fs.mkdirSync(runs)
+  // Another repository's run on a branch of the same name: never this PR's.
+  fs.writeFileSync(
+    path.join(runs, '2026-10-01T00-00-01Z-review.json'),
+    JSON.stringify({
+      name: 'review',
+      ts: '2026-10-01T00-00-01Z',
+      project: '/work/other',
+      branch: 'feat/x',
+      head: sha(2),
+      ledger: [{ fp: 'foreign1', file: 'src/a.rs', line: 40, severity: 'High', tier: 'confirmed', title: 'lock guard dropped', why: '' }],
+    }),
+  )
+  fs.writeFileSync(
+    path.join(runs, '2026-10-01T00-00-00Z-review.json'),
+    JSON.stringify({ name: 'review', ts: '2026-10-01T00-00-00Z', project: '/work/repo', branch: 'feat/x', head: sha(2), ledger: LEDGER }),
+  )
+  /** @type {string[][]} */
+  const calls = []
+  /** @param {string[]} args */
+  const gh = args => {
+    calls.push(args)
+    return args[0] === 'api' ? COMMENTS : PR_VIEW
+  }
+  /** @param {string} d */
+  const remotesOf = d => (d === '/work/repo' ? 'origin\tgit@github.com:example/repo.git (fetch)\n' : 'origin\thttps://github.com/example/other (fetch)\n')
+  return { dir, runs, calls, gh, remotesOf, deps: { gh, remotesOf }, base: ['--repo', 'example/repo', '--pr', '7', '--runs-dir', runs] }
+}
+
+test('a bad command line is a usage error, exit 2', async () => {
+  for (const argv of [
+    [],
+    ['--pr', '7'],
+    ['--repo', 'example/repo'],
+    ['--repo', 'example/repo', '--pr', 'x'],
+    ['--repo', 'not a repo', '--pr', '7'],
+    ['--repo', 'example/repo', '--pr', '7', '--bogus'],
+  ]) {
+    const r = run(argv, {}, { gh: () => assert.fail('no gh on a usage error') })
+    assert.equal(r.exitCode, 2, argv.join(' '))
+    assert.equal(r.stderr.at(-1), USAGE)
+  }
+})
+
+test('without decisions: ranked candidates per finding, gh called with argument arrays, the author left out', async () => {
+  const s = setup()
+  const r = run([...s.base, '--id-regex', 'FR-[A-Z]+-[0-9a-f]{6}'], {}, s.deps)
+  assert.equal(r.exitCode, 0, r.stderr.join('\n'))
+  assert.deepEqual(s.calls, [
+    ['api', 'repos/example/repo/pulls/7/comments', '--paginate', '--slurp'],
+    ['pr', 'view', '7', '--repo', 'example/repo', '--json', 'reviews,headRefName,commits,author'],
+  ])
+  const out = r.stdout.join('\n')
+  assert.match(out, /^projects: \/work\/repo$/m)
+  assert.match(out, /^delta runs: 0 \(not counted as coverage\)$/m)
+  assert.doesNotMatch(out, /foreign1/, "another repository's run")
+  assert.match(out, /## PR 7 feat\/x reviewers=ext-reviewer findings=1 /)
+  assert.match(out, /FR-RACE-abc123 \[must-fix\] src\/a\.rs:41 — 1 candidate\(s\)/)
+  assert.match(out, /fp000001 src\/a\.rs:40 High\/confirmed lock guard/)
+  assert.doesNotMatch(out, /COUNTS|never raised/)
+})
+
+test('with decisions: buckets, counts and the precision side; --json keeps the whole result; the cache spares gh', async () => {
+  const s = setup()
+  const decisions = path.join(s.dir, 'decisions.json')
+  fs.writeFileSync(
+    decisions,
+    JSON.stringify({ '7:FR-RACE-abc123': { matches: [{ rec: '2026-10-01', fp: 'fp000001', reason: 'same guard' }], note: 'n1' }, '7:FR-GONE-000000': {} }),
+  )
+  const json = path.join(s.dir, 'out.json')
+  const argv = [
+    ...s.base,
+    '--reviewer',
+    'ext-reviewer',
+    '--id-regex',
+    'FR-[A-Z]+-[0-9a-f]{6}',
+    '--decisions',
+    decisions,
+    '--json',
+    json,
+    '--cache-dir',
+    path.join(s.dir, 'cache'),
+  ]
+  const r = run(argv, {}, s.deps)
+  assert.equal(r.exitCode, 0, r.stderr.join('\n'))
+  const out = r.stdout.join('\n')
+  assert.match(out, /^WARNING: decision 7:FR-GONE-000000 matches no finding$/m)
+  assert.match(out, /FR-RACE-abc123 \[must-fix\] src\/a\.rs:41 -> SEEN_CONFIRMED \(n1\)/)
+  assert.match(out, /never raised: 1\n {2}fp000002 \[Medium\] src\/z\.rs:9 unrelated/)
+  assert.match(out, /COUNTS \(pr\|severity\|bucket\):\n7\|must-fix\|SEEN_CONFIRMED 1\nALL\|must-fix\|SEEN_CONFIRMED 1/)
+  const saved = JSON.parse(fs.readFileSync(json, 'utf8'))
+  assert.equal(saved.prs['7'].results[0].matches[0].reason, 'same guard')
+  assert.deepEqual([saved.projects, saved.unmatchedDecisions], [['/work/repo'], ['7:FR-GONE-000000']])
+  assert.equal(s.calls.length, 2)
+  const again = run(argv, {}, { remotesOf: s.remotesOf, gh: () => assert.fail('cached') })
+  assert.deepEqual(again.stdout, r.stdout)
+})
+
+test('a missing decisions file, a bucket that is not one, or no run store fail with exit 1', async () => {
+  const s = setup()
+  const bad = path.join(s.dir, 'bad.json')
+  fs.writeFileSync(bad, JSON.stringify({ '7:x': { bucket: 'SEEN' } }))
+  for (const [extra, msg] of /** @type {Array<[string[], RegExp]>} */ ([
+    [['--decisions', path.join(s.dir, 'none.json')], /ENOENT/],
+    [['--decisions', bad], /bucket SEEN is not one of/],
+  ])) {
+    const r = run([...s.base, ...extra], {}, s.deps)
+    assert.equal(r.exitCode, 1)
+    assert.match(r.stderr.join('\n'), msg)
+  }
+  const none = run(['--repo', 'example/repo', '--pr', '7'], {}, { gh: s.gh, home: s.dir })
+  assert.equal(none.exitCode, 1)
+  assert.match(none.stderr.join('\n'), /no run store at .*\.craft\/runs/)
+})
+
+test('--project names the checkout whose runs count, by the key the records use', async () => {
+  const s = setup()
+  const r = run([...s.base, '--project', s.dir], {}, s.deps)
+  assert.equal(r.exitCode, 0, r.stderr.join('\n'))
+  assert.match(r.stdout.join('\n'), /runs=0/, 'the store holds no run of that checkout')
+})
+
+test('no recorded project is a checkout of --repo: exit 1, naming --project', async () => {
+  const s = setup()
+  const r = run(s.base, {}, { gh: s.gh, remotesOf: () => '' })
+  assert.equal(r.exitCode, 1)
+  assert.match(r.stderr.join('\n'), /no project in .* is a checkout of example\/repo .*--project/)
+})
+
+// fluence-review posting from the PR author's own account, as on fluencelabs/lightmare: no flag needed to find it.
+// Copied from its real comments, the prose shortened and the paths anonymised; the marks are byte-exact.
+const FLUENCE_COMMENTS = [
+  [
+    {
+      id: 11,
+      user: { login: 'pr-author' },
+      body: 'Important: lock guard dropped before write\n\nTrigger: An equal-revision mismatch returns another 409.\n\nImpact: a critical section races.\n\n<!-- review:request-118fe7079f10b18136ead8b0b3b4d642b9a034574e0ec80aad964d45762b9ec7:1 -->',
+      path: 'src/a.rs',
+      line: 41,
+      original_commit_id: sha(2),
+      created_at: '2026-10-02T12:00:00Z',
+    },
+    {
+      id: 12,
+      user: { login: 'second-reviewer' },
+      body: 'looks fine to me',
+      path: 'src/a.rs',
+      line: 1,
+      original_commit_id: sha(2),
+      created_at: '2026-10-02T12:00:00Z',
+    },
+    {
+      id: 13,
+      user: { login: 'pr-author' },
+      body: 'Pre-existing: Legacy wiring loses its report\n\nTrigger: An older image lost its status write.\n\nAlso at src/b.rs:2205\n\n<!-- review:request-1e99bd751a66fcb4cccbccef881f6a993f16493d86272a0b2ab6cfe801bf6fc3:1 -->',
+      path: 'src/b.rs',
+      line: 9,
+      original_commit_id: sha(2),
+      created_at: '2026-10-02T12:00:00Z',
+    },
+    {
+      id: 14,
+      user: { login: 'pr-author' },
+      body: 'Fixed in b743def6: the guard now spans the write.',
+      path: 'src/a.rs',
+      line: 41,
+      original_commit_id: sha(2),
+      created_at: '2026-10-02T12:03:00Z',
+      in_reply_to_id: 11,
+    },
+    {
+      id: 15,
+      user: { login: 'pr-author' },
+      body: 'Fixed in b743def687c0.\n\n<!-- review:request-915a3be02ae9b346986fd0cc15d1e7d2769394c7706d3d0f42bfd319577c3797:thread:PRRT_kwDOMdhCSs63sPjO -->',
+      path: 'src/a.rs',
+      line: 41,
+      original_commit_id: sha(2),
+      created_at: '2026-10-02T12:40:00Z',
+      in_reply_to_id: 11,
+    },
+  ],
+]
+
+test("fluence-review's marks choose the reviewer, the PR author's account included, and both are named in one line", async () => {
+  const s = setup()
+  const gh = (/** @type {string[]} */ args) => (args[0] === 'api' ? FLUENCE_COMMENTS : PR_VIEW)
+  const r = run(s.base, {}, { ...s.deps, gh })
+  assert.equal(r.exitCode, 0, r.stderr.join('\n'))
+  const out = r.stdout.join('\n')
+  assert.match(out, /## PR 7 feat\/x reviewers=pr-author findings=1 /)
+  assert.match(
+    out,
+    /^reviewer: pr-author \(fluence-review marks\), format fluence-review: 1 finding\(s\) parsed, 1 with a severity, 1 pre-existing set aside$/m,
+  )
+  assert.match(out, /r11 \[important\(should-fix\)\] src\/a\.rs:41 — 1 candidate\(s\)/)
+  assert.doesNotMatch(out, /r13|r14|r15/, 'the Pre-existing root is set aside; replies are never findings')
+})
+
+test('with decisions, a set-aside Pre-existing finding is in no bucket; --exclude-regex replaces the default set-aside', async () => {
+  const s = setup()
+  const gh = (/** @type {string[]} */ args) => (args[0] === 'api' ? FLUENCE_COMMENTS : PR_VIEW)
+  const decisions = path.join(s.dir, 'decisions.json')
+  fs.writeFileSync(decisions, JSON.stringify({}))
+  const out = run([...s.base, '--decisions', decisions], {}, { ...s.deps, gh }).stdout.join('\n')
+  assert.match(out, /^ALL\|important\(should-fix\)\|\w+ 1$/m)
+  assert.doesNotMatch(out, /pre-existing\|/, 'no bucket counts it')
+  assert.match(out, /1 pre-existing set aside/)
+  const own = run([...s.base, '--exclude-regex', 'lock guard'], {}, { ...s.deps, gh }).stdout.join('\n')
+  assert.match(own, /findings=1 excluded=1 /)
+  assert.match(own, /r13 \[pre-existing\] src\/b\.rs:9/)
+  assert.doesNotMatch(own, /set aside/)
+})
+
+test('no external finding is never silent: the line names the reviewer, the format and the zero', async () => {
+  const s = setup()
+  const gh = (/** @type {string[]} */ args) => (args[0] === 'api' ? [[]] : { ...PR_VIEW, reviews: [] })
+  const r = run(s.base, {}, { ...s.deps, gh })
+  assert.equal(r.exitCode, 0, r.stderr.join('\n'))
+  assert.match(
+    r.stdout.join('\n'),
+    /^WARNING: reviewer: none found \(default: every commenter but the PR author and bots\), format generic: 0 finding\(s\) parsed, 0 with a severity$/m,
+  )
+  const named = run([...s.base, '--reviewer', 'ext-reviewer', '--id-regex', 'FR-[A-Z]+-[0-9a-f]{6}'], {}, s.deps)
+  assert.doesNotMatch(named.stdout.join('\n'), /^(WARNING: )?reviewer:/m, 'a named reviewer with findings needs no line')
+})

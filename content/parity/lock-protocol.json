@@ -1,7 +1,14 @@
 {
-  "note": "The run store's index lock, one protocol for both writers: lib/index-lock.mjs and cli/crates/craft-store/src/lock.rs each assert these and release a lock only while it holds their own token.",
+  "note": "The run store's index lock, one protocol for both writers: integrations/shared/index-lock.mjs and cli/crates/craft-store/src/lock.rs each assert these and release a lock only while it holds their own token.",
   "lockFile": "index.jsonl.lock",
   "staleMs": 30000,
   "timeoutMs": 45000,
+  "admissionDirectory": ".index-writers",
+  "admission": "local-process bakery tickets; live incarnations never expire; dead, different-incarnation or previous-boot owners are ignored, never removed; malformed or unknown identity refuses",
+  "ticketFormat": "<canonical positive u32 PID>-v1_<32 lowercase boot hex>_<16 lowercase incarnation hex>-<24 lowercase random hex>",
+  "identityVersion": 1,
+  "identityHelper": "__craft-process-identity --pid <u32>; exactly {version:1,pid,identity:string|null}; null only for proven absence; error exits nonzero",
+  "identitySources": "Linux /proc boot_id and stat field22; macOS kern.bootsessionuuid and proc_pidinfo flavour17 p_uniqueid; Windows class90 BootIdentifier and GetProcessTimes on a death-checked handle",
+  "deadline": "one monotonic 45000ms budget from before self identity through scans and legacy acquisition, checked before callback; no helper download or PID-only fallback",
   "release": "only while the lock holds the writer's own token"
 }

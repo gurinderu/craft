@@ -25,8 +25,8 @@ other doubt sign it carries — unless its line is marked `not confirmed`: then 
 (verify it before fixing), and with `comment` it is also listed under Doubtful, the record named first.
 
 With `comment` the workflow posts only defects on the PR; a doubtful finding (not confirmed, raised by
-the compat, intent or api-boundary lens, about rollback, rollout, old replicas, migration or a breaking
-change, or outside the changed lines) is listed under **Doubtful — for the reviewer, not posted** and
+the compat, intent or api-boundary lens, a design question naming no harm, about rollback, rollout,
+old replicas, migration or a breaking change, or outside the changed lines) is listed under **Doubtful — for the reviewer, not posted** and
 waits for the human: show him that list, and act on his choice for each — ask the author, post as a
 defect, or do not post — as `craft:addressing-findings` says (its doubtful findings section).
 
@@ -45,11 +45,11 @@ verdict is **Approve** (or **Warning** with each remaining item justified in the
 then open the PR. A one-shot review whose findings never loop back into fixes is not a gate; the
 PR isn't ready until the loop is green.
 If the workflow fails with `at workflow.js:<line>:<column>`, that place is in the bundled engine:
-`node "<this skill's base directory>/../../lib/engine-source-map.mjs" review workflow.js:<line>:<column>`
+`node "<this skill's base directory>/../../integrations/shared/engine-source-map.mjs" review workflow.js:<line>:<column>`
 gives it in the plugin's source.
 Once a workflow run has ended (completed, failed or stopped — not while you may still resume it),
 fold its real cost into the records it filed:
-`node "<this skill's base directory>/../../lib/craft-log-run.mjs" enrich-cost --run-id <wf_…>`, with the
+`node "<this skill's base directory>/../../integrations/shared/craft-log-run.mjs" enrich-cost --run-id <wf_…>`, with the
 run id the Workflow completion names. Best-effort: if it fails, say so in one line and go on.
 
 ## Step 1 — Establish the gate (CI informs, never certifies)
@@ -235,7 +235,11 @@ others (higher recall than one broad pass):
 
 | Lens | Slice | Owning skill for the fix |
 |---|---|---|
-| safety | injection / secrets / unsafe / untrusted-input limits / build-profile-divergent arithmetic and guards | `rust-security`, `rust-unsafe` |
+| correctness | logic: wrong behaviour behind correct-looking code — off-by-one, inverted or incomplete conditions, a missed case, state updated in the wrong order, a documented invariant the change breaks (a general lens) | `rust-idioms` |
+| security | untrusted input reaching a sink (SQL/command injection, path traversal, deserialization, SSRF), authn/authz, tenant or owner isolation, session/token handling, secrets, crypto use (a general lens) | `rust-security` |
+| money | float arithmetic on amounts, lost cents in splits or rounding, payment idempotency, double-charge windows, currency mixups, ledger imbalance (a general lens) | `rust-fintech` |
+| complexity | the code-graph metrics of the functions the diff touches (cognitive and cyclomatic complexity, loop depth, a scan or allocation in a loop, unguarded recursion), each finding carrying the numbers it stands on; runs only when the binary's code-graph index is ready (a general lens) | `refactoring` |
+| safety | panics on reachable paths / `unsafe` and soundness / FFI / build-profile-divergent arithmetic and guards | `rust-unsafe`, `rust-security` |
 | errors | Result-vs-panic, dropped errors, typed-vs-anyhow | `rust-errors` |
 | concurrency | blocking-in-async, lock-across-await, deadlock, Send/Sync | `rust-concurrency` |
 | performance | hot-loop allocation, N+1; needless allocation at LOW (`collect` only to iterate, owned returns and `&[String]` params where an iterator or borrow fits, `format!`/clones in a loop, `String` lookup keys) | `rust-performance` |
@@ -244,17 +248,27 @@ others (higher recall than one broad pass):
 | maintainability | structural simplification (code judo), file-size growth, spaghetti branching, needless optionality/casts | `refactoring`, `rust-idioms` |
 | tests | test *quality* not just presence; missing regression/error-path tests | `rust-testing` |
 | intent | does the change do what the brief/spec says? | `specs` |
+| design | the decisions the change makes — a new abstraction, source of truth, module or crate boundary, format, dependency direction, storage or engine — each critiqued for its alternatives, a second implementation, the accepted architecture and the next change; seeded with the crate graph's new edges and the dev-dependency cycles they close; runs by itself when the diff adds a module, crate, public type or format, else on `optional=design`, in the first round only (a general lens; not yet observed live) | `rust-architecture` |
 
 The workflow runs additional context-dependent lenses the scout selects — `reconciler` (controller
 correctness; reads the language-agnostic `distributed-races` catalogue) and `negative-space` (breakage the diff enables in unchanged code); the Rust profile,
-`content/profiles/rust.json`, is the authoritative lens set.
+`content/profiles/rust.json`, extends the general profile (`content/profiles/general.json`): its
+lenses are the general ones — the Rust brief replacing the general one where both name a lens
+(`errors`, `concurrency`, `performance`, `maintainability`, `intent`, `negative-space`) — then
+Rust's own. The two files are the authoritative lens set. On a security-sensitive or large plan, or one the scout gave no
+pick for, the security floor adds only the profile's `securityFloor` lenses — for Rust security,
+safety, correctness, errors, concurrency, compat and invariants — beside the always set; `tests`
+still joins on any change to production code, and `maintainability`, `money` and `complexity`
+stay the scout's pick.
 
 **The optional pass — off by default.** Two lenses are not part of the standard fan-out, because
 on the measured run they returned no High findings at all while producing the bulk of the
 Low/Info volume: `api-idioms` (typed errors, giant fns, wildcard match, missing docs,
 `#![deny(warnings)]` — `rust-idioms`) and `api-boundary` (error→HTTP-status mapping, OpenAPI
 completeness — `rust-web`). Their findings are real and worth having, so they are not deleted; they
-are bought deliberately with `optional=true` (or a subset: `optional=api-idioms`). `performance`
+are bought deliberately with `optional=true` (or a subset: `optional=api-idioms`). The general
+profile's `design` lens is optional too, and joins without a request when the diff adds a module, a
+crate, a public type or a format. `performance`
 was in this pass and now runs in every Rust review (not yet observed live), scoped to needless
 allocation at LOW. Neither `strict` nor the security-sensitive floor turns the pass on or off —
 the request is the only switch. A run that

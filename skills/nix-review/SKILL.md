@@ -15,11 +15,11 @@ it sends each changed Nix file to the Nix profile, scout-scales depth to the dif
 grounds findings in tool output, and verifies each one. This skill is the rubric its Nix lenses and the
 `nix-reviewer` lens worker apply.
 If the workflow fails with `at workflow.js:<line>:<column>`, that place is in the bundled engine:
-`node "<this skill's base directory>/../../lib/engine-source-map.mjs" review workflow.js:<line>:<column>`
+`node "<this skill's base directory>/../../integrations/shared/engine-source-map.mjs" review workflow.js:<line>:<column>`
 gives it in the plugin's source.
 Once a workflow run has ended (completed, failed or stopped — not while you may still resume it),
 fold its real cost into the records it filed:
-`node "<this skill's base directory>/../../lib/craft-log-run.mjs" enrich-cost --run-id <wf_…>`, with the
+`node "<this skill's base directory>/../../integrations/shared/craft-log-run.mjs" enrich-cost --run-id <wf_…>`, with the
 run id the Workflow completion names. Best-effort: if it fails, say so in one line and go on.
 
 The workflow recalls the project's active decisions, open questions and project rules for the diff's paths
@@ -34,8 +34,8 @@ other doubt sign it carries — unless its line is marked `not confirmed`: then 
 (verify it before fixing), and with `comment` it is also listed under Doubtful, the record named first.
 
 With `comment` the workflow posts only defects on the PR; a doubtful finding (not confirmed, raised by
-the compat, intent or api-boundary lens, about rollback, rollout, old replicas, migration or a breaking
-change, or outside the changed lines) is listed under **Doubtful — for the reviewer, not posted** and
+the compat, intent or api-boundary lens, a design question naming no harm, about rollback, rollout,
+old replicas, migration or a breaking change, or outside the changed lines) is listed under **Doubtful — for the reviewer, not posted** and
 waits for the human: show him that list, and act on his choice for each — ask the author, post as a
 defect, or do not post — as `craft:addressing-findings` says (its doubtful findings section).
 
