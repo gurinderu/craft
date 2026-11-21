@@ -235,11 +235,11 @@ others (higher recall than one broad pass):
 
 | Lens | Slice | Owning skill for the fix |
 |---|---|---|
-| correctness | logic: wrong behaviour behind correct-looking code — off-by-one, inverted or incomplete conditions, a missed case, state updated in the wrong order (a general lens) | `rust-idioms` |
-| security | authn/authz, tenant or owner isolation, session/token handling, crypto use, SSRF, untrusted input reaching a sink (a general lens; `unsafe`, panics and injection stay `safety`'s) | `rust-security` |
+| correctness | logic: wrong behaviour behind correct-looking code — off-by-one, inverted or incomplete conditions, a missed case, state updated in the wrong order, a documented invariant the change breaks (a general lens) | `rust-idioms` |
+| security | untrusted input reaching a sink (SQL/command injection, path traversal, deserialization, SSRF), authn/authz, tenant or owner isolation, session/token handling, secrets, crypto use (a general lens) | `rust-security` |
 | money | float arithmetic on amounts, lost cents in splits or rounding, payment idempotency, double-charge windows, currency mixups, ledger imbalance (a general lens) | `rust-fintech` |
 | complexity | the code-graph metrics of the functions the diff touches (cognitive and cyclomatic complexity, loop depth, a scan or allocation in a loop, unguarded recursion), each finding carrying the numbers it stands on; runs only when the binary's code-graph index is ready (a general lens) | `refactoring` |
-| safety | injection / secrets / unsafe / untrusted-input limits / build-profile-divergent arithmetic and guards | `rust-security`, `rust-unsafe` |
+| safety | panics on reachable paths / `unsafe` and soundness / FFI / build-profile-divergent arithmetic and guards | `rust-unsafe`, `rust-security` |
 | errors | Result-vs-panic, dropped errors, typed-vs-anyhow | `rust-errors` |
 | concurrency | blocking-in-async, lock-across-await, deadlock, Send/Sync | `rust-concurrency` |
 | performance | hot-loop allocation, N+1; needless allocation at LOW (`collect` only to iterate, owned returns and `&[String]` params where an iterator or borrow fits, `format!`/clones in a loop, `String` lookup keys) | `rust-performance` |
@@ -256,8 +256,9 @@ lenses are the general ones — the Rust brief replacing the general one where b
 (`errors`, `concurrency`, `performance`, `maintainability`, `intent`, `negative-space`) — then
 Rust's own. The two files are the authoritative lens set. On a security-sensitive or large plan, or one the scout gave no
 pick for, the security floor adds only the profile's `securityFloor` lenses — for Rust security,
-safety, correctness, errors, concurrency, compat and invariants — beside the always set; `tests`,
-`maintainability`, `money` and `complexity` stay the scout's pick.
+safety, correctness, errors, concurrency, compat and invariants — beside the always set; `tests`
+still joins on any change to production code, and `maintainability`, `money` and `complexity`
+stay the scout's pick.
 
 **The optional pass — off by default.** Two lenses are not part of the standard fan-out, because
 on the measured run they returned no High findings at all while producing the bulk of the

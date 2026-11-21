@@ -916,7 +916,7 @@
       }
     },
     {
-      "name": "general: a small diff keeps the picks and adds correctness and intent",
+      "name": "general: a small diff keeps the picks and adds correctness, intent and tests",
       "profile": "general",
       "changedFiles": [
         "web/app.ts"
@@ -940,7 +940,8 @@
         "lenses": [
           "security",
           "correctness",
-          "intent"
+          "intent",
+          "tests"
         ],
         "lightSkipped": [],
         "maxRounds": 1,
@@ -1018,6 +1019,7 @@
           "compat",
           "invariants",
           "intent",
+          "tests",
           "negative-space"
         ],
         "lightSkipped": [],

@@ -184,3 +184,61 @@ fn the_security_floor_adds_only_the_profiles_security_lenses() {
         }
     }
 }
+
+#[test]
+fn a_documented_invariant_has_an_owner_in_a_small_nix_or_general_plan() {
+    for (id, file, pick, owner) in [
+        ("general", "web/app.ts", "errors", "correctness"),
+        ("nix", "flake.nix", "purity", "intent"),
+    ] {
+        let p = Profile::load(id).unwrap();
+        let files = [file.to_owned()];
+        let scout = json!({"sizeBucket": "small", "lenses": [pick], "securitySensitive": false});
+        let got = plan(PlanInput {
+            scout: Some(&scout),
+            ..input(&p, &files, false)
+        });
+        assert!(!got.lenses.iter().any(|l| l == "invariants"), "{id}");
+        assert!(
+            got.lenses.iter().any(|l| l == owner),
+            "{id}: {:?}",
+            got.lenses
+        );
+        let brief = crate::content::text(&p.lens(owner).unwrap().brief).unwrap();
+        assert!(brief.contains("documented invariant"), "{id}: {brief}");
+    }
+}
+
+#[test]
+fn a_general_change_to_production_source_forces_tests_and_a_light_pass_intent() {
+    let p = Profile::load("general").unwrap();
+    let scout = json!({"sizeBucket": "small", "lenses": ["errors"], "securitySensitive": false});
+    let source = ["web/app.ts".to_owned()];
+    let got = plan(PlanInput {
+        scout: Some(&scout),
+        ..input(&p, &source, false)
+    });
+    assert!(got.lenses.iter().any(|l| l == "tests"), "{:?}", got.lenses);
+    let light = plan(PlanInput {
+        scout: Some(&scout),
+        light: true,
+        ..input(&p, &source, false)
+    });
+    assert!(
+        light.lenses.iter().any(|l| l == "intent") && light.lenses.iter().any(|l| l == "tests"),
+        "{:?}",
+        light.lenses
+    );
+    for test in ["web/app.test.ts", "web/app.spec.ts", "tests/test_app.py"] {
+        let files = [test.to_owned()];
+        let got = plan(PlanInput {
+            scout: Some(&scout),
+            ..input(&p, &files, false)
+        });
+        assert!(
+            !got.lenses.iter().any(|l| l == "tests"),
+            "{test}: {:?}",
+            got.lenses
+        );
+    }
+}

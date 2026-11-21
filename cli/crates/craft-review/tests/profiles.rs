@@ -92,7 +92,8 @@ fn a_typescript_only_diff_is_reviewed_by_the_general_lenses() {
         [
             "lens-general-security-r1",
             "lens-general-correctness-r1",
-            "lens-general-intent-r1"
+            "lens-general-intent-r1",
+            "lens-general-tests-r1"
         ]
     );
     assert!(
@@ -121,7 +122,7 @@ fn a_typescript_only_diff_is_reviewed_by_the_general_lenses() {
     let s = submit(
         &run,
         json!({"lens-general-security-r1": lens("security", &[f]), "lens-general-correctness-r1": lens("correctness", &[]),
-               "lens-general-intent-r1": lens("intent", &[])}),
+               "lens-general-intent-r1": lens("intent", &[]), "lens-general-tests-r1": lens("tests", &[])}),
     );
     assert_eq!(ids(&s), ["verify-0-v0", "verify-0-v1"]);
     let v = prompt_of(task(&s, "verify-0-v0"));
@@ -230,7 +231,8 @@ fn a_mixed_diff_plans_each_profile_over_its_own_files_and_settles_one_pool() {
             "lens-nix-intent-r1",
             "lens-general-security-r1",
             "lens-general-correctness-r1",
-            "lens-general-intent-r1"
+            "lens-general-intent-r1",
+            "lens-general-tests-r1"
         ]
     );
     let found = |id: &str| -> Vec<Value> {

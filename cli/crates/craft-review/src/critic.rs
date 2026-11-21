@@ -62,13 +62,22 @@ fn in_scope(plan: &Plan) -> bool {
 }
 
 /// The lenses a critic may name: the roster's that the plan did not run. A metrics-or-nothing lens
-/// dropped for want of an index is no candidate: nothing it would read is there.
-pub(crate) fn candidates(profile: &Profile, plan: &Plan) -> Vec<String> {
+/// is no candidate while the run's code-metrics index is not ready (`metrics`), picked or not:
+/// nothing it would read is there.
+pub(crate) fn candidates(profile: &Profile, plan: &Plan, metrics: bool) -> Vec<String> {
+    let no_index = profile.flagged(|l| l.metrics && !metrics);
     profile
         .roster()
         .into_iter()
-        .filter(|l| !plan.lenses.contains(l) && !plan.metrics_dropped.contains(l))
+        .filter(|l| {
+            !plan.lenses.contains(l) && !plan.metrics_dropped.contains(l) && !no_index.contains(l)
+        })
         .collect()
+}
+
+/// Whether the run's code-metrics index is ready, as the plan judged it ([`crate::complexity`]).
+pub(crate) fn metrics_ready(run: &RunState) -> bool {
+    crate::complexity::indexed(&run.context, true).is_some_and(|(ready, _)| ready)
 }
 
 /// One critic per profile whose plan calls for it and has a lens left to name; none on a light pass.
@@ -84,7 +93,7 @@ pub(crate) fn tasks(run: &RunState, profiles: &[Profile]) -> Result<Vec<Task>, C
         let Some(plan) = track.plan.as_ref().filter(|plan| in_scope(plan)) else {
             continue;
         };
-        let candidates = candidates(p, plan);
+        let candidates = candidates(p, plan, metrics_ready(run));
         if candidates.is_empty() {
             continue;
         }

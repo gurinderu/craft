@@ -165,3 +165,23 @@ fn the_verification_pass_of_the_critic_runs_under_ids_of_its_own() {
     relabel(&run, &mut tasks);
     assert_eq!(tasks[0].id, "critic-verify-0-v0");
 }
+
+#[test]
+fn a_metrics_lens_is_no_candidate_without_an_index() {
+    let profiles = vec![Profile::rust().unwrap()];
+    let mut run = run_with(&plan("large", false, &["errors"], &[]));
+    let asked = tasks(&run, &profiles).unwrap();
+    assert!(
+        !asked[0].prompt.contains("\"complexity\""),
+        "no index, no complexity: {}",
+        asked[0].prompt
+    );
+    run.context.graph_project = "craft-review-x".into();
+    run.context.consumers.graph_indexed = true;
+    let asked = tasks(&run, &profiles).unwrap();
+    assert!(
+        asked[0].prompt.contains("\"complexity\""),
+        "{}",
+        asked[0].prompt
+    );
+}

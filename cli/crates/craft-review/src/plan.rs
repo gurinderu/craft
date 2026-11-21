@@ -8,7 +8,7 @@ use serde_json::Value;
 
 use crate::agent::Model;
 use crate::optional::admitted;
-use crate::paths::{changes_production_code, is_contract_path};
+use crate::paths::{changes_production_code, is_contract_path, is_test_path};
 use crate::profile::Profile;
 
 /// At most this many repository rule files reach a lens prompt, as `REPO_RULES_MAX`.
@@ -107,6 +107,17 @@ fn security_floor(p: &Profile, optional: &[String]) -> Vec<String> {
         .into_iter()
         .filter(|l| floor.contains(l))
         .collect()
+}
+
+/// Whether `files` change `p`'s production code: by its globs, or, a profile taking the rest with
+/// none, any file it covers that is no test — what it covers already leaves out prose, project
+/// configuration and vendored or generated output.
+fn production(p: &Profile, files: &[String]) -> bool {
+    if p.diff_globs.is_empty() {
+        files.iter().any(|f| p.covers(f) && !is_test_path(f))
+    } else {
+        changes_production_code(files, &p.diff_globs)
+    }
 }
 
 fn scout_str<'a>(scout: Option<&'a Value>, k: &str) -> Option<&'a str> {
@@ -246,7 +257,7 @@ fn required(
     for l in &p.always_lenses {
         offer(l);
     }
-    if changes_production_code(files, &p.diff_globs) {
+    if production(p, files) {
         offer("tests");
     }
     if chose_reconciler(scout) {
@@ -309,7 +320,7 @@ fn light(
             .collect()
     };
     let mut forced = Vec::new();
-    if changes_production_code(files, &p.diff_globs) {
+    if production(p, files) {
         forced.extend(in_roster(&["tests", "intent"]));
     }
     if chose_reconciler(scout) {
