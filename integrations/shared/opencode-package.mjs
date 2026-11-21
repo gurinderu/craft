@@ -21,11 +21,12 @@ export const SKIPPED_SKILLS = ['develop', 'codex-review']
 // Read whole at run time: the review's content, OpenCode's agents and commands, and the Claude Code agents whose
 // prompts the binary puts before a task (its rubric_of reads `<root>/integrations/claude-code/agents`).
 const TREES = ['content', 'integrations/opencode/agents', 'integrations/opencode/commands', 'integrations/claude-code/agents']
-// The binary takes CRAFT_ROOT (bin/craft sets it to the package root) as a plugin root only when a Claude Code
+// The binary takes CRAFT_ROOT (craft-cli.sh sets it to the package root) as a plugin root only when a Claude Code
 // manifest is there or under integrations/claude-code (cli prompts.rs plugin_root_at), and reads the plugin version
 // from it: without it `review run` stops at "no craft plugin root is known".
 const FILES = [
   'bin/craft',
+  'integrations/shared/craft-cli.sh',
   'integrations/shared/craft-fetch.sh',
   'integrations/shared/craft-fetch-http.sh',
   'integrations/shared/craft-hook-repo.sh',

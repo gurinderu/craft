@@ -233,10 +233,20 @@ that shaped this layer has been removed.
 confirmed on at least two branches of one repository. Selection and grouping are in
 `cli/crates/craft-review/src/recurring.rs` and `recurring/`, reached by `cli/bin/craft/src/runs.rs` and tested through the
 built binary in `cli/bin/craft/tests/recurring.rs` and `cli/bin/craft/tests/recurring/`. The old
-`integrations/shared/recurring-findings.mjs` entry is a thin adapter to the binary, with its own
+`integrations/shared/recurring-findings.mjs` entry is a thin adapter to the binary, using
+`integrations/shared/native-command.mjs` for package-version acquisition and stream/exit forwarding
+(shared with the `craft-externals.mjs` compatibility entry), with its own
 transport tests. The addressing-findings and develop skills resolve that binary by the package's
 existing downloader and call the native command. Equal groups use UTF-16 code-unit order,
 independent of the host locale.
+
+Manifest discovery and legacy external-record import live in
+`cli/crates/craft-review/src/externals.rs` and `externals/`. Both `craft init`
+(`cli/bin/craft/src/init.rs`, `init/memory.rs`) and the compatibility command
+(`cli/bin/craft/src/externals.rs`) call that library. `integrations/shared/craft-externals.mjs`
+forwards to the binary through `native-command.mjs`. Library coverage is in
+`externals/tests/`; binary-boundary coverage is in `cli/bin/craft/tests/externals.rs`
+and `externals/`. The embedded regex engine is pinned through `cli/Cargo.lock`.
 
 `cli/` is a Cargo workspace for `craft review`, designed so the binary decides a review's work and
 a host (the `review` engine above) runs its agents. The step protocol was observed end to end
@@ -315,11 +325,12 @@ and arm64 and Windows on x64; `integrations/shared/craft-bin.mjs ensure` fetches
 `~/.craft/bin/<version>/` (through the REST API, `integrations/shared/release-asset.mjs`, when the download URL answers 5xx or
 not at all; `GITHUB_TOKEN` or `GH_TOKEN`, if set, is sent to the API only),
 which the `review` engine runs when no `craftBin` is given. The other hosts reach the same cache through `bin/craft`
-at the repository root, a POSIX `sh` wrapper carrying the plugin version (release-please moves it): it runs
+at the repository root, forwarding to `integrations/shared/craft-cli.sh`, the POSIX entry carrying the plugin version (release-please moves it): it runs
 `~/.craft/bin/<version>/craft`, first downloading the release archive and its `.sha256` with `curl` or `wget` and
 checking it with `sha256sum` or `shasum` when the cache lacks it (no Windows), `CRAFT_BIN` naming a local build,
 and `CRAFT_ROOT` defaulting to the plugin root. The download itself is `integrations/shared/craft-fetch.sh` with `integrations/shared/craft-fetch-http.sh` — the release URL, the REST API fallback, the SHA-256,
-the lock and the cache layout in one place —, which `bin/craft` sources (`--ensure` only fetches) and `integrations/shared/craft-bin.mjs ensure`
+the lock and the cache layout in one place —, which `craft-cli.sh` sources (`--ensure` only fetches;
+`--ensure --print-path` also prints the executable path, used by `review-init` even in packages without `bin/`) and `integrations/shared/craft-bin.mjs ensure`
 runs (its own Node download kept for Windows only). `integrations/shared/craft-hook.sh <name>`
 runs the start, prompt, subagent and reviewer-dispatch hooks as `craft hook <name>` from the same cache, never waiting for
 a download: while the binary is absent it makes the repo test itself (`integrations/shared/craft-hook-repo.sh`) and, where the repo has

@@ -1,6 +1,6 @@
 #!/bin/sh
 # The one download of the craft binary into ~/.craft/bin/<version>/craft (realm @nick/craft, nodes #457, #500, #550):
-# the release's craft-<target>.tar.gz and its .sha256, the SHA-256 checked, the binary unpacked into place. bin/craft
+# the release's craft-<target>.tar.gz and its .sha256, the SHA-256 checked, the binary unpacked into place. craft-cli.sh
 # sources it before it runs the binary; integrations/shared/craft-hook.sh runs it in the background when a hook finds the binary absent
 # (the Claude Code delivery has no bin/); integrations/shared/craft-bin.mjs ensure, the review engine's fetcher, runs it everywhere sh
 # runs — on Windows, where it does not, that file keeps its own Node download. The cache layout is integrations/shared/craft-bin.mjs's.

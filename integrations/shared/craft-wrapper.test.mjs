@@ -15,6 +15,7 @@ import { writeExecutable } from './write-executable.mjs'
 
 const ROOT = path.resolve(import.meta.dirname, '../..')
 const WRAPPER = path.join(ROOT, 'bin', 'craft')
+const SHARED = path.join(ROOT, 'integrations/shared/craft-cli.sh')
 const VERSION = JSON.parse(fs.readFileSync(path.join(ROOT, '.release-please-manifest.json'), 'utf8'))['.']
 const ASSET = `craft-${targetOf(process.platform, process.arch)}.tar.gz`
 const FAKE = '#!/bin/sh\nprintf "%s|" "$CRAFT_ROOT" "$@"\n'
@@ -116,14 +117,30 @@ test('with neither curl nor wget on the PATH it says so', async () => {
   assert.equal(got.stderr, `craft: neither curl nor wget is on the PATH to download the craft binary ${VERSION}\n`)
 })
 
-test('the wrapper carries the plugin version on the line release-please moves', () => {
+test('the shared entry carries the plugin version on the line release-please moves', () => {
   const lines = fs
-    .readFileSync(WRAPPER, 'utf8')
+    .readFileSync(SHARED, 'utf8')
     .split('\n')
     .filter(l => l.includes('x-release-please-version'))
   assert.deepEqual(lines, [`version=${VERSION} # x-release-please-version`])
   const extra = JSON.parse(fs.readFileSync(path.join(ROOT, 'release-please-config.json'), 'utf8')).packages['.']['extra-files']
-  assert.ok(extra.some((/** @type {{ type: string, path: string }} */ f) => f.type === 'generic' && f.path === 'bin/craft'))
+  assert.ok(extra.some((/** @type {{ type: string, path: string }} */ f) => f.type === 'generic' && f.path === 'integrations/shared/craft-cli.sh'))
+})
+
+test('--ensure --print-path downloads once and prints only the binary path without executing it', async () => {
+  const expected = { code: 0, stdout: `${cached()}\n`, stderr: '' }
+  assert.deepEqual(await wrapper(['--ensure', '--print-path']), expected)
+  assert.deepEqual(await wrapper(['--ensure', '--print-path']), expected)
+  assert.deepEqual(hits(), [ASSET, `${ASSET}.sha256`])
+})
+
+test('--ensure --print-path validates an override and preserves spaces in its path', async () => {
+  const local = path.join(HOME, 'local craft')
+  fs.writeFileSync(local, FAKE, { mode: 0o755 })
+  assert.deepEqual(await wrapper(['--ensure', '--print-path'], { CRAFT_BIN: local }), { code: 0, stdout: `${local}\n`, stderr: '' })
+  fs.rmSync(local)
+  assert.equal((await wrapper(['--ensure', '--print-path'], { CRAFT_BIN: local })).code, 127)
+  assert.deepEqual(hits(), [])
 })
 
 test('--ensure fetches the binary and runs nothing; with it cached, it fetches nothing', async () => {
