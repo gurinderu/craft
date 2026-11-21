@@ -238,9 +238,10 @@ lenses and verifiers see, a tool not installed is named), a scout per profile wh
 consumers list, built at start beside the gate (`src/consumers/`: for each changed Rust symbol the lines outside the diff that name it —
 callers, implementors and same-named declarations, places passing it as a value — from a name search, always run, and,
 when the reviewer's profile says codebase-memory answers (`src/consumers/cbm/`, `graph.rs`), the checkout the review
-reads indexed first within the list's graph budget (`cbm/reindex.rs`; the profile's project when it is of this checkout,
-else one project of craft's own per repository moved to each checkout reviewed: `graph/target.rs`), its index checked to
-be of this checkout and of a commit holding the base (`fresh.rs`) and read again after the questions (answers dropped
+reads indexed first within the list's graph budget (`cbm/reindex.rs`, one review at a time per project by a lock under
+`~/.craft/cbm-locks/`: `cbm/lock.rs`; an index past the budget left to finish; always one project of craft's own per
+repository moved to each checkout reviewed, never the profile's: `graph/target.rs`; nothing indexed when the change has
+no symbol), its index checked to be of this very checkout and of a commit holding the base (`fresh.rs`) and read again after the questions (answers dropped
 when it moved), the graph's callers merged in (`graph/sites.rs`: none from a checkout nested in this one), the report
 naming which sources built it and why the graph was not asked; the whole list
 saved as `consumers.json` in the run directory, each lens given a budgeted part to go through line by line; `craft

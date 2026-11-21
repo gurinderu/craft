@@ -30,7 +30,10 @@ pub fn of_checkout(
     cancel: &Cancel,
 ) -> Consumers {
     match crate::git::toplevel(cwd) {
-        Ok(top) => build_until(&top, diff, graph_of(projects, &top), cancel),
+        Ok(top) => {
+            let locks = crate::consumers::cbm::review_locks();
+            build_until(&top, diff, (graph_of(projects, &top), &locks), cancel)
+        }
         Err(e) => Consumers::failed(format!("the checkout's top could not be read: {e}")),
     }
 }
@@ -44,14 +47,15 @@ pub fn build(
     diff: &crate::git::Diff,
     graph: Result<CodeGraph, GraphError>,
 ) -> Consumers {
-    build_until(top, diff, graph, &Cancel::default())
+    let locks = crate::consumers::cbm::scratch_locks();
+    build_until(top, diff, (graph, &locks), &Cancel::default())
 }
 
 /// [`build`], its name search and the graph's questions run until `cancel` is.
 fn build_until(
     top: &Path,
     diff: &crate::git::Diff,
-    graph: Result<CodeGraph, GraphError>,
+    (graph, locks): (Result<CodeGraph, GraphError>, &Path),
     cancel: &Cancel,
 ) -> Consumers {
     let text = match crate::git::zero_context_diff(top, &diff.merge_base) {
@@ -61,8 +65,17 @@ fn build_until(
     let changed = crate::gate::lines::Lines::parse(&text);
     let removed = crate::gate::lines::removals(&text);
     let found = changed::changed(top, &diff.files, &changed, &removed, list::SYMBOLS_MAX);
-    let asked =
-        graph.and_then(|g| graph::graph_callers(top, &diff.merge_base, &g, &found.symbols, cancel));
+    // Nothing to ask of it: the graph is not indexed either.
+    let graph = graph.and_then(|g| {
+        if found.symbols.is_empty() {
+            Err(GraphError::NothingToAsk)
+        } else {
+            Ok(g)
+        }
+    });
+    let asked = graph.and_then(|g| {
+        graph::graph_callers(top, &diff.merge_base, (&g, locks), &found.symbols, cancel)
+    });
     let (asked, graph_skipped) = match asked {
         Ok(a) => (Some(a), String::new()),
         Err(why) => (None, why.to_string()),
@@ -71,7 +84,6 @@ fn build_until(
     let mut out = list::assemble(top, &changed, &found.symbols, cancel, callers);
     if let Some(a) = asked {
         out.graph_truncated = a.truncated;
-        out.graph_project = a.project;
         out.graph_unasked = a.unasked;
     }
     out.graph_skipped = graph_skipped;

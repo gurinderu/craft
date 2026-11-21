@@ -117,23 +117,8 @@ pub(super) fn prepare(cwd: &Path, dir: &Path, opts: &StartOptions, run: &mut Run
 }
 
 /// One scout per profile taking part of the change, each over its own files; beside them the index
-/// warm-up when a profile taking part has a metrics-or-nothing lens.
-/// The graph's project the warm-up indexes: the one the consumers list asked, else craft's own
-/// for the repository (realm @nick/craft, node #529).
-fn warmup_project(run: &RunState) -> String {
-    let asked = &run.context.consumers.graph_project;
-    if !asked.is_empty() {
-        return asked.clone();
-    }
-    let repo = Path::new(&run.context.repo);
-    crate::consumers::craft_project(repo).unwrap_or_else(|_| {
-        format!(
-            "craft-review-{}",
-            crate::project::project_id(&run.context.repo)
-        )
-    })
-}
-
+/// warm-up when a profile taking part has a metrics-or-nothing lens and craft's own graph project
+/// for the repository can be named.
 pub(super) fn scouts(run: &RunState, profiles: &[Profile]) -> Result<Vec<Task>, Error> {
     let mut tasks = Vec::new();
     for t in &run.tracks {
@@ -153,8 +138,10 @@ pub(super) fn scouts(run: &RunState, profiles: &[Profile]) -> Result<Vec<Task>, 
     }
     let taking_part = |p: &&Profile| run.tracks.iter().any(|t| t.profile == p.id);
     if profiles.iter().filter(taking_part).any(complexity::wanted) {
-        let project = warmup_project(run);
-        tasks.push(complexity::warmup_task(&run.context.repo, &project)?);
+        let project = &run.context.graph_project;
+        if !project.is_empty() {
+            tasks.push(complexity::warmup_task(&run.context.repo, project)?);
+        }
     }
     Ok(tasks)
 }

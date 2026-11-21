@@ -41,6 +41,8 @@ impl Cbm {
                 | CbmError::Timeout(_)
                 | CbmError::TimeBound
                 | CbmError::Stopped
+                | CbmError::Locked { .. }
+                | CbmError::StillIndexing(_)
                 | CbmError::Output(_)
                 | CbmError::Graph(_)) => e,
             })?;

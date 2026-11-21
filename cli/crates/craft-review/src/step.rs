@@ -19,7 +19,6 @@ use crate::prompts::{PromptContext, ReScope, SPEC_MAX};
 use crate::publish::{self, PostSetup, Publish};
 use crate::rereview;
 use crate::rounds::Rounds;
-use crate::sources;
 use crate::state::{self, Phase, RunState, STATE_VERSION, TaskState, Track};
 use crate::stop;
 use crate::units;
@@ -137,9 +136,9 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
         craft_version: opts.craft_version.clone(),
         re_review,
         strict: opts.strict,
-        sources: sources::Sources::default(),
-        consumers: crate::consumers::Consumers::default(),
+        graph_project: crate::complexity::project(&cwd.display().to_string()).unwrap_or_default(),
         scope,
+        ..PromptContext::default()
     };
     let (tracks, uncovered) = tracks_of(&diff.files, &profiles);
     let memory = Memory::open(opts.prior_decisions.clone());

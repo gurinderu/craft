@@ -23,8 +23,16 @@ pub fn wanted(profile: &Profile) -> bool {
     profile.lenses.iter().any(|l| l.metrics)
 }
 
+/// The graph's project the warm-up, the metrics lenses and their verifier name for the repository
+/// at `repo`: craft's own, the consumers list's too (realm @nick/craft, node #529); `None` when
+/// the repository's shared git directory cannot be read.
+#[must_use]
+pub fn project(repo: &str) -> Option<String> {
+    crate::consumers::craft_project(std::path::Path::new(repo)).ok()
+}
+
 /// The warm-up's task: whether a usable code-metrics index covers the repository at `repo`, under
-/// the graph's `project` the consumers list asks too (realm @nick/craft, node #529).
+/// the graph's `project` ([`project`]).
 ///
 /// # Errors
 /// When its prompt is missing.
@@ -80,12 +88,13 @@ pub fn is_metric(f: &Value) -> bool {
     f.get("metrics").is_some_and(Value::is_object)
 }
 
-/// The prompt of a metrics lens, `brief` over the diff from `base` as the engine renders it, then
-/// what its findings must carry here.
+/// The prompt of a metrics lens, `brief` over the diff from `base` in the graph's `project`
+/// ([`project`]) as the engine renders it, then what its findings must carry here.
 ///
 /// # Errors
 /// When a content file is missing.
-pub fn lens_body(brief: &str, base: &str) -> Result<String, ContentError> {
-    let body = content::prompt(brief, &content::vars([("base", base.to_owned())]))?;
+pub fn lens_body(brief: &str, base: &str, project: &str) -> Result<String, ContentError> {
+    let vars = content::vars([("base", base.to_owned()), ("project", project.to_owned())]);
+    let body = content::prompt(brief, &vars)?;
     Ok(format!("{body}\n\n{}", content::text("lens-metrics")?))
 }

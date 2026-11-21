@@ -22,13 +22,18 @@ pub enum GraphError {
     Unusable { tool: String, note: String },
     #[error("{0}")]
     Cbm(#[from] CbmError),
+    #[error("the change has no symbol to ask the graph of, so it was neither indexed nor asked")]
+    NothingToAsk,
     #[error("the index of {project} names no root it indexes, so whose it is cannot be told")]
     NoRoot { project: String },
-    #[error("the index of {project} is of {root}, not of this repository ({roots})")]
+    #[error(
+        "the index of {project} is of {root}, not of this checkout ({checkout}): another review \
+         moved it after this one indexed it"
+    )]
     Foreign {
         project: String,
         root: String,
-        roots: String,
+        checkout: String,
     },
     #[error("{0}")]
     Stale(#[from] Box<Stale>),

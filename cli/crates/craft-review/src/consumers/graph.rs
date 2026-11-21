@@ -24,24 +24,25 @@ const RECHECK: Duration = Duration::from_secs(5);
 pub use error::GraphError;
 pub(super) use sites::graph_sites;
 
-/// The graph's callers of `found`, asked until `cancel` is, once the graph has indexed `top`
-/// (realm @nick/craft, node #529) within the graph's budget; why the graph was not asked
-/// otherwise: the index not done in time, not ready, naming no root, of another repository than
-/// `top`'s, made of a commit not holding `merge_base`, or no answer; or why its answers were
-/// dropped: the index moved while they were asked (node #533).
+/// The graph's callers of `found`, asked until `cancel` is, once the graph has indexed `top` under
+/// craft's own project (realm @nick/craft, node #529) within the graph's budget, its index lock
+/// under `locks`; why the graph was not asked otherwise: the lock held past the budget, the index
+/// not done in time (left running), not ready, naming no root, of another checkout than `top`,
+/// made of a commit not holding `merge_base`, or no answer; or why its answers were dropped: the
+/// index moved while they were asked (node #533).
 ///
 /// # Errors
 /// Why the graph's callers are not in the list.
 pub(super) fn graph_callers(
     top: &Path,
     merge_base: &str,
-    g: &CodeGraph,
+    (g, locks): (&CodeGraph, &Path),
     found: &[Symbol],
     cancel: &Cancel,
 ) -> Result<Asked, GraphError> {
-    let cbm = Cbm::new(&g.tool).stopped_by(cancel);
+    let cbm = Cbm::new(&g.tool).stopped_by(cancel).locked_in(locks);
     let deadline = Instant::now() + cbm.budget;
-    let project = target::project(&cbm, top, g, deadline)?;
+    let project = target::own(top)?;
     let checkout = top.display().to_string();
     cbm.reindex(&checkout, &project, deadline)
         .map_err(|why| GraphError::Reindex {
@@ -70,7 +71,6 @@ pub(super) fn graph_callers(
         .iter()
         .map(|s| format!("{} (file not indexed by the graph)", s.name));
     out.unasked.extend(not_indexed);
-    out.project.clone_from(&project);
     if index.unindexed_cut {
         out.unasked.extend(unanswered(&asked, &out));
     }
@@ -98,9 +98,9 @@ fn unanswered(asked: &[&Symbol], out: &Asked) -> Vec<String> {
         .collect()
 }
 
-/// The code graph the profile of the repository at `cwd` under `projects` names as answering:
-/// one indexing it, or one that answered and indexes no project of it yet, which a review
-/// indexes itself (realm @nick/craft, node #529).
+/// The code graph the profile of the repository at `cwd` under `projects` names as answering —
+/// whatever project it records, it only says the graph is there: a review indexes and asks
+/// craft's own (realm @nick/craft, node #529).
 ///
 /// # Errors
 /// Why the graph is not to be asked.

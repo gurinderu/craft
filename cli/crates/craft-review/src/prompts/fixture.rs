@@ -19,6 +19,7 @@ impl PromptContext {
             strict: false,
             sources: super::Sources::default(),
             consumers: crate::consumers::Consumers::default(),
+            graph_project: String::new(),
             scope: None,
         }
     }
@@ -29,6 +30,7 @@ impl PromptContext {
         Self {
             craft_root: input["craftRoot"].as_str().map(str::to_owned),
             craft_version: input["craftVersion"].as_str().map(str::to_owned),
+            graph_project: "craft-review-repo-0123456789ab".into(),
             ..Self::fixture("/work/repo", input["base"].as_str().unwrap())
         }
     }

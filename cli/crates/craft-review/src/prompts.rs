@@ -43,7 +43,7 @@ const FIELD_MAX: usize = 500;
 pub(crate) const SPEC_MAX: usize = 4000;
 
 /// What every prompt of one run is rendered from.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PromptContext {
     pub repo: String,
@@ -69,6 +69,12 @@ pub struct PromptContext {
     /// lens. Optional, so a state written before it reads as a run with none.
     #[serde(default, skip_serializing_if = "crate::consumers::Consumers::is_empty")]
     pub consumers: crate::consumers::Consumers,
+    /// The code graph's project of the repository, craft's own, which the index warm-up, the
+    /// metrics lenses and their verifier name (realm @nick/craft, node #529); empty when it could
+    /// not be named, and then no warm-up is asked. Optional, so a state written before it reads
+    /// as a run with none.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub graph_project: String,
     /// The directory of the change the run reviews (`path`, [`crate::scope`]): the scout is told
     /// it, and the lenses read only its files. Optional, so a state written before it reads as a
     /// review of the whole change.

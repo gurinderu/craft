@@ -14,19 +14,21 @@ use crate::gate::tests::exe;
 mod asks;
 mod built;
 mod changed;
+mod checkout;
 mod gaps;
 mod graphs;
 mod half_asked;
 mod heads;
 mod index;
 mod lists;
+mod lock;
 mod nested;
 mod paths;
 mod reindex;
 mod stale;
 mod walk;
 
-fn git(dir: &Path, args: &[&str]) -> String {
+pub(super) fn git(dir: &Path, args: &[&str]) -> String {
     let out = Command::new("git")
         .arg("-C")
         .arg(dir)
@@ -199,7 +201,8 @@ fn a_stale_or_absent_graph_leaves_the_name_search_alone_and_says_why() {
     let s = section(&c);
     assert!(s.contains("Built from: name search."), "{s}");
     assert!(
-        s.contains("codebase-memory not used: the index of p names no commit"),
+        s.contains("codebase-memory not used: the index of craft-review-")
+            && s.contains("names no commit"),
         "{s}"
     );
 

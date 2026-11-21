@@ -14,6 +14,16 @@ pub enum CbmError {
     /// The review's budget for asking callers ran out.
     #[error("time bound")]
     TimeBound,
+    /// Another review holds the index lock of the project past the time left.
+    #[error("another review is indexing {project} (lock {lock}) past the time left")]
+    Locked { project: String, lock: String },
+    /// The index ran past the time left; it goes on in the background, holding the lock.
+    #[error(
+        "its index ran past the time left ({}s); it goes on in the background and a later review \
+         asks it",
+        .0.as_secs()
+    )]
+    StillIndexing(Duration),
     /// The run was stopped while the graph was asked.
     #[error("{}", crate::cancel::STOPPED)]
     Stopped,

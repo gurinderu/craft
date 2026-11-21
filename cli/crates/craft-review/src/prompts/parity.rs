@@ -106,11 +106,18 @@ fn complexity(g: &mut Golden, ctx: &PromptContext, plan: &Plan, prior: &str) {
     let shared = lens
         .strip_suffix(&carried)
         .unwrap_or_else(|| panic!("what the findings carry closes it: {lens}"));
+    // The lens, the warm-up and the verifier each name the graph's one project.
+    assert!(
+        shared.contains("`craft-review-repo-0123456789ab`"),
+        "{shared}"
+    );
     g.check("/expected/complexity/lens", shared);
-    let warmup =
-        crate::complexity::warmup_task(&ctx.repo, "craft-review-repo-0123456789ab").unwrap();
+    let warmup = crate::complexity::warmup_task(&ctx.repo, &ctx.graph_project).unwrap();
     g.check("/expected/complexity/warmup", body(ctx, warmup.prompt));
-    let head = crate::content::text("verify-metric").unwrap();
+    let vars = crate::content::vars([("project", ctx.graph_project.clone())]);
+    let head = crate::content::prompt("verify-metric", &vars).unwrap();
+    let head = head.trim_end_matches('\n').to_owned();
+    assert!(head.contains("`craft-review-repo-0123456789ab`"), "{head}");
     g.check("/expected/complexity/verify", head.clone());
     let f = serde_json::json!({"severity": "High", "title": "t", "file": "web/app.ts", "line": 1, "why": "w",
         "source": "complexity", "metrics": {"function": "f", "cognitive": 30}});

@@ -63,8 +63,9 @@ pub fn roots_of(cwd: &Path) -> Vec<String> {
 pub fn said(g: &CodeGraph) -> String {
     match &g.state {
         GraphState::Indexed { project } => format!(
-            "{} answers and indexes this repository as {project}: a review adds its callers to \
-             the consumers list",
+            "{} answers and indexes this repository as {project}, which a review leaves alone: it \
+             indexes the checkout it reads under craft's own project and adds its callers to the \
+             consumers list",
             g.tool
         ),
         GraphState::Unindexed { note } => format!(

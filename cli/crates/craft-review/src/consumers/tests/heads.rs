@@ -32,7 +32,7 @@ fn an_index_of_another_repository_is_not_asked() {
     let c = build(&repo, &diff_of(&repo), Ok(g));
     assert!(
         c.graph_skipped
-            .contains("is of /elsewhere, not of this repository"),
+            .contains("is of /elsewhere, not of this checkout"),
         "{}",
         c.graph_skipped
     );
@@ -47,7 +47,7 @@ fn an_index_naming_no_root_is_not_asked() {
     let why = crate::consumers::graph::graph_callers(
         &repo,
         &diff_of(&repo).merge_base,
-        &g,
+        (&g, &crate::consumers::cbm::scratch_locks()),
         &[],
         &crate::cancel::Cancel::default(),
     )

@@ -106,7 +106,12 @@ pub fn verify_prompt(
     let n = (voter + 1).to_string();
     let metric = crate::complexity::is_metric(f);
     let head = if metric {
-        content::text("verify-metric")?
+        content::prompt(
+            "verify-metric",
+            &vars([("project", ctx.graph_project.clone())]),
+        )?
+        .trim_end_matches('\n')
+        .to_owned()
     } else if tool {
         content::prompt("verify-head-tool", &vars([("n", n), ("source", source)]))?
     } else {
