@@ -30,8 +30,11 @@ jobs:
   # plugin version fetches is the one built from that version's tag. Each runner builds for its own host:
   # the step below refuses a runner whose host is not the matrix target, so no archive is mislabelled. Linux
   # builds are static musl (any distro's libc, however old); the runner's host is gnu on the same arch, so for
-  # musl the guard compares the target with its gnu twin. musl needs no musl-tools: no crate compiles C code,
-  # and Rust links the musl targets with its own self-contained C runtime. Windows is a tar.gz too: craft-bin
+  # musl the guard compares the target with its gnu twin. The C the build compiles (tree-sitter's runtime and its
+  # Rust grammar, through `cc`, for the consumers list's structural search) needs a musl C compiler: the runner's own
+  # gcc builds against glibc's headers. Each Linux runner is native to its arch, so musl-tools' `musl-gcc` is
+  # that compiler for both, no cross toolchain; Rust still links with its self-contained musl runtime. ci.yml's
+  # rust job builds the x86_64 musl target the same way on every PR. Windows is a tar.gz too: craft-bin
   # unpacks it with the tar.exe Windows 10 and later ship; every step runs in bash (Git Bash on the Windows runner).
   cli-binaries:
     needs: release-please
@@ -75,10 +78,17 @@ jobs:
           want="$TARGET"
           case "$TARGET" in *-linux-musl) want="${TARGET%-musl}-gnu" ;; esac
           [ "$host" = "$want" ] || { echo "::error::runner host $host is not $want (for $TARGET)"; exit 1; }
+      - name: musl C compiler
+        if: ${{ endsWith(matrix.target, '-linux-musl') }}
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
       - name: cargo build
         env:
           TARGET: ${{ matrix.target }}
-        run: cargo build --release --locked --target "$TARGET"
+        run: |
+          case "$TARGET" in
+            *-linux-musl) export "CC_$(echo "$TARGET" | tr - _)=musl-gcc" ;;
+          esac
+          cargo build --release --locked --target "$TARGET"
       - name: package
         env:
           TARGET: ${{ matrix.target }}

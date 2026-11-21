@@ -78,6 +78,16 @@ fn ndjson(out: &Output) -> Vec<Value> {
         .collect()
 }
 
+/// The address-space ceiling the large-record tests run `craft runs` under: well above what the
+/// binary needs to read the store one record at a time (measured on Linux `x86_64`, debug build,
+/// 2026-11-21: about 36 MB on an empty store, about 56 MB over these records), so the binary's
+/// own size and mappings do not decide the test.
+const AS_CEILING: u64 = 128_000_000;
+/// The large records: each payload and how many, together 192 MB, half again the ceiling, so a
+/// reader that kept them all could not stay under it.
+const LARGE_PAYLOAD: usize = 4_000_000;
+const LARGE_RECORDS: usize = 48;
+
 #[cfg(target_os = "linux")]
 #[test]
 fn stats_does_not_keep_large_unfoldable_records_in_memory() {
@@ -86,9 +96,9 @@ fn stats_does_not_keep_large_unfoldable_records_in_memory() {
     }
     let d = tempfile::tempdir().unwrap();
     let mut r = review("0.9.0", "Approve", 0);
-    r["payload"] = json!("x".repeat(500_000));
+    r["payload"] = json!("x".repeat(LARGE_PAYLOAD));
     let bytes = serde_json::to_vec(&r).unwrap();
-    for n in 0..64 {
+    for n in 0..LARGE_RECORDS {
         std::fs::write(
             d.path().join(format!("{n:03}-workflow-review.json")),
             &bytes,
@@ -96,7 +106,7 @@ fn stats_does_not_keep_large_unfoldable_records_in_memory() {
         .unwrap();
     }
     let out = Command::new("prlimit")
-        .arg("--as=40000000")
+        .arg(format!("--as={AS_CEILING}"))
         .arg("--")
         .arg(env!("CARGO_BIN_EXE_craft"))
         .args(["runs", "stats", "--json", "--store"])
@@ -109,7 +119,7 @@ fn stats_does_not_keep_large_unfoldable_records_in_memory() {
         "{}",
         String::from_utf8_lossy(&out.stderr)
     );
-    assert_eq!(ndjson(&out)[0]["tally"]["runs"], json!(64));
+    assert_eq!(ndjson(&out)[0]["tally"]["runs"], json!(LARGE_RECORDS));
 }
 
 #[cfg(target_os = "linux")]
@@ -120,9 +130,9 @@ fn retro_does_not_keep_large_unfoldable_records_in_memory() {
     }
     let d = tempfile::tempdir().unwrap();
     let mut r = review("0.9.0", "Approve", 0);
-    r["payload"] = json!("x".repeat(500_000));
+    r["payload"] = json!("x".repeat(LARGE_PAYLOAD));
     let bytes = serde_json::to_vec(&r).unwrap();
-    for n in 0..64 {
+    for n in 0..LARGE_RECORDS {
         std::fs::write(
             d.path().join(format!("{n:03}-workflow-review.json")),
             &bytes,
@@ -130,7 +140,7 @@ fn retro_does_not_keep_large_unfoldable_records_in_memory() {
         .unwrap();
     }
     let out = Command::new("prlimit")
-        .arg("--as=40000000")
+        .arg(format!("--as={AS_CEILING}"))
         .arg("--")
         .arg(env!("CARGO_BIN_EXE_craft"))
         .args(["runs", "retro", "0.9.0", "--json", "--store"])

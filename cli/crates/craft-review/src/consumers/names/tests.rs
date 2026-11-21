@@ -5,7 +5,7 @@ use std::process::Command;
 use std::time::{Duration, Instant};
 
 use super::stream::{Ended, stream};
-use super::{HITS_MAX, search};
+use super::{HITS_MAX, Unfinished, search};
 use crate::cancel::{Cancel, STOPPED};
 
 fn git(dir: &Path, args: &[&str]) {
@@ -80,7 +80,7 @@ fn a_name_reached_after_the_deadline_is_not_searched() {
     let Err(why) = search(&repo, "wanted_name", Instant::now(), &Cancel::default()) else {
         panic!("a search after its deadline ran");
     };
-    assert!(why.contains("no time left"), "{why}");
+    assert!(why.to_string().contains("no time left"), "{why}");
 }
 
 #[test]
@@ -89,7 +89,7 @@ fn git_s_failure_is_named() {
     let Err(why) = search(t.path(), "wanted_name", far(), &Cancel::default()) else {
         panic!("a search outside a repository succeeded");
     };
-    assert!(why.starts_with("git grep failed"), "{why}");
+    assert!(why.to_string().starts_with("git grep failed"), "{why}");
 }
 
 #[test]
@@ -125,6 +125,6 @@ fn a_search_stopped_with_the_run_is_killed_and_says_so() {
     let repo = repo(t.path(), 1);
     assert_eq!(
         search(&repo, "wanted_name", far(), &cancel),
-        Err(STOPPED.to_owned())
+        Err(Unfinished::Failed(STOPPED.to_owned()))
     );
 }

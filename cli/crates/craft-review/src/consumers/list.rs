@@ -14,6 +14,10 @@ use super::{Consumers, GRAPH, Listed, NAME_SEARCH, SAME_NAME, Site, names};
 use crate::cancel::Cancel;
 use crate::gate::lines::Lines;
 
+mod searched;
+
+use searched::{Searched, by_path, searched};
+
 /// How many changed symbols are searched.
 pub(super) const SYMBOLS_MAX: usize = 40;
 /// How much of a line's text is kept.
@@ -85,8 +89,27 @@ pub(super) fn assemble(
     };
     let mut files = HashMap::new();
     let deadline = Instant::now() + names::BUDGET;
-    for sym in found {
-        let mut sites = searched(top, changed, sym, (deadline, cancel), &mut out.unsearched);
+    // Every name search first, so a distinctive name never waits on a common one's structural one.
+    let named: Vec<Searched> = found
+        .iter()
+        .map(|sym| searched((top, changed), sym, (deadline, cancel), &mut out))
+        .collect();
+    // The workspace's external crates, read once for every structural search.
+    let ext = std::cell::OnceCell::new();
+    for (sym, named) in found.iter().zip(named) {
+        let mut sites = match named {
+            Searched::Sites(sites) => sites,
+            Searched::ByPath(capped) => by_path(
+                (
+                    top,
+                    changed,
+                    ext.get_or_init(|| names::externals(top, (deadline, cancel))),
+                ),
+                sym,
+                (deadline, cancel),
+                (&mut out, capped.as_deref()),
+            ),
+        };
         let theirs = callers.unwrap_or_default().iter();
         let of_sym = theirs.filter(|c| c.symbol == sym.name && c.defined_in == sym.file);
         for c in of_sym {
@@ -122,33 +145,5 @@ fn graph_into(
         }
         Err(why) if !out.graph_unreadable.contains(&why) => out.graph_unreadable.push(why),
         Err(_) => {}
-    }
-}
-
-/// The name search's lines for `sym`, searched before `deadline` and until `cancel` is; a name too common to search, or
-/// one the search could not finish, is noted in `unsearched`.
-fn searched(
-    top: &Path,
-    changed: &Lines,
-    sym: &Symbol,
-    (deadline, cancel): (Instant, &Cancel),
-    unsearched: &mut Vec<String>,
-) -> Vec<Site> {
-    if names::skip(&sym.name) {
-        unsearched.push(sym.name.clone());
-        return Vec::new();
-    }
-    match names::search(top, &sym.name, deadline, cancel) {
-        Ok(hits) => hits
-            .iter()
-            .filter_map(|h| {
-                let kind = consumer(changed, sym, &h.file, h.line, &h.text)?;
-                Some(site(&h.file, h.line, &h.text, NAME_SEARCH, kind))
-            })
-            .collect(),
-        Err(why) => {
-            unsearched.push(format!("{} ({why})", sym.name));
-            Vec::new()
-        }
     }
 }
