@@ -64,13 +64,15 @@ fn the_general_profile_takes_code_but_not_prose_or_configuration() {
         p.lens_agent, None,
         "its lenses run on the host's default agent"
     );
-    assert!(p.lens("negative-space").is_none());
+    assert!(
+        p.lens("negative-space").is_some_and(|l| l.whole_diff) && p.negative_space.is_some(),
+        "negative space over any language's exported surface"
+    );
     assert!(!p.rule_catalog, "review-rules ships no rules.md");
     assert!(
         p.lens("complexity").is_some_and(|l| l.metrics) && crate::complexity::wanted(&p),
         "complexity, behind its code-metrics index"
     );
-    assert!(!Profile::rust().unwrap().lenses.iter().any(|l| l.metrics));
     for f in ["web/app.ts", "main.py", "src/lib.rs", "scripts/build.sh"] {
         assert!(p.covers(f), "{f}");
     }
@@ -177,4 +179,103 @@ fn the_embedded_queries_lens_carries_the_sql_rubric_not_its_hosts() {
         ),
         ("review-rules", false)
     );
+}
+
+#[test]
+fn rust_and_nix_extend_the_general_lenses_and_sql_stays_narrow() {
+    let general = Profile::load("general").unwrap();
+    assert_eq!(
+        general.roster(),
+        [
+            "correctness",
+            "security",
+            "money",
+            "concurrency",
+            "errors",
+            "performance",
+            "intent",
+            "tests",
+            "maintainability",
+            "compat",
+            "invariants",
+            "sql-queries",
+            "complexity"
+        ]
+    );
+    assert_eq!(general.flagged(|_| true).last().unwrap(), "negative-space");
+    let rust = Profile::rust().unwrap();
+    assert_eq!(
+        rust.roster(),
+        [
+            "correctness",
+            "security",
+            "money",
+            "concurrency",
+            "errors",
+            "performance",
+            "intent",
+            "tests",
+            "maintainability",
+            "compat",
+            "invariants",
+            "sql-queries",
+            "complexity",
+            "safety",
+            "api-idioms",
+            "api-boundary",
+            "reconciler",
+            "failure-windows"
+        ],
+        "general's lenses where they stand, then Rust's own"
+    );
+    for (id, brief) in [
+        ("correctness", "lens-briefs/general-correctness"),
+        ("errors", "lens-briefs/rust-errors"),
+        ("intent", "lens-briefs/rust-intent"),
+        ("tests", "lens-briefs/general-tests"),
+        ("compat", "lens-briefs/general-compat"),
+        ("negative-space", "lens-briefs/rust-negative-space"),
+    ] {
+        assert_eq!(rust.lens(id).unwrap().brief, brief, "{id}");
+    }
+    assert!(
+        crate::complexity::wanted(&rust),
+        "complexity, behind its index"
+    );
+    assert_eq!(
+        (
+            rust.always_lenses.as_slice(),
+            rust.safety_lens.as_str(),
+            rust.rubric_skill.as_str(),
+            rust.rule_catalog
+        ),
+        (
+            ["intent".to_owned(), "performance".to_owned()].as_slice(),
+            "safety",
+            "rust-review",
+            true
+        ),
+        "its own, not general's"
+    );
+    let nix = Profile::load("nix").unwrap();
+    assert_eq!(
+        nix.roster(),
+        [
+            "correctness",
+            "security",
+            "intent",
+            "maintainability",
+            "compat",
+            "purity",
+            "reproducibility",
+            "injection",
+            "packaging",
+            "dev-env",
+            "modules"
+        ]
+    );
+    assert_eq!(nix.lens("intent").unwrap().brief, "lens-briefs/nix-intent");
+    assert!(!crate::complexity::wanted(&nix));
+    let sql = Profile::load("sql").unwrap();
+    assert!(sql.lens("correctness").is_none() && sql.lens("negative-space").is_none());
 }

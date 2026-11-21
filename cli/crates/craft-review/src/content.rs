@@ -28,6 +28,8 @@ pub enum ContentError {
     UnknownFile(String),
     #[error("content file {0} is not JSON: {1}")]
     NotJson(String, String),
+    #[error("profile {0}: {1}")]
+    BadProfile(String, String),
 }
 
 /// `(name, ...)` pairs as [`Vars`].
@@ -162,11 +164,8 @@ const FILES: &[(&str, &str)] = content_files![
     "prompts/lens-briefs/rust-api-boundary.md",
     "prompts/lens-briefs/rust-reconciler.md",
     "prompts/lens-briefs/rust-failure-windows.md",
-    "prompts/lens-briefs/rust-compat.md",
     "prompts/lens-briefs/rust-maintainability.md",
-    "prompts/lens-briefs/rust-tests.md",
     "prompts/lens-briefs/rust-intent.md",
-    "prompts/lens-briefs/rust-invariants.md",
     "prompts/lens-briefs/rust-negative-space.md",
     "prompts/lens-briefs/nix-purity.md",
     "prompts/lens-briefs/nix-reproducibility.md",
@@ -185,6 +184,12 @@ const FILES: &[(&str, &str)] = content_files![
     "prompts/lens-briefs/general-concurrency.md",
     "prompts/lens-briefs/general-errors.md",
     "prompts/lens-briefs/general-performance.md",
+    "prompts/lens-briefs/general-intent.md",
+    "prompts/lens-briefs/general-tests.md",
+    "prompts/lens-briefs/general-maintainability.md",
+    "prompts/lens-briefs/general-compat.md",
+    "prompts/lens-briefs/general-invariants.md",
+    "prompts/lens-briefs/general-negative-space.md",
     "prompts/review-rules.md",
     "prompts/dependency-source.md",
     "prompts/verify.md",
