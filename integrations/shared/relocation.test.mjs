@@ -124,4 +124,6 @@ test('a tracked JavaScript file outside integrations fails the boundary assertio
   fs.writeFileSync(path.join(root, 'outside.js'), '')
   execFileSync('git', ['add', 'outside.js'], { cwd: root })
   assert.equal(boundary([], {}, root).exitCode, 1)
+  fs.rmSync(path.join(root, 'outside.js'))
+  assert.equal(boundary([], {}, root).exitCode, 1, 'a missing working file is still tracked until its deletion is staged')
 })

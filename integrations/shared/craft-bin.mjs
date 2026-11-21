@@ -83,9 +83,9 @@ function flags(rest) {
 
 /**
  * The plugin manifests that may hold this plugin's version, first readable wins. The copy this script sits in comes
- * first: the directory above integrations/shared/ (an installed copy, integrations/shared/ a real directory), then the Claude Code delivery of the
+ * first: the root two levels above integrations/shared/ (an installed copy, integrations/shared/ a real directory), then the Claude Code delivery of the
  * checkout integrations/shared/ resolves into — a load in place (`--plugin-dir`, a local marketplace) reaches integrations/shared/ through
- * integrations/claude-code/lib, a symlink to the repository's own integrations/shared/, beside which there is no manifest. The
+ * integrations/claude-code/integrations/shared, a symlink to the repository's own integrations/shared/, beside which there is no manifest. The
  * plugin root the harness names (CLAUDE_PLUGIN_ROOT) is the last resort: inside a session with another craft
  * installed it names that copy, not the one being run.
  * @param {NodeJS.ProcessEnv} env @returns {string[]}

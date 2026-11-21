@@ -3,7 +3,7 @@
 // with npm's Arborist and scripts off, and refuses one whose package.json has a `prepare` script — the repository
 // root has one — so each release lays out a tree of its own with a package.json and no scripts
 // (integrations/shared/materialize-opencode.mjs commits it). The tree keeps the checkout's relative layout
-// (integrations/opencode/plugin/…, integrations/shared/…, skills/…), so the plugin's `../../../integrations/shared/` imports and the craft binary's
+// (integrations/opencode/plugin/…, integrations/shared/…, skills/…), so the plugin's `../../shared/` imports and the craft binary's
 // plugin_path lookups resolve in it as they do in a checkout. 1.x keeps install.sh (#497, #498).
 import fs from 'node:fs'
 import path from 'node:path'
