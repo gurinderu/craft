@@ -101,11 +101,10 @@ pub fn tasks(
     let prior = prompts::prior_found_summary(&rounds.pool);
     let pathspec = ctx.pathspec(profile, files);
     let mut out = Vec::new();
-    // A metrics lens reads numbers another round would not change: it runs in the first only.
-    let lenses = plan
-        .lenses
-        .iter()
-        .filter(|l| rounds.round <= 1 || !profile.lens(l).is_some_and(|x| x.metrics));
+    // A metrics lens reads numbers another round would not change, and the design lens decisions
+    // another round would not change (realm @nick/craft, node #534): each runs in the first only.
+    let once = |l: &str| l == crate::design::LENS || profile.lens(l).is_some_and(|x| x.metrics);
+    let lenses = plan.lenses.iter().filter(|l| rounds.round <= 1 || !once(l));
     for lens in lenses {
         let at = LensIn {
             profile,

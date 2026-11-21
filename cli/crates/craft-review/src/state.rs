@@ -259,6 +259,10 @@ pub struct Track {
     /// `sql-queries` lens when its profile holds one.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub embedded_sql: bool,
+    /// Its part of the change adds a module, a crate, a public type or a format
+    /// ([`crate::design`]), so its plan takes the `design` lens when its profile holds one.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub design: bool,
 }
 
 impl Track {
@@ -271,6 +275,7 @@ impl Track {
             rounds: 0,
             dry: false,
             embedded_sql: false,
+            design: false,
         }
     }
 

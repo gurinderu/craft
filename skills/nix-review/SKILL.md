@@ -34,8 +34,8 @@ other doubt sign it carries — unless its line is marked `not confirmed`: then 
 (verify it before fixing), and with `comment` it is also listed under Doubtful, the record named first.
 
 With `comment` the workflow posts only defects on the PR; a doubtful finding (not confirmed, raised by
-the compat, intent or api-boundary lens, about rollback, rollout, old replicas, migration or a breaking
-change, or outside the changed lines) is listed under **Doubtful — for the reviewer, not posted** and
+the compat, intent or api-boundary lens, a design question naming no harm, about rollback, rollout,
+old replicas, migration or a breaking change, or outside the changed lines) is listed under **Doubtful — for the reviewer, not posted** and
 waits for the human: show him that list, and act on his choice for each — ask the author, post as a
 defect, or do not post — as `craft:addressing-findings` says (its doubtful findings section).
 

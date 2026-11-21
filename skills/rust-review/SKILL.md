@@ -25,8 +25,8 @@ other doubt sign it carries — unless its line is marked `not confirmed`: then 
 (verify it before fixing), and with `comment` it is also listed under Doubtful, the record named first.
 
 With `comment` the workflow posts only defects on the PR; a doubtful finding (not confirmed, raised by
-the compat, intent or api-boundary lens, about rollback, rollout, old replicas, migration or a breaking
-change, or outside the changed lines) is listed under **Doubtful — for the reviewer, not posted** and
+the compat, intent or api-boundary lens, a design question naming no harm, about rollback, rollout,
+old replicas, migration or a breaking change, or outside the changed lines) is listed under **Doubtful — for the reviewer, not posted** and
 waits for the human: show him that list, and act on his choice for each — ask the author, post as a
 defect, or do not post — as `craft:addressing-findings` says (its doubtful findings section).
 
@@ -248,6 +248,7 @@ others (higher recall than one broad pass):
 | maintainability | structural simplification (code judo), file-size growth, spaghetti branching, needless optionality/casts | `refactoring`, `rust-idioms` |
 | tests | test *quality* not just presence; missing regression/error-path tests | `rust-testing` |
 | intent | does the change do what the brief/spec says? | `specs` |
+| design | the decisions the change makes — a new abstraction, source of truth, module or crate boundary, format, dependency direction, storage or engine — each critiqued for its alternatives, a second implementation, the accepted architecture and the next change; seeded with the crate graph's new edges and the dev-dependency cycles they close; runs by itself when the diff adds a module, crate, public type or format, else on `optional=design`, in the first round only (a general lens; not yet observed live) | `rust-architecture` |
 
 The workflow runs additional context-dependent lenses the scout selects — `reconciler` (controller
 correctness; reads the language-agnostic `distributed-races` catalogue) and `negative-space` (breakage the diff enables in unchanged code); the Rust profile,
@@ -265,7 +266,9 @@ on the measured run they returned no High findings at all while producing the bu
 Low/Info volume: `api-idioms` (typed errors, giant fns, wildcard match, missing docs,
 `#![deny(warnings)]` — `rust-idioms`) and `api-boundary` (error→HTTP-status mapping, OpenAPI
 completeness — `rust-web`). Their findings are real and worth having, so they are not deleted; they
-are bought deliberately with `optional=true` (or a subset: `optional=api-idioms`). `performance`
+are bought deliberately with `optional=true` (or a subset: `optional=api-idioms`). The general
+profile's `design` lens is optional too, and joins without a request when the diff adds a module, a
+crate, a public type or a format. `performance`
 was in this pass and now runs in every Rust review (not yet observed live), scoped to needless
 allocation at LOW. Neither `strict` nor the security-sensitive floor turns the pass on or off —
 the request is the only switch. A run that

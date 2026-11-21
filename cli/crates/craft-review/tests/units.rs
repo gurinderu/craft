@@ -128,6 +128,7 @@ fn a_two_crate_change_is_sliced_judged_by_contract_and_seam_and_its_questions_de
             "lens-rust-performance-r1-s1",
             "lens-rust-tests-r1-s0",
             "lens-rust-tests-r1-s1",
+            "lens-rust-design-r1",
             "lens-rust-contract-r1-u0",
             "lens-rust-contract-r1-u1",
         ]
@@ -200,29 +201,31 @@ fn a_two_crate_change_is_sliced_judged_by_contract_and_seam_and_its_questions_de
 
 #[test]
 fn a_change_unit_mode_cannot_slice_runs_in_the_normal_mode_with_its_warning() {
-    for (repo, why) in [
+    // The workspace's crates are new, so the design lens joins; the fixture edits an old file.
+    for (repo, why, design) in [
         (
             workspace(3, 5),
             "Unit mode skipped, change too small to slice: 6 files — the review ran in the normal mode.",
+            true,
         ),
         (
             common::fixture(true),
             "Unit mode found no crate in the Rust change — the review ran in the normal mode.",
+            false,
         ),
     ] {
         let out = tempfile::tempdir().unwrap();
         let run = out.path().join("run");
         step::start(&unit_opts(repo.path(), out.path())).unwrap();
         let s = submit(&run, json!({"scout-rust": scout("small", &["errors"])}));
-        assert_eq!(
-            ids(&s),
-            [
-                "lens-rust-errors-r1",
-                "lens-rust-intent-r1",
-                "lens-rust-performance-r1",
-                "lens-rust-tests-r1"
-            ]
-        );
+        let mut want = vec![
+            "lens-rust-errors-r1",
+            "lens-rust-intent-r1",
+            "lens-rust-performance-r1",
+            "lens-rust-tests-r1",
+        ];
+        want.extend(design.then_some("lens-rust-design-r1"));
+        assert_eq!(ids(&s), want);
         let mut s = submit(&run, answer_all(&s, &Map::new()));
         while s["done"] == json!(false) {
             s = submit(&run, answer_all(&s, &Map::new()));
@@ -249,7 +252,8 @@ fn without_the_flag_a_large_change_is_cut_by_directory_and_a_small_one_not_at_al
             "lens-rust-errors-r1",
             "lens-rust-intent-r1",
             "lens-rust-performance-r1",
-            "lens-rust-tests-r1"
+            "lens-rust-tests-r1",
+            "lens-rust-design-r1"
         ]
     );
     let repo = workspace(7, 120);
@@ -268,7 +272,8 @@ fn without_the_flag_a_large_change_is_cut_by_directory_and_a_small_one_not_at_al
             "lens-rust-performance-r1-s0",
             "lens-rust-performance-r1-s1",
             "lens-rust-tests-r1-s0",
-            "lens-rust-tests-r1-s1"
+            "lens-rust-tests-r1-s1",
+            "lens-rust-design-r1"
         ]
     );
     let sliced = prompt_of(task(&s, "lens-rust-errors-r1-s1"));
