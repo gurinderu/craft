@@ -24,7 +24,7 @@ export const meta = {
     { title: 'Scout', detail: 'detect the diff base, unsafe code, and the workspace crates + dependency edges', model: 'haiku' },
     { title: 'Audit', detail: 'parallel: the mechanical gate once (review gateOnly), then per-crate CLI review taking it (gateFrom; none on a red gate) + per-edge contracts + architecture + crate-decomposition + security + Miri + semver/build-matrix/deps/unused-crates/tests-cov' },
     { title: 'Verify', detail: 'adversarially verify unused-crate candidates before reporting', model: 'opus' },
-    { title: 'Synthesize', detail: 'merge every dimension into one severity-ranked report', model: 'sonnet' },
+    { title: 'Synthesize', detail: 'merge every dimension into one severity-ranked report', model: 'opus' },
   ],
 }
 
@@ -852,7 +852,7 @@ NO EVIDENCE (agent claimed a green but showed no work, so its verdict is not tru
 RESULTS:
 ${JSON.stringify(stripped, null, 2)}`,
   // Synthesis is merge/dedup/rank of given verdicts — moderate reasoning, not a deep judgement call.
-  { label: 'synthesis', model: 'sonnet', effort: 'medium' },
+  { label: 'synthesis', model: 'opus', effort: 'medium' },
 )
 
 const uc = results.find(r => r.dimension === 'unused-crates')
