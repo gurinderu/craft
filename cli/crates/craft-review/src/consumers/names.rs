@@ -8,9 +8,12 @@ use std::time::{Duration, Instant};
 
 use crate::cancel::Cancel;
 
+mod paths;
 mod stream;
+mod structural;
 
 use stream::{Ended, stream};
+pub(super) use structural::by_path;
 
 /// Names too common for a whole-word search to tell one symbol's uses from another's.
 const COMMON: [&str; 40] = [
@@ -80,6 +83,11 @@ pub(super) struct Hit {
     pub text: String,
 }
 
+/// Why a name search stopped: more lines name it than [`HITS_MAX`].
+pub(super) fn capped() -> String {
+    format!("over {HITS_MAX} lines")
+}
+
 /// Why a name is not searched: a common one, or too short to tell apart.
 pub(super) fn skip(name: &str) -> bool {
     name.len() < 3 || COMMON.contains(&name)
@@ -112,7 +120,7 @@ pub(super) fn search(
         ])
         .args(EXCLUDE);
     match stream(cmd, deadline, cancel)? {
-        Ended::Capped => Err(format!("over {HITS_MAX} lines")),
+        Ended::Capped => Err(capped()),
         Ended::Exited(Some(0), hits, _) => Ok(hits),
         Ended::Exited(Some(1), ..) => Ok(Vec::new()),
         Ended::Exited(_, _, err) => Err(format!("git grep failed: {}", err.trim())),
