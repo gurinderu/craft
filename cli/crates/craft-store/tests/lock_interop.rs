@@ -110,6 +110,85 @@ fn a_process_killed_while_holding_the_lock_does_not_block_recovery() {
     with_index_lock(dir.path(), || Ok(())).unwrap();
 }
 
+#[cfg(unix)]
+#[test]
+fn stopped_owner_excludes_both_writers_until_killed() {
+    use nix::{
+        sys::signal::{Signal, kill},
+        unistd::Pid,
+    };
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let dir = tempfile::tempdir().unwrap();
+    let mut js = javascript(dir.path(), &JS.replace("200);", "60000);"));
+    let pid = Pid::from_raw(i32::try_from(js.0.id()).unwrap());
+    kill(pid, Signal::SIGSTOP).unwrap();
+    let module = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../lib/index-lock.mjs")
+        .canonicalize()
+        .unwrap();
+    let refused = Command::new("node").args(["--input-type=module", "-e", r"
+      import {pathToFileURL} from 'node:url';
+      const {withIndexLock}=await import(pathToFileURL(process.env.MODULE));
+      try { withIndexLock(process.env.STORE,()=>process.exit(7),{timeoutMs:100,waitMs:2});process.exit(8); }
+      catch(e) { if(!e.message.includes('deadline')) throw e; }
+    "]).env("MODULE",module).env("STORE",dir.path()).status().unwrap();
+    assert!(refused.success());
+    let killed = AtomicBool::new(false);
+    std::thread::scope(|scope| {
+        scope.spawn(|| {
+            std::thread::sleep(Duration::from_millis(150));
+            killed.store(true, Ordering::SeqCst);
+            kill(pid, Signal::SIGKILL).unwrap();
+            js.0.wait().unwrap();
+        });
+        with_index_lock(dir.path(), || {
+            assert!(killed.load(Ordering::SeqCst));
+            Ok(())
+        })
+        .unwrap();
+    });
+}
+
+#[test]
+fn a_killed_writer_ticket_must_not_revive_when_its_pid_is_reassigned() {
+    let dir = tempfile::tempdir().unwrap();
+    let body = JS.replace("200);", "60000);");
+    let mut js = distinct_javascript(dir.path(), &body);
+    let root = dir.path().join(".index-writers");
+    let original = std::fs::read_dir(&root)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+        .find(|name| name.starts_with(&format!("{}-", js.0.id())))
+        .unwrap();
+    js.0.kill().unwrap();
+    js.0.wait().unwrap();
+    // Real death, simulated PID reuse: retain every other byte of the owner's identity.
+    let (_, identity) = original.split_once('-').unwrap();
+    let reused = format!("{}-{identity}", std::process::id());
+    std::fs::rename(root.join(original), root.join(&reused)).unwrap();
+    std::fs::remove_file(dir.path().join(LOCK)).unwrap();
+    with_index_lock(dir.path(), || Ok(())).unwrap();
+    assert!(root.join(reused).exists());
+}
+
+#[expect(
+    clippy::panic,
+    reason = "bounded test fixture exhaustion must fail, not skip"
+)]
+fn distinct_javascript(store: &Path, body: &str) -> Worker {
+    let own = craft_store::process_identity::query(std::process::id()).unwrap();
+    for _ in 0..10 {
+        let mut child = javascript(store, body);
+        if craft_store::process_identity::query(child.0.id()).unwrap() != own {
+            return child;
+        }
+        child.0.kill().unwrap();
+        child.0.wait().unwrap();
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    panic!("could not construct distinct starttime tokens after ten child processes");
+}
+
 #[test]
 fn three_rust_contenders_do_not_overlap_while_the_legacy_lock_looks_stale() {
     use std::sync::{

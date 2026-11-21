@@ -10,9 +10,8 @@ use std::time::{Duration, Instant, SystemTime};
 
 use crate::StoreError;
 
+mod ticket;
 mod turn;
-#[cfg(windows)]
-mod windows;
 
 /// The protocol both writers hold to (`content/parity/lock-protocol.json`, `lib/index-lock.mjs`).
 pub const LOCK: &str = "index.jsonl.lock";
@@ -88,11 +87,20 @@ fn under_legacy_lock<T>(
     deadline: Instant,
     f: impl FnOnce() -> Result<T, StoreError>,
 ) -> Result<T, StoreError> {
+    under_legacy_lock_using(store, deadline, f, create)
+}
+
+fn under_legacy_lock_using<T>(
+    store: &Path,
+    deadline: Instant,
+    f: impl FnOnce() -> Result<T, StoreError>,
+    mut create_lock: impl FnMut(&Path, &str) -> std::io::Result<bool>,
+) -> Result<T, StoreError> {
     std::fs::create_dir_all(store).map_err(|e| StoreError::io(store, &e))?;
     let lock = store.join(LOCK);
     let token = token();
     let mut why = "held by another writer".to_owned();
-    while !create(&lock, &token).map_err(|e| StoreError::io(&lock, &e))? {
+    while !create_lock(&lock, &token).map_err(|e| StoreError::io(&lock, &e))? {
         let gone = match take_over(&lock, &token) {
             Ok(gone) => gone,
             Err(e) => {
@@ -111,6 +119,7 @@ fn under_legacy_lock<T>(
         }
     }
     let _held = Held { lock, token };
+    turn::budget(deadline).map_err(|e| StoreError::io(store, &e))?;
     f()
 }
 
@@ -160,6 +169,48 @@ fn append_using(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn late_successful_create_cleans_own_lock_without_entering() {
+        let d = tempfile::tempdir().unwrap();
+        let deadline = Instant::now() + Duration::from_millis(20);
+        let result = under_legacy_lock_using(
+            d.path(),
+            deadline,
+            || -> Result<(), StoreError> { panic!("entered after deadline") },
+            |path, token| {
+                let created = create(path, token)?;
+                std::thread::sleep(deadline.saturating_duration_since(Instant::now()));
+                Ok(created)
+            },
+        );
+        assert!(result.unwrap_err().to_string().contains("deadline"));
+        assert!(!d.path().join(LOCK).exists());
+    }
+
+    #[test]
+    fn zero_or_expired_preparation_budget_refuses_and_retains_foreign_lock() {
+        let d = tempfile::tempdir().unwrap();
+        for deadline in [
+            Instant::now(),
+            Instant::now()
+                .checked_sub(Duration::from_millis(1))
+                .unwrap(),
+        ] {
+            let result = under_legacy_lock(d.path(), deadline, || -> Result<(), StoreError> {
+                panic!("entered")
+            });
+            assert!(result.is_err());
+            assert!(!d.path().join(LOCK).exists());
+            std::fs::write(d.path().join(LOCK), "foreign").unwrap();
+            assert!(under_legacy_lock(d.path(), deadline, || Ok(())).is_err());
+            assert_eq!(
+                std::fs::read_to_string(d.path().join(LOCK)).unwrap(),
+                "foreign"
+            );
+            std::fs::remove_file(d.path().join(LOCK)).unwrap();
+        }
+    }
 
     #[test]
     fn appending_to_an_unterminated_row_keeps_both_rows() {

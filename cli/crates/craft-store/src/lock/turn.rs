@@ -5,30 +5,20 @@ use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
+use super::ticket;
 use crate::StoreError;
 
 pub(super) const TURNS: &str = ".index-writers";
 const MAX_NUMBER: u64 = 9_007_199_254_740_991;
 
-fn alive(name: &str) -> std::io::Result<bool> {
-    let pid = name.split('-').next().and_then(|p| p.parse::<i32>().ok());
-    let Some(pid) = pid.filter(|p| *p > 0) else {
+pub(super) fn budget(deadline: Instant) -> std::io::Result<()> {
+    if Instant::now() >= deadline {
         return Err(Error::new(
-            ErrorKind::InvalidData,
-            "invalid index writer ticket",
+            ErrorKind::TimedOut,
+            "index.jsonl stays locked: waiting for writer (admission deadline)",
         ));
-    };
-    #[cfg(unix)]
-    {
-        Ok(
-            nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None)
-                != Err(nix::errno::Errno::ESRCH),
-        )
     }
-    #[cfg(windows)]
-    {
-        Ok(super::windows::alive(pid.unsigned_abs()))
-    }
+    Ok(())
 }
 
 fn number(root: &Path, name: &str) -> std::io::Result<Option<u64>> {
@@ -44,7 +34,13 @@ fn number(root: &Path, name: &str) -> std::io::Result<Option<u64>> {
     }
 }
 
-fn peers(root: &Path, own: &str) -> std::io::Result<Vec<String>> {
+fn peers(
+    root: &Path,
+    own: &str,
+    identity: &str,
+    deadline: Instant,
+) -> std::io::Result<Vec<String>> {
+    budget(deadline)?;
     let mut found = Vec::new();
     for entry in std::fs::read_dir(root)? {
         let name = entry?.file_name().into_string().map_err(|name| {
@@ -53,15 +49,24 @@ fn peers(root: &Path, own: &str) -> std::io::Result<Vec<String>> {
                 format!("invalid index writer name: {}", name.display()),
             )
         })?;
-        if name != own && alive(&name)? {
+        budget(deadline)?;
+        if name != own && ticket::alive(&name, identity)? {
             found.push(name);
         }
     }
     Ok(found)
 }
 
-fn ahead(root: &Path, peer: &str, own: &str, ticket: u64) -> std::io::Result<bool> {
-    if !root.join(peer).try_exists()? || !alive(peer)? {
+fn ahead(
+    root: &Path,
+    peer: &str,
+    own: &str,
+    ticket: u64,
+    identity: &str,
+    deadline: Instant,
+) -> std::io::Result<bool> {
+    budget(deadline)?;
+    if !root.join(peer).try_exists()? || !ticket::alive(peer, identity)? {
         return Ok(false);
     }
     Ok(number(root, peer)?.is_none_or(|n| n < ticket || (n == ticket && peer < own)))
@@ -74,9 +79,10 @@ impl Drop for Ticket {
     }
 }
 
-fn publish(root: &Path, own: &str) -> std::io::Result<u64> {
+fn publish(root: &Path, own: &str, identity: &str, deadline: Instant) -> std::io::Result<u64> {
     let mut maximum = 0;
-    for peer in peers(root, own)? {
+    for peer in peers(root, own, identity, deadline)? {
+        budget(deadline)?;
         maximum = maximum.max(number(root, &peer)?.unwrap_or(0));
     }
     let ticket = maximum + 1;
@@ -96,22 +102,24 @@ pub(super) fn with_turn<T>(
 ) -> Result<T, StoreError> {
     let root = store.join(TURNS);
     let io = |e: Error| StoreError::io(&root, &e);
+    budget(deadline).map_err(io)?;
+    let identity = crate::process_identity::query(std::process::id())
+        .map_err(io)?
+        .ok_or_else(|| StoreError::Locked("could not establish own process identity".into()))?;
+    budget(deadline).map_err(io)?;
     std::fs::create_dir_all(&root).map_err(io)?;
-    let own = super::token();
+    let own = ticket::name(&identity).map_err(io)?;
     let dir = root.join(&own);
     std::fs::create_dir(&dir).map_err(io)?;
     let _ticket = Ticket(dir);
-    let ticket = publish(&root, &own).map_err(io)?;
-    for peer in peers(&root, &own).map_err(io)? {
-        while ahead(&root, &peer, &own, ticket).map_err(io)? {
-            if Instant::now() >= deadline {
-                return Err(StoreError::Locked(format!(
-                    "index.jsonl stays locked: waiting for writer {peer}"
-                )));
-            }
-            std::thread::sleep(super::WAIT);
+    let ticket = publish(&root, &own, &identity, deadline).map_err(io)?;
+    for peer in peers(&root, &own, &identity, deadline).map_err(io)? {
+        while ahead(&root, &peer, &own, ticket, &identity, deadline).map_err(io)? {
+            budget(deadline).map_err(io)?;
+            std::thread::sleep(super::WAIT.min(deadline.saturating_duration_since(Instant::now())));
         }
     }
+    budget(deadline).map_err(io)?;
     f()
 }
 
@@ -121,10 +129,29 @@ mod tests {
     use std::time::Duration;
 
     #[test]
+    fn no_budget_refuses_without_an_announcement() {
+        let d = tempfile::tempdir().unwrap();
+        assert!(
+            with_turn(d.path(), Instant::now(), || -> Result<(), StoreError> {
+                panic!("entered")
+            })
+            .is_err()
+        );
+        assert!(!d.path().join(TURNS).exists());
+    }
+
+    #[test]
     fn a_live_chooser_blocks_and_an_expired_wait_leaves_its_ticket_alone() {
         let d = tempfile::tempdir().unwrap();
         let root = d.path().join(TURNS);
-        let peer = root.join(format!("{}-choosing", std::process::id()));
+        let peer = root.join(
+            ticket::name(
+                &crate::process_identity::query(std::process::id())
+                    .unwrap()
+                    .unwrap(),
+            )
+            .unwrap(),
+        );
         std::fs::create_dir_all(&peer).unwrap();
         let result = with_turn(
             d.path(),
@@ -145,10 +172,14 @@ mod tests {
     #[test]
     fn invalid_and_exhausted_tickets_refuse_admission() {
         let d = tempfile::tempdir().unwrap();
-        let peer = d
-            .path()
-            .join(TURNS)
-            .join(format!("{}-peer", std::process::id()));
+        let peer = d.path().join(TURNS).join(
+            ticket::name(
+                &crate::process_identity::query(std::process::id())
+                    .unwrap()
+                    .unwrap(),
+            )
+            .unwrap(),
+        );
         std::fs::create_dir_all(&peer).unwrap();
         for text in ["broken", "0", "9007199254740992", "9007199254740991"] {
             std::fs::write(peer.join("number"), text).unwrap();
