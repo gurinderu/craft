@@ -59,17 +59,20 @@ fn the_critic_admits_a_lens_and_its_finding_is_verified() {
     let p = prompt_of(&s["tasks"][0]);
     assert!(p.contains("Confirmed: 1, Suspected: 0."), "{p}");
     assert!(
-        p.contains(r#"choose ONLY from: ["correctness","security","money","concurrency""#),
+        p.contains(r#"choose ONLY from: ["money","maintainability","sql-queries""#),
         "{p}"
     );
 
     let s = submit(
         &run,
-        json!({"critic-rust": {"missingLenses": ["safety", "api-idioms"], "notes": "the panic path of f is untested"}}),
+        json!({"critic-rust": {"missingLenses": ["maintainability", "api-idioms"], "notes": "the panic path of f is untested"}}),
     );
-    assert_eq!(ids(&s), ["critic-lens-rust-safety"]);
+    assert_eq!(ids(&s), ["critic-lens-rust-maintainability"]);
     let p = prompt_of(&s["tasks"][0]);
-    assert!(p.contains("You are the **safety** review lens"), "{p}");
+    assert!(
+        p.contains("You are the **maintainability** review lens"),
+        "{p}"
+    );
     assert!(
         p.contains("Earlier lenses already produced 1 findings"),
         "{p}"
@@ -81,7 +84,7 @@ fn the_critic_admits_a_lens_and_its_finding_is_verified() {
     ];
     let s = submit(
         &run,
-        json!({"critic-lens-rust-safety": lens("safety", &found)}),
+        json!({"critic-lens-rust-maintainability": lens("maintainability", &found)}),
     );
     assert_eq!(
         ids(&s),
@@ -93,10 +96,10 @@ fn the_critic_admits_a_lens_and_its_finding_is_verified() {
     let r = report(&s);
     for want in [
         "`src/lib.rs:1` — f returns 1 (errors)",
-        "`src/lib.rs:1` — unsafe read past the end (safety)",
+        "`src/lib.rs:1` — unsafe read past the end (maintainability)",
         "## Coverage gaps\n\nthe panic path of f is untested",
         "the completeness critic named the optional lens api-idioms",
-        "completeness critic → follow-up lenses: rust:safety",
+        "completeness critic → follow-up lenses: rust:maintainability",
         "2 finding(s) reported: 2 confirmed",
     ] {
         assert!(r.contains(want), "{want}: {r}");
@@ -131,12 +134,12 @@ fn a_limit_stop_in_the_critics_verification_keeps_the_first_passs_findings() {
     to_critic(&run);
     submit(
         &run,
-        json!({"critic-rust": {"missingLenses": ["safety"], "notes": "n"}}),
+        json!({"critic-rust": {"missingLenses": ["maintainability"], "notes": "n"}}),
     );
     let found = [titled("High", 2, "unsafe read past the end")];
     let s = submit(
         &run,
-        json!({"critic-lens-rust-safety": lens("safety", &found)}),
+        json!({"critic-lens-rust-maintainability": lens("maintainability", &found)}),
     );
     assert_eq!(ids(&s), ["critic-verify-0-v0", "critic-verify-0-v3"]);
     let said = Said {

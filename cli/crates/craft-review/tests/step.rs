@@ -340,8 +340,8 @@ fn a_scout_that_never_answers_runs_the_conservative_plan_and_says_so() {
     let lenses = ids(&s);
     assert_eq!(
         lenses.len(),
-        14,
-        "the security floor's roster less complexity, which has no index, and negative-space: {lenses:?}"
+        11,
+        "the security floor, the always set, tests and negative-space: {lenses:?}"
     );
     let ns = s["tasks"]
         .as_array()
@@ -496,17 +496,26 @@ fn a_light_pass_runs_one_round_of_the_scoped_lenses() {
             "lens-rust-errors-r1",
             "lens-rust-intent-r1",
             "lens-rust-performance-r1",
-            "lens-rust-tests-r1"
-        ]
+            "lens-rust-tests-r1",
+            "lens-rust-correctness-r1",
+            "lens-rust-security-r1",
+            "lens-rust-concurrency-r1",
+            "lens-rust-safety-r1"
+        ],
+        "the security floor's diff-scoped lenses too, a large plan"
     );
     let st = status::status(&run).unwrap();
     assert_eq!(
         st["profiles"][0]["plan"]["lightSkipped"],
-        json!(["invariants", "negative-space", "compat"])
+        json!(["invariants", "compat", "negative-space"])
     );
     assert_eq!(st["profiles"][0]["plan"]["maxRounds"], json!(1));
     let low = titled("Low", 2, "naming");
-    let s = submit(&run, round1(&[low]));
+    let mut answers = round1(&[low]);
+    for l in ["correctness", "security", "concurrency", "safety"] {
+        answers[format!("lens-rust-{l}-r1")] = lens(l, &[]);
+    }
+    let s = submit(&run, answers);
     assert_eq!(
         s["verdict"],
         json!("Warning"),
@@ -516,7 +525,7 @@ fn a_light_pass_runs_one_round_of_the_scoped_lenses() {
     for want in [
         "## Verdict\n\nWarning — a light round (depth=light) never approves: Approve comes only from a full round (the whole diff, `depth=full`) · light pass (depth=light) -- see \"Light pass\" below for what it skipped",
         "(NOT VERIFIED: light pass: only Medium and above are verified, so no verifier was spent on this Low finding and nothing here has been checked against the code)",
-        "## Light pass -- what it skipped\n⚠️ This was a LIGHT pass (depth=light), not a full review, and its verdict covers only what it ran: the whole-diff lenses invariants, negative-space, compat were NOT dispatched (it DID run intent, which the diff called for);",
+        "## Light pass -- what it skipped\n⚠️ This was a LIGHT pass (depth=light), not a full review, and its verdict covers only what it ran: the whole-diff lenses invariants, compat, negative-space were NOT dispatched (it DID run intent, which the diff called for);",
     ] {
         assert!(report.contains(want), "{want}: {report}");
     }

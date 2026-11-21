@@ -99,6 +99,16 @@ fn blanket(p: &Profile, optional: &[String]) -> Vec<String> {
         .collect()
 }
 
+/// The security floor's lenses of the roster, as a blanket fill takes them: the profile's
+/// `securityFloor` ids (realm @nick/craft, node #552).
+fn security_floor(p: &Profile, optional: &[String]) -> Vec<String> {
+    let floor = &p.security_floor;
+    blanket(p, optional)
+        .into_iter()
+        .filter(|l| floor.contains(l))
+        .collect()
+}
+
 fn scout_str<'a>(scout: Option<&'a Value>, k: &str) -> Option<&'a str> {
     scout.and_then(|s| s.get(k)).and_then(Value::as_str)
 }
@@ -174,7 +184,7 @@ pub fn plan(input: PlanInput<'_>) -> Plan {
         push_missing(&mut lenses, l);
     }
     if lenses.is_empty() {
-        lenses = blanket(p, input.optional);
+        lenses = security_floor(p, input.optional);
     }
     let mut plan = Plan {
         size_bucket: size.to_owned(),
@@ -247,17 +257,19 @@ fn required(
     }
 }
 
-/// The security floor, negative-space where new surface appears (on a profile that has the lens),
-/// and compat on large diffs and contract paths.
+/// The security floor on a security-sensitive or large plan, negative-space where new surface
+/// appears (on a profile that has the lens), and compat on large diffs and contract paths.
 fn floors(p: &Profile, files: &[String], optional: &[String], plan: &mut Plan) {
-    if plan.security_sensitive {
-        for l in blanket(p, optional) {
+    let large = plan.size_bucket == "large";
+    if plan.security_sensitive || large {
+        for l in security_floor(p, optional) {
             push_missing(&mut plan.lenses, &l);
         }
+    }
+    if plan.security_sensitive {
         plan.verify_votes = plan.verify_votes.max(3);
         plan.max_rounds = plan.max_rounds.max(2);
     }
-    let large = plan.size_bucket == "large";
     if (plan.security_sensitive || large) && p.lens("negative-space").is_some() {
         push_missing(&mut plan.lenses, "negative-space");
     }

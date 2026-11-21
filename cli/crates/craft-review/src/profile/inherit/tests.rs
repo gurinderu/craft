@@ -15,7 +15,7 @@ fn base(id: &str) -> Value {
         "id": id, "lang": "source", "detect": {"suffixes": [], "names": [], "rest": true},
         "diffGlobs": [], "rubricSkill": "review-rules", "fpRules": "", "ruleCatalog": false,
         "navSkill": "", "securityHints": "input", "usesLibrary": false,
-        "alwaysLenses": ["a"], "safetyLens": "b", "scoutRules": "scout-rules-general",
+        "alwaysLenses": ["a"], "safetyLens": "b", "securityFloor": ["b", "c"], "scoutRules": "scout-rules-general",
         "scoutModel": "haiku", "dedupModel": "haiku", "rollupRuleIds": [],
         "negativeSpace": {"newSurface": "fn", "shapeUses": "calls"},
         "lenses": [lens("a", "base-a"), lens("b", "base-b"), lens("c", "base-c")],
@@ -67,7 +67,7 @@ fn the_lenses_are_the_bases_minus_excluded_each_own_replacing_in_place_or_append
     let x = child(
         "x",
         &json!({
-            "exclude": ["b"], "safetyLens": "c",
+            "exclude": ["b"], "safetyLens": "c", "securityFloor": ["c"],
             "lenses": [lens("d", "x-d"), lens("a", "x-a")]
         }),
     );
@@ -144,7 +144,7 @@ fn a_chain_resolves_root_first() {
     );
     let leaf = json!({
         "id": "leaf", "lang": "Leaf", "extends": "mid", "detect": {"suffixes": [], "names": []},
-        "exclude": ["c"], "lenses": [lens("m", "leaf-m")]
+        "exclude": ["c"], "securityFloor": ["b"], "lenses": [lens("m", "leaf-m")]
     });
     let p = load("leaf", &[&general, &mid, &leaf]).unwrap();
     assert_eq!(p.roster(), ["a", "b", "m"]);
@@ -240,4 +240,22 @@ fn a_required_lens_the_merged_roster_lacks_is_refused() {
         let why = refused("x", &[&general, &x]);
         assert!(why.contains(named), "{why}");
     }
+}
+
+#[test]
+fn the_security_floor_is_inherited_overridable_and_in_the_roster() {
+    let general = base("general");
+    let x = child("x", &json!({}));
+    assert_eq!(
+        load("x", &[&general, &x]).unwrap().security_floor,
+        ["b", "c"]
+    );
+    let y = child("y", &json!({"securityFloor": ["a"]}));
+    assert_eq!(load("y", &[&general, &y]).unwrap().security_floor, ["a"]);
+    let z = child("z", &json!({"exclude": ["c"]}));
+    let why = refused("z", &[&general, &z]);
+    assert!(
+        why.contains("securityFloor") && why.contains("\"c\""),
+        "{why}"
+    );
 }

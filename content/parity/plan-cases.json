@@ -86,17 +86,14 @@
         "lenses": [
           "correctness",
           "security",
-          "money",
           "concurrency",
           "errors",
-          "performance",
-          "intent",
-          "tests",
-          "maintainability",
           "compat",
           "invariants",
           "safety",
-          "reconciler",
+          "intent",
+          "performance",
+          "tests",
           "negative-space"
         ],
         "maxRounds": 2,
@@ -112,7 +109,7 @@
       }
     },
     {
-      "name": "security-sensitive floors the roster, votes and rounds",
+      "name": "security-sensitive floors the security lenses, votes and rounds",
       "changedFiles": [
         "src/lib.rs"
       ],
@@ -137,13 +134,10 @@
           "tests",
           "correctness",
           "security",
-          "money",
           "concurrency",
-          "maintainability",
           "compat",
           "invariants",
           "safety",
-          "reconciler",
           "negative-space"
         ],
         "maxRounds": 2,
@@ -159,7 +153,7 @@
       }
     },
     {
-      "name": "large adds negative-space and compat, three rounds",
+      "name": "large adds the security floor, negative-space and compat, three rounds",
       "changedFiles": [
         "src/lib.rs"
       ],
@@ -190,8 +184,10 @@
           "intent",
           "performance",
           "tests",
-          "negative-space",
-          "compat"
+          "correctness",
+          "security",
+          "compat",
+          "negative-space"
         ],
         "maxRounds": 3,
         "verifyVotes": 3,
@@ -316,7 +312,11 @@
           "errors",
           "intent",
           "performance",
-          "tests"
+          "tests",
+          "correctness",
+          "security",
+          "concurrency",
+          "safety"
         ],
         "maxRounds": 3,
         "verifyVotes": 3,
@@ -455,7 +455,10 @@
           "errors",
           "intent",
           "performance",
-          "tests"
+          "tests",
+          "correctness",
+          "security",
+          "concurrency"
         ],
         "maxRounds": 1,
         "verifyVotes": 3,
@@ -639,15 +642,9 @@
         "lenses": [
           "correctness",
           "security",
-          "intent",
-          "maintainability",
           "compat",
-          "purity",
-          "reproducibility",
           "injection",
-          "packaging",
-          "dev-env",
-          "modules",
+          "intent",
           "negative-space"
         ],
         "maxRounds": 2,
@@ -663,7 +660,7 @@
       }
     },
     {
-      "name": "nix: security-sensitive floors the roster and adds negative-space",
+      "name": "nix: security-sensitive floors the security lenses and adds negative-space",
       "profile": "nix",
       "changedFiles": [
         "modules/a.nix"
@@ -687,13 +684,8 @@
           "intent",
           "correctness",
           "security",
-          "maintainability",
           "compat",
-          "purity",
-          "reproducibility",
           "injection",
-          "packaging",
-          "dev-env",
           "negative-space"
         ],
         "maxRounds": 2,
@@ -709,7 +701,7 @@
       }
     },
     {
-      "name": "nix: large adds negative-space and compat, three rounds",
+      "name": "nix: large adds the security floor, negative-space and compat, three rounds",
       "profile": "nix",
       "changedFiles": [
         "a.nix"
@@ -735,8 +727,11 @@
           "reproducibility",
           "packaging",
           "intent",
-          "negative-space",
-          "compat"
+          "correctness",
+          "security",
+          "compat",
+          "injection",
+          "negative-space"
         ],
         "maxRounds": 3,
         "verifyVotes": 3,
@@ -778,7 +773,10 @@
         "lenses": [
           "purity",
           "intent",
-          "compat"
+          "correctness",
+          "security",
+          "compat",
+          "injection"
         ],
         "maxRounds": 3,
         "verifyVotes": 3,
@@ -819,7 +817,10 @@
         "lenses": [
           "purity",
           "dev-env",
-          "intent"
+          "intent",
+          "correctness",
+          "security",
+          "injection"
         ],
         "maxRounds": 1,
         "verifyVotes": 3,
@@ -831,8 +832,8 @@
         "repoRules": [],
         "surfaceDropped": [],
         "lightSkipped": [
-          "negative-space",
-          "compat"
+          "compat",
+          "negative-space"
         ]
       }
     },
@@ -983,6 +984,9 @@
           "invariants",
           "correctness",
           "intent",
+          "security",
+          "concurrency",
+          "errors",
           "negative-space"
         ],
         "lightSkipped": [],
@@ -1009,15 +1013,11 @@
         "lenses": [
           "correctness",
           "security",
-          "money",
           "concurrency",
           "errors",
-          "performance",
-          "intent",
-          "tests",
-          "maintainability",
           "compat",
           "invariants",
+          "intent",
           "negative-space"
         ],
         "lightSkipped": [],

@@ -12,6 +12,7 @@
   "usesLibrary": false,
   "alwaysLenses": ["intent"],
   "safetyLens": "injection",
+  "securityFloor": ["security", "injection", "correctness", "compat"],
   "scoutRules": "scout-rules-nix",
   "scoutModel": "haiku",
   "dedupModel": "haiku",

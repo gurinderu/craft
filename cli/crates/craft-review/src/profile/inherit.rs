@@ -15,7 +15,8 @@
 //! Refused with [`ContentError::BadProfile`]: a cycle of `extends`, a base that does not exist, an
 //! `exclude` without a base or naming a lens the base lacks, a lens both excluded and declared, a
 //! replacement that moves a lens between the roster and the floors, flips `metrics` or drops the
-//! base lens's own rubric; and, once merged, an always or safety lens the roster lacks.
+//! base lens's own rubric; and, once merged, an always, safety or security-floor lens the roster
+//! lacks.
 
 use serde_json::{Map, Value};
 
@@ -221,6 +222,12 @@ pub(super) fn check(p: &Profile) -> Result<(), ContentError> {
         return Err(bad(
             &p.id,
             format!("safetyLens names {:?}, not in its lenses", p.safety_lens),
+        ));
+    }
+    if let Some(l) = p.security_floor.iter().find(|l| !p.offers(l)) {
+        return Err(bad(
+            &p.id,
+            format!("securityFloor names {l:?}, not in its lenses"),
         ));
     }
     Ok(())

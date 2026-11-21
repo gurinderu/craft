@@ -254,7 +254,10 @@ correctness; reads the language-agnostic `distributed-races` catalogue) and `neg
 `content/profiles/rust.json`, extends the general profile (`content/profiles/general.json`): its
 lenses are the general ones — the Rust brief replacing the general one where both name a lens
 (`errors`, `concurrency`, `performance`, `maintainability`, `intent`, `negative-space`) — then
-Rust's own. The two files are the authoritative lens set.
+Rust's own. The two files are the authoritative lens set. On a security-sensitive or large plan, or one the scout gave no
+pick for, the security floor adds only the profile's `securityFloor` lenses — for Rust security,
+safety, correctness, errors, concurrency, compat and invariants — beside the always set; `tests`,
+`maintainability`, `money` and `complexity` stay the scout's pick.
 
 **The optional pass — off by default.** Two lenses are not part of the standard fan-out, because
 on the measured run they returned no High findings at all while producing the bulk of the

@@ -108,7 +108,8 @@ general profiles' rosters (`content/profiles/rust.json`, `nix.json`, `sql.json`,
 profile's `sql-migrations` and `sql-queries`, the latter also held by the Rust and general profiles behind
 the embedded-SQL signal; the general lenses, complexity among them behind a code-metrics index, which
 the Rust and Nix profiles `extends`, each lens of their own replacing the general one of its id or
-added, `exclude` leaving out those that do not fit — resolved once at load by
+added, `exclude` leaving out those that do not fit, `securityFloor` naming what the security floor adds —
+resolved once at load by
 `cli/crates/craft-review/src/profile/inherit.rs`) — is data under `content/`, compiled into the Rust CLI; the
 templates an engine still renders itself (memory recall among them) are inlined into it by the build.
 

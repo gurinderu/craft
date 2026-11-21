@@ -167,7 +167,7 @@ fn plan_tracks(run: &mut RunState, profiles: &[Profile]) {
             .and_then(|t| t.answer.as_ref());
         if scout.is_none() {
             run.not_run.push(format!(
-                "{} scout classification — the plan is the conservative fallback (all lenses, 3-vote, 2 rounds), not a scouted one ({})",
+                "{} scout classification — the plan is the conservative fallback (the security floor, 3-vote, 2 rounds), not a scouted one ({})",
                 p.id,
                 why_failed(task)
             ));

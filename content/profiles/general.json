@@ -11,6 +11,7 @@
   "usesLibrary": false,
   "alwaysLenses": ["correctness", "intent"],
   "safetyLens": "security",
+  "securityFloor": ["security", "correctness", "errors", "concurrency", "compat", "invariants"],
   "scoutRules": "scout-rules-general",
   "scoutModel": "haiku",
   "dedupModel": "haiku",

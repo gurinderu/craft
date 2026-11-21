@@ -113,6 +113,10 @@ pub struct Profile {
     pub uses_library: bool,
     pub always_lenses: Vec<String>,
     pub safety_lens: String,
+    /// What the security floor adds — on a security-sensitive or large plan, or one with no scout
+    /// pick — beside the always set: the roster's security-relevant lenses, the rest left to the
+    /// scout (realm @nick/craft, node #552).
+    pub security_floor: Vec<String>,
     /// The scout's rules, `content/prompts/<scoutRules>.md`.
     pub scout_rules: String,
     pub scout_model: Model,

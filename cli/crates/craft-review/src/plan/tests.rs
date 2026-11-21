@@ -119,3 +119,68 @@ fn a_general_diff_can_plan_the_lenses_it_gained() {
         assert!(got.lenses.iter().any(|x| x == l), "{l}: {:?}", got.lenses);
     }
 }
+
+/// The lenses `l` holds of `ids`.
+fn holds(l: &[String], ids: &[&str]) -> Vec<String> {
+    ids.iter()
+        .filter(|i| l.iter().any(|x| x == *i))
+        .map(|i| (*i).to_owned())
+        .collect()
+}
+
+#[test]
+fn the_security_floor_adds_only_the_profiles_security_lenses() {
+    let rust_floor = [
+        "security",
+        "safety",
+        "correctness",
+        "errors",
+        "concurrency",
+        "compat",
+        "invariants",
+    ];
+    let general_floor = [
+        "security",
+        "correctness",
+        "errors",
+        "concurrency",
+        "compat",
+        "invariants",
+    ];
+    let scout_picked = ["money", "maintainability", "complexity", "performance"];
+    for (id, file, floor) in [
+        ("rust", "src/lib.rs", rust_floor.as_slice()),
+        ("general", "web/app.ts", general_floor.as_slice()),
+    ] {
+        let p = Profile::load(id).unwrap();
+        let files = [file.to_owned()];
+        let sensitive =
+            json!({"sizeBucket": "small", "lenses": ["errors"], "securitySensitive": true});
+        let large =
+            json!({"sizeBucket": "large", "lenses": ["errors"], "securitySensitive": false});
+        for scout in [Some(&sensitive), Some(&large), None] {
+            let got = plan(PlanInput {
+                scout,
+                metrics: true,
+                ..input(&p, &files, false)
+            });
+            assert_eq!(
+                holds(&got.lenses, floor),
+                floor,
+                "{id} {scout:?}: {:?}",
+                got.lenses
+            );
+            let always: Vec<&str> = p.always_lenses.iter().map(String::as_str).collect();
+            let extra: Vec<&str> = scout_picked
+                .iter()
+                .copied()
+                .filter(|l| !always.contains(l))
+                .collect();
+            assert!(
+                holds(&got.lenses, &extra).is_empty(),
+                "{id} {scout:?}: left to the scout: {:?}",
+                got.lenses
+            );
+        }
+    }
+}
