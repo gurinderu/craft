@@ -9,10 +9,10 @@ use super::iso;
 use super::kind::Kind;
 
 pub const NUDGE: &str = "re-review-nudge";
-/// The `reason` of the one line a later prompt in another script hears.
-pub const REMINDER: &str = "language-reminder";
+/// The `reason` on every line of the Agent-tool hook.
+pub const DISPATCH: &str = "reviewer-dispatch";
 // OpenCode's events for the same moments: a main session's message, its compaction.
-const OPENCODE_PROMPT: &str = "chat.message";
+pub(super) const OPENCODE_PROMPT: &str = "chat.message";
 const OPENCODE_RESET: &str = "session.compacted";
 /// How far back a session's first continuation reaches into the repo's other sessions.
 const WINDOW_MS: i64 = 12 * 60 * 60 * 1000;
@@ -29,7 +29,7 @@ fn reset(e: &Value) -> bool {
 }
 
 /// The session's lines since its context was last emptied.
-fn since_reset<'a>(log: &'a [Value], session: &str) -> Vec<&'a Value> {
+pub(super) fn since_reset<'a>(log: &'a [Value], session: &str) -> Vec<&'a Value> {
     let mut mine = Vec::new();
     for e in log.iter().filter(|e| in_session(e, session)) {
         if reset(e) {
@@ -41,7 +41,7 @@ fn since_reset<'a>(log: &'a [Value], session: &str) -> Vec<&'a Value> {
     mine
 }
 
-fn spoke(e: &Value) -> bool {
+pub(super) fn spoke(e: &Value) -> bool {
     e.get("spoke").and_then(Value::as_bool) == Some(true)
 }
 
@@ -70,26 +70,19 @@ pub fn nudged_in_session(log: &[Value], session: &str) -> bool {
         .any(|e| field(e, "reason") == Some(NUDGE))
 }
 
-/// The kinds whose text, once said, makes the text for `kind` unneeded: each covers its own;
-/// Codex's one English text names both English kinds.
-fn covered_by(codex: bool, kind: Kind) -> Vec<&'static str> {
-    if codex && kind != Kind::OtherLanguage {
-        vec!["findings", "review"]
-    } else {
-        vec![kind.name()]
-    }
-}
-
-/// What a prompt of `kind` hears when its text was already said: nothing for a per-kind text
-/// (`already-said`), the reminder for the conditional one; `None` when that text is not there.
-pub fn repeat_of(log: &[Value], session: &str, codex: bool, kind: Kind) -> Option<&'static str> {
-    if !said_in_session(log, session, Some(&covered_by(codex, kind))) {
-        return None;
-    }
-    Some(if kind == Kind::OtherLanguage {
-        REMINDER
-    } else {
-        "already-said"
+/// Whether the reviewer-dispatch lines a dispatch run in the background (or not) needs were said
+/// in the session's context: they are a rule, said once, not an instruction per dispatch, whatever
+/// range a later one names; the background lines cover the foreground ones, not the other way
+/// round, so the first background dispatch after a foreground one hears them again. A line from
+/// before the variant was logged counts as background.
+pub fn dispatch_said(log: &[Value], session: &str, background: bool) -> bool {
+    since_reset(log, session).into_iter().any(|e| {
+        event(e) == "PreToolUse"
+            && field(e, "reason") == Some(DISPATCH)
+            && spoke(e)
+            && e.get("background")
+                .and_then(Value::as_bool)
+                .is_none_or(|said_background| said_background || !background)
     })
 }
 

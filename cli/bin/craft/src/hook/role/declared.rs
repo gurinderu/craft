@@ -146,6 +146,7 @@ pub fn repo_test(cwd: &Path, session: &str, ctx: &Ctx, event: &str, who: Harness
         agent_kind: None,
         readiness: None,
         reason: None,
+        background: None,
     }
 }
 
