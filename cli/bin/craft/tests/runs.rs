@@ -79,7 +79,7 @@ fn ndjson(out: &Output) -> Vec<Value> {
 }
 
 /// The address-space ceiling the large-record tests run `craft runs` under: well above what the
-/// binary needs to read the store one record at a time (measured on Linux x86_64, debug build,
+/// binary needs to read the store one record at a time (measured on Linux `x86_64`, debug build,
 /// 2026-11-21: about 36 MB on an empty store, about 56 MB over these records), so the binary's
 /// own size and mappings do not decide the test.
 const AS_CEILING: u64 = 128_000_000;
