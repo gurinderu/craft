@@ -8,7 +8,7 @@ use serde_json::Value;
 
 use crate::agent::Model;
 use crate::optional::admitted;
-use crate::paths::{changes_production_code, is_contract_path};
+use crate::paths::{changes_production_code, is_contract_path, is_test_path};
 use crate::profile::Profile;
 
 /// At most this many repository rule files reach a lens prompt, as `REPO_RULES_MAX`.
@@ -59,6 +59,9 @@ pub struct PlanInput<'a> {
     /// The scout's answer; `None` when it gave none, for the conservative plan.
     pub scout: Option<&'a Value>,
     pub changed_files: &'a [String],
+    /// The files of the change this profile was assigned ([`crate::coverage::assign`]): what it
+    /// reads as its production code.
+    pub profile_files: &'a [String],
     pub spec: &'a str,
     pub light: bool,
     /// Strict mode: the plan carries `maintainability` whatever the scout picked.
@@ -97,6 +100,27 @@ fn blanket(p: &Profile, optional: &[String]) -> Vec<String> {
         .filter(|l| !l.conditional && admitted(p, &l.id, optional))
         .map(|l| l.id.clone())
         .collect()
+}
+
+/// The security floor's lenses of the roster, as a blanket fill takes them: the profile's
+/// `securityFloor` ids (realm @nick/craft, node #552).
+fn security_floor(p: &Profile, optional: &[String]) -> Vec<String> {
+    let floor = &p.security_floor;
+    blanket(p, optional)
+        .into_iter()
+        .filter(|l| floor.contains(l))
+        .collect()
+}
+
+/// Whether `own`, the files `p` was assigned, change its production code: by its globs, or, a
+/// profile taking the rest with none, any of them that is no test — what it was assigned already
+/// leaves out prose, project configuration, vendored or generated output and other profiles' files.
+fn production(p: &Profile, own: &[String]) -> bool {
+    if p.diff_globs.is_empty() {
+        own.iter().any(|f| !is_test_path(f))
+    } else {
+        changes_production_code(own, &p.diff_globs)
+    }
 }
 
 fn scout_str<'a>(scout: Option<&'a Value>, k: &str) -> Option<&'a str> {
@@ -174,7 +198,7 @@ pub fn plan(input: PlanInput<'_>) -> Plan {
         push_missing(&mut lenses, l);
     }
     if lenses.is_empty() {
-        lenses = blanket(p, input.optional);
+        lenses = security_floor(p, input.optional);
     }
     let mut plan = Plan {
         size_bucket: size.to_owned(),
@@ -198,7 +222,12 @@ pub fn plan(input: PlanInput<'_>) -> Plan {
         light_skipped: Vec::new(),
         metrics_dropped: Vec::new(),
     };
-    required(p, (scout, input.embedded_sql), files, &mut plan);
+    required(
+        p,
+        (scout, input.embedded_sql),
+        input.profile_files,
+        &mut plan,
+    );
     if input.strict && p.offers("maintainability") {
         push_missing(&mut plan.lenses, "maintainability");
     }
@@ -215,7 +244,12 @@ pub fn plan(input: PlanInput<'_>) -> Plan {
         plan.metrics_dropped = dropped;
     }
     if input.light {
-        light((p, input.optional), scout, files, &mut plan);
+        light(
+            (p, input.optional),
+            scout,
+            (files, input.profile_files),
+            &mut plan,
+        );
     }
     plan
 }
@@ -225,7 +259,7 @@ pub fn plan(input: PlanInput<'_>) -> Plan {
 fn required(
     p: &Profile,
     (scout, embedded_sql): (Option<&Value>, bool),
-    files: &[String],
+    own: &[String],
     plan: &mut Plan,
 ) {
     let mut offer = |l: &str| {
@@ -236,7 +270,7 @@ fn required(
     for l in &p.always_lenses {
         offer(l);
     }
-    if changes_production_code(files, &p.diff_globs) {
+    if production(p, own) {
         offer("tests");
     }
     if chose_reconciler(scout) {
@@ -247,17 +281,19 @@ fn required(
     }
 }
 
-/// The security floor, negative-space where new surface appears (on a profile that has the lens),
-/// and compat on large diffs and contract paths.
+/// The security floor on a security-sensitive or large plan, negative-space where new surface
+/// appears (on a profile that has the lens), and compat on large diffs and contract paths.
 fn floors(p: &Profile, files: &[String], optional: &[String], plan: &mut Plan) {
-    if plan.security_sensitive {
-        for l in blanket(p, optional) {
+    let large = plan.size_bucket == "large";
+    if plan.security_sensitive || large {
+        for l in security_floor(p, optional) {
             push_missing(&mut plan.lenses, &l);
         }
+    }
+    if plan.security_sensitive {
         plan.verify_votes = plan.verify_votes.max(3);
         plan.max_rounds = plan.max_rounds.max(2);
     }
-    let large = plan.size_bucket == "large";
     if (plan.security_sensitive || large) && p.lens("negative-space").is_some() {
         push_missing(&mut plan.lenses, "negative-space");
     }
@@ -287,7 +323,7 @@ fn surface_gate(p: &Profile, scout: Option<&Value>, files: &[String], plan: &mut
 fn light(
     (p, optional): (&Profile, &[String]),
     scout: Option<&Value>,
-    files: &[String],
+    (files, own): (&[String], &[String]),
     plan: &mut Plan,
 ) {
     let in_roster = |ls: &[&str]| -> Vec<String> {
@@ -297,7 +333,7 @@ fn light(
             .collect()
     };
     let mut forced = Vec::new();
-    if changes_production_code(files, &p.diff_globs) {
+    if production(p, own) {
         forced.extend(in_roster(&["tests", "intent"]));
     }
     if chose_reconciler(scout) {

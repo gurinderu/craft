@@ -9,12 +9,14 @@
   "navSkill": "",
   "securityHints": "input parsing, authentication or authorization, tenant isolation, secrets, deserialization, payments, or untrusted input reaching a sink",
   "usesLibrary": false,
-  "alwaysLenses": ["correctness"],
+  "alwaysLenses": ["correctness", "intent"],
   "safetyLens": "security",
+  "securityFloor": ["security", "correctness", "errors", "concurrency", "compat", "invariants"],
   "scoutRules": "scout-rules-general",
   "scoutModel": "haiku",
   "dedupModel": "haiku",
   "rollupRuleIds": [],
+  "negativeSpace": { "newSurface": "exported function / class / type / interface / enum value / status value / DB column / table / migration / route / config key / object or struct field", "shapeUses": "lists, updates, deletes, cascades, serializes, orders, or authorizes" },
   "lenses": [
     { "id": "correctness", "brief": "lens-briefs/general-correctness", "model": "opus" },
     { "id": "security", "brief": "lens-briefs/general-security", "model": "opus" },
@@ -22,8 +24,18 @@
     { "id": "concurrency", "brief": "lens-briefs/general-concurrency", "model": "opus" },
     { "id": "errors", "brief": "lens-briefs/general-errors", "model": "opus" },
     { "id": "performance", "brief": "lens-briefs/general-performance", "model": "opus" },
+    { "id": "intent", "brief": "lens-briefs/general-intent", "model": "opus", "wholeDiff": true },
+    { "id": "tests", "brief": "lens-briefs/general-tests", "model": "opus" },
+    { "id": "maintainability", "brief": "lens-briefs/general-maintainability", "model": "opus" },
+    {
+      "id": "compat", "brief": "lens-briefs/general-compat", "model": "opus", "surface": "wireForm", "wholeDiff": true,
+      "catalogue": { "label": "COMPATIBILITY CATALOGUE", "file": "skills/compatibility/catalogue.md", "fallback": "C1–C4, C8, C9 and C11–C13" }
+    },
+    { "id": "invariants", "brief": "lens-briefs/general-invariants", "model": "opus", "surface": "invariantType", "wholeDiff": true },
     { "id": "sql-queries", "brief": "lens-briefs/sql-queries", "model": "opus", "conditional": true, "rubric": "sql-review" },
     { "id": "complexity", "brief": "lens-complexity", "model": "opus", "metrics": true }
   ],
-  "floorLenses": []
+  "floorLenses": [
+    { "id": "negative-space", "brief": "lens-briefs/general-negative-space", "model": "opus", "surface": "crossBoundarySymbol", "wholeDiff": true }
+  ]
 }

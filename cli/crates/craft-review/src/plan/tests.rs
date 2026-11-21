@@ -11,6 +11,7 @@ fn input<'a>(p: &'a Profile, files: &'a [String], embedded_sql: bool) -> PlanInp
         profile: p,
         scout: None,
         changed_files: files,
+        profile_files: files,
         spec: "feat: x",
         light: false,
         strict: false,
@@ -76,6 +77,187 @@ fn a_light_pass_keeps_the_embedded_queries_lens() {
     assert!(
         got.lenses.iter().any(|l| l == "sql-queries"),
         "{:?}",
+        got.lenses
+    );
+}
+
+#[test]
+fn a_rust_diff_can_plan_the_general_lenses_complexity_behind_its_index() {
+    let p = Profile::rust().unwrap();
+    let files = ["src/billing.rs".to_owned()];
+    let scout = json!({"sizeBucket": "medium", "securitySensitive": false,
+        "lenses": ["correctness", "security", "money", "complexity"]});
+    let with = plan(PlanInput {
+        scout: Some(&scout),
+        metrics: true,
+        ..input(&p, &files, false)
+    });
+    for l in ["correctness", "security", "money", "complexity"] {
+        assert!(with.lenses.iter().any(|x| x == l), "{l}: {:?}", with.lenses);
+    }
+    let without = plan(PlanInput {
+        scout: Some(&scout),
+        ..input(&p, &files, false)
+    });
+    assert!(!without.lenses.iter().any(|l| l == "complexity"));
+    assert_eq!(without.metrics_dropped, ["complexity"]);
+}
+
+#[test]
+fn a_general_diff_can_plan_the_lenses_it_gained() {
+    let p = Profile::load("general").unwrap();
+    let files = ["web/app.ts".to_owned()];
+    let gained = ["tests", "maintainability", "compat", "invariants"];
+    let scout = json!({"sizeBucket": "large", "securitySensitive": false, "lenses": gained});
+    let got = plan(PlanInput {
+        scout: Some(&scout),
+        ..input(&p, &files, false)
+    });
+    for l in gained
+        .iter()
+        .chain(&["intent", "correctness", "negative-space"])
+    {
+        assert!(got.lenses.iter().any(|x| x == l), "{l}: {:?}", got.lenses);
+    }
+}
+
+/// The lenses `l` holds of `ids`.
+fn holds(l: &[String], ids: &[&str]) -> Vec<String> {
+    ids.iter()
+        .filter(|i| l.iter().any(|x| x == *i))
+        .map(|i| (*i).to_owned())
+        .collect()
+}
+
+#[test]
+fn the_security_floor_adds_only_the_profiles_security_lenses() {
+    let rust_floor = [
+        "security",
+        "safety",
+        "correctness",
+        "errors",
+        "concurrency",
+        "compat",
+        "invariants",
+    ];
+    let general_floor = [
+        "security",
+        "correctness",
+        "errors",
+        "concurrency",
+        "compat",
+        "invariants",
+    ];
+    let scout_picked = ["money", "maintainability", "complexity", "performance"];
+    for (id, file, floor) in [
+        ("rust", "src/lib.rs", rust_floor.as_slice()),
+        ("general", "web/app.ts", general_floor.as_slice()),
+    ] {
+        let p = Profile::load(id).unwrap();
+        let files = [file.to_owned()];
+        let sensitive =
+            json!({"sizeBucket": "small", "lenses": ["errors"], "securitySensitive": true});
+        let large =
+            json!({"sizeBucket": "large", "lenses": ["errors"], "securitySensitive": false});
+        for scout in [Some(&sensitive), Some(&large), None] {
+            let got = plan(PlanInput {
+                scout,
+                metrics: true,
+                ..input(&p, &files, false)
+            });
+            assert_eq!(
+                holds(&got.lenses, floor),
+                floor,
+                "{id} {scout:?}: {:?}",
+                got.lenses
+            );
+            let always: Vec<&str> = p.always_lenses.iter().map(String::as_str).collect();
+            let extra: Vec<&str> = scout_picked
+                .iter()
+                .copied()
+                .filter(|l| !always.contains(l))
+                .collect();
+            assert!(
+                holds(&got.lenses, &extra).is_empty(),
+                "{id} {scout:?}: left to the scout: {:?}",
+                got.lenses
+            );
+        }
+    }
+}
+
+#[test]
+fn a_documented_invariant_has_an_owner_in_a_small_nix_or_general_plan() {
+    for (id, file, pick, owner) in [
+        ("general", "web/app.ts", "errors", "correctness"),
+        ("nix", "flake.nix", "purity", "intent"),
+    ] {
+        let p = Profile::load(id).unwrap();
+        let files = [file.to_owned()];
+        let scout = json!({"sizeBucket": "small", "lenses": [pick], "securitySensitive": false});
+        let got = plan(PlanInput {
+            scout: Some(&scout),
+            ..input(&p, &files, false)
+        });
+        assert!(!got.lenses.iter().any(|l| l == "invariants"), "{id}");
+        assert!(
+            got.lenses.iter().any(|l| l == owner),
+            "{id}: {:?}",
+            got.lenses
+        );
+        let brief = crate::content::text(&p.lens(owner).unwrap().brief).unwrap();
+        assert!(brief.contains("documented invariant"), "{id}: {brief}");
+    }
+}
+
+#[test]
+fn a_general_change_to_production_source_forces_tests_and_a_light_pass_intent() {
+    let p = Profile::load("general").unwrap();
+    let scout = json!({"sizeBucket": "small", "lenses": ["errors"], "securitySensitive": false});
+    let source = ["web/app.ts".to_owned()];
+    let got = plan(PlanInput {
+        scout: Some(&scout),
+        ..input(&p, &source, false)
+    });
+    assert!(got.lenses.iter().any(|l| l == "tests"), "{:?}", got.lenses);
+    let light = plan(PlanInput {
+        scout: Some(&scout),
+        light: true,
+        ..input(&p, &source, false)
+    });
+    assert!(
+        light.lenses.iter().any(|l| l == "intent") && light.lenses.iter().any(|l| l == "tests"),
+        "{:?}",
+        light.lenses
+    );
+    for test in ["web/app.test.ts", "web/app.spec.ts", "tests/test_app.py"] {
+        let files = [test.to_owned()];
+        let got = plan(PlanInput {
+            scout: Some(&scout),
+            ..input(&p, &files, false)
+        });
+        assert!(
+            !got.lenses.iter().any(|l| l == "tests"),
+            "{test}: {:?}",
+            got.lenses
+        );
+    }
+}
+
+#[test]
+fn a_general_plan_counts_only_its_own_files_as_production() {
+    let p = Profile::load("general").unwrap();
+    let scout = json!({"sizeBucket": "small", "lenses": ["errors"], "securitySensitive": false});
+    let change = ["src/lib.rs".to_owned(), "web/app.test.ts".to_owned()];
+    let own = ["web/app.test.ts".to_owned()];
+    let got = plan(PlanInput {
+        scout: Some(&scout),
+        profile_files: &own,
+        ..input(&p, &change, false)
+    });
+    assert!(
+        !got.lenses.iter().any(|l| l == "tests"),
+        "the Rust file is Rust's: {:?}",
         got.lenses
     );
 }

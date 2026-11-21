@@ -1,0 +1,1 @@
+negative space / cross-surface interaction: the bug the diff ENABLES in UNCHANGED code. A new status/type/enum value/column that pre-existing handlers mutate blindly; a renamed or reshaped export that unchanged callers still use the old way; a latent bug in an unchanged helper the diff makes reachable for the first time.

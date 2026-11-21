@@ -37,6 +37,11 @@ pub(super) fn declared(line: &str) -> Option<&str> {
 
 /// Whether `path` is a test file: under a `tests` directory, or named `tests.rs`, `*_tests.rs`
 /// or `*_test.rs`.
+///
+/// Narrower than [`crate::paths::is_test_path`] on purpose: the consumers list holds Rust symbols
+/// only, so this reads Cargo's own layout (`tests/`, `benches/`, `*_test.rs`) rather than the
+/// fixture directories and other languages' test names the plan counts, and keeps a caller under
+/// a fixture or `testdata` directory listed as a consumer, and a bench counted as a test.
 pub(super) fn is_test_path(path: &str) -> bool {
     let name = path.rsplit('/').next().unwrap_or(path);
     path.split('/').any(|s| s == "tests" || s == "benches")

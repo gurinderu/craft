@@ -403,3 +403,18 @@ fn a_commit_the_remote_lacks_fails_its_fetch_with_the_hint() {
     assert!(error.starts_with("git failed: "), "{got:?}");
     assert!(error.ends_with(super::runner::AUTH_HINT), "{error}");
 }
+
+#[test]
+fn the_lenses_judging_another_system_read_the_sources_in_each_profile() {
+    for (profile, lens) in [
+        ("rust", "reconciler"),
+        ("rust", "compat"),
+        ("general", "concurrency"),
+        ("general", "compat"),
+    ] {
+        assert!(super::reads(profile, lens), "{profile}:{lens}");
+    }
+    for (profile, lens) in [("general", "reconciler"), ("rust", "correctness")] {
+        assert!(!super::reads(profile, lens), "{profile}:{lens}");
+    }
+}
