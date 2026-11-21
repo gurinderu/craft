@@ -1,18 +1,20 @@
 //! One record into the store, as `writeRecord` in `lib/craft-log-run.mjs` files it: the fields the
-//! writer owns stamped over the caller's, the file claimed exclusively under a name stepped a second
-//! on a collision (or written over the record `recover` filed for the same run), read back, and its
-//! index line appended — or its row replaced — under the index lock.
+//! writer owns stamped over the caller's. A durable intent precedes publication; staged bytes are
+//! read back before an exclusive link or replacement. Detail, index and proof replay under the index
+//! lock; a conflicting detail is left untouched with its intent retained (#555, #556, #559).
 
 use std::path::{Path, PathBuf};
 
 use crate::StoreError;
 use crate::git::{GitId, git};
 use crate::js::{Js, Obj, parse};
-use crate::lock::{append_index_line, with_index_lock};
-use crate::record::{ENGINE_REVISION, filename, index_projection};
+use crate::lock::with_index_lock;
+use crate::record::{ENGINE_REVISION, filename};
 use crate::time::stamp;
 
 const README: &str = include_str!("store-readme.md");
+#[path = "filing.rs"]
+mod filing;
 
 /// What every write of one call knows: where, for which repository, as which session and clock.
 #[derive(Debug, Clone)]
@@ -57,7 +59,7 @@ impl Writing {
             o.set("dirty", Js::Bool(*dirty));
         }
         let craft = self.craft_commit.clone().filter(|c| !c.is_empty());
-        o.set("craftCommit", craft.map_or(Js::Null, Js::Str));
+        o.set("craftCommit", craft.map_or(Js::Null, Js::str));
         let session = (!self.session.is_empty()).then(|| Js::str(&self.session));
         o.set("session", session.unwrap_or(Js::Null));
         // A git probe this write killed past its bound left its field empty: the record says which.
@@ -65,7 +67,7 @@ impl Writing {
         if !slow.is_empty() {
             o.set(
                 "gitTimedOut",
-                Js::Arr(slow.into_iter().map(Js::Str).collect()),
+                Js::Arr(slow.into_iter().map(Js::str).collect()),
             );
         }
         o
@@ -84,48 +86,89 @@ pub fn with_git(raw: &Obj, id: &GitId) -> Obj {
     out
 }
 
-/// Files `input` as a record: `git_id` applied to it, the computed fields stamped, the file
-/// written — over `over`, the record `recover` filed for this run, when that still fits — read
-/// back, and indexed. The file and the record as filed.
+/// Files `input` as a new, independent record, replacing `over` when it still fits. Pending intents
+/// are replayed first under the index lock. A failed publication retains recovery evidence; no
+/// published detail is unlinked on error. Explicit retry identity is supplied by `finalize`.
 ///
 /// # Errors
-/// When the store cannot be written, the readback disagrees or the index cannot be appended.
+/// When staging, intent, detail, index or proof publication fails, or replay sees a conflicting detail.
 pub fn write_record(
     input: &Obj,
     w: &Writing,
     git_id: &GitId,
     over: Option<&Path>,
 ) -> Result<(PathBuf, Obj), StoreError> {
+    write_proven(input, w, git_id, over, None)
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct Proof<'a> {
+    pub raw: &'a Obj,
+    pub at: crate::proof::ProofAt<'a>,
+    pub retry: bool,
+    pub warnings: &'a [String],
+    pub finalizing: Option<&'a Path>,
+}
+
+pub(crate) fn recover_filings(store: &Path) -> Result<(), StoreError> {
+    if !store.join(".filing-intents").exists() {
+        return Ok(());
+    }
+    std::fs::create_dir_all(store).map_err(|e| StoreError::io(store, &e))?;
+    with_index_lock(store, || filing::recover(store))
+}
+
+pub(crate) fn retire_finalized(dir: &Path, store: &Path) -> Result<(), StoreError> {
+    filing::retire(dir, store)
+}
+
+pub(crate) fn publish_proof(file: &Path, text: &str) -> Result<(), StoreError> {
+    filing::publish(file, text, true)
+}
+
+pub(crate) fn sync_filing_path(file: &Path) -> Result<(), StoreError> {
+    filing::sync(file)
+}
+
+pub(crate) fn write_proven(
+    input: &Obj,
+    w: &Writing,
+    git_id: &GitId,
+    over: Option<&Path>,
+    proof: Option<Proof<'_>>,
+) -> Result<(PathBuf, Obj), StoreError> {
     std::fs::create_dir_all(&w.store).map_err(|e| StoreError::io(&w.store, &e))?;
     let raw = with_git(input, git_id);
     let seen = w.observed();
-    let replaced = over.and_then(|o| replace_record_file(&raw, o, w, &seen).transpose());
-    let (file, record, replaced) = match replaced {
-        Some(r) => r.map(|(f, rec)| (f, rec, true))?,
-        None => claim_record_file(&raw, w, &seen).map(|(f, rec)| (f, rec, false))?,
-    };
-    verify_written(&file, &record)?;
-    if let Err(e) = index_filed(&w.store, &record, replaced) {
-        if !replaced {
-            drop(std::fs::remove_file(&file));
+    with_index_lock(&w.store, || {
+        filing::recover(&w.store)?;
+        if let Some(p) = &proof
+            && let Some((file, _)) = crate::proof::filed_for(p.raw, p.at, p.retry)
+        {
+            let text = std::fs::read_to_string(&file).map_err(|e| StoreError::io(&file, &e))?;
+            let record = parse(&text)
+                .ok()
+                .and_then(|v| v.as_obj().cloned())
+                .ok_or_else(|| StoreError::Refused("invalid filed record".into()))?;
+            return Ok((file, record));
         }
-        return Err(e);
-    }
-    ensure_readme(&w.store);
-    Ok((file, record))
+        let replaced = over.and_then(|o| replace_record_file(&raw, o, w, &seen));
+        let (file, record, before) = match replaced {
+            Some((f, rec, before)) => (f, rec, Some(before)),
+            None => claim_record_file(&raw, w, &seen).map(|(f, rec)| (f, rec, None))?,
+        };
+        let proofs = proof.as_ref().map_or_else(Vec::new, |p| {
+            crate::proof::filing_proofs(p.raw, p.at, &file, p.warnings)
+        });
+        let finalizing = proof.as_ref().and_then(|p| p.finalizing);
+        filing::commit(&w.store, &file, &record, before, proofs, finalizing)?;
+        ensure_readme(&w.store);
+        Ok((file, record))
+    })
 }
 
-fn index_filed(store: &Path, record: &Obj, replaced: bool) -> Result<(), StoreError> {
-    let line = Js::Obj(index_projection(record)).compact();
-    if replaced {
-        replace_index_row(store, record, &line)
-    } else {
-        append_index_line(store, &line)
-    }
-}
-
-/// The record claimed under a fresh name: written exclusively, the stamp stepped a second on a
-/// collision, sixty times at most.
+/// Plans a fresh name under the lock, stepping the stamp on collision, sixty times at most.
+/// The transaction subsequently claims it by exclusive link, respecting legacy ordinary writers.
 fn claim_record_file(
     raw: &Obj,
     w: &Writing,
@@ -135,63 +178,14 @@ fn claim_record_file(
         let mut record = raw.clone();
         record.spread(&w.computed(w.now + bump * 1000, seen));
         let file = w.store.join(filename(&record));
-        let text = Js::Obj(record.clone()).pretty();
-        let made = claim_using(&file, |f| std::io::Write::write_all(f, text.as_bytes()));
-        match made {
-            Ok(()) => return Ok((file, record)),
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
-            Err(e) => return Err(StoreError::io(&file, &e)),
+        if !file.exists() {
+            return Ok((file, record));
         }
     }
     Err(StoreError::Refused(format!(
         "cannot claim a record name under {} — 60 consecutive stamps taken",
         w.store.display()
     )))
-}
-
-fn claim_using(
-    file: &Path,
-    write: impl FnOnce(&mut std::fs::File) -> std::io::Result<()>,
-) -> std::io::Result<()> {
-    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    let name = file
-        .file_name()
-        .ok_or_else(|| std::io::Error::other("record has no name"))?
-        .to_string_lossy();
-    let mut made = None;
-    for _ in 0..60 {
-        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let tmp = file.with_file_name(format!(".{name}.{}-{n}.tmp", std::process::id()));
-        match std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&tmp)
-        {
-            Ok(f) => {
-                made = Some((tmp, f));
-                break;
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
-            Err(e) => return Err(e),
-        }
-    }
-    let (tmp, mut f) =
-        made.ok_or_else(|| std::io::Error::other("60 temporary record names are taken"))?;
-    let result = write(&mut f);
-    drop(f);
-    let result = result.and_then(|()| std::fs::hard_link(&tmp, file));
-    match result {
-        Ok(()) => {
-            drop(std::fs::remove_file(&tmp));
-            Ok(())
-        }
-        Err(e) => match std::fs::remove_file(&tmp) {
-            Ok(()) => Err(e),
-            Err(cleanup) => Err(std::io::Error::other(format!(
-                "{e}; could not remove partial record: {cleanup}"
-            ))),
-        },
-    }
 }
 
 /// The record written over the one `recover` filed for this run, keeping its `ts`; `None` when that
@@ -201,27 +195,26 @@ fn replace_record_file(
     over: &Path,
     w: &Writing,
     seen: &Observed,
-) -> Result<Option<(PathBuf, Obj)>, StoreError> {
+) -> Option<(PathBuf, Obj, String)> {
     let in_store = over.parent().map(crate::git::lexical) == Some(crate::git::lexical(&w.store));
-    let prev = std::fs::read_to_string(over)
-        .ok()
-        .and_then(|t| parse(&t).ok());
-    let (true, Some(Js::Obj(prev))) = (in_store, prev) else {
-        return Ok(None);
+    let before = std::fs::read_to_string(over).ok();
+    let prev = before.as_deref().and_then(|t| parse(t).ok());
+    let (true, Some(Js::Obj(prev)), Some(before)) = (in_store, prev, before) else {
+        return None;
     };
     let mut record = raw.clone();
     record.spread(&w.computed(w.now, seen));
     record.set("ts", prev.get("ts").cloned().unwrap_or(Js::Null));
     if over.file_name().is_none_or(|n| *n != *filename(&record)) {
-        return Ok(None);
+        return None;
     }
-    write_atomically(over, Js::Obj(record.clone()).pretty())?;
-    Ok(Some((over.to_path_buf(), record)))
+    Some((over.to_path_buf(), record, before))
 }
 
 /// The record's row of the index replaced — or appended when it has none — under the lock. Every
 /// other line is kept byte for byte, one that is not UTF-8 or not JSON too; an index that cannot be
 /// read fails the write and is left as it is, never replaced by what a failed read gave.
+#[cfg(test)]
 fn replace_index_row(store: &Path, record: &Obj, row: &str) -> Result<(), StoreError> {
     with_index_lock(store, || replace_index_row_locked(store, record, row))
 }
@@ -306,34 +299,6 @@ pub(crate) fn write_atomically_using(
     })
 }
 
-/// The readback: every key the record holds is in the file, every array as long.
-fn verify_written(file: &Path, record: &Obj) -> Result<(), StoreError> {
-    let text = std::fs::read_to_string(file).map_err(|e| StoreError::io(file, &e))?;
-    let back = parse(&text).map_err(|e| StoreError::Refused(format!("readback: {e}")))?;
-    let back = back
-        .as_obj()
-        .ok_or_else(|| StoreError::Refused("readback: not a JSON object".into()))?;
-    let lost: Vec<&str> = record
-        .iter()
-        .filter(|(k, _)| !back.has(k))
-        .map(|(k, _)| k.as_str())
-        .collect();
-    if !lost.is_empty() {
-        return Err(StoreError::Refused(format!(
-            "readback lost key(s): {}",
-            lost.join(", ")
-        )));
-    }
-    for (k, v) in record.iter() {
-        if let Js::Arr(a) = v
-            && back.get(k).and_then(Js::as_arr).map(<[Js]>::len) != Some(a.len())
-        {
-            return Err(StoreError::Refused(format!("readback changed array '{k}'")));
-        }
-    }
-    Ok(())
-}
-
 fn ensure_readme(store: &Path) {
     let file = store.join("README.md");
     if !file.exists() {
@@ -387,31 +352,6 @@ mod tests {
     }
 
     #[test]
-    fn failed_write_removes_the_partial_claim() {
-        let d = tempfile::tempdir().unwrap();
-        let file = d.path().join("claimed.json");
-        let failure = claim_using(&file, |f| {
-            std::io::Write::write_all(f, b"partial")?;
-            Err(std::io::Error::other("disk full"))
-        });
-        assert!(failure.unwrap_err().to_string().contains("disk full"));
-        assert!(!file.exists());
-    }
-
-    #[test]
-    fn interruption_during_claim_does_not_expose_a_partial_record() {
-        let d = tempfile::tempdir().unwrap();
-        let file = d.path().join("claimed.json");
-        let _panic = std::panic::catch_unwind(|| {
-            drop(claim_using(&file, |f| {
-                std::io::Write::write_all(f, b"partial")?;
-                panic!("interrupted")
-            }));
-        });
-        assert!(!file.exists());
-    }
-
-    #[test]
     fn failed_index_replacement_keeps_the_new_record_for_a_retry() {
         let d = tempfile::tempdir().unwrap();
         let previous = record("2026-03-04T05-00-00Z");
@@ -431,10 +371,16 @@ mod tests {
         };
         let result = write_record(&record("x"), &w, &GitId::default(), Some(&file));
         result.unwrap_err();
+        assert!(d.path().join(".filing-intents").is_dir());
         let after = std::fs::read_to_string(&file).unwrap();
         assert_ne!(after, old);
         assert_eq!(
-            parse(&after).unwrap().as_obj().unwrap().text("project"),
+            parse(&after)
+                .unwrap()
+                .as_obj()
+                .unwrap()
+                .text("project")
+                .unwrap(),
             "/p"
         );
         std::fs::remove_dir(d.path().join("index.jsonl")).unwrap();
@@ -451,7 +397,8 @@ mod tests {
                 .unwrap()
                 .as_obj()
                 .unwrap()
-                .text("project"),
+                .text("project")
+                .unwrap(),
             "/p"
         );
     }

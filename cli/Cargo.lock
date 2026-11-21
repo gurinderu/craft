@@ -374,12 +374,14 @@ dependencies = [
 name = "craft-store"
 version = "0.56.0"
 dependencies = [
+ "getrandom 0.3.4",
  "nix 0.31.3",
  "regex",
  "serde_json",
  "sha2",
  "tempfile",
  "thiserror 2.0.21",
+ "windows-sys",
 ]
 
 [[package]]

@@ -53,7 +53,7 @@ fn repo_of(kind: &str, repo: &Path) {
 
 fn map_strings(v: &Js, f: &dyn Fn(&str) -> String) -> Js {
     match v {
-        Js::Str(s) => Js::Str(f(s)),
+        Js::Str(s) => Js::str(s.map_unicode(f)),
         Js::Arr(a) => Js::Arr(a.iter().map(|x| map_strings(x, f)).collect()),
         Js::Obj(o) => {
             let mut out = Obj::new();
@@ -157,12 +157,12 @@ fn every_case_files_as_the_javascript_writer_filed_it() {
     assert!(all.len() >= 5);
     for case in all {
         let case = case.as_obj().unwrap();
-        let name = case.text("name");
+        let name = case.text("name").unwrap();
         let (repo_dir, store_dir) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
         let repo = std::fs::canonicalize(repo_dir.path()).unwrap();
         let store = std::fs::canonicalize(store_dir.path()).unwrap();
-        repo_of(case.text("repo"), &repo);
-        let plain = case.text("repo") == "plain";
+        repo_of(case.text("repo").unwrap(), &repo);
+        let plain = case.text("repo").unwrap() == "plain";
         let real = Real {
             store: store.display().to_string(),
             repo: repo.display().to_string(),
@@ -195,25 +195,25 @@ fn every_case_files_as_the_javascript_writer_filed_it() {
                     .replace("<store>", &real.store)
             });
             let req = req.as_obj().unwrap();
-            if call.text("command") == "write" {
+            if call.text("command").unwrap() == "write" {
                 // A file laid in the store as another writer left it.
-                let at = Path::new(req.text("path"));
+                let at = Path::new(req.text("path").unwrap());
                 std::fs::create_dir_all(at.parent().unwrap()).unwrap();
                 let bytes = match req.get("hex").and_then(Js::as_str) {
                     Some(h) => hex(h),
-                    None => req.text("text").as_bytes().to_vec(),
+                    None => req.text("text").unwrap().as_bytes().to_vec(),
                 };
                 std::fs::write(at, bytes).unwrap();
-                let wrote = Obj::new().with("wrote", Js::str(real.back(req.text("path"))));
+                let wrote = Obj::new().with("wrote", Js::str(real.back(req.text("path").unwrap())));
                 answers.push(Js::Obj(wrote));
                 continue;
             }
-            let got = craft_store::answer_js(call.text("command"), req, &env).unwrap();
-            if !got.text("runDir").is_empty() {
-                run_dir = got.text("runDir").to_owned();
+            let got = craft_store::answer_js(call.text("command").unwrap(), req, &env).unwrap();
+            if !got.text("runDir").unwrap().is_empty() {
+                run_dir = got.text("runDir").unwrap().to_owned();
             }
-            if !got.text("file").is_empty() {
-                record_file = got.text("file").to_owned();
+            if !got.text("file").unwrap().is_empty() {
+                record_file = got.text("file").unwrap().to_owned();
             }
             answers.push(parse(&real.back(&Js::Obj(got).compact())).unwrap());
         }
@@ -232,7 +232,7 @@ fn every_case_files_as_the_javascript_writer_filed_it() {
         let want_files = want.get("files").unwrap().as_obj().unwrap();
         let want_files: BTreeMap<String, String> = want_files
             .iter()
-            .map(|(k, v)| (k.clone(), v.as_str().unwrap().to_owned()))
+            .map(|(k, v)| (k.to_utf8().unwrap(), v.as_str().unwrap().to_owned()))
             .collect();
         assert_eq!(
             files.keys().collect::<Vec<_>>(),

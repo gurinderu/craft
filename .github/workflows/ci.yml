@@ -105,6 +105,30 @@ jobs:
           CC_x86_64_unknown_linux_musl: musl-gcc
         run: cargo build --release --locked --target x86_64-unknown-linux-musl
 
+  # Exercise native process identity and both writer boundaries on the operating systems whose
+  # Node writer uses the craft helper (realm @nick/craft, #563); cross-compilation is not execution.
+  store-native:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: cli
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@1.99.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: cli
+      - name: Native process identity and writer interoperability
+        run: cargo test -p craft --locked --test process_identity
+
   # Static analysis with semgrep's public registry rule sets, plus craft's own shell-command rule, over
   # lib/, integrations/opencode/plugin/ and integrations/claude-code/workflows/ (not integrations/opencode/install.sh or
   # .github/). It found nothing real on adoption — it is here for code
