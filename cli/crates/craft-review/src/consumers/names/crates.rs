@@ -20,7 +20,8 @@ const MANIFESTS_MAX: usize = 500;
 const TABLES: [&str; 3] = ["dependencies", "dev-dependencies", "build-dependencies"];
 
 /// The packages of the workspace at `top`; a manifest that cannot be read or parsed adds none, so
-/// its files are read as of no package then.
+/// its files are read as of no package then; when the manifests cannot be listed (past
+/// [`MANIFESTS_MAX`], a failed listing, the deadline or a stop) the workspace is unread, saying why.
 pub(in crate::consumers) fn workspace(
     top: &Path,
     (deadline, cancel): (Instant, &Cancel),
@@ -46,7 +47,13 @@ pub(in crate::consumers) fn workspace(
     };
     let files = match stream_as(cmd, paths, deadline, cancel) {
         Ok(Ended::Exited(Some(0), hits, _)) => hits,
-        Ok(_) | Err(_) => Vec::new(),
+        Ok(Ended::Capped) => {
+            return Workspace::not_read(format!("over {MANIFESTS_MAX} manifests, none read"));
+        }
+        Ok(Ended::Exited(_, _, err)) => {
+            return Workspace::not_read(format!("the manifests not listed: {}", err.trim()));
+        }
+        Err(why) => return Workspace::not_read(format!("the manifests not listed: {why}")),
     };
     let mut packages = Vec::new();
     for f in files {
@@ -57,12 +64,17 @@ pub(in crate::consumers) fn workspace(
             continue;
         };
         let dir = f.file.strip_suffix("Cargo.toml").unwrap_or_default();
-        packages.extend(read(&doc, dir.trim_end_matches('/')));
+        let dir = dir.trim_end_matches('/');
+        packages.extend(read(&doc, dir).map(|mut p| {
+            p.has_lib |= top.join(dir).join("src/lib.rs").is_file();
+            p
+        }));
     }
     Workspace::of(packages)
 }
 
-/// The package `doc`, the manifest in `dir`, declares: its library's name and the crates its own
+/// The package `doc`, the manifest in `dir`, declares: its library's name (a library target when
+/// it names `[lib]`) and the crates its own
 /// tables and each `[target.*]`'s depend on, each as code spells it; `None` for a manifest with
 /// no `[package]` (a virtual workspace's).
 fn read(doc: &toml::Table, dir: &str) -> Option<Package> {
@@ -89,6 +101,7 @@ fn read(doc: &toml::Table, dir: &str) -> Option<Package> {
     Some(Package {
         dir: dir.to_owned(),
         lib: lib.replace('-', "_"),
+        has_lib: doc.contains_key("lib"),
         deps,
     })
 }

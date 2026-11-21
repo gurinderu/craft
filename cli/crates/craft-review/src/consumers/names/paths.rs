@@ -9,6 +9,7 @@
 
 mod syntax;
 
+mod declared;
 mod imports;
 mod owner;
 mod reach;
@@ -36,8 +37,12 @@ pub(super) type Reexports<'a> = &'a dyn Fn(&Item, &str) -> bool;
 /// What a changed function is declared in.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum Kind {
-    /// `impl T` (`of_trait` none) or `impl Tr for T` (`of_trait` the trait's last segment).
-    Type { of_trait: Option<String> },
+    /// `impl T` (`of_trait` none) or `impl Tr for T` (`of_trait` the trait's last segment);
+    /// `also` the other types `T` can be, when more than one glob can bring it in.
+    Type {
+        of_trait: Option<String>,
+        also: Vec<Item>,
+    },
     /// `trait Tr`, with the types found implementing it.
     Trait { impls: Vec<Item> },
     /// A module: a free function.
@@ -59,12 +64,10 @@ impl Owner {
         let own = self.at.path.last().map(String::as_str);
         match &self.kind {
             Kind::Free => Vec::new(),
-            Kind::Type { .. } => own.into_iter().collect(),
-            Kind::Trait { impls } => own
+            Kind::Type { also: more, .. } | Kind::Trait { impls: more } => own
                 .into_iter()
                 .chain(
-                    impls
-                        .iter()
+                    more.iter()
                         .filter_map(|i| i.path.last().map(String::as_str)),
                 )
                 .collect(),
@@ -72,12 +75,12 @@ impl Owner {
     }
 
     /// The items a qualifier (the full path, for a free function) must name to reach the item.
-    fn targets(&self) -> impl Iterator<Item = &Item> {
-        let impls = match &self.kind {
-            Kind::Trait { impls } => impls.as_slice(),
-            Kind::Type { .. } | Kind::Free => &[],
+    pub(super) fn targets(&self) -> impl Iterator<Item = &Item> {
+        let more = match &self.kind {
+            Kind::Trait { impls: more } | Kind::Type { also: more, .. } => more.as_slice(),
+            Kind::Free => &[],
         };
-        std::iter::once(&self.at).chain(impls)
+        std::iter::once(&self.at).chain(more)
     }
 }
 

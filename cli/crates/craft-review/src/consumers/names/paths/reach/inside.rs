@@ -30,7 +30,7 @@ impl Reach<'_> {
         };
         match &self.own.kind {
             Kind::Type { .. } => {
-                path("type").is_some_and(|s| self.lands(&s, imp, std::iter::once(&self.own.at)))
+                path("type").is_some_and(|s| self.lands(&s, imp, self.own.targets()))
             }
             Kind::Trait { impls } => match path("trait") {
                 Some(tr) => self.lands(&tr, imp, std::iter::once(&self.own.at)),

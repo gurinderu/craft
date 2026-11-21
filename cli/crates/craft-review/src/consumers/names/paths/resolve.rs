@@ -1,20 +1,26 @@
 //! A path as written resolved to the items it can name (realm @nick/craft, #564): from the
 //! module it is written in, through `crate`, `self` and `super`, a `use` naming its first segment
 //! (an alias, `{self as x}`) or a glob of the module it sits in, another crate of the workspace,
-//! or none when it leaves the workspace. A `use` path is read without other imports.
+//! or none when it leaves the workspace — a name of the standard prelude too, unless the file
+//! declares a type of it. A `use` path is read without other imports.
 
 use tree_sitter::{Node, Tree};
 
 use super::super::unit::{Root, Unit};
 use super::Item;
+use super::declared::{declared, in_prelude};
 use super::imports::{Import, imports};
 use super::syntax::chain;
+
+mod scope;
 
 /// One file's resolution of paths.
 pub(in crate::consumers::names) struct Resolver<'a> {
     unit: &'a Unit<'a>,
     src: &'a str,
     imports: Vec<Import>,
+    /// The type names the file declares, each with its inline modules.
+    declared: Vec<(Vec<String>, String)>,
 }
 
 impl<'a> Resolver<'a> {
@@ -23,7 +29,13 @@ impl<'a> Resolver<'a> {
             unit,
             src,
             imports: imports(tree, src),
+            declared: declared(tree, src),
         }
+    }
+
+    /// Whether paths are matched by their owner's last segment alone: the workspace is unread.
+    pub(super) fn degraded(&self) -> bool {
+        self.unit.degraded
     }
 
     /// The module path of the position `at`: the file's module and the inline modules around it.
@@ -65,36 +77,35 @@ impl<'a> Resolver<'a> {
                 )]
             }
             _ if through_uses => self.through_uses(chain, module, segs),
-            _ => self.by_root(module, segs),
+            _ => self.by_root(chain, module, segs),
         }
     }
 
     /// A path whose first segment a `use` in its module may bind: that `use`'s path, else the
     /// path from its root and through each glob there.
     fn through_uses(&self, chain: &[String], module: Vec<String>, segs: &[&str]) -> Vec<Item> {
-        let here = || self.imports.iter().filter(|i| i.chain == chain);
         let first = segs.first().copied();
-        if let Some(i) = here().find(|i| i.local.as_deref() == first) {
+        if let Some(i) = self.here(chain).find(|i| i.local.as_deref() == first) {
             return self.resolve_in(
                 &i.chain,
                 &joined(&i.path, segs.get(1..).unwrap_or_default()),
                 false,
             );
         }
-        let mut out = self.by_root(module, segs);
-        for g in here().filter(|i| i.local.is_none()) {
-            out.extend(self.resolve_in(&g.chain, &joined(&g.path, segs), false));
-        }
+        let mut out = self.by_root(chain, module, segs);
+        out.extend(self.globs(chain, segs));
         out
     }
 
-    /// A path from its first segment: another crate, out of the workspace, or this module's.
-    fn by_root(&self, module: Vec<String>, segs: &[&str]) -> Vec<Item> {
+    /// A path from its first segment: another crate, out of the workspace (a prelude name the
+    /// module `chain` declares no type of too), or this module's.
+    fn by_root(&self, chain: &[String], module: Vec<String>, segs: &[&str]) -> Vec<Item> {
         let Some((&first, rest)) = segs.split_first() else {
             return Vec::new();
         };
         match self.unit.root(first) {
             Root::Out => Vec::new(),
+            Root::Here if in_prelude(first) && !self.declares(chain, first) => Vec::new(),
             Root::Crate(c) => vec![item(&c, Vec::new(), rest)],
             Root::Here => vec![item(&self.unit.krate, module, segs)],
         }

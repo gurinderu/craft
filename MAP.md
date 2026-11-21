@@ -244,14 +244,14 @@ lenses and verifiers see, a tool not installed is named), a scout per profile wh
 consumers list, built at start beside the gate (`src/consumers/`: for each changed Rust symbol the lines outside the diff that name it —
 callers, implementors and same-named declarations, places passing it as a value — from a name search, always run
 (`names.rs`), a structural search for a name too common to search by text or past the name search's line cap
-(`names/structural.rs`, with `structural/files.rs` the files it reads and `structural/around.rs` a trait's implementors
-and an enclosing module's re-exports; `names/paths.rs` and `names/paths/`: the paths that reach it — `T::name`,
+(`names/structural.rs`, with `structural/files.rs` the files it reads, `structural/reading.rs` one of them read and
+`structural/around.rs` a trait's implementors and an enclosing module's re-exports; `names/paths.rs` and `names/paths/`: the paths that reach it — `T::name`,
 `Self::name` inside an `impl` of `T`, `<T as Tr>::name`, `Tr::name` or `X::name` for a trait's item with `impl Tr for X`,
 `m::name` and a bare `name` called or passed for a free function — each resolved to its full path from the file's module,
 its `use` declarations (an alias, `{self as x}`, a glob) and its own crate's dependencies (`paths/resolve.rs`,
-`paths/imports.rs`, `paths/owner.rs`, `paths/reach.rs`), read from a tree-sitter syntax tree embedded in the binary
+`paths/resolve/scope.rs`, `paths/declared.rs` with the standard prelude's names, `paths/imports.rs`, `paths/owner.rs`, `paths/reach.rs`), read from a tree-sitter syntax tree embedded in the binary
 (`paths/syntax.rs`), so comments, strings and same-named items of another module or crate never match;
-`names/crates.rs` reads each package's manifest, `names/unit.rs` a file's crate and module; a call through a value is
+`names/crates.rs` reads each package's manifest, `names/unit.rs` a file's crate and module (`unit/root.rs` where a path's root leads, `unit/files.rs` a module's files); a call through a value is
 not read), and,
 when the reviewer's profile says codebase-memory answers, or records none and it answers on PATH (`src/consumers/cbm/`,
 `graph.rs`, `graph/found.rs`), the checkout the review

@@ -62,12 +62,16 @@ pub(in crate::consumers::names) fn owner(
         }),
         "impl_item" => {
             let ty = segs(holder.child_by_field_name("type")?, text)?;
-            let at = res.resolve(holder, &ty).into_iter().next()?;
+            let mut also = res.type_candidates(holder, &ty);
+            if also.is_empty() {
+                return None;
+            }
+            let at = also.remove(0);
             let of_trait = holder
                 .child_by_field_name("trait")
                 .and_then(|t| segs(t, text)?.last().map(|s| (*s).to_owned()));
             (!is_parameter(holder, &ty, text)).then_some(Owner {
-                kind: Kind::Type { of_trait },
+                kind: Kind::Type { of_trait, also },
                 at,
             })
         }
@@ -98,7 +102,7 @@ pub(in crate::consumers::names) fn implementors(
         };
         let of = res.resolve(n, &tr);
         if !is_parameter(n, &ty, text) && of.iter().any(|t| super::same(t, trait_at, rx)) {
-            out.extend(res.resolve(n, &ty).into_iter().take(1));
+            out.extend(res.type_candidates(n, &ty));
         }
     });
     out

@@ -28,6 +28,7 @@ mod paths;
 mod reindex;
 mod stale;
 mod structural;
+mod structural_bounds;
 mod structural_gaps;
 mod structural_imports;
 mod walk;

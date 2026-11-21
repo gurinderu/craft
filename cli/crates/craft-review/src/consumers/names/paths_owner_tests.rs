@@ -102,6 +102,26 @@ mod inner {
 }
 
 #[test]
+fn an_implementor_is_no_prelude_type_and_a_glob_s_type_is_its_own() {
+    let text = "\
+impl Tr for String {}
+impl Tr for u8 {}
+impl Tr for Mine {}
+mod m {
+    use crate::a::*;
+    impl super::Tr for Foo {}
+}
+";
+    let tree = parse(text, &mut || false).unwrap();
+    let ws = Workspace::default();
+    let unit = ws.unit("src/lib.rs");
+    let res = Resolver::new(&unit, &tree, text);
+    let tr = item(&["Tr"]);
+    let found = super::implementors(&tree, text, (&tr, &|_, _| false), &res);
+    assert_eq!(found, [item(&["Mine"]), item(&["a", "Foo"])]);
+}
+
+#[test]
 fn a_parse_stopped_gives_no_tree() {
     let text = "fn f() {}\n".repeat(10_000);
     assert!(parse(&text, &mut || true).is_none());

@@ -15,7 +15,7 @@ use super::{Until, parse_until};
 const IMPLS_MAX: usize = 32;
 
 /// The types the workspace at `top` implements the trait at `trait_at` for, read from the files
-/// naming it, the first [`IMPLS_MAX`] kept.
+/// naming it, read until [`IMPLS_MAX`] are found.
 pub(super) fn implemented(
     top: &Path,
     ws: &Workspace,
@@ -34,10 +34,13 @@ pub(super) fn implemented(
         let unit = ws.unit(&f);
         let res = Resolver::new(&unit, &tree, &text);
         out.extend(paths::implementors(&tree, &text, (trait_at, rx), &res));
+        out.sort();
+        out.dedup();
+        if out.len() >= IMPLS_MAX {
+            out.truncate(IMPLS_MAX);
+            break;
+        }
     }
-    out.sort();
-    out.dedup();
-    out.truncate(IMPLS_MAX);
     Ok(out)
 }
 

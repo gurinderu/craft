@@ -17,15 +17,22 @@ use crate::cancel::{Cancel, STOPPED};
 
 mod around;
 mod files;
+mod reading;
 
 use around::{Reexported, implemented};
 use files::candidates;
+use reading::{Reading, shared};
 
-/// What the structural search found: the lines, and the files it could not read, `file (why)`.
+/// How many files a free function's search reads, those nearest its own file first.
+pub(in crate::consumers) const FREE_FILES_MAX: usize = 300;
+
+/// What the structural search found: the lines, the files it could not read, `file (why)`, and
+/// how many of the files naming the item were read, when not all.
 #[derive(Debug, Default)]
 pub(in crate::consumers) struct Found {
     pub hits: Vec<Hit>,
     pub unread: Vec<String>,
+    pub partial: Option<String>,
 }
 
 /// The deadline and the stop a search runs under.
@@ -33,8 +40,8 @@ type Until<'a> = (Instant, &'a Cancel);
 
 /// The lines of the working tree's Rust sources at `top` whose paths reach `name`, declared at
 /// `declared` (`file`, 1-based line), each read in its place in `ws`; `None` when no function of
-/// that name starts there, it is a blanket `impl`'s or inside another's body, or its file is
-/// absent; `Err` once more than [`HITS_MAX`] lines do, when its own file cannot be read, when
+/// that name starts there, it is a blanket `impl`'s or inside another's body, it is a free one
+/// and `ws` is unread, or its file is absent; `Err` once more than [`HITS_MAX`] lines do, when its own file cannot be read, when
 /// `deadline` passes or `cancel` is first, or with git's reason.
 pub(in crate::consumers) fn by_path(
     top: &Path,
@@ -55,6 +62,9 @@ pub(in crate::consumers) fn by_path(
     let Some(mut own) = paths::owner(&tree, &text, (line, name), &res) else {
         return Ok(None);
     };
+    if ws.unread().is_some() && own.kind == Kind::Free {
+        return Ok(None);
+    }
     let reexported = Reexported::new(top, ws, until);
     let rx = |m: &paths::Item, n: &str| reexported.brings(m, n);
     if matches!(own.kind, Kind::Trait { .. }) {
@@ -63,29 +73,21 @@ pub(in crate::consumers) fn by_path(
         };
     }
     let mut found = Found::default();
-    for f in candidates(top, &own.words(), name, until)? {
-        let text = match source::read_within(top, &f) {
-            Ok(Some(t)) => t,
-            Ok(None) => continue,
-            Err(e) => {
-                found.unread.push(format!("{f} ({e})"));
-                continue;
-            }
-        };
-        let tree = parse_until(&text, until)?;
-        let unit = ws.unit(&f);
-        let res = Resolver::new(&unit, &tree, &text);
-        let lines: Vec<&str> = text.lines().collect();
-        let rows = paths::reaching(&tree, &text, (name, &own), (&res, &rx));
-        found.hits.extend(rows.into_iter().map(|n| {
-            let at = usize::try_from(n).ok().and_then(|n| n.checked_sub(1));
-            let text = at.and_then(|i| lines.get(i)).copied().unwrap_or_default();
-            Hit {
-                file: f.clone(),
-                line: n,
-                text: text.to_owned(),
-            }
-        }));
+    let mut files = candidates(top, &own.words(), name, until)?;
+    if own.kind == Kind::Free && files.len() > FREE_FILES_MAX {
+        found.partial = Some(format!("{FREE_FILES_MAX} of {} files read", files.len()));
+        files.sort_by_key(|f| std::cmp::Reverse(shared(f, file)));
+        files.truncate(FREE_FILES_MAX);
+    }
+    let at = Reading {
+        top,
+        ws,
+        own: (name, &own),
+        rx: &rx,
+        until,
+    };
+    for f in files {
+        at.read(&f, &mut found)?;
         if found.hits.len() > HITS_MAX {
             return Err(super::Unfinished::Capped.to_string());
         }

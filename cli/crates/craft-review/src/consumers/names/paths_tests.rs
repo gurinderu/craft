@@ -32,6 +32,7 @@ pub(super) fn typed(path: &[&str], of_trait: Option<&str>) -> Owner {
     Owner {
         kind: Kind::Type {
             of_trait: of_trait.map(Into::into),
+            also: Vec::new(),
         },
         at: item(path),
     }
@@ -208,6 +209,7 @@ fn a_path_through_a_dependency_of_the_file_s_crate_does_not_match() {
     let ws = Workspace::of(vec![Package {
         dir: String::new(),
         lib: "app".into(),
+        has_lib: true,
         deps: ["tokio".to_owned()].into(),
     }]);
     let mut own = typed(&["sync", "Mutex"], None);

@@ -66,6 +66,10 @@ impl Reach<'_> {
         mut targets: impl Iterator<Item = &'t Item>,
     ) -> bool {
         let found = self.res.resolve(at, segs);
+        if self.res.degraded() {
+            // The workspace unread: the owner's last segment alone, as before #564.
+            return targets.any(|t| found.iter().any(|f| f.path.last() == t.path.last()));
+        }
         targets.any(|t| found.iter().any(|f| same(f, t, self.rx)))
     }
 
@@ -129,13 +133,15 @@ impl Reach<'_> {
             return false;
         };
         match &self.own.kind {
-            Kind::Type { of_trait: Some(t) } => {
+            Kind::Type {
+                of_trait: Some(t), ..
+            } => {
                 let last = segs(tr, self.src).and_then(|s| s.last().copied());
                 self.type_is_owner(ty, at) && last == Some(t.as_str())
             }
             Kind::Trait { .. } => segs(tr, self.src)
                 .is_some_and(|s| self.lands(&s, at, std::iter::once(&self.own.at))),
-            Kind::Type { of_trait: None } | Kind::Free => false,
+            Kind::Type { of_trait: None, .. } | Kind::Free => false,
         }
     }
 }

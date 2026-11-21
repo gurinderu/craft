@@ -8,6 +8,7 @@ fn package(dir: &str, lib: &str, deps: &[&str]) -> Package {
     Package {
         dir: dir.into(),
         lib: lib.into(),
+        has_lib: false,
         deps: deps
             .iter()
             .map(|d| (*d).to_owned())
@@ -60,4 +61,19 @@ fn a_root_is_external_only_to_a_crate_depending_on_it() {
     assert_eq!(b.root("nested"), Root::Here);
     assert_eq!(b.root("std"), Root::Out);
     assert_eq!(b.root("::"), Root::Out);
+}
+
+#[test]
+fn a_package_s_main_is_a_crate_of_its_own_only_beside_a_library() {
+    let mut lib = package("", "mylib", &[]);
+    lib.has_lib = true;
+    let ws = Workspace::of(vec![lib]);
+    let main = ws.unit("src/main.rs");
+    assert_eq!((main.krate.as_str(), main.module.len()), ("src/main.rs", 0));
+    assert_eq!(main.root("mylib"), Root::Crate("mylib".into()));
+    assert_eq!(ws.unit("src/lib.rs").krate, "mylib");
+    assert_eq!(ws.unit("src/lib.rs").root("mylib"), Root::Here);
+    let bin_only = Workspace::of(vec![package("", "tool", &[])]);
+    assert_eq!(bin_only.unit("src/main.rs").krate, "tool");
+    assert_eq!(bin_only.unit("src/cli.rs").krate, "tool");
 }
