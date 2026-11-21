@@ -6,11 +6,13 @@ use serde_json::Value;
 
 use super::entry::{event, field, has};
 use super::iso;
-use super::kind::Kind;
+use super::kind::{Kind, work_sign};
 
 pub const NUDGE: &str = "re-review-nudge";
 /// The `reason` of the one line a later prompt in another script hears.
 pub const REMINDER: &str = "language-reminder";
+/// The `reason` on every line of the Agent-tool hook.
+pub const DISPATCH: &str = "reviewer-dispatch";
 // OpenCode's events for the same moments: a main session's message, its compaction.
 const OPENCODE_PROMPT: &str = "chat.message";
 const OPENCODE_RESET: &str = "session.compacted";
@@ -80,17 +82,32 @@ fn covered_by(codex: bool, kind: Kind) -> Vec<&'static str> {
     }
 }
 
-/// What a prompt of `kind` hears when its text was already said: nothing for a per-kind text
-/// (`already-said`), the reminder for the conditional one; `None` when that text is not there.
-pub fn repeat_of(log: &[Value], session: &str, codex: bool, kind: Kind) -> Option<&'static str> {
+/// What `prompt`, of `kind`, hears when its text was already said: nothing for a per-kind text
+/// (`already-said`); for the conditional one the reminder beside a sign of PR or review work, else
+/// nothing (`no-work-sign`: "давай дальше" asks for no review work); `None` when that text is not there.
+pub fn repeat_of(
+    log: &[Value],
+    session: &str,
+    codex: bool,
+    kind: Kind,
+    prompt: &str,
+) -> Option<&'static str> {
     if !said_in_session(log, session, Some(&covered_by(codex, kind))) {
         return None;
     }
-    Some(if kind == Kind::OtherLanguage {
-        REMINDER
-    } else {
-        "already-said"
+    Some(match kind {
+        Kind::OtherLanguage if work_sign(prompt) => REMINDER,
+        Kind::OtherLanguage => "no-work-sign",
+        Kind::Findings | Kind::Review => "already-said",
     })
+}
+
+/// Whether the reviewer-dispatch lines were said in the session's context: they are a rule, said
+/// once, not an instruction per dispatch, whatever range a later one names.
+pub fn dispatch_said(log: &[Value], session: &str) -> bool {
+    since_reset(log, session)
+        .into_iter()
+        .any(|e| event(e) == "PreToolUse" && field(e, "reason") == Some(DISPATCH) && spoke(e))
 }
 
 /// A line a human's prompt left: no agent's words, no nudge, no reminder.

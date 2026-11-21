@@ -2,19 +2,19 @@
 //! own reviewer (realm @nick/craft, node #417; one engine for any language: #420): the repo's
 //! reviewer stands, and the same range also goes through craft's review engine in the main
 //! session — a subagent has no Workflow tool (#262). The dispatch is never blocked: the context
-//! reaches the model after the tool result (#289), which for a background reviewer is at once.
+//! reaches the model after the tool result (#289), which for a background reviewer is at once. The
+//! lines are a rule: said once per session until a compact or clear (#288).
 
 use std::path::Path;
 
 use serde_json::Value;
 
 use super::declared::{self, repo_root};
+use super::heard::{DISPATCH, dispatch_said};
 use super::work::craft_agent;
 use super::{Ctx, Harness, Run, context, cwd_of, fields, frontmatter, text_of};
 
 const EVENT: &str = "PreToolUse";
-/// Every line this hook writes carries it.
-const REASON: &str = "reviewer-dispatch";
 
 /// The repo's own agent dispatched as `kind` (by its frontmatter name, else its file name): its
 /// file and whether it is a reviewer.
@@ -64,7 +64,8 @@ fn said(kind: &str, file: &str, background: bool, ctx: &Ctx) -> String {
 
 /// One `PreToolUse` run on the Agent tool. Not logged: another tool, craft's own agents and a type
 /// that is no agent of the repo's. Logged, each with `reason: reviewer-dispatch`: the repo test's
-/// silence, `not-review`, `in-subagent` (no Workflow tool there), `codex` (none there either), or
+/// silence, `not-review`, `in-subagent` (no Workflow tool there), `codex` (none there either),
+/// `already-said` (once per session until a compact or clear: realm @nick/craft, node #288), or
 /// the lines it spoke.
 pub fn run(input: &str, ctx: &Ctx) -> Run {
     let fields = fields(input);
@@ -88,7 +89,7 @@ pub fn run(input: &str, ctx: &Ctx) -> Run {
     let who = Harness::of(&fields, ctx);
     let mut base = declared::repo_test(&cwd, text_of(&fields, "session_id"), ctx, EVENT, who);
     base.agent = Some(kind.to_owned());
-    let base = base.because(REASON);
+    let base = base.because(DISPATCH);
     let quiet = |why: &str| Run {
         stdout: String::new(),
         entry: Some(base.clone().quiet(why)),
@@ -107,6 +108,9 @@ pub fn run(input: &str, ctx: &Ctx) -> Run {
     }
     if who == Harness::Codex {
         return quiet("codex");
+    }
+    if !base.session.is_empty() && dispatch_said(&ctx.logged(), &base.session) {
+        return quiet("already-said");
     }
     let background = tool.get("run_in_background") == Some(&Value::Bool(true));
     Run {

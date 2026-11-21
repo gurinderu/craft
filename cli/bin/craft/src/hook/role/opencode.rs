@@ -13,16 +13,22 @@ use serde_json::Value;
 
 use super::entry::{event, field, has};
 use super::heard::{REMINDER, repeat_of, said_in_session};
+use super::js::{Re, compile};
 use super::kind::prompt_kind;
 use super::work::craft_agent;
 use super::{Ctx, Harness, Run, cwd_of, declared, fields, text_of, text_opencode};
 
 const EVENT: &str = "chat.message";
+// An Iskron wake-up delivered as a user message: no human's word.
+static WAKE: Re = Re::new(|| compile(r"(?i)^[{S}]*\[iskron\]"));
 
-/// A main session's message: silent and unlogged on a prompt of no class; otherwise the text of its
-/// class, once per class and session until a compaction, the reminder for a later prompt in another
-/// script.
+/// A main session's message: silent and unlogged on a prompt of no class or an Iskron wake-up;
+/// otherwise the text of its class, once per class and session until a compaction, the reminder
+/// for a later prompt in another script beside a sign of PR or review work.
 fn main_message(prompt: &str, session: &str, cwd: &Path, ctx: &Ctx) -> Run {
+    if WAKE.is_match(prompt) {
+        return Run::default();
+    }
     let Some(kind) = prompt_kind(prompt, None) else {
         return Run::default();
     };
@@ -30,7 +36,7 @@ fn main_message(prompt: &str, session: &str, cwd: &Path, ctx: &Ctx) -> Run {
     let mut entry = base.clone();
     entry.kind = Some(kind.name().to_owned());
     let repeat = if entry.spoke {
-        repeat_of(&ctx.logged(), session, false, kind)
+        repeat_of(&ctx.logged(), session, false, kind, prompt)
     } else {
         None
     };
