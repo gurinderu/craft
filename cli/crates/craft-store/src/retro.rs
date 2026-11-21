@@ -5,7 +5,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::js::{Js, Obj};
+use crate::js::{Js, JsString, Obj, Utf16Error};
 use crate::record::SEVERITIES;
 use crate::tally::{Tally, round2};
 
@@ -51,18 +51,23 @@ pub struct Retro {
 /// Whether the run is the CLI's (`reviewChain`).
 #[must_use]
 pub fn is_cli(r: &Obj) -> bool {
-    r.text("name") == "cli-review" || r.text("driver") == "cli"
+    r.text_units("name") == "cli-review" || r.text_units("driver") == "cli"
 }
 
 /// `engineKey`: the host the run's tasks ran in (`+cli` for the CLI's), its version and revision.
-#[must_use]
-pub fn engine_key(r: &Obj) -> String {
+/// # Errors
+/// When the engine's name cannot cross the Unicode-only report boundary.
+pub fn engine_key(r: &Obj) -> Result<String, Utf16Error> {
+    engine_text(r).to_utf8()
+}
+
+fn engine_text(r: &Obj) -> JsString {
     let runtime = match r.get("runtime") {
-        Some(v) if v.truthy() => v.to_js_string(),
+        Some(v) if v.truthy() => v.to_js_text(),
         _ => "unknown-runtime".into(),
     };
     let version = match r.get("craftVersion") {
-        Some(v) if v.truthy() => v.to_js_string(),
+        Some(v) if v.truthy() => v.to_js_text(),
         _ => "unversioned".into(),
     };
     let int = |k: &str| r.get(k).and_then(Js::as_num).filter(|n| n.fract() == 0.0);
@@ -73,7 +78,17 @@ pub fn engine_key(r: &Obj) -> String {
             |n| format!("r{}", crate::js::number_text(n)),
         );
     let cli = if is_cli(r) { "+cli" } else { "" };
-    format!("{runtime}{cli} {version} {rev}")
+    JsString::join(
+        &[
+            runtime,
+            cli.into(),
+            " ".into(),
+            version,
+            " ".into(),
+            rev.into(),
+        ],
+        "",
+    )
 }
 
 /// The key a resumed run's two records share (`runKey`), `None` when the record is not foldable.
@@ -82,7 +97,7 @@ pub fn run_key(r: &Obj) -> Option<String> {
     let first = |ks: &[&str]| {
         ks.iter()
             .find_map(|k| r.get(k).filter(|v| v.truthy()))
-            .map(Js::to_js_string)
+            .map(Js::to_js_text)
             .unwrap_or_default()
     };
     let head = first(&["head", "commit"]);
@@ -102,7 +117,7 @@ pub fn run_key(r: &Obj) -> Option<String> {
         None => Js::Null,
         Some(v) => v.clone(),
     };
-    let mut key = vec![Js::str(engine_key(r))];
+    let mut key = vec![Js::str(engine_text(r))];
     for k in ["kind", "name", "driver", "project"] {
         key.push(or_null(r.get(k)));
     }
@@ -140,7 +155,7 @@ pub fn fold_runs(records: Vec<Obj>) -> Vec<Obj> {
             continue;
         };
         match newest.iter_mut().find(|(k, _)| *k == key) {
-            Some((_, seen)) if r.text("ts") > seen.text("ts") => *seen = r,
+            Some((_, seen)) if r.text_units("ts") > seen.text_units("ts") => *seen = r,
             Some(_) => {}
             None => newest.push((key, r)),
         }
@@ -157,7 +172,9 @@ fn finished_of(
 ) -> Vec<Obj> {
     let mut kept = Vec::new();
     for r in records {
-        if !r.get("schemaVersion").is_some_and(Js::truthy) || r.text("craftVersion") != version {
+        if !r.get("schemaVersion").is_some_and(Js::truthy)
+            || r.text_units("craftVersion") != version
+        {
             retro.other += 1;
             continue;
         }
@@ -174,24 +191,27 @@ fn finished_of(
 }
 
 /// The retro of `version` over every record.
-#[must_use]
-pub fn retro(version: &str, records: impl IntoIterator<Item = Obj>) -> Retro {
+/// # Errors
+/// When a report field cannot be represented as Unicode.
+pub fn retro(version: &str, records: impl IntoIterator<Item = Obj>) -> Result<Retro, Utf16Error> {
     let mut out = Retro::default();
     for r in finished_of(version, records, &mut out) {
-        add_record(&mut out, &r);
+        add_record(&mut out, &r)?;
     }
-    out
+    Ok(out)
 }
 
 /// Add one finished, deduplicated record to a retro.
-pub fn add_record(out: &mut Retro, r: &Obj) {
-    if r.text("kind") == "develop" {
-        return;
+/// # Errors
+/// When a report field cannot be represented as Unicode.
+pub fn add_record(out: &mut Retro, r: &Obj) -> Result<(), Utf16Error> {
+    if r.text_units("kind") == "develop" {
+        return Ok(());
     }
     out.runs += 1;
-    *out.engines.entry(engine_key(r)).or_default() += 1;
+    *out.engines.entry(engine_key(r)?).or_default() += 1;
     let name = match r.get("name") {
-        Some(n) if n.truthy() => n.to_js_string(),
+        Some(n) if n.truthy() => n.to_js_string()?,
         _ => "(unknown)".into(),
     };
     let name = if name == "review" && is_cli(r) {
@@ -201,23 +221,21 @@ pub fn add_record(out: &mut Retro, r: &Obj) {
     };
     let w = out.workflows.entry(name).or_default();
     w.add(r);
-    let verdict = r
-        .get("verdict")
-        .filter(|v| v.truthy())
-        .map(Js::to_js_string);
-    out.partial_coverage += u64::from(verdict.is_some_and(|v| crate::tally::is_incomplete(&v)));
+    let verdict = r.get("verdict").filter(|v| v.truthy()).map(Js::to_js_text);
+    out.partial_coverage +=
+        u64::from(verdict.is_some_and(|v| crate::tally::is_incomplete_units(&v)));
     for item in r.get("notRun").and_then(Js::as_arr).unwrap_or(&[]) {
-        *out.not_run.entry(item.to_js_string()).or_default() += 1;
+        *out.not_run.entry(item.to_js_string()?).or_default() += 1;
     }
-    lenses_of(r, &mut out.lenses);
+    lenses_of(r, &mut out.lenses)
 }
 
-fn lenses_of(r: &Obj, lenses: &mut BTreeMap<String, Lens>) {
+fn lenses_of(r: &Obj, lenses: &mut BTreeMap<String, Lens>) -> Result<(), Utf16Error> {
     let chain = if is_cli(r) { " (cli)" } else { "" };
     for dim in r.get("dimensions").and_then(Js::as_arr).unwrap_or(&[]) {
         let Some(d) = dim.as_obj() else { continue };
         let name = match d.get("dimension") {
-            Some(v) if v.truthy() => v.to_js_string(),
+            Some(v) if v.truthy() => v.to_js_string()?,
             _ => "(unnamed)".into(),
         };
         let lens = lenses.entry(format!("{name}{chain}")).or_default();
@@ -248,4 +266,5 @@ fn lenses_of(r: &Obj, lenses: &mut BTreeMap<String, Lens>) {
             }
         }
     }
+    Ok(())
 }

@@ -1,7 +1,8 @@
 //! A finished run's record, as `finalizeRun` in `lib/craft-log-run.mjs` files it: a proven retry
 //! answered with the file the first attempt filed; else the run's checkpoints folded in when their
 //! directory is proven this run's, the record filed under the identity its checkpoints observed near
-//! the start, the proof left, and the folded directory marked and removed. A directory that is not
+//! the start. Its durable intent marks the directory before publication; cleanup retires it outside
+//! `.partial` before recursive deletion. A directory that is not
 //! the run's, cannot be read or lies outside the store is left alone and said, never the reason the
 //! record is lost. The record parts and ledger shards the Workflow engine may send are not read
 //! here: the binary sends its record whole.
@@ -10,17 +11,48 @@ use std::path::{Path, PathBuf};
 
 use crate::StoreError;
 use crate::checkpoint::{
-    FINALIZED_MARKER, Identity, KEPT_LIVE_MARKER, agrees, attested, find_rejoinable, inside_store,
+    Identity, KEPT_LIVE_MARKER, agrees, attested, find_rejoinable, inside_store,
     read_checkpoint_files,
 };
 use crate::git::GitId;
-use crate::js::{Js, Obj};
+use crate::js::{Js, JsString, Obj};
 use crate::proof::{self, ProofAt};
-use crate::write::{Writing, with_git, write_record};
+use crate::write::{Proof, Writing, recover_filings, with_git, write_proven};
 
 #[cfg(test)]
 mod corrupt_rejoin_test {
     use super::*;
+
+    #[test]
+    fn marker_failure_refuses_before_filing() {
+        let d = tempfile::tempdir().unwrap();
+        let dir = d.path().join(".partial/run");
+        std::fs::create_dir_all(dir.join(".finalized")).unwrap();
+        std::fs::write(dir.join("00-start.json"), r#"{"project":"/p"}"#).unwrap();
+        let w = Writing {
+            store: d.path().into(),
+            project: "/p".into(),
+            workdir: d.path().into(),
+            session: String::new(),
+            git_id: GitId::default(),
+            observe: false,
+            craft_commit: None,
+            now: 0,
+        };
+        assert!(
+            finalize(
+                &Obj::new(),
+                &w,
+                Asked {
+                    dir: dir.to_str().unwrap(),
+                    ..Asked::default()
+                },
+                &mut Said::default()
+            )
+            .is_err()
+        );
+        assert!(!d.path().join("index.jsonl").exists());
+    }
 
     #[test]
     fn explicit_rejoin_refuses_corrupt_checkpoint_without_removing_it() {
@@ -152,15 +184,8 @@ pub fn finalize(
         dir: asked.dir,
         project: &w.project,
     };
-    if asked.retry
-        && let Some((file, warned)) = proof::filed_before(raw, at)
-    {
-        said.out.push(format!("already filed {}", file.display()));
-        let new: Vec<String> = warned
-            .into_iter()
-            .filter(|l| !said.err.contains(l))
-            .collect();
-        said.err.extend(new);
+    recover_filings(&w.store)?;
+    if say_proven(raw, at, asked.retry, said) {
         return Ok(());
     }
     let partial = w.store.join(crate::checkpoint::PARTIAL_DIR);
@@ -169,35 +194,23 @@ pub fn finalize(
     let mut own = with_git(raw, &w.git_id);
     own.set("project", Js::str(&w.project));
     let own = Identity::of(&own);
-    let target = if refused.is_some() {
-        None
-    } else if !asked.dir.is_empty() {
-        Some(PathBuf::from(asked.dir))
-    } else if asked.rejoin {
-        find_rejoinable(raw, &w.store, &own, w.now)?
-    } else {
-        None
-    };
+    let target = fold_target(raw, w, asked, refused.is_some(), &own)?;
     let (phases, read_error) = read_target(target.as_deref(), asked.rejoin)?;
     let have = attested(&phases);
     let own_dir = !asked.dir.is_empty() && refused.is_none() && !asked.rejoin;
-    let mine = if target.is_none() || phases.is_empty() || have.project.as_deref() == Some("") {
+    let mine = if target.is_none()
+        || phases.is_empty()
+        || have.project.as_ref().is_some_and(JsString::is_empty)
+    {
         true
     } else if own_dir {
-        have.project.as_deref() == Some(w.project.as_str())
+        have.project
+            .as_ref()
+            .is_some_and(|p| p == w.project.as_str())
     } else {
         agrees(&own, &have)
     };
-    let folded: Vec<Js> = if mine {
-        phases
-            .iter()
-            .filter(|p| !p.get("ledgerShard").is_some_and(Js::truthy))
-            .filter(|p| !p.get("recordPart").is_some_and(Js::truthy))
-            .map(|p| Js::Obj(p.clone()))
-            .collect()
-    } else {
-        Vec::new()
-    };
+    let folded = folded_phases(mine, &phases);
     let start = start_identity(mine, &have, &w.git_id);
     if let Some(m) = start.as_ref().and_then(|s| moved(s, &w.git_id)) {
         said.err.push(m);
@@ -207,8 +220,28 @@ pub fn finalize(
     if !folded.is_empty() && !raw.has("phases") {
         record.set("phases", Js::Arr(folded.clone()));
     }
-    let id = start.as_ref().unwrap_or(&w.git_id);
-    let (file, _) = write_record(&record, w, id, over.as_deref())?;
+    let fallback = GitId::default();
+    let id = if let Some(start) = &start {
+        record.set("branch", Js::str(&start.branch));
+        record.set("head", Js::str(&start.head));
+        &fallback
+    } else {
+        &w.git_id
+    };
+    let finalizing = target.as_deref().filter(|_| mine && read_error.is_empty());
+    let (file, _) = write_proven(
+        &record,
+        w,
+        id,
+        over.as_deref(),
+        Some(Proof {
+            raw,
+            at,
+            retry: asked.retry,
+            warnings: &said.err,
+            finalizing,
+        }),
+    )?;
     say_slow_git(said);
     if !read_error.is_empty() {
         said.err.push(format!(
@@ -216,8 +249,8 @@ pub fn finalize(
             safe_path(&read_error)
         ));
     }
-    proof::leave(raw, at, &file, &said.err);
-    let unreadable = remove_folded(target.as_deref(), mine, &read_error, w.now);
+    proof::leave(raw, at, &file, &said.err)?;
+    let unreadable = remove_folded(target.as_deref(), mine, &read_error, &w.store);
     let tail = if folded.is_empty() {
         String::new()
     } else {
@@ -243,8 +276,51 @@ pub fn finalize(
             partial.display()
         ));
     }
-    proof::leave(raw, at, &file, &said.err);
+    proof::leave(raw, at, &file, &said.err)?;
     Ok(())
+}
+
+fn say_proven(raw: &Obj, at: ProofAt<'_>, retry: bool, said: &mut Said) -> bool {
+    let Some((file, warned)) = proof::filed_for(raw, at, retry) else {
+        return false;
+    };
+    said.out.push(format!("already filed {}", file.display()));
+    let new: Vec<String> = warned
+        .into_iter()
+        .filter(|l| !said.err.contains(l))
+        .collect();
+    said.err.extend(new);
+    true
+}
+
+fn folded_phases(mine: bool, phases: &[Obj]) -> Vec<Js> {
+    if !mine {
+        return Vec::new();
+    }
+    phases
+        .iter()
+        .filter(|p| !p.get("ledgerShard").is_some_and(Js::truthy))
+        .filter(|p| !p.get("recordPart").is_some_and(Js::truthy))
+        .map(|p| Js::Obj(p.clone()))
+        .collect()
+}
+
+fn fold_target(
+    raw: &Obj,
+    w: &Writing,
+    asked: Asked<'_>,
+    refused: bool,
+    own: &Identity,
+) -> Result<Option<PathBuf>, StoreError> {
+    if refused {
+        Ok(None)
+    } else if !asked.dir.is_empty() {
+        Ok(Some(PathBuf::from(asked.dir)))
+    } else if asked.rejoin {
+        find_rejoinable(raw, &w.store, own, w.now)
+    } else {
+        Ok(None)
+    }
 }
 
 fn read_target(dir: Option<&Path>, rejoin: bool) -> Result<(Vec<Obj>, String), StoreError> {
@@ -260,46 +336,53 @@ fn read_target(dir: Option<&Path>, rejoin: bool) -> Result<(Vec<Obj>, String), S
 
 /// Per field, the start-of-run observation the checkpoints carry, else the write-time one; `None`
 /// when the run's own checkpoints observed neither.
-fn start_identity(mine: bool, have: &crate::checkpoint::Attested, now: &GitId) -> Option<GitId> {
+fn start_identity(mine: bool, have: &crate::checkpoint::Attested, now: &GitId) -> Option<Identity> {
     let branch = have.branch.clone().unwrap_or_default();
     let head = have.head.clone().unwrap_or_default();
     if !mine || (branch.is_empty() && head.is_empty()) {
         return None;
     }
-    Some(GitId {
+    Some(Identity {
+        project: JsString::default(),
         branch: if branch.is_empty() {
-            now.branch.clone()
+            JsString::from(&now.branch)
         } else {
             branch
         },
         head: if head.is_empty() {
-            now.head.clone()
+            JsString::from(&now.head)
         } else {
             head
         },
     })
 }
 
-fn moved(start: &GitId, now: &GitId) -> Option<String> {
-    let differ = |a: &str, b: &str| !a.is_empty() && !b.is_empty() && a != b;
+fn moved(start: &Identity, now: &GitId) -> Option<String> {
+    let differ = |a: &JsString, b: &str| !a.is_empty() && !b.is_empty() && a != b;
     if !(differ(&start.branch, &now.branch) || differ(&start.head, &now.head)) {
         return None;
     }
-    let short = |h: &str| h.chars().take(8).collect::<String>();
-    let or_q = |b: &str| {
+    let short = |h: &JsString| display_identity(&JsString::from_utf16(h.units().take(8).collect()));
+    let or_q = |b: &JsString| {
         if b.is_empty() {
             "?".to_owned()
         } else {
-            b.to_owned()
+            display_identity(b)
         }
     };
     Some(format!(
         "craft-log-run WARNING: the working copy moved during this run ({}@{} now, {}@{} when it started) — filed under the identity it reviewed",
-        or_q(&now.branch),
-        short(&now.head),
+        or_q(&JsString::from(&now.branch)),
+        short(&JsString::from(&now.head)),
         or_q(&start.branch),
         short(&start.head)
     ))
+}
+
+fn display_identity(value: &JsString) -> String {
+    value
+        .as_str()
+        .map_or_else(|| Js::str(value).compact(), str::to_owned)
 }
 
 fn kept_record_file(mine: bool, dir: Option<&Path>) -> Option<PathBuf> {
@@ -310,15 +393,11 @@ fn kept_record_file(mine: bool, dir: Option<&Path>) -> Option<PathBuf> {
 }
 
 /// The folded directory marked finalized and removed; what kept it, `""` when nothing did.
-fn remove_folded(target: Option<&Path>, mine: bool, unreadable: &str, now: i64) -> String {
+fn remove_folded(target: Option<&Path>, mine: bool, unreadable: &str, store: &Path) -> String {
     let Some(t) = target.filter(|t| mine && unreadable.is_empty() && t.exists()) else {
         return unreadable.to_owned();
     };
-    drop(std::fs::write(
-        t.join(FINALIZED_MARKER),
-        format!("{}\n", crate::time::iso(now)),
-    ));
-    match std::fs::remove_dir_all(t) {
+    match crate::write::retire_finalized(t, store) {
         Ok(()) => String::new(),
         Err(e) => format!("the run directory could not be removed: {e}"),
     }

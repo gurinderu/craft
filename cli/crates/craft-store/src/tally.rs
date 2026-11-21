@@ -3,7 +3,7 @@
 //! severity; the verification's candidates, confirmed findings and refute rates; a triage run's
 //! dispositions.
 
-use crate::js::{Js, Obj};
+use crate::js::{Js, JsString, Obj};
 use crate::record::SEVERITIES;
 
 /// The dispositions a triage run counts.
@@ -42,6 +42,16 @@ fn has(v: &str, words: &[&str]) -> bool {
     words.iter().any(|w| v.contains(w))
 }
 
+fn has_units(v: &JsString, words: &[&str]) -> bool {
+    let lower = v.map_unicode(str::to_lowercase);
+    words.iter().any(|w| lower.contains(w))
+}
+
+#[must_use]
+pub fn is_incomplete_units(verdict: &JsString) -> bool {
+    has_units(verdict, &["incomplete", "partial coverage"])
+}
+
 /// Whether a verdict carries a coverage marker (`isIncomplete`).
 #[must_use]
 pub fn is_incomplete(verdict: &str) -> bool {
@@ -60,20 +70,20 @@ fn count(o: Option<&Obj>, k: &str) -> f64 {
 impl Tally {
     /// Adds one run's record.
     pub fn add(&mut self, r: &Obj) {
-        self.runs += 1;
         let v = match r.get("verdict") {
-            Some(v) if v.truthy() => v.to_js_string(),
-            _ => String::new(),
+            Some(v) if v.truthy() => v.to_js_text(),
+            _ => JsString::default(),
         };
-        let incomplete = is_incomplete(&v);
+        self.runs += 1;
+        let incomplete = is_incomplete_units(&v);
         self.partial_coverage += u64::from(incomplete);
-        if has(&v, &["block", "at-risk", "ub-found"]) {
+        if has_units(&v, &["block", "at-risk", "ub-found"]) {
             self.block += 1;
-        } else if has(&v, &["warning", "concerns"]) {
+        } else if has_units(&v, &["warning", "concerns"]) {
             self.warning += 1;
         } else if incomplete {
             self.incomplete += 1;
-        } else if has(&v, &["approve", "healthy", "clean"]) {
+        } else if has_units(&v, &["approve", "healthy", "clean"]) {
             self.approve += 1;
         }
         let by = r

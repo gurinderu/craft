@@ -50,12 +50,15 @@ struct Row {
 }
 
 fn row_of(r: &Obj) -> Row {
-    let head = r.text("head");
-    let at = crate::time::stamp_ms(r.text("ts"));
+    let head = r.text_units("head");
+    let at = r
+        .get("ts")
+        .and_then(Js::as_str)
+        .and_then(crate::time::stamp_ms);
     let run = at.filter(|_| !head.is_empty()).map(|at| {
         let key: Vec<Js> = ["kind", "name", "driver", "project", "branch"]
             .iter()
-            .map(|k| Js::str(r.text(k)))
+            .map(|k| Js::str(r.text_units(k)))
             .chain([Js::str(head)])
             .collect();
         (Js::Arr(key).compact(), at)
@@ -63,7 +66,7 @@ fn row_of(r: &Obj) -> Row {
     Row {
         file: filename(r),
         run,
-        incomplete: r.text("verdict").starts_with("INCOMPLETE"),
+        incomplete: r.text_units("verdict").starts_with("INCOMPLETE"),
     }
 }
 
@@ -158,10 +161,10 @@ fn unfiled_runs(store: &Path) -> std::io::Result<Vec<String>> {
     Ok(dirs(&root)?
         .into_iter()
         .filter(|d| {
-            let done =
-                json(&root.join(d).join("state.json")).is_some_and(|s| s.text("phase") == "done");
+            let done = json(&root.join(d).join("state.json"))
+                .is_some_and(|s| s.text_units("phase") == "done");
             let filing = json(&root.join(d).join("filing.json"));
-            done && filing.is_some_and(|f| f.text("record") != "filed")
+            done && filing.is_some_and(|f| f.text_units("record") != "filed")
         })
         .collect())
 }

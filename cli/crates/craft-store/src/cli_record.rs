@@ -2,7 +2,7 @@
 //! builds them from the finished step the binary printed, read field by field as
 //! `lib/cli-review-step.mjs` reads it (`finishedStep`): each field checked and defaulted the one way.
 
-use crate::js::{Js, Obj};
+use crate::js::{Js, JsString, Obj};
 use crate::record::{fingerprint, summarize};
 
 const ENGINE: &str = "review";
@@ -13,12 +13,14 @@ fn is_obj(v: Option<&Js>) -> Option<&Obj> {
 }
 
 fn text(v: Option<&Js>) -> Js {
-    Js::str(v.and_then(Js::as_str).unwrap_or(""))
+    v.filter(|v| v.is_string())
+        .cloned()
+        .unwrap_or_else(|| Js::str(""))
 }
 
 fn strings(v: Option<&Js>) -> Js {
     let a = v.and_then(Js::as_arr).unwrap_or(&[]);
-    Js::Arr(a.iter().filter(|x| x.as_str().is_some()).cloned().collect())
+    Js::Arr(a.iter().filter(|x| x.is_string()).cloned().collect())
 }
 
 fn objects(v: Option<&Js>) -> Option<Vec<Js>> {
@@ -33,8 +35,8 @@ fn obj_or_null(v: Option<&Js>) -> Js {
 /// `String(v ?? '')`.
 fn string_of(v: Option<&Js>) -> Js {
     Js::str(match v {
-        None | Some(Js::Null) => String::new(),
-        Some(v) => v.to_js_string(),
+        None | Some(Js::Null) => JsString::default(),
+        Some(v) => v.to_js_text(),
     })
 }
 
@@ -78,19 +80,19 @@ fn ledger_row(r: &Obj) -> Obj {
     for k in ["symbol", "severity", "tier"] {
         o.set(k, text(r.get(k)));
     }
-    let disposition = r.text("disposition");
+    let disposition = text(r.get("disposition"));
     o.set(
         "disposition",
-        Js::str(if disposition.is_empty() {
-            "open"
-        } else {
+        if disposition.truthy() {
             disposition
-        }),
+        } else {
+            Js::str("open")
+        },
     );
     for k in ["source", "ruleId", "title", "why"] {
         o.set(k, text(r.get(k)));
     }
-    if !r.text("toolRule").is_empty() {
+    if text(r.get("toolRule")).truthy() {
         o.set("toolRule", text(r.get("toolRule")));
     }
     if let Some(s) = r.get("sources").filter(|s| s.as_arr().is_some()) {
@@ -146,7 +148,7 @@ pub fn publication_kept(step: &Obj) -> Obj {
 /// Why a finished step cannot be read, as `finishedStep` says it; `None` when it can.
 #[must_use]
 pub fn unreadable_step(step: &Obj) -> Option<&'static str> {
-    let verdict = step.get("verdict").and_then(Js::as_str);
+    let verdict = step.get("verdict").filter(|v| v.is_string());
     (!absolute_path(step.get("report")) || verdict.is_none())
         .then_some("a finished step names no report or verdict")
 }

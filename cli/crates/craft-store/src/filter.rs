@@ -30,30 +30,36 @@ impl Filter {
     #[must_use]
     pub fn keeps(&self, r: &Obj) -> bool {
         let project = |want: &String| {
-            let have = r.text("project");
-            have == want || have.ends_with(&format!("/{}", want.trim_start_matches('/')))
+            let have = r.text_units("project");
+            have == *want || have.ends_with(&format!("/{}", want.trim_start_matches('/')))
         };
-        let ts = r.text("ts");
+        let ts = r.text_units("ts");
         let verdict = |want: &String| {
-            r.text("verdict")
-                .to_lowercase()
+            r.text_units("verdict")
+                .map_unicode(str::to_lowercase)
                 .contains(&want.to_lowercase())
         };
         self.project.as_ref().is_none_or(project)
-            && self.branch.as_ref().is_none_or(|b| r.text("branch") == b)
-            && self.name.as_ref().is_none_or(|n| r.text("name") == n)
+            && self
+                .branch
+                .as_ref()
+                .is_none_or(|b| r.text_units("branch") == *b)
+            && self
+                .name
+                .as_ref()
+                .is_none_or(|n| r.text_units("name") == *n)
             && self
                 .version
                 .as_ref()
-                .is_none_or(|v| r.text("craftVersion") == v)
+                .is_none_or(|v| r.text_units("craftVersion") == *v)
             && self
                 .since
                 .as_ref()
-                .is_none_or(|s| !ts.is_empty() && *ts >= *as_stamp(s))
+                .is_none_or(|s| !ts.is_empty() && ts >= as_stamp(s).into())
             && self
                 .until
                 .as_ref()
-                .is_none_or(|u| !ts.is_empty() && *ts < *as_stamp(u))
+                .is_none_or(|u| !ts.is_empty() && ts < as_stamp(u).into())
             && self.verdict.as_ref().is_none_or(verdict)
     }
 }

@@ -29,6 +29,7 @@ tempfile = "3.27"
 thiserror = "2.0"
 toml = { version = "0.9", default-features = false, features = ["parse", "display", "serde", "std"] }
 tokio = { version = "1.53", default-features = false }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Threading"] }
 
 craft-agent = { path = "crates/craft-agent" }
 craft-review = { path = "crates/craft-review" }
