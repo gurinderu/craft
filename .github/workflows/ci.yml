@@ -81,6 +81,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.99.0
         with:
           components: rustfmt, clippy
+          targets: x86_64-unknown-linux-musl
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: cli
@@ -95,6 +96,14 @@ jobs:
         run: |
           CRAFT_UPDATE_PARITY=1 cargo test -p craft-review --locked parity
           git diff --exit-code ../content/parity
+      # The release's Linux binary, built as release-please.yml builds it: static musl, its C (tree-sitter)
+      # compiled by musl-tools' musl-gcc, so a C build that fails is seen on the PR, not at the release.
+      - name: musl C compiler
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: cargo build (release, x86_64 musl)
+        env:
+          CC_x86_64_unknown_linux_musl: musl-gcc
+        run: cargo build --release --locked --target x86_64-unknown-linux-musl
 
   # Static analysis with semgrep's public registry rule sets, plus craft's own shell-command rule, over
   # lib/, integrations/opencode/plugin/ and integrations/claude-code/workflows/ (not integrations/opencode/install.sh or
