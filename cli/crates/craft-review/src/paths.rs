@@ -51,8 +51,9 @@ pub fn is_test_path(f: &str) -> bool {
     let stem = base.rsplit_once('.').map(|(s, _)| s);
     let named = stem.is_some_and(|s| {
         let last = s.rsplit(['.', '_', '-']).next().unwrap_or(s);
-        // `(^|[._-])tests?\.[^.]+$`: the last dotted part is the extension alone.
-        let spec = last == "spec" && last.len() < s.len();
+        // `(^|[._-])tests?\.[^.]+$` or `.+\.spec\.[^.]+$`: the last dotted part is the extension
+        // alone, and `spec` counts only as a dotted part of its own after a name.
+        let spec = s.strip_suffix(".spec").is_some_and(|name| !name.is_empty());
         (last == "test" || last == "tests" || spec) && !ext(&base).is_empty()
     });
     named || base.starts_with("test_")
@@ -165,6 +166,9 @@ mod tests {
             "src/latest.rs",
             "src/contest.rs",
             "src/spec.rs",
+            "node/src/chain_spec.rs",
+            "api/api_spec.py",
+            "web/openapi-spec.ts",
         ] {
             assert!(!is_test_path(p), "{p}");
         }

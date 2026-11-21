@@ -59,6 +59,9 @@ pub struct PlanInput<'a> {
     /// The scout's answer; `None` when it gave none, for the conservative plan.
     pub scout: Option<&'a Value>,
     pub changed_files: &'a [String],
+    /// The files of the change this profile was assigned ([`crate::coverage::assign`]): what it
+    /// reads as its production code.
+    pub profile_files: &'a [String],
     pub spec: &'a str,
     pub light: bool,
     /// Strict mode: the plan carries `maintainability` whatever the scout picked.
@@ -109,14 +112,14 @@ fn security_floor(p: &Profile, optional: &[String]) -> Vec<String> {
         .collect()
 }
 
-/// Whether `files` change `p`'s production code: by its globs, or, a profile taking the rest with
-/// none, any file it covers that is no test — what it covers already leaves out prose, project
-/// configuration and vendored or generated output.
-fn production(p: &Profile, files: &[String]) -> bool {
+/// Whether `own`, the files `p` was assigned, change its production code: by its globs, or, a
+/// profile taking the rest with none, any of them that is no test — what it was assigned already
+/// leaves out prose, project configuration, vendored or generated output and other profiles' files.
+fn production(p: &Profile, own: &[String]) -> bool {
     if p.diff_globs.is_empty() {
-        files.iter().any(|f| p.covers(f) && !is_test_path(f))
+        own.iter().any(|f| !is_test_path(f))
     } else {
-        changes_production_code(files, &p.diff_globs)
+        changes_production_code(own, &p.diff_globs)
     }
 }
 
@@ -219,7 +222,12 @@ pub fn plan(input: PlanInput<'_>) -> Plan {
         light_skipped: Vec::new(),
         metrics_dropped: Vec::new(),
     };
-    required(p, (scout, input.embedded_sql), files, &mut plan);
+    required(
+        p,
+        (scout, input.embedded_sql),
+        input.profile_files,
+        &mut plan,
+    );
     if input.strict && p.offers("maintainability") {
         push_missing(&mut plan.lenses, "maintainability");
     }
@@ -236,7 +244,12 @@ pub fn plan(input: PlanInput<'_>) -> Plan {
         plan.metrics_dropped = dropped;
     }
     if input.light {
-        light((p, input.optional), scout, files, &mut plan);
+        light(
+            (p, input.optional),
+            scout,
+            (files, input.profile_files),
+            &mut plan,
+        );
     }
     plan
 }
@@ -246,7 +259,7 @@ pub fn plan(input: PlanInput<'_>) -> Plan {
 fn required(
     p: &Profile,
     (scout, embedded_sql): (Option<&Value>, bool),
-    files: &[String],
+    own: &[String],
     plan: &mut Plan,
 ) {
     let mut offer = |l: &str| {
@@ -257,7 +270,7 @@ fn required(
     for l in &p.always_lenses {
         offer(l);
     }
-    if production(p, files) {
+    if production(p, own) {
         offer("tests");
     }
     if chose_reconciler(scout) {
@@ -310,7 +323,7 @@ fn surface_gate(p: &Profile, scout: Option<&Value>, files: &[String], plan: &mut
 fn light(
     (p, optional): (&Profile, &[String]),
     scout: Option<&Value>,
-    files: &[String],
+    (files, own): (&[String], &[String]),
     plan: &mut Plan,
 ) {
     let in_roster = |ls: &[&str]| -> Vec<String> {
@@ -320,7 +333,7 @@ fn light(
             .collect()
     };
     let mut forced = Vec::new();
-    if production(p, files) {
+    if production(p, own) {
         forced.extend(in_roster(&["tests", "intent"]));
     }
     if chose_reconciler(scout) {

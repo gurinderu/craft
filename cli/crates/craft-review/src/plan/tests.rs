@@ -11,6 +11,7 @@ fn input<'a>(p: &'a Profile, files: &'a [String], embedded_sql: bool) -> PlanInp
         profile: p,
         scout: None,
         changed_files: files,
+        profile_files: files,
         spec: "feat: x",
         light: false,
         strict: false,
@@ -241,4 +242,22 @@ fn a_general_change_to_production_source_forces_tests_and_a_light_pass_intent() 
             got.lenses
         );
     }
+}
+
+#[test]
+fn a_general_plan_counts_only_its_own_files_as_production() {
+    let p = Profile::load("general").unwrap();
+    let scout = json!({"sizeBucket": "small", "lenses": ["errors"], "securitySensitive": false});
+    let change = ["src/lib.rs".to_owned(), "web/app.test.ts".to_owned()];
+    let own = ["web/app.test.ts".to_owned()];
+    let got = plan(PlanInput {
+        scout: Some(&scout),
+        profile_files: &own,
+        ..input(&p, &change, false)
+    });
+    assert!(
+        !got.lenses.iter().any(|l| l == "tests"),
+        "the Rust file is Rust's: {:?}",
+        got.lenses
+    );
 }

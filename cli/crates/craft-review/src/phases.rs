@@ -176,6 +176,7 @@ fn plan_tracks(run: &mut RunState, profiles: &[Profile]) {
             profile: p,
             scout,
             changed_files: &run.diff.files,
+            profile_files: &track.files,
             spec: &run.context.spec,
             light: run.light,
             strict: run.context.strict,
