@@ -12,7 +12,7 @@ pub const NUDGE: &str = "re-review-nudge";
 /// The `reason` on every line of the Agent-tool hook.
 pub const DISPATCH: &str = "reviewer-dispatch";
 // OpenCode's events for the same moments: a main session's message, its compaction.
-const OPENCODE_PROMPT: &str = "chat.message";
+pub(super) const OPENCODE_PROMPT: &str = "chat.message";
 const OPENCODE_RESET: &str = "session.compacted";
 /// How far back a session's first continuation reaches into the repo's other sessions.
 const WINDOW_MS: i64 = 12 * 60 * 60 * 1000;
@@ -46,7 +46,7 @@ pub(super) fn spoke(e: &Value) -> bool {
 }
 
 /// The prompt hook speaking a request's text in a main session, for one of `kinds`.
-pub(super) fn prompt_spoke(e: &Value, kinds: Option<&[&str]>) -> bool {
+fn prompt_spoke(e: &Value, kinds: Option<&[&str]>) -> bool {
     let ev = event(e);
     let prompt = ev == "UserPromptSubmit" || ev == OPENCODE_PROMPT && !has(e, "agent");
     prompt
@@ -70,10 +70,11 @@ pub fn nudged_in_session(log: &[Value], session: &str) -> bool {
         .any(|e| field(e, "reason") == Some(NUDGE))
 }
 
-/// Whether the reviewer-dispatch lines for a dispatch run in the background (or not) were said in
-/// the session's context: they are a rule, said once, not an instruction per dispatch, whatever
-/// range a later one names; the background variant says more, so it is said once of its own. A
-/// line from before the variant was logged counts for both.
+/// Whether the reviewer-dispatch lines a dispatch run in the background (or not) needs were said
+/// in the session's context: they are a rule, said once, not an instruction per dispatch, whatever
+/// range a later one names; the background lines cover the foreground ones, not the other way
+/// round, so the first background dispatch after a foreground one hears them again. A line from
+/// before the variant was logged counts as background.
 pub fn dispatch_said(log: &[Value], session: &str, background: bool) -> bool {
     since_reset(log, session).into_iter().any(|e| {
         event(e) == "PreToolUse"
@@ -81,7 +82,7 @@ pub fn dispatch_said(log: &[Value], session: &str, background: bool) -> bool {
             && spoke(e)
             && e.get("background")
                 .and_then(Value::as_bool)
-                .is_none_or(|b| b == background)
+                .is_none_or(|said_background| said_background || !background)
     })
 }
 

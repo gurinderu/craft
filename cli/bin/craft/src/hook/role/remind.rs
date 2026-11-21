@@ -1,12 +1,12 @@
 //! What a request hears when its text is already in the session's context (realm @nick/craft,
 //! node #288): nothing for a per-kind text; for the conditional text of a prompt in another
-//! script, one reminder line beside a sign of PR or review work, or once the text and its last
-//! reminder are more than 30 minutes old, else a logged silence.
+//! script, one reminder line beside a sign of PR or review work, or once the session's last craft
+//! text is more than 30 minutes old, else a logged silence.
 
 use serde_json::Value;
 
-use super::entry::{Entry, field};
-use super::heard::{prompt_spoke, said_in_session, since_reset, spoke};
+use super::entry::{Entry, event, field, has};
+use super::heard::{DISPATCH, OPENCODE_PROMPT, said_in_session, since_reset, spoke};
 use super::iso;
 use super::kind::{Kind, work_sign};
 
@@ -15,7 +15,7 @@ pub const REMINDER: &str = "language-reminder";
 /// The silence, and `reason`, of a later prompt in another script that hears nothing: the reason
 /// keeps it from counting as the request a bare continuation takes its kind from.
 const NO_SIGN: &str = "no-work-sign";
-/// How long the conditional text or a reminder stays fresh in the session's mind.
+/// How long the session's last craft text stays fresh in its mind.
 const FRESH_MS: i64 = 30 * 60 * 1000;
 
 /// The kinds whose text, once said, makes the text for `kind` unneeded: each covers its own;
@@ -28,15 +28,22 @@ fn covered_by(codex: bool, kind: Kind) -> Vec<&'static str> {
     }
 }
 
-/// Whether the conditional text and every reminder after it were said more than 30 minutes before
-/// `now` (or at a time the log does not give).
+/// A craft text the main session heard: a request's text of any kind, a reminder, the re-review
+/// nudge, the reviewer-dispatch lines.
+fn craft_text(e: &Value) -> bool {
+    let ev = event(e);
+    spoke(e)
+        && (ev == "UserPromptSubmit"
+            || ev == OPENCODE_PROMPT && !has(e, "agent")
+            || ev == "PreToolUse" && field(e, "reason") == Some(DISPATCH))
+}
+
+/// Whether the session's last craft text was said more than 30 minutes before `now` (or at a time
+/// the log does not give).
 fn stale(log: &[Value], session: &str, now: i64) -> bool {
     since_reset(log, session)
         .into_iter()
-        .filter(|e| {
-            prompt_spoke(e, Some(&[Kind::OtherLanguage.name()]))
-                || spoke(e) && field(e, "reason") == Some(REMINDER)
-        })
+        .filter(|e| craft_text(e))
         .filter_map(|e| field(e, "ts").and_then(iso::parse))
         .max()
         .is_none_or(|t| now - t > FRESH_MS)
