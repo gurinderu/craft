@@ -30,7 +30,7 @@ fn object(text: &str) -> Result<Obj, StoreError> {
 /// The words of a retained conflict: which detail, which intent, and how to clear it.
 fn conflict(detail: &Path, intent: &Path) -> String {
     format!(
-        "filing conflict: {} is not what intent {} expected; intent retained, the detail left as it is — inspect the detail, then delete the intent (safe once the detail is checked)",
+        "filing conflict: {} is not what intent {} expected; intent retained, the detail left as it is — its record may be the run's only copy: to keep it, move the detail aside and `jq -j .record <intent> > <detail>`, and the next write completes the intent; to keep the detail, save that record elsewhere, then delete the intent",
         detail.display(),
         intent.display()
     )

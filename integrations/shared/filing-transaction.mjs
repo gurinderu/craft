@@ -6,6 +6,7 @@ import { parseJsonObject } from './json-object.mjs'
 
 /** @typedef {{ key: string, file: string, warnings: string[] }} FilingProof */
 /** @typedef {{ file: string, before: string | null, record: string, proofs: FilingProof[], finalizing?: string }} FilingIntent */
+/** @typedef {{ detail: string, intent: string }} Retained */
 const INTENTS = '.filing-intents'
 
 /** @param {string} file */
@@ -53,7 +54,7 @@ function current(file) {
  * @param {string} detail @param {string} intent
  */
 const conflict = (detail, intent) =>
-  `filing conflict: ${detail} is not what intent ${intent} expected; intent retained, the detail left as it is — inspect the detail, then delete the intent (safe once the detail is checked)`
+  `filing conflict: ${detail} is not what intent ${intent} expected; intent retained, the detail left as it is — its record may be the run's only copy: to keep it, move the detail aside and \`jq -j .record <intent> > <detail>\`, and the next write completes the intent; to keep the detail, save that record elsewhere, then delete the intent`
 
 /** Retained intents already warned of in this process. @type {Set<string>} */
 const warned = new Set()
@@ -98,12 +99,14 @@ function markFinalizing(store, dir) {
 
 /**
  * Replays every pending intent; a conflicting one is retained and skipped, so it never blocks a write to another
- * detail — it is warned of on stderr once per process, and a write to its own detail refuses in `commitFiling`.
- * @param {string} store @param {(record: Record<string, unknown>) => void} index
+ * detail — returned for `sayRetained`, and a write to its own detail refuses in `commitFiling`.
+ * @param {string} store @param {(record: Record<string, unknown>) => void} index @returns {Retained[]}
  */
 export function recoverFilings(store, index) {
   const root = path.join(store, INTENTS)
-  if (!fs.existsSync(root)) return
+  if (!fs.existsSync(root)) return []
+  /** @type {Retained[]} */
+  const retained = []
   for (const name of fs
     .readdirSync(root)
     .filter(n => n.endsWith('.json'))
@@ -111,12 +114,25 @@ export function recoverFilings(store, index) {
     const file = path.join(root, name)
     const intent = /** @type {FilingIntent} */ (/** @type {unknown} */ (parseJsonObject(fs.readFileSync(file, 'utf8'))))
     if (!replay(store, intent, index)) {
-      if (!warned.has(file)) process.stderr.write(`craft-log-run WARNING: ${conflict(path.join(store, intent.file), file)} — this write went on\n`)
-      warned.add(file)
+      retained.push({ detail: path.join(store, intent.file), intent: file })
       continue
     }
     fs.unlinkSync(file)
     syncFilingPath(root)
+  }
+  return retained
+}
+
+/**
+ * Warns on stderr, once per process, of each retained intent but the one on `target` (a detail's base name), whose
+ * own write refused with the conflict instead.
+ * @param {Retained[]} retained @param {string} [target]
+ */
+export function sayRetained(retained, target = '') {
+  for (const r of retained) {
+    if (path.basename(r.detail) === target || warned.has(r.intent)) continue
+    warned.add(r.intent)
+    process.stderr.write(`craft-log-run WARNING: ${conflict(r.detail, r.intent)} — this write went on\n`)
   }
 }
 

@@ -8,7 +8,9 @@
 - `.filing-intents/<detail>.json` — a write in flight; every write replays these first. One whose detail
   was rewritten since (a crash, then another writer) is a `filing conflict`: the intent stays, the newer
   detail is never overwritten, writes to other records go on, a write to that record refuses, and the
-  warning names both files. Inspect the detail; once it is checked, deleting the intent is safe.
+  warning names both files. The intent's `record` may be the run's only copy: never just delete it.
+  To keep it, move the detail aside and `jq -j .record <intent> > <detail>`; the next write completes
+  the intent. To keep the detail, save that record elsewhere, then delete the intent.
 
 Common fields: schemaVersion, engineRevision, ts, kind (workflow|agent), name, project, commit, dirty, verdict,
 findings{total,bySeverity}, nested, via. Workflows add scout/dimensions/verification/notRun/outputTokens;

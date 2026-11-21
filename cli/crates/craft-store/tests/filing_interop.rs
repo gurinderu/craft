@@ -275,6 +275,33 @@ fn replacement_replay_never_overwrites_a_newer_detail() {
     assert!(!d.path().join("index.jsonl").exists());
 }
 
+/// The remedy the conflict names — move the detail aside, put the intent's record in its place —
+/// keeps the run's record, and the next write completes the intent instead of losing it.
+#[test]
+fn the_named_remedy_keeps_the_run_record_and_completes_the_intent() {
+    let d = tempfile::tempdir().unwrap();
+    let foreign = r#"{"ts":"1970-01-01T00-00-00Z","kind":"workflow","name":"review","a":"later"}"#;
+    let (file, intent, changed) = retained_conflict(d.path(), foreign).unwrap();
+    let w = writing(d.path());
+    let error = write_record(&changed, &w, &GitId::default(), Some(&file)).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("jq -j .record <intent> > <detail>"),
+        "{error}"
+    );
+    std::fs::rename(&file, file.with_extension("aside")).unwrap();
+    let held: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&intent).unwrap()).unwrap();
+    let record = held["record"].as_str().unwrap();
+    std::fs::write(&file, record).unwrap();
+    write_record(&raw(), &w, &GitId::default(), None).unwrap();
+    assert!(!intent.exists());
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), record);
+    let index = std::fs::read_to_string(d.path().join("index.jsonl")).unwrap();
+    assert!(index.contains(r#""verdict":"Block""#), "{index}");
+}
+
 /// A retained conflict blocks only its own detail: a later unrelated write and finalize go on,
 /// the intent stays, the newer detail is never overwritten, and the warning names the intent.
 #[test]

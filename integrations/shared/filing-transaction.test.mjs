@@ -46,9 +46,30 @@ function retainedConflict({ raw, opts }) {
 test('failed replacement index has durable intent and recovery never overwrites a later record', () => {
   const f = fixture()
   const { old, intent, foreign } = retainedConflict(f)
+  /** @type {string[]} */
+  const said = []
+  vi.spyOn(process.stderr, 'write').mockImplementation(chunk => (said.push(String(chunk)), true))
   expect(() => writeRecord(f.raw, { ...f.opts, over: old.file })).toThrow(`intent ${intent} expected`)
+  // Its own detail's conflict is the failure, never also a warning that the write went on.
+  expect(said.join('')).not.toContain('went on')
   expect(JSON.parse(fs.readFileSync(old.file, 'utf8'))).toEqual(foreign)
   expect(fs.existsSync(intent)).toBe(true)
+})
+
+test('the remedy the conflict names keeps the run record and the next write completes the intent', () => {
+  const f = fixture()
+  const { old, intent } = retainedConflict(f)
+  expect(() => writeRecord(f.raw, { ...f.opts, over: old.file })).toThrow('jq -j .record <intent> > <detail>')
+  // `mv <detail> <aside>` then `jq -j .record <intent> > <detail>`.
+  fs.renameSync(old.file, `${old.file}.aside`)
+  const record = String(JSON.parse(fs.readFileSync(intent, 'utf8')).record)
+  fs.writeFileSync(old.file, record)
+  writeRecord(f.raw, f.opts)
+  expect(fs.existsSync(intent)).toBe(false)
+  expect(fs.readFileSync(old.file, 'utf8')).toBe(record)
+  const rows = fs.readFileSync(path.join(f.opts.store, 'index.jsonl'), 'utf8').trim().split('\n')
+  const own = rows.map(r => JSON.parse(r)).filter(r => r.ts === JSON.parse(record).ts)
+  expect(own.map(r => r.verdict)).toEqual(['Approve'])
 })
 
 test('a retained conflict never blocks a write to another record, and its warning names the intent', () => {
