@@ -32,7 +32,7 @@ test('check-skills: a clean copy passes; a dangling craft: ref fails and names i
     copyOf([
       'skills',
       'integrations/claude-code/agents',
-      'src',
+      'integrations/claude-code/src',
       'integrations/claude-code/workflows',
       'integrations/claude-code/.claude-plugin',
       '.claude-plugin',
@@ -47,12 +47,20 @@ test('check-skills: a clean copy passes; a dangling craft: ref fails and names i
         r.stderr.filter(l => l.includes('no-such-skill')).map(l => l.includes('skills/debugging')),
         [true],
       )
+      const engine = 'integrations/claude-code/src/review.js'
+      fs.appendFileSync(path.join(root, engine), '\n// See craft:no-such-engine.\n')
+      const authored = checkSkills([], process.env, root)
+      assert.equal(authored.exitCode, 1)
+      assert.deepEqual(
+        authored.stderr.filter(l => l.includes('no-such-engine')).map(l => l.includes(engine)),
+        [true],
+      )
     },
   ))
 
 test('check-skills: directories that yield nothing fail as a misconfiguration', () =>
   inside(copyOf([]), async root => {
-    for (const d of ['skills', 'integrations/claude-code/agents', 'src', 'integrations/claude-code/workflows'])
+    for (const d of ['skills', 'integrations/claude-code/agents', 'integrations/claude-code/src', 'integrations/claude-code/workflows'])
       fs.mkdirSync(path.join(root, d), { recursive: true })
     const r = checkSkills([], process.env, root)
     assert.equal(r.exitCode, 1)
