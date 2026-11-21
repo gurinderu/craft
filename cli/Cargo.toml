@@ -20,6 +20,8 @@ clap = { version = "4.6", features = ["derive", "env"] }
 crossterm = "0.29"
 jsonschema = { version = "0.58", default-features = false }
 regex = "1.13"
+# ECMAScript RegExp only (realm @nick/craft, node #574).
+rquickjs = { version = "=0.14.0", default-features = false, features = ["std"] }
 nix = { version = "0.31", default-features = false, features = ["process", "signal", "user"] }
 ratatui = "0.30"
 serde = { version = "1.0", features = ["derive"] }

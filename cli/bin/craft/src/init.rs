@@ -11,7 +11,7 @@
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Command, ExitCode, Stdio};
+use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use craft_review::consumers::cbm;
@@ -19,8 +19,6 @@ use craft_review::git;
 use craft_review::project::{self, IntegrationPoint, ProjectProfile};
 use craft_review::sources::{self, Git, SourcesSetup};
 use serde_json::{Value, json};
-
-use crate::review::find_craft_root;
 
 mod ci;
 mod graph;
@@ -53,8 +51,7 @@ pub struct InitArgs {
     /// proposed as an integration point with the revision its version file names now.
     #[arg(long = "memory-externals", requires = "propose", value_name = "-")]
     pub memory_externals: Option<String>,
-    /// craft's plugin root, whose `integrations/shared/craft-externals.mjs` finds the candidates; found above the
-    /// executable when absent.
+    /// Accepted for older callers; native proposal discovery does not need a plugin root.
     #[arg(long, env = "CRAFT_ROOT")]
     pub craft_root: Option<PathBuf>,
 }
@@ -125,10 +122,9 @@ pub fn init(args: &InitArgs) -> Result<ExitCode> {
         .map(|p| p.integrations.clone())
         .unwrap_or_default();
     let held_ci = held.as_ref().map(|p| p.ci.clone()).unwrap_or_default();
-    let root = args.craft_root.clone().or_else(find_craft_root);
     let recalled = memory::recalled(args.memory_externals.as_deref())?;
-    let imported = memory::import(root.as_deref(), &args.cwd, &recalled, &integrations);
-    let discovery = discover(root.as_deref(), &args.cwd, &integrations, &recalled);
+    let imported = memory::import(&args.cwd, &recalled, &integrations);
+    let discovery = discover(&args.cwd, &integrations, &recalled);
     print(&json!({
         "profile": path,
         "exists": held.is_some(),
@@ -146,8 +142,7 @@ pub fn init(args: &InitArgs) -> Result<ExitCode> {
     }))
 }
 
-/// `answer` marked as having run, or `{"ran": false, "why": …}` when it could not (no plugin root,
-/// no node).
+/// `answer` marked as having run, or `{"ran": false, "why": …}` when it could not.
 fn ran(answer: Result<Value>) -> Value {
     match answer {
         Ok(mut v) => {
@@ -162,19 +157,13 @@ fn ran(answer: Result<Value>) -> Value {
 
 /// The discovery's answer over the repository at `cwd`, the profile's points and the memory's
 /// `recalled` records left out as known.
-fn discover(
-    root: Option<&Path>,
-    cwd: &Path,
-    known: &[IntegrationPoint],
-    recalled: &memory::Recalled,
-) -> Value {
+fn discover(cwd: &Path, known: &[IntegrationPoint], recalled: &memory::Recalled) -> Value {
     let mut records: Vec<Value> = known
         .iter()
         .map(|p| json!({"system": p.name, "repo": p.repo, "version": p.rev}))
         .collect();
     records.extend(memory::listed(recalled));
     ran(externals(
-        root,
         cwd,
         &["discover", "--known", "-"],
         &Value::Array(records),
@@ -183,39 +172,24 @@ fn discover(
 
 /// What `integrations/shared/craft-externals.mjs <verb> --repo-root <top> <rest…>` prints, `stdin` handed to it as
 /// JSON; its `{"error"}` is an error.
-fn externals(root: Option<&Path>, cwd: &Path, args: &[&str], stdin: &Value) -> Result<Value> {
-    let root = root.context("no craft plugin root: pass --craft-root")?;
-    let script =
-        craft_review::prompts::plugin_path(root, "integrations/shared/craft-externals.mjs");
-    anyhow::ensure!(
-        script.is_file(),
-        "no integrations/shared/craft-externals.mjs under {}",
-        root.display()
-    );
+fn externals(cwd: &Path, args: &[&str], stdin: &Value) -> Result<Value> {
     let top = git::toplevel(cwd)?;
-    let (verb, rest) = args.split_first().context("no verb")?;
-    let mut child = Command::new("node")
-        .arg(&script)
-        .args([verb, "--repo-root"])
-        .arg(&top)
-        .args(rest)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .context("running node")?;
-    if let Some(mut input) = child.stdin.take() {
-        input.write_all(serde_json::to_string(stdin)?.as_bytes())?;
+    let input = craft_store::js::Js::from(stdin);
+    let verb = args.first().context("no verb")?;
+    let answer = if *verb == "memory" {
+        craft_review::externals::import(&top, &input)
+    } else {
+        craft_review::externals::discover(
+            &top,
+            None,
+            craft_review::externals::record_list(&input).unwrap_or(&[]),
+        )
     }
-    let out = child.wait_with_output()?;
-    let answer: Value = serde_json::from_slice(&out.stdout).with_context(|| {
-        format!(
-            "integrations/shared/craft-externals.mjs {verb} printed no JSON: {}",
-            String::from_utf8_lossy(&out.stderr).trim()
+    .map_err(|e| {
+        anyhow::anyhow!(
+            "integrations/shared/craft-externals.mjs {verb} refused: {}",
+            craft_store::js::Js::str(e.message()).compact()
         )
     })?;
-    match answer.get("error") {
-        Some(e) => anyhow::bail!("integrations/shared/craft-externals.mjs {verb} refused: {e}"),
-        None => Ok(answer),
-    }
+    Ok(Value::try_from(&answer)?)
 }

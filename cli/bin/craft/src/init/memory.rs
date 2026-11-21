@@ -1,10 +1,10 @@
 //! The project memory's `external` records proposed as integration points — the owner's decision on
 //! realm @nick/craft node #470, option (a). The binary reads no memory store itself: the session
 //! recalls the records with the craft:memory skill and pipes them in (`--memory-externals -`), and
-//! `integrations/shared/craft-externals.mjs memory` reads each one's revision from its version file and pattern,
+//! `craft_review::externals` reads each one's revision from its version file and pattern,
 //! or takes the version stated, as a review reads it (node #431). Each candidate carries its
 //! system, its source and that revision, and the `--point` that writes it; the reviewer confirms
-//! it. Nothing here fails the proposal: a missing plugin root, node or readable list is named.
+//! it. An unreadable list or failed native import is named without failing the proposal.
 
 use std::io::Read;
 use std::path::Path;
@@ -59,12 +59,7 @@ pub(super) fn listed(recalled: &Recalled) -> Vec<Value> {
 
 /// The memory's records as candidates over the repository at `cwd`, each with the `--point` that
 /// writes it and the revision the profile `held` names for its system, if any.
-pub(super) fn import(
-    root: Option<&Path>,
-    cwd: &Path,
-    recalled: &Recalled,
-    held: &[IntegrationPoint],
-) -> Value {
+pub(super) fn import(cwd: &Path, recalled: &Recalled, held: &[IntegrationPoint]) -> Value {
     let records = match recalled {
         Recalled::None => {
             return json!({"ran": false, "why": "no memory records given: recall the project's `external` records with the craft:memory skill and pipe them in with --memory-externals -"});
@@ -72,7 +67,7 @@ pub(super) fn import(
         Recalled::Unreadable(why) => return json!({"ran": false, "why": why}),
         Recalled::Records(v) => v,
     };
-    let mut answer = ran(externals(root, cwd, &["memory"], records));
+    let mut answer = ran(externals(cwd, &["memory"], records));
     let candidates = answer.get_mut("candidates").and_then(Value::as_array_mut);
     for c in candidates.into_iter().flatten() {
         annotate(c, held);

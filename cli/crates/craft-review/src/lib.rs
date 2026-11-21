@@ -20,6 +20,7 @@ mod dedup;
 pub mod design;
 mod embedded_sql;
 mod error;
+pub mod externals;
 pub mod extra;
 pub mod filing;
 mod finished;
