@@ -3,7 +3,7 @@
 //! reviewer stands, and the same range also goes through craft's review engine in the main
 //! session — a subagent has no Workflow tool (#262). The dispatch is never blocked: the context
 //! reaches the model after the tool result (#289), which for a background reviewer is at once. The
-//! lines are a rule: said once per session until a compact or clear (#288).
+//! lines are a rule: said once per session and variant until a compact or clear (#288).
 
 use std::path::Path;
 
@@ -65,8 +65,8 @@ fn said(kind: &str, file: &str, background: bool, ctx: &Ctx) -> String {
 /// One `PreToolUse` run on the Agent tool. Not logged: another tool, craft's own agents and a type
 /// that is no agent of the repo's. Logged, each with `reason: reviewer-dispatch`: the repo test's
 /// silence, `not-review`, `in-subagent` (no Workflow tool there), `codex` (none there either),
-/// `already-said` (once per session until a compact or clear: realm @nick/craft, node #288), or
-/// the lines it spoke.
+/// `already-said` (once per session and variant, background or not, until a compact or clear: realm
+/// @nick/craft, node #288), or the lines it spoke; those two carry the variant as `background`.
 pub fn run(input: &str, ctx: &Ctx) -> Run {
     let fields = fields(input);
     let Some(tool) = fields
@@ -109,12 +109,17 @@ pub fn run(input: &str, ctx: &Ctx) -> Run {
     if who == Harness::Codex {
         return quiet("codex");
     }
-    if !base.session.is_empty() && dispatch_said(&ctx.logged(), &base.session) {
-        return quiet("already-said");
-    }
     let background = tool.get("run_in_background") == Some(&Value::Bool(true));
+    let mut line = base.clone();
+    line.background = Some(background);
+    if !line.session.is_empty() && dispatch_said(&ctx.logged(), &line.session, background) {
+        return Run {
+            stdout: String::new(),
+            entry: Some(line.quiet("already-said")),
+        };
+    }
     Run {
         stdout: context(EVENT, &said(kind, &file, background, ctx)),
-        entry: Some(base),
+        entry: Some(line),
     }
 }

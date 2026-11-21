@@ -12,9 +12,10 @@ use std::path::Path;
 use serde_json::Value;
 
 use super::entry::{event, field, has};
-use super::heard::{REMINDER, repeat_of, said_in_session};
+use super::heard::said_in_session;
 use super::js::{Re, compile};
 use super::kind::prompt_kind;
+use super::remind::{REMINDER, hushed, repeat_of};
 use super::work::craft_agent;
 use super::{Ctx, Harness, Run, cwd_of, declared, fields, text_of, text_opencode};
 
@@ -36,7 +37,7 @@ fn main_message(prompt: &str, session: &str, cwd: &Path, ctx: &Ctx) -> Run {
     let mut entry = base.clone();
     entry.kind = Some(kind.name().to_owned());
     let repeat = if entry.spoke {
-        repeat_of(&ctx.logged(), session, false, kind, prompt)
+        repeat_of(&ctx.logged(), session, false, kind, prompt, ctx.now)
     } else {
         None
     };
@@ -47,7 +48,7 @@ fn main_message(prompt: &str, session: &str, cwd: &Path, ctx: &Ctx) -> Run {
         };
     }
     if let Some(why) = repeat {
-        entry = entry.quiet(why);
+        entry = hushed(entry, why);
     }
     Run {
         stdout: if entry.spoke {

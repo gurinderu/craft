@@ -6,8 +6,9 @@
 use serde_json::{Map, Value};
 
 use super::entry::{Entry, event, field};
-use super::heard::{NUDGE, REMINDER, nudged_in_session, recent_kind, repeat_of, said_in_session};
+use super::heard::{NUDGE, nudged_in_session, recent_kind, said_in_session};
 use super::kind::{Kind, prompt_kind};
+use super::remind::{REMINDER, hushed, repeat_of};
 use super::word::{continuation, not_human, subagent_report};
 use super::{Ctx, Harness, Run, context, cwd_of, declared, fields, text, text_codex, text_of};
 
@@ -108,6 +109,7 @@ pub fn prompt(input: &str, ctx: &Ctx) -> Run {
             who == Harness::Codex,
             kind,
             prompt,
+            ctx.now,
         )
     } else {
         None
@@ -123,7 +125,7 @@ pub fn prompt(input: &str, ctx: &Ctx) -> Run {
         };
     }
     if let Some(why) = repeat {
-        entry = entry.quiet(why);
+        entry = hushed(entry, why);
     }
     Run {
         stdout: if entry.spoke {

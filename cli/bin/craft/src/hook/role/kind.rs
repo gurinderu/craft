@@ -64,8 +64,10 @@ static LINKS: [Re; 2] = [
     Re::new(|| compile(r"(?i){B}github\.com/[^{S}/]+/[^{S}/]+/pull/[0-9]+")),
     Re::new(|| compile(r"(?i)/merge_requests/[0-9]+")),
 ];
-// A PR or issue by its number; an HTML entity ("&#123;") is none.
-static NUMBER: Re = Re::new(|| compile(r"(?:^|[^&A-Za-z0-9_])#[0-9]+{B}"));
+// A PR or issue by its number, after `#` or the numero sign; an HTML entity ("&#123;") is none.
+static NUMBER: Re = Re::new(|| compile(r"(?:^|[^&A-Za-z0-9_])#[0-9]+{B}|\x{2116}[{S}]?[0-9]+"));
+// A PR in lower case: a sign only beside another script, where it is no path or command.
+static LOWER_PR: Re = Re::new(|| compile(r"{B}prs?{B}"));
 static FILE: Re = Re::new(|| compile(r"^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*\.[a-z][a-z0-9]{0,5}$"));
 static EXT: Re = Re::new(|| compile(r"\.[a-z][a-z0-9]{0,5}$"));
 static HOME_OR_DOT: Re = Re::new(|| compile(r"^(?:\.{1,2}|~)/"));
@@ -128,14 +130,16 @@ pub fn prompt_kind(prompt: &str, recent: Option<Kind>) -> Option<Kind> {
     if continuation(prompt) { recent } else { None }
 }
 
-/// Whether a prompt holds a sign of PR or review work that reads the same in any script: Latin PR,
-/// MR or review as a word, a `#<number>`, or a PR or MR link. After the conditional text a later
+/// Whether a prompt holds a sign of PR or review work that reads the same in any script: Latin PR
+/// (in either case), MR or review as a word outside paths, a `#<number>` or a number after the
+/// numero sign, or a PR or MR link. After the conditional text a later
 /// prompt in another script hears the reminder only beside one (realm @nick/craft, node #288).
 pub fn work_sign(prompt: &str) -> bool {
     let words = without_paths(prompt);
     let folded = js::ascii_case(&words);
     let prompt_folded = js::ascii_case(prompt);
     REVIEW.iter().any(|re| re.is_match(&folded))
+        || LOWER_PR.is_match(&folded)
         || NUMBER.is_match(prompt)
         || LINKS.iter().any(|re| re.is_match(&prompt_folded))
 }

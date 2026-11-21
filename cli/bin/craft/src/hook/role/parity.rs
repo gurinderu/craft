@@ -1,9 +1,7 @@
-//! The hooks held to the Node hooks they replace by `content/parity/hook-cases.json`, frozen
-//! golden data the Node hooks computed before the port: the same repo, environment, hook log and
-//! input give the same stdout, byte for byte, and the same log line; a case a later decision
-//! changed is edited by hand (the reminder and the reviewer-dispatch lines said less often: #288).
-//! Its `kinds` hold the prompt classes, which `lib/work-hook-kind.mjs` still computes for OpenCode
-//! and `lib/hook-cases-parity.test.mjs` holds to the same file.
+//! The hooks held to `content/parity/hook-cases.json`: golden cases, first computed by the Node
+//! hooks the binary replaced and since edited by hand where a later decision changed what a hook
+//! says (realm @nick/craft, node #288): the same repo, environment, hook log and input give the
+//! same stdout, byte for byte, and the same log line. Its `kinds` hold the prompt classes.
 
 use std::collections::HashMap;
 use std::fs;
