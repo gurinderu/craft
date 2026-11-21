@@ -41,8 +41,10 @@ The quoted heredoc hands the records over as written: the shell reads no `'`, `$
 them. With nothing recalled, drop the heredoc and `--memory-externals -`. A local build (`cargo build
 --release` in craft's `cli/`) can stand for `$CRAFT_BIN`. It prints one JSON object: `profile`
 (the file's path, outside the repository), `exists`, `integrations` (what the profile holds now:
-`name`, `repo`, `ref`), `memory`, `discovery`, `ci` (the CI map the profile holds now) and
-`ciCandidates`. It writes nothing.
+`name`, `repo`, `ref`), `memory`, `discovery`, `ci` (the CI map the profile holds now),
+`ciCandidates`, `codeGraph` (the code graph the profile holds) and `codeGraphSays`. It writes
+nothing. Tell the user `codeGraphSays` as it is, in one line: whether codebase-memory answers,
+so the review indexes the checkout it reads and adds the graph's callers to the consumers list.
 
 - `memory` — the recalled records as candidates, each with `system`, `repo` (its source), `ref`
   (the revision read now from its `versionFrom` file with its `versionMatch` pattern, or its
@@ -190,7 +192,8 @@ local `uses:` it does not list, or whose `hashes` miss one of its files, is refu
 is written.
 At most 8; a name is letters, digits, `.`, `_` or `-`. A confirmed memory record goes in as its
 `point`, as printed. A refused point is named on stderr and nothing is written; so is a profile
-written by a craft of another format. Report the file's path, the points and the CI map entries written.
+written by a craft of another format. Report the file's path, the points and the CI map entries written,
+and `codeGraphSays` in one line.
 
 ## What the review does with it
 

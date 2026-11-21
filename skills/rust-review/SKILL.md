@@ -166,9 +166,7 @@ Review the diff against these tiers. This skill owns only the review *process*; 
 ### MEDIUM — warn, may merge
 
 **Performance**
-- Allocation inside a hot loop; `to_string()`/`to_owned()` where a borrow works
-- `Vec::new()` + push loop where the size is known (`with_capacity`)
-- N+1 queries / repeated work in a loop
+- N+1 queries / repeated calls against a database or the network that stall a request path or a controller until an operator steps in — the finding naming that load and who recovers (`operator-recovery`); one that names no such harm is LOW (rules.md, footnote ⁵)
 
 **API & quality**
 - Library returning `Box<dyn Error>` / `anyhow::Error` instead of a typed error (API-design concern → `rust-errors`)
@@ -176,6 +174,17 @@ Review the diff against these tiers. This skill owns only the review *process*; 
 - Wildcard `_ =>` on a business enum (hides new variants — prefer exhaustive)
 
 ### LOW — optional, never blocks (unless a harm is named)
+
+**Performance** — LOW whatever the path: a performance cost names no harm above `none`; the finding
+says whether it sits on a hot path, and one finding per pattern lists every site (rules.md,
+footnote ⁴)
+- Allocation inside a hot loop; `to_string()`/`to_owned()`/`format!`/`clone()` inside a loop (a clone only for the borrow checker is OWN-001)
+- `Vec::new()` + push loop where the size is known (`with_capacity`)
+- N+1 queries / repeated work in a loop that names no harm above `none`
+- `collect()` into a `Vec` only to iterate it once, take its length or call `contains`
+- Returning `Vec`/`String` where `impl Iterator` or a borrow (`&str`) would do — not on a library's `pub` item that already exists on the base
+- A `&[String]`-style parameter where `&[&str]` or `impl IntoIterator<Item = impl AsRef<str>>` serves callers — not on a library's `pub` item that already exists on the base; `&String`/`&Vec<T>` is clippy `ptr_arg`
+- A lookup key built into a `String` only for a `get`
 
 **Test coverage** (cross-check with the `rust-testing` skill)
 - New error path or branch with no test
@@ -229,6 +238,7 @@ others (higher recall than one broad pass):
 | safety | injection / secrets / unsafe / untrusted-input limits / build-profile-divergent arithmetic and guards | `rust-security`, `rust-unsafe` |
 | errors | Result-vs-panic, dropped errors, typed-vs-anyhow | `rust-errors` |
 | concurrency | blocking-in-async, lock-across-await, deadlock, Send/Sync | `rust-concurrency` |
+| performance | hot-loop allocation, N+1; needless allocation at LOW (`collect` only to iterate, owned returns and `&[String]` params where an iterator or borrow fits, `format!`/clones in a loop, `String` lookup keys) | `rust-performance` |
 | invariants | domain lifecycle/scope rules, derived/effective quantities, eligibility checks that **diverge from an existing sibling gate** (a new capacity/permission predicate dropping a fail-closed dimension), and the **mirror walk** on two-sided contracts (below) | `rust-architecture`, `rust-fintech` |
 | compat | backward compatibility of every contract another version reads, calls or deploys against — serde/JSONB/wire data (rename with no `alias`, `alias` that only covers new-reads-old, unbackfilled migration), CLI/config/env/Helm surface and defaults, CRD/API versions, IDL, rollout order, renamed exports, regression vs last release; reads the language-agnostic `compatibility` catalogue | `compatibility`, `rust-ecosystem` |
 | maintainability | structural simplification (code judo), file-size growth, spaghetti branching, needless optionality/casts | `refactoring`, `rust-idioms` |
@@ -239,14 +249,15 @@ The workflow runs additional context-dependent lenses the scout selects — `rec
 correctness; reads the language-agnostic `distributed-races` catalogue) and `negative-space` (breakage the diff enables in unchanged code); the Rust profile,
 `content/profiles/rust.json`, is the authoritative lens set.
 
-**The optional pass — off by default.** Three lenses are not part of the standard fan-out, because
+**The optional pass — off by default.** Two lenses are not part of the standard fan-out, because
 on the measured run they returned no High findings at all while producing the bulk of the
-Low/Info volume: `performance` (hot-loop allocation, N+1, needless owning — `rust-performance`),
-`api-idioms` (typed errors, giant fns, wildcard match, missing docs, `#![deny(warnings)]` —
-`rust-idioms`) and `api-boundary` (error→HTTP-status mapping, OpenAPI completeness — `rust-web`).
-Their findings are real and worth having, so they are not deleted; they are bought deliberately with
-`optional=true` (or a subset: `optional=performance,api-boundary`). Neither `strict` nor the
-security-sensitive floor turns the pass on or off — the request is the only switch. A run that
+Low/Info volume: `api-idioms` (typed errors, giant fns, wildcard match, missing docs,
+`#![deny(warnings)]` — `rust-idioms`) and `api-boundary` (error→HTTP-status mapping, OpenAPI
+completeness — `rust-web`). Their findings are real and worth having, so they are not deleted; they
+are bought deliberately with `optional=true` (or a subset: `optional=api-idioms`). `performance`
+was in this pass and now runs in every Rust review (not yet observed live), scoped to needless
+allocation at LOW. Neither `strict` nor the security-sensitive floor turns the pass on or off —
+the request is the only switch. A run that
 skipped it says so in its report and on its run record: that is an absence of a result, never a
 clean one. A run stopped by a red mechanical gate lists only the optional lenses you requested —
 the gate, not the optional pass, is why the rest did not run.

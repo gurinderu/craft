@@ -1,0 +1,7 @@
+{
+  "note": "The run store's index lock, one protocol for both writers: lib/index-lock.mjs and cli/crates/craft-store/src/lock.rs each assert these and release a lock only while it holds their own token.",
+  "lockFile": "index.jsonl.lock",
+  "staleMs": 30000,
+  "timeoutMs": 45000,
+  "release": "only while the lock holds the writer's own token"
+}
