@@ -18,9 +18,10 @@ fn read(root: &Path) -> Option<String> {
         .spawn()
         .ok()?;
     let mut stdout = child.stdout.take()?;
-    let reader = std::thread::spawn(move || {
+    let (send, receive) = std::sync::mpsc::sync_channel(1);
+    std::thread::spawn(move || {
         let mut out = Vec::new();
-        stdout.read_to_end(&mut out).map(|_| out)
+        drop(send.send(stdout.read_to_end(&mut out).map(|_| out)));
     });
     let deadline = Instant::now() + Duration::from_secs(10);
     let status = loop {
@@ -34,11 +35,14 @@ fn read(root: &Path) -> Option<String> {
             }
         }
     };
-    // Do not wait on a descendant retaining the pipe after the deadline.
+    // The same deadline bounds the pipe (realm @nick/craft, node #575).
     if !status.is_some_and(|s| s.success()) {
         return None;
     }
-    let bytes = reader.join().ok()?.ok()?;
+    let bytes = receive
+        .recv_timeout(deadline.checked_duration_since(Instant::now())?)
+        .ok()?
+        .ok()?;
     let raw = String::from_utf8_lossy(&bytes);
     let value = raw.trim_matches(super::super::text::whitespace);
     let rest = value.strip_prefix("https://");
