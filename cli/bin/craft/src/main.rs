@@ -47,6 +47,23 @@ enum HookCommand {
     /// After a Bash call opened a pull request: say when the run store holds no finished full
     /// craft review of its head. Prints the `PostToolUse` output or nothing, and always exits 0.
     PrOpened(hook::PrOpenedArgs),
+    /// At a session's start: what the repo's declared roles or work rules mean for craft's tools.
+    /// Prints the `SessionStart` output or nothing, and always exits 0.
+    SessionStart,
+    /// On a human's prompt asking for review work: how to run it with craft's tools. Prints the
+    /// `UserPromptSubmit` output or nothing, and always exits 0.
+    UserPrompt,
+    /// To a subagent of a session that asked for review work: its part. Prints the
+    /// `SubagentStart` output or nothing, and always exits 0.
+    SubagentStart,
+    /// When the main session dispatches the repo's own reviewer agent: run craft's review beside
+    /// it. Prints the `PreToolUse` output or nothing, never blocks, and always exits 0.
+    ReviewerDispatch,
+    /// The OpenCode plugin's work hook on one user message: prints the lines to add, or nothing,
+    /// and always exits 0.
+    OpencodeMessage,
+    /// The OpenCode plugin's work hook on a session's compaction: logs it, prints nothing.
+    OpencodeCompacted,
 }
 
 #[derive(Subcommand)]
@@ -124,6 +141,18 @@ async fn main() -> ExitCode {
         Command::Hook(HookCommand::PrOpened(args)) => hook::pr_opened(&args),
         Command::Runs(args) => runs::runs(&args),
         Command::FileRun => filing_worker::worker(),
+        Command::Hook(HookCommand::SessionStart) => hook::role_hook(hook::RoleHook::SessionStart),
+        Command::Hook(HookCommand::UserPrompt) => hook::role_hook(hook::RoleHook::UserPrompt),
+        Command::Hook(HookCommand::SubagentStart) => hook::role_hook(hook::RoleHook::SubagentStart),
+        Command::Hook(HookCommand::ReviewerDispatch) => {
+            hook::role_hook(hook::RoleHook::ReviewerDispatch)
+        }
+        Command::Hook(HookCommand::OpencodeMessage) => {
+            hook::role_hook(hook::RoleHook::OpencodeMessage)
+        }
+        Command::Hook(HookCommand::OpencodeCompacted) => {
+            hook::role_hook(hook::RoleHook::OpencodeCompacted)
+        }
     };
     // Every way out — a stop, an error, a finished run — waits out the grace of the agents'
     // groups, so their SIGKILL is sent before craft is gone.

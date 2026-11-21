@@ -103,11 +103,17 @@ export function v1WorkHooks(work: WorkHook): Required<Pick<Hooks, 'event' | 'cha
     async 'chat.message'(input, output) {
       try {
         const parts = output.parts
-        await work.message(input.sessionID, promptOf(parts), input.agent, text => {
-          const part = syntheticPart(parts, text)
-          if (part) parts.push(part)
-          return part !== null
-        })
+        await work.message(
+          input.sessionID,
+          promptOf(parts),
+          input.agent,
+          text => {
+            const part = syntheticPart(parts, text)
+            if (part) parts.push(part)
+            return part !== null
+          },
+          syntheticPart(parts, '') !== null,
+        )
       } catch {
         /* silence */
       }

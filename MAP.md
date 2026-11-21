@@ -281,7 +281,13 @@ which the `review` engine runs when no `craftBin` is given. The other hosts reac
 at the repository root, a POSIX `sh` wrapper carrying the plugin version (release-please moves it): it runs
 `~/.craft/bin/<version>/craft`, first downloading the release archive and its `.sha256` with `curl` or `wget` and
 checking it with `sha256sum` or `shasum` when the cache lacks it (no Windows), `CRAFT_BIN` naming a local build,
-and `CRAFT_ROOT` defaulting to the plugin root. `lib/pr-opened-hook.sh`, the PostToolUse hook on the Bash tool (Claude Code;
+and `CRAFT_ROOT` defaulting to the plugin root. The download itself is `lib/craft-fetch.sh` with `lib/craft-fetch-http.sh` — the release URL, the REST API fallback, the SHA-256,
+the lock and the cache layout in one place —, which `bin/craft` sources (`--ensure` only fetches) and `lib/craft-bin.mjs ensure`
+runs (its own Node download kept for Windows only). `lib/craft-hook.sh <name>`
+runs the start, prompt, subagent and reviewer-dispatch hooks as `craft hook <name>` from the same cache, never waiting for
+a download: while the binary is absent it makes the repo test itself (`lib/craft-hook-repo.sh`) and, where the repo has
+role signs and the switch is on, the start fetches it in the background and says so (`lib/craft-hook-absent.sh`; release-please
+moves its version too). The OpenCode work hook runs `craft hook opencode-message` the same way. `lib/pr-opened-hook.sh`, the PostToolUse hook on the Bash tool (Claude Code;
 Codex: unobserved), hands a call that says `pr create` or `pr new` and prints a pull request's numbered URL to `craft hook pr-opened` — the cached binary of
 its own version (release-please moves it), never downloaded. When the command said `pr create` or `pr new` and printed
 a PR's URL, the binary asks `gh pr view` for the PR's head and base and warns when the run store holds no finished
