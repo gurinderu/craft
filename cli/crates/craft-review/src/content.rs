@@ -194,7 +194,6 @@ const FILES: &[(&str, &str)] = content_files![
     "prompts/verify-metric.md",
     "prompts/lens-complexity.md",
     "prompts/lens-metrics.md",
-    "prompts/index-warmup.md",
     "prompts/verify-exclusion-catalog.md",
     "prompts/verify-shared-exclusions.md",
     "prompts/verify-harm-question.md",

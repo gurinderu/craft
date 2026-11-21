@@ -36,23 +36,32 @@ fn metric(title: &str, metrics: &Value) -> Value {
            "metrics": metrics})
 }
 
-/// Starts a run over the TypeScript change; the scout picks complexity, the warm-up says `indexed`.
-fn planned(repo: &Path, out: &Path, indexed: bool) -> Value {
+/// Starts a run over the TypeScript change, the reviewer's profile recording `graph` as its code
+/// graph; the scout picks complexity. No warm-up agent is dispatched, and no prompt tells an
+/// agent to index: the binary alone indexes the graph (realm @nick/craft, node #529).
+fn planned(repo: &Path, out: &Path, graph: (Option<&Path>, &Path)) -> Value {
     let run = out.join("run");
-    let s = step::start(&opts(repo, out)).unwrap();
-    assert_eq!(ids(&s), ["scout-general", "index-warmup"]);
-    assert!(prompt_of(&s["tasks"][1]).contains("You are warming up the codebase-memory index"));
+    let s = step::start(&common::cbm::with_profile(opts(repo, out), out, graph)).unwrap();
+    assert_eq!(ids(&s), ["scout-general"]);
+    for t in s["tasks"].as_array().unwrap() {
+        let p = prompt_of(t);
+        assert!(
+            !p.contains("index_repository"),
+            "an agent is told to index: {p}"
+        );
+    }
     submit(
         &run,
-        json!({"scout-general": scout("medium", &["complexity"]),
-               "index-warmup": {"indexed": indexed, "notes": if indexed { "" } else { "no project" }}}),
+        json!({"scout-general": scout("medium", &["complexity"])}),
     )
 }
 
 #[test]
 fn without_a_code_metrics_index_the_lens_is_dropped_and_said_so() {
     let (repo, out) = (typescript(), tempfile::tempdir().unwrap());
-    let s = planned(repo.path(), out.path(), false);
+    // No profile entry, and no program answering where the review looks for one.
+    let missing = out.path().join("no-codebase-memory-mcp");
+    let s = planned(repo.path(), out.path(), (None, &missing));
     assert_eq!(ids(&s), ["lens-general-correctness-r1"]);
     let run = out.path().join("run");
     let mut s = s;
@@ -68,7 +77,8 @@ fn without_a_code_metrics_index_the_lens_is_dropped_and_said_so() {
         &report,
         &[
             "Dropped for want of a code-metrics index: complexity.",
-            "codebase-memory index unavailable (no project) -> the metrics-or-nothing lenses dropped",
+            "the complexity lens did not run: the codebase-memory index is unavailable (the review profile names no code graph, and",
+            "did not answer",
         ],
     );
 }
@@ -77,7 +87,20 @@ fn without_a_code_metrics_index_the_lens_is_dropped_and_said_so() {
 fn with_an_index_a_finding_stands_on_the_metrics_it_carries_and_the_verifier_rereads_them() {
     let (repo, out) = (typescript(), tempfile::tempdir().unwrap());
     let run = out.path().join("run");
-    let s = planned(repo.path(), out.path(), true);
+    let graphs = tempfile::tempdir().unwrap();
+    let (tool, log) = common::cbm::stand_in(graphs.path(), repo.path());
+    let s = planned(
+        repo.path(),
+        out.path(),
+        (Some(&tool), &out.path().join("unused")),
+    );
+    // Indexed once, by the binary, under craft's own project.
+    let calls = std::fs::read_to_string(&log).unwrap();
+    assert_eq!(calls.lines().count(), 1, "{calls}");
+    assert!(
+        calls.contains(r#""name":"craft-review-"#) && calls.contains(r#""mode":"full""#),
+        "{calls}"
+    );
     assert_eq!(
         ids(&s),
         ["lens-general-complexity-r1", "lens-general-correctness-r1"]
@@ -136,4 +159,18 @@ fn with_an_index_a_finding_stands_on_the_metrics_it_carries_and_the_verifier_rer
         &["complexity: 1 finding(s) dropped — they carry no metric value read from the graph"],
     );
     assert!(!report.contains("f is a bit long"), "{report}");
+}
+
+#[test]
+fn a_graph_answering_where_no_profile_records_one_is_indexed_and_the_lens_runs() {
+    let (repo, out) = (typescript(), tempfile::tempdir().unwrap());
+    let graphs = tempfile::tempdir().unwrap();
+    let (tool, log) = common::cbm::stand_in(graphs.path(), repo.path());
+    let s = planned(repo.path(), out.path(), (None, &tool));
+    let calls = std::fs::read_to_string(&log).unwrap();
+    assert_eq!(calls.lines().count(), 1, "{calls}");
+    assert_eq!(
+        ids(&s),
+        ["lens-general-complexity-r1", "lens-general-correctness-r1"]
+    );
 }

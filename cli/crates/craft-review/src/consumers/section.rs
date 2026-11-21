@@ -1,5 +1,5 @@
-//! The report's section of the consumers list: which sources built it, and what the list could
-//! not hold or place.
+//! The report's section of the consumers list: which sources built it, why the graph was not one,
+//! and what the list could not hold or place.
 
 use super::order::FILE_MAX;
 use super::{Consumers, gaps};

@@ -37,6 +37,7 @@ fn a_run_not_finished_is_refused_with_nothing_posted() {
     git(&code, &["commit", "-qm", "feat: add f"]);
     let craft = env!("CARGO_BIN_EXE_craft");
     let started = Command::new(craft)
+        .env("CRAFT_CODE_GRAPH", "")
         .args(["review", "start", "--no-recall", "--no-gate", "--cwd"])
         .arg(&code)
         .arg("--run-dir")
@@ -46,6 +47,7 @@ fn a_run_not_finished_is_refused_with_nothing_posted() {
     assert!(started.status.success(), "{started:?}");
     // No gh anywhere: a refusal must come before any is looked for.
     let out = Command::new(craft)
+        .env("CRAFT_CODE_GRAPH", "")
         .args(["review", "comment", "--run"])
         .arg(&run)
         .env("PATH", "/nonexistent")

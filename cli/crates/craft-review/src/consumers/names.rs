@@ -1,6 +1,6 @@
 //! The name search: the lines of the working tree that name a symbol as a whole word, from
 //! `git grep -n -w -I -F -z` over the tracked Rust sources, build output, lockfiles and vendored
-//! trees left out; it finds a function passed as a value as well as a call.
+//! trees left out — always run, because a code graph loses edges (a function passed as a value).
 
 use std::path::Path;
 use std::process::Command;
@@ -117,6 +117,16 @@ pub(super) fn search(
         Ended::Exited(Some(1), ..) => Ok(Vec::new()),
         Ended::Exited(_, _, err) => Err(format!("git grep failed: {}", err.trim())),
     }
+}
+
+/// Whether `text` names `name` as a whole word.
+pub(super) fn names(text: &str, name: &str) -> bool {
+    let ident = |c: char| c.is_ascii_alphanumeric() || c == '_';
+    text.match_indices(name).any(|(i, _)| {
+        let before = text.get(..i).and_then(|s| s.chars().next_back());
+        let after = text.get(i + name.len()..).and_then(|s| s.chars().next());
+        !before.is_some_and(ident) && !after.is_some_and(ident)
+    })
 }
 
 #[cfg(test)]

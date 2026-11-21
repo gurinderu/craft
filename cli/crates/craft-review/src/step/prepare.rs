@@ -49,10 +49,30 @@ pub(super) fn choose_extra(cwd: &Path, opts: &StartOptions, run: &mut RunState) 
     }
 }
 
+/// The consumers list of the change (realm @nick/craft, node #529), the code graph indexed and
+/// asked when the reviewer's profile says it answers, run until the start is stopped; indexed
+/// for the metrics lenses too when `metrics` (the binary's one index of it, under its lock).
+fn consumers_of(
+    cwd: &Path,
+    (opts, metrics): (&StartOptions, bool),
+    diff: &crate::git::Diff,
+) -> crate::consumers::Consumers {
+    let projects = opts.sources.as_ref().map(|s| s.projects.as_path());
+    let probe = opts.sources.as_ref().map_or("", |s| s.code_graph.as_str());
+    crate::consumers::of_checkout(cwd, (projects, probe, metrics), diff, &opts.cancel)
+}
+
 /// The embedded-SQL signal on each track, then the integration points' sources, the gate and the
 /// consumers list, side by side, none waiting on another: the sources and the list reach the
 /// prompts, the gate's seeds the pool as round-0 findings.
-pub(super) fn prepare(cwd: &Path, dir: &Path, opts: &StartOptions, run: &mut RunState) {
+pub(super) fn prepare(
+    cwd: &Path,
+    (dir, profiles): (&Path, &[Profile]),
+    opts: &StartOptions,
+    run: &mut RunState,
+) {
+    let taking_part = |p: &&Profile| run.tracks.iter().any(|t| t.profile == p.id);
+    let metrics = profiles.iter().filter(taking_part).any(complexity::wanted);
     let sql = crate::embedded_sql::mark(cwd, &run.diff.merge_base, &mut run.tracks);
     run.notes.extend(sql);
     let (prepared, gated, listed) = std::thread::scope(|s| {
@@ -66,7 +86,7 @@ pub(super) fn prepare(cwd: &Path, dir: &Path, opts: &StartOptions, run: &mut Run
                 .map(|setup| sources::for_repo(cwd, &setup))
         });
         // Started before the gate, which runs on this thread, so the two overlap.
-        let consumers = s.spawn(|| crate::consumers::of_checkout(cwd, &run.diff, &opts.cancel));
+        let consumers = s.spawn(|| consumers_of(cwd, (opts, metrics), &run.diff));
         let gated = match &opts.gate_from {
             Some(from) => Some(gate::alone::taken(from, &run.diff)),
             None => opts
@@ -105,8 +125,7 @@ pub(super) fn prepare(cwd: &Path, dir: &Path, opts: &StartOptions, run: &mut Run
     }
 }
 
-/// One scout per profile taking part of the change, each over its own files; beside them the index
-/// warm-up when a profile taking part has a metrics-or-nothing lens.
+/// One scout per profile taking part of the change, each over its own files.
 pub(super) fn scouts(run: &RunState, profiles: &[Profile]) -> Result<Vec<Task>, Error> {
     let mut tasks = Vec::new();
     for t in &run.tracks {
@@ -123,10 +142,6 @@ pub(super) fn scouts(run: &RunState, profiles: &[Profile]) -> Result<Vec<Task>, 
                 profile: p.id.clone(),
             },
         ));
-    }
-    let taking_part = |p: &&Profile| run.tracks.iter().any(|t| t.profile == p.id);
-    if profiles.iter().filter(taking_part).any(complexity::wanted) {
-        tasks.push(complexity::warmup_task(&run.context.repo)?);
     }
     Ok(tasks)
 }

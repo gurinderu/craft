@@ -245,7 +245,7 @@ pub(super) fn lens_prompt_in(
     let spec = lens_spec(at)?;
     let (profile, lens) = (at.profile, at.lens);
     let body = if spec.metrics {
-        crate::complexity::lens_body(&spec.brief, &base_label(ctx))?
+        crate::complexity::lens_body(&spec.brief, &base_label(ctx), &ctx.graph_project)?
     } else if lens == "negative-space" {
         let already = content::prompt("already-found", &vars([("summary", at.prior.to_owned())]))?;
         negative_space(ctx, profile, at.plan, already)?

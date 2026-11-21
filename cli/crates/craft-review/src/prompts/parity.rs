@@ -90,7 +90,7 @@ fn every_prompt_renders_as_the_engines_render_it() {
 }
 
 /// The general profile's complexity lens — the engine's prompt, then what its findings carry here —,
-/// its index warm-up, and the verifier of one of its findings, whose head is the engine's.
+/// and the verifier of one of its findings, whose head is the engine's.
 fn complexity(g: &mut Golden, ctx: &PromptContext, plan: &Plan, prior: &str) {
     let general = Profile::load("general").unwrap();
     let pathspec = general.pathspec(&["web/app.ts".into()]);
@@ -106,10 +106,16 @@ fn complexity(g: &mut Golden, ctx: &PromptContext, plan: &Plan, prior: &str) {
     let shared = lens
         .strip_suffix(&carried)
         .unwrap_or_else(|| panic!("what the findings carry closes it: {lens}"));
+    // The lens and the verifier each name the graph's one project.
+    assert!(
+        shared.contains("`craft-review-repo-0123456789ab`"),
+        "{shared}"
+    );
     g.check("/expected/complexity/lens", shared);
-    let warmup = crate::complexity::warmup_task(&ctx.repo).unwrap();
-    g.check("/expected/complexity/warmup", body(ctx, warmup.prompt));
-    let head = crate::content::text("verify-metric").unwrap();
+    let vars = crate::content::vars([("project", ctx.graph_project.clone())]);
+    let head = crate::content::prompt("verify-metric", &vars).unwrap();
+    let head = head.trim_end_matches('\n').to_owned();
+    assert!(head.contains("`craft-review-repo-0123456789ab`"), "{head}");
     g.check("/expected/complexity/verify", head.clone());
     let f = serde_json::json!({"severity": "High", "title": "t", "file": "web/app.ts", "line": 1, "why": "w",
         "source": "complexity", "metrics": {"function": "f", "cognitive": 30}});
@@ -173,8 +179,8 @@ fn sources(g: &mut Golden, ctx: &PromptContext, plan: &Plan, prior: &str, input:
     );
 }
 
-/// The consumers list in a judging lens and the negative-space lens: two lines of one symbol, a
-/// symbol with none, one too common to search, and lines cut.
+/// The consumers list in a judging lens and the negative-space lens: two lines of one symbol, one
+/// found by both sources, a symbol with none, one too common to search, and lines cut.
 fn consumers(g: &mut Golden, ctx: &PromptContext, plan: &Plan, prior: &str) {
     use crate::consumers::{Consumers, Listed, Site};
     let site = |line: u32, text: &str, from: &[&str]| Site {
@@ -185,7 +191,7 @@ fn consumers(g: &mut Golden, ctx: &PromptContext, plan: &Plan, prior: &str) {
         kind: String::new(),
     };
     let listed = Consumers {
-        sources: vec!["name search".into()],
+        sources: vec!["name search".into(), "codebase-memory".into()],
         symbols: vec![
             Listed {
                 name: "rule_to_api".into(),
@@ -193,7 +199,11 @@ fn consumers(g: &mut Golden, ctx: &PromptContext, plan: &Plan, prior: &str) {
                 line: 12,
                 sites: vec![
                     site(33, ".map(rule_to_api)", &["name search"]),
-                    site(41, "let a = rule_to_api(r);", &["name search"]),
+                    site(
+                        41,
+                        "let a = rule_to_api(r);",
+                        &["name search", "codebase-memory"],
+                    ),
                 ],
             },
             Listed {

@@ -5,6 +5,7 @@
     reason = "the fixture helpers fail the test loudly, like the tests they serve"
 )]
 
+pub mod cbm;
 pub mod consumers;
 #[path = "../../../../test-support/exe.rs"]
 pub mod exe;

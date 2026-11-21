@@ -117,6 +117,7 @@ fn review(tmp: &Path, root: &Path) -> (String, String, PathBuf) {
     let fake = tmp.join("codex");
     common::write_executable(&fake, FAKE_CODEX).unwrap();
     let out = Command::new(env!("CARGO_BIN_EXE_craft"))
+        .env("CRAFT_CODE_GRAPH", "")
         .args([
             "review",
             "run",

@@ -37,6 +37,7 @@ fn ctx() -> PromptContext {
             }],
             ..Consumers::default()
         },
+        graph_project: String::new(),
         scope: None,
     }
 }
