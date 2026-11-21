@@ -1,15 +1,5 @@
-// Two small pure helpers left from the review engine's diff slicing (the slicing itself is the craft binary's now):
-// the files whose relation to everything else is the point, and UTF-8 encoding for the Workflow sandbox.
-
-// Files whose relation to everything else is the point — a manifest, a lockfile, a schema: a slice of the
-// diff that cannot see them cannot tell what the rest is checked against (integrations/shared/unit-boundary.mjs lists their
-// reads apart, never as a unit's violation).
-export const SHARED_SUFFIXES = ['.lock', '.yml', '.yaml', '.toml', '.json']
-
-/** @param {string} file */
-export function isShared(file) {
-  return SHARED_SUFFIXES.some(s => file.endsWith(s))
-}
+// One small pure helper left from the review engine's diff slicing (the slicing itself is the craft binary's now,
+// shared files included — `is_shared` in cli/crates/craft-review/src/units/dirs.rs): UTF-8 encoding for the Workflow sandbox.
 
 // UTF-8 by hand. The Workflow sandbox has no TextEncoder or TextDecoder — a probe workflow saw both
 // undefined (realm @nick/craft, #135). This follows the platform object: a lone surrogate encodes as
