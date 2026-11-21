@@ -28,6 +28,8 @@ mod paths;
 mod reindex;
 mod stale;
 mod structural;
+mod structural_gaps;
+mod structural_imports;
 mod walk;
 
 pub(super) fn git(dir: &Path, args: &[&str]) -> String {

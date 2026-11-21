@@ -243,11 +243,16 @@ for Rust, nix flake check, statix and deadnix for Nix: a red check blocks, a dia
 lenses and verifiers see, a tool not installed is named), a scout per profile whose answer plans its lenses over its own files, the
 consumers list, built at start beside the gate (`src/consumers/`: for each changed Rust symbol the lines outside the diff that name it —
 callers, implementors and same-named declarations, places passing it as a value — from a name search, always run
-(`names.rs`), a structural search for a name too common to search by text or past the name search's line cap,
-when an `impl` or a trait owns it (`names/structural.rs`, `names/paths.rs`: the paths that reach it — `T::name`,
-`Self::name` inside an `impl` of `T`, `<T as Tr>::name`, `Tr::name` for a trait's item, a `use … as` alias — read from a
-tree-sitter syntax tree embedded in the binary, so comments, strings and paths through another crate never match
-(`names/crates.rs` reads the workspace's dependencies); a call through a value is not read), and,
+(`names.rs`), a structural search for a name too common to search by text or past the name search's line cap
+(`names/structural.rs`, with `structural/files.rs` the files it reads and `structural/around.rs` a trait's implementors
+and an enclosing module's re-exports; `names/paths.rs` and `names/paths/`: the paths that reach it — `T::name`,
+`Self::name` inside an `impl` of `T`, `<T as Tr>::name`, `Tr::name` or `X::name` for a trait's item with `impl Tr for X`,
+`m::name` and a bare `name` called or passed for a free function — each resolved to its full path from the file's module,
+its `use` declarations (an alias, `{self as x}`, a glob) and its own crate's dependencies (`paths/resolve.rs`,
+`paths/imports.rs`, `paths/owner.rs`, `paths/reach.rs`), read from a tree-sitter syntax tree embedded in the binary
+(`paths/syntax.rs`), so comments, strings and same-named items of another module or crate never match;
+`names/crates.rs` reads each package's manifest, `names/unit.rs` a file's crate and module; a call through a value is
+not read), and,
 when the reviewer's profile says codebase-memory answers, or records none and it answers on PATH (`src/consumers/cbm/`,
 `graph.rs`, `graph/found.rs`), the checkout the review
 reads indexed first within the list's graph budget (`cbm/reindex.rs`, one review at a time per project by a lock under

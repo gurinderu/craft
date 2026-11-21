@@ -6,8 +6,8 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use super::super::HITS_MAX;
-use super::super::crates::externals;
-use super::super::paths::Externals;
+use super::super::crates::workspace;
+use super::super::unit::Workspace;
 use super::by_path;
 use crate::cancel::Cancel;
 
@@ -48,7 +48,7 @@ fn only_the_paths_through_the_owner_are_listed() {
     let found = by_path(
         &repo,
         ("src/lib.rs", 3),
-        ("new", &Externals::default()),
+        ("new", &Workspace::default()),
         far(),
         &Cancel::default(),
     )
@@ -71,31 +71,40 @@ fn only_the_paths_through_the_owner_are_listed() {
 }
 
 #[test]
-fn a_free_item_is_not_searched_by_path() {
+fn a_free_item_is_searched_by_its_module() {
     let t = tempfile::tempdir().unwrap();
-    let repo = repo(t.path(), "fn f() { crate::run() }\n");
+    let repo = repo(
+        t.path(),
+        "fn f() { crate::run() }\nfn g() { other::run() }\n",
+    );
     let found = by_path(
         &repo,
         ("src/lib.rs", 7),
-        ("run", &Externals::default()),
+        ("run", &Workspace::default()),
         far(),
         &Cancel::default(),
     )
+    .unwrap()
     .unwrap();
-    assert!(found.is_none());
+    let at: Vec<(&str, u32)> = found
+        .hits
+        .iter()
+        .map(|h| (h.file.as_str(), h.line))
+        .collect();
+    assert_eq!(at, [("src/uses.rs", 1)]);
 }
 
 #[test]
 fn a_search_past_the_line_cap_is_stopped_and_says_so() {
     let t = tempfile::tempdir().unwrap();
-    let uses: String = (0..=HITS_MAX)
-        .map(|i| format!("fn f{i}() {{ T::new(); }}\n"))
+    let uses: String = std::iter::once("use crate::T;\n".to_owned())
+        .chain((0..=HITS_MAX).map(|i| format!("fn f{i}() {{ T::new(); }}\n")))
         .collect();
     let repo = repo(t.path(), &uses);
     let why = by_path(
         &repo,
         ("src/lib.rs", 3),
-        ("new", &Externals::default()),
+        ("new", &Workspace::default()),
         far(),
         &Cancel::default(),
     )
@@ -110,7 +119,7 @@ fn a_search_reached_after_the_deadline_does_not_run() {
     let why = by_path(
         &repo,
         ("src/lib.rs", 3),
-        ("new", &Externals::default()),
+        ("new", &Workspace::default()),
         Instant::now(),
         &Cancel::default(),
     )
@@ -127,7 +136,7 @@ fn a_file_the_list_cannot_read_is_not_parsed_and_is_named() {
     let found = by_path(
         &repo,
         ("src/lib.rs", 3),
-        ("new", &Externals::default()),
+        ("new", &Workspace::default()),
         far(),
         &Cancel::default(),
     )
@@ -156,7 +165,7 @@ fn a_path_through_a_workspace_dependency_is_not_listed() {
     let found = by_path(
         &repo,
         ("src/lib.rs", 3),
-        ("new", &externals(&repo, (far(), &Cancel::default()))),
+        ("new", &workspace(&repo, (far(), &Cancel::default()))),
         far(),
         &Cancel::default(),
     )

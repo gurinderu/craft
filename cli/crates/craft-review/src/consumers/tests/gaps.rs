@@ -35,7 +35,11 @@ fn a_name_not_searched_is_not_said_to_have_no_consumer() {
     git(&repo, &["commit", "-qam", "feat: change"]);
     let c = build(&repo, &diff_of(&repo), no_graph());
     assert_eq!(c.unsearched.len(), 2, "{:?}", c.unsearched);
-    assert_eq!(c.unsearched[0], "parse");
+    assert!(
+        c.unsearched[0].starts_with("parse (searched by path only"),
+        "{:?}",
+        c.unsearched
+    );
     assert!(
         c.unsearched[1].starts_with("busy_name ("),
         "{:?}",
