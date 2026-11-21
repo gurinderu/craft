@@ -40,6 +40,18 @@ test('floorProblems: no floor on the base (the file is new) passes', () => {
   assert.deepEqual(floorProblems(at(70), null), [])
 })
 
+for (const include of ['integrations/shared/**/*.mjs', 'integrations/pi/pi-extension.mjs']) {
+  test(`floorProblems: a legacy head glob cannot replace ${include}`, () => {
+    const current = parseFloor(fs.readFileSync(new URL('./mutation-floor.json', import.meta.url), 'utf8'))
+    const legacy = { break: 70, mutate: ['lib/**/*.mjs', '!lib/**/*.test.mjs', '!lib/engine-harness.mjs', '!lib/sandbox-globals.mjs'] }
+    const head = { ...current, mutate: current.mutate.map(g => (g === include ? 'lib/**/*.mjs' : g)) }
+    for (const base of [current, legacy]) {
+      assert.deepEqual(floorProblems(current, base), [])
+      assert.ok(floorProblems(head, base).some(p => p.includes(`drops ${include} from`)))
+    }
+  })
+}
+
 for (const directory of ['config', 'fixtures']) {
   test(`floorProblems: ${directory} coverage cannot be removed after widening in the new layout`, () => {
     const wide = at(70)

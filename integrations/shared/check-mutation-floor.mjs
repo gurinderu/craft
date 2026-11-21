@@ -33,7 +33,6 @@ const CONFIG = 'integrations/shared/config/stryker.config.mjs'
  */
 export function floorProblems(head, base) {
   if (base === null) return []
-  head = { ...head, mutate: mutationScope(head.mutate) }
   base = { ...base, mutate: mutationScope(base.mutate) }
   const problems =
     head.break < base.break ? [`${FILE} lowers the mutation floor from ${base.break} to ${head.break} — it may only rise: raise the score instead`] : []
