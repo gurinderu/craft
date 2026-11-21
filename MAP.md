@@ -237,7 +237,8 @@ for Rust, nix flake check, statix and deadnix for Nix: a red check blocks, a dia
 lenses and verifiers see, a tool not installed is named), a scout per profile whose answer plans its lenses over its own files, the
 consumers list, built at start beside the gate (`src/consumers/`: for each changed Rust symbol the lines outside the diff that name it —
 callers, implementors and same-named declarations, places passing it as a value — from a name search, always run, and,
-when the reviewer's profile says codebase-memory answers (`src/consumers/cbm/`, `graph.rs`), the checkout the review
+when the reviewer's profile says codebase-memory answers, or records none and it answers on PATH (`src/consumers/cbm/`,
+`graph.rs`, `graph/found.rs`), the checkout the review
 reads indexed first within the list's graph budget (`cbm/reindex.rs`, one review at a time per project by a lock under
 `~/.craft/cbm-locks/`: `cbm/lock.rs`; an index past the budget left to finish; always one project of craft's own per
 repository moved to each checkout reviewed, never the profile's: `graph/target.rs`; nothing indexed when the change has

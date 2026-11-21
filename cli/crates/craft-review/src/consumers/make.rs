@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use super::graph::{self, GraphError, graph_of};
+use super::graph::{self, GraphError, graph_found};
 use super::{Consumers, changed, list};
 use crate::cancel::Cancel;
 use crate::project::CodeGraph;
@@ -25,7 +25,7 @@ impl Consumers {
 #[must_use]
 pub fn of_checkout(
     cwd: &Path,
-    (projects, metrics): (Option<&Path>, bool),
+    (projects, probe, metrics): (Option<&Path>, &str, bool),
     diff: &crate::git::Diff,
     cancel: &Cancel,
 ) -> Consumers {
@@ -37,7 +37,7 @@ pub fn of_checkout(
         });
     match crate::git::toplevel(cwd) {
         Ok(top) => {
-            let graph = (graph_of(projects, &top), locks.as_path(), metrics);
+            let graph = (graph_found(projects, &top, probe), locks.as_path(), metrics);
             build_until(&top, diff, graph, cancel)
         }
         Err(e) => Consumers::failed(format!("the checkout's top could not be read: {e}")),
@@ -55,6 +55,17 @@ pub fn build(
 ) -> Consumers {
     let locks = crate::consumers::cbm::scratch_locks();
     build_until(top, diff, (graph, &locks, false), &Cancel::default())
+}
+
+/// [`build`], the graph indexed for the metrics lenses too, though the change has no symbol.
+#[must_use]
+pub fn build_for_metrics(
+    top: &Path,
+    diff: &crate::git::Diff,
+    graph: Result<CodeGraph, GraphError>,
+) -> Consumers {
+    let locks = crate::consumers::cbm::scratch_locks();
+    build_until(top, diff, (graph, &locks, true), &Cancel::default())
 }
 
 /// [`build`], its name search and the graph's questions run until `cancel` is.
@@ -79,14 +90,22 @@ fn build_until(
             Ok(g)
         }
     });
-    let asked = graph.and_then(|g| {
-        graph::graph_callers(top, &diff.merge_base, (&g, locks), &found.symbols, cancel)
+    let ready = graph.and_then(|g| graph::ready(top, &diff.merge_base, (&g, locks), cancel));
+    let mut indexed = ready.is_ok();
+    // Indexed for the metrics lenses alone, the graph is asked nothing and is no source.
+    let asked = ready.and_then(|r| {
+        (!found.symbols.is_empty())
+            .then(|| graph::graph_callers(&r, &found.symbols))
+            .transpose()
     });
     let (asked, graph_skipped) = match asked {
-        Ok(a) => (Some(a), String::new()),
-        Err(why) => (None, why.to_string()),
+        Ok(a) => (a, String::new()),
+        Err(why) => {
+            // An index that moved meanwhile may be another checkout's now.
+            indexed &= !matches!(why, GraphError::Moved { .. });
+            (None, why.to_string())
+        }
     };
-    let indexed = asked.is_some();
     let callers = asked.as_ref().map(|a| a.callers.as_slice());
     let mut out = list::assemble(top, &changed, &found.symbols, cancel, callers);
     if let Some(a) = asked {

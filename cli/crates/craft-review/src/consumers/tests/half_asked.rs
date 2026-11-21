@@ -124,6 +124,8 @@ fn a_first_question_that_fails_leaves_the_graph_out_of_the_sources() {
     let c = build(&repo, &diff_of(&repo), Ok(g));
     assert!(c.graph_skipped.contains("database locked"), "{c:?}");
     assert!(!c.sources.contains(&GRAPH.to_owned()), "{:?}", c.sources);
+    // Indexed and fresh all the same: the metrics lenses may still read it.
+    assert!(c.graph_indexed, "{c:?}");
 }
 
 /// A deadline no test reaches.

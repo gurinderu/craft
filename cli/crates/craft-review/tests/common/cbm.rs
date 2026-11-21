@@ -7,8 +7,13 @@ use craft_review::sources::{Git, SourcesSetup};
 use craft_review::step::StartOptions;
 
 /// `opts`, its profiles under `out/projects`; with `tool`, the profile records it as the code
-/// graph (indexing a project of the reviewer's own, `theirs`).
-pub fn with_profile(mut opts: StartOptions, out: &Path, tool: Option<&Path>) -> StartOptions {
+/// graph (indexing a project of the reviewer's own, `theirs`); `probe` the program a review asks
+/// when the profile records none.
+pub fn with_profile(
+    mut opts: StartOptions,
+    out: &Path,
+    (tool, probe): (Option<&Path>, &Path),
+) -> StartOptions {
     let projects = out.join("projects");
     if let Some(tool) = tool {
         let (path, common) = project::profile_path(&projects, &opts.cwd).unwrap();
@@ -20,6 +25,7 @@ pub fn with_profile(mut opts: StartOptions, out: &Path, tool: Option<&Path>) -> 
         projects,
         cache: Err("no cache in the tests".into()),
         git: Git::prompt_free(),
+        code_graph: probe.display().to_string(),
     });
     opts
 }

@@ -77,6 +77,9 @@ pub struct SourcesSetup {
     /// The cache, `$CRAFT_SOURCES_DIR` or `~/.craft/sources`; `Err` names why there is none.
     pub cache: Result<PathBuf, String>,
     pub git: Git,
+    /// The code graph program a review asks when the reviewer's profile records none
+    /// (`codebase-memory-mcp`, found on PATH; realm @nick/craft, node #529); empty: none is asked.
+    pub code_graph: String,
 }
 
 /// The cache root `CRAFT_SOURCES_DIR` names, else `<home>/.craft/sources` (`sourcesRoot`).

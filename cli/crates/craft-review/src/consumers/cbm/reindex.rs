@@ -25,10 +25,23 @@ const MODE: &str = "full";
 const CAP: u64 = 16 << 20;
 /// How often the index is checked for having exited.
 const POLL: Duration = Duration::from_millis(20);
-/// The index run, under `sh`: the lock touched every `$4` seconds while it is this run's, the
-/// tool, then the lock removed while it is still this run's. `$0` the tool, `$1` its arguments,
-/// `$2` the lock directory, `$3` the lock's token.
-const RUN: &str = r#"(while sleep "$4"; do [ "$(cat "$2/owner" 2>/dev/null)" = "$3" ] && touch "$2"; done) & beat=$!; "$0" cli --quiet index_repository "$1"; s=$?; kill "$beat" 2>/dev/null; [ "$(cat "$2/owner" 2>/dev/null)" = "$3" ] && rm -rf "$2"; exit $s"#;
+/// The index run, under `sh`: the tool started, then the lock touched every `$4` seconds while
+/// the tool and this `sh` both live and the lock is this run's, and given up past `$5` seconds of
+/// holding it (the tool left running); once the tool exits, the lock removed while it is still
+/// this run's. `$0` the tool, `$1` its arguments, `$2` the lock directory, `$3` the lock's token.
+const RUN: &str = r#"lock=$2; token=$3
+ours() { [ "$(cat "$lock/owner" 2>/dev/null)" = "$token" ]; }
+"$0" cli --quiet index_repository "$1" & ix=$!
+sh=$$; start=$(date +%s)
+(while sleep "$4"; do
+  kill -0 "$ix" 2>/dev/null && kill -0 "$sh" 2>/dev/null || exit 0
+  if [ $(( $(date +%s) - start )) -ge "$5" ]; then ours && rm -rf "$lock"; exit 0; fi
+  ours && touch "$lock"
+done) </dev/null & beat=$!
+wait "$ix"; s=$?
+kill "$beat" 2>/dev/null
+ours && rm -rf "$lock"
+exit $s"#;
 
 impl Cbm {
     /// Indexes the checkout at `repo` as the project `name`, refused past `deadline`.
@@ -63,7 +76,8 @@ impl Cbm {
         let mut cmd = Command::new("sh");
         let dir = lock.dir.display().to_string();
         let beat = format!("{:.3}", self.heartbeat.as_secs_f64());
-        cmd.args(["-c", RUN, &self.tool, args, &dir, &lock.token, &beat]);
+        let cap = self.lock_cap.as_secs().max(1).to_string();
+        cmd.args(["-c", RUN, &self.tool, args, &dir, &lock.token, &beat, &cap]);
         cmd.stdin(Stdio::null()).stdout(to_out).stderr(to_err);
         detached(&mut cmd);
         let child = cmd

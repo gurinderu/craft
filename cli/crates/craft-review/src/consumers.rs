@@ -28,8 +28,8 @@ mod symbols;
 mod tests;
 mod text;
 
-pub use graph::{GraphError, craft_project, graph_of};
-pub use make::{build, of_checkout};
+pub use graph::{GraphError, craft_project, graph_found, graph_of};
+pub use make::{build, build_for_metrics, of_checkout};
 pub use save::{keep, prepare};
 pub use section::{gap_line, section};
 pub use text::{confined_block, lens_block, seam_block};

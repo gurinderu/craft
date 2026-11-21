@@ -65,3 +65,50 @@ fn a_change_with_no_symbol_indexes_nothing_and_says_so() {
     );
     assert!(c.graph_skipped.contains("no symbol to ask"), "{c:?}");
 }
+
+#[test]
+fn a_change_with_no_symbol_is_indexed_for_the_metrics_lenses_alone_and_lists_no_graph() {
+    let t = tempfile::tempdir().unwrap();
+    let repo = fixture(t.path(), "");
+    let g = graph_of_own(
+        t.path(),
+        ("/elsewhere", &repo_root(t.path())),
+        INDEXED,
+        ROW,
+        false,
+    );
+    let none = crate::git::read_diff(&repo, Some("HEAD"), None).unwrap();
+    let c = crate::consumers::build_for_metrics(&repo, &none, Ok(g));
+    assert_eq!(
+        reindexed(t.path()).lines().count(),
+        1,
+        "{}",
+        reindexed(t.path())
+    );
+    assert!(c.graph_indexed, "{c:?}");
+    assert_eq!(c.sources, vec![NAME_SEARCH], "{c:?}");
+}
+
+#[test]
+fn a_profile_naming_no_graph_has_one_found_answering_on_the_path() {
+    let t = tempfile::tempdir().unwrap();
+    let repo = fixture(t.path(), "");
+    let projects = t.path().join("projects");
+    let g = graph_of_own(
+        t.path(),
+        ("/elsewhere", &repo_root(t.path())),
+        INDEXED,
+        ROW,
+        false,
+    );
+    let found = crate::consumers::graph_found(Some(&projects), &repo, &g.tool).unwrap();
+    assert_eq!(found.tool, g.tool);
+    let missing = t.path().join("no-such-cbm").display().to_string();
+    let why = crate::consumers::graph_found(Some(&projects), &repo, &missing)
+        .unwrap_err()
+        .to_string();
+    assert!(
+        why.contains("names no code graph") && why.contains("did not answer"),
+        "{why}"
+    );
+}

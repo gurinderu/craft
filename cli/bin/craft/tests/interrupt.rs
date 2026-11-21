@@ -58,6 +58,7 @@ fn signal_craft(
     let dir = tempfile::tempdir()?;
     let claude = stand_in(dir.path(), prelude)?;
     let mut craft = Command::new(env!("CARGO_BIN_EXE_craft"))
+        .env("CRAFT_CODE_GRAPH", "")
         .args(["review", "probe", "--plain", "--cwd"])
         .arg(dir.path())
         .arg("--claude")

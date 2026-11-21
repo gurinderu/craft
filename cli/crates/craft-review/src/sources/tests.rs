@@ -299,6 +299,7 @@ fn a_profile_that_cannot_be_read_is_named_and_the_review_goes_on_without_sources
         projects: t.path().join("projects"),
         cache: Ok(cache(t.path())),
         git: git_to(None),
+        code_graph: String::new(),
     };
     assert!(
         super::for_repo(&repo, &setup).is_empty(),

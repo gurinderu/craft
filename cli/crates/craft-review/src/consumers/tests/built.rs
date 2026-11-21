@@ -39,7 +39,7 @@ fn a_checkout_whose_top_cannot_be_read_is_said() {
     std::fs::create_dir_all(&elsewhere).unwrap();
     let c = of_checkout(
         &elsewhere,
-        (None, false),
+        (None, "", false),
         &diff,
         &crate::cancel::Cancel::default(),
     );

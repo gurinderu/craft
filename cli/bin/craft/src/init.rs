@@ -82,6 +82,8 @@ pub fn sources_setup() -> Option<SourcesSetup> {
         projects: craft_home()?.join("projects"),
         cache: sources::cache_root(set.as_deref(), home.as_deref()),
         git: Git::prompt_free(),
+        // `CRAFT_CODE_GRAPH` names another program; set empty, none is asked.
+        code_graph: std::env::var("CRAFT_CODE_GRAPH").unwrap_or_else(|_| cbm::TOOL.to_owned()),
     })
 }
 

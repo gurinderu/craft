@@ -15,15 +15,10 @@ use crate::cancel::Cancel;
 pub(super) const STALE: Duration = Duration::from_secs(600);
 /// How often a running index touches its lock.
 pub(super) const HEARTBEAT: Duration = Duration::from_secs(60);
+/// How long an index run may hold its lock at all.
+pub(super) const CAP: Duration = Duration::from_mins(30);
 /// How often a held lock is looked at again.
 const POLL: Duration = Duration::from_millis(100);
-
-/// Where a review keeps its index locks: `~/.craft/cbm-locks`, shared by every craft on the
-/// machine; the scratch directory's when there is no home.
-#[must_use]
-pub fn review_locks() -> PathBuf {
-    craft_store::read::home().map_or_else(scratch_locks, |h| h.join(".craft").join("cbm-locks"))
-}
 
 /// The index locks of a list built outside a review (tests, a library caller): under the
 /// temporary directory.
@@ -91,7 +86,10 @@ fn made(locks: &Path, dir: &Path) -> std::io::Result<Option<Lock>> {
     let token = token();
     let new = locks.join(format!(".new-{token}"));
     std::fs::create_dir(&new)?;
-    std::fs::write(new.join("owner"), &token)?;
+    if let Err(e) = std::fs::write(new.join("owner"), &token) {
+        std::fs::remove_dir_all(&new).unwrap_or(());
+        return Err(e);
+    }
     // A rename onto a lock holding its owner fails: the directory is not empty.
     if std::fs::rename(&new, dir).is_ok() {
         return Ok(Some(Lock {

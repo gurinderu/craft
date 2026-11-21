@@ -44,14 +44,15 @@ fn an_index_naming_no_root_is_not_asked() {
     let t = tempfile::tempdir().unwrap();
     let repo = fixture(t.path(), "");
     let g = index_of(t.path(), "", &row("src/uses.rs", 3, 5));
-    let why = crate::consumers::graph::graph_callers(
+    let ready = crate::consumers::graph::ready(
         &repo,
         &diff_of(&repo).merge_base,
         (&g, &crate::consumers::cbm::scratch_locks()),
-        &[],
         &crate::cancel::Cancel::default(),
-    )
-    .unwrap_err();
+    );
+    let Err(why) = ready else {
+        panic!("an index naming no root was taken as ready");
+    };
     assert!(
         matches!(why, crate::consumers::GraphError::NoRoot { .. }),
         "{why}"

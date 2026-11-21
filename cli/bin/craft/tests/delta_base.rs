@@ -40,6 +40,7 @@ fn branch(code: &Path) {
 
 fn craft(args: &[&str], code: &Path, home: &Path) -> Output {
     Command::new(env!("CARGO_BIN_EXE_craft"))
+        .env("CRAFT_CODE_GRAPH", "")
         .args(args)
         .args(["--no-recall", "--no-gate", "--delta", "--cwd"])
         .arg(code)

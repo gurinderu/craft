@@ -74,6 +74,8 @@ fn fetched(dir: &Path) -> PathBuf {
 /// answer submitted: the first lens prompt and the context the run's state keeps.
 fn start(exe: &Path, repo: &Path, run: &Path, root: Option<&Path>) -> (String, Value) {
     let mut cmd = Command::new(exe);
+    // Never the machine's own code graph (realm @nick/craft, node #529).
+    cmd.env("CRAFT_CODE_GRAPH", "");
     cmd.args(["review", "start", "--cwd"])
         .arg(repo)
         .arg("--run-dir")
@@ -99,6 +101,7 @@ fn start(exe: &Path, repo: &Path, run: &Path, root: Option<&Path>) -> (String, V
     let answers = run.with_extension("answers.json");
     std::fs::write(&answers, scout).unwrap();
     let out = Command::new(exe)
+        .env("CRAFT_CODE_GRAPH", "")
         .args(["review", "submit", "--run"])
         .arg(run)
         .arg("--answers")
@@ -177,6 +180,7 @@ fn gate_of(extra: &[&str]) -> Value {
     repo(&code);
     let run = tmp.path().join("run");
     let out = Command::new(env!("CARGO_BIN_EXE_craft"))
+        .env("CRAFT_CODE_GRAPH", "")
         .args(["review", "start", "--no-recall", "--cwd"])
         .arg(&code)
         .arg("--run-dir")
@@ -344,6 +348,7 @@ fn a_run_started_with_no_root_takes_the_one_a_later_submit_names_and_keeps_it() 
 #[test]
 fn the_usage_limit_help_points_a_stopped_run_at_resume() {
     let out = Command::new(env!("CARGO_BIN_EXE_craft"))
+        .env("CRAFT_CODE_GRAPH", "")
         .args(["review", "submit", "--help"])
         .output()
         .unwrap();

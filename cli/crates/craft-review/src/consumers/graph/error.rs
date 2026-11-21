@@ -16,6 +16,11 @@ pub enum GraphError {
     )]
     NotRecorded,
     #[error(
+        "the review profile names no code graph, and {tool} did not answer ({why}); `craft init \
+         --propose` checks for one"
+    )]
+    NotFound { tool: String, why: CbmError },
+    #[error(
         "`craft init` found {tool} unusable: {note}; once it answers and indexes this repository, {}",
         cbm::RECORD
     )]

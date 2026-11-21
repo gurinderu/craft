@@ -39,7 +39,7 @@ fn metric(title: &str, metrics: &Value) -> Value {
 /// Starts a run over the TypeScript change, the reviewer's profile recording `graph` as its code
 /// graph; the scout picks complexity. No warm-up agent is dispatched, and no prompt tells an
 /// agent to index: the binary alone indexes the graph (realm @nick/craft, node #529).
-fn planned(repo: &Path, out: &Path, graph: Option<&Path>) -> Value {
+fn planned(repo: &Path, out: &Path, graph: (Option<&Path>, &Path)) -> Value {
     let run = out.join("run");
     let s = step::start(&common::cbm::with_profile(opts(repo, out), out, graph)).unwrap();
     assert_eq!(ids(&s), ["scout-general"]);
@@ -59,7 +59,9 @@ fn planned(repo: &Path, out: &Path, graph: Option<&Path>) -> Value {
 #[test]
 fn without_a_code_metrics_index_the_lens_is_dropped_and_said_so() {
     let (repo, out) = (typescript(), tempfile::tempdir().unwrap());
-    let s = planned(repo.path(), out.path(), None);
+    // No profile entry, and no program answering where the review looks for one.
+    let missing = out.path().join("no-codebase-memory-mcp");
+    let s = planned(repo.path(), out.path(), (None, &missing));
     assert_eq!(ids(&s), ["lens-general-correctness-r1"]);
     let run = out.path().join("run");
     let mut s = s;
@@ -75,7 +77,8 @@ fn without_a_code_metrics_index_the_lens_is_dropped_and_said_so() {
         &report,
         &[
             "Dropped for want of a code-metrics index: complexity.",
-            "the complexity lens did not run: the codebase-memory index is unavailable (the review profile names no code graph",
+            "the complexity lens did not run: the codebase-memory index is unavailable (the review profile names no code graph, and",
+            "did not answer",
         ],
     );
 }
@@ -86,7 +89,11 @@ fn with_an_index_a_finding_stands_on_the_metrics_it_carries_and_the_verifier_rer
     let run = out.path().join("run");
     let graphs = tempfile::tempdir().unwrap();
     let (tool, log) = common::cbm::stand_in(graphs.path(), repo.path());
-    let s = planned(repo.path(), out.path(), Some(&tool));
+    let s = planned(
+        repo.path(),
+        out.path(),
+        (Some(&tool), &out.path().join("unused")),
+    );
     // Indexed once, by the binary, under craft's own project.
     let calls = std::fs::read_to_string(&log).unwrap();
     assert_eq!(calls.lines().count(), 1, "{calls}");
@@ -152,4 +159,18 @@ fn with_an_index_a_finding_stands_on_the_metrics_it_carries_and_the_verifier_rer
         &["complexity: 1 finding(s) dropped — they carry no metric value read from the graph"],
     );
     assert!(!report.contains("f is a bit long"), "{report}");
+}
+
+#[test]
+fn a_graph_answering_where_no_profile_records_one_is_indexed_and_the_lens_runs() {
+    let (repo, out) = (typescript(), tempfile::tempdir().unwrap());
+    let graphs = tempfile::tempdir().unwrap();
+    let (tool, log) = common::cbm::stand_in(graphs.path(), repo.path());
+    let s = planned(repo.path(), out.path(), (None, &tool));
+    let calls = std::fs::read_to_string(&log).unwrap();
+    assert_eq!(calls.lines().count(), 1, "{calls}");
+    assert_eq!(
+        ids(&s),
+        ["lens-general-complexity-r1", "lens-general-correctness-r1"]
+    );
 }

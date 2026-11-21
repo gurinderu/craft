@@ -76,6 +76,8 @@ impl Bench {
         ))
         .unwrap();
         let mut cmd = Command::new(env!("CARGO_BIN_EXE_craft"));
+        // Never the machine's own code graph (realm @nick/craft, node #529).
+        cmd.env("CRAFT_CODE_GRAPH", "");
         cmd.args([
             "review",
             "run",

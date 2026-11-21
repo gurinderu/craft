@@ -25,9 +25,9 @@ use run::{bounded, payload};
 
 pub use error::CbmError;
 pub use index::Index;
-pub use lock::{review_locks, scratch_locks};
+pub use lock::scratch_locks;
 
-pub use probe::{RECORD, look, probe, roots_of, said};
+pub use probe::{RECORD, answers, look, probe, roots_of, said};
 
 /// The program `craft init` asks.
 pub const TOOL: &str = "codebase-memory-mcp";
@@ -78,6 +78,9 @@ pub struct Cbm {
     pub lock_stale: Duration,
     /// How often a running index touches its lock, so only silence ages it.
     pub heartbeat: Duration,
+    /// How long an index run may hold its lock at all: past it the lock is given up and the index
+    /// left running.
+    pub lock_cap: Duration,
 }
 
 impl Cbm {
@@ -91,6 +94,7 @@ impl Cbm {
             locks: scratch_locks(),
             lock_stale: lock::STALE,
             heartbeat: lock::HEARTBEAT,
+            lock_cap: lock::CAP,
         }
     }
 

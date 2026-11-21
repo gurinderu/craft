@@ -31,6 +31,27 @@ pub fn probe(tool: &str, roots: &[String]) -> CodeGraph {
     }
 }
 
+/// How long a review waits for a code graph no profile records to answer.
+const ANSWERS_WITHIN: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Whether `tool` answers `list_projects` within a short bound: a review then asks it though no
+/// profile records it (realm @nick/craft, node #529).
+///
+/// # Errors
+/// Why it did not answer.
+pub fn answers(tool: &str) -> Result<(), super::CbmError> {
+    let cbm = Cbm {
+        timeout: ANSWERS_WITHIN,
+        ..Cbm::new(tool)
+    };
+    cbm.call(
+        "list_projects",
+        serde_json::json!({"limit": 1}),
+        ANSWERS_WITHIN,
+    )
+    .map(drop)
+}
+
 /// What `tool` says now of the repository at `cwd`, from one look: the graph and its line for
 /// the reviewer.
 #[must_use]

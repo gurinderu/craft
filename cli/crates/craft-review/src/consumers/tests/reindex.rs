@@ -26,7 +26,7 @@ pub(super) fn graph_of_own(
     let calls = t.join("status-calls");
     let late = if moves { "2099-06-01" } else { "2099-01-01" };
     let script = format!(
-        "#!/bin/sh\ncase \"$3\" in\n index_status) echo \"$4\" >> {calls}; n=$(wc -l < {calls}); at=2099-01-01; [ \"$n\" -ge 2 ] && at={late}; case \"$4\" in *'\"project\":\"p\"'*) r='{root}';; *) r='{own}';; esac; echo \"{{\\\"status\\\":\\\"ready\\\",\\\"indexed_at\\\":\\\"${{at}}T00:00:00Z\\\",\\\"root_path\\\":\\\"$r\\\"}}\";;\n index_repository) echo \"$4\" >> {log}; {reindex};;\n query_graph) echo \"$4\" >> {queries}; case \"$4\" in *k8s_rule_to_api*) echo '{{\"rows\":[{rows}]}}';; *) echo '{{\"rows\":[]}}';; esac;;\nesac\n",
+        "#!/bin/sh\ncase \"$3\" in\n index_status) echo \"$4\" >> {calls}; n=$(wc -l < {calls}); at=2099-01-01; [ \"$n\" -ge 2 ] && at={late}; case \"$4\" in *'\"project\":\"p\"'*) r='{root}';; *) r='{own}';; esac; echo \"{{\\\"status\\\":\\\"ready\\\",\\\"indexed_at\\\":\\\"${{at}}T00:00:00Z\\\",\\\"root_path\\\":\\\"$r\\\"}}\";;\n index_repository) echo \"$4\" >> {log}; {reindex};;\n list_projects) echo '{{\"projects\":[]}}';;\n query_graph) echo \"$4\" >> {queries}; case \"$4\" in *k8s_rule_to_api*) echo '{{\"rows\":[{rows}]}}';; *) echo '{{\"rows\":[]}}';; esac;;\nesac\n",
         calls = calls.display(),
         log = t.join("reindexed").display(),
         queries = t.join("queries").display(),

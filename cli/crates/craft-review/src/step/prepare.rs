@@ -58,7 +58,8 @@ fn consumers_of(
     diff: &crate::git::Diff,
 ) -> crate::consumers::Consumers {
     let projects = opts.sources.as_ref().map(|s| s.projects.as_path());
-    crate::consumers::of_checkout(cwd, (projects, metrics), diff, &opts.cancel)
+    let probe = opts.sources.as_ref().map_or("", |s| s.code_graph.as_str());
+    crate::consumers::of_checkout(cwd, (projects, probe, metrics), diff, &opts.cancel)
 }
 
 /// The embedded-SQL signal on each track, then the integration points' sources, the gate and the

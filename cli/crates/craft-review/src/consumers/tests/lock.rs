@@ -134,3 +134,20 @@ fn a_stop_leaves_the_index_running() {
         "the lock outlived the index"
     );
 }
+
+#[test]
+fn a_dead_holder_s_lock_with_its_owner_is_taken_over() {
+    let t = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(lock(t.path())).unwrap();
+    std::fs::write(lock(t.path()).join("owner"), "dead-holder").unwrap();
+    let old = std::process::Command::new("touch")
+        .args(["-d", "2000-01-01", &lock(t.path()).display().to_string()])
+        .status()
+        .unwrap();
+    assert!(old.success());
+    slow(t.path(), 0)
+        .reindex("/r", "proj", Instant::now() + Duration::from_secs(30))
+        .unwrap();
+    assert!(t.path().join("finished").exists());
+    assert!(!lock(t.path()).exists());
+}
