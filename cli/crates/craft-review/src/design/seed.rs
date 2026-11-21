@@ -1,5 +1,7 @@
 //! The design lens's seed and its block of the lens prompt (realm @nick/craft, node #534).
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 use crate::content::{self, ContentError, vars};
@@ -11,10 +13,10 @@ const SEED_MAX: usize = 30;
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Seed {
-    /// What the signal saw the change add, one line each.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub structure: Vec<String>,
-    /// The crate graph's new edges and the cycles they close.
+    /// What the signal saw each profile's part of the change add, one line each, by profile.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub structure: BTreeMap<String, Vec<String>>,
+    /// The crate graph's new edges and the cycles they close: the Rust profile's alone.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub crates: Vec<String>,
     /// Why the crate delta is missing, when it could not be read.
@@ -46,24 +48,23 @@ fn listed(items: &[String]) -> String {
     out.join("\n")
 }
 
-/// The seed's block of the design lens's prompt; empty when the seed is.
+/// The seed's block of the design lens of `profile`: its own structure lines, and the crate delta
+/// for the Rust profile alone; empty when it has neither.
 ///
 /// # Errors
 /// When the template is missing or a placeholder has no value.
-pub(crate) fn lens_block(seed: &Seed) -> Result<String, ContentError> {
-    if seed.is_empty() {
+pub(crate) fn lens_block(seed: &Seed, profile: &str) -> Result<String, ContentError> {
+    let own = seed.structure.get(profile).filter(|l| !l.is_empty());
+    let rust = profile == crate::consumers::PROFILE;
+    let crates = match (rust, seed.crates.is_empty(), seed.note.is_empty()) {
+        (false, _, _) | (true, true, true) => String::new(),
+        (true, true, false) => crates_part(&format!("- not read: {}", seed.note))?,
+        (true, false, _) => crates_part(&listed(&seed.crates))?,
+    };
+    if own.is_none() && crates.is_empty() {
         return Ok(String::new());
     }
-    let crates = match (seed.crates.is_empty(), seed.note.is_empty()) {
-        (true, true) => String::new(),
-        (true, false) => crates_part(&format!("- not read: {}", seed.note))?,
-        (false, _) => crates_part(&listed(&seed.crates))?,
-    };
-    let structure = if seed.structure.is_empty() {
-        "none".to_owned()
-    } else {
-        listed(&seed.structure)
-    };
+    let structure = own.map_or_else(|| "none".to_owned(), |l| listed(l));
     content::prompt(
         "lens-design-seed",
         &vars([("structure", structure), ("crates", crates)]),

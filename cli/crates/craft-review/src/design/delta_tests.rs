@@ -1,4 +1,7 @@
 use super::delta::{edges, lines};
+use super::mark;
+use super::mark_tests::change;
+use crate::state::Track;
 
 fn manifest(name: &str, deps: &[&str], dev: &[&str]) -> String {
     let list = |ds: &[&str]| {
@@ -50,11 +53,75 @@ fn a_new_edge_is_named_and_the_cycle_it_closes_too() {
         [
             "new edge: c -> a (dev-dependency)",
             "new edge: d -> a",
-            "new cycle: c -> a -> b -> c (closed by the new edge c -> a (dev-dependency))",
+            "new cycle: c -> a -> b -> c, through the dev-dependency edge(s) c -> a — legal in Cargo: a test, bench or example depending back",
         ]
     );
     assert!(
         lines(&head, &head).is_empty(),
         "an unchanged graph: no delta"
     );
+}
+
+#[test]
+fn every_dev_edge_on_the_cycle_is_named_and_a_cycle_of_normal_edges_is_not_claimed() {
+    let base = edges(&[
+        manifest("a", &[], &["b"]),
+        manifest("b", &[], &[]),
+        manifest("c", &[], &[]),
+    ]);
+    let head = edges(&[
+        manifest("a", &[], &["b"]),
+        manifest("b", &["c"], &[]),
+        manifest("c", &[], &["a"]),
+    ]);
+    let got = lines(&base, &head);
+    assert_eq!(
+        got.last().unwrap(),
+        "new cycle: b -> c -> a -> b, through the dev-dependency edge(s) c -> a, a -> b — legal in Cargo: a test, bench or example depending back"
+    );
+    let normal = edges(&[manifest("a", &["b"], &[]), manifest("b", &["a"], &[])]);
+    let got = lines(&edges(&[]), &normal);
+    assert_eq!(
+        got,
+        ["new edge: a -> b", "new edge: b -> a"],
+        "Cargo refuses to build it: no cycle line"
+    );
+}
+
+#[test]
+fn the_crate_delta_reads_the_workspace_members_only() {
+    let t = tempfile::tempdir().unwrap();
+    let d = t.path();
+    let ws = "[workspace]\nmembers = [\"crates/*\"]\nexclude = [\"crates/skip\"]\n";
+    let pkg = |n: &str, dep: &str| format!("[package]\nname = \"{n}\"\n[dependencies]\n{dep}");
+    let diff = change(
+        d,
+        &[
+            ("Cargo.toml", ws),
+            ("crates/a/Cargo.toml", &pkg("a", "")),
+            ("crates/a/src/lib.rs", "\n"),
+        ],
+        &[
+            (
+                "crates/b/Cargo.toml",
+                &pkg("b", "a = { path = \"../a\" }\n"),
+            ),
+            ("crates/b/src/lib.rs", "\n"),
+            (
+                "crates/skip/Cargo.toml",
+                &pkg("skip", "a = { path = \"../a\" }\n"),
+            ),
+        ],
+    );
+    let files = [
+        "crates/b/Cargo.toml",
+        "crates/b/src/lib.rs",
+        "crates/skip/Cargo.toml",
+    ];
+    let mut tracks = vec![Track::new(
+        "rust",
+        files.iter().map(|f| (*f).to_owned()).collect(),
+    )];
+    let (seed, _) = mark(d, &diff, &mut tracks);
+    assert_eq!(seed.crates, ["new edge: b -> a"], "crates/skip is excluded");
 }

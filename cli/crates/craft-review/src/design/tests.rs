@@ -1,34 +1,17 @@
 use std::path::Path;
 
 use super::mark;
+use super::mark_tests::{commit, staged, write};
 use crate::git::Diff;
-use crate::git::tests::git;
 use crate::state::Track;
-
-fn write(d: &Path, f: &str, text: &str) {
-    let p = d.join(f);
-    std::fs::create_dir_all(p.parent().unwrap()).unwrap();
-    std::fs::write(p, text).unwrap();
-}
-
-fn diff_of(d: &Path, base: &str) -> Diff {
-    let files = git(d, &["diff", "--name-only", base]);
-    Diff {
-        base: base.into(),
-        merge_base: base.into(),
-        head: base.into(),
-        dirty: true,
-        worktree: String::new(),
-        files: files.lines().map(str::to_owned).collect(),
-        stat: String::new(),
-        log: String::new(),
-    }
-}
 
 /// A workspace of two crates, `a` depending on `b`, committed.
 fn workspace(d: &Path) -> String {
-    git(d, &["init", "-q", "-b", "main"]);
-    write(d, "Cargo.toml", "[workspace]\nmembers = [\"a\", \"b\"]\n");
+    write(
+        d,
+        "Cargo.toml",
+        "[workspace]\nmembers = [\"a\", \"b\", \"c\"]\n",
+    );
     write(
         d,
         "a/Cargo.toml",
@@ -38,9 +21,8 @@ fn workspace(d: &Path) -> String {
     write(d, "b/Cargo.toml", "[package]\nname = \"b\"\n");
     write(d, "b/src/lib.rs", "\n");
     write(d, "app/main.py", "x = 1\n");
-    git(d, &["add", "."]);
-    git(d, &["commit", "-qm", "base"]);
-    git(d, &["rev-parse", "HEAD"])
+    write(d, "app/main.ts", "x\n");
+    commit(d, &[])
 }
 
 #[test]
@@ -60,8 +42,7 @@ fn a_new_crate_with_a_cycle_marks_the_rust_track_and_seeds_the_delta() {
         "[package]\nname = \"b\"\n[dev-dependencies]\nc = { path = \"../c\" }\n",
     );
     write(d, "app/main.py", "x = 2\n");
-    git(d, &["add", "."]);
-    let diff = diff_of(d, &base);
+    let diff = staged(d, &base);
     let mut tracks = vec![
         Track::new(
             "rust",
@@ -81,19 +62,20 @@ fn a_new_crate_with_a_cycle_marks_the_rust_track_and_seeds_the_delta() {
         "an edit of an old file adds no structure"
     );
     assert_eq!(
-        seed.structure,
+        seed.structure["rust"],
         [
             "new crate: c/Cargo.toml",
             "new module: c/src/lib.rs",
             "new public type: Plan at c/src/lib.rs:1"
         ]
     );
+    assert!(!seed.structure.contains_key("general"));
     assert_eq!(
         seed.crates,
         [
             "new edge: b -> c (dev-dependency)",
             "new edge: c -> a",
-            "new cycle: b -> c -> a -> b (closed by the new edge b -> c (dev-dependency))",
+            "new cycle: b -> c -> a -> b, through the dev-dependency edge(s) b -> c — legal in Cargo: a test, bench or example depending back",
         ]
     );
 }
@@ -103,19 +85,18 @@ fn a_new_directory_of_other_source_marks_the_general_track_and_reads_no_crate_gr
     let t = tempfile::tempdir().unwrap();
     let d = t.path();
     let base = workspace(d);
-    write(d, "billing/ledger.py", "def f():\n    pass\n");
-    write(d, "app/helpers.py", "def g():\n    pass\n");
-    git(d, &["add", "."]);
-    let diff = diff_of(d, &base);
+    write(d, "billing/ledger.ts", "const f = 1;\n");
+    write(d, "app/helpers.ts", "const g = 1;\n");
+    let diff = staged(d, &base);
     let mut tracks = vec![Track::new(
         "general",
-        vec!["app/helpers.py".into(), "billing/ledger.py".into()],
+        vec!["app/helpers.ts".into(), "billing/ledger.ts".into()],
     )];
     let (seed, _) = mark(d, &diff, &mut tracks);
     assert!(tracks[0].design);
     assert_eq!(
-        seed.structure,
-        ["new module: billing/ledger.py, in the new directory billing"],
+        seed.structure["general"],
+        ["new module: billing/ledger.ts"],
         "app/ was at the base"
     );
     assert!(seed.crates.is_empty() && seed.note.is_empty());

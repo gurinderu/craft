@@ -4,46 +4,61 @@
 //! crate graph's delta ([`delta`]), reach the lens's prompt as its seed — leads for its inventory
 //! of decisions, never findings: a new edge is a decision to judge, not a defect.
 
+use std::cell::Cell;
 use std::collections::BTreeSet;
 use std::path::Path;
+use std::time::{Duration, Instant};
 
 use crate::gate::lines::Lines;
 use crate::git::Diff;
 use crate::state::Track;
 
 mod delta;
+mod members;
 mod seed;
 mod signal;
+mod types;
 
 pub use seed::Seed;
 pub(crate) use seed::lens_block;
 
 /// The lens this module admits and seeds.
 pub(crate) const LENS: &str = "design";
+/// The profile whose design lens also reads the crate delta.
+const RUST: &str = crate::consumers::PROFILE;
 
-/// The directories among `dirs` the tree at `rev` lacks, read with one `git ls-tree`; none when
-/// git cannot tell (the signal then does not fire on a directory).
+/// How many type names one run checks against the base, and for how long: a name past either is
+/// taken as new.
+const DECLARED_MAX: usize = 40;
+const DECLARED_BUDGET: Duration = Duration::from_secs(10);
+
+/// The directories among `dirs` the tree at `rev` lacks, each asked on its own (`git cat-file -e
+/// <rev>:<dir>`: a pathspec list would let a child's entry hide its parent's).
 fn new_dirs(top: &Path, rev: &str, dirs: &BTreeSet<&str>) -> BTreeSet<String> {
-    let asked: Vec<&str> = dirs.iter().copied().filter(|d| *d != ".").collect();
-    if asked.is_empty() {
-        return BTreeSet::new();
-    }
-    let mut args = vec!["ls-tree", "--name-only", rev, "--"];
-    args.extend(&asked);
-    let Ok(out) = crate::git::git(top, &args) else {
-        return BTreeSet::new();
-    };
-    let have: BTreeSet<&str> = out.lines().collect();
-    asked
-        .into_iter()
-        .filter(|d| !have.contains(d))
-        .map(str::to_owned)
+    dirs.iter()
+        .filter(|d| **d != ".")
+        .filter(|d| crate::git::git(top, &["cat-file", "-e", &format!("{rev}:{d}")]).is_err())
+        .map(|d| (*d).to_owned())
         .collect()
 }
 
-/// Marks each of `tracks` whose part of `diff` adds structure, and returns the seed; the change
-/// read from the checkout `cwd` is in. A change that cannot be read marks none, and the note it
-/// returns says so for the report.
+/// Whether the tree at `rev` declares a type named `name` anywhere, within the run's budget: past
+/// it, or when git cannot tell, it does not.
+fn declared_at(top: &Path, rev: &str, asked: &Cell<(usize, Option<Instant>)>, name: &str) -> bool {
+    let (n, since) = asked.get();
+    let since = since.unwrap_or_else(Instant::now);
+    asked.set((n + 1, Some(since)));
+    if n >= DECLARED_MAX || since.elapsed() > DECLARED_BUDGET {
+        return false;
+    }
+    let pattern = types::base_pattern(name);
+    crate::git::git(top, &["grep", "-q", "-E", "-e", &pattern, rev, "--"]).is_ok()
+}
+
+/// Marks each of `tracks` whose part of `diff` adds structure, and returns the seed: each
+/// profile's own lines, and, when the Rust profile takes part and a manifest changed, the crate
+/// delta. The change is read from the checkout `cwd` is in; one that cannot be read marks none,
+/// and the note it returns says so for the report.
 pub(crate) fn mark(cwd: &Path, diff: &Diff, tracks: &mut [Track]) -> (Seed, Option<String>) {
     let read = crate::git::toplevel(cwd).and_then(|top| {
         crate::git::zero_context_diff(cwd, &diff.merge_base).map(|text| (top, text))
@@ -61,18 +76,26 @@ pub(crate) fn mark(cwd: &Path, diff: &Diff, tracks: &mut [Track]) -> (Seed, Opti
     let (added, lines) = (signal::added_files(&text), Lines::parse(&text));
     let dirs: BTreeSet<&str> = added.iter().map(|f| signal::dir_of(f)).collect();
     let fresh = new_dirs(&top, &diff.merge_base, &dirs);
+    let asked = Cell::new((0, None));
+    let ask = signal::Lookups {
+        added_lines: &|f| lines.added_text(&top, f),
+        new_dir: &|d| fresh.contains(d),
+        declared: &|t| declared_at(&top, &diff.merge_base, &asked, t),
+    };
     let mut seed = Seed::default();
     for t in tracks.iter_mut() {
         let part = signal::Part {
-            rust: t.profile == "rust",
+            rust: t.profile == RUST,
             files: &t.files,
             added: &added,
         };
-        let reasons = signal::reasons(&part, |f| lines.added_text(&top, f), |d| fresh.contains(d));
+        let reasons = signal::reasons(&part, &ask);
         t.design = !reasons.is_empty();
-        seed.structure.extend(reasons);
+        if t.design {
+            seed.structure.insert(t.profile.clone(), reasons);
+        }
     }
-    let rust = tracks.iter().any(|t| t.profile == "rust");
+    let rust = tracks.iter().any(|t| t.profile == RUST);
     let manifests = diff
         .files
         .iter()
@@ -89,8 +112,12 @@ pub(crate) fn mark(cwd: &Path, diff: &Diff, tracks: &mut [Track]) -> (Seed, Opti
 #[cfg(test)]
 mod delta_tests;
 #[cfg(test)]
+mod mark_tests;
+#[cfg(test)]
 mod seed_tests;
 #[cfg(test)]
 mod signal_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod types_tests;

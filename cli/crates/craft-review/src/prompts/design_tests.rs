@@ -32,8 +32,11 @@ fn the_design_lens_carries_its_brief_and_seed_and_no_other_lens_does() {
         repo: "/work/repo".into(),
         base: "origin/main".into(),
         design: Seed {
-            structure: vec!["new crate: c/Cargo.toml".into()],
-            crates: vec!["new cycle: b -> c -> b (closed by the new edge b -> c)".into()],
+            structure: ["rust", "general"]
+                .into_iter()
+                .map(|p| (p.to_owned(), vec![format!("new module: {p}/x")]))
+                .collect(),
+            crates: vec!["new edge: b -> c".into()],
             note: String::new(),
         },
         ..PromptContext::default()
@@ -43,8 +46,13 @@ fn the_design_lens_carries_its_brief_and_seed_and_no_other_lens_does() {
         let got = render(&p, "design", &ctx);
         assert!(got.contains("INVENTORY THE DECISIONS"), "{id}");
         assert!(got.contains("SECOND IMPLEMENTATION"), "{id}");
-        assert!(got.contains("- new crate: c/Cargo.toml"), "{id}: {got}");
-        assert!(got.contains("- new cycle: b -> c -> b"), "{id}");
+        assert!(
+            got.contains(&format!("- new module: {id}/x")),
+            "{id}: {got}"
+        );
+        let other = if id == "rust" { "general" } else { "rust" };
+        assert!(!got.contains(&format!("{other}/x")), "{id}: {got}");
+        assert_eq!(got.contains("- new edge: b -> c"), id == "rust", "{id}");
         assert!(
             !render(&p, "correctness", &ctx).contains("STRUCTURE THIS CHANGE ADDS"),
             "{id}"

@@ -208,7 +208,7 @@ pub(super) fn common_vars(
         (
             "design",
             if lens == crate::design::LENS {
-                crate::design::lens_block(&ctx.design)?
+                crate::design::lens_block(&ctx.design, &profile.id)?
             } else {
                 String::new()
             },

@@ -1,30 +1,59 @@
+use std::collections::BTreeMap;
+
 use super::{Seed, lens_block};
 
-#[test]
-fn the_seed_renders_its_structure_and_crate_delta_and_nothing_when_empty() {
-    assert_eq!(lens_block(&Seed::default()).unwrap(), "");
-    let seed = Seed {
-        structure: vec!["new crate: c/Cargo.toml".into()],
-        crates: vec!["new cycle: b -> c -> b (closed by the new edge b -> c)".into()],
+fn seed() -> Seed {
+    Seed {
+        structure: BTreeMap::from([
+            (
+                "rust".to_owned(),
+                vec!["new crate: c/Cargo.toml".to_owned()],
+            ),
+            (
+                "general".to_owned(),
+                vec!["new format: api/v1.proto".to_owned()],
+            ),
+        ]),
+        crates: vec!["new edge: c -> a".into()],
         note: String::new(),
-    };
-    let block = lens_block(&seed).unwrap();
-    assert!(block.contains("DESIGN SEED"), "{block}");
-    assert!(block.contains("- new crate: c/Cargo.toml"), "{block}");
-    assert!(block.contains("CRATE GRAPH DELTA"), "{block}");
-    assert!(block.contains("- new cycle: b -> c -> b"), "{block}");
-    let general = Seed {
-        structure: vec!["new format: api/v1.proto".into()],
-        ..Seed::default()
-    };
-    assert!(!lens_block(&general).unwrap().contains("CRATE GRAPH"));
-    let unread = Seed {
-        note: "the crate graph could not be read (boom)".into(),
-        ..general
-    };
+    }
+}
+
+#[test]
+fn each_profiles_design_lens_reads_its_own_lines_and_only_rust_the_crate_delta() {
+    assert_eq!(lens_block(&Seed::default(), "rust").unwrap(), "");
+    let rust = lens_block(&seed(), "rust").unwrap();
+    assert!(rust.contains("DESIGN SEED"), "{rust}");
+    assert!(rust.contains("- new crate: c/Cargo.toml"), "{rust}");
     assert!(
-        lens_block(&unread)
-            .unwrap()
-            .contains("- not read: the crate graph")
+        !rust.contains("api/v1.proto"),
+        "another profile's line: {rust}"
     );
+    assert!(
+        rust.contains("CRATE GRAPH DELTA") && rust.contains("- new edge: c -> a"),
+        "{rust}"
+    );
+    let general = lens_block(&seed(), "general").unwrap();
+    assert!(general.contains("- new format: api/v1.proto"), "{general}");
+    assert!(
+        !general.contains("c/Cargo.toml") && !general.contains("CRATE GRAPH"),
+        "{general}"
+    );
+    assert_eq!(
+        lens_block(&seed(), "nix").unwrap(),
+        "",
+        "no line of its own"
+    );
+}
+
+#[test]
+fn a_crate_delta_that_could_not_be_read_says_so_to_rust_alone() {
+    let unread = Seed {
+        crates: Vec::new(),
+        note: "the crate graph could not be read (boom)".into(),
+        ..seed()
+    };
+    let rust = lens_block(&unread, "rust").unwrap();
+    assert!(rust.contains("- not read: the crate graph"), "{rust}");
+    assert!(!lens_block(&unread, "general").unwrap().contains("not read"));
 }

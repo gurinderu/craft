@@ -15,8 +15,10 @@ The general lenses — correctness, security, money, concurrency, errors, perfor
 maintainability, compat, invariants, negative-space, design and complexity — are judged by these rules
 alone on source no language profile takes. The Rust and Nix profiles run the same lenses that fit
 them, under their own rubric beside these rules, some with a brief of their own. The `design` lens
-rates by the same cap: a second implementation or a broken boundary names its harm and is
-should-fix; a legitimate trade-off names none and is a question to the author, listed as doubtful.
+rates by the same cap: duplication by itself names no harm and is optional; a design finding rises
+only through a harm it names — a written architecture rule it breaks, quoted, or two live copies of
+state or behaviour that can diverge in the running system; a legitimate trade-off is a question to
+the author, listed as doubtful.
 
 ## Files
 

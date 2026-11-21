@@ -157,7 +157,15 @@ fn a_nix_only_diff_runs_the_nix_lenses_on_the_nix_reviewer() {
     let (run, s) = start(repo.path(), out.path());
     assert_eq!(ids(&s), ["scout-nix"]);
     let s = submit(&run, json!({"scout-nix": scout("small", &["purity"])}));
-    assert_eq!(ids(&s), ["lens-nix-purity-r1", "lens-nix-intent-r1"]);
+    // A new .nix file is a module of its own: the design lens joins.
+    assert_eq!(
+        ids(&s),
+        [
+            "lens-nix-purity-r1",
+            "lens-nix-intent-r1",
+            "lens-nix-design-r1"
+        ]
+    );
     for id in ids(&s) {
         assert_eq!(task(&s, &id)["agentType"], json!("nix-reviewer"), "{id}");
     }
@@ -172,12 +180,13 @@ fn a_nix_only_diff_runs_the_nix_lenses_on_the_nix_reviewer() {
     }
     let s = submit(
         &run,
-        json!({"lens-nix-purity-r1": lens("purity", &[]), "lens-nix-intent-r1": lens("intent", &[])}),
+        json!({"lens-nix-purity-r1": lens("purity", &[]), "lens-nix-intent-r1": lens("intent", &[]),
+               "lens-nix-design-r1": lens("design", &[])}),
     );
     assert_eq!(s["verdict"], json!("Approve"));
     let report = std::fs::read_to_string(s["report"].as_str().unwrap()).unwrap();
     assert!(
-        report.contains("Plan: small diff, full review, at most 1 round(s). Lenses planned: purity, intent; ran: purity, intent."),
+        report.contains("Plan: small diff, full review, at most 1 round(s). Lenses planned: purity, intent, design; ran: purity, intent, design."),
         "{report}"
     );
     assert!(
@@ -247,6 +256,7 @@ fn a_mixed_diff_plans_each_profile_over_its_own_files_and_settles_one_pool() {
             "lens-rust-design-r1",
             "lens-nix-purity-r1",
             "lens-nix-intent-r1",
+            "lens-nix-design-r1",
             "lens-general-security-r1",
             "lens-general-correctness-r1",
             "lens-general-intent-r1",
@@ -261,8 +271,7 @@ fn a_mixed_diff_plans_each_profile_over_its_own_files_and_settles_one_pool() {
             "lens-rust-errors-r2",
             "lens-rust-intent-r2",
             "lens-rust-performance-r2",
-            "lens-rust-tests-r2",
-            "lens-rust-design-r2"
+            "lens-rust-tests-r2"
         ],
         "only the profile with rounds left and new findings runs again"
     );

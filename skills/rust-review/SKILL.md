@@ -248,7 +248,7 @@ others (higher recall than one broad pass):
 | maintainability | structural simplification (code judo), file-size growth, spaghetti branching, needless optionality/casts | `refactoring`, `rust-idioms` |
 | tests | test *quality* not just presence; missing regression/error-path tests | `rust-testing` |
 | intent | does the change do what the brief/spec says? | `specs` |
-| design | the decisions the change makes — a new abstraction, source of truth, module or crate boundary, format, dependency direction, storage or engine — each critiqued for its alternatives, a second implementation, the accepted architecture and the next change; seeded with the crate graph's new edges and cycles; runs by itself when the diff adds a module, crate, public type or format, else on `optional=design` (a general lens) | `rust-architecture` |
+| design | the decisions the change makes — a new abstraction, source of truth, module or crate boundary, format, dependency direction, storage or engine — each critiqued for its alternatives, a second implementation, the accepted architecture and the next change; seeded with the crate graph's new edges and the dev-dependency cycles they close; runs by itself when the diff adds a module, crate, public type or format, else on `optional=design`, in the first round only (a general lens; not yet observed live) | `rust-architecture` |
 
 The workflow runs additional context-dependent lenses the scout selects — `reconciler` (controller
 correctness; reads the language-agnostic `distributed-races` catalogue) and `negative-space` (breakage the diff enables in unchanged code); the Rust profile,

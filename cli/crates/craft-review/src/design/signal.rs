@@ -2,10 +2,6 @@
 //! the change adds a module, a crate, a public type or a format. A path and line heuristic over
 //! what the diff added, not a parser.
 
-use std::sync::LazyLock;
-
-use regex::Regex;
-
 use crate::gate::lines::header_path;
 use crate::paths::is_test_path;
 
@@ -17,24 +13,6 @@ const FORMAT_EXT: [&str; 10] = [
 const SCHEMA_DATA: [&str; 3] = ["json", "yaml", "yml"];
 /// The name prefixes of an API description file.
 const API_DESCRIPTIONS: [&str; 3] = ["openapi", "asyncapi", "swagger"];
-
-/// A public type's declaration, in the languages whose spelling says it is public: Rust `pub`,
-/// an ES/TS `export`, `public` in the JVM and .NET languages and Swift, Go's capital, a
-/// top-level Python class.
-static PUBLIC_TYPE: LazyLock<Option<Regex>> = LazyLock::new(|| {
-    Regex::new(concat!(
-        r"^\s*pub\s+(?:struct|enum|trait|type|union)\s+([A-Za-z_]\w*)",
-        r"|^\s*export\s+(?:default\s+)?(?:declare\s+)?(?:abstract\s+)?(?:class|interface|type|enum)\s+([A-Za-z_$][\w$]*)",
-        r"|^\s*public\s+(?:(?:static|final|abstract|sealed|partial)\s+)*(?:class|interface|record|enum|struct|protocol)\s+([A-Za-z_]\w*)",
-        r"|^type\s+([A-Z]\w*)\s+(?:struct|interface)\b",
-        r"|^class\s+([A-Za-z]\w*)",
-    ))
-    .ok()
-});
-
-/// An inline Rust module, `mod name {`: the one module no new file carries.
-static INLINE_MOD: LazyLock<Option<Regex>> =
-    LazyLock::new(|| Regex::new(r"^\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+([A-Za-z_]\w*)\s*\{").ok());
 
 /// The files the zero-context `diff` creates (`new file mode`), by their new path; a rename or a
 /// copy is not one.
@@ -86,61 +64,69 @@ pub(super) fn is_format(f: &str) -> bool {
                 || API_DESCRIPTIONS.iter().any(|p| name.starts_with(p))))
 }
 
-/// The public type `line` declares, if it declares one.
-pub(super) fn public_type(line: &str) -> Option<String> {
-    let caps = PUBLIC_TYPE.as_ref()?.captures(line)?;
-    caps.iter()
-        .skip(1)
-        .flatten()
-        .next()
-        .map(|m| m.as_str().to_owned())
-}
-
-/// The inline Rust module `line` opens, a test module aside.
-pub(super) fn inline_module(line: &str) -> Option<String> {
-    let name = INLINE_MOD.as_ref()?.captures(line)?.get(1)?.as_str();
-    let test =
-        name == "test" || name == "tests" || name.ends_with("_test") || name.ends_with("_tests");
-    (!test).then(|| name.to_owned())
-}
+/// Data extensions: a new file of one is never a new module.
+const DATA_EXT: [&str; 9] = [
+    "txt", "json", "yaml", "yml", "toml", "csv", "ini", "lock", "xml",
+];
+/// Extensions whose every file is a module of its own, wherever it lands.
+const MODULE_EXT: [&str; 2] = ["py", "nix"];
 
 /// One profile's part of the change as the signal reads it.
 pub(super) struct Part<'a> {
-    /// Whether it is the Rust profile's: a new `.rs` file is a new module there; elsewhere a new
-    /// source file counts only in a directory the base did not have.
+    /// Whether it is the Rust profile's: a new `.rs` file is a new module there.
     pub rust: bool,
     pub files: &'a [String],
     /// The files the change creates.
     pub added: &'a [String],
 }
 
+/// What the signal asks of the change and its base.
+pub(super) struct Lookups<'a> {
+    /// A file's added lines with their numbers.
+    pub added_lines: &'a dyn Fn(&str) -> Vec<(u32, String)>,
+    /// Whether a directory did not exist at the base.
+    pub new_dir: &'a dyn Fn(&str) -> bool,
+    /// Whether the base declares a type of this name anywhere: an edited, moved or re-indented
+    /// declaration is no new type.
+    pub declared: &'a dyn Fn(&str) -> bool,
+}
+
+/// Whether the new file `f` of a part that is not Rust's is a module: a `.py` or `.nix` file
+/// anywhere, another source file in a directory the base lacked; never a data file.
+fn new_module(f: &str, new_dir: &dyn Fn(&str) -> bool) -> bool {
+    let e = ext(f);
+    !DATA_EXT.contains(&e.as_str()) && (MODULE_EXT.contains(&e.as_str()) || new_dir(dir_of(f)))
+}
+
+/// What the new file `f` adds, if it adds structure by itself.
+fn added_file(rust: bool, f: &str, new_dir: &dyn Fn(&str) -> bool) -> Option<String> {
+    if base(f) == "Cargo.toml" {
+        Some(format!("new crate: {f}"))
+    } else if is_format(f) {
+        Some(format!("new format: {f}"))
+    } else if (rust && ext(f) == "rs") || (!rust && new_module(f, new_dir)) {
+        Some(format!("new module: {f}"))
+    } else {
+        None
+    }
+}
+
 /// Why `part` admits the design lens, one line per thing it adds: a crate (`Cargo.toml`), a
-/// format, a module, a public type. `added_lines` gives a file's added lines with their numbers;
-/// `new_dir` says a directory did not exist at the base. Empty: no signal.
-pub(super) fn reasons(
-    part: &Part<'_>,
-    added_lines: impl Fn(&str) -> Vec<(u32, String)>,
-    new_dir: impl Fn(&str) -> bool,
-) -> Vec<String> {
+/// format, a module, a public type the base does not declare. Empty: no signal.
+pub(super) fn reasons(part: &Part<'_>, ask: &Lookups<'_>) -> Vec<String> {
     let mut out = Vec::new();
     for f in part.files.iter().filter(|f| !is_test_path(f)) {
-        let added = part.added.contains(f);
-        if added && base(f) == "Cargo.toml" {
-            out.push(format!("new crate: {f}"));
-        } else if added && is_format(f) {
-            out.push(format!("new format: {f}"));
-        } else if added && part.rust && ext(f) == "rs" {
-            out.push(format!("new module: {f}"));
-        } else if added && !part.rust && new_dir(dir_of(f)) {
-            out.push(format!(
-                "new module: {f}, in the new directory {}",
-                dir_of(f)
-            ));
+        if part.added.contains(f) {
+            out.extend(added_file(part.rust, f, ask.new_dir));
         }
-        for (n, l) in added_lines(f) {
-            if let Some(t) = public_type(&l) {
+        let lines = (ask.added_lines)(f);
+        for (n, t) in super::types::declared(&ext(f), &lines) {
+            if !(ask.declared)(&t) {
                 out.push(format!("new public type: {t} at {f}:{n}"));
-            } else if let Some(m) = inline_module(&l).filter(|_| part.rust) {
+            }
+        }
+        for (n, l) in lines.iter().filter(|_| part.rust) {
+            if let Some(m) = super::types::inline_module(l) {
                 out.push(format!("new module: mod {m} at {f}:{n}"));
             }
         }

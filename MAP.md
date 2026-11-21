@@ -238,7 +238,7 @@ protocol; `craft review run --backend codex|pi|opencode`, which drives that prot
 backend — the `claude`, `codex`, `pi` or `opencode` CLI — and many under a concurrency cap), `crates/craft-review` (the steps — each changed file to one profile (Rust, Nix, SQL, or the general lenses for source in
 any other language, `content/profiles/`; a Rust or general file whose changed lines hold a query string also gets the
 `sql-queries` lens, `src/embedded_sql.rs`; a part that adds a module, crate, public type or format gets the `design`
-lens, seeded with what it adds and, for Rust, the crate graph's new edges and cycles, `src/design.rs`), the mechanical gate the binary runs itself before any lens (clippy and semgrep
+lens, seeded with what it adds and, for Rust, the crate graph's new edges and the dev-dependency cycles they close; first round only, `src/design.rs`), the mechanical gate the binary runs itself before any lens (clippy and semgrep
 for Rust, nix flake check, statix and deadnix for Nix: a red check blocks, a diagnostic on a changed line is a seed the
 lenses and verifiers see, a tool not installed is named), a scout per profile whose answer plans its lenses over its own files, the
 consumers list, built at start beside the gate (`src/consumers/`: for each changed Rust symbol the lines outside the diff that name it —
