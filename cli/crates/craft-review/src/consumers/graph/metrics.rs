@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use super::{GraphError, RECHECK, Ready};
+use crate::consumers::cbm::Functions;
 use crate::gate::lines::Lines;
 
 /// How many changed files' functions are read.
@@ -34,9 +35,30 @@ fn touches(start: u32, end: u32, ranges: &[(u32, u32)]) -> bool {
     ranges.iter().any(|&(a, b)| a <= end && start <= b)
 }
 
+/// Why a file the graph indexes reads as not wholly read: its functions cut, rows that did not
+/// read, or none at all — a name the graph does not hold answers no rows, as no function does, so
+/// an empty answer is not taken for a file without functions (node #530).
+fn unread_why(fns: &Functions) -> Option<String> {
+    if fns.cut {
+        Some(format!(
+            "its functions cut at {}",
+            crate::consumers::cbm::ROWS_PER_FILE
+        ))
+    } else if fns.unreadable > 0 {
+        Some(format!(
+            "{} of its rows did not read as a function",
+            fns.unreadable
+        ))
+    } else if fns.read.is_empty() {
+        Some("the graph gave no function of it numbers: none there, or none read".into())
+    } else {
+        None
+    }
+}
+
 /// The numbers of every function whose span holds a changed line of `changed`, file by file within
-/// the graph's budget; a file the index left out, one past [`FILES_MAX`] or one whose question
-/// failed after the first is named as unread.
+/// the graph's budget; a file the index left out, one past [`FILES_MAX`], one whose question
+/// failed after the first or one [`unread_why`] names is named as unread.
 ///
 /// # Errors
 /// When the first question gets no answer, or the index moved while they were asked (node #533).
@@ -60,14 +82,14 @@ pub(in crate::consumers) fn graph_metrics(r: &Ready, changed: &Lines) -> Result<
         }
         asked += 1;
         match r.cbm.functions(&r.project, file, until) {
-            Ok((fns, cut)) => {
-                if cut {
-                    out.unread.push(format!(
-                        "{file} (its functions cut at {})",
-                        crate::consumers::cbm::ROWS_PER_FILE
-                    ));
+            Ok(fns) => {
+                if let Some(why) = unread_why(&fns) {
+                    out.unread.push(format!("{file} ({why})"));
                 }
-                let hit = fns.into_iter().filter(|f| touches(f.start, f.end, ranges));
+                let hit = fns
+                    .read
+                    .into_iter()
+                    .filter(|f| touches(f.start, f.end, ranges));
                 out.measured.extend(hit.map(|f| Measured {
                     function: f.name,
                     file: file.to_owned(),
@@ -84,6 +106,7 @@ pub(in crate::consumers) fn graph_metrics(r: &Ready, changed: &Lines) -> Result<
     if (&after.at, &after.root) != (&r.index.at, &r.index.root) {
         return Err(GraphError::Moved {
             project: r.project.clone(),
+            during: "the numbers of the functions the change touches were read",
         });
     }
     Ok(out)

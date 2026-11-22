@@ -92,17 +92,18 @@ fn build_until(
     });
     let ready = graph.and_then(|g| graph::ready(top, &diff.merge_base, (&g, locks), cancel));
     let mut indexed = ready.is_ok();
-    // The metrics lenses' numbers, read before the callers: their gate is these, not the list.
-    let read = match (&ready, metrics) {
-        (Ok(r), true) => Some(graph::graph_metrics(r, &changed)),
-        _ => None,
+    // The callers first: every lens's consumers list stands on them (node #529), and the metrics
+    // lens's numbers take only what of the graph's budget they left.
+    let (asked, read) = match ready {
+        Ok(r) => {
+            // Indexed for the metrics lenses alone, the graph is asked nothing and is no source.
+            let asked = (!found.symbols.is_empty())
+                .then(|| graph::graph_callers(&r, &found.symbols))
+                .transpose();
+            (asked, metrics.then(|| graph::graph_metrics(&r, &changed)))
+        }
+        Err(why) => (Err(why), None),
     };
-    // Indexed for the metrics lenses alone, the graph is asked nothing and is no source.
-    let asked = ready.and_then(|r| {
-        (!found.symbols.is_empty())
-            .then(|| graph::graph_callers(&r, &found.symbols))
-            .transpose()
-    });
     let (asked, graph_skipped) = match asked {
         Ok(a) => (a, String::new()),
         Err(why) => {

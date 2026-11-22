@@ -93,6 +93,7 @@ pub(super) fn graph_callers(r: &Ready, found: &[Symbol]) -> Result<Asked, GraphE
     if (&after.at, &after.root) != (&index.at, &index.root) {
         return Err(GraphError::Moved {
             project: project.clone(),
+            during: "its callers were asked",
         });
     }
     let not_indexed = left_out

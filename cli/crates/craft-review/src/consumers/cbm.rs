@@ -25,8 +25,8 @@ mod run;
 use run::{bounded, payload};
 
 pub use error::CbmError;
-pub use functions::Function;
 pub(crate) use functions::ROWS_PER_FILE;
+pub use functions::{Function, Functions};
 pub use index::Index;
 pub use lock::scratch_locks;
 
