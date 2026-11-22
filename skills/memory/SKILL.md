@@ -199,11 +199,14 @@ rule 3. Never put secrets, credentials or personal data in a record, whatever th
    and ranks last. An old scope `path:N` or `path:N-M` matches as `path`.
 2. **Keyword match.** `topic` keywords against `title` and `body`; with both scope and topic,
    a record must match the scope and at least one keyword.
-3. **Only matches come back.** Use the backend's search (the MCP search tool, `grep -l` over the
+3. **Only matches come back.** Use the backend's search (the MCP search tool's attribute filter on each exact `craft_kind`, every page read, a text search only as the fallback, then narrowed by scope — [backends.md](backends.md) —, `grep -l` over the
    memory files, craft's harness index `craft-memory.md` and any craft lines not yet moved out of
    `MEMORY.md`, then the record files neither lists, found by their `craft_kind` frontmatter; only an active one
    among them makes the index stale) —
-   never load the whole store into context. A recall writes nothing.
+   never load the whole store into context. A recall writes nothing. A recall a call of which
+   errored says so beside what it found (`recall partly failed — …`); an empty one whose query
+   errored, or whose listing by `craft_kind` came back empty where the store shows craft records, says `recall found nothing —
+   backend query may have failed: <the query and its error>`, never "no memory".
 4. **Active only by default.** `superseded` and `withdrawn` stay hidden unless the caller asks for
    history; a superseded record shown on request carries its successor's id. A review engine's
    recall also returns the matching `superseded` and `withdrawn` records apart, in an `inactive`

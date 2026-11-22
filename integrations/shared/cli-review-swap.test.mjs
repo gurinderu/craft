@@ -132,6 +132,19 @@ test("optional, _recalled and _via reach the binary's start as --optional, --no-
   assert.doesNotMatch(plain, /--optional|--no-recall|--nested|--via/)
 })
 
+test("_recallDegraded beside _recalled reaches the binary's start as one --recall-degraded= argument; otherwise it is refused", async () => {
+  /** @param {Record<string, unknown>} args */
+  const start = async args => String((await runWith(args)).calls.find(c => c.label === 'step:start')?.prompt)
+  assert.match(
+    await start({ _recalled: true, _recallDegraded: "-q refused: it's required" }),
+    /--no-recall --recall-degraded='-q refused: it'\\''s required' --record '[^']+'$/m,
+  )
+  assert.doesNotMatch(await start({ _recalled: true }), /--recall-degraded/)
+  assert.match((await runWith({ _recallDegraded: 'x' })).report, /_recallDegraded is taken only beside _recalled=true/)
+  for (const bad of ['a\nb', '   ', '', 7])
+    assert.match((await runWith({ _recalled: true, _recallDegraded: bad })).report, /_recallDegraded=.* is not one non-blank line of text/)
+})
+
 test('_via files the record nested under the parent engine', async () => {
   const { repo, store, record, head } = repoAndStore()
   const run = await runEngine('review', {

@@ -303,6 +303,14 @@
           }
         }
       }
+    },
+    "queryError": {
+      "type": "string",
+      "description": "when any search call errored or was refused, whatever the lists hold; and, with every list empty, when only text queries ran or the attribute listing came back empty while the store shows craft records exist (never for records the scope narrowing left out, nor the text fallback's not-found after a clean empty listing): the call (tool and arguments) and its error or answer, one line"
+    },
+    "truncated": {
+      "type": "string",
+      "description": "only when the backend said it held more than the recall read and gave no way to read the rest (no offset, page or higher limit): what it said, one line"
     }
   }
 }

@@ -515,9 +515,10 @@
           "count": 0,
           "why": "the recall agent died or returned no decision list, so nothing recalled was applied — findings are raised normally",
           "passed": 1,
-          "added": 1
+          "added": 1,
+          "recallDied": "the recall agent died or returned no decision list"
         },
-        "report": "\n\n## Memory\n- memory: none — the recall agent died or returned no decision list, so nothing recalled was applied — findings are raised normally; plus 1 passed by the launcher\n\n\n## Prior decisions not applied\n- ⚠️ passed decision #0 (decision-ffffffffff) is not active (status \"withdrawn\")\n- ⚠️ passed decision #1 (lesson-0000000000) is a \"lesson\" record, not a decision, a question or a rule\n- ⚠️ passed decision #2 (decision-9999999999): scope \"../etc\" is not a repo-relative path\n- ⚠️ passed decision #3 (decision-8888888888): commit \"not-a-hash\" is not a commit hash\n- ⚠️ passed decision #4 (decision-7777777777): line \"ten\" is not a line number\n- ⚠️ passed decision #6 (decision-6666666666) repeats an id already given — not applied\n- ⚠️ passed decision #7 is not an object\n- ⚠️ the match judge died or answered unreadably — 1 disputed record–finding pair(s) not matched unless a near-verbatim title answers them (for a tool finding naming no rule only a tool record with the same title, near its line when lines compare), the rest raised normally\n"
+        "report": "\n\n## Memory\n- memory: not read — the recall agent died or returned no decision list, so nothing recalled was applied — findings are raised normally; plus 1 passed by the launcher\n\n\n## Prior decisions not applied\n- ⚠️ passed decision #0 (decision-ffffffffff) is not active (status \"withdrawn\")\n- ⚠️ passed decision #1 (lesson-0000000000) is a \"lesson\" record, not a decision, a question or a rule\n- ⚠️ passed decision #2 (decision-9999999999): scope \"../etc\" is not a repo-relative path\n- ⚠️ passed decision #3 (decision-8888888888): commit \"not-a-hash\" is not a commit hash\n- ⚠️ passed decision #4 (decision-7777777777): line \"ten\" is not a line number\n- ⚠️ passed decision #6 (decision-6666666666) repeats an id already given — not applied\n- ⚠️ passed decision #7 is not an object\n- ⚠️ the match judge died or answered unreadably — 1 disputed record–finding pair(s) not matched unless a near-verbatim title answers them (for a tool finding naming no rule only a tool record with the same title, near its line when lines compare), the rest raised normally\n"
       }
     },
     {

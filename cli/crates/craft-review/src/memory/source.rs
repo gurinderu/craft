@@ -36,6 +36,22 @@ pub struct MemorySource {
     pub derived_named: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backend: Option<String>,
+    /// The backend call the recall named as possibly failed (its answer's `queryError`): the
+    /// memory was not read, or only partly, and the run is degraded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub query_error: Option<String>,
+    /// What the backend said it held past what the recall read (its answer's `truncated`): the
+    /// records past it were not applied, and the run is degraded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub truncated: Option<String>,
+    /// Why the recall agent gave no answer (it died, or returned no decision list): the memory was
+    /// not read, and the run is degraded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recall_died: Option<String>,
+    /// Why the launcher's own recall may not have read the whole store (`--recall-degraded`):
+    /// only the records it handed on apply, and the run is degraded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recall_degraded: Option<String>,
 }
 
 impl Default for MemorySource {
@@ -59,6 +75,10 @@ impl MemorySource {
             derived: None,
             derived_named: Vec::new(),
             backend: None,
+            query_error: None,
+            truncated: None,
+            recall_died: None,
+            recall_degraded: None,
         }
     }
 
@@ -131,7 +151,8 @@ impl MemorySource {
                 self.why
             )
         } else {
-            format!("memory: none — {}{plus}", self.why)
+            let lead = if self.not_read() { "not read" } else { "none" };
+            format!("memory: {lead} — {}{plus}", self.why)
         };
         format!("{head}{}", self.derived_tail())
     }

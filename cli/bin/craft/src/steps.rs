@@ -59,6 +59,12 @@ pub struct StartArgs {
     /// apply (a launcher that recalled them itself).
     #[arg(long)]
     pub no_recall: bool,
+    /// Why the launcher's recall may not have read the whole store (its backend query failed, its
+    /// answer was truncated, its agent gave none): the run names it and reads as degraded. Only
+    /// as `--recall-degraded=<text>`, so a text that starts with `-` is never read as a flag, nor
+    /// the next flag as its text; a blank text is refused.
+    #[arg(long, requires = "no_recall", require_equals = true, value_parser = recall_note)]
+    pub recall_degraded: Option<String>,
     /// Run no mechanical gate: clippy and `nix flake check` build the branch's code (build scripts,
     /// proc macros, flake checks and a flake dev shell's `shellHook` run as you), so skip them for a branch you do not trust; the report
     /// names the gate as skipped.
@@ -285,6 +291,7 @@ pub(crate) fn start_step(args: &StartArgs, cancel: &craft_review::cancel::Cancel
         runs: args.runs.clone(),
         strict: args.strict,
         recall: !args.no_recall,
+        recall_degraded: args.recall_degraded.clone(),
         // An unreadable list is refused and named in the report; the review still runs.
         prior_decisions: args
             .prior_decisions
@@ -527,6 +534,15 @@ pub fn status(args: &StatusArgs) -> Result<ExitCode> {
 /// Where the run in `run` stands, as `status` prints it.
 pub(crate) fn status_step(run: &Path) -> Result<Value> {
     Ok(status::status(run)?)
+}
+
+/// A `--recall-degraded` text: refused when nothing but whitespace and control characters.
+fn recall_note(s: &str) -> Result<String, String> {
+    if s.chars().any(|c| !c.is_control() && !c.is_whitespace()) {
+        Ok(s.to_owned())
+    } else {
+        Err("a blank note: say why the launcher's recall may not have read the whole store".into())
+    }
 }
 
 #[cfg(test)]

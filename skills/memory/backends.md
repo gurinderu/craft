@@ -35,8 +35,40 @@ SKILL.md's ("Choosing the backend"); this file only says how to write and search
   `title` and `scope` are always handed on as stored, so the id can be derived again — a review
   engine sets `id` from them itself whenever a record carries a `store:` link or an id not of the
   form `<kind>-<10 hex>`, and `answers:` / `supersedes:` links name skill-rule ids.
-- **Search, don't list**: `recall` calls the server's search with the topic keywords and the scope,
-  then filters the hits by `scope` and `status` — never a full listing.
+- **Recall by the attribute, then narrow** — the same calls every run, each kept with what it
+  answered:
+  1. List the craft records of each kind through the search's **attribute filter** with the exact
+     value — `craft_kind` equal to `decision`, then `question`, `rule`, `external` — then the same
+     on the bare `kind`. Never a wildcard such as `craft_kind:*` (a filter may read it as the
+     literal value), and never a text query on the word `craft_kind` or a kind name in its place:
+     a text query matches names and bodies, not attributes.
+  2. A search that refuses a call without a text query (it asks for `q`, `query` or the like)
+     gets an empty one (`""`) beside the filter; one that refuses that too, the broadest it takes
+     (`*`) beside the filter — never the filter's words as the query.
+  3. **Read every page**: ask for the largest number of results the search takes and follow its
+     offset, page or cursor, or its "N more not shown", until it says there is no more. A backend
+     that says it holds more than was read and gives no way to read the rest makes the recall
+     **truncated**: say what it said (`12 found, 10 shown`); a review then reads its memory as
+     degraded, whatever was recalled.
+  4. **Text fallback**: only when every attribute listing came back empty, run the text search on
+     the kind name once (`decision`, then the others) and take a hit only when it carries the craft
+     kind as an attribute, a tag or an observation — a record written as text rather than attribute
+     (SKILL.md's plain mapping allows either). Say which call found the records.
+  5. Narrow what was listed by `scope` (to the paths, as "recall" in SKILL.md matches them), then
+     by `status` and the topic keywords — yourself, or through the search's own scope or status
+     filter beside the attribute one; never by a text query per path alone, and never a listing of
+     the whole store with no attribute filter.
+- **A recall that may have failed is named, never read as no memory.** A call that errored or was
+  refused (past the step 2 retry, a page included) is named whatever the other calls returned: the
+  records they found apply, and the recall says `recall partly failed — backend query may have
+  failed: <the call and its error>`. When the recall comes back with no record and either a call
+  failed so, or every call was a text query and none an attribute listing, or the attribute listing came back
+  empty while the store shows craft records exist (an index, a count the server reports, a craft
+  record seen in any other answer) — never for records the scope narrowing (step 5) left out, nor
+  for the fallback's not-found after a clean empty listing, both clean answers — say `recall found
+  nothing — backend query may have failed: <the call, its tool and arguments, and its error or
+  answer>`. A review engine's recall agent puts that call and error in its answer's `queryError`
+  (and a truncated answer in `truncated`); the review then names its memory as degraded.
 - **Supersede** by the server's own means (a status field, a supersede relation, a mode); if it has
   none, write the new item and append `superseded by <id>` to the old one.
 
