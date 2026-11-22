@@ -24,13 +24,22 @@ pub fn take_answer<K: Kind>(
     hold: Hold,
     aside: &mut Aside,
 ) -> Result<bool, HandoffError> {
-    let submitted = match given {
-        Some(g) => g
-            .get(&task.id)
-            .cloned()
-            .ok_or_else(|| "no answer was submitted".to_owned()),
-        None => handoff::read_answer(dir, task),
+    let (submitted, print) = if let Some(g) = given {
+        let answer = g.get(&task.id).cloned();
+        (
+            answer.ok_or_else(|| "no answer was submitted".to_owned()),
+            None,
+        )
+    } else {
+        let written = handoff::read_answer(dir, task);
+        (written.answer, written.print)
     };
+    // The very file whose refusal the state already counts, left in place by a set-aside cut off
+    // or failed after the save: moved aside now, its task as the state left it.
+    if print.is_some() && print == task.counted {
+        aside.mark(dir, task)?;
+        return Ok(true);
+    }
     // An answer file that cannot be read or parsed was still written: its agent was alive.
     let live = match given {
         Some(g) => g.contains_key(&task.id),
@@ -42,6 +51,7 @@ pub fn take_answer<K: Kind>(
         task.state = TaskState::Failed;
         task.error = Some(failure);
         task.refused = None;
+        task.counted = None;
         return Ok(true);
     }
     let checked = submitted
@@ -55,6 +65,7 @@ pub fn take_answer<K: Kind>(
             task.state = TaskState::Answered;
             task.error = None;
             task.refused = None;
+            task.counted = None;
             return Ok(true);
         }
         Err(e) => {
@@ -66,6 +77,7 @@ pub fn take_answer<K: Kind>(
     if given.is_none() {
         aside.mark(dir, task)?;
     }
+    task.counted = print;
     Ok(refused(task, hold, live))
 }
 

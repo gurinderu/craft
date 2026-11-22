@@ -334,11 +334,33 @@ fn save_and_next(
     publish::deliver(dir, run, &setup)?;
     handoff::write_pending(dir, run)?;
     state::save(dir, run)?;
-    aside.apply()?;
+    set_aside(dir, run, aside)?;
     if run.stopped.is_some() {
         return stop::step(dir, run);
     }
     next(dir, run)
+}
+
+/// Moves the refused answers aside once the state counting their refusal is saved. One that cannot
+/// be moved stays where its agent wrote it and is read again on the next submit as the refusal
+/// already counted (`Task::counted`), and moved aside then: a note, not a failed submit.
+fn set_aside(dir: &Path, run: &mut RunState, aside: Aside) -> Result<(), Error> {
+    let unmoved: Vec<String> = aside
+        .apply()
+        .iter()
+        .map(|e| {
+            let why = std::error::Error::source(e)
+                .map(|s| format!(": {s}"))
+                .unwrap_or_default();
+            format!("{e}{why}: left in place, it is moved aside on the next submit")
+        })
+        .collect();
+    if unmoved.is_empty() {
+        return Ok(());
+    }
+    take::note(&mut run.notes, &unmoved);
+    state::save(dir, run)?;
+    Ok(())
 }
 
 /// What the host is to do next: the pending tasks, or the finished run's report, verdict and what

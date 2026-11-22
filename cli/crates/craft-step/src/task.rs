@@ -53,6 +53,11 @@ pub struct Task<K: Kind> {
     /// retries counts as an off-schema vote rather than a dead one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub refused: Option<Value>,
+    /// The print of the answer file whose refusal was counted last ([`crate::handoff::Written`]):
+    /// the same file read again — its set-aside cut off or failed — is set aside then, not counted
+    /// twice.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub counted: Option<String>,
     /// The host abandoned its agent at its deadline (`submit --abandoned`): failed for good, never
     /// held for a resume nor handed out again, and no death of its dispatch round.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -86,6 +91,7 @@ impl<K: Kind> Task<K> {
             error: None,
             answer: None,
             refused: None,
+            counted: None,
             abandoned: false,
             flags: K::Flags::default(),
         }

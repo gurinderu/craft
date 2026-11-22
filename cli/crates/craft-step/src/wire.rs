@@ -13,7 +13,8 @@ use crate::task::Task;
 /// it is for (`kind`, by which the host sets its deadline) and what it runs on.
 ///
 /// # Errors
-/// When its id cannot be a file name, or its agent cannot be encoded.
+/// When its id cannot be a file name, its agent cannot be encoded, or the kind's own fields name
+/// one every task carries ([`HandoffError::WireClash`]).
 pub fn wire<K: Kind>(dir: &Path, task: &Task<K>) -> Result<Value, HandoffError> {
     let path = |p: PathBuf| Value::String(p.display().to_string());
     let mut t = Map::new();
@@ -31,7 +32,9 @@ pub fn wire<K: Kind>(dir: &Path, task: &Task<K>) -> Result<Value, HandoffError> 
         t.insert("consumerAgent".into(), json!(a));
     }
     for (key, value) in K::wire(task) {
-        t.insert(key.into(), value);
+        if t.insert(key.into(), value).is_some() {
+            return Err(HandoffError::WireClash(key));
+        }
     }
     Ok(Value::Object(t))
 }
@@ -54,4 +57,73 @@ pub fn pending_step<K: Kind>(dir: &Path, tasks: &[Task<K>]) -> Result<Value, Han
 #[must_use]
 pub fn status_line<K: Kind>(t: &Task<K>) -> Value {
     json!({"id": t.id, "label": t.label, "state": t.state, "retries": t.retries, "error": t.error})
+}
+
+#[cfg(test)]
+mod tests {
+    use serde::{Deserialize, Serialize};
+    use serde_json::{Value, json};
+
+    use super::wire;
+    use crate::handoff::HandoffError;
+    use crate::{Kind, Model, Task};
+
+    #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+    struct Empty {}
+
+    /// A kind whose own wire fields are `fields`, by its tag.
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(tag = "kind")]
+    enum Own {
+        #[serde(rename = "clash")]
+        Clash,
+        #[serde(rename = "apart")]
+        Apart,
+    }
+
+    impl Kind for Own {
+        type Agent = String;
+        type Marks = Empty;
+        type Flags = Empty;
+
+        fn tag(&self) -> &'static str {
+            match self {
+                Self::Clash => "clash",
+                Self::Apart => "apart",
+            }
+        }
+
+        fn wire(task: &Task<Self>) -> Vec<(&'static str, Value)> {
+            match task.kind {
+                Self::Clash => vec![("answerFile", json!("/elsewhere.json"))],
+                Self::Apart => vec![("lens", json!("errors"))],
+            }
+        }
+    }
+
+    fn task(kind: Own) -> Task<Own> {
+        Task::new(
+            "t".into(),
+            "t".into(),
+            "p".into(),
+            Model::Haiku,
+            json!({}),
+            kind,
+        )
+    }
+
+    #[test]
+    fn a_kind_field_never_replaces_a_shared_one() {
+        let dir = std::path::Path::new("/run");
+        let got = wire(dir, &task(Own::Clash));
+        assert!(
+            matches!(got, Err(HandoffError::WireClash("answerFile"))),
+            "{got:?}"
+        );
+        let apart = wire(dir, &task(Own::Apart)).unwrap();
+        assert_eq!(
+            (apart["lens"].clone(), apart["answerFile"].clone()),
+            (json!("errors"), json!("/run/answers/t.json"))
+        );
+    }
 }

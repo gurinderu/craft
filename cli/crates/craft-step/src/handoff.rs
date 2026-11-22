@@ -5,7 +5,7 @@
 
 mod answer;
 
-pub use answer::{Aside, read_answer};
+pub use answer::{Aside, Written, read_answer};
 
 use std::path::{Path, PathBuf};
 
@@ -31,6 +31,9 @@ pub enum HandoffError {
         #[source]
         source: std::io::Error,
     },
+    /// A kind's own wire field named as one the shared task already carries.
+    #[error("the kind's wire field {0:?} would replace one every task carries")]
+    WireClash(&'static str),
     #[error("moving {} aside", path.display())]
     Unmovable {
         path: PathBuf,
@@ -46,7 +49,7 @@ pub fn tasks_dir(dir: &Path) -> PathBuf {
 }
 
 /// `<run>/answers`: each task's `<id>.json` answer, kept once accepted; a refused one is set aside
-/// as `<id>.rejected-<n>.json`.
+/// as `<id>.rejected-<n>.json`, or `<id>.rejected-<n>.<k>.json` when that name is taken.
 #[must_use]
 pub fn answers_dir(dir: &Path) -> PathBuf {
     dir.join("answers")
@@ -126,7 +129,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{HandoffError, answer_file, file_safe};
+    use super::{HandoffError, answer_file, file_safe, prompt_file, schema_file};
 
     #[test]
     fn ids_are_held_to_file_names() {
@@ -138,7 +141,18 @@ mod tests {
 
     #[test]
     fn no_path_is_built_from_an_unsafe_id() {
-        let got = answer_file(std::path::Path::new("/run"), "../escape");
-        assert!(matches!(got, Err(HandoffError::UnsafeId(id)) if id == "../escape"));
+        type Build = fn(&std::path::Path, &str) -> Result<std::path::PathBuf, HandoffError>;
+        let builders: [(&str, Build); 3] = [
+            ("answer", answer_file),
+            ("prompt", prompt_file),
+            ("schema", schema_file),
+        ];
+        for (name, build) in builders {
+            let got = build(std::path::Path::new("/run"), "../escape");
+            assert!(
+                matches!(&got, Err(HandoffError::UnsafeId(id)) if id == "../escape"),
+                "{name}: {got:?}"
+            );
+        }
     }
 }

@@ -1,39 +1,84 @@
 //! An answer file read back, or set aside once refused — after the state that says why is saved.
 
+use std::fs::{self, OpenOptions};
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 
 use super::{HandoffError, answer_file, answers_dir, safe};
 use crate::kind::Kind;
 use crate::task::Task;
 
-/// The answer the agent of `task` wrote, or why there is none to read, in one line.
-///
-/// # Errors
-/// The id is no file name, or the file is missing, unreadable, or not JSON.
-pub fn read_answer<K: Kind>(dir: &Path, task: &Task<K>) -> Result<Value, String> {
-    let path = answer_file(dir, &task.id).map_err(|e| e.to_string())?;
-    let text = match std::fs::read_to_string(&path) {
-        Ok(t) => t,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            return Err(format!("no answer file was written at {}", path.display()));
-        }
+/// How many `<stem>.<n>.json` names a refused file may take after `<stem>.json` before its
+/// set-aside gives up.
+const SLOTS: u32 = 100;
+
+/// What the agent of a task left in its answer file.
+#[derive(Debug)]
+pub struct Written {
+    /// The answer, or why there is none to read, in one line.
+    pub answer: Result<Value, String>,
+    /// The file's bytes and when it was written, as one string, when it could be read: the same
+    /// file read again has the same one, a file its agent writes anew another.
+    pub print: Option<String>,
+}
+
+/// What the agent of `task` wrote: its answer, or why there is none to read, and its file's print.
+#[must_use]
+pub fn read_answer<K: Kind>(dir: &Path, task: &Task<K>) -> Written {
+    let path = match answer_file(dir, &task.id) {
+        Ok(p) => p,
         Err(e) => {
-            return Err(format!(
-                "the answer file {} cannot be read: {e}",
-                path.display()
-            ));
+            return Written {
+                answer: Err(e.to_string()),
+                print: None,
+            };
         }
     };
-    serde_json::from_str(&text)
-        .map_err(|e| format!("the answer file {} is not JSON: {e}", path.display()))
+    let bytes = match fs::read(&path) {
+        Ok(b) => b,
+        Err(e) => {
+            let why = if e.kind() == ErrorKind::NotFound {
+                format!("no answer file was written at {}", path.display())
+            } else {
+                format!("the answer file {} cannot be read: {e}", path.display())
+            };
+            return Written {
+                answer: Err(why),
+                print: None,
+            };
+        }
+    };
+    let print = Some(print(&path, &bytes));
+    let answer = serde_json::from_slice(&bytes)
+        .map_err(|e| format!("the answer file {} is not JSON: {e}", path.display()));
+    Written { answer, print }
+}
+
+/// The SHA-256 of `bytes` and the nanoseconds since the epoch of `path`'s last write (empty where
+/// the platform gives none).
+fn print(path: &Path, bytes: &[u8]) -> String {
+    let digest: String = Sha256::digest(bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    let written = fs::metadata(path)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_nanos().to_string())
+        .unwrap_or_default();
+    format!("{digest}@{written}")
 }
 
 /// The refused answer files of a submit, moved aside only once the state that records their
 /// refusal is saved ([`Aside::apply`]): a submit cut off before that leaves each where its agent
-/// wrote it, to be read again, rather than gone with nothing saying why. Moved aside, a file is
-/// not read again as the same refused answer by a retry whose agent writes nothing.
+/// wrote it, to be read again, rather than gone with nothing saying why. The state keeps the print
+/// of the file it counted ([`Task::counted`]), so a file read again before it was moved aside is
+/// moved aside then without counting twice. Moved aside, a file is not read again as the same
+/// refused answer by a retry whose agent writes nothing.
 #[derive(Debug, Default)]
 #[must_use = "the refused files stay in place until applied"]
 pub struct Aside(Vec<(PathBuf, PathBuf, String)>);
@@ -50,60 +95,65 @@ impl Aside {
         Ok(())
     }
 
-    /// Moves each marked file that is there aside, never over an earlier one: a name taken (a
-    /// ladder held or restarted asks again at the same count) gets `.<n>` before `.json`.
-    ///
-    /// # Errors
-    /// When a file exists and cannot be moved.
-    pub fn apply(self) -> Result<(), HandoffError> {
-        for (from, dir, stem) in self.0 {
-            if !from.exists() {
-                continue;
-            }
-            let to = free(&dir, &stem);
-            std::fs::rename(&from, &to)
-                .map_err(|source| HandoffError::Unmovable { path: from, source })?;
-        }
-        Ok(())
+    /// Moves each marked file that is there aside, never over another file: a name taken (a
+    /// ladder held or restarted asks again at the same count) gets `.<n>` before `.json`. Every
+    /// move is tried; those that failed are returned, each file left where it was.
+    #[must_use = "a file not moved aside is read again on the next submit"]
+    pub fn apply(self) -> Vec<HandoffError> {
+        self.0
+            .into_iter()
+            .filter_map(|(from, dir, stem)| move_aside(&from, &dir, &stem).err())
+            .collect()
     }
 }
 
-/// `<dir>/<stem>.json`, or the first `<dir>/<stem>.<n>.json` no file holds.
-fn free(dir: &Path, stem: &str) -> PathBuf {
-    let first = dir.join(format!("{stem}.json"));
-    if !first.exists() {
-        return first;
+/// Moves `from`, when it is there, to the first free `<dir>/<stem>[.<n>].json`.
+fn move_aside(from: &Path, dir: &Path, stem: &str) -> Result<(), HandoffError> {
+    let unmovable = |source| HandoffError::Unmovable {
+        path: from.to_owned(),
+        source,
+    };
+    match fs::symlink_metadata(from) {
+        Err(e) if e.kind() == ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(unmovable(e)),
+        Ok(_) => {}
     }
-    (1..u32::MAX)
-        .map(|n| dir.join(format!("{stem}.{n}.json")))
-        .find(|p| !p.exists())
-        .unwrap_or(first)
+    let to = claim(dir, stem).map_err(unmovable)?;
+    match fs::rename(from, &to) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            // The claimed name is still empty and ours: give it back, or leave an empty file
+            // that only takes a name.
+            if let Err(left) = fs::remove_file(&to) {
+                drop(left);
+            }
+            if e.kind() == ErrorKind::NotFound {
+                Ok(())
+            } else {
+                Err(unmovable(e))
+            }
+        }
+    }
+}
+
+/// Creates the first of `<dir>/<stem>.json`, `<dir>/<stem>.1.json`, … no file holds, empty, so no
+/// other move takes it; the rename over it then replaces only that.
+fn claim(dir: &Path, stem: &str) -> std::io::Result<PathBuf> {
+    let names = std::iter::once(format!("{stem}.json"))
+        .chain((1..=SLOTS).map(|n| format!("{stem}.{n}.json")));
+    for name in names {
+        let path = dir.join(name);
+        match OpenOptions::new().write(true).create_new(true).open(&path) {
+            Ok(_) => return Ok(path),
+            Err(e) if e.kind() == ErrorKind::AlreadyExists => {}
+            Err(e) => return Err(e),
+        }
+    }
+    Err(std::io::Error::new(
+        ErrorKind::AlreadyExists,
+        format!("{stem}.json and its {SLOTS} numbered names are all taken"),
+    ))
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_taken_name_is_never_overwritten() {
-        let d = tempfile::tempdir().unwrap();
-        let dir = answers_dir(d.path());
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("t.rejected-0.json"), "first").unwrap();
-        std::fs::write(dir.join("t.json"), "second").unwrap();
-        let mut aside = Aside::default();
-        aside
-            .0
-            .push((dir.join("t.json"), dir.clone(), "t.rejected-0".into()));
-        aside.apply().unwrap();
-        assert_eq!(
-            std::fs::read_to_string(dir.join("t.rejected-0.json")).unwrap(),
-            "first"
-        );
-        assert_eq!(
-            std::fs::read_to_string(dir.join("t.rejected-0.1.json")).unwrap(),
-            "second"
-        );
-        assert!(!dir.join("t.json").exists());
-    }
-}
+mod tests;
