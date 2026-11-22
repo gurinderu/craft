@@ -19,7 +19,7 @@ use crate::prompts::{PromptContext, ReScope, SPEC_MAX};
 use crate::publish::{self, PostSetup, Publish};
 use crate::rereview;
 use crate::rounds::Rounds;
-use crate::state::{self, Phase, RunState, STATE_VERSION, TaskState, Track};
+use crate::state::{self, Phase, RunState, STATE_VERSION, Track};
 use crate::stop;
 use crate::units;
 
@@ -28,7 +28,9 @@ mod open;
 mod options;
 mod prepare;
 
-use answers::{Hold, abandon, move_on, take_answer};
+use answers::move_on;
+use craft_step::Hold;
+use craft_step::take;
 use open::{open_dir, pr_worktree, read_change, refuse_delta_over_branch};
 pub use options::StartOptions;
 use prepare::{choose_extra, choose_units, prepare, scouts};
@@ -305,39 +307,14 @@ pub fn submit_with(
             return save_and_next(dir, &mut run, said);
         }
     }
-    for note in said
-        .degraded
-        .iter()
-        .map(|n| n.trim())
-        .filter(|n| !n.is_empty())
-    {
-        if !run.degraded.iter().any(|d| d == note) {
-            run.degraded.push(note.to_owned());
-        }
-    }
-    let pending = |id: &str| {
-        run.tasks
-            .iter()
-            .any(|t| t.id == id && t.state == TaskState::Pending)
-    };
-    if let Some(id) = given.and_then(|g| g.keys().find(|id| !pending(id))) {
+    take::note(&mut run.degraded, said.degraded);
+    if let Some(id) = take::unknown(&run.tasks, given) {
         return Err(StepError::UnknownTask(id.clone()).into());
     }
-    abandon(dir, &mut run, said.abandoned)?;
+    take::abandon(dir, &mut run.tasks, said.abandoned)?;
     stop::open(&mut run);
-    let hold = match (said.limit, said.resume) {
-        (Some(_), _) => Hold::Every,
-        (None, true) => Hold::Missing,
-        (None, false) => Hold::Nothing,
-    };
-    for task in run
-        .tasks
-        .iter_mut()
-        .filter(|t| t.state == TaskState::Pending)
-    {
-        let live = take_answer(dir, task, given, hold)?;
-        run.watch.live |= live;
-    }
+    let hold = Hold::of(said.limit.is_some(), said.resume);
+    run.watch.live |= take::take_pending(dir, &mut run.tasks, given, hold)?;
     move_on(dir, &mut run, said)?;
     save_and_next(dir, &mut run, said)
 }
@@ -362,13 +339,11 @@ fn next(dir: &Path, run: &RunState) -> Value {
     match &run.verdict {
         Some(v) if run.phase == Phase::Done => finished::step(dir, run, v),
         Some(_) | None => {
-            let tasks: Vec<Value> = run
-                .tasks
-                .iter()
-                .filter(|t| t.state == TaskState::Pending)
-                .map(|t| handoff::wire(dir, t))
-                .collect();
-            let mut step = json!({"run": dir.display().to_string(), "tasks": tasks, "done": false, "repo": run.context.repo, "phase": run.phase});
+            let mut step = craft_step::wire::pending_step(dir, &run.tasks);
+            if let Some(obj) = step.as_object_mut() {
+                obj.insert("repo".into(), json!(run.context.repo));
+                obj.insert("phase".into(), json!(run.phase));
+            }
             finished::name_chain(&mut step, run);
             finished::name_worktree(&mut step, run);
             step

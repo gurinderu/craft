@@ -35,9 +35,7 @@ pub fn status(dir: &Path) -> Result<Value, StateError> {
     let tasks: Vec<Value> = run
         .tasks
         .iter()
-        .map(|t| {
-            json!({"id": t.id, "label": t.label, "state": t.state, "retries": t.retries, "error": t.error})
-        })
+        .map(craft_step::wire::status_line)
         .collect();
     let profiles: Vec<Value> = run
         .tracks
