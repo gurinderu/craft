@@ -100,6 +100,10 @@ pub(crate) fn reindex(dir: &Path) -> Result<Outcome> {
     let harness = match fs::read_to_string(&harness_path) {
         Ok(t) => t,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) if e.kind() == std::io::ErrorKind::InvalidData => bail!(
+            "{} is not UTF-8 text — refused, so none of its lines is rewritten; nothing written",
+            harness_path.display()
+        ),
         Err(e) => return Err(e).with_context(|| format!("reading {}", harness_path.display())),
     };
     if index::forbids_writes(&harness) {

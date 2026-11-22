@@ -200,3 +200,36 @@ fn a_record_file_that_is_not_utf8_is_skipped_and_named() {
     assert_eq!(o.indexed, 1);
     assert_eq!(o.skipped, ["lesson-abcdefabcd.md: not UTF-8 text"]);
 }
+
+#[test]
+fn the_no_write_marker_is_a_line_of_its_own_never_part_of_a_sentence_or_a_craft_line() {
+    for marked in [
+        "Do not write here: state lives in the repo.",
+        "- do NOT write here",
+        "## Do not write here",
+    ] {
+        assert!(
+            index::forbids_writes(&format!("# Memory\n{marked}\n")),
+            "{marked}"
+        );
+    }
+    for plain in [
+        "- [note](note.md) — we said do not write here once",
+        "- [decision: do not write here without a lock](decision-0123456789.md) — src",
+    ] {
+        assert!(!index::forbids_writes(plain), "{plain}");
+    }
+}
+
+#[test]
+fn a_memory_md_that_is_not_utf8_is_refused_by_name() {
+    let d = tempfile::tempdir().unwrap();
+    record(d.path(), "decision-0123456789", "t", "src", "active");
+    fs::write(d.path().join("MEMORY.md"), [0xff, 0xfe, b'\n']).unwrap();
+    let err = reindex(d.path()).unwrap_err().to_string();
+    assert!(err.contains("MEMORY.md is not UTF-8 text"), "{err}");
+    assert!(
+        !d.path().join("craft-memory.md").exists(),
+        "nothing written"
+    );
+}

@@ -121,8 +121,9 @@ match. Use the harness's format, not a craft one:
   `MEMORY.md` (the main session has it in context; an agent without it reads it at the derived
   path). Then find the records neither lists: `grep -l "craft_kind:"` over the directory's
   `<kind>-<10 hex>.md` files, those whose file name no index line links to; match them by their
-  `craft_scope` and title like the indexed ones, and say how many there were — `index stale: N
-  record(s) outside the index — run craft memory reindex after recording`. Read only the matching
+  `craft_scope` and title like the indexed ones, and say how many of them are active — `index
+  stale: N record(s) outside the index — run craft memory reindex after recording`. A superseded or
+  withdrawn record is outside the index by design and never counts as stale. Read only the matching
   files; for history, `grep -l "craft_scope: <path>"` over the directory.
   Handed on (a subagent's brief, a review's `priorDecisions`) as the SKILL.md shape: `name` → `id`,
   `craft_kind` → `kind`, the title from `description` without its `<kind>: ` prefix, `craft_scope`

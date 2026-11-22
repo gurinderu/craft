@@ -190,7 +190,8 @@ rule 3. Never put secrets, credentials or personal data in a record, whatever th
    a record must match the scope and at least one keyword.
 3. **Only matches come back.** Use the backend's search (the MCP search tool, `grep -l` over the
    memory files, craft's harness index `craft-memory.md` and any craft lines not yet moved out of
-   `MEMORY.md`, then the record files neither lists, found by their `craft_kind` frontmatter) —
+   `MEMORY.md`, then the record files neither lists, found by their `craft_kind` frontmatter; only an active one
+   among them makes the index stale) —
    never load the whole store into context. A recall writes nothing.
 4. **Active only by default.** `superseded` and `withdrawn` stay hidden unless the caller asks for
    history; a superseded record shown on request carries its successor's id. A review engine's

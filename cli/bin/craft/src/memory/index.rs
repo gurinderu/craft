@@ -138,13 +138,17 @@ fn link_target(line: &str) -> Option<&str> {
     Some(target.trim())
 }
 
-/// Whether `MEMORY.md` forbids writes into its directory: a line saying "do not write here", the
-/// marker the craft:memory skill honours as a refused write.
+/// Whether `MEMORY.md` forbids writes into its directory: a line that is, or starts with, "do not
+/// write here" (trimmed, its Markdown list, heading or quote marker aside, any case) — the marker
+/// the craft:memory skill honours as a refused write. craft's own old-layout index lines never
+/// count, whatever their title says.
 #[must_use]
 pub fn forbids_writes(harness: &str) -> bool {
-    harness
-        .lines()
-        .any(|l| l.to_lowercase().contains("do not write here"))
+    harness.lines().any(|l| {
+        let own = link_target(l).is_some_and(is_record_name);
+        let text = l.trim().trim_start_matches(['#', '-', '*', '>', ' ', '\t']);
+        !own && text.to_lowercase().starts_with("do not write here")
+    })
 }
 
 /// `MEMORY.md` with every line that indexes one of craft's records (`craft`, the record file
