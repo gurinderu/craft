@@ -73,7 +73,10 @@ const STEP = {
   prComments: null,
   dimensions: [{ dimension: 'errors', ran: true, findingCount: 1 }, 'not a row'],
   verification: { candidates: 2, refuted: 0.1 + 0.2 },
-  lensRounds: [{ round: 1, lenses: 3 }],
+  lensRounds: [
+    { round: 1, agents: 3, returned: 3, newFindings: 2, raw: 4, newUnique: 2, confirmed: 1 },
+    { round: 2, agents: 3, returned: 2, newFindings: 0, raw: 1, newUnique: 0 },
+  ],
   at: 9000,
   took: 100,
 }

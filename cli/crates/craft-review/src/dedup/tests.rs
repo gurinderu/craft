@@ -38,6 +38,11 @@ fn a_rule_flood_is_rolled_up_past_three_worst_first() {
         out[4]["foundInRound"], 1,
         "the earliest round of what it folds"
     );
+    assert_eq!(
+        out[4]["foundInRounds"],
+        json!([1, 2]),
+        "every round it folds"
+    );
 }
 
 #[test]
@@ -62,6 +67,11 @@ fn same_spot_and_model_groups_merge_as_one_component() {
             .ends_with("(same defect also reported by: errors, tests)")
     );
     assert_eq!(m["foundInRound"], 1);
+    assert_eq!(
+        m["foundInRounds"],
+        json!([1, 2]),
+        "the rounds its members were raised in"
+    );
     let (same, n) = merge(&pool, None);
     assert_eq!(
         (same.len(), n),

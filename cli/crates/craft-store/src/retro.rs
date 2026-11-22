@@ -9,6 +9,10 @@ use crate::js::{Js, JsString, Obj, Utf16Error};
 use crate::record::SEVERITIES;
 use crate::tally::{Tally, round2};
 
+mod rounds;
+
+pub use rounds::Round;
+
 /// One lens's yield over the runs it ran in.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Lens {
@@ -46,6 +50,8 @@ pub struct Retro {
     pub unfinished: u64,
     /// The records folded into a newer one of the same run.
     pub folded: u64,
+    /// Each lens round's yield after the dedup and verification, by round number.
+    pub rounds: BTreeMap<u64, Round>,
 }
 
 /// Whether the run is the CLI's (`reviewChain`).
@@ -227,6 +233,7 @@ pub fn add_record(out: &mut Retro, r: &Obj) -> Result<(), Utf16Error> {
     for item in r.get("notRun").and_then(Js::as_arr).unwrap_or(&[]) {
         *out.not_run.entry(item.to_js_string()?).or_default() += 1;
     }
+    rounds::add(r, &mut out.rounds);
     lenses_of(r, &mut out.lenses)
 }
 

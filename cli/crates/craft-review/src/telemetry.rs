@@ -13,6 +13,10 @@ use serde_json::{Value, json};
 use crate::settle::Tier;
 use crate::state::{RunState, Task, TaskKind, TaskState, finding_profile};
 
+mod rounds;
+
+pub use rounds::{ByRound, lens_rounds};
+
 /// The severities a row counts its confirmed findings by, as `countBySeverity` does.
 const SEVERITIES: [&str; 5] = ["Critical", "High", "Medium", "Low", "Info"];
 
@@ -60,6 +64,9 @@ pub struct Tally {
     /// `None` until a verification pass settled.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub verified: Option<Verified>,
+    /// Each round's deduplicated and confirmed findings; `None` until the dedup's pool was counted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub by_round: Option<ByRound>,
 }
 
 /// The `profile:lens` a lens-like task runs: a lens, a critic's lens, a unit-mode coordinator.
@@ -120,6 +127,7 @@ pub(crate) fn verified(run: &mut RunState, settled: &[Value]) {
         .count();
     let sent = verifiers.len();
     let tally = &mut run.telemetry;
+    tally.confirmed(settled);
     let v = tally.verified.get_or_insert_with(Verified::default);
     v.votes_sent += sent;
     v.votes_returned += returned;

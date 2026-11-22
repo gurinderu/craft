@@ -145,7 +145,7 @@ fn lens_rounds(run: &std::path::Path) {
     );
     assert_eq!(
         st["rounds"][1],
-        json!({"round": 2, "agents": 4, "returned": 4, "newFindings": 0})
+        json!({"round": 2, "agents": 4, "returned": 4, "newFindings": 0, "raw": 1})
     );
 }
 
@@ -254,10 +254,6 @@ fn a_full_run_goes_scout_lenses_two_rounds_dedup_verify_done() {
 
 /// What the full run's finished step carries for the run record's lens yield and verification,
 /// in review's record shape: a row per planned lens, the merged High under the lens that kept it.
-#[expect(
-    clippy::indexing_slicing,
-    reason = "a step of the test above, failing loudly like it"
-)]
 fn finished_telemetry(s: &Value) {
     let row = |lens: &str, ran: bool, tiers: [u64; 4], high: u64| {
         let [confirmed, suspected, refuted, unverified] = tiers;
@@ -280,9 +276,13 @@ fn finished_telemetry(s: &Value) {
         json!({"candidates": 2, "confirmed": 1, "refuteRate": 0.5, "unverified": 1, "thinned": 0,
                "suspected": 0, "refuted": 1, "votes": {"sent": 3, "returned": 3}})
     );
+    // Round 1's four raw findings dedup to three, one confirmed; round 2's one copy adds none.
     assert_eq!(
-        s["lensRounds"][0],
-        json!({"round": 1, "agents": 4, "returned": 4, "newFindings": 4})
+        s["lensRounds"],
+        json!([
+            {"round": 1, "agents": 4, "returned": 4, "newFindings": 4, "raw": 4, "newUnique": 3, "confirmed": 1},
+            {"round": 2, "agents": 4, "returned": 4, "newFindings": 0, "raw": 1, "newUnique": 0, "confirmed": 0}
+        ])
     );
 }
 

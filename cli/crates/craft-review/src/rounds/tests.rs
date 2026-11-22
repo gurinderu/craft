@@ -78,7 +78,8 @@ fn a_round_pools_new_findings_by_the_dispatched_lens_and_notes_exact_copies() {
             round: 1,
             agents: 3,
             returned: 2,
-            new_findings: 2
+            new_findings: 2,
+            raw: Some(3),
         }]
     );
     assert_eq!(r.holes("rust"), ["tests: it does not match the schema"]);
@@ -102,6 +103,26 @@ fn a_round_pools_new_findings_by_the_dispatched_lens_and_notes_exact_copies() {
         r.pool[0]["foundInRound"], 1,
         "a re-surfaced finding keeps its first round"
     );
+}
+
+#[test]
+fn a_copy_raised_in_a_later_round_is_counted_raw_and_names_both_rounds() {
+    let mut r = Rounds::default();
+    for (round, title) in [(1, "A bug"), (2, "a BUG"), (3, "a bug")] {
+        r.round = round;
+        let answer = json!({"lens": "x", "findings": [f(title, 3)]});
+        r.absorb(&[lens_task("errors", round, Some(answer))]);
+    }
+    assert_eq!(r.pool.len(), 1);
+    assert_eq!(
+        (
+            r.pool[0]["foundInRound"].clone(),
+            r.pool[0]["foundInRounds"].clone()
+        ),
+        (json!(1), json!([1, 2, 3]))
+    );
+    let raw: Vec<_> = r.yields.iter().map(|y| (y.raw, y.new_findings)).collect();
+    assert_eq!(raw, [(Some(1), 1), (Some(1), 0), (Some(1), 0)]);
 }
 
 #[test]
