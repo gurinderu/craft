@@ -166,7 +166,7 @@ One **round** is:
    recurring-findings check that step 3 no longer reaches (addressing-findings' step 0): run
    `"$CRAFT_BIN" runs recurring --path <path> …` for the paths the round's findings touch, resolving
    `CRAFT_BIN` with `sh "<this skill's base directory>/../../integrations/shared/craft-cli.sh" --ensure --print-path`
-   first (stop this check and report a failed resolution). It needs no Node; only on native Windows
+   first (stop this check and report a failed resolution). It needs no Node (under Git Bash the script caches `craft.exe`; not observed on a Windows host); only on native Windows
    without `sh`, fall back to `node "<this skill's base directory>/../../integrations/shared/craft-bin.mjs" ensure`. Show each group, and offer
    the author a lesson per group — recorded only on their yes (addressing-findings, "Recurring
    findings").

@@ -31,8 +31,10 @@ export const shellWord = s => (/^[A-Za-z0-9_./+-][A-Za-z0-9_./~+-]*$/.test(s) ? 
  * @param {string | undefined} craftRoot @param {string} version @param {string} repo
  * @param {string} script  a path inside the plugin, shell-inert (a constant of the caller's)
  * @param {string} varName  a shell variable name
+ * @param {string} [accepts]  a further shell condition on the resolved candidate "$CRAFT_REAL", run only once it is
+ *   usable, that sets CRAFT_WHY when it fails: a candidate failing it is skipped like any other, never the run ended
  */
-export function pluginScriptPrelude(craftRoot, version, repo, script, varName) {
+export function pluginScriptPrelude(craftRoot, version, repo, script, varName, accepts) {
   // ONE pipeline for every way the logger can be located, and that uniformity is the fix rather than
   // a tidy-up. Each source used to get its own treatment: an explicit `craftRoot` returned EARLY,
   // before the absoluteness check and before the refusal, so a review launched with `craftRoot=.`
@@ -97,7 +99,7 @@ ${varName}_WHY=""
   /** @param {string} label @param {string} expr */
   const tryCandidate = (label, expr) => `if [ -z "\${${varName}:-}" ]; then
   CRAFT_TRY=${expr}
-  if craft_usable "$CRAFT_TRY"; then ${varName}="$CRAFT_REAL"; else ${noteWhy(label, '$CRAFT_WHY').trimEnd()}; fi
+  if craft_usable "$CRAFT_TRY"${accepts ? ` && ${accepts}` : ''}; then ${varName}="$CRAFT_REAL"; else ${noteWhy(label, '$CRAFT_WHY').trimEnd()}; fi
 fi
 `
   const explicit = craftRoot ? tryCandidate('craftRoot', `${shq(craftRoot)}"/${script}"`) : noteWhy('craftRoot', 'not passed')

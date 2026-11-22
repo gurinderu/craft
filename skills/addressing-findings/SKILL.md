@@ -314,7 +314,8 @@ one itself). Only a **lesson** waits for the author's yes (below).
   "$CRAFT_BIN" runs recurring --path <path> [--path <path> …]
   ```
 
-  Getting the binary needs no Node (Git Bash on Windows caches `craft.exe`). Only on native Windows
+  Getting the binary needs no Node; under Git Bash on Windows the script caches `craft.exe` (not
+  observed on a Windows host). Only on native Windows
   without `sh`, fall back to `node "<this skill's base directory>/../../integrations/shared/craft-bin.mjs" ensure`
   for `CRAFT_BIN`.
 

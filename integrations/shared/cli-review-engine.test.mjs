@@ -345,10 +345,11 @@ test('without craftBin the released binary of this version is fetched first, the
   assert.match(fetch.prompt, /CRAFT_TRY='\/opt\/craft-plugin'"\/integrations\/shared\/craft-cli\.sh"/, 'craftRoot first')
   assert.match(fetch.prompt, /\$\{CLAUDE_PLUGIN_ROOT:-\}\/integrations\/shared\/craft-cli\.sh/, 'then the plugin root')
   assert.match(fetch.prompt, /plugins\/cache\/craft\/craft\/"'\d+\.\d+\.\d+'"\/integrations\/shared\/craft-cli\.sh/, "then this version's installed copy")
-  assert.match(fetch.prompt, /grep -q '\^version=\d+\.\d+\.\d+ ' "\$CRAFT_FETCHER"/, "the fetcher must carry the engine's own stamp")
+  assert.match(fetch.prompt, /grep -q '\^version=\d+\.\d+\.\d+ ' "\$1"/, "each candidate must carry the engine's own stamp")
+  assert.match(fetch.prompt, /if craft_usable "\$CRAFT_TRY" && craft_stamped "\$CRAFT_REAL"; then/, 'checked per candidate, not on the winner')
   assert.match(
     fetch.prompt,
-    /CRAFT_BIN_PATH="\$\(CRAFT_BIN= CRAFT_REPO= sh "\$CRAFT_FETCHER" --ensure --print-path\)" \|\| exit \$\?/,
+    /CRAFT_BIN_PATH="\$\(CRAFT_BIN= CRAFT_REPO= CRAFT_RELEASE_BASE= CRAFT_API_BASE= CRAFT_TARGET= sh "\$CRAFT_FETCHER" --ensure --print-path\)" \|\| exit \$\?/,
     'fetched through sh, no Node',
   )
   assert.doesNotMatch(fetch.prompt, /\bnode\b/, 'no Node in the fetch')
