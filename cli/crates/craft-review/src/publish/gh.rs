@@ -15,8 +15,8 @@ use super::body;
 use super::{Defect, Posted};
 use crate::gate::runner::Runner;
 
-mod read;
-mod send;
+pub(super) mod read;
+pub(super) mod send;
 
 pub(super) use crate::gh::{Failed, gh, gh_said};
 
