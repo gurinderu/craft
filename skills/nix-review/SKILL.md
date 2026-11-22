@@ -13,7 +13,7 @@ applies it to an actual diff and reports back.
 **The review entry point is the `craft:review` workflow** (the craft CLI's review, driven from Claude Code):
 it sends each changed Nix file to the Nix profile, scout-scales depth to the diff, fans out the lenses below,
 grounds findings in tool output, and verifies each one. This skill is the rubric its Nix lenses (on the review's task agent) and the
-`nix-reviewer` agent, run by hand, apply.
+`craft:nix-reviewer` agent, run by hand, apply.
 If the workflow fails with `at workflow.js:<line>:<column>`, that place is in the bundled engine:
 `node "<this skill's base directory>/../../integrations/shared/engine-source-map.mjs" review workflow.js:<line>:<column>`
 gives it in the plugin's source.
