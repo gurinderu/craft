@@ -238,7 +238,8 @@ independent of the host locale.
 
 Manifest discovery and legacy external-record import live in
 `cli/crates/craft-review/src/externals.rs` and `externals/`. `craft init`
-(`cli/bin/craft/src/init.rs`, `init/memory.rs`) calls that library. Library coverage is in
+(`cli/bin/craft/src/init.rs`, `init/memory.rs`, and `init/paths.rs` for its repeatable `--path`,
+the manifests read in place of the walk) calls that library. Library coverage is in
 `externals/tests/`; binary-boundary coverage is in `cli/bin/craft/tests/externals.rs`
 and `externals/`. The embedded regex engine is pinned through `cli/Cargo.lock`.
 

@@ -56,3 +56,7 @@ fn init_refuses_a_root_outside_git() {
 #[cfg(unix)]
 #[path = "externals/init_native.rs"]
 mod init_native;
+
+#[cfg(unix)]
+#[path = "externals/init_paths.rs"]
+mod init_paths;
