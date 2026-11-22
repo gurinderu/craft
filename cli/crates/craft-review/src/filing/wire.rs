@@ -77,6 +77,8 @@ pub(super) struct RecordAsked<'a> {
     pub(super) strict: bool,
     pub(super) via: &'a str,
     pub(super) output_tokens: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) output_tokens_scope: Option<&'a str>,
 }
 
 /// What a finished run's publication after the fact amends in its filed record.

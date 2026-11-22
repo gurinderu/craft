@@ -63,6 +63,7 @@ impl Protocol for InProcess {
             agents: Some(said.agents),
             // Neither host prints what its tasks spent in output tokens alone.
             output_tokens: None,
+            output_tokens_scope: None,
             record_root: Some(self.record_root.clone()),
         })
     }

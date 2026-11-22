@@ -26,6 +26,7 @@ import { gateAnswer, gateCommand, gateShell } from './cli-review-gate.mjs'
 import { telemetryLostSection } from './review-coverage.mjs'
 import { argumentRefusal } from './run-record.mjs'
 import { normalizeArgs } from './workflow-args.mjs'
+import { runBudget } from './run-budget.mjs'
 
 /** @typedef {import('./cli-review-options.mjs').Options} Options */
 /** @typedef {import('./cli-review-step.mjs').Step} Step */
@@ -316,7 +317,7 @@ function stoppedAt(standing, read, run, bin) {
  */
 export async function runCliReview(given, craftVersion) {
   const a = normalizeArgs(given.args, given.log)
-  const sb = viaName(a['_via']) ? { ...given, budget: { spent: () => null } } : given
+  const sb = viaName(a['_via']) ? { ...given, budget: runBudget(undefined) } : given
   const problem = argumentProblem(a, readOptions)
   if (problem) return refuse(sb, craftVersion, a, problem)
   const o = /** @type {{ options: Options }} */ (readOptions(a)).options

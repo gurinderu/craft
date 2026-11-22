@@ -105,7 +105,7 @@ test('limit text from a task stops the run at once: the submit says --limit, and
   assert.match(
     String(submit),
     new RegExp(
-      `^/opt/craft review submit --run '${RUN}' --limit 'You'\\\\''ve hit your limit · resets 3am \\(Europe/Berlin\\)' --agents 2 --output-tokens \\d+$`,
+      `^/opt/craft review submit --run '${RUN}' --limit 'You'\\\\''ve hit your limit · resets 3am \\(Europe/Berlin\\)' --agents 2 --output-tokens \\d+ --output-tokens-scope turn-delta$`,
     ),
   )
   assert.ok(
@@ -210,7 +210,11 @@ test('a resumed run is resumed with --resume, and the record of a resume the bin
       'log-run': { ok: true, output: ['wrote /store/r.json'] },
     },
   })
-  assert.match(promptOf(run, 'step:resume'), / --resume --agents 0 --output-tokens \d+$/m, "a new segment of the binary's telemetry, counted from nothing")
+  assert.match(
+    promptOf(run, 'step:resume'),
+    / --resume --agents 0 --output-tokens \d+ --output-tokens-scope turn-delta$/m,
+    "a new segment of the binary's telemetry, counted from nothing",
+  )
   assert.doesNotMatch(promptOf(run, 'step:submit:1'), /--resume/, 'only the resuming submit is marked')
   assert.ok(promptOf(run, 'log-run').includes('/work/other'), promptOf(run, 'log-run'))
   assert.ok(!promptOf(run, 'log-run').includes('/work/repo'))
@@ -284,7 +288,7 @@ test('a run stopped on the limit, resumed through the driver with run=, reaches 
   assert.equal(promptOf(resumed, 'step:start'), '', 'no new run is started')
   assert.match(
     String(promptOf(resumed, 'step:resume').split('\n\n')[1]),
-    new RegExp(`^/opt/craft review submit --run '${RUN}' --resume --agents 0 --output-tokens \\d+$`),
+    new RegExp(`^/opt/craft review submit --run '${RUN}' --resume --agents 0 --output-tokens \\d+ --output-tokens-scope turn-delta$`),
   )
   assert.equal(resumed.calls.filter(c => c.label === 'lens:errors').length, 1, 'the held task handed out again')
   assert.match(resumed.report, /^## Verdict\n\n✅ Approve\n/)

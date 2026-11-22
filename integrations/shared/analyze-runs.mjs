@@ -21,7 +21,7 @@ import { hookLogPath, readHookLog, renderHookSection } from './hook-log.mjs'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { engineKey, engineRevisionToken, isEngineAttributed, costProblem, costTotal, isReviewRun, reviewChain } from './run-record.mjs'
+import { engineKey, engineRevisionToken, isEngineAttributed, costProblem, costTotal, isReviewRun, reviewChain, TURN_DELTA } from './run-record.mjs'
 import { roundPairs, renderRoundPairs, excludedRounds } from './round-pairs.mjs'
 import { outputLines, runIfMain } from './script-main.mjs'
 import { readAgentUnavailable } from './agent-fallback.mjs'
@@ -157,20 +157,12 @@ function tallyPool(w, r) {
   }
 }
 
-// The craft release from which `outputTokens` is the turn's shared pool while the engine ran; before it, the session's
-// running total, which no average may take.
-const POOL_PER_RUN_SINCE = 59 // 0.59.0, a minor of the 0.x line
-
-// Whether a record's `outputTokens` may enter the indicative pool average: it is the turn's shared pool (the main loop
-// and every concurrent workflow draw from it), so only a fallback — a run whose `cost` is usable is measured by that,
-// never by the pool — and never a pre-0.59.0 record's session total. A record with no parseable version is kept.
+// Whether a record's `outputTokens` may enter the indicative pool average: the turn's output spend from budget.spent()
+// while the engine ran — a shared pool, the main loop and every concurrent workflow included — so only a fallback: a
+// run whose `cost` is usable is measured by that, never by the pool. Only a record marked `outputTokensScope:
+// 'turn-delta'` holds that growth; one without the marker is an older record holding the session's running total.
 /** @param {RunRec} r @returns {boolean} */
-function poolReading(r) {
-  if (!costProblem(r.cost)) return false
-  const v = /^(\d+)\.(\d+)\./.exec(String(r.craftVersion ?? ''))
-  if (!v) return true
-  return Number(v[1]) > 0 || Number(v[2]) >= POOL_PER_RUN_SINCE
-}
+const poolReading = r => r.outputTokensScope === TURN_DELTA && !!costProblem(r.cost)
 
 // Fold one run's REAL cost into the workflow bucket. `outputTokens` (tallyPool above) is the
 // Workflow budget's shared pool — indicative only; the record's `cost` object carries the run's own spend
@@ -578,8 +570,8 @@ function newBucket() {
     refuteRateN: 0,
     candidates: 0,
     confirmed: 0,
-    // `outputTokens` is the turn's shared token POOL while the engine ran (the main loop and any
-    // concurrent workflow included), NOT this run's output tokens — indicative, and its size is set by run TYPE: a re-review (round > 1) runs
+    // `outputTokens` is the turn's output spend from budget.spent() while the engine ran — a shared pool (the main
+    // loop and any concurrent workflow included), NOT this run's own output — indicative, and its size is set by run TYPE: a re-review (round > 1) runs
     // an extra Adjudicate phase (and periodically a whole-diff re-scan), so its pool is structurally MUCH larger
     // than a first-pass's (round <= 1). Averaging the two under one name is the same anti-pattern
     // the file already guards (refuteTracked/Legacy, thinned/thinnedMeasured): what cannot be told
@@ -917,7 +909,8 @@ export function renderEngineSection(a) {
 // no `round`, and engines other than `review` never stamp it at all, so the analyzer cannot know why
 // a run is round-less and claims nothing. The round-less pool prints on its own N, independent of the
 // other two — so an all-round-less bucket still surfaces its pool with a label rather than as a bare
-// figure. Named a POOL, never "output": `outputTokens` is the turn's shared budget pool, not this run's output tokens.
+// figure. Named a POOL, never "output": `outputTokens` is the turn's output spend from budget.spent() while the engine
+// ran — a shared pool, not this run's own output; the run's real cost is `cost`.
 /** @param {Aggregate['workflows'][number]} w @returns {string} */
 function poolClause(w) {
   let s = ''

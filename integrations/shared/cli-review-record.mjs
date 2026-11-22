@@ -14,6 +14,7 @@
 // `unattributedConfirmed`) as the
 // binary counted them, and what the run cost as the driver observed it (`runtimeStats`, integrations/shared/cli-review-clock.mjs).
 import { makeRunLogger, quietly, telemetryLossNoter } from './run-logging.mjs'
+import { scopedTokens, scopeField } from './run-record.mjs'
 import { telemetryLostSection } from './review-coverage.mjs'
 import { fingerprint, summarizeFindings } from './run-record.mjs'
 import { resumeHint } from './cli-review-verdict.mjs'
@@ -117,10 +118,11 @@ const hostOf = r => r || 'claude-code'
  * the record's. A run a parent engine launched (`_via`, as rust-audit launches its per-crate reviews) is filed nested,
  * naming the parent. Its `runtime` is the host its tasks ran in: `craft review run`'s backend (codex, pi, opencode),
  * else Claude Code, whose engine drives the binary itself.
- * @param {Outcome} o @param {{ craftVersion: string, depth: string, strict: boolean, via: string | null, outputTokens: number | null, runtime?: string }} at
+ * @param {Outcome} o @param {{ craftVersion: string, depth: string, strict: boolean, via: string | null, outputTokens: number | null, outputTokensScope?: string, runtime?: string }} at
+ *   outputTokensScope: what outputTokens counts (`turn-delta`), on the record only when named
  * @returns {Record<string, unknown>}
  */
-export function cliRecord(o, { craftVersion, depth, strict, via, outputTokens, runtime }) {
+export function cliRecord(o, { craftVersion, depth, strict, via, outputTokens, outputTokensScope, runtime }) {
   const findings = o.findings ?? []
   return {
     schemaVersion: 1,
@@ -156,6 +158,7 @@ export function cliRecord(o, { craftVersion, depth, strict, via, outputTokens, r
     strict,
     ...publicationKept(o),
     outputTokens,
+    ...scopeField(outputTokensScope),
   }
 }
 
@@ -240,7 +243,7 @@ export function cliRecorder(sb, { craftVersion, repo: given, run = '', depth, st
   }
   /** @param {Outcome} outcome */
   const file = outcome =>
-    logRun(cliRecord({ ...seen, ...outcome }, { craftVersion, depth, strict, via: via || null, outputTokens: sb.budget?.spent() ?? null }))
+    logRun(cliRecord({ ...seen, ...outcome }, { craftVersion, depth, strict, via: via || null, ...scopedTokens(sb.budget?.spent() ?? null) }))
   // keyTo: the repository the run reviews, when the binary names it (a resumed run, `run=`), over the one given;
   // keyed: whether the record has a repository of its own, given or named.
   return {

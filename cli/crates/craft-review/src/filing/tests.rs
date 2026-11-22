@@ -184,7 +184,7 @@ fn the_finishing_submit_writes_the_last_checkpoint_then_the_record_once() {
             &json!(true),
             &json!("rust-audit"),
             &json!("codex"),
-            &json!(9000),
+            &Value::Null,
             &json!(false),
             &json!("/store/.partial/a")
         ]
@@ -194,6 +194,35 @@ fn the_finishing_submit_writes_the_last_checkpoint_then_the_record_once() {
         None,
         "a filed record is not filed again"
     );
+}
+
+#[test]
+fn a_top_level_run_files_the_hosts_tokens_with_their_scope_and_a_nested_one_none() {
+    let top = Ctx {
+        via: String::new(),
+        ..ctx()
+    };
+    let scoped = Host {
+        output_tokens_scope: Some("turn-delta".into()),
+        ..host(4)
+    };
+    for (c, tokens, scope) in [
+        (top, json!(9000), json!("turn-delta")),
+        (ctx(), Value::Null, Value::Null),
+    ] {
+        let run = tempfile::tempdir().unwrap();
+        let w = Fake::default();
+        open(run.path(), c, "", &pending("verify", 1), &w);
+        submitted(run.path(), &finished(2), &scoped, Vec::new(), &w).unwrap();
+        let req = w.request(2);
+        assert_eq!(
+            (
+                req["outputTokens"].clone(),
+                req["outputTokensScope"].clone()
+            ),
+            (tokens, scope)
+        );
+    }
 }
 
 #[test]

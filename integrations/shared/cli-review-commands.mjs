@@ -3,6 +3,7 @@
 // the binary's own driver, realm @nick/craft, node #499). Each flag only when it differs from the binary's default.
 import { shq } from './plugin-script.mjs'
 import { launchFlags } from './cli-review-keys.mjs'
+import { TURN_DELTA } from './run-record.mjs'
 
 /** @typedef {import('./cli-review-options.mjs').Options} Options */
 /** @typedef {{ bin: string, root: string, recordRoot?: string }} Where  the binary as a shell word; the plugin root its prompts name ('' to let it look above itself); the root the run is filed through when only that was located */
@@ -49,11 +50,12 @@ export function startCommand(o, { bin, root, recordRoot }, version) {
  * `craft review submit`, with a `--degraded` note for each way the step's tasks ran weaker than asked, an
  * `--abandoned` for each task abandoned at its deadline, the usage limit's text when a task ran into it (`--limit`),
  * `--resume` when it resumes a run, the plugin root known now (`--record-root`), then what the binary's telemetry
- * needs and only the driver sees: the task agents dispatched (`--agents`) and the output tokens spent.
+ * needs and only the driver sees: the task agents dispatched (`--agents`) and the output tokens spent, named as the
+ * turn's shared pool grown while this engine ran (`--output-tokens-scope turn-delta`).
  * @param {string} bin @param {string} run @param {Said} said @param {Spent} spent @returns {string}
  */
 export const submitCommand = (bin, run, { degraded = [], limit = '', resume = false, recordRoot = '', abandoned = [] }, { agents, tokens }) =>
-  `${bin} review submit --run ${shq(run)}${degraded.map(n => ` --degraded ${shq(n)}`).join('')}${abandoned.map(id => ` --abandoned ${shq(id)}`).join('')}${limit ? ` --limit ${shq(limit)}` : ''}${resume ? ' --resume' : ''}${recordRoot ? ` --record-root ${shq(recordRoot)}` : ''} --agents ${agents}${tokens === null ? '' : ` --output-tokens ${tokens}`}`
+  `${bin} review submit --run ${shq(run)}${degraded.map(n => ` --degraded ${shq(n)}`).join('')}${abandoned.map(id => ` --abandoned ${shq(id)}`).join('')}${limit ? ` --limit ${shq(limit)}` : ''}${resume ? ' --resume' : ''}${recordRoot ? ` --record-root ${shq(recordRoot)}` : ''} --agents ${agents}${tokens === null ? '' : ` --output-tokens ${tokens} --output-tokens-scope ${TURN_DELTA}`}`
 
 /** `craft review status`: where the run stands. @param {string} bin @param {string} run @returns {string} */
 export const statusCommand = (bin, run) => `${bin} review status --run ${shq(run)}`

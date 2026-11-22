@@ -1,5 +1,6 @@
-// A run's own output tokens, not the session's (integrations/shared/run-budget.mjs): every engine that files
-// `outputTokens` counts from its own start, the session's spend before it left out.
+// `outputTokens` as the turn's shared pool grown while an engine ran (integrations/shared/run-budget.mjs), never the
+// session's spend before it, marked `outputTokensScope: 'turn-delta'`; a nested review files none — an indicative
+// figure, not the run's own cost, which is `cost` from enrich-cost.
 import { afterEach, beforeEach, test } from 'vitest'
 import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
@@ -35,8 +36,10 @@ test('a pool read below its start is null, said once; no sandbox budget is null'
   const own = runBudget({ spent: () => spent }, line => logs.push(line))
   spent = 100
   assert.deepEqual([own.spent(), own.spent()], [null, null])
+  spent = 600
+  assert.equal(own.spent(), 100, 'a later reading above the start is a figure again')
   assert.equal(logs.length, 1)
-  assert.match(String(logs[0]), /below 500 at the run's start: outputTokens is recorded as null/)
+  assert.match(String(logs[0]), /below 500 at the run's start: a reading below it gives no figure \(null\)/)
   assert.equal(runBudget(undefined).spent(), null)
 })
 
@@ -77,7 +80,7 @@ test("review: each submit tells the binary the run's own tokens, not the session
   const before = run.calls.indexOf(/** @type {NonNullable<typeof submit>} */ (submit))
   assert.match(
     String(submit?.prompt),
-    new RegExp(`--output-tokens ${String(before * CALL_SPEND)}$`, 'm'),
+    new RegExp(`--output-tokens ${String(before * CALL_SPEND)} --output-tokens-scope turn-delta$`, 'm'),
     'the calls dispatched before it, nothing of the session before the run',
   )
 })
@@ -131,6 +134,30 @@ for (const [engine, args] of /** @type {Array<[string, Record<string, unknown>]>
 ])) {
   test(`${engine}: a refusal's record spends nothing of the session before it`, async () => {
     const r = await runEngine(engine, { args, budgetSpent: BEFORE })
-    assert.equal(filedRecord(r).outputTokens, 0)
+    const rec = filedRecord(r)
+    assert.deepEqual([rec.outputTokens, rec.outputTokensScope], [0, 'turn-delta'])
   })
 }
+
+/** A review whose start the binary never answers readably, so the engine files the INCOMPLETE record itself. @param {Record<string, unknown>} args */
+const unfinished = args =>
+  runEngine('review', {
+    args: { repo: '/work/repo', base: 'origin/main', craftBin: '/opt/craft', ...args },
+    budgetSpent: BEFORE,
+    script: { 'step:locate': ran('root=/home/u/.claude/plugins/cache/craft/craft/0.40.1\n'), 'step:start': ran('not json') },
+  })
+
+test("review: the record the engine files itself carries the pool's growth and its scope, and none when nested", async () => {
+  const top = filedRecord(await unfinished({}))
+  assert.equal(top.verdict, 'INCOMPLETE')
+  assert.ok(typeof top.outputTokens === 'number' && top.outputTokens < BEFORE, String(top.outputTokens))
+  assert.equal(top.outputTokensScope, 'turn-delta')
+  const nested = filedRecord(await unfinished({ _via: 'rust-audit' }))
+  assert.deepEqual([nested.verdict, nested.outputTokens, 'outputTokensScope' in nested], ['INCOMPLETE', null, false])
+})
+
+test("review: a nested review's refusal files no tokens", async () => {
+  const r = await runEngine('review', { args: { bogus: true, _via: 'rust-audit' }, budgetSpent: BEFORE })
+  const rec = filedRecord(r)
+  assert.deepEqual([rec.verdict, rec.outputTokens, 'outputTokensScope' in rec], ['INCOMPLETE (argument refused)', null, false])
+})

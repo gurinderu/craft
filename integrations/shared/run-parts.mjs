@@ -6,7 +6,7 @@
 // sum of every Workflow run's share once (by the cost's `source` and slice; a repeated share is the latest part's) and
 // how many shares carry no usable cost as `partsUnmeasured`, which with a share's own `skipped` makes the run's cost
 // partial (run-record.mjs, costProblem), never averaged in as whole. `outputTokens` is never summed: it is the turn's
-// shared pool while a part ran, indicative only (on a record before craft 0.59.0, the session's running total), so the
+// shared pool while a part ran, indicative only (on a record without `outputTokensScope: 'turn-delta'`, the session's running total), so the
 // standing record keeps its own. The fold runs before
 // any version or engine slice: the run is counted under its standing record's version, and a slice of the stopped
 // part's version says it folded. A record that names no run directory, filed before records named it, folds on

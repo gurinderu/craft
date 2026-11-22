@@ -11,6 +11,8 @@ pub struct Host {
     /// The task agents it has dispatched so far, and the output tokens its run has spent.
     pub agents: Option<u64>,
     pub output_tokens: Option<u64>,
+    /// What `output_tokens` counts (`turn-delta`), kept with it.
+    pub output_tokens_scope: Option<String>,
     /// It resumes the run (`--resume`): a new segment, filed apart, as a new host run files its own.
     pub resume: bool,
     pub session: String,

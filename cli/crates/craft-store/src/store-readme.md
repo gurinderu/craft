@@ -29,8 +29,9 @@ several a run filed) is folded in AFTER the run by
 from the run's agent-*.jsonl transcripts (cacheRead is ~99% of it); absent until a run is enriched. It is
 the run's real cost. `outputTokens` above is only indicative: the turn's output spend while this engine
 ran, read off the Workflow budget — a shared pool, which includes the main loop and any workflow running at
-the same time; null on a nested run (its parent's covers it). Never sum it across records. A record before
-craft 0.59.0 holds the session's running total there instead. A cost without `rule: "per-message"`
+the same time; null on a nested run (its parent's covers it). Never sum it across records. Such a record
+says so with `outputTokensScope: "turn-delta"`; a record without that marker holds the session's running
+total there instead. A cost without `rule: "per-message"`
 was summed per transcript line and overstates the run ~1.8x: re-run enrich-cost on it while its transcripts exist.
 
     jq -s 'group_by(.name)[]|{name:.[0].name,runs:length}' index.jsonl

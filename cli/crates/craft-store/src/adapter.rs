@@ -212,6 +212,7 @@ fn record_inner(req: &Obj, env: &Env) -> Result<Obj, Utf16Error> {
         strict: req.get("strict") == Some(&Js::Bool(true)),
         via: (!via.is_empty()).then_some(via),
         output_tokens: req.get("outputTokens").and_then(Js::as_num),
+        output_tokens_scope: req.text("outputTokensScope")?,
         runtime: req.text("runtime")?,
     };
     let retry = req.get("retry") == Some(&Js::Bool(true));

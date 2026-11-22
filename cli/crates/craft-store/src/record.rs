@@ -239,6 +239,9 @@ pub fn index_projection(r: &Obj) -> Obj {
         as_is(&mut o, k);
     }
     or_null(&mut o, "outputTokens");
+    if let Some(s) = r.get("outputTokensScope").filter(|s| **s != Js::Null) {
+        o.set("outputTokensScope", s.clone());
+    }
     if let Some(d) = r.get("driver").filter(|d| **d != Js::Null) {
         o.set("driver", d.clone());
     }
