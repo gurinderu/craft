@@ -3,7 +3,7 @@
 
 use super::{discover, put};
 use serde_json::json;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 /// About 1 MiB of a values file: many plain keys, one image the walk should find.
 fn large_values() -> String {
@@ -22,9 +22,14 @@ fn a_one_mib_manifest_is_discovered_under_the_engine_budgets() {
     put(root.path(), "values.yaml", large_values());
     let started = Instant::now();
     let got = discover(root.path(), Some(&["values.yaml"]), json!([]));
-    // Well inside the 2 s floor of its budget: the patterns are linear over ordinary lines.
+    // Nothing unread is the proof: past the engine's budget for 1 MiB (the 2 s floor plus a second
+    // per 64 KiB, about 18 s) the manifest would be unread. The wall clock only catches a call
+    // drifting toward that budget, before it starts failing as unread: 15 s leaves the engine its
+    // margin and sits far above any host's time (a debug build: about 1 s alone, 2 s under the
+    // parallel suite here), so it measures the patterns, not the machine. A tighter bound would
+    // need a measurement on CI's runners, which no one has taken.
     assert!(
-        started.elapsed() < super::super::pattern::CALL_BUDGET,
+        started.elapsed() < Duration::from_secs(15),
         "{:?}",
         started.elapsed()
     );

@@ -24,6 +24,7 @@ const REVIEW_1 = {
   verdict: 'Warning',
   verification: { candidates: 5, confirmed: 2, refuteRate: 0.6 },
   outputTokens: 1000,
+  outputTokensScope: 'turn-delta',
   notRun: ['rust lens safety'],
   dimensions: [
     { dimension: 'rust:safety', findingCount: 1, bySeverity: { Critical: 0, High: 0, Medium: 1, Low: 0, Info: 0 } },
@@ -36,6 +37,7 @@ const REVIEW_2 = {
   verdict: 'Approve (INCOMPLETE)',
   verification: { candidates: 0, confirmed: 0, refuteRate: 0 },
   outputTokens: 500,
+  outputTokensScope: 'turn-delta',
   notRun: ['rust lens safety', 'rust completeness-critic'],
   dimensions: [{ dimension: 'rust:safety', findingCount: 0, bySeverity: {} }],
 }
@@ -45,6 +47,7 @@ const AUDIT = {
   verdict: 'Block',
   verification: { candidates: 3, confirmed: 1, refuteRate: 0.67 },
   outputTokens: 2000,
+  outputTokensScope: 'turn-delta',
   notRun: [],
   dimensions: [{ dimension: 'security', findingCount: 2, bySeverity: { Critical: 1, High: 1, Medium: 0, Low: 0, Info: 0 } }],
 }
@@ -141,8 +144,8 @@ test('aggregate tallies runs, verdicts and INCOMPLETE', () => {
   assert.equal(audit.avgRefuteRate, 0.67)
 })
 
-// `outputTokens` is NOT output tokens — it is budget.spent(), the whole-run token POOL (input +
-// output + parent-driver + cache). Its size is set by run TYPE: a re-review (round > 1) runs an
+// `outputTokens` is NOT this run's output tokens — it is the turn's output spend from budget.spent() while the engine ran
+// (the main loop and any concurrent workflow included), indicative only. Its size is set by run TYPE: a re-review (round > 1) runs an
 // extra Adjudicate phase and a whole-diff re-scan, so its pool is structurally MUCH larger than a
 // first-pass's (round 1). Blending them into one average is the same anti-pattern the file already
 // guards for refuteTracked/legacy and thinned/thinnedMeasured — what cannot be told apart is not
@@ -150,7 +153,16 @@ test('aggregate tallies runs, verdicts and INCOMPLETE', () => {
 // each named as a POOL, never "output".
 test('run-token pool is split by run type (first-pass vs re-review), never blended into one average', () => {
   /** @param {number} round @param {number} outputTokens */
-  const mk = (round, outputTokens) => ({ schemaVersion: 1, name: 'review', verdict: 'Warning', notRun: [], dimensions: [], round, outputTokens })
+  const mk = (round, outputTokens) => ({
+    schemaVersion: 1,
+    name: 'review',
+    verdict: 'Warning',
+    notRun: [],
+    dimensions: [],
+    round,
+    outputTokens,
+    outputTokensScope: 'turn-delta',
+  })
   // Two first-pass runs (round 1) at a small pool; one re-review (round 2) at a structurally larger one.
   const a = aggregate([mk(1, 1000), mk(1, 2000), mk(2, 9000)])
   const review = defined(a.workflows.find(w => w.name === 'review'))
@@ -173,7 +185,15 @@ test('run-token pool is split by run type (first-pass vs re-review), never blend
 // bucket is its own thing — a single plain pool, no run-type label.
 test('a workflow that never stamps round reports a single plain pool — no phantom first-pass/re-review split', () => {
   /** @param {number} outputTokens */
-  const mk = outputTokens => ({ schemaVersion: 1, name: 'rust-audit', verdict: 'Approve', notRun: [], dimensions: [], outputTokens })
+  const mk = outputTokens => ({
+    schemaVersion: 1,
+    name: 'rust-audit',
+    verdict: 'Approve',
+    notRun: [],
+    dimensions: [],
+    outputTokens,
+    outputTokensScope: 'turn-delta',
+  })
   const a = aggregate([mk(3000), mk(5000)])
   const audit = defined(a.workflows.find(w => w.name === 'rust-audit'))
   assert.equal(audit.avgRunTokenPoolFirstPass, null, 'round-less runs are NOT first-pass')
@@ -196,9 +216,26 @@ test('a workflow that never stamps round reports a single plain pool — no phan
 // absent.
 test('a review workflow mixing round>1, round==1 and round-absent splits the pools and counts the round-less runs apart', () => {
   /** @param {number} round @param {number} outputTokens */
-  const mk = (round, outputTokens) => ({ schemaVersion: 1, name: 'review', verdict: 'Warning', notRun: [], dimensions: [], round, outputTokens })
+  const mk = (round, outputTokens) => ({
+    schemaVersion: 1,
+    name: 'review',
+    verdict: 'Warning',
+    notRun: [],
+    dimensions: [],
+    round,
+    outputTokens,
+    outputTokensScope: 'turn-delta',
+  })
   /** @param {number} outputTokens */
-  const noRound = outputTokens => ({ schemaVersion: 1, name: 'review', verdict: 'Warning', notRun: [], dimensions: [], outputTokens })
+  const noRound = outputTokens => ({
+    schemaVersion: 1,
+    name: 'review',
+    verdict: 'Warning',
+    notRun: [],
+    dimensions: [],
+    outputTokens,
+    outputTokensScope: 'turn-delta',
+  })
   const a = aggregate([mk(1, 1000), mk(1, 2000), mk(2, 9000), noRound(8000)])
   const review = defined(a.workflows.find(w => w.name === 'review'))
   assert.equal(review.avgRunTokenPoolFirstPass, 1500, 'first-pass averages only the round==1 runs, not the round-less one')
@@ -238,9 +275,26 @@ test('an all-round-less review bucket renders its pool labelled (round not recor
 // historical record. The label names the observable property (no round recorded), never a cause.
 test('the rendered pool clause never asserts a cause for a round-less run', () => {
   /** @param {number} round @param {number} outputTokens */
-  const mk = (round, outputTokens) => ({ schemaVersion: 1, name: 'review', verdict: 'Warning', notRun: [], dimensions: [], round, outputTokens })
+  const mk = (round, outputTokens) => ({
+    schemaVersion: 1,
+    name: 'review',
+    verdict: 'Warning',
+    notRun: [],
+    dimensions: [],
+    round,
+    outputTokens,
+    outputTokensScope: 'turn-delta',
+  })
   /** @param {number} outputTokens */
-  const noRound = outputTokens => ({ schemaVersion: 1, name: 'review', verdict: 'Warning', notRun: [], dimensions: [], outputTokens })
+  const noRound = outputTokens => ({
+    schemaVersion: 1,
+    name: 'review',
+    verdict: 'Warning',
+    notRun: [],
+    dimensions: [],
+    outputTokens,
+    outputTokensScope: 'turn-delta',
+  })
   const out = renderReport(aggregate([mk(1, 1000), mk(2, 9000), noRound(8000)]))
   assert.ok(!/predate/.test(out), 'no rendered clause claims a round-less run "predates" anything')
 })
@@ -1369,7 +1423,8 @@ test('a run with no craftVersion takes part in no version collision', () => {
 })
 
 test('the token pools: no pool without outputTokens, a non-numeric round is unclassified, each pool is a mean', () => {
-  const w = wfOf([run(), run({ outputTokens: 50, round: '3' }), run({ outputTokens: 1000, round: 2 }), run({ outputTokens: 3000, round: 3 })])
+  const d = { outputTokensScope: 'turn-delta' }
+  const w = wfOf([run(), run({ ...d, outputTokens: 50, round: '3' }), run({ ...d, outputTokens: 1000, round: 2 }), run({ ...d, outputTokens: 3000, round: 3 })])
   assert.equal(w.poolUnclassifiedN, 1)
   assert.equal(w.avgRunTokenPoolUnclassified, 50)
   assert.equal(w.avgRunTokenPoolReReview, 2000)
@@ -1509,8 +1564,8 @@ test('workflow line: a bare run says only that thinning was not measured', () =>
 test('workflow line: a mixed refute basis, thinning measured on part of the runs, pools and cost', () => {
   const cost = { cacheRead: 100, cacheWrite: 20, input: 30, output: 50, total: 200, agents: 1, source: 'a', rule: 'per-message' }
   const line = workflowLineOf([
-    run({ verdict: 'Block', round: 1, outputTokens: 100, verification: { refuteRate: 0.5, unverified: 0, thinned: 2 }, cost }),
-    run({ verdict: 'Approve (INCOMPLETE)', round: 2, outputTokens: 300, verification: { refuteRate: 0.1 } }),
+    run({ verdict: 'Block', round: 1, outputTokens: 100, outputTokensScope: 'turn-delta', verification: { refuteRate: 0.5, unverified: 0, thinned: 2 }, cost }),
+    run({ verdict: 'Approve (INCOMPLETE)', round: 2, outputTokens: 300, outputTokensScope: 'turn-delta', verification: { refuteRate: 0.1 } }),
   ])
   inOrder(
     line,
@@ -1522,7 +1577,6 @@ test('workflow line: a mixed refute basis, thinning measured on part of the runs
     /refute basis MIXED/,
     /\b2 verdict\(s\) on a THINNED panel across 1 run\(s\)/,
     /thinning measured on 1\/2 run\(s\)/,
-    /~100 tok-pool\/run \(first-pass\)/,
     /~300 tok-pool\/run \(re-review\)/,
     /~100 cache-read tok\/run/,
     /~200 tok\/run total/,
@@ -1532,10 +1586,39 @@ test('workflow line: a mixed refute basis, thinning measured on part of the runs
     /\b1 usable enriched run\(s\)/,
   )
   assert.doesNotMatch(line, /LEGACY|none thinned|NOT MEASURED/)
+  assert.doesNotMatch(line, /first-pass/, 'the enriched run is measured by its cost, not the shared pool')
+})
+
+test('the indicative pool takes only an unenriched run marked turn-delta: no marker is an old session total', () => {
+  const cost = { cacheRead: 100, cacheWrite: 20, input: 30, output: 50, total: 200, agents: 1, source: 'a', rule: 'per-message' }
+  const delta = { outputTokensScope: 'turn-delta' }
+  /** @param {number} outputTokens @param {Record<string, unknown>} [over] */
+  const mk = (outputTokens, over = {}) => ({
+    schemaVersion: 1,
+    name: 'review',
+    verdict: 'Warning',
+    notRun: [],
+    dimensions: [],
+    round: 1,
+    outputTokens,
+    ...over,
+  })
+  const a = aggregate([
+    mk(9_728_497, { craftVersion: '0.59.0' }),
+    mk(9_807_607),
+    mk(5_000_000, { ...delta, cost }),
+    mk(100, delta),
+    mk(300, { ...delta, craftVersion: '0.58.0' }),
+  ])
+  const review = defined(a.workflows.find(w => w.name === 'review'))
+  assert.equal(review.avgRunTokenPoolFirstPass, 200, 'neither an unmarked record, versioned or not, nor an enriched one')
 })
 
 test('workflow line: a legacy refute basis, and thinning measured on part of the runs with none thinned', () => {
-  const line = workflowLineOf([run({ verification: { refuteRate: 0.2, thinned: 0 } }), run({ verdict: 'Warning', outputTokens: 7 })])
+  const line = workflowLineOf([
+    run({ verification: { refuteRate: 0.2, thinned: 0 } }),
+    run({ verdict: 'Warning', outputTokens: 7, outputTokensScope: 'turn-delta' }),
+  ])
   inOrder(
     line,
     /^- review: 2 run\(s\)/,

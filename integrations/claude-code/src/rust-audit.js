@@ -1,8 +1,9 @@
 import { normalizeArgs } from '../../shared/workflow-args.mjs'
+import { runBudget } from '../../shared/run-budget.mjs'
 import { parsePriorDecisions } from '../../shared/prior-decisions.mjs'
 import { forwardedDegraded, launcherDegradedNote, memoryDegradedNotes } from '../../shared/recall-degraded.mjs'
 import { MEMORY_RECALL_SCHEMA, recallText, memoryRecord, initialMemory, withPassed, withDerived, withDerivedIds, mergeAndRead, memorySection, recallDecisions } from '../../shared/memory-recall.mjs'
-import { summarizeFindings, worstVerdict, repoRefusal } from '../../shared/run-record.mjs'
+import { summarizeFindings, worstVerdict, repoRefusal, scopedTokens } from '../../shared/run-record.mjs'
 import { wrapVerdict, tallyVerification, unusedCratesResult, unusedEvidence } from '../../shared/audit-verification.mjs'
 import { GREEN_VERDICT, demoteUnsupportedGreen } from '../../shared/audit-evidence.mjs'
 import { quietly, makeRunLogger, telemetryLossNoter } from '../../shared/run-logging.mjs'
@@ -30,6 +31,8 @@ export const meta = {
 }
 
 export async function __run() {
+// The turn's shared pool as it grows while this engine runs, read before anything is dispatched (integrations/shared/run-budget.mjs).
+const pool = runBudget(budget, log)
 // Optional args: {base: "origin/main"} fixes the diff base; {mutants: true} opts into the slow
 // mutation-testing pass in the tests-cov dimension.
 // ---- args ----
@@ -378,7 +381,7 @@ const agentRecord = () => agentUnavailableRecord(
 // all — and `notRun` fragility ranking, which is the one place a repeated wrong dispatch would show
 // up, never saw it. This is still before the first phase, so nothing has run when it refuses.
 if (A['repo']) {
-  const refused = repoRefusal({ engine: 'rust-audit', repo: String(A['repo']), craftVersion: CRAFT_VERSION, outputTokens: budget.spent() })
+  const refused = repoRefusal({ engine: 'rust-audit', repo: String(A['repo']), craftVersion: CRAFT_VERSION, outputTokens: pool.spent() })
   await logRun(refused.record)
   return refused.report
 }
@@ -942,7 +945,7 @@ const auditRecord = {
   // dispatches that came back empty and went generic, the nested reviews' included — realm
   // @nick/craft #116, #151, #153.
   ...agentRecord(),
-  outputTokens: budget.spent(),
+  ...scopedTokens(pool.spent()),
 }
 await logRun(auditRecord)
 
