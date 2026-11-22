@@ -84,6 +84,7 @@ pub fn opts(repo: &Path, run: &Path) -> StartOptions {
         strict: false,
         prior_decisions: None,
         recall: false,
+        recall_degraded: None,
         sources: None,
         gate: None,
         gate_from: None,

@@ -132,7 +132,7 @@ fn a_follow_up_finding_the_pool_holds_is_not_new_and_a_dead_lens_is_a_gap() {
         lens("b", "concurrency", None),
         lens("c", "complexity", None),
     ];
-    run.tasks[1].consumers = vec!["src/x.rs:9".into()];
+    run.tasks[1].marks.consumers = vec!["src/x.rs:9".into()];
     let fresh = fresh(&mut run, &[Profile::rust().unwrap()]);
     assert_eq!(fresh.len(), 1);
     assert_eq!(

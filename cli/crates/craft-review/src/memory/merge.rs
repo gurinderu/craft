@@ -58,14 +58,13 @@ fn accepted(m: MemorySource, applied: &[&PriorDecision]) -> MemorySource {
     }
     let of = |k| applied.iter().filter(|d| d.kind == k).count();
     let (q, r) = (of(super::RecordKind::Question), of(super::RecordKind::Rule));
-    let mut out = MemorySource {
+    MemorySource {
         count: applied.len(),
-        ..MemorySource::none(m.why)
-    };
-    out.source = m.source;
-    out.backend = m.backend;
-    out.externals = m.externals;
-    out.with_kinds(q, r, 0)
+        questions: None,
+        rules: None,
+        ..m
+    }
+    .with_kinds(q, r, 0)
 }
 
 /// The passed records a well-formed recalled record does not already hold (`mergeById`).

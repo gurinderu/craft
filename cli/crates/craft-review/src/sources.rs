@@ -96,7 +96,7 @@ pub fn cache_root(set: Option<&str>, home: Option<&Path>) -> Result<PathBuf, Str
 }
 
 /// An error with each of its sources, one line.
-fn chain(e: &dyn std::error::Error) -> String {
+pub(crate) fn chain(e: &dyn std::error::Error) -> String {
     let mut s = e.to_string();
     let mut at = e.source();
     while let Some(c) = at {

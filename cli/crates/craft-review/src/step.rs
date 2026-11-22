@@ -19,7 +19,7 @@ use crate::prompts::{PromptContext, ReScope, SPEC_MAX};
 use crate::publish::{self, PostSetup, Publish};
 use crate::rereview;
 use crate::rounds::Rounds;
-use crate::state::{self, Phase, RunState, STATE_VERSION, TaskState, Track};
+use crate::state::{self, Phase, RunState, STATE_VERSION, Track};
 use crate::stop;
 use crate::units;
 
@@ -28,7 +28,9 @@ mod open;
 mod options;
 mod prepare;
 
-use answers::{Hold, abandon, move_on, take_answer};
+use answers::move_on;
+use craft_step::take;
+use craft_step::{Aside, Hold};
 use open::{open_dir, pr_worktree, read_change, refuse_delta_over_branch};
 pub use options::StartOptions;
 use prepare::{choose_extra, choose_units, prepare, scouts};
@@ -165,7 +167,7 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
         verdict: None,
         exit: None,
         chain,
-        memory: Memory::open(opts.prior_decisions.clone()).recalling(opts.recall),
+        memory: opts.memory(),
         gate: gate::Gate::default(),
         critic: crate::critic::Critic::default(),
         extra: extra::Extra::default(),
@@ -222,7 +224,7 @@ fn first_step(dir: &Path, run: &mut RunState) -> Result<Value, Error> {
     if run.tasks.is_empty() {
         settle_memory(dir, run)?;
     }
-    save_and_next(dir, run, &Said::default())
+    save_and_next(dir, run, &Said::default(), Aside::default())
 }
 
 /// Takes the answers to the pending tasks of the run in `dir` and hands out what comes next. The
@@ -302,76 +304,124 @@ pub fn submit_with(
         }
         run.stopped = None;
         if given.is_none() {
-            return save_and_next(dir, &mut run, said);
+            return save_and_next(dir, &mut run, said, Aside::default());
         }
     }
-    for note in said
-        .degraded
-        .iter()
-        .map(|n| n.trim())
-        .filter(|n| !n.is_empty())
-    {
-        if !run.degraded.iter().any(|d| d == note) {
-            run.degraded.push(note.to_owned());
-        }
-    }
-    let pending = |id: &str| {
-        run.tasks
-            .iter()
-            .any(|t| t.id == id && t.state == TaskState::Pending)
-    };
-    if let Some(id) = given.and_then(|g| g.keys().find(|id| !pending(id))) {
+    take::note(&mut run.degraded, said.degraded);
+    if let Some(id) = take::unknown(&run.tasks, given) {
         return Err(StepError::UnknownTask(id.clone()).into());
     }
-    abandon(dir, &mut run, said.abandoned)?;
+    // The refused answer files are moved aside only once the state saying why is saved.
+    let mut aside = Aside::default();
+    take::abandon(dir, &mut run.tasks, said.abandoned, &mut aside)?;
     stop::open(&mut run);
-    let hold = match (said.limit, said.resume) {
-        (Some(_), _) => Hold::Every,
-        (None, true) => Hold::Missing,
-        (None, false) => Hold::Nothing,
-    };
-    for task in run
-        .tasks
-        .iter_mut()
-        .filter(|t| t.state == TaskState::Pending)
-    {
-        let live = take_answer(dir, task, given, hold)?;
-        run.watch.live |= live;
-    }
+    let hold = Hold::of(said.limit.is_some(), said.resume);
+    run.watch.live |= take::take_pending(dir, &mut run.tasks, given, hold, &mut aside)?;
     move_on(dir, &mut run, said)?;
-    save_and_next(dir, &mut run, said)
+    save_and_next(dir, &mut run, said, aside)
 }
 
 /// Posts a run that finished on its PR when it was asked to, writes the pending tasks and the
-/// state, and says what comes next: the stop, when the run stopped.
-fn save_and_next(dir: &Path, run: &mut RunState, said: &Said<'_>) -> Result<Value, Error> {
+/// state, then moves the answers this submit refused aside (`aside`), and says what comes next:
+/// the stop, when the run stopped.
+fn save_and_next(
+    dir: &Path,
+    run: &mut RunState,
+    said: &Said<'_>,
+    aside: Aside,
+) -> Result<Value, Error> {
+    save_and_next_with(dir, run, said, aside, &state::save)
+}
+
+/// The state's writer of a step.
+type Save<'a> = &'a dyn Fn(&Path, &RunState) -> Result<(), state::StateError>;
+
+/// [`save_and_next`], the state written by `save`.
+fn save_and_next_with(
+    dir: &Path,
+    run: &mut RunState,
+    said: &Said<'_>,
+    aside: Aside,
+    save: Save<'_>,
+) -> Result<Value, Error> {
     let setup = said.post.cloned().unwrap_or_default();
     publish::deliver(dir, run, &setup)?;
     handoff::write_pending(dir, run)?;
-    state::save(dir, run)?;
+    save(dir, run)?;
+    set_aside(dir, run, aside, save)?;
     if run.stopped.is_some() {
         return stop::step(dir, run);
     }
-    Ok(next(dir, run))
+    next(dir, run)
+}
+
+/// Moves the refused answers aside once the state counting their refusal is saved. One that cannot
+/// be moved stays where its agent wrote it, and the run notes it, saved again with `save`.
+///
+/// # Errors
+/// When that second save fails while the run goes on with a pending task's file left in place:
+/// the submit fails loudly. A file left there that the first save's `Task::counted` names is
+/// known by its print when read again: set aside uncounted the first time; found there once more,
+/// counted as a missing answer after a round that ran, held uncounted by a resume or the host's
+/// limit. A file read with no print (unreadable) is not known, and its next read is taken as a new
+/// answer. Once the run is done or stopped, or only settled tasks' files stay, the note is
+/// information alone: a failed save of it is let go, so the finished or stopped step is still
+/// returned and filed.
+fn set_aside(dir: &Path, run: &mut RunState, aside: Aside, save: Save<'_>) -> Result<(), Error> {
+    let unmoved = aside.apply();
+    if unmoved.is_empty() {
+        return Ok(());
+    }
+    let notes: Vec<String> = unmoved.iter().map(|u| unmoved_note(run, u)).collect();
+    let goes_on = run.stopped.is_none() && unmoved.iter().any(|u| pending(run, &u.id).is_some());
+    take::note(&mut run.notes, &notes);
+    match save(dir, run) {
+        Err(e) if goes_on => Err(e.into()),
+        Ok(()) | Err(_) => Ok(()),
+    }
+}
+
+/// The task `id` while the run still waits for its answer.
+fn pending<'a>(run: &'a RunState, id: &str) -> Option<&'a state::Task> {
+    run.tasks
+        .iter()
+        .find(|t| t.id == id)
+        .filter(|t| run.phase != Phase::Done && t.pending())
+}
+
+/// The run's note on a refused answer file `u` left in place, saying what its next read does.
+fn unmoved_note(run: &RunState, u: &craft_step::Unmoved) -> String {
+    let then = match pending(run, &u.id) {
+        None => "its task is settled, so it stays there",
+        Some(_) if !u.known => "read again, it is taken as a new answer",
+        Some(t) if t.counted.as_ref().is_some_and(|c| c.again) => {
+            "found there again after a round that ran, it counts as a missing answer"
+        }
+        Some(_) => {
+            "read again, it is set aside uncounted, and found there once more after a round that ran it counts as a missing answer"
+        }
+    };
+    format!("{}: left in place; {then}", crate::sources::chain(&u.error))
 }
 
 /// What the host is to do next: the pending tasks, or the finished run's report, verdict and what
 /// its run record carries (`finished`). Each names the head the run read, for the host's start
 /// checkpoint.
-fn next(dir: &Path, run: &RunState) -> Value {
+fn next(dir: &Path, run: &RunState) -> Result<Value, Error> {
     match &run.verdict {
-        Some(v) if run.phase == Phase::Done => finished::step(dir, run, v),
+        Some(v) if run.phase == Phase::Done => Ok(finished::step(dir, run, v)),
         Some(_) | None => {
-            let tasks: Vec<Value> = run
-                .tasks
-                .iter()
-                .filter(|t| t.state == TaskState::Pending)
-                .map(|t| handoff::wire(dir, t))
-                .collect();
-            let mut step = json!({"run": dir.display().to_string(), "tasks": tasks, "done": false, "repo": run.context.repo, "phase": run.phase});
+            let mut step = craft_step::wire::pending_step(dir, &run.tasks)?;
+            if let Some(obj) = step.as_object_mut() {
+                obj.insert("repo".into(), json!(run.context.repo));
+                obj.insert("phase".into(), json!(run.phase));
+            }
             finished::name_chain(&mut step, run);
             finished::name_worktree(&mut step, run);
-            step
+            Ok(step)
         }
     }
 }
+
+#[cfg(test)]
+mod aside_tests;

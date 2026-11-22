@@ -1,10 +1,12 @@
 import { normalizeArgs, unknownOptionsRefusal, UNKNOWN_OPTION_CLASS } from '../../shared/workflow-args.mjs'
+import { runBudget } from '../../shared/run-budget.mjs'
 import { readRepoArg, repoDirective, REPO_REFUSED_CLASS } from '../../shared/repo-arg.mjs'
 import { summarizeFindings, tallyVerdicts, argumentRefusal } from '../../shared/run-record.mjs'
 import { quietly, makeRunLogger, telemetryLossNoter } from '../../shared/run-logging.mjs'
 import { DEPENDENCY_SOURCE_HOW } from '../../shared/dependency-source.mjs'
 import { telemetryLostSection } from '../../shared/review-coverage.mjs'
 import { parsePriorDecisions } from '../../shared/prior-decisions.mjs'
+import { memoryDegradedNotes } from '../../shared/recall-degraded.mjs'
 import { MEMORY_RECALL_SCHEMA, memoryRecord, mergeRecall, readLaunch, memoryLine, recallDecisions } from '../../shared/memory-recall.mjs'
 import { MATCH_JUDGE_SCHEMA } from '../../shared/prior-decision-match.mjs'
 import { SCOPE_CHECK_SCHEMA, scopeCheckPrompt } from '../../shared/prior-decision-scope.mjs'
@@ -25,6 +27,8 @@ export const meta = {
 }
 
 export async function __run() {
+// The turn's shared pool as it grows while this engine runs, read before anything is dispatched (integrations/shared/run-budget.mjs).
+const pool = runBudget(budget, log)
 // Locator args (not payload): pr (GitHub PR number), report (path to a report file from any review engine
 // or a saved verdict), base (ref to pin validation against), prBase (the commit the PR forks from — the merge-base
 // of trunk and the reviewed head — where "not this PR's" must be shown, realm @nick/craft, node #309), priorLedger (array of prior {stable_id, verdict,
@@ -153,7 +157,7 @@ const PLAN_SCHEMA = {
 /** @typedef {{ stable_id: string, verdict: string, reason: string, sifted?: boolean, action?: string, repeat_of?: string }} LedgerEntry */
 /** @typedef {{ plan_markdown: string, ledger: LedgerEntry[], summary: string }} PlanResult */
 // What this script adds to the plan before returning it — not part of PLAN_SCHEMA.
-/** @typedef {PlanResult & { notRun?: string[], telemetryLost?: string[], issues?: Array<{ stable_id: string, title: string, body: string }>, memory?: string, priorDecisionsNotApplied?: string[], ruleNotices?: string[] }} TriagePlan */
+/** @typedef {PlanResult & { notRun?: string[], telemetryLost?: string[], issues?: Array<{ stable_id: string, title: string, body: string }>, memory?: string, memoryDegraded?: string[], priorDecisionsNotApplied?: string[], ruleNotices?: string[] }} TriagePlan */
 
 // The craft release that produced a run. Recorded on the run record and index line so an
 // aggregate can be filtered to ONE engine version: without it, runs from every rubric the store
@@ -185,7 +189,7 @@ async function refuseArgument() {
   // Every refusal at once, so a caller fixing one does not meet the next on the re-launch.
   const both = [[unknownRefused, UNKNOWN_OPTION_CLASS], [repoRefused, REPO_REFUSED_CLASS]].filter(([why]) => why)
   if (!both.length) return ''
-  const refused = argumentRefusal({ engine: 'triage-findings', why: both.map(([why]) => why).join(' '), notRun: both.map(([, cls]) => String(cls)), craftVersion: CRAFT_VERSION, outputTokens: budget.spent() })
+  const refused = argumentRefusal({ engine: 'triage-findings', why: both.map(([why]) => why).join(' '), notRun: both.map(([, cls]) => String(cls)), craftVersion: CRAFT_VERSION, outputTokens: pool.spent() })
   await logRun(refused.record)
   return refused.report
 }
@@ -505,8 +509,18 @@ await logRun({
 
 if (!plan) return `${telemetryLostSection(telemetryLost)}Triage failed: the Plan-phase agent returned no result. Re-run, or triage the findings manually.`
 
+/** A recall that may not have read the store leads the plan: its sift ran without the project's records. @param {TriagePlan} planIn */
+function memoryBanner(planIn) {
+  const notes = memoryDegradedNotes(memory)
+  if (!notes.length) return
+  planIn.memoryDegraded = notes
+  planIn.plan_markdown = `${["> **MEMORY DEGRADED** — the sift may have run without some or all of the project's records:", ...notes.map(l => `> - ${l}`), ''].join('\n')}\n${planIn.plan_markdown ?? ''}`
+}
+
 /** The plan as its reader gets it: led by what did not run and by a write that did not land. @param {TriagePlan} planIn @returns {TriagePlan} */
 function bannered(planIn) {
+  // Prepended first, so the INCOMPLETE and lost-record banners below stay above it.
+  memoryBanner(planIn)
   // What did not run has to reach the READER of the plan, not just the run record. A dead `gather:pr`
   // agent means the plan covers fewer sources than were asked for, and a plan that says nothing about
   // it is indistinguishable from one that covered everything.

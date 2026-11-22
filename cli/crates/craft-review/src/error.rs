@@ -1,8 +1,9 @@
 //! The crate's error: what any step of a run can fail with, each module's own error kept whole.
 
+use craft_step::HandoffError;
+
 use crate::content::ContentError;
 use crate::git::GitError;
-use crate::handoff::HandoffError;
 use crate::publish::CommentError;
 use crate::state::StateError;
 use crate::step::StepError;

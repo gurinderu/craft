@@ -59,6 +59,12 @@ pub struct StartArgs {
     /// apply (a launcher that recalled them itself).
     #[arg(long)]
     pub no_recall: bool,
+    /// Why the launcher's recall may not have read the whole store (its backend query failed, its
+    /// answer was truncated, its agent gave none): the run names it and reads as degraded. Only
+    /// as `--recall-degraded=<text>`, so a text that starts with `-` is never read as a flag, nor
+    /// the next flag as its text; a blank text is refused.
+    #[arg(long, requires = "no_recall", require_equals = true, value_parser = recall_note)]
+    pub recall_degraded: Option<String>,
     /// Run no mechanical gate: clippy and `nix flake check` build the branch's code (build scripts,
     /// proc macros, flake checks and a flake dev shell's `shellHook` run as you), so skip them for a branch you do not trust; the report
     /// names the gate as skipped.
@@ -166,9 +172,16 @@ pub struct SubmitArgs {
     /// For the run's telemetry (`start --record`): the task agents the host has dispatched so far.
     #[arg(long)]
     pub agents: Option<u64>,
-    /// For the run's telemetry: the output tokens the host's run has spent so far.
+    /// For the run's telemetry: the output tokens the host reports — with `--output-tokens-scope
+    /// turn-delta`, the turn's shared pool grown while its engine ran; without it, an older host's
+    /// session total.
     #[arg(long)]
     pub output_tokens: Option<u64>,
+    /// What `--output-tokens` counts, stamped on the record as `outputTokensScope`: `turn-delta`,
+    /// the turn's shared pool grown while the host's engine ran. Without it the record carries no
+    /// scope, as an older host's session total does.
+    #[arg(long, value_parser = ["turn-delta"], requires = "output_tokens")]
+    pub output_tokens_scope: Option<String>,
     /// The craft plugin root the run's records are stamped with, for a run whose telemetry knows
     /// none (started with none known, or its own uninstalled): kept from now on. It names nothing
     /// in the prompts.
@@ -278,6 +291,7 @@ pub(crate) fn start_step(args: &StartArgs, cancel: &craft_review::cancel::Cancel
         runs: args.runs.clone(),
         strict: args.strict,
         recall: !args.no_recall,
+        recall_degraded: args.recall_degraded.clone(),
         // An unreadable list is refused and named in the report; the review still runs.
         prior_decisions: args
             .prior_decisions
@@ -476,6 +490,7 @@ pub(crate) fn submit_step(args: &SubmitArgs) -> Result<Value> {
     let host = filing::Host {
         agents: args.agents,
         output_tokens: args.output_tokens,
+        output_tokens_scope: args.output_tokens_scope.clone(),
         resume: args.resume,
         session: session(),
     };
@@ -519,6 +534,15 @@ pub fn status(args: &StatusArgs) -> Result<ExitCode> {
 /// Where the run in `run` stands, as `status` prints it.
 pub(crate) fn status_step(run: &Path) -> Result<Value> {
     Ok(status::status(run)?)
+}
+
+/// A `--recall-degraded` text: refused when nothing but whitespace and control characters.
+fn recall_note(s: &str) -> Result<String, String> {
+    if s.chars().any(|c| !c.is_control() && !c.is_whitespace()) {
+        Ok(s.to_owned())
+    } else {
+        Err("a blank note: say why the launcher's recall may not have read the whole store".into())
+    }
 }
 
 #[cfg(test)]

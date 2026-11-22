@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 
 use crate::gate::GateSetup;
+use crate::memory::Memory;
 use crate::publish::PostSetup;
 use crate::rereview;
 use crate::sources::SourcesSetup;
@@ -37,6 +38,9 @@ pub struct StartOptions {
     pub prior_decisions: Option<Result<Value, String>>,
     /// Recall the project's memory beside the scouts; without it only `prior_decisions` apply.
     pub recall: bool,
+    /// Why the launcher's own recall may not have read the whole store (`--recall-degraded`): the
+    /// run names it and reads as degraded; taken only with `recall` false.
+    pub recall_degraded: Option<String>,
     /// Where the reviewer's profile and the sources cache are: the integration points' sources are
     /// prepared before the first tasks. `None`, none are.
     pub sources: Option<SourcesSetup>,
@@ -95,6 +99,12 @@ pub struct StartOptions {
 }
 
 impl StartOptions {
+    /// The memory the run starts with: the launcher's decisions, recalled as it asked.
+    pub(super) fn memory(&self) -> Memory {
+        Memory::open(self.prior_decisions.clone())
+            .recalling(self.recall, self.recall_degraded.as_deref())
+    }
+
     /// Where earlier runs are looked for: `runs`, else the run directory's parent.
     pub(super) fn runs_or_parent(&self) -> Option<PathBuf> {
         self.runs

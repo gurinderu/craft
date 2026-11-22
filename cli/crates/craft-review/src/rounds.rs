@@ -175,7 +175,7 @@ fn lens_task(
     // numbers in its prompt alone; the scout, the dedup and the verifiers name none, and each host
     // picks the agent for those.
     task.agent_type = profile.agent_of(lens);
-    task.consumers = crate::validate::listed(&task.prompt, &ctx.consumers);
+    task.marks.consumers = crate::validate::listed(&task.prompt, &ctx.consumers);
     Ok(task)
 }
 
@@ -292,10 +292,10 @@ impl Rounds {
     /// Notes the CONSUMERS lines lens task `t` was shown: when it `answered`, those it marked and
     /// those it left; else as shown to a lens that did not answer.
     pub(crate) fn note_lines(&mut self, t: &Task, answered: bool) {
-        for site in &t.consumers {
+        for site in &t.marks.consumers {
             let into = if !answered {
                 &mut self.consumers_unanswered
-            } else if t.unmarked.contains(site) {
+            } else if t.marks.unmarked.contains(site) {
                 &mut self.consumers_left
             } else {
                 &mut self.consumers_marked

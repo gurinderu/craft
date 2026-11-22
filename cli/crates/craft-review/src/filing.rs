@@ -71,8 +71,12 @@ pub fn submitted(
     } else if filing.finished.is_some() {
         return Some(outcome(run, &filing, &earlier, true));
     }
-    if host.output_tokens.is_some() {
+    // A nested run's figure would be its parent's and siblings' shared pool: the parent's record covers it.
+    if host.output_tokens.is_some() && filing.ctx.via.is_empty() {
         filing.output_tokens = host.output_tokens;
+        filing
+            .output_tokens_scope
+            .clone_from(&host.output_tokens_scope);
     }
     let agents = host.agents.unwrap_or(0);
     Some(record_step(run, filing, step, agents, earlier, w))

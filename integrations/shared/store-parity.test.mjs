@@ -120,6 +120,7 @@ const CASES = [
           strict: true,
           via: 'rust-audit',
           outputTokens: 1234,
+          outputTokensScope: 'turn-delta',
           runtime: 'codex',
           session: 's-1',
         },

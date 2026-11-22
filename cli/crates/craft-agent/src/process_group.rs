@@ -21,8 +21,8 @@ pub(crate) fn isolate(command: &mut Command) {
 /// Stops the group a child started by [`isolate`] leads when dropped: SIGTERM to every member,
 /// then SIGKILL to whatever is left after a two-second grace. Dropped on every way out of a run —
 /// its end, a timeout, a stop. The grace runs on a thread of its own, which dies with the process:
-/// whoever ends the process calls [`settle_stops`] first, or the SIGKILL may never be sent. A no-op off
-/// unix.
+/// whoever ends the process calls [`settle_stops`] first, or the SIGKILL may never be sent. When
+/// the OS refuses that thread, the drop runs the grace itself. A no-op off unix.
 #[derive(Debug)]
 pub(crate) struct GroupGuard {
     #[cfg(unix)]
@@ -42,12 +42,28 @@ impl GroupGuard {
     }
 }
 
-/// Blocks until every group a guard has stopped is gone or has been sent SIGKILL: at most the
-/// two-second grace. Call it before the process exits, so a group that ignores SIGTERM does not
+/// Blocks until every group a guard has stopped on a grace thread is gone or has been sent SIGKILL:
+/// at most the two-second grace plus the wait to reap a killed leader, about 2.2 s. A grace a drop
+/// is running inline, for want of a thread, is not listed and not waited for here: that drop's own
+/// thread ends it. Call it before the process exits, so a group that ignores SIGTERM does not
 /// outlive craft. A no-op off unix.
 pub fn settle_stops() {
     #[cfg(unix)]
     unix::settle();
+}
+
+/// Whether a group a guard stopped is still inside its grace: its thread has neither seen the group
+/// gone nor sent SIGKILL yet, so [`settle_stops`] would wait for it. A stop whose grace has ended
+/// is not counted, settled or not, nor is a grace a drop runs inline on another thread for want of
+/// one of its own; nothing stopped, as in every command that runs no agent, is false. Always false
+/// off unix.
+#[must_use]
+pub fn stops_pending() -> bool {
+    #[cfg(unix)]
+    let pending = unix::pending();
+    #[cfg(not(unix))]
+    let pending = false;
+    pending
 }
 
 #[cfg(unix)]
@@ -60,61 +76,10 @@ impl Drop for GroupGuard {
 }
 
 #[cfg(unix)]
-mod unix {
-    use std::sync::{Mutex, PoisonError};
-    use std::thread::JoinHandle;
-    use std::time::{Duration, Instant};
+#[path = "process_group_unix.rs"]
+mod unix;
 
-    use nix::sys::signal::{Signal, killpg};
-    use nix::sys::wait::{WaitPidFlag, waitpid};
-    use nix::unistd::Pid;
-
-    /// How long the group has between SIGTERM and SIGKILL.
-    const GRACE: Duration = Duration::from_secs(2);
-    /// How often a stopping group is checked for being gone.
-    const POLL: Duration = Duration::from_millis(20);
-
-    /// The threads still inside a group's grace, joined by [`settle_stops`](super::settle_stops).
-    static STOPPING: Mutex<Vec<JoinHandle<()>>> = Mutex::new(Vec::new());
-
-    pub(super) fn stop(pgid: Pid) {
-        // An error means the group is gone already (ESRCH): nothing to stop.
-        if killpg(pgid, Signal::SIGTERM).is_err() {
-            return;
-        }
-        // Drop cannot wait; a thread finishes the job. The group id could in principle be reused
-        // within the grace, but only by a new process made leader of a group of its own pid — the
-        // same pid the kernel would have to hand out again within two seconds.
-        let thread = std::thread::spawn(move || {
-            let deadline = Instant::now() + GRACE;
-            while Instant::now() < deadline {
-                // The leader is craft's own child, and until reaped it stays a zombie that still
-                // counts as a member, so a group that obeyed SIGTERM would look alive for the whole
-                // grace: reap it here. It is already reaped (ECHILD) when its run ended normally;
-                // tokio's orphan queue, which holds it after a stop, drops a child found gone.
-                // Reaping by pid shares the reuse caveat above: only a new child of craft could
-                // take that pid within the grace.
-                let _reaped = waitpid(pgid, Some(WaitPidFlag::WNOHANG));
-                // Signal 0 only asks whether the group still has a member.
-                if killpg(pgid, None).is_err() {
-                    return;
-                }
-                std::thread::sleep(POLL);
-            }
-            // Gone by now is a usual case, not an error.
-            let _gone = killpg(pgid, Signal::SIGKILL);
-        });
-        let mut stopping = STOPPING.lock().unwrap_or_else(PoisonError::into_inner);
-        stopping.retain(|t| !t.is_finished());
-        stopping.push(thread);
-    }
-
-    pub(super) fn settle() {
-        let stopping =
-            std::mem::take(&mut *STOPPING.lock().unwrap_or_else(PoisonError::into_inner));
-        for thread in stopping {
-            // The thread only signals; a panic there leaves nothing more to do here.
-            let _panicked = thread.join();
-        }
-    }
-}
+#[cfg(test)]
+#[cfg(unix)]
+#[path = "process_group_tests.rs"]
+mod tests;

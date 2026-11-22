@@ -1,0 +1,23 @@
+{
+  "base": "origin/main",
+  "done": false,
+  "head": "8ece2039eb4a241af3903b9db391767b30d85861",
+  "lensScope": "full",
+  "path": null,
+  "phase": "lenses",
+  "repo": "@REPO@",
+  "round": 1,
+  "run": "@RUN@",
+  "tasks": [
+    {
+      "agentType": "rust-reviewer",
+      "answerFile": "@RUN@/answers/lens-rust-errors-r1.json",
+      "id": "lens-rust-errors-r1",
+      "kind": "lens",
+      "label": "lens:rust:errors r1",
+      "model": "opus",
+      "promptFile": "@RUN@/tasks/lens-rust-errors-r1.md",
+      "schemaFile": "@RUN@/tasks/lens-rust-errors-r1.schema.json"
+    }
+  ]
+}

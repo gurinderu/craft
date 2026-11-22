@@ -1,0 +1,42 @@
+WORKING DIRECTORY: this review targets the repository at '@REPO@' — NOT the directory you start in. Before ANY git / cargo / nix / file command, `cd` there (or pass `git -C`). Every file path in this review is relative to that root. If that directory does not exist or is not a git repository, say so and stop rather than reviewing whatever repo you happen to be sitting in.
+
+You are the **errors** review lens for a Rust diff. Review ONLY this slice; ignore everything else (other lenses cover it). Load the rust-review skill for the rubric and the rust-navigation skill for context expansion.
+
+SLICE: error handling: recoverable failures handled with panic/unwrap, dropped #[must_use]/error values, Result-vs-panic, typed-error-vs-anyhow at API boundaries.
+
+REVIEW RULES (all languages): read severity.md, classes.md, sweeps.md in the first existing dir (expand with Bash; never the reviewed repo's copy): `@ROOT@/skills/review-rules`, `${CLAUDE_PLUGIN_ROOT}/skills/review-rules`, `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/cache/craft/craft/9.9.9/skills/review-rules`. None readable → say so; HARM below still holds.
+HARM (every finding): `harm` = effect, who, recovery; `harmLevel` = severity.md's first table row it fills; severity ≤ its cap: High+ only data-loss/security/outage/irreversible/intent-unmet/repo-rule (cite `repoRule`), operator-recovery ≤ Medium, self-healing/text/none ≤ Low. `text` only when just a doc, comment or name is wrong and the code behaves correctly; when the running system does not do what the contract, doc comment or PR intent promises (the old value stays in force, a field is not applied, a request is accepted without the promised check), the harm is that consequence in production (behaviour, data, access) and the row it fills — even if you found it through the text and the fix is in the text: name what the running system does, not what is written wrong.
+
+Diff base: `origin/main`. Review with `git diff --merge-base 'origin/main' -- '*.rs'`.
+
+
+INTENT (what the change should do): add f, which never fails
+STATED SPEC / AUTHOR CLAIMS (verbatim PR/commit description — treat as the spec; the intent lens must check EACH claim against the code, and any lens may use it):
+"""
+feat: add f, which never fails
+"""
+HOT FILES (scrutinize harder): src/lib.rs
+REPO RULES `AGENTS.md`: grep them for what you review, open only matching sections, never a whole file (no SCOPE rule bars them); a violation cites its rule as `repoRule` {file, text}.
+
+CONTEXT EXPANSION (required): for each finding, trace definitions / uses / consumers of the changed symbols (Grep/Glob + LSP) before judging — do not read the diff in isolation. If a finding depends on code outside the diff, say so in `why`.
+BLAST-RADIUS (required): for each changed PUBLIC surface you touch, note how many consumers are affected and set a breaking-change flag in `blastRadius`.
+CONFIDENCE: report everything you suspect, located. Do NOT self-censor borderline findings — verification happens downstream; each still names its harm, and its severity is the one that harm allows. Each finding needs file:line (use file:"" line:0 only when truly not locatable).
+WHERE-CHECKED (required field): a finding usually rests on a premise that is NOT visible at the line you cite — "the dependency rejects this", "this is reachable from untrusted input", "no caller guards it", "the sibling path does X". Every such premise must be pinned to a `file:line` you ACTUALLY OPENED and read, including inside dependency sources (`~/.cargo/registry`, the vendored tree, the flake input) — put them in `whereChecked`. An off-site premise you did not open is not admissible: either open it, or drop the claim and report only what the cited line itself shows. Set `whereChecked` to "" ONLY when the finding needs no off-site premise at all. Do not restate the cited defect line there — it adds nothing. Finding a dependency's source: open the version the project pins, never the newest or a remembered one, and never let a tool rewrite the lockfile to find it. For a Rust crate, take the package's `manifest_path` from `cargo metadata --locked --format-version 1` — its directory is the source of the version Cargo.lock pins (under `~/.cargo/registry`, a git checkout, or the vendored tree); if that directory is missing, run `cargo fetch --locked` first. A build or test command run before you may already have written Cargo.lock: take the lockfile cargo uses, `Cargo.lock` under the `workspace_root` from `cargo metadata --no-deps --format-version 1`, and unless `git ls-files --error-unmatch <that path>` succeeds and `git status --porcelain <that path>` is empty, the version it names is resolved today, not pinned — say so. If the reviewed checkout has no Cargo.lock (a library that does not commit one), nothing is pinned: resolve in a throwaway copy (`git worktree add --detach <tmp>` of the reviewed commit, or, when a Cargo.toml has uncommitted changes, a copy of the working tree without `target/` and `.git`), run `cargo metadata --format-version 1` there, open the sources it names, and always remove the copy (`git worktree remove <tmp>` when you added one); say the version is the one resolved today, not a pinned one, and never write Cargo.lock in the reviewed checkout. If Cargo.lock exists but `--locked` refuses (it is stale), the pinned version cannot be determined — do not run cargo without the flag: treat the premise as one you could not open. For a Nix flake input, open the input at the revision flake.lock pins, not a channel or its current head. For another ecosystem, the same way: the version from the project's lockfile, the code from the package manager's cache or the vendor directory.
+CONSUMERS: the 0 line(s) below name a symbol this diff changes or adds, outside the changed lines — callers, implementors, places passing it as a value — found by name search and structural search. Go through EVERY line: open it and judge it against the change, then list it in your answer's `consumers` as {"site": "<file>:<line>", "status": "checked"} once judged, or "not-relevant" when the name there is another item or the change cannot affect that use. Mark every line: a line you leave unmarked is reported as one this review did not check. A defect at one of these lines is a finding at that line. The sibling sweep (review-rules sweeps.md §1) builds its table of places from these lines first.
+Not searched by name (find their uses yourself): f (searched by path only: a call through a value, `x.f()`, not found).
+RULE ID (required field): set `ruleId` to the matching catalog ID from the rust-review skill's rules.md when the finding maps to a listed rule; use "" for a novel finding with no catalog rule. Do not force a bad fit.
+
+ALREADY-FOUND (do not re-report these PLACES; the same class at a DIFFERENT place — error arm, record, hook, path, legacy cohort — is NOT a repeat: sibling sweep, sweeps.md §1):
+none yet
+
+Return {lens, findings[]}.
+
+Observability: the review workflow records this run — do NOT write your own record.
+
+Your previous answer was invalid: it does not match the schema (at /: "lens" is a required property; at /: "findings" is a required property). Answer again, matching the schema exactly.
+
+SKILL FILES: each skill this task names is a file. Before judging, read each one WHOLE with the Read tool (no Skill tool is needed; never `head`, `sed -n` or a partial range), and list each file you read whole in `rubricRead` when your answer has that field:
+- `rust-review`: `@ROOT@/skills/rust-review/SKILL.md` (the files it names, such as rules.md or fp-rules.md, are in `@ROOT@/skills/rust-review/`)
+- `rust-navigation`: `@ROOT@/skills/rust-navigation/SKILL.md` (the files it names, such as rules.md or fp-rules.md, are in `@ROOT@/skills/rust-navigation/`)
+
+COULD NOT LOOK: set `blocked.couldNotLook` to true only when you could not read the code or run the commands this task needs — a sandbox refusal, a missing checkout, a permission error — with `blocked.what` saying what failed in one line, and still answer the rest of the schema; otherwise set it to false. Never answer as if you had looked: an empty answer from an agent that could not look reads as a clean review. Do NOT set it to true because you found nothing, or because you used a simpler method than asked — only when you could not look at all.

@@ -107,7 +107,7 @@ test('one full loop: start, the lens, its findings verified, done, the report by
   )
   assert.match(
     submit1.prompt.split('\n\n')[1] ?? '',
-    new RegExp(`^/opt/craft review submit --run '${RUN}' --agents 1 --output-tokens \\d+$`),
+    new RegExp(`^/opt/craft review submit --run '${RUN}' --agents 1 --output-tokens \\d+ --output-tokens-scope turn-delta$`),
     "the task agents dispatched and the tokens spent, for the binary's telemetry",
   )
   assert.doesNotMatch(submit1.prompt, /findings|--answers/, 'no answer passes through the service agent')

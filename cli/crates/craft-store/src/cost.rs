@@ -64,7 +64,7 @@ fn cost_line(cost: &Obj) -> String {
         format!(" ({} unreadable, skipped)", num(cost, "skipped"))
     });
     format!(
-        "{} agent(s){skipped}: cacheRead {}, cacheWrite {}, input {}, output {}, total {} tok (real cost; outputTokens is the harness pool, ~<1%)",
+        "{} agent(s){skipped}: cacheRead {}, cacheWrite {}, input {}, output {}, total {} tok (real cost; outputTokens is only the turn's indicative spend)",
         num(cost, "agents"),
         num(cost, "cacheRead"),
         num(cost, "cacheWrite"),

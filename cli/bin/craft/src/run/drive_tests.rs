@@ -2,7 +2,8 @@
 //! does) and stand-in host CLIs: shell scripts that act on a word in their task's
 //! prompt — FAIL fails, FAIL-ONCE fails the first time, HANG outlives its deadline, LIMIT says the
 //! usage limit, NOLOGIN says no account is logged in, BLOCKED (Codex) answers that it could not
-//! look — and otherwise answer.
+//! look — and otherwise answer. With a `deaf` file in the log the script ignores SIGTERM from its
+//! first line and says so with `deaf-ready`, once its `call-` file is written.
 
 use std::cell::RefCell;
 use std::num::NonZeroUsize;
@@ -22,6 +23,15 @@ use super::host::Host;
 use super::models::ModelTable;
 use super::protocol::{Protocol, Said};
 use super::round::RoundCtx;
+
+/// How long the stopping signal waits for its file: past it the signal is sent anyway, and the
+/// test's own checks on what the file stands for fail instead of the test hanging.
+const STOP_ONCE_BOUND: Duration = Duration::from_secs(10);
+
+/// The tests that settle the stop list take turns: a settle joins every listed grace, another
+/// test's too, and a test that checks its own group is gone after its settle must not find it
+/// joined, and still running, by a settle elsewhere.
+static SETTLING: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 /// One task the fake start lays out: its id, prompt, and the agent it names.
 struct Spec(&'static str, &'static str, Option<&'static str>);
@@ -153,9 +163,11 @@ fn host_script(log: &Path, read: &str, answer: &str) -> String {
     let log = log.display();
     format!(
         r#"#!/bin/sh
+if [ -f '{log}/deaf' ]; then trap '' TERM; fi
 {read}
 mkdir -p '{log}/live'; touch '{log}/live/'$$; ls '{log}/live' | wc -l >> '{log}/alive'
 printf '%s' "$input" > '{log}/call-'$$; echo "$@" > '{log}/argv-'$$; echo "$CLAUDE_PLUGIN_ROOT" > '{log}/root'; pwd -P > '{log}/cwd'
+if [ -f '{log}/deaf' ]; then touch '{log}/deaf-ready'; fi
 case "$input" in *HANG*) sleep 30;; esac
 sleep 0.3; rm -f '{log}/live/'$$
 case "$input" in
@@ -187,6 +199,8 @@ struct Bench {
     events: RefCell<Vec<Event>>,
     /// A stopping signal's exit status, sent this long after the drive starts.
     stop_after: Option<(Duration, u8)>,
+    /// A file the stopping signal also waits for, sent once it exists or after [`STOP_ONCE_BOUND`].
+    stop_once: Option<PathBuf>,
 }
 
 impl Bench {
@@ -218,6 +232,7 @@ impl Bench {
             agents: None,
             events: RefCell::default(),
             stop_after: None,
+            stop_once: None,
         }
     }
 
@@ -256,7 +271,14 @@ impl Bench {
             stop: {
                 let (send, stop) = tokio::sync::watch::channel(None);
                 if let Some((after, code)) = self.stop_after {
+                    let once = self.stop_once.clone();
                     tokio::spawn(async move {
+                        let bound = tokio::time::Instant::now() + STOP_ONCE_BOUND;
+                        while once.as_ref().is_some_and(|f| !f.exists())
+                            && tokio::time::Instant::now() < bound
+                        {
+                            tokio::time::sleep(Duration::from_millis(10)).await;
+                        }
                         tokio::time::sleep(after).await;
                         let _gone = send.send(Some(code));
                         std::future::pending::<()>().await;
@@ -367,6 +389,7 @@ async fn a_task_that_fails_once_is_handed_out_again_and_its_retry_answers() {
 
 #[tokio::test]
 async fn a_late_task_is_abandoned_and_an_agent_with_no_body_said_degraded() {
+    let _turn = SETTLING.lock().await;
     let mut bench = Bench::new(HostKind::Codex);
     bench.deadline = Some(Duration::from_secs(2));
     let fake = bench.fake(vec![
@@ -374,6 +397,10 @@ async fn a_late_task_is_abandoned_and_an_agent_with_no_body_said_degraded() {
         Spec("n", "do n", Some("nix-reviewer")),
     ]);
     let answer = bench.drive(&fake).await;
+    // The abandoned task's group was stopped: its grace is waited out here, not left running.
+    tokio::task::spawn_blocking(craft_agent::settle_stops)
+        .await
+        .unwrap();
     assert!(answer.finished, "{}", answer.text);
     let submits = fake.submits.borrow();
     assert_eq!(submits[0].abandoned, ["slow"]);
@@ -510,6 +537,7 @@ async fn a_submit_that_fails_is_asked_of_status_and_the_run_said_where_it_stands
 
 #[tokio::test]
 async fn a_stopping_signal_stops_the_round_s_tasks_and_files_the_run_incomplete() {
+    let _turn = SETTLING.lock().await;
     let mut bench = Bench::new(HostKind::Codex);
     bench.stop_after = Some((Duration::from_millis(500), 143));
     let fake = bench.fake(vec![Spec("slow", "HANG", None), Spec("b", "HANG", None)]);
@@ -549,6 +577,9 @@ async fn a_stopping_signal_stops_the_round_s_tasks_and_files_the_run_incomplete(
         assert!(!alive, "the group of task process {pid} is left behind");
     }
 }
+
+#[path = "exit_drive_tests.rs"]
+mod exit;
 
 #[path = "opencode_drive_tests.rs"]
 mod opencode;

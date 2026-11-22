@@ -114,6 +114,7 @@ pub(super) fn record(
         strict: filing.ctx.strict,
         via: &filing.ctx.via,
         output_tokens: filing.output_tokens,
+        output_tokens_scope: filing.output_tokens_scope.as_deref(),
     };
     let done = exchange::<_, RecordDone>(run, filing, "finalize", &asked, w).unwrap_or_else(|e| {
         RecordDone {

@@ -419,12 +419,17 @@ pub fn capped(state: &RunState) -> Vec<String> {
     gap_cap::named(state)
 }
 
-/// How the run was weaker than asked: the host's notes, the gate's unread changed lines, then the
-/// CONSUMERS lines no lens marked per line and no seam pass read (realm @nick/craft, node #531).
+/// How the run was weaker than asked.
+///
+/// The host's notes, the rubric skills no path was found for, a recall that may not have read the
+/// store (its query failed, its agent died or gave no list, its answer was truncated, or the
+/// launcher's recall was so), the gate's
+/// unread changed lines, then the CONSUMERS lines no lens marked per line and no seam pass read (realm @nick/craft, node #531).
 #[must_use]
 pub fn degraded_notes(state: &RunState) -> Vec<String> {
     let mut notes = state.degraded.clone();
     notes.extend(skills_note(state));
+    notes.extend(state.memory.source.degraded_notes());
     notes.extend(state.gate.unread_note());
     notes.extend(
         consumer_lines::all(state)
@@ -450,11 +455,17 @@ fn skills_note(state: &RunState) -> Option<String> {
 /// How the run was weaker than asked, as its host said: before the findings, so they are read with it.
 fn degraded(state: &RunState, out: &mut String) {
     let skills = skills_note(state);
-    if state.degraded.is_empty() && skills.is_none() {
+    let memory = state.memory.source.degraded_notes();
+    if state.degraded.is_empty() && skills.is_none() && memory.is_empty() {
         return;
     }
     out.push_str("## Degraded\n\nThe host ran part of this review weaker than it asked:\n\n");
-    for d in state.degraded.iter().chain(skills.iter()) {
+    for d in state
+        .degraded
+        .iter()
+        .chain(skills.iter())
+        .chain(memory.iter())
+    {
         out.push_str(&format!("- {}\n", one_line(d)));
     }
     out.push('\n');

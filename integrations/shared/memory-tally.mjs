@@ -8,10 +8,14 @@
 // rules recalled count with the records (at the recall, so once); the findings a rule covered count on
 // every run that applied rules, a nested review included: each covers its own (realm @nick/craft, node #273).
 // External-system records (node #431) are counted apart from `records`: they set no finding aside, and a
-// recall of those alone is still a recall.
+// recall of those alone is still a recall. A recall that may not have read the store is DEGRADED, never "the project has
+// no memory", in one of three classes: not read (a failed backend query, `queryError`, or a dead agent, `recallDied`, or
+// a truncated answer, `truncated`, with nothing found), partly read (a failed call or a truncated answer beside records)
+// — each counted once, on the run that recalled — and handed a launcher's degraded recall (`recallDegraded`): a nested
+// run counted apart, its launcher's one recall already counted at the launcher.
 /**
  * @typedef {{ runs: number, carrying: number, recalled: number, passedOnly: number, nested: number, none: number,
- *   records: number, questions: number, rules: number, externals: number, covered: number, byBackend: Record<string, number>, noneWhy: Record<string, number> }} MemoryTally
+ *   records: number, questions: number, rules: number, externals: number, covered: number, notRead: number, partlyRead: number, launcherDegraded: number, byBackend: Record<string, number>, noneWhy: Record<string, number> }} MemoryTally
  */
 
 /** @returns {MemoryTally} */
@@ -28,6 +32,9 @@ export function newMemoryTally() {
     rules: 0,
     externals: 0,
     covered: 0,
+    notRead: 0,
+    partlyRead: 0,
+    launcherDegraded: 0,
     byBackend: {},
     noneWhy: {},
   }
@@ -50,11 +57,12 @@ const NONE_CLASSES = [
   ['pinned backend unavailable', 'pinned backend unavailable'],
 ]
 
-/** @param {string} why @param {string} backend @returns {string} */
-function noneClass(why, backend) {
+/** @param {string} why @param {string} backend @param {string} queryError the recall's failed query, '' when none @returns {string} */
+function noneClass(why, backend, queryError) {
   if (why.startsWith('not recalled — ')) return why.split(';')[0] ?? why
   const known = NONE_CLASSES.find(([lead]) => why.startsWith(lead))
-  return known ? known[1] : `recall found nothing in ${backend}`
+  if (known) return known[1]
+  return queryError ? `backend query may have failed in ${backend}` : `recall found nothing in ${backend}`
 }
 
 /** @param {Record<string, number>} counts @param {string} key @returns {void} */
@@ -74,6 +82,7 @@ export function tallyMemory(t, r) {
   t.carrying++
   t.covered += count(o['covered'])
   const source = o['source']
+  tallyDegraded(t, o, source === 'recalled')
   if (source === 'launcher') {
     t.nested++
     return
@@ -90,11 +99,31 @@ export function tallyMemory(t, r) {
   t.none++
   // Recall did not run or found nothing, yet the launcher's own records were applied.
   if (count(o['passed'])) t.passedOnly++
-  bump(t.noneWhy, noneClass(text(o['why'], 'no reason recorded'), text(o['backend'], 'an unnamed backend')))
+  bump(t.noneWhy, noneClass(text(o['why'], 'no reason recorded'), text(o['backend'], 'an unnamed backend'), text(o['queryError'], '')))
+}
+
+/**
+ * A run whose memory may not have read the store: handed a launcher's degraded recall, partly read (a failed call or a
+ * truncated answer beside records), or not read (a failed query, a dead agent or a truncated answer, nothing found).
+ * @param {MemoryTally} t @param {Record<string, unknown>} o @param {boolean} recalled @returns {void}
+ */
+function tallyDegraded(t, o, recalled) {
+  const has = (/** @type {string} */ k) => text(o[k], '') !== ''
+  if (has('recallDegraded')) t.launcherDegraded++
+  else if (recalled && (has('queryError') || has('truncated'))) t.partlyRead++
+  else if (!recalled && (has('queryError') || has('recallDied') || has('truncated'))) t.notRead++
 }
 
 /** @param {Record<string, number>} counts @returns {Array<[string, number]>} */
 const ranked = counts => Object.entries(counts).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+
+/** The recalls that may not have read the store, as one line; none when every run read it. @param {MemoryTally} t @returns {string[]} */
+const degradedLines = t =>
+  t.notRead || t.partlyRead || t.launcherDegraded
+    ? [
+        `- DEGRADED — ${t.notRead} recall(s) not read (a failed backend query, a dead agent or a truncated answer — not "no memory") · ${t.partlyRead} partly read (a failed call or a truncated answer beside records) · ${t.launcherDegraded} nested run(s) handed a launcher's degraded recall (counted once, at the launcher)`,
+      ]
+    : []
 
 /**
  * The section's lines.
@@ -111,6 +140,7 @@ export function renderMemorySection(t) {
   L.push(
     `- ${t.carrying} run(s) carry the field${silent ? ` (${silent} without it, excluded)` : ''} · ${t.recalled} recalled · ${t.none} none (${t.passedOnly} of them applied the launcher's records)${nested} · ${t.records} record(s) recalled, ${t.questions} of them open questions`,
   )
+  L.push(...degradedLines(t))
   if (t.externals) L.push(`- external systems: ${t.externals} recalled beside the records, their source read by the lenses`)
   if (t.rules || t.covered) L.push(`- project rules: ${t.rules} recalled · ${t.covered} finding(s) covered by one, out of the verdict`)
   for (const [backend, n] of ranked(t.byBackend).slice(0, 10)) L.push(`- ${n}× from ${backend}`)

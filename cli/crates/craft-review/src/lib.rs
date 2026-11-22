@@ -60,6 +60,7 @@ pub mod status;
 pub mod step;
 pub mod stop;
 mod strict;
+mod task_kind;
 pub mod telemetry;
 mod tool;
 #[cfg(test)]

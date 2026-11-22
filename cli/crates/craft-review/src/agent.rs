@@ -16,14 +16,8 @@ pub enum AgentKind {
     NixReviewer,
 }
 
-/// The model a task runs on.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Model {
-    Opus,
-    Sonnet,
-    Haiku,
-}
+/// The model a task runs on, a token every kind of run shares.
+pub use craft_step::Model;
 
 #[cfg(test)]
 mod tests {

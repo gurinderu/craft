@@ -87,6 +87,14 @@ const AS_CEILING: u64 = 128_000_000;
 /// reader that kept them all could not stay under it.
 const LARGE_PAYLOAD: usize = 4_000_000;
 const LARGE_RECORDS: usize = 48;
+/// glibc's allocator pinned for the large-record tests, so the address space tracks live memory:
+/// a fixed mmap threshold turns off the dynamic one, so every block of 1 MiB or more is mapped on
+/// its own and unmapped when freed instead of kept in the heap, and one arena leaves no per-thread
+/// reservations. Unpinned, freed records stay mapped and the ceiling measures fragmentation.
+const PINNED_ALLOCATOR: [(&str, &str); 2] = [
+    ("MALLOC_MMAP_THRESHOLD_", "1048576"),
+    ("MALLOC_ARENA_MAX", "1"),
+];
 
 #[cfg(target_os = "linux")]
 #[test]
@@ -112,6 +120,7 @@ fn stats_does_not_keep_large_unfoldable_records_in_memory() {
         .args(["runs", "stats", "--json", "--store"])
         .arg(d.path())
         .env("TOKIO_WORKER_THREADS", "1")
+        .envs(PINNED_ALLOCATOR)
         .output()
         .unwrap();
     assert!(
@@ -146,6 +155,7 @@ fn retro_does_not_keep_large_unfoldable_records_in_memory() {
         .args(["runs", "retro", "0.9.0", "--json", "--store"])
         .arg(d.path())
         .env("TOKIO_WORKER_THREADS", "1")
+        .envs(PINNED_ALLOCATOR)
         .output()
         .unwrap();
     assert!(
