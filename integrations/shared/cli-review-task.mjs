@@ -55,13 +55,8 @@ const taskPrompt = t =>
   `Read the file ${t.promptFile} and do exactly what it says: it is your whole task — run no gate, give no verdict and write no run record of your own beyond what it asks. When done, write your final answer as JSON matching the schema in ${t.schemaFile} to ${t.answerFile} (create the directory if needed) and nothing else — without a Write tool, through Bash with a quoted heredoc: \`cat > ${shq(t.answerFile)} <<'JSON'\` — then reply with the single word done.`
 
 /** @typedef {{ agent: string, count: number, shipped: boolean, why?: string }} Fallen  tasks of one agent that ran on the default type, and what its first failure said */
-/** The default type in a task's place, as one note says it: the lean task agent's, or a rubric agent's. @param {Fallen} x @returns {string} */
-function fallenNote(x) {
-  const why = x.why ? `the first ${x.why}` : 'the agent is not registered in this session, or it failed'
-  return x.agent === REVIEW_TASK_AGENT
-    ? `ran on the default agent type instead (${why}) — the same prompt, so no weaker, only costlier: each such agent also loaded the session's skill listing and project instructions.`
-    : `ran on the default agent type instead, without its rubric (${why}) — this run is weaker than a normal one, not broken.`
-}
+/** Why the default type ran a task in its agent's place, as a note says it. @param {Fallen} x @returns {string} */
+const whyFallen = x => (x.why ? `the first ${x.why}` : 'the agent is not registered in this session, or it failed')
 
 /**
  * The task runner of one run: a task naming an agent this plugin ships runs on it (realm @nick/craft, node #465);
@@ -73,7 +68,8 @@ function fallenNote(x) {
  * is self-contained, so the default type can run it. A null from a task on the default type leaves no answer file,
  * which the binary asks for again.
  * `degraded(round)`: what ran on the default type in place of the agent its task named since the last call, as the
- * notes `craft review submit --degraded` takes, so the report says the run was weaker (realm #113, #116).
+ * notes `craft review submit --degraded` takes, so the report says the run was weaker (realm #113, #116); the lean task
+ * agent's fallback, which costs more but judges the same, is logged instead.
  * `stopped`: the run dispatches no more work (the usage limit), so a typed task's null is not re-run on the default type.
  * Every task races its kind's deadline, one budget shared by its re-run on the default type
  * (integrations/shared/cli-review-deadline.mjs): one past it is abandoned as dead and never re-run; `abandoned()` names those since
@@ -163,7 +159,15 @@ export function taskRunner(sb, stopped = () => false) {
     return out
   }
   /** @param {number} round */
-  const degraded = round => fallen().map(x => degradedNote(round, x))
+  // The lean task agent's fallback costs more and judges the same: a log line, never a degraded note.
+  const degraded = round =>
+    fallen().flatMap(x => {
+      if (x.agent !== REVIEW_TASK_AGENT) return [degradedNote(round, x)]
+      sb.log(
+        `round ${round}: ${x.count} task(s) on \`${x.agent}\` ran on the default agent type instead (${whyFallen(x)}) — the same prompt, so no weaker, only costlier: each such agent also loaded the session's skill listing and project instructions.`,
+      )
+      return []
+    })
   const abandoned = () => {
     const out = cutOff
     cutOff = []
@@ -178,5 +182,5 @@ export function taskRunner(sb, stopped = () => false) {
  */
 const degradedNote = (round, x) =>
   x.shipped
-    ? `round ${round}: ${x.count} task(s) on \`${x.agent}\` ${fallenNote(x)}`
+    ? `round ${round}: ${x.count} task(s) on \`${x.agent}\` ran on the default agent type instead, without its rubric (${whyFallen(x)}) — this run is weaker than a normal one, not broken.`
     : `round ${round}: ${x.count} task(s) named \`${x.agent}\`, which this plugin does not ship, and ran on the default agent type — this run is weaker than a normal one, not broken.`

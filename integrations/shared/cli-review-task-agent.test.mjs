@@ -1,6 +1,6 @@
 // The review driver's untyped tasks (integrations/shared/cli-review-task.mjs) on craft's lean task agent, driven end to end
 // through the engine: which tasks take `craft:review-task`, which keep the default type, and the soft fallback when
-// the lean agent fails — re-run on the default type and said in the next submit's notes as a cost, not a weaker run.
+// the lean agent fails — re-run on the default type and logged as a cost, never a degraded note.
 import { afterEach, beforeEach, test } from 'vitest'
 import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -43,8 +43,6 @@ const writes = c => {
   writeFileSync(file, JSON.stringify({ lens: 'intent', findings: [] }))
   return 'done'
 }
-/** The `--degraded` notes of a submit's command, unquoted. @param {string} prompt */
-const notes = prompt => [...prompt.matchAll(/ --degraded '((?:[^']|'\\'')*)'/g)].map(m => String(m[1]).replaceAll("'\\''", "'"))
 /** @param {{ calls: { label: string, opts: { agentType?: string } }[] }} run @param {string} label */
 const typesOf = (run, label) => run.calls.filter(c => c.label === label).map(c => c.opts.agentType)
 
@@ -85,7 +83,7 @@ test('a task naming no agent runs on the lean task agent, with its own model; re
   )
 })
 
-test('the lean agent unregistered: the task re-runs on the default type, the type retires, and the note says it cost more, not less', async () => {
+test('the lean agent unregistered: the task re-runs on the default type, the type retires, and the log says it cost more — no degraded note', async () => {
   const run = await runEngine('review', {
     args: { craftBin: '/opt/craft' },
     script: {
@@ -106,15 +104,15 @@ test('the lean agent unregistered: the task re-runs on the default type, the typ
     run.logs.some(l => l.includes(`${LEAN} could not launch`)),
     run.logs.join('\n'),
   )
-  const submits = run.calls.filter(c => c.label.startsWith('step:submit:')).map(c => notes(c.prompt))
-  assert.equal(submits.length, 2)
-  const first = submits[0] ?? []
-  const second = submits[1] ?? []
-  assert.equal(first.length, 1, JSON.stringify(first))
-  assert.match(String(first[0]), /^round 1: 1 task\(s\) on `craft:review-task` ran on the default agent type instead \(the first failed with ".*not found/)
-  assert.match(String(first[0]), /the same prompt, so no weaker, only costlier/)
-  assert.doesNotMatch(String(first[0]), /without its rubric/)
-  assert.match(String(second[0]), /^round 2: 1 task\(s\) on `craft:review-task` ran on the default agent type instead/)
+  assert.ok(
+    run.calls.every(c => !/--degraded/.test(c.prompt)),
+    'a cost-only fallback is no degraded note',
+  )
+  const said = run.logs.filter(l => l.includes('task(s) on `craft:review-task` ran on the default agent type instead'))
+  assert.equal(said.length, 2, run.logs.join('\n'))
+  assert.match(String(said[0]), /^round 1: 1 task\(s\) .*\(the first failed with ".*not found.*the same prompt, so no weaker, only costlier/)
+  assert.match(String(said[1]), /^round 2: 1 task\(s\)/)
+  assert.doesNotMatch(run.report, /Degraded/)
 })
 
 test('the lean agent ships with the plugin: read-only tools, no project instructions, no pinned model', () => {
