@@ -3,7 +3,7 @@
 //! prompt — FAIL fails, FAIL-ONCE fails the first time, HANG outlives its deadline, LIMIT says the
 //! usage limit, NOLOGIN says no account is logged in, BLOCKED (Codex) answers that it could not
 //! look — and otherwise answer. With a `deaf` file in the log the script ignores SIGTERM from its
-//! first line and says so with `deaf-ready`.
+//! first line and says so with `deaf-ready`, once its `call-` file is written.
 
 use std::cell::RefCell;
 use std::num::NonZeroUsize;
@@ -23,6 +23,10 @@ use super::host::Host;
 use super::models::ModelTable;
 use super::protocol::{Protocol, Said};
 use super::round::RoundCtx;
+
+/// How long the stopping signal waits for its file: past it the signal is sent anyway, and the
+/// test's own checks on what the file stands for fail instead of the test hanging.
+const STOP_ONCE_BOUND: Duration = Duration::from_secs(10);
 
 /// The tests that settle the stop list take turns: a settle joins every listed grace, another
 /// test's too, and a test that checks its own group is gone after its settle must not find it
@@ -159,10 +163,11 @@ fn host_script(log: &Path, read: &str, answer: &str) -> String {
     let log = log.display();
     format!(
         r#"#!/bin/sh
-if [ -f '{log}/deaf' ]; then trap '' TERM; touch '{log}/deaf-ready'; fi
+if [ -f '{log}/deaf' ]; then trap '' TERM; fi
 {read}
 mkdir -p '{log}/live'; touch '{log}/live/'$$; ls '{log}/live' | wc -l >> '{log}/alive'
 printf '%s' "$input" > '{log}/call-'$$; echo "$@" > '{log}/argv-'$$; echo "$CLAUDE_PLUGIN_ROOT" > '{log}/root'; pwd -P > '{log}/cwd'
+if [ -f '{log}/deaf' ]; then touch '{log}/deaf-ready'; fi
 case "$input" in *HANG*) sleep 30;; esac
 sleep 0.3; rm -f '{log}/live/'$$
 case "$input" in
@@ -194,7 +199,7 @@ struct Bench {
     events: RefCell<Vec<Event>>,
     /// A stopping signal's exit status, sent this long after the drive starts.
     stop_after: Option<(Duration, u8)>,
-    /// A file the stopping signal also waits for, sent once it exists.
+    /// A file the stopping signal also waits for, sent once it exists or after [`STOP_ONCE_BOUND`].
     stop_once: Option<PathBuf>,
 }
 
@@ -268,7 +273,10 @@ impl Bench {
                 if let Some((after, code)) = self.stop_after {
                     let once = self.stop_once.clone();
                     tokio::spawn(async move {
-                        while once.as_ref().is_some_and(|f| !f.exists()) {
+                        let bound = tokio::time::Instant::now() + STOP_ONCE_BOUND;
+                        while once.as_ref().is_some_and(|f| !f.exists())
+                            && tokio::time::Instant::now() < bound
+                        {
                             tokio::time::sleep(Duration::from_millis(10)).await;
                         }
                         tokio::time::sleep(after).await;

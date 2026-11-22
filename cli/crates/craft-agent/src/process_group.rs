@@ -42,8 +42,10 @@ impl GroupGuard {
     }
 }
 
-/// Blocks until every group a guard has stopped is gone or has been sent SIGKILL: at most the
-/// two-second grace. Call it before the process exits, so a group that ignores SIGTERM does not
+/// Blocks until every group a guard has stopped on a grace thread is gone or has been sent SIGKILL:
+/// at most the two-second grace plus the wait to reap a killed leader, about 2.2 s. A grace a drop
+/// is running inline, for want of a thread, is not listed and not waited for here: that drop's own
+/// thread ends it. Call it before the process exits, so a group that ignores SIGTERM does not
 /// outlive craft. A no-op off unix.
 pub fn settle_stops() {
     #[cfg(unix)]
@@ -52,8 +54,9 @@ pub fn settle_stops() {
 
 /// Whether a group a guard stopped is still inside its grace: its thread has neither seen the group
 /// gone nor sent SIGKILL yet, so [`settle_stops`] would wait for it. A stop whose grace has ended
-/// is not counted, settled or not; nothing stopped, as in every command that runs no agent, is
-/// false. Always false off unix.
+/// is not counted, settled or not, nor is a grace a drop runs inline on another thread for want of
+/// one of its own; nothing stopped, as in every command that runs no agent, is false. Always false
+/// off unix.
 #[must_use]
 pub fn stops_pending() -> bool {
     #[cfg(unix)]

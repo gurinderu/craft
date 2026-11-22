@@ -35,10 +35,11 @@ pub(super) fn stop(pgid: Pid) {
 /// Sends the group SIGTERM and starts its grace on the thread `spawn` gives, listed under the lock
 /// in the same move, so a check or settle never runs between the two; the lock is held across the
 /// spawn, which only the stops and the settle contend for. When the OS refuses the thread, this
-/// drop runs the grace itself: it blocks its worker for at most the two seconds, only when threads
-/// have run out, and the group still gets its grace and its SIGKILL within the same two seconds
-/// the thread would have — nothing is kept by pid past them, so the reuse caveat below holds
-/// either way. Not deferred to the settle: by then the pid could lead an unrelated group.
+/// drop runs the grace itself (realm @nick/craft, node #612): it blocks its worker for at most
+/// [`GRACE`] plus the [`KILLED`] wait, about 2.2 s, only when threads have run out, and the group
+/// still gets its grace and its SIGKILL within the same time the thread would have — nothing is
+/// kept by pid past it, so the reuse caveat below holds either way. Not deferred to the settle:
+/// by then the pid could lead an unrelated group.
 pub(super) fn stop_with(pgid: Pid, spawn: impl FnOnce(Grace) -> io::Result<JoinHandle<()>>) {
     // An error means the group is gone already (ESRCH): nothing to stop.
     if killpg(pgid, Signal::SIGTERM).is_err() {
@@ -47,8 +48,8 @@ pub(super) fn stop_with(pgid: Pid, spawn: impl FnOnce(Grace) -> io::Result<JoinH
     let deadline = Instant::now() + GRACE;
     let mut stopping = STOPPING.lock().unwrap_or_else(PoisonError::into_inner);
     stopping.retain(|t| !t.is_finished());
-    // Drop cannot wait; a thread finishes the job. The group id could in principle be reused
-    // within the grace, but only by a new process made leader of a group of its own pid — the
+    // A thread finishes the job, so the drop need not wait. The group id could in principle be
+    // reused within the grace, but only by a new process made leader of a group of its own pid — the
     // same pid the kernel would have to hand out again within two seconds.
     if let Ok(thread) = spawn(Box::new(move || wait_out(pgid, deadline))) {
         stopping.push(thread);
@@ -64,11 +65,12 @@ fn wait_out(pgid: Pid, deadline: Instant) {
     while Instant::now() < deadline {
         // The leader is craft's own child, and until reaped it stays a zombie that still counts as
         // a member, so a group that obeyed SIGTERM would look alive for the whole grace: reap it
-        // here. Nothing waits on it any more: the guard is dropped only with the future that owned
-        // its tokio `Child`, which is then reaped already (ECHILD) when its run ended normally, or
-        // held by tokio's orphan queue after a stop, which drops a child found gone. Reaping by
-        // pid shares the reuse caveat above: only a new child of craft could take that pid within
-        // the grace.
+        // here. Nothing waits on it any more: the guard lives in the same future as its tokio
+        // `Child`, declared after it, so it is dropped first, as that future ends or is dropped.
+        // By then the run either ended normally and its `wait_with_output` reaped the child
+        // (ECHILD here), or the future is being dropped and no one awaits the child: it goes to
+        // tokio's orphan queue, which drops a child found gone. Reaping by pid shares the reuse
+        // caveat above: only a new child of craft could take that pid within the grace.
         let _reaped = waitpid(pgid, Some(WaitPidFlag::WNOHANG));
         // Signal 0 only asks whether the group still has a member.
         if killpg(pgid, None).is_err() {

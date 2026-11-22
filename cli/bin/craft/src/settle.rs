@@ -39,8 +39,8 @@ impl Exit {
             let _gone = settled.send(std::panic::catch_unwind(settle));
         });
         if (self.spawn)(job).is_err() {
-            // This blocks a runtime worker for at most the two-second grace: at exit there is
-            // nothing left for it to turn.
+            // This blocks a runtime worker for at most the two-second grace plus the wait to reap
+            // a killed leader, about 2.2 s: at exit there is nothing left for it to turn.
             settle();
             return;
         }

@@ -35,6 +35,11 @@ async fn craft_s_exit_kills_a_stopped_group_that_ignores_sigterm() {
             name.strip_prefix("call-").map(str::to_owned)
         })
         .unwrap();
+    // Stopped, it has had SIGTERM and ignored it: a SIGKILL ends it below, not the SIGTERM.
+    assert!(
+        alive(&pid),
+        "the deaf group {pid} died on SIGTERM: was its trap set?"
+    );
     let code = crate::finish(Ok(ExitCode::from(7))).await;
     assert_eq!(code, ExitCode::from(7));
     // What SIGKILL left, such as the shell's own child, is gone within moments; a group still
