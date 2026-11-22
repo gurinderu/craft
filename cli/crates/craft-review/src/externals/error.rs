@@ -6,6 +6,10 @@ pub enum Error {
     /// A refused invocation, record, version pattern or file.
     #[error("{}", String::from_utf16_lossy(&.0.units().collect::<Vec<_>>()))]
     Refused(JsString),
+    /// A call into the engine ran past its time or memory budget, or threw: refused for the record
+    /// whose `versionMatch` it evaluated, or for the manifest discovery was reading.
+    #[error("{}", String::from_utf16_lossy(&.0.units().collect::<Vec<_>>()))]
+    Budget(JsString),
     /// Failure of the embedded ECMAScript runtime, distinct from a refused pattern.
     #[error("ECMAScript regex engine: {0}")]
     Engine(#[from] rquickjs::Error),
@@ -33,11 +37,15 @@ impl Error {
         Self::Refused(message.into())
     }
 
+    pub(super) fn budget(message: impl Into<JsString>) -> Self {
+        Self::Budget(message.into())
+    }
+
     /// The error's original code units, suitable for the compatibility JSON envelope.
     #[must_use]
     pub fn message(&self) -> JsString {
         match self {
-            Self::Refused(message) => message.clone(),
+            Self::Refused(message) | Self::Budget(message) => message.clone(),
             Self::Engine(_) | Self::Io(_) | Self::File { .. } | Self::Transport(_) => {
                 self.to_string().into()
             }

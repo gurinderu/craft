@@ -106,10 +106,10 @@ export function inFocus(f, paths) {
 /**
  * The judge's `ranked` pairs reordered so the `max` it is asked about come first, each part in the order
  * it had: under the bound unchanged; past it those of findings in focus first, then by `group` (the
- * stage's own severity split), then every finding's first candidate before any finding's second, then
- * the more severe finding, then the order given.
+ * stage's own split of a pair: whether its record can set the finding aside), then every finding's
+ * first candidate before any finding's second, then the more severe finding, then the order given.
  * @template {{ f: { file?: unknown, severity?: unknown, priorIndex?: unknown } }} P
- * @param {P[]} ranked @param {number} max @param {string[]} paths @param {(f: P['f']) => number} group
+ * @param {P[]} ranked @param {number} max @param {string[]} paths @param {(p: P) => number} group
  * @returns {P[]}
  */
 export function spreadPairs(ranked, max, paths, group) {
@@ -119,7 +119,7 @@ export function spreadPairs(ranked, max, paths, group) {
   const keyed = ranked.map((p, i) => {
     const k = nth.get(p.f) ?? 0
     nth.set(p.f, k + 1)
-    return { p, i, key: [inFocus(p.f, paths) ? 0 : 1, group(p.f), k, findingSeverityRank(p.f.severity), i] }
+    return { p, i, key: [inFocus(p.f, paths) ? 0 : 1, group(p), k, findingSeverityRank(p.f.severity), i] }
   })
   keyed.sort((a, b) => {
     for (let j = 0; j < a.key.length; j++) {

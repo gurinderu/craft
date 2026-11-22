@@ -238,3 +238,41 @@ fn a_memory_md_that_is_not_utf8_is_refused_by_name() {
         "nothing written"
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn a_symlinked_memory_file_keeps_its_link_and_its_target_is_rewritten() {
+    let d = old_layout();
+    let elsewhere = tempfile::tempdir().unwrap();
+    let target = elsewhere.path().join("MEMORY.md");
+    fs::rename(d.path().join("MEMORY.md"), &target).unwrap();
+    std::os::unix::fs::symlink(&target, d.path().join("MEMORY.md")).unwrap();
+    let out = reindex(d.path()).unwrap();
+    assert!(out.harness_written);
+    let link = fs::symlink_metadata(d.path().join("MEMORY.md")).unwrap();
+    assert!(link.file_type().is_symlink(), "the link is not detached");
+    let text = fs::read_to_string(&target).unwrap();
+    assert!(text.starts_with(USER_LINES), "{text}");
+    assert!(!text.contains("decision-0123456789.md"), "{text}");
+    assert!(!elsewhere.path().join("MEMORY.md.craft-tmp").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn a_dangling_memory_link_is_refused_by_name() {
+    let d = old_layout();
+    fs::remove_file(d.path().join("MEMORY.md")).unwrap();
+    let gone = d.path().join("gone/MEMORY.md");
+    std::os::unix::fs::symlink(&gone, d.path().join("MEMORY.md")).unwrap();
+    let err = format!("{:#}", reindex(d.path()).unwrap_err());
+    assert!(
+        err.contains("symbolic link whose target cannot be resolved"),
+        "{err}"
+    );
+    assert!(
+        fs::symlink_metadata(d.path().join("MEMORY.md"))
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+}

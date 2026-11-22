@@ -134,14 +134,15 @@ type PairKey = (bool, u8, usize, u8, usize);
 
 /// The judge's `ranked` pairs (finding, record) reordered so the `max` it is asked about come
 /// first, each part in the order it had: under the bound unchanged; past it those of findings in
-/// focus first, then by `group` (the stage's own severity split), then every finding's first
-/// candidate before any finding's second, then the more severe finding, then the order given.
+/// focus first, then by `group` (the stage's own split of a pair (finding, record): whether the
+/// record can set the finding aside), then every finding's first candidate before any finding's
+/// second, then the more severe finding, then the order given.
 pub(super) fn spread(
     ranked: Vec<(usize, usize)>,
     max: usize,
     findings: &[Value],
     paths: &[String],
-    group: &dyn Fn(&Value) -> u8,
+    group: &dyn Fn(usize, usize) -> u8,
 ) -> Vec<(usize, usize)> {
     if ranked.len() <= max {
         return ranked;
@@ -152,7 +153,7 @@ pub(super) fn spread(
         let k = nth.entry(fi).or_insert(0);
         let f = findings.get(fi).unwrap_or(&Value::Null);
         keyed.push((
-            (!in_focus(f, paths), group(f), *k, severity_rank(f), i),
+            (!in_focus(f, paths), group(fi, di), *k, severity_rank(f), i),
             (fi, di),
         ));
         *k += 1;

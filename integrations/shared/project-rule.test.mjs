@@ -76,13 +76,13 @@ test("candidates: the finding's file inside the rule's scope, and the rule's len
   assert.ok(!ruleCandidate(finding(), { ...r, kind: 'decision' }), 'a decision is no rule')
 })
 
-test("pairs: Critical and High last, the rule's body never in the judge's prompt", () => {
+test("pairs: Critical last, a High among the findings a rule can cover; the rule's body never in the judge's prompt", () => {
   const [r] = rules()
   assert.ok(r)
   const pairs = rulePairs([finding({ severity: 'Critical' }), finding({ severity: 'High' }), finding({ severity: 'Low' })], [r])
   assert.deepEqual(
     pairs.map(p => p.f.severity),
-    ['Low', 'High', 'Critical'],
+    ['High', 'Low', 'Critical'],
   )
   const prompt = ruleJudgePrompt(pairs)
   assert.match(prompt, /exactly what the rule declares acceptable/)

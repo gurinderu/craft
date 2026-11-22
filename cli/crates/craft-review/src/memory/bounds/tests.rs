@@ -81,7 +81,7 @@ fn past_the_judges_bound_each_finding_gets_its_best_candidate_first() {
     let findings = [finding("a.rs", "Low"), finding("b.rs", "Medium")];
     // a.rs holds five candidates, b.rs one: an order by rank alone would spend the bound on a.rs.
     let ranked: Vec<(usize, usize)> = (0..5).map(|d| (0, d)).chain([(1, 5)]).collect();
-    let group = |_: &Value| 0;
+    let group = |_: usize, _: usize| 0;
     assert_eq!(spread(ranked.clone(), 6, &findings, &[], &group), ranked);
     let out = spread(ranked, 3, &findings, &[], &group);
     assert_eq!(out.get(..3), Some([(0, 0), (0, 1), (1, 5)].as_slice()));

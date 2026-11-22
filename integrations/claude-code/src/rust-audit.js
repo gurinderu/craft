@@ -130,6 +130,7 @@ const SCOUT_SCHEMA = {
     repoRoot: { type: 'string', description: 'absolute path of the repository root (`git rev-parse --show-toplevel`), empty if it cannot be resolved — used ONLY to relativize a crate path that came back absolute' },
     crates: { type: 'array', items: CRATE_ITEM, description: 'workspace members; empty if cargo metadata is unavailable' },
     changedCrates: { type: 'array', items: CRATE_ITEM, description: 'subset of crates with a changed .rs file vs the base; empty if no base / no changes' },
+    changedFiles: { type: 'array', items: { type: 'string' }, description: 'every file the diff changes vs the base, repo-relative; empty if no base / no changes' },
     edges: { type: 'array', items: EDGE_ITEM, description: 'intra-workspace dependency edges; empty if cargo metadata is unavailable' },
     notes: { type: 'string', description: 'one line on what was detected' },
   },
@@ -199,7 +200,7 @@ const UNUSED_VERDICT_SCHEMA = {
 /** @typedef {{ from: string, to: string }} EdgeItem */
 /**
  * @typedef {{ hasDiff: boolean, hasUnsafe: boolean, baseRef: string, repoRoot: string, crates: CrateItem[],
- *   changedCrates: CrateItem[], edges: EdgeItem[], notes: string }} ScoutResult
+ *   changedCrates: CrateItem[], changedFiles?: string[], edges: EdgeItem[], notes: string }} ScoutResult
  */
 /** @typedef {{ severity: string, title: string, location: string, detail: string }} Finding */
 /** @typedef {{ dimension: string, verdict: string, summary: string, findings: Finding[], evidence: string }} FindingsResult */
@@ -406,6 +407,7 @@ const scout = /** @type {ScoutResult | null} */ (await auditAgent(
 5. crates = workspace members from \`cargo metadata --no-deps --format-version 1\` — each as {name, path} where path is the crate's manifest directory RELATIVE to the repo root. \`cargo metadata\` prints \`manifest_path\` as an ABSOLUTE file path: strip the repo root and the trailing \`/Cargo.toml\` yourself (the workspace root crate is \`.\`). An absolute path here cannot be used as a git pathspec and the per-crate review it feeds will refuse to run. Empty array if \`cargo metadata\` is unavailable.
 5b. repoRoot = \`git rev-parse --show-toplevel\` (empty string if it fails). It is the fallback that lets the script repair an absolute crate path; it is not a substitute for step 5.
 6. changedCrates = the subset of \`crates\` whose directory contains a \`.rs\` file listed by \`git diff --name-only <base>...HEAD\` (or \`git status --porcelain\` for uncommitted work). Empty if no base or no changed \`.rs\`.
+6b. changedFiles = every path \`git diff --name-only <base>...HEAD\` lists (any file, not only \`.rs\`), plus uncommitted ones from \`git status --porcelain\`, repo-relative. Empty if no base or no changes.
 7. edges = intra-workspace dependency edges from \`cargo metadata --locked --format-version 1\`; if \`--locked\` refuses (Cargo.lock missing or stale), read them from \`cargo metadata --no-deps --format-version 1\` instead — it does not resolve dependencies, so it never writes Cargo.lock; there each member's \`dependencies\` entry with a \`path\` inside another member is an edge. Never run it without one of those two flags: a plain call rewrites the lockfile of the checkout under audit. {from, to} where BOTH \`from\` and \`to\` are workspace members and \`from\` depends on \`to\`. Empty array if \`cargo metadata\` is unavailable.`,
   // Scout is pure mechanics (git refs + grep) — run it cheap: Haiku at low effort.
   { label: 'scout', schema: SCOUT_SCHEMA, model: 'haiku', effort: 'low' },
@@ -414,30 +416,38 @@ const scout = /** @type {ScoutResult | null} */ (await auditAgent(
  * What the audit reads from the scout. scout is null if the agent was skipped or died — fall back to
  * safe defaults rather than crash.
  * @param {ScoutResult | null} s
- * @returns {{ baseRef: string, hasUnsafe: boolean, repoRoot: string, crates: CrateItem[], changedCrates: CrateItem[], edges: EdgeItem[], notes: string }}
+ * @returns {{ baseRef: string, hasUnsafe: boolean, repoRoot: string, crates: CrateItem[], changedCrates: CrateItem[], changedFiles: string[], edges: EdgeItem[], notes: string }}
  */
 function scoutFacts(s) {
   const noNotes = 'scout produced no result — assuming unsafe present, no base ref'
   // fail-safe: run Miri when detection didn't resolve
-  if (!s) return { baseRef: '', hasUnsafe: true, repoRoot: '', crates: [], changedCrates: [], edges: [], notes: noNotes }
+  if (!s) return { baseRef: '', hasUnsafe: true, repoRoot: '', crates: [], changedCrates: [], changedFiles: [], edges: [], notes: noNotes }
   return {
     baseRef: s.baseRef ?? '',
     hasUnsafe: s.hasUnsafe ?? true,
     repoRoot: typeof s.repoRoot === 'string' ? s.repoRoot.trim() : '',
     crates: Array.isArray(s.crates) ? s.crates : [],
     changedCrates: Array.isArray(s.changedCrates) ? s.changedCrates : [],
+    changedFiles: Array.isArray(s.changedFiles) ? s.changedFiles.filter(f => typeof f === 'string' && f !== '') : [],
     edges: Array.isArray(s.edges) ? s.edges : [],
     notes: s.notes ?? noNotes,
   }
 }
-const { baseRef, hasUnsafe, repoRoot, crates, changedCrates, edges, notes: scoutNotes } = scoutFacts(scout)
+const { baseRef, hasUnsafe, repoRoot, crates, changedCrates, changedFiles, edges, notes: scoutNotes } = scoutFacts(scout)
+// The records past the cap are ranked by the diff's paths (keptRecords), so the cap keeps those closest to them.
+/** @type {(list: unknown, labelOf?: (i: number) => string) => ReturnType<typeof parsePriorDecisions>} */
+const parseNear = (list, labelOf) => parsePriorDecisions(list, labelOf, changedFiles)
 // The one recall of this audit (realm @nick/craft, node #203): the agent lists the diff's paths from
 // the base itself. Whatever it yields — an empty list included — goes to the nested reviews, the
 // launcher's records merged in (the recalled one kept on an id clash).
 async function recallOnce() {
-  if (recalledByLauncher) return
+  // A launcher's recall: its records are read again by the diff's paths, now that the scout named them.
+  if (recalledByLauncher) {
+    memory = withDerived(initialMemory(passedAccepted, true, A['_memory']), parseNear(passedList).decisions)
+    return
+  }
   const r = await recallDecisions(p => auditAgent(p, { label: 'memory-recall', phase: 'Scout', schema: MEMORY_RECALL_SCHEMA, model: 'sonnet', effort: 'low' }), [], baseRef || baseArg)
-  const { merged, read, blocked, overrides } = mergeAndRead(r.decisions, passedList, parsePriorDecisions, r.inactive)
+  const { merged, read, blocked, overrides } = mergeAndRead(r.decisions, passedList, parseNear, r.inactive)
   memory = withDerived(withPassed(r.memory, passedAccepted, read.passed), read.prior.decisions)
   // A passed copy of a record the store withdrew or superseded is not forwarded; the audit names it on
   // its memory line, the nested reviews never see it (realm @nick/craft, node #224).

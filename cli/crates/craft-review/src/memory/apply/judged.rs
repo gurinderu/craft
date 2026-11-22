@@ -13,9 +13,12 @@ use super::super::bounds;
 use super::super::judge::{self, CUT_NAMED_MAX, PAIRS_MAX, Verdict};
 use super::super::matching::{self, Match, Plan};
 
+#[cfg(test)]
+mod bound_tests;
+
 const FALLBACK: &str = "not matched unless a near-verbatim title answers them (for a tool finding naming no rule only a tool record with the same title, near its line when lines compare), the rest raised normally";
 /// How the pairs the judge saw were chosen past its bound, and how to need it less.
-const CUT_HOW: &str = "judged first were the findings on the reviewed paths and the priors re-adjudicated, then those a record can set aside before Critical and High ones, then each finding's closest record before any finding's second, severity ordering the findings within each of those; to need the judge less, record decisions with the finding's file as scope, its line and its lens (they then match outright), or review a narrower path (path=<dir>)";
+const CUT_HOW: &str = "judged first were the findings on the reviewed paths and the priors re-adjudicated, then the pairs whose record can set the finding aside (a Medium or Low finding, or a High a human's decision answers) before those its severity raises again whatever the record says (a Critical, or a High no human decided), then each finding's closest record before any finding's second, severity ordering the findings within each of those; to need the judge less, record decisions with the finding's file as scope, its line and its lens (they then match outright), or review a narrower path (path=<dir>)";
 
 /// The pairs the judge is asked about, as (finding, record) indices: the candidates first, ranked
 /// and cut at the bound, then the re-raised outright matches in the room left.
@@ -51,7 +54,12 @@ impl Asked {
             _ => u8::MAX,
         };
         ranked.sort_by_key(rank);
-        let severe = |f: &Value| u8::from(matching::reraised_by_severity(f));
+        // The same test as `pair_rank`: a High a human's decision answers is among the pairs a
+        // record can set aside (realm @nick/craft, node #602).
+        let severe = |fi: usize, di: usize| match (findings.get(fi), ds.get(di)) {
+            (Some(f), Some(d)) => u8::from(matching::reraised_by_rank(f, d)),
+            _ => 1,
+        };
         let ranked = bounds::spread(ranked, PAIRS_MAX, findings, focus, &severe);
         let sent = ranked.len().min(PAIRS_MAX);
         let mut pairs: Vec<(usize, usize)> = ranked.iter().take(sent).copied().collect();

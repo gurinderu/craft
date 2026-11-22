@@ -87,6 +87,19 @@ test('the rule judge’s pairs past its bound spread over findings, each finding
   assert.equal(new Set(sent.map(p => p.f)).size, RULE_JUDGE_SENT_MAX, 'no finding takes two of the bound while another has none')
 })
 
+test('past the rule judge’s bound a High is judged with the findings a rule can cover, only a Critical after them', () => {
+  const rule = /** @type {import('./prior-decision-record.mjs').PriorDecision} */ (
+    /** @type {unknown} */ ({ id: 'rule-a', kind: 'rule', title: 'clones are fine', scope: '.', reason: 'r', lens: '', links: [] })
+  )
+  const lows = Array.from({ length: RULE_JUDGE_SENT_MAX }, (_, i) => finding(`o${i}.rs`))
+  const high = { ...finding('h.rs'), severity: 'High' }
+  const critical = { ...finding('c.rs'), severity: 'Critical' }
+  const pairs = rulePairs([...lows, critical, high], [rule])
+  const sent = new Set(pairs.slice(0, RULE_JUDGE_SENT_MAX).map(p => p.f))
+  assert.ok(sent.has(high), 'a rule covers a High (realm @nick/craft, node #273), so it is not cut behind the Lows')
+  assert.ok(!sent.has(critical), 'a Critical is raised whatever the verdict: it goes last')
+})
+
 test('a path spelled with ./ or doubled slashes is covered by its directory entry', () => {
   assert.deepEqual(pathEntries(['./a/x.rs', 'a//y.rs', 'b/z.rs'], 2), { entries: ['a/', 'b/'], grouped: 3, cut: 0 })
 })

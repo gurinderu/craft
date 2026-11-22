@@ -27,7 +27,20 @@ pub(super) fn discover(root: &Path, paths: Option<&[JsString]>, known: &[Js]) ->
                 continue;
             }
         };
-        for c in manifest::candidates(&engine, file.as_str().unwrap_or(""), &value)? {
+        let found = match manifest::candidates(&engine, file.as_str().unwrap_or(""), &value) {
+            Ok(found) => found,
+            // A manifest whose lines ran the patterns past their budget is not read; the others are.
+            Err(Error::Budget(why)) => {
+                unread.push(Js::Obj(
+                    Obj::new()
+                        .with("file", Js::str(file))
+                        .with("error", Js::str(why)),
+                ));
+                continue;
+            }
+            Err(e) => return Err(e),
+        };
+        for c in found {
             if c.covered(known, &origin) {
                 continue;
             }
