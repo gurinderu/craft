@@ -1,10 +1,10 @@
 //! The review as a kind of run of the step protocol ([`craft_step::Kind`]): its tasks name the
-//! review's agents and carry the CONSUMERS lines and the code-graph flag, an agent that could not
+//! review's agents and carry the CONSUMERS lines, an agent that could not
 //! look fails at once, a batch verdict is checked beside the schema, and the CONSUMERS lines an
 //! answer left unmarked are kept.
 
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use crate::agent::AgentKind;
 use crate::state::{Task, TaskKind};
@@ -22,14 +22,10 @@ pub struct Marks {
     pub unmarked: Vec<String>,
 }
 
-/// A review task's flags, kept last in the state.
+/// A review task's flags, kept last in the state: none since no task reaches for the code graph's
+/// MCP tools — a metrics lens and its verifier judge from the numbers in their prompt.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
-pub struct Flags {
-    /// Its prompt asks for the code graph's MCP tools (a metrics lens, the verifier of a metric
-    /// finding): a host runs it on an agent that can reach them.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub graph: bool,
-}
+pub struct Flags {}
 
 impl craft_step::Kind for TaskKind {
     type Agent = AgentKind;
@@ -54,15 +50,6 @@ impl craft_step::Kind for TaskKind {
             Self::Critic { .. } => "critic",
             Self::CriticLens { .. } => "criticLens",
             Self::Extra { .. } => "extra",
-        }
-    }
-
-    fn wire(task: &Task) -> Vec<(&'static str, Value)> {
-        // A task whose prompt reaches for the code graph's MCP tools, which a lean agent type lacks.
-        if task.flags.graph {
-            vec![("graph", json!(true))]
-        } else {
-            Vec::new()
         }
     }
 

@@ -21,7 +21,7 @@ pub trait Kind: Debug + Clone + PartialEq + Serialize + DeserializeOwned {
     type Agent: Debug + Clone + PartialEq + Serialize + DeserializeOwned;
     /// Its fields beside the kind (the review's CONSUMERS lines).
     type Marks: Debug + Clone + PartialEq + Default + Serialize + DeserializeOwned;
-    /// Its fields after the shared ones (the review's code-graph flag).
+    /// Its fields after the shared ones (the review has none today).
     type Flags: Debug + Clone + PartialEq + Default + Serialize + DeserializeOwned;
 
     /// What the task is for, as the host reads it off the wire's `kind` (its deadline is set by it).

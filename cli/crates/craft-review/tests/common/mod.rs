@@ -168,7 +168,7 @@ pub fn scout(size: &str, lenses: &[&str]) -> Value {
 
 /// A lens's answer of `findings`.
 pub fn lens(name: &str, findings: &[Value]) -> Value {
-    json!({"lens": name, "findings": findings})
+    json!({"lens": name, "findings": findings, "rubricRead": ["/plugin/skills/rubric/SKILL.md"]})
 }
 
 /// Past the completeness critic a large or security-sensitive plan asks: each critic answers that

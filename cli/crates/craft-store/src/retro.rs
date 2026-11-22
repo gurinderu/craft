@@ -249,6 +249,14 @@ pub fn add_record(out: &mut Retro, r: &Obj) -> Result<(), Utf16Error> {
     for item in r.get("notRun").and_then(Js::as_arr).unwrap_or(&[]) {
         *out.not_run.entry(item.to_js_string()?).or_default() += 1;
     }
+    // A coverage gap (`capped`) is fragility a re-run fixes too, ranked beside what did not run
+    // though the record keeps it apart from `notRun`, which marks a run INCOMPLETE; by its lens and
+    // kind alone ([`crate::gap::key`]), as its files and errors differ run to run.
+    for item in r.get("capped").and_then(Js::as_arr).unwrap_or(&[]) {
+        *out.not_run
+            .entry(crate::gap::key(&item.to_js_string()?).to_owned())
+            .or_default() += 1;
+    }
     rounds::add(r, &mut out.rounds);
     rounds::add_apart(r, &mut out.apart);
     lenses_of(r, &mut out.lenses)

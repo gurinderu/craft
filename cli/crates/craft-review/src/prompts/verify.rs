@@ -108,7 +108,11 @@ pub fn verify_prompt(
     let head = if metric {
         content::prompt(
             "verify-metric",
-            &vars([("project", ctx.graph_project.clone())]),
+            &vars([
+                ("project", ctx.graph_project.clone()),
+                ("base", super::lens::base_label(ctx)),
+                ("rows", crate::complexity::rows_of(&ctx.consumers, f)),
+            ]),
         )?
         .trim_end_matches('\n')
         .to_owned()
@@ -128,8 +132,8 @@ pub fn verify_prompt(
     };
     let (fallback, refuted) = if metric {
         (
-            " If you cannot re-read the metrics (the index is unavailable), refuted=true.",
-            "Metric-decided as above: refuted=true when the values you re-read do not back the claim, or this diff did not introduce or worsen them.",
+            " If the review's rows hold no numbers for this function, refuted=true.",
+            "Metric-decided as above: refuted=true when the review's rows do not back the claim's values, or this diff did not introduce or worsen them.",
         )
     } else if tool {
         (

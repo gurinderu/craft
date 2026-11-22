@@ -143,7 +143,6 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
         ..PromptContext::default()
     };
     let (tracks, uncovered) = tracks_of(&diff.files, &profiles);
-    let memory = Memory::open(opts.prior_decisions.clone());
     let (optional, unknown) = crate::optional::request(opts.optional.as_deref(), &profiles);
     let notes =
         crate::optional::unknown_note(opts.optional.as_deref().unwrap_or(""), &unknown, &profiles);
@@ -163,11 +162,12 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
         settled: Vec::new(),
         notes: notes.into_iter().chain(pr_note).collect(),
         not_run: Vec::new(),
+        capped: Vec::new(),
         degraded: Vec::new(),
         verdict: None,
         exit: None,
         chain,
-        memory: memory.recalling(opts.recall, opts.recall_degraded.as_deref()),
+        memory: opts.memory(),
         gate: gate::Gate::default(),
         critic: crate::critic::Critic::default(),
         extra: extra::Extra::default(),

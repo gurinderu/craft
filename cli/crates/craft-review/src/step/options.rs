@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 
 use crate::gate::GateSetup;
+use crate::memory::Memory;
 use crate::publish::PostSetup;
 use crate::rereview;
 use crate::sources::SourcesSetup;
@@ -98,6 +99,12 @@ pub struct StartOptions {
 }
 
 impl StartOptions {
+    /// The memory the run starts with: the launcher's decisions, recalled as it asked.
+    pub(super) fn memory(&self) -> Memory {
+        Memory::open(self.prior_decisions.clone())
+            .recalling(self.recall, self.recall_degraded.as_deref())
+    }
+
     /// Where earlier runs are looked for: `runs`, else the run directory's parent.
     pub(super) fn runs_or_parent(&self) -> Option<PathBuf> {
         self.runs

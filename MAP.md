@@ -87,8 +87,8 @@ with a skill for the rubric and degrades gracefully when a tool is absent.
 
 | Agent | Runs | Rubric skill |
 |---|---|---|
-| `rust-reviewer` | per-lens diff review for the `review` workflow's rust profile; run directly = ad-hoc whole-diff review that runs the gate itself (a CI check only informs) and returns a verdict, at most Warning when the gate could not be established | `rust-review` |
-| `nix-reviewer` | per-lens diff review for the `review` workflow's nix profile; run directly = ad-hoc whole-diff Nix review (nix flake check / statix / deadnix gate + verdict) | `nix-review` |
+| `rust-reviewer` | a Rust review by hand (the `review` workflow runs its Rust lenses on `review-task`) = ad-hoc whole-diff review that runs the gate itself (a CI check only informs) and returns a verdict, at most Warning when the gate could not be established | `rust-review` |
+| `nix-reviewer` | a Nix review by hand (the `review` workflow runs its Nix lenses on `review-task`) = ad-hoc whole-diff Nix review (nix flake check / statix / deadnix gate + verdict) | `nix-review` |
 | `rust-architecture-reviewer` | whole crate/module dependency graph audit | `rust-architecture-review` |
 | `rust-security-scanner` | cargo-audit/deny/geiger + semgrep | `rust-security` |
 | `rust-miri` | `cargo +nightly miri test` (UB) | `rust-unsafe` |
@@ -280,7 +280,9 @@ reads indexed first within the list's graph budget (`cbm/reindex.rs`, one review
 `~/.craft/cbm-locks/`: `cbm/lock.rs`; an index past the budget left to finish; always one project of craft's own per
 repository moved to each checkout reviewed, never the profile's: `graph/target.rs`; nothing indexed when the change has
 no symbol), its index checked to be of this very checkout and of a commit holding the base (`fresh.rs`) and read again after the questions (answers dropped
-when it moved), the graph's callers merged in (`graph/sites.rs`: none from a checkout nested in this one), the report
+when it moved), the graph's callers merged in (`graph/sites.rs`: none from a checkout nested in this one) and, for the metrics lenses, the
+numbers of the functions the change touches read after them within a floor of the budget kept for it (`graph/ask.rs`,
+`graph/metrics.rs`, `cbm/functions.rs`), whether the complexity lens could look decided once (`src/complexity/look.rs`), the report
 naming which sources built it and why the graph was not asked; the whole list
 saved as `consumers.json` in the run directory, each lens given a budgeted part to go through line by line; `craft
 init` probes codebase-memory and writes `[code_graph]` into the profile, keeping a usable one it held while the graph

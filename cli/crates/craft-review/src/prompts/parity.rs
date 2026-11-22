@@ -112,13 +112,17 @@ fn complexity(g: &mut Golden, ctx: &PromptContext, plan: &Plan, prior: &str) {
         "{shared}"
     );
     g.check("/expected/complexity/lens", shared);
-    let vars = crate::content::vars([("project", ctx.graph_project.clone())]);
+    let f = serde_json::json!({"severity": "High", "title": "t", "file": "web/app.ts", "line": 1, "why": "w",
+        "source": "complexity", "metrics": {"function": "f", "cognitive": 30}});
+    let vars = crate::content::vars([
+        ("project", ctx.graph_project.clone()),
+        ("base", super::lens::base_label(ctx)),
+        ("rows", crate::complexity::rows_of(&ctx.consumers, &f)),
+    ]);
     let head = crate::content::prompt("verify-metric", &vars).unwrap();
     let head = head.trim_end_matches('\n').to_owned();
     assert!(head.contains("`craft-review-repo-0123456789ab`"), "{head}");
     g.check("/expected/complexity/verify", head.clone());
-    let f = serde_json::json!({"severity": "High", "title": "t", "file": "web/app.ts", "line": 1, "why": "w",
-        "source": "complexity", "metrics": {"function": "f", "cognitive": 30}});
     let v = body(ctx, verify_prompt(ctx, &general, &f, 0, "").unwrap());
     assert!(v.starts_with(&head), "{v}");
 }

@@ -239,3 +239,31 @@ fn a_lens_shown_consumer_lines_must_mark_them() {
     let got = tasks(&ctx, (&rust, &plan), &[], &[], &rounds).unwrap();
     assert_eq!(got[0].marks.consumers, ["src/api.rs:33", "src/api.rs:41"]);
 }
+
+#[test]
+fn a_sliced_metrics_lens_that_never_returned_is_held_as_a_coverage_gap() {
+    let mut run: crate::state::RunState = serde_json::from_value(json!({
+        "version": crate::state::STATE_VERSION,
+        "context": {"repo": "/r", "base": "origin/main", "spec": "", "craftRoot": null, "craftVersion": null},
+        "diff": {"base": "origin/main", "mergeBase": "abc", "head": "def", "dirty": false,
+                 "files": ["web/app.ts"], "stat": "", "log": ""},
+        "tracks": [], "uncovered": [], "light": false, "phase": "lenses", "tasks": [],
+        "rounds": {"round": 1, "pool": [], "yields": [], "returned": [], "failures": {},
+                   "expected": [format!("general:complexity{SLICE_SEP}web"), "general:errors"]},
+        "findings": [], "settled": [], "notes": [], "notRun": []
+    }))
+    .unwrap();
+    crate::phases::file_holes(
+        &mut run,
+        &[crate::profile::Profile::load("general").unwrap()],
+    );
+    assert_eq!(run.capped.len(), 1, "{:?}", run.capped);
+    assert_eq!(
+        craft_store::gap::key(&run.capped[0]),
+        "general metrics-only lenses that never returned"
+    );
+    let (_, detail) = run.capped[0].split_once(craft_store::gap::SEP).unwrap();
+    assert!(detail.starts_with("complexity :: web: "), "{detail}");
+    assert_eq!(run.not_run.len(), 1, "{:?}", run.not_run);
+    assert!(run.not_run[0].contains("errors: ") && !run.not_run[0].contains("complexity"));
+}

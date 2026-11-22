@@ -10,14 +10,14 @@ use crate::profile::Profile;
 use crate::state::{Task, TaskKind, TaskState};
 
 /// The metrics a finding carries, as the graph names them: the counts, then the flags.
-const COUNTS: [&str; 5] = [
+pub(crate) const COUNTS: [&str; 5] = [
     "cognitive",
     "complexity",
     "loop_depth",
     "transitive_loop_depth",
     "param_count",
 ];
-const FLAGS: [&str; 4] = [
+pub(crate) const FLAGS: [&str; 4] = [
     "linear_scan_in_loop",
     "alloc_in_loop",
     "recursion_in_loop",

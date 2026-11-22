@@ -22,7 +22,7 @@ pub(crate) fn step(dir: &Path, run: &RunState, verdict: &str) -> Value {
         "report": state::report_path(dir).display().to_string(),
         "verdict": verdict, "line": report::verdict_line(run, verdict),
         "repo": run.context.repo,
-        "findings": findings(run), "uncovered": run.uncovered, "notRun": run.not_run,
+        "findings": findings(run), "uncovered": run.uncovered, "notRun": run.not_run, "capped": report::capped(run),
         "ledger": run.chain.ledger, "reReview": re_review(run),
         "memory": run.memory.source.record(), "strict": run.context.strict,
         "memorySections": report::memory_sections(run),

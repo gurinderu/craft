@@ -111,6 +111,30 @@ fn the_critic_admits_a_lens_and_its_finding_is_verified() {
 }
 
 #[test]
+fn a_follow_up_lens_that_read_no_rubric_file_whole_is_named_as_degraded() {
+    let repo = fixture(true);
+    let out = tempfile::tempdir().unwrap();
+    let run = out.path().join("run");
+    step::start(&opts(repo.path(), out.path())).unwrap();
+    to_critic(&run);
+    let s = submit(
+        &run,
+        json!({"critic-rust": {"missingLenses": ["maintainability"], "notes": "n"}}),
+    );
+    assert_eq!(ids(&s), ["critic-lens-rust-maintainability"]);
+    let mut silent = lens("maintainability", &[]);
+    silent.as_object_mut().unwrap().remove("rubricRead");
+    let s = submit(&run, json!({"critic-lens-rust-maintainability": silent}));
+    assert_eq!(s["verdict"], json!("Block"), "the verdict stands: {s}");
+    let degraded = s["degraded"].to_string();
+    assert!(
+        degraded.contains("1 lens task(s) named no rubric file they read whole")
+            && degraded.contains("maintainability"),
+        "{s}"
+    );
+}
+
+#[test]
 fn a_critic_that_names_nothing_ends_the_run_as_it_stood() {
     let repo = fixture(true);
     let out = tempfile::tempdir().unwrap();

@@ -46,23 +46,19 @@ const writes = c => {
 /** @param {{ calls: { label: string, opts: { agentType?: string } }[] }} run @param {string} label */
 const typesOf = (run, label) => run.calls.filter(c => c.label === label).map(c => c.opts.agentType)
 
-test('a task naming no agent runs on the lean task agent, with its own model; recall and graph tasks keep the default type', async () => {
+test('a task naming no agent runs on the lean task agent, with its own model; recall tasks keep the default type', async () => {
   const run = await runEngine('review', {
     args: { craftBin: '/opt/craft' },
     script: {
       'step:start': pending([
         task('g'),
         task('d', { kind: 'dedup' }),
-        task('m', { graph: true }),
         task('r', { kind: 'recall' }),
         task('o', { kind: undefined }),
         task('t', { agentType: 'rust-reviewer' }),
-        task('c', { agentType: 'rust-reviewer', graph: true }),
       ]),
-      'lens:c': writes,
       'lens:g': writes,
       'lens:d': writes,
-      'lens:m': writes,
       'lens:r': writes,
       'lens:o': writes,
       'lens:t': writes,
@@ -72,11 +68,9 @@ test('a task naming no agent runs on the lean task agent, with its own model; re
   assert.deepEqual(typesOf(run, 'lens:g'), [LEAN], 'a general lens')
   assert.deepEqual(typesOf(run, 'lens:d'), [LEAN], 'the dedup')
   assert.equal(run.calls.find(c => c.label === 'lens:g')?.opts.model, 'sonnet', "the task's own model")
-  assert.deepEqual(typesOf(run, 'lens:m'), [undefined], "a task asking for the code graph's MCP tools")
   assert.deepEqual(typesOf(run, 'lens:r'), [undefined], "the memory's recall needs the Skill tool and MCP servers")
   assert.deepEqual(typesOf(run, 'lens:o'), [undefined], 'a task whose kind the binary did not say')
   assert.deepEqual(typesOf(run, 'lens:t'), ['craft:rust-reviewer'], 'a typed task keeps its agent')
-  assert.deepEqual(typesOf(run, 'lens:c'), [undefined], 'a Rust complexity lens: craft:rust-reviewer has no graph tools')
   assert.ok(
     run.calls.every(c => !/--degraded/.test(c.prompt)),
     'nothing fell back',

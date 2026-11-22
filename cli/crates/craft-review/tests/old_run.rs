@@ -7,9 +7,12 @@
 //! change started from), through a throwaway test beside these that ran `common::small_run`, wrote
 //! `{}` for `lens-rust-errors-r1` and the other lenses' clean answers, submitted once, and copied
 //! `state.json`, the printed step and that task's prompt and schema here, the run directory, the
-//! repository and the plugin root replaced by `@RUN@`, `@REPO@` and `@ROOT@`. These tests pass
-//! against that commit's craft-review unchanged. `EVERY_FIELD` is one task with each optional field
-//! set, in the field order that commit's `Task` serialized.
+//! repository and the plugin root replaced by `@RUN@`, `@REPO@` and `@ROOT@`. These tests passed
+//! against that commit's craft-review unchanged; since, the retry's SKILL FILES line is the one
+//! this binary renders (each rubric read whole, listed in `rubricRead`), as a resumed run's retry
+//! is rendered anew. `EVERY_FIELD` is one task with each optional field
+//! set, in the field order that commit's `Task` serialized, but for its `graph` flag, which no
+//! task carries any more: a state that holds it still reads, the flag dropped.
 #![expect(
     clippy::unwrap_used,
     reason = "the fixture's files are the test's own: a missing one fails it loudly"
@@ -58,13 +61,23 @@ const EVERY_FIELD: &str = r#"{
     "findings": []
   },
   "refused": "r",
-  "abandoned": true,
-  "graph": true
+  "abandoned": true
 }"#;
 
 #[test]
 fn a_task_with_every_field_set_reads_and_writes_back_byte_for_byte() {
     let task: state::Task = serde_json::from_str(EVERY_FIELD).unwrap();
+    assert_eq!(serde_json::to_string_pretty(&task).unwrap(), EVERY_FIELD);
+}
+
+#[test]
+fn a_task_with_the_retired_graph_flag_reads_and_writes_back_without_it() {
+    let with = EVERY_FIELD.replace(
+        "\"abandoned\": true\n",
+        "\"abandoned\": true,\n  \"graph\": true\n",
+    );
+    assert!(with.contains("\"graph\": true"));
+    let task: state::Task = serde_json::from_str(&with).unwrap();
     assert_eq!(serde_json::to_string_pretty(&task).unwrap(), EVERY_FIELD);
 }
 

@@ -494,3 +494,46 @@ fn a_run_that_only_stopped_across_versions_counts_once_under_its_newest_parts_ve
     let old_only = ndjson(&craft(d.path(), &["stats", "--version", "0.9.0", "--json"]));
     assert!(old_only.is_empty(), "{old_only:?}");
 }
+
+#[test]
+fn a_retro_ranks_coverage_gaps_beside_not_run_by_their_lens_and_kind() {
+    use craft_review::gaps;
+    let d = tempfile::tempdir().unwrap();
+    // The gaps as the review's own writers file them, their details differing run to run.
+    let gaps = [
+        gaps::could_not_look("complexity", "web/a.ts (cut) — and again"),
+        gaps::could_not_look("complexity", "the graph said boom"),
+        gaps::never_returned("general", &["complexity: died".to_owned()]),
+        "a gap written with no separator".to_owned(),
+    ];
+    for (i, gap) in gaps.iter().enumerate() {
+        let mut r = review("0.9.0", "Warning", 0);
+        r["capped"] = json!([gap]);
+        record(d.path(), &format!("2026-11-01T1{i}-00-00Z"), &r);
+    }
+    let lines = ndjson(&craft(d.path(), &["retro", "0.9.0", "--json"]));
+    let rows: Vec<(&str, &Value)> = lines
+        .iter()
+        .filter(|l| l["section"] == "notRun")
+        .map(|l| (l["what"].as_str().unwrap(), &l["runs"]))
+        .collect();
+    assert_eq!(
+        rows.len(),
+        3,
+        "one row per kind, the bare gap whole: {rows:?}"
+    );
+    let runs = |what: &str| {
+        rows.iter()
+            .find(|(w, _)| *w == what)
+            .map(|(_, r)| (*r).clone())
+    };
+    assert_eq!(
+        runs("metrics-only lens complexity could not look"),
+        Some(json!(2))
+    );
+    assert_eq!(
+        runs("general metrics-only lenses that never returned"),
+        Some(json!(1))
+    );
+    assert_eq!(runs("a gap written with no separator"), Some(json!(1)));
+}

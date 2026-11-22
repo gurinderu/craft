@@ -19,7 +19,7 @@ fn agent_types(s: &Value) -> Vec<Option<&str>> {
 }
 
 #[test]
-fn only_the_lens_tasks_name_the_profile_agent() {
+fn no_task_names_an_agent_so_every_one_runs_on_the_hosts_task_agent() {
     let repo = fixture(true);
     let scouted = tempfile::tempdir().unwrap();
     let scout = step::start(&opts(repo.path(), scouted.path())).unwrap();
@@ -33,8 +33,21 @@ fn only_the_lens_tasks_name_the_profile_agent() {
     let (run, s) = small_run(repo.path(), out.path());
     assert_eq!(
         agent_types(&s),
-        [Some("rust-reviewer"); 4],
-        "every lens runs on the profile's lens agent, named without a host prefix"
+        [None; 4],
+        "a Rust lens names no agent: the host's lean task agent runs it, the rubric read from \
+         the SKILL FILES its prompt names, and craft:rust-reviewer stays for a review by hand"
+    );
+    let p = common::prompt_of(&s["tasks"][0]);
+    assert!(
+        p.contains("SKILL FILES") && p.contains("- `rust-review`: `"),
+        "{p}"
+    );
+    let (_, block) = p.split_once("SKILL FILES").unwrap();
+    assert!(
+        block.contains("read each one WHOLE with the Read tool")
+            && block.contains("never `head`")
+            && block.contains("list each file you read whole in `rubricRead`"),
+        "the block tells the lens to read its rubric whole and say so: {block}"
     );
     let mut medium = finding("Medium", 2);
     medium["title"] = json!("another");
@@ -108,5 +121,45 @@ fn a_run_with_no_degraded_note_says_nothing_of_it() {
     assert!(
         !saved.contains("\"degraded\""),
         "the state keeps its old shape: {saved}"
+    );
+}
+
+#[test]
+fn a_lens_that_read_no_rubric_file_whole_is_named_as_degraded() {
+    let repo = fixture(true);
+    let out = tempfile::tempdir().unwrap();
+    let (run, s) = small_run(repo.path(), out.path());
+    let p = common::prompt_of(&s["tasks"][0]);
+    assert!(
+        p.contains("RUBRIC (required)") && p.contains("`rubricRead`"),
+        "{p}"
+    );
+    // The lens's answer schema offers the field, else no lens could answer it.
+    let schema: Value = serde_json::from_str(
+        &std::fs::read_to_string(s["tasks"][0]["schemaFile"].as_str().unwrap()).unwrap(),
+    )
+    .unwrap();
+    let field = &schema["properties"]["rubricRead"];
+    assert_eq!(
+        (field["type"].clone(), field["items"]["type"].clone()),
+        (json!("array"), json!("string")),
+        "{schema}"
+    );
+    let mut skimmed = lens("errors", &[]);
+    skimmed["rubricRead"] = json!(["/plugin/skills/rust-review/rules.md"]);
+    let mut silent = lens("intent", &[]);
+    silent.as_object_mut().unwrap().remove("rubricRead");
+    let round = json!({
+        "lens-rust-errors-r1": skimmed, "lens-rust-intent-r1": silent, "lens-rust-performance-r1": lens("performance", &[]), "lens-rust-tests-r1": lens("tests", &[]),
+    });
+    let s = step::submit(&run, Some(&answers(round))).unwrap();
+    assert_eq!(s["verdict"], json!("Approve"), "the verdict stands: {s}");
+    let degraded = s["degraded"].to_string();
+    assert!(
+        degraded.contains("2 lens task(s) named no rubric file they read whole")
+            && degraded.contains("lens:rust:errors r1")
+            && degraded.contains("lens:rust:intent r1")
+            && !degraded.contains("performance"),
+        "{degraded}"
     );
 }

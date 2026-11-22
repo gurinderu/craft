@@ -1803,3 +1803,31 @@ test('an unavailable agent is counted per agent type across both engines and bot
   assert.match(out, /## AGENT UNAVAILABLE[^\n]*\n- 3 run\(s\) · craft:rust-reviewer/)
   assert.match(out, /- 3 dispatch\(es\) in 2 run\(s\) · craft:nix-reviewer/)
 })
+
+test('coverage gaps rank beside notRun by their key: the text before the first separator', () => {
+  /** @param {string[]} capped */
+  const run = capped => ({ schemaVersion: 1, name: 'review', verdict: 'Warning', notRun: [], capped, dimensions: [] })
+  const look = 'metrics-only lens complexity could not look'
+  const a = aggregate([
+    run([`${look} — src/a.rs (cut) — and again`]),
+    run([`${look} — the graph said boom`]),
+    run(['general metrics-only lenses that never returned — complexity: died']),
+    run(['a gap written with no separator']),
+    { ...REVIEW_1 },
+  ])
+  assert.deepEqual(a.notRun, [
+    { item: look, count: 2 },
+    { item: 'a gap written with no separator', count: 1 },
+    { item: 'general metrics-only lenses that never returned', count: 1 },
+    { item: 'rust lens safety', count: 1 },
+  ])
+  assert.equal(a.incompleteRuns, 0, 'a coverage gap is no INCOMPLETE run')
+})
+
+test("gapKeys splits on the Rust writer's separator", () => {
+  const rust = fs.readFileSync(new URL('../../cli/crates/craft-store/src/gap.rs', import.meta.url), 'utf8')
+  const sep = /pub const SEP: &str = "([^"]+)";/.exec(rust)?.[1]
+  assert.ok(sep, 'craft_store::gap::SEP is found')
+  const js = fs.readFileSync(new URL('./analyze-runs.mjs', import.meta.url), 'utf8')
+  assert.ok(js.includes(`String(g).split('${sep}')[0]`), 'gapKeys splits on the same separator')
+})

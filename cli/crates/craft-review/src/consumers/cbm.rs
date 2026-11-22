@@ -13,6 +13,7 @@ use crate::cancel::Cancel;
 
 mod callers;
 mod error;
+mod functions;
 mod index;
 mod lock;
 mod probe;
@@ -24,6 +25,8 @@ mod run;
 use run::{bounded, payload};
 
 pub use error::CbmError;
+pub(crate) use functions::ROWS_PER_FILE;
+pub use functions::{Function, Functions};
 pub use index::Index;
 pub use lock::scratch_locks;
 
@@ -138,6 +141,22 @@ pub(super) fn left(deadline: Instant) -> Result<Duration, CbmError> {
         return Err(CbmError::TimeBound);
     }
     Ok(left)
+}
+
+/// `e`, a question's own time limit run out read as the budget's when `budget_bound`: what was
+/// left of the budget was the shorter limit.
+pub(super) fn of_budget(e: CbmError, budget_bound: bool) -> CbmError {
+    match e {
+        CbmError::Timeout(_) if budget_bound => CbmError::TimeBound,
+        e @ (CbmError::Spawn(_)
+        | CbmError::Timeout(_)
+        | CbmError::TimeBound
+        | CbmError::Stopped
+        | CbmError::Locked { .. }
+        | CbmError::StillIndexing(_)
+        | CbmError::Output(_)
+        | CbmError::Graph(_)) => e,
+    }
 }
 
 /// Whether `s` is an identifier, so it can be quoted into a query as it is.

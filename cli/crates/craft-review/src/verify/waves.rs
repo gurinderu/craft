@@ -145,7 +145,7 @@ fn vote(run: &RunState, i: usize, f: &Value, k: u32) -> Result<Task, ContentErro
     } else {
         (format!("c{}", k + 1), CULL_MODEL)
     };
-    let mut task = Task::new(
+    let task = Task::new(
         format!("verify-{i}-v{k}"),
         format!("verify:{file}:{line}#{tag}"),
         prompts::verify_prompt(
@@ -162,7 +162,6 @@ fn vote(run: &RunState, i: usize, f: &Value, k: u32) -> Result<Task, ContentErro
             voter: k,
         },
     );
-    task.flags.graph = crate::complexity::is_metric(f);
     Ok(task)
 }
 

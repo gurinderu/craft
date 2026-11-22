@@ -30,14 +30,39 @@ pub fn with_profile(
     opts
 }
 
+/// The numbers the stand-in graph holds for its one function `f`, by property.
+const F: &str = "f.name) x=f;; f.start_line|f.end_line) x=1;; f.cognitive) x=3;; f.complexity) x=2;; \
+f.loop_depth|f.transitive_loop_depth) x=1;; f.param_count|f.linear_scan_in_loop) x=0;; \
+f.alloc_in_loop|f.recursion_in_loop|f.unguarded_recursion) x=false;;";
+
 /// A stand-in graph over the checkout at `top`: every `index_repository` logged to `log`, a ready
-/// index of `top`, and no callers.
+/// index of `top`, no callers, and the numbers of one function `f` at `web/app.ts:1`, answered
+/// column by column as the question's RETURN names them — a property it does not hold reads as an
+/// empty cell — so the question and the reading of its answer cannot drift apart unseen.
 pub fn stand_in(dir: &Path, top: &Path) -> (PathBuf, PathBuf) {
+    stand_in_answering(dir, top, (None, None))
+}
+
+/// [`stand_in`], the metrics question over `web/app.ts` answered by `metrics` and the probe for
+/// any function's numbers by `probe` (shell: what each prints) when given; by default the probe
+/// finds one.
+pub fn stand_in_answering(
+    dir: &Path,
+    top: &Path,
+    (metrics, probe): (Option<&str>, Option<&str>),
+) -> (PathBuf, PathBuf) {
     let tool = dir.join("cbm");
     let log = dir.join("index-calls");
     let top = top.canonicalize().unwrap();
+    let answer = format!(
+        "cols=$(printf '%s' \"$4\" | sed -n 's/.* RETURN \\(.*\\) LIMIT .*/\\1/p' | tr -d ' ' | tr ',' ' '); \
+         c=; v=; for k in $cols; do case $k in {F} *) x=;; esac; c=\"$c,\\\"$k\\\"\"; v=\"$v,\\\"$x\\\"\"; done; \
+         echo \"{{\\\"columns\\\":[${{c#,}}],\\\"rows\\\":[[${{v#,}}]]}}\""
+    );
+    let answer = metrics.map_or(answer, str::to_owned);
+    let probe = probe.unwrap_or(r#"echo '{"columns":["f.name"],"rows":[["f"]]}'"#);
     let script = format!(
-        "#!/bin/sh\ncase \"$3\" in\n index_repository) echo \"$4\" >> {log}; echo '{{\"status\":\"indexed\"}}';;\n index_status) echo '{{\"status\":\"ready\",\"indexed_at\":\"2099-01-01T00:00:00Z\",\"root_path\":\"{top}\"}}';;\n query_graph) echo '{{\"rows\":[]}}';;\n *) echo '{{\"projects\":[]}}';;\nesac\n",
+        "#!/bin/sh\ncase \"$3\" in\n index_repository) echo \"$4\" >> '{log}'; echo '{{\"status\":\"indexed\"}}';;\n index_status) echo '{{\"status\":\"ready\",\"indexed_at\":\"2099-01-01T00:00:00Z\",\"root_path\":\"{top}\"}}';;\n query_graph) case \"$4\" in *'WHERE f.file_path IS NOT NULL AND f.cognitive IS NOT NULL RETURN f.name LIMIT 1'*) {probe};; *web/app.ts*'IS NOT NULL'*) {answer};; *) echo '{{\"rows\":[]}}';; esac;;\n *) echo '{{\"projects\":[]}}';;\nesac\n",
         log = log.display(),
         top = top.display(),
     );

@@ -130,9 +130,10 @@ fn a_follow_up_finding_the_pool_holds_is_not_new_and_a_dead_lens_is_a_gap() {
             {"file": "src/lib.rs", "line": 2, "title": "new"}]})),
         ),
         lens("b", "concurrency", None),
+        lens("c", "complexity", None),
     ];
     run.tasks[1].marks.consumers = vec!["src/x.rs:9".into()];
-    let fresh = fresh(&mut run);
+    let fresh = fresh(&mut run, &[Profile::rust().unwrap()]);
     assert_eq!(fresh.len(), 1);
     assert_eq!(
         (fresh[0]["source"].as_str(), fresh[0]["profile"].as_str()),
@@ -140,6 +141,17 @@ fn a_follow_up_finding_the_pool_holds_is_not_new_and_a_dead_lens_is_a_gap() {
     );
     assert_eq!(run.not_run.len(), 1);
     assert!(run.not_run[0].starts_with("rust critic follow-up lens concurrency"));
+    // A dead metrics-only lens is a coverage gap, as on the rounds' path: it caps, never INCOMPLETE.
+    assert_eq!(run.capped.len(), 1, "{:?}", run.capped);
+    assert_eq!(
+        craft_store::gap::key(&run.capped[0]),
+        "rust critic follow-up lens complexity"
+    );
+    let (_, detail) = run.capped[0].split_once(craft_store::gap::SEP).unwrap();
+    assert!(
+        detail.starts_with("dispatched and returned no findings"),
+        "{detail}"
+    );
     // The line only the dead lens was shown is named as such.
     assert_eq!(run.rounds.unanswered(), ["src/x.rs:9"]);
 }
@@ -178,6 +190,7 @@ fn a_metrics_lens_is_no_candidate_without_an_index() {
     );
     run.context.graph_project = "craft-review-x".into();
     run.context.consumers.graph_indexed = true;
+    run.context.consumers.metrics = vec![crate::complexity::tests::measured("src/a.rs", "f")];
     let asked = tasks(&run, &profiles).unwrap();
     assert!(
         asked[0].prompt.contains("\"complexity\""),

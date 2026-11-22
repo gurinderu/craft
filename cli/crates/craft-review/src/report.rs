@@ -6,6 +6,9 @@ use crate::coverage;
 use crate::state::{RunState, Track};
 
 mod consumer_lines;
+mod gap_cap;
+#[cfg(test)]
+mod gap_cap_tests;
 mod gate_cap;
 #[cfg(test)]
 mod gate_cap_tests;
@@ -86,6 +89,12 @@ pub fn verdict_line(state: &RunState, verdict: &str) -> String {
         Some(why) => format!("{line} · {why}"),
         None => line,
     };
+    // A metrics-only lens that never returned says why it holds an otherwise clean verdict.
+    let line = match gap_cap::reason(state, gate_cap::cap(state, findings_verdict(state))) {
+        Some(why) if line == verdict => format!("{line} — {why}"),
+        Some(why) => format!("{line} · {why}"),
+        None => line,
+    };
     let line = match reduced {
         Some(why) if line == verdict => format!("{line} — {why}"),
         Some(why) => format!("{line} · {why}"),
@@ -116,9 +125,10 @@ fn severity_verdict(state: &RunState) -> String {
     }
     // After the exit: a red gate's Block stands over another profile's unknown one; what did not
     // run makes it INCOMPLETE before a reduced round's cap could name another cause.
+    // A coverage gap caps only a run with nothing missing: else INCOMPLETE names the cause.
     let worst = gate_cap::cap(state, worst);
     match (state.not_run.is_empty(), worst) {
-        (true, w) => reduced_cap::cap(state, w).into(),
+        (true, w) => reduced_cap::cap(state, gap_cap::cap(state, w)).into(),
         (false, "Approve") => "INCOMPLETE".into(),
         (false, w) => format!("{w} (INCOMPLETE)"),
     }
@@ -273,7 +283,7 @@ fn plan_lines(state: &RunState, t: &Track, out: &mut String) {
     ));
     if !plan.metrics_dropped.is_empty() {
         out.push_str(&format!(
-            "Dropped for want of a code-metrics index{whose}: {}.\n",
+            "Dropped for want of the code graph's numbers{whose} (the note or the coverage gap says why): {}.\n",
             plan.metrics_dropped.join(", ")
         ));
     }
@@ -361,7 +371,7 @@ pub fn markdown(state: &RunState, verdict: &str) -> String {
     out.push_str(&crate::critic::section(state));
     out.push_str(&crate::units::section(&state.units));
     out.push_str("\n## Not run\n\n");
-    for n in &state.not_run {
+    for n in &not_run(state) {
         out.push_str(&format!("- {n}\n"));
     }
     out.push_str(&format!("- {}\n", light::cli_not_run(state)));
@@ -391,6 +401,22 @@ fn listed(heading: Option<&str>, files: &[String], out: &mut String) {
         out.push_str(&format!("- {f}\n"));
     }
     out.push('\n');
+}
+
+/// What did not run, each coverage gap named beside it as one: the report's "Not run".
+#[must_use]
+pub fn not_run(state: &RunState) -> Vec<String> {
+    let mut all = state.not_run.clone();
+    all.extend(capped(state));
+    all
+}
+
+/// Each coverage gap, marked as one: the finished step's and the status's `capped`, and so the
+/// run's record — apart from `notRun`, which holds only what the review needed, so no reader
+/// takes a gap for an INCOMPLETE run (realm @nick/craft, node #541).
+#[must_use]
+pub fn capped(state: &RunState) -> Vec<String> {
+    gap_cap::named(state)
 }
 
 /// How the run was weaker than asked.

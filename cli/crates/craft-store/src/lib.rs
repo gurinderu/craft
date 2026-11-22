@@ -14,6 +14,7 @@ pub mod cost;
 pub mod develop;
 pub mod filter;
 pub mod finalize;
+pub mod gap;
 pub mod git;
 pub mod js;
 pub mod lock;

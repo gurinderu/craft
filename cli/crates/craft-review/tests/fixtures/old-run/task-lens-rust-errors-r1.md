@@ -35,7 +35,7 @@ Observability: the review workflow records this run — do NOT write your own re
 
 Your previous answer was invalid: it does not match the schema (at /: "lens" is a required property; at /: "findings" is a required property). Answer again, matching the schema exactly.
 
-SKILL FILES: each skill this task names is a file. Read it with your file tool or `cat` (no Skill tool is needed):
+SKILL FILES: each skill this task names is a file. Before judging, read each one WHOLE with the Read tool (no Skill tool is needed; never `head`, `sed -n` or a partial range), and list each file you read whole in `rubricRead` when your answer has that field:
 - `rust-review`: `@ROOT@/skills/rust-review/SKILL.md` (the files it names, such as rules.md or fp-rules.md, are in `@ROOT@/skills/rust-review/`)
 - `rust-navigation`: `@ROOT@/skills/rust-navigation/SKILL.md` (the files it names, such as rules.md or fp-rules.md, are in `@ROOT@/skills/rust-navigation/`)
 

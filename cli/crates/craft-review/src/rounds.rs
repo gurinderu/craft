@@ -171,10 +171,10 @@ fn lens_task(
             slice: slice.map(|(_, s)| s.key.clone()),
         },
     );
-    // Only the lenses name the profile's agent, and not a metrics lens, which needs the code graph's
-    // tools; the scout, the dedup and the verifiers name none, and each host picks the agent for those.
+    // Only the lenses name the profile's agent, and not a metrics lens, which judges from the
+    // numbers in its prompt alone; the scout, the dedup and the verifiers name none, and each host
+    // picks the agent for those.
     task.agent_type = profile.agent_of(lens);
-    task.flags.graph = spec.is_some_and(|l| l.metrics);
     task.marks.consumers = crate::validate::listed(&task.prompt, &ctx.consumers);
     Ok(task)
 }
@@ -362,6 +362,12 @@ impl Rounds {
     /// The lenses of `profile` that never answered in any round, each with why.
     #[must_use]
     pub fn holes(&self, profile: &str) -> Vec<String> {
+        self.holes_of(profile).into_iter().map(|(_, h)| h).collect()
+    }
+
+    /// [`Self::holes`], each beside the id of the lens it is, its slice cut off.
+    #[must_use]
+    pub fn holes_of(&self, profile: &str) -> Vec<(String, String)> {
         let prefix = lens_key(profile, "");
         self.expected
             .iter()
@@ -372,7 +378,8 @@ impl Rounds {
                     "returned no result (skipped or died without an error)",
                     String::as_str,
                 );
-                Some(format!("{lens}: {why}"))
+                let id = lens.split(SLICE_SEP).next().unwrap_or(lens);
+                Some((id.to_owned(), format!("{lens}: {why}")))
             })
             .collect()
     }

@@ -82,7 +82,7 @@ fn the_lines_an_admitted_lens_left_unmarked_are_the_run_s() {
         lens("safety", &["src/b.rs:3", "src/c.rs:4"]),
         lens("concurrency", &["src/b.rs:3"]),
     ];
-    fresh(&mut run);
+    fresh(&mut run, &[]);
     assert_eq!(run.rounds.unmarked(), ["src/b.rs:3"]);
     assert_eq!(run.rounds.consumers_shown, ["src/b.rs:3", "src/c.rs:4"]);
 }
