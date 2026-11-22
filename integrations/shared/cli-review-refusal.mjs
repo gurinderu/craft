@@ -35,11 +35,17 @@ export function harnessRefusal(got) {
 }
 
 /**
+ * `command` quoted as it can be copied: a heredoc it opens (the start's, the only one a review command carries) has its
+ * body named after the quote, never inside it. @param {string} command @returns {string}
+ */
+const quotedCommand = command => (/<<'[^']+'$/.test(command) ? `\`${command}\` (the launcher's prior decisions on stdin)` : `\`${command}\``)
+
+/**
  * Who refused `command` ('' when the refusal quoted none: `what` stands for it). @param {string} command
  * @param {string} what @returns {string}
  */
 const refusedSentence = (command, what) =>
-  `the harness's permission check refused the command, not craft — it was not run: ${command ? `\`${command}\`` : what}.`
+  `the harness's permission check refused the command, not craft — it was not run: ${command ? quotedCommand(command) : what}.`
 
 /**
  * The Bash rule that allows the binary's review commands, its prefix spelled as the commands spell the binary (bare,

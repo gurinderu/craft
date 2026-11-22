@@ -372,7 +372,7 @@ test('a start with prior decisions refused by a classifier that quotes no comman
       ?.split('\n')[0] ?? ''
   assert.ok(issued.endsWith("--prior-decisions - <<'CRAFT_PRIOR_DECISIONS'"), issued)
   const line = verdictOf(run)
-  assert.ok(line.includes(`it was not run: \`${issued} (the launcher's prior decisions on stdin)\`.`), line)
+  assert.ok(line.includes(`it was not run: \`${issued}\` (the launcher's prior decisions on stdin).`), line)
 })
 
 test('a spent budget fails the run closed rather than reporting a verdict', async () => {

@@ -197,13 +197,13 @@ function startPrompt(o, where, version) {
 }
 
 /**
- * The start as the service agent is asked to issue it, for naming a refused one: its first line, and the heredoc that
- * hands the launcher's records on stdin named, not copied.
+ * The start as the service agent is asked to issue it, for naming a refused one: its first line, the heredoc that
+ * hands the launcher's records on stdin opened, not copied (the refusal names its body outside the quote).
  * @param {Options} o @param {import('./cli-review-commands.mjs').Where} where @param {string} version @returns {string}
  */
 function startIssued(o, where, version) {
   const cmd = startCommand(o, where, version)
-  return o.priorDecisions ? `${cmd} --prior-decisions - <<'${PRIOR_DECISIONS_EOF}' (the launcher's prior decisions on stdin)` : cmd
+  return o.priorDecisions ? `${cmd} --prior-decisions - <<'${PRIOR_DECISIONS_EOF}'` : cmd
 }
 
 /**
