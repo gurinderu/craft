@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 use crate::harm::{raise_path_floor, raise_weak_floor};
 use crate::profile::Profile;
 
-pub(crate) use found::with_rounds;
+pub(crate) use found::{GATE, LENS, stamped, with_rounds};
 pub(crate) use merge::merge;
 
 /// At most this many findings of one roll-up rule from one lens are kept as they are, as

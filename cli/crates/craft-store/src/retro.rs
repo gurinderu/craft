@@ -11,7 +11,7 @@ use crate::tally::{Tally, round2};
 
 mod rounds;
 
-pub use rounds::Round;
+pub use rounds::{Apart, Round};
 
 /// One lens's yield over the runs it ran in.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -52,6 +52,8 @@ pub struct Retro {
     pub folded: u64,
     /// Each lens round's yield after the dedup and verification, by round number.
     pub rounds: BTreeMap<u64, Round>,
+    /// The confirmed of the gate's seeds and of no lens round.
+    pub apart: Apart,
 }
 
 /// Whether the run is the CLI's (`reviewChain`).
@@ -234,6 +236,7 @@ pub fn add_record(out: &mut Retro, r: &Obj) -> Result<(), Utf16Error> {
         *out.not_run.entry(item.to_js_string()?).or_default() += 1;
     }
     rounds::add(r, &mut out.rounds);
+    rounds::add_apart(r, &mut out.apart);
     lenses_of(r, &mut out.lenses)
 }
 

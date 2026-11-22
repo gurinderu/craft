@@ -1,60 +1,79 @@
-//! The lens rounds that raised a finding: `foundInRound`, the round that first found it, and on a
-//! merge of several (an exact copy, a rolled-up flood, a same-defect group) `foundInRounds`, every
-//! round any member was raised in, so the record can say what each round added after the dedup.
+//! Where a finding came from (realm @nick/craft, node #248): `foundBy`, its origin — a lens round
+//! (`lens`, with `lensRound`), the gate's seeds (`gate`), an extra lens (`extra`), a unit-mode seam
+//! pass (`seam`), the completeness critic (`critic`) —, and `foundInRound`, the round it first
+//! entered the pool. A merge of several (an exact copy, a rolled-up flood, a same-defect group)
+//! keeps the earliest `foundInRound`, the strongest origin (a seed over a lens round over the
+//! rest), the earliest `lensRound` and `foundInRounds`, every lens round that raised a member.
 
 use std::collections::BTreeSet;
 
 use serde_json::{Value, json};
 
-/// The rounds `f` was raised in: its `foundInRounds`, else its `foundInRound`, else none.
-fn rounds_of(f: &Value) -> BTreeSet<u64> {
+/// The origin of a lens round's finding.
+pub(crate) const LENS: &str = "lens";
+/// The origin of a gate seed.
+pub(crate) const GATE: &str = "gate";
+
+/// `f` stamped with its `origin`, and `round` as its lens round when a lens round raised it.
+pub(crate) fn stamped(mut f: Value, origin: &str, round: Option<u32>) -> Value {
+    if let Some(obj) = f.as_object_mut() {
+        obj.insert("foundBy".into(), json!(origin));
+        if let Some(r) = round {
+            obj.insert("lensRound".into(), json!(r));
+        }
+    }
+    f
+}
+
+/// The lens rounds that raised `f`: its `foundInRounds`, else its `lensRound`, else none.
+fn lens_rounds_of(f: &Value) -> BTreeSet<u64> {
     match f.get("foundInRounds").and_then(Value::as_array) {
         Some(all) => all.iter().filter_map(Value::as_u64).collect(),
         None => f
-            .get("foundInRound")
+            .get("lensRound")
             .and_then(Value::as_u64)
             .into_iter()
             .collect(),
     }
 }
 
-/// `f` as the merge of `members`: first found when the earliest of them was, raised in every
-/// round any of them was. Unchanged when no member names a round.
+/// The strongest origin among `members`: a seed, then a lens round, then the first named.
+fn origin_of(members: &[&Value]) -> Option<String> {
+    let named: Vec<&str> = members
+        .iter()
+        .filter_map(|m| m.get("foundBy").and_then(Value::as_str))
+        .collect();
+    [GATE, LENS]
+        .into_iter()
+        .find(|o| named.contains(o))
+        .or_else(|| named.first().copied())
+        .map(str::to_owned)
+}
+
+/// `f` as the merge of `members`, its rounds and origin theirs as the module says. Unchanged
+/// where no member names them.
 pub(crate) fn with_rounds(mut f: Value, members: &[&Value]) -> Value {
-    let all: BTreeSet<u64> = members.iter().flat_map(|m| rounds_of(m)).collect();
-    if let (Some(&first), Some(obj)) = (all.first(), f.as_object_mut()) {
-        obj.insert("foundInRound".into(), json!(first));
-        obj.insert("foundInRounds".into(), json!(all));
+    let first = members
+        .iter()
+        .filter_map(|m| m.get("foundInRound").and_then(Value::as_u64))
+        .min();
+    let lens: BTreeSet<u64> = members.iter().flat_map(|m| lens_rounds_of(m)).collect();
+    let origin = origin_of(members);
+    let Some(obj) = f.as_object_mut() else {
+        return f;
+    };
+    if let Some(r) = first {
+        obj.insert("foundInRound".into(), json!(r));
+    }
+    if let Some(o) = origin {
+        obj.insert("foundBy".into(), json!(o));
+    }
+    if let Some(&r) = lens.first() {
+        obj.insert("lensRound".into(), json!(r));
+        obj.insert("foundInRounds".into(), json!(lens));
     }
     f
 }
 
 #[cfg(test)]
-mod tests {
-    use serde_json::json;
-
-    use super::with_rounds;
-
-    #[test]
-    fn a_finding_raised_in_rounds_one_and_three_is_round_ones_with_both() {
-        let (a, b) = (json!({"foundInRound": 3}), json!({"foundInRound": 1}));
-        let m = with_rounds(a.clone(), &[&a, &b]);
-        assert_eq!(
-            (m["foundInRound"].clone(), m["foundInRounds"].clone()),
-            (json!(1), json!([1, 3]))
-        );
-    }
-
-    #[test]
-    fn a_merge_of_merges_unions_their_rounds_and_one_without_rounds_is_left_as_is() {
-        let (a, b) = (
-            json!({"foundInRounds": [2, 3], "foundInRound": 2}),
-            json!({"foundInRound": 1}),
-        );
-        assert_eq!(
-            with_rounds(json!({}), &[&a, &b])["foundInRounds"],
-            json!([1, 2, 3])
-        );
-        assert_eq!(with_rounds(json!({"t": 1}), &[&json!({})]), json!({"t": 1}));
-    }
-}
+mod tests;

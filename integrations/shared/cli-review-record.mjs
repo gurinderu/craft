@@ -10,7 +10,8 @@
 // no profile covered, what did not run, the round of the branch's chain and the binary's ledger: a row per reported
 // finding and per prior finding the round carried, each with its disposition; and, as review's record keeps them, the
 // sorting before publication, the findings going against memory and what was posted on the PR; and, in the engine's
-// shape, each lens's yield (`dimensions`), the verification (`verification`), the lens rounds (`lensRounds`) as the
+// shape, each lens's yield (`dimensions`), the verification (`verification`), the lens rounds (`lensRounds`) and what their yield leaves beside them (`seedYield`, `unattributedYield`,
+// `unattributedConfirmed`) as the
 // binary counted them, and what the run cost as the driver observed it (`runtimeStats`, integrations/shared/cli-review-clock.mjs).
 import { makeRunLogger, quietly, telemetryLossNoter } from './run-logging.mjs'
 import { telemetryLostSection } from './review-coverage.mjs'
@@ -19,7 +20,7 @@ import { resumeHint } from './cli-review-verdict.mjs'
 
 /** @typedef {{ severity: string, file: string, line: number, title: string, ruleId: string, tier: string }} Finding  as the finished step names it */
 /** @typedef {{ file: string, line: number, symbol: string, severity: string, tier: string, disposition: string, source: string, ruleId: string, title: string, why: string, toolRule?: string, sources?: unknown[], deferral?: Record<string, unknown> }} LedgerRow  as the finished step names it */
-/** @typedef {{ verdict: string, base?: string, path?: string, findings?: Finding[], uncovered?: string[], notRun?: string[], round?: number, lensScope?: 'delta' | 'full', ledger?: LedgerRow[] | null, reReview?: Record<string, unknown> | null, memory?: Record<string, unknown> | null, sorting?: Record<string, unknown> | null, memoryContradictions?: Record<string, unknown> | null, prComments?: Record<string, unknown> | null, dimensions?: Record<string, unknown>[], verification?: Record<string, unknown> | null, lensRounds?: Record<string, unknown>[] | null, runtimeStats?: import('./cli-review-clock.mjs').RuntimeStats | null }} Outcome */
+/** @typedef {{ verdict: string, base?: string, path?: string, findings?: Finding[], uncovered?: string[], notRun?: string[], round?: number, lensScope?: 'delta' | 'full', ledger?: LedgerRow[] | null, reReview?: Record<string, unknown> | null, memory?: Record<string, unknown> | null, sorting?: Record<string, unknown> | null, memoryContradictions?: Record<string, unknown> | null, prComments?: Record<string, unknown> | null, dimensions?: Record<string, unknown>[], verification?: Record<string, unknown> | null, lensRounds?: Record<string, unknown>[] | null, seedYield?: Record<string, unknown> | null, unattributedYield?: Record<string, unknown> | null, unattributedConfirmed?: number | null, runtimeStats?: import('./cli-review-clock.mjs').RuntimeStats | null }} Outcome */
 /** @typedef {(prompt: string, opts: Record<string, unknown>) => Promise<unknown>} Call */
 /** @typedef {{ run: Call, route: (opts: Record<string, unknown>) => Record<string, unknown> }} Service  integrations/shared/service-agent.mjs */
 
@@ -95,6 +96,9 @@ const telemetryKept = o => ({
   dimensions: o.dimensions ?? [],
   verification: o.verification ?? null,
   ...(o.lensRounds ? { lensRounds: o.lensRounds } : {}),
+  ...(o.seedYield ? { seedYield: o.seedYield } : {}),
+  ...(o.unattributedYield ? { unattributedYield: o.unattributedYield } : {}),
+  ...(o.unattributedConfirmed != null ? { unattributedConfirmed: o.unattributedConfirmed } : {}),
   runtimeStats: o.runtimeStats ?? null,
 })
 

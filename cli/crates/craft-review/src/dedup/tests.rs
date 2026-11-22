@@ -4,7 +4,8 @@ use super::*;
 
 fn f(sev: &str, source: &str, title: &str, line: u32) -> Value {
     json!({"severity": sev, "title": title, "file": "src/a.rs", "line": line, "why": "w", "source": source,
-           "ruleId": "", "whereChecked": "", "foundInRound": line % 2 + 1, "profile": "rust"})
+           "ruleId": "", "whereChecked": "", "foundInRound": line % 2 + 1, "profile": "rust",
+           "foundBy": "lens", "lensRound": line % 2 + 1})
 }
 
 #[test]

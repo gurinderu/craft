@@ -35,6 +35,7 @@ pub(crate) fn step(dir: &Path, run: &RunState, verdict: &str) -> Value {
         if !degraded.is_empty() {
             obj.insert("degraded".into(), json!(degraded));
         }
+        obj.extend(telemetry::apart(run));
         for (k, v) in crate::publish::finished(run) {
             obj.insert(k.into(), v);
         }

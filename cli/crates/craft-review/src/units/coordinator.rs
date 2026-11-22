@@ -91,6 +91,7 @@ pub fn seam_answered(run: &mut RunState) {
             f.insert("source".into(), Value::String("seam".into()));
             f.insert("profile".into(), Value::String(profile.clone()));
             f.insert("foundInRound".into(), Value::from(run.rounds.round));
+            f.insert("foundBy".into(), Value::from("seam"));
             let f = Value::Object(f);
             if !kept.iter().any(|g| key(g) == key(&f)) {
                 kept.push(f);

@@ -1,6 +1,6 @@
 use serde_json::{Value, json};
 
-use super::lens_rounds;
+use super::{apart, lens_rounds};
 use crate::rounds::RoundYield;
 use crate::state::RunState;
 
@@ -20,62 +20,101 @@ fn run(yields: &[(u32, usize)]) -> RunState {
     .unwrap()
 }
 
-fn found(round: u64, tier: &str) -> Value {
-    json!({"foundInRound": round, "tier": tier})
+/// A finding of `origin` (a lens round's when `round` is given), judged `tier` at `severity`.
+fn found(origin: &str, round: Option<u32>, severity: &str, tier: &str) -> Value {
+    let mut f = json!({"foundBy": origin, "foundInRound": round.unwrap_or(1), "severity": severity, "tier": tier});
+    if let Some(r) = round {
+        f["lensRound"] = json!(r);
+    }
+    f
+}
+
+/// A pool of every origin: lens rounds 1 and 3, a seed, an extra (round 1, no lens round), a
+/// seam, a critic's and one that names none.
+fn pool() -> Vec<Value> {
+    vec![
+        found("lens", Some(1), "High", "confirmed"),
+        found("lens", Some(1), "Low", "confirmed"),
+        found("lens", Some(1), "Medium", "suspected"),
+        found("lens", Some(3), "Medium", "confirmed"),
+        found("lens", Some(3), "Low", "refuted"),
+        found("gate", None, "Medium", "confirmed"),
+        found("extra", None, "High", "confirmed"),
+        found("seam", None, "Low", "confirmed"),
+        found("critic", None, "Medium", "confirmed"),
+        json!({"severity": "Info", "tier": "confirmed"}),
+    ]
 }
 
 #[test]
-fn each_round_carries_its_raw_new_unique_and_confirmed_by_earliest_round() {
+fn each_round_carries_only_its_lens_findings_split_by_severity() {
     let mut r = run(&[(1, 5), (2, 4), (3, 2)]);
-    let pool = [
-        found(1, ""),
-        found(1, ""),
-        found(3, ""),
-        json!({"title": "the critic's"}),
-    ];
-    r.telemetry.deduped(&pool);
-    r.telemetry.confirmed(&[
-        found(1, "confirmed"),
-        found(1, "refuted"),
-        found(3, "confirmed"),
-    ]);
+    r.telemetry.deduped(&pool());
+    r.telemetry.tiers(&pool());
     let rows = lens_rounds(&r);
-    let pick = |row: &Value| {
-        (
-            row["raw"].clone(),
-            row["newUnique"].clone(),
-            row["confirmed"].clone(),
-        )
-    };
-    assert_eq!(
-        rows.iter().map(pick).collect::<Vec<_>>(),
-        [
-            (json!(5), json!(2), json!(1)),
-            (json!(4), json!(0), json!(0)),
-            (json!(2), json!(1), json!(1))
-        ]
-    );
     assert_eq!(
         rows[0],
-        json!({"round": 1, "agents": 2, "returned": 2, "newFindings": 1, "raw": 5, "newUnique": 2, "confirmed": 1})
+        json!({"round": 1, "agents": 2, "returned": 2, "newFindings": 1, "raw": 5, "newUnique": 3,
+               "confirmed": 2, "confirmedMediumPlus": 1,
+               "confirmedBySeverity": {"Critical": 0, "High": 1, "Medium": 0, "Low": 1, "Info": 0},
+               "suspected": 1, "suspectedBySeverity": {"Critical": 0, "High": 0, "Medium": 1, "Low": 0, "Info": 0}})
+    );
+    let pick = |row: &Value| (row["newUnique"].clone(), row["confirmed"].clone());
+    let picked: Vec<_> = rows.iter().map(pick).collect();
+    assert_eq!(
+        picked,
+        [
+            (json!(3), json!(2)),
+            (json!(0), json!(0)),
+            (json!(2), json!(1))
+        ]
+    );
+    assert!(
+        rows.iter()
+            .all(|row| row["newUnique"].as_u64() <= row["raw"].as_u64())
     );
 }
 
 #[test]
-fn a_run_before_its_dedup_carries_the_rounds_alone_and_one_before_verification_no_confirmed() {
+fn the_rounds_the_seeds_and_the_unattributed_add_up_to_every_confirmed_finding() {
+    let mut r = run(&[(1, 5), (3, 2)]);
+    r.telemetry.deduped(&pool());
+    r.telemetry.tiers(&pool());
+    let rows: u64 = lens_rounds(&r)
+        .iter()
+        .filter_map(|y| y["confirmed"].as_u64())
+        .sum();
+    let apart = apart(&r);
+    let seeds = apart["seedYield"]["confirmed"].as_u64().unwrap();
+    let unattributed = apart["unattributedConfirmed"].as_u64().unwrap();
+    let all = pool().iter().filter(|f| f["tier"] == "confirmed").count() as u64;
+    assert_eq!((rows, seeds, unattributed), (3, 1, 4));
+    assert_eq!(rows + seeds + unattributed, all);
+    let other = &apart["unattributedYield"];
+    let names: Vec<&String> = other.as_object().unwrap().keys().collect();
+    assert_eq!(names, ["critic", "extra", "other", "seam"]);
+    assert_eq!(other["extra"]["confirmedMediumPlus"], 1);
+}
+
+#[test]
+fn a_run_before_its_dedup_carries_the_rounds_alone_and_one_before_verification_no_tiers() {
     let mut r = run(&[(1, 5)]);
-    r.telemetry.confirmed(&[found(1, "confirmed")]);
+    r.telemetry.tiers(&pool());
     assert_eq!(
         lens_rounds(&r)[0].get("newUnique"),
         None,
         "no dedup counted"
     );
-    r.telemetry.deduped(&[found(1, "")]);
+    assert!(apart(&r).is_empty());
+    r.telemetry.deduped(&pool());
     let row = &lens_rounds(&r)[0];
     assert_eq!(
         (row["newUnique"].clone(), row.get("confirmed")),
-        (json!(1), None)
+        (json!(3), None)
     );
+    let apart = apart(&r);
+    assert_eq!(apart["seedYield"], json!({"unique": 1}));
+    assert_eq!(apart.get("unattributedConfirmed"), None);
 }
 
 #[test]
@@ -87,6 +126,7 @@ fn an_empty_pool_counts_zero_in_every_round_and_an_old_yield_reads_without_raw()
         (row["newUnique"].clone(), row["confirmed"].clone()),
         (json!(0), json!(0))
     );
+    assert_eq!(apart(&r)["unattributedConfirmed"], 0);
     let old: RoundYield =
         serde_json::from_value(json!({"round": 1, "agents": 1, "returned": 1, "newFindings": 0}))
             .unwrap();

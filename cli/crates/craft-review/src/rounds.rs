@@ -214,7 +214,7 @@ fn pooled(found: &Value, profile: &str, lens: &str, round: u32) -> Value {
     f.insert("source".into(), Value::String(lens.to_owned()));
     f.insert("profile".into(), Value::String(profile.to_owned()));
     f.insert("foundInRound".into(), Value::from(round));
-    Value::Object(f)
+    crate::dedup::stamped(Value::Object(f), crate::dedup::LENS, Some(round))
 }
 
 impl Rounds {

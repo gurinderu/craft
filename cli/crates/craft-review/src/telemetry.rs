@@ -15,7 +15,7 @@ use crate::state::{RunState, Task, TaskKind, TaskState, finding_profile};
 
 mod rounds;
 
-pub use rounds::{ByRound, lens_rounds};
+pub use rounds::{ByRound, Yield, apart, lens_rounds};
 
 /// The severities a row counts its confirmed findings by, as `countBySeverity` does.
 const SEVERITIES: [&str; 5] = ["Critical", "High", "Medium", "Low", "Info"];
@@ -127,7 +127,7 @@ pub(crate) fn verified(run: &mut RunState, settled: &[Value]) {
         .count();
     let sent = verifiers.len();
     let tally = &mut run.telemetry;
-    tally.confirmed(settled);
+    tally.tiers(settled);
     let v = tally.verified.get_or_insert_with(Verified::default);
     v.votes_sent += sent;
     v.votes_returned += returned;
