@@ -1,0 +1,20 @@
+[
+  [" src/api/src/users.rs:1230-1245 ", "src/api/src/users.rs", 1230],
+  ["src/users.rs:42", "src/users.rs", 42],
+  ["src/a.rs:500-505", "src/a.rs", 500],
+  ["src/users.rs", "src/users.rs", 0],
+  [".", ".", 0],
+  ["src:", "src:", 0],
+  [":12", ":12", 0],
+  ["src/a.rs:x", "src/a.rs:x", 0],
+  ["src/a.rs:1-x", "src/a.rs:1-x", 0],
+  ["src/a.rs:1-2-3", "src/a.rs:1-2-3", 0],
+  ["src/a.rs::3", "src/a.rs::3", 0],
+  ["a:1234567890", "a:1234567890", 0],
+  ["src/a.rs\n:12", "src/a.rs\n:12", 0],
+  ["src/a\u0085.rs:12", "src/a\u0085.rs", 12],
+  ["src/a.rs:1\u000b", "src/a.rs:1", 0],
+  ["src/a\u2028.rs:7", "src/a\u2028.rs", 7],
+  ["src/a.rs :7", "src/a.rs :7", 0],
+  ["src/a.rs\u007f:3", "src/a.rs\u007f:3", 0]
+]
