@@ -8,7 +8,8 @@ use super::{Record, Writer, unfiled, write};
 /// What the host says on a submit beside its answers.
 #[derive(Debug, Clone, Default)]
 pub struct Host {
-    /// The task agents it has dispatched so far, and the output tokens its run has spent.
+    /// The task agents it has dispatched so far, and the output tokens it reports (what they count:
+    /// `output_tokens_scope`).
     pub agents: Option<u64>,
     pub output_tokens: Option<u64>,
     /// What `output_tokens` counts (`turn-delta`), kept with it.

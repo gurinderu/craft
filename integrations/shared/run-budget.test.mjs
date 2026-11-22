@@ -95,7 +95,12 @@ test("rust-audit: the audit's record carries the pool's growth since its start, 
   })
   const logger = r.calls.findIndex(c => /craft-log-run/.test(c.prompt))
   assert.ok(logger > 0 && r.calls.slice(0, logger).every(c => !c.threw))
-  assert.equal(filedRecord(r).outputTokens, logger * CALL_SPEND, 'every dispatch before the record, and none of the session before the run')
+  const rec = filedRecord(r)
+  assert.deepEqual(
+    [rec.outputTokens, rec.outputTokensScope],
+    [logger * CALL_SPEND, 'turn-delta'],
+    'every dispatch before the record, none of the session before the run, and marked as such',
+  )
 })
 
 test('review: a nested run (_via) tells the binary no tokens', async () => {
@@ -126,6 +131,36 @@ test('review: a nested run (_via) tells the binary no tokens', async () => {
   const submit = String(run.calls.find(c => c.label === 'step:submit:1')?.prompt)
   assert.match(submit, /review submit --run /)
   assert.doesNotMatch(submit, /--output-tokens/, 'the pool is shared with its siblings and its parent, whose record covers it')
+})
+
+test("review: a nested run's resume tells the binary no tokens on any submit", async () => {
+  const lens = {
+    id: 'lens-errors-r1',
+    label: 'lens:errors',
+    model: 'opus',
+    promptFile: `${RUN}/tasks/l.md`,
+    schemaFile: `${RUN}/tasks/l.schema.json`,
+    answerFile: `${RUN}/answers/l.json`,
+  }
+  const run = await runEngine('review', {
+    args: { craftBin: '/opt/craft', run: RUN, _via: 'rust-audit' },
+    budgetSpent: BEFORE,
+    script: {
+      'step:resume': ran({ run: RUN, tasks: [lens], done: false }),
+      lens: 'done',
+      'step:submit:1': ran({
+        run: RUN,
+        done: true,
+        report: `${RUN}/report.md`,
+        verdict: 'Approve',
+        filing: { runDir: '', rejoin: false, lost: [], record: 'filed' },
+      }),
+    },
+  })
+  const submits = run.calls.filter(c => /^step:(resume|submit)/.test(c.label)).map(c => c.prompt)
+  assert.equal(submits.length, 2, run.report)
+  assert.ok(submits[0]?.includes(' --resume '), submits[0])
+  for (const p of submits) assert.doesNotMatch(p, /--output-tokens/, 'a nested resume is no more its own pool than its start')
 })
 
 for (const [engine, args] of /** @type {Array<[string, Record<string, unknown>]>} */ ([

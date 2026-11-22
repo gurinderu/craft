@@ -225,6 +225,86 @@ fn a_top_level_run_files_the_hosts_tokens_with_their_scope_and_a_nested_one_none
     }
 }
 
+/// A top-level ctx: no parent, so the host's tokens are this run's to file.
+fn top() -> Ctx {
+    Ctx {
+        via: String::new(),
+        ..ctx()
+    }
+}
+
+/// The finalize requests `w` was sent: what each says of the tokens.
+fn tokens_sent(w: &Fake) -> Vec<(Value, Value)> {
+    (0..w.commands().len())
+        .filter(|&i| w.commands()[i] == "finalize")
+        .map(|i| {
+            let r = w.request(i);
+            (r["outputTokens"].clone(), r["outputTokensScope"].clone())
+        })
+        .collect()
+}
+
+#[test]
+fn an_older_hosts_tokens_without_a_scope_file_no_scope() {
+    let run = tempfile::tempdir().unwrap();
+    let w = Fake::default();
+    open(run.path(), top(), "", &pending("verify", 1), &w);
+    submitted(run.path(), &finished(2), &host(4), Vec::new(), &w).unwrap();
+    let req = w.request(2);
+    assert_eq!(req["outputTokens"], json!(9000));
+    assert!(
+        req.get("outputTokensScope").is_none(),
+        "an unmarked figure is an old session total: {req}"
+    );
+}
+
+#[test]
+fn a_resumed_nested_run_files_no_tokens_and_a_top_level_one_its_own() {
+    for (c, sent) in [
+        (ctx(), (Value::Null, Value::Null)),
+        (top(), (json!(9000), json!("turn-delta"))),
+    ] {
+        let run = tempfile::tempdir().unwrap();
+        let w = Fake::default();
+        open(run.path(), c, "s1", &pending("lenses", 1), &w);
+        let resumed = Host {
+            resume: true,
+            session: "s2".into(),
+            output_tokens_scope: Some("turn-delta".into()),
+            ..host(1)
+        };
+        submitted(run.path(), &finished(9), &resumed, Vec::new(), &w).unwrap();
+        assert_eq!(tokens_sent(&w), [sent]);
+    }
+}
+
+#[test]
+fn a_refiled_record_resends_its_tokens_and_scope_as_first_sent() {
+    let run = tempfile::tempdir().unwrap();
+    let w = Fake::answering(vec![
+        ("checkpoint", Ok(json!({"runDir": "/store/.partial/a"}))),
+        ("checkpoint", Ok(json!({"runDir": "/store/.partial/a"}))),
+        ("finalize", Err(WriteError::Store("disk full".into()))),
+        ("finalize", Err(WriteError::Store("disk full".into()))),
+    ]);
+    open(run.path(), top(), "s1", &pending("verify", 1), &w);
+    let scoped = Host {
+        output_tokens_scope: Some("turn-delta".into()),
+        ..host(4)
+    };
+    let stopped = json!({"run": "/run", "done": true, "report": "/run/report.md", "verdict": "INCOMPLETE", "stopped": {"cause": "limit"}, "at": 2, "took": 1});
+    submitted(run.path(), &stopped, &scoped, Vec::new(), &w).unwrap();
+    resuming(run.path(), &w);
+    resuming(run.path(), &w);
+    let sent = tokens_sent(&w);
+    assert_eq!(sent.len(), 3, "{sent:?}");
+    assert!(
+        sent.iter()
+            .all(|t| *t == (json!(9000), json!("turn-delta"))),
+        "the kept record, its tokens and scope included, byte for byte: {sent:?}"
+    );
+}
+
 #[test]
 fn a_failed_checkpoint_is_said_and_every_later_write_rejoins_the_segments_directory() {
     let run = tempfile::tempdir().unwrap();
@@ -414,7 +494,9 @@ fn a_stopped_parts_record_is_kept_and_filed_again_on_every_resume_until_it_lands
     assert!(
         finals
             .iter()
-            .all(|r| r["step"] == finals[0]["step"] && r["dir"] == finals[0]["dir"]),
+            .all(|r| ["step", "dir", "outputTokens", "outputTokensScope"]
+                .iter()
+                .all(|k| r[k] == finals[0][k])),
         "the stopped part's record, byte for byte"
     );
     let resumed = Host {
@@ -540,8 +622,12 @@ fn a_resume_whose_first_step_finishes_its_new_segment_names_its_own_record() {
 /// A run opened and finished through `w`, its record filed or not as the script says.
 fn finished_run(w: &Fake) -> tempfile::TempDir {
     let run = tempfile::tempdir().unwrap();
-    open(run.path(), ctx(), "s1", &pending("scout", 1), w);
-    submitted(run.path(), &finished(9), &host(3), Vec::new(), w).unwrap();
+    open(run.path(), top(), "s1", &pending("scout", 1), w);
+    let scoped = Host {
+        output_tokens_scope: Some("turn-delta".into()),
+        ..host(3)
+    };
+    submitted(run.path(), &finished(9), &scoped, Vec::new(), w).unwrap();
     run
 }
 
@@ -591,6 +677,14 @@ fn a_publication_over_a_record_that_never_landed_files_it_as_first_sent_then_ame
             &refile["step"].get("prComments")
         ),
         (&json!(true), &finished(9), &None)
+    );
+    assert_eq!(
+        tokens_sent(&w),
+        [
+            (json!(9000), json!("turn-delta")),
+            (json!(9000), json!("turn-delta"))
+        ],
+        "its tokens and scope as first sent"
     );
     assert_eq!(w.request(n - 1)["recordFile"], json!("/store/r.json"));
     assert_eq!(

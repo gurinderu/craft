@@ -242,7 +242,8 @@ pub fn cli_record(step: &Obj, stats: Obj, at: &At<'_>) -> Obj {
     r.set("strict", Js::Bool(at.strict));
     r.spread(&publication_kept(step));
     r.set("outputTokens", at.output_tokens.map_or(Js::Null, Js::Num));
-    if !at.output_tokens_scope.is_empty() {
+    // The scope says what a figure counts: none without a figure, as the engines' `scopedTokens`.
+    if at.output_tokens.is_some() && !at.output_tokens_scope.is_empty() {
         r.set("outputTokensScope", Js::str(at.output_tokens_scope));
     }
     r

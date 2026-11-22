@@ -14,9 +14,8 @@
 // `unattributedConfirmed`) as the
 // binary counted them, and what the run cost as the driver observed it (`runtimeStats`, integrations/shared/cli-review-clock.mjs).
 import { makeRunLogger, quietly, telemetryLossNoter } from './run-logging.mjs'
-import { scopedTokens, scopeField } from './run-record.mjs'
 import { telemetryLostSection } from './review-coverage.mjs'
-import { fingerprint, summarizeFindings } from './run-record.mjs'
+import { fingerprint, summarizeFindings, scopedTokens, tokensScope } from './run-record.mjs'
 import { resumeHint } from './cli-review-verdict.mjs'
 
 /** @typedef {{ severity: string, file: string, line: number, title: string, ruleId: string, tier: string }} Finding  as the finished step names it */
@@ -158,7 +157,7 @@ export function cliRecord(o, { craftVersion, depth, strict, via, outputTokens, o
     strict,
     ...publicationKept(o),
     outputTokens,
-    ...scopeField(outputTokensScope),
+    ...tokensScope(outputTokens, outputTokensScope),
   }
 }
 

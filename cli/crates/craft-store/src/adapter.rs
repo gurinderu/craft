@@ -254,6 +254,7 @@ fn request_text(req: &Obj) -> Result<(), crate::js::Utf16Error> {
         "dir",
         "depth",
         "via",
+        "outputTokensScope",
     ] {
         req.try_text(key)?;
     }

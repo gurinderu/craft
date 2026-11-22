@@ -85,6 +85,12 @@ export const TURN_DELTA = 'turn-delta'
 export const scopeField = scope => (scope != null && scope !== '' ? { outputTokensScope: scope } : {})
 
 /**
+ * The scope beside a record's figure: none without a number to say what it counts, as the binary's record writer.
+ * @param {unknown} tokens @param {unknown} scope @returns {{ outputTokensScope?: unknown }}
+ */
+export const tokensScope = (tokens, scope) => (typeof tokens === 'number' ? scopeField(scope) : {})
+
+/**
  * A record's `outputTokens` and, when it is a number, the scope that says what it counts.
  * @param {number | null} tokens @returns {{ outputTokens: number | null, outputTokensScope?: string }}
  */
