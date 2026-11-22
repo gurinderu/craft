@@ -37,24 +37,8 @@
 //   prior-round --branch <b> [--project <p>]  newest prior review round for that branch (no stdin)
 //   repair-index [--apply]                index.jsonl: compact hand-written pretty-printed blocks,
 //                                         quarantine damaged and duplicate ones; dry by default
-//   sorting-choice --n <n> --choice <question|defect|dropped> [--record <f>]
-//                                         POST-HOC (no stdin): the reviewer's choice for doubtful finding
-//                                         <n> of a review run with comment, into that run's record (the
-//                                         newest of this project carrying a sorting, unless --record)
 //   publication --record <f>              a finished run's sorting, memoryContradictions and prComments
 //                                         from stdin, written into its record (craft review comment)
-//   develop-cycle                         one craft:develop cycle (its rounds, outcome and full reviews,
-//                                         integrations/shared/develop-cycle.mjs) → a `develop` record + index line
-//   enrich-cost --run-id <wf_id> [--claude-home <dir>]
-//                                         POST-HOC (no stdin): find the run's transcript directory
-//                                         under ~/.claude/projects (or $CLAUDE_CONFIG_DIR), and give
-//                                         each record its log-run agents filed the cost of its own
-//                                         slice of the run's agents (cost.slice).
-//   enrich-cost --run-dir <d> --record <f>  POST-HOC (no stdin): sum the REAL per-agent cost
-//                                         (cache_read/write) from <run-dir>/agent-*.jsonl and fold a
-//                                         `cost` object into the record. Run by the launcher, which
-//                                         holds the runId — not by any engine (the live sandbox
-//                                         cannot see the transcripts). Idempotent.
 //
 // Run: node integrations/shared/craft-log-run.mjs <command> [flags]
 import { parseJsonObject } from './json-object.mjs'
@@ -86,14 +70,11 @@ import { RECOVERY_ONLY } from './record-parts-settle.mjs'
 import { recordFromRecoveredParts, recordWithParts } from './record-parts-recover.mjs'
 import { deferralOn } from './ledger-deferral.mjs'
 import { outputLines, runIfMain, stderrLines } from './script-main.mjs'
-import { applyPublication, applySortingChoice, latestSortedRecord } from './sorting-choice.mjs'
-import { developCycleRecord } from './develop-cycle.mjs'
+import { applyPublication } from './sorting-choice.mjs'
 import { repoKey } from './repo-key.mjs'
-import { sumTranscriptUsage, runTranscripts, measureCost } from './transcript-cost.mjs'
-import { enrichRunCost } from './run-cost-slices.mjs'
 import { withIndexLock } from './index-lock.mjs'
 import { readRecordFromTranscript, TRANSCRIPT_MISS, TRANSCRIPT_MISS_EXIT } from './transcript-record.mjs'
-export { repoKey, sumTranscriptUsage }
+export { repoKey }
 
 /** @typedef {{ project: string, branch: string, head: string, session: string }} CheckpointIdentity */
 /** @typedef {{ project: string | null, branch: string | null, head: string | null, session: string | null }} DirIdentity */
@@ -2495,40 +2476,6 @@ export function writeFileAtomically(file, content) {
   }
 }
 
-// Atomic replace of a cost-enriched record — a thin wrapper over `writeFileAtomically`. Its callers
-// are unchanged; the temp+rename and the leave-nothing-behind cleanup now live in the shared helper.
-/** @param {string} recordFile @param {unknown} record */
-export function writeCostRecordAtomically(recordFile, record) {
-  writeFileAtomically(recordFile, JSON.stringify(record, null, 2))
-}
-
-// Sum every `agent-*.jsonl` under `runDir`, merge a `cost` object into the record at `recordFile`,
-// and write it back atomically (temp file in the same dir + rename), preserving every other field.
-// IDEMPOTENT: `cost` is REPLACED on every run, never appended, so re-running after more transcripts
-// land simply re-sums. `total` is the four token sums; `agents` is the count of transcripts ACTUALLY
-// summed (not the raw glob count), and `skipped` is present only when some matching entry could not
-// be read. Per-transcript tolerance — the cross-transcript twin of the line-level tolerance
-// `sumTranscriptUsage` already applies: one unreadable entry (a subdirectory whose name matches the
-// glob → EISDIR, or a transcript deleted/permission-flipped between readdir and read → ENOENT/EACCES)
-// is skipped with a stderr warning rather than discarding every good transcript's cost. Throws with a
-// clear message when the run directory is missing, holds no matching transcripts, none of them could
-// be read at all, or the record is missing/unparseable — the CLI turns any throw into a non-zero exit.
-// A readable-but-zero sum (agents summed, total 0) is not refused — a trivial run is theoretically
-// possible — but it IS warned loudly on stderr, since the far likelier cause is the usage schema
-// drifting out from under `sumTranscriptUsage` (realm @nick/craft, node #98).
-// `warnings` is the sink each warning is pushed into as it arises (the run's stderr), so a later throw
-// — an unreadable record — keeps what was already said; it is returned too.
-/** @param {{ runDir: string, recordFile: string, warnings?: string[] }} opts */
-export function enrichCost({ runDir, recordFile, warnings = stderrLines() }) {
-  const transcripts = runTranscripts(runDir)
-  if (!transcripts.length) throw new Error(`no agent-*.jsonl transcripts under ${runDir}`)
-  const cost = measureCost(runDir, transcripts, warnings)
-  const record = readCostRecord(recordFile)
-  record.cost = cost // replace, never append: a re-run must re-sum, not accumulate onto a stale cost
-  writeCostRecordAtomically(recordFile, record)
-  return { cost, recordFile, warnings }
-}
-
 /** @param {string} recordFile @returns {RunRecord} */
 function readCostRecord(recordFile) {
   try {
@@ -2572,7 +2519,7 @@ computed the fingerprints — what a later round decides their basis by; \`engin
 An optional \`cost{output,input,cacheRead,cacheWrite,total,agents,source,rule}\` (with a \`skipped\` count
 added only when a transcript could not be read, and \`slice{index,of,tail?}\` when the record is one of
 several a run filed) is folded in AFTER the run by
-\`node integrations/shared/craft-log-run.mjs enrich-cost --run-id <wf_id>\` (or \`--run-dir <d> --record <f>\`) — the REAL per-agent spend summed
+\`craft runs enrich-cost --run-id <wf_id>\` (or \`--run-dir <d> --record <f>\`) — the REAL per-agent spend summed
 from the run's agent-*.jsonl transcripts (cacheRead is ~99% of it). \`outputTokens\` above is only the
 harness pool, under 1% of real cost. Absent until a run is enriched. A cost without \`rule: "per-message"\`
 was summed per transcript line and overstates the run ~1.8x: re-run enrich-cost on it while its transcripts exist.
@@ -3390,66 +3337,15 @@ function cmdRepairIndex({ argv, store, o }) {
   if (!res.apply && !nothingToDo) o.stdout.push('\n(dry run — re-run with --apply to write)')
 }
 
-/** @param {Ctx} c */
-function cmdEnrichCost({ argv, cwd, env, store, o }) {
-  const runId = flag(argv, 'run-id')
-  if (runId) {
-    enrichCostByRunId(runId, pathFlag(argv, 'claude-home', cwd) || claudeHomeOf(env), store, o)
-    return
-  }
-  const runDir = pathFlag(argv, 'run-dir', cwd)
-  const recordFile = pathFlag(argv, 'record', cwd)
-  if (!runDir || !recordFile) throw new Error('usage: enrich-cost --run-id <wf_id> [--claude-home <dir>] | --run-dir <path> --record <path>')
-  const { cost } = enrichCost({ runDir, recordFile, warnings: o.stderr })
-  o.stdout.push(`enriched ${recordFile} — ${costLine(cost)}`)
-}
-
-/** @param {import('./transcript-cost.mjs').RunCost} cost */
-function costLine(cost) {
-  return `${cost.agents} agent(s)${cost.skipped ? ` (${cost.skipped} unreadable, skipped)` : ''}: cacheRead ${cost.cacheRead}, cacheWrite ${cost.cacheWrite}, input ${cost.input}, output ${cost.output}, total ${cost.total} tok (real cost; outputTokens is the harness pool, ~<1%)`
-}
-
 // Where Claude Code keeps its transcripts: `$CLAUDE_CONFIG_DIR`, else `~/.claude`.
 /** @param {NodeJS.ProcessEnv} env */
 function claudeHomeOf(env) {
   return env['CLAUDE_CONFIG_DIR'] || path.join(os.homedir(), '.claude')
 }
 
-// Every record a Workflow run filed, each with its own slice's cost (realm @nick/craft, nodes #393, #389).
-// A record path comes off a logger's transcript, so it is written only inside the store, as finalize's
-// `--dir` is; one outside refuses the run before any record is touched.
-/** @param {string} runId @param {string} claudeHome @param {string} store @param {Ctx['o']} o */
-function enrichCostByRunId(runId, claudeHome, store, o) {
-  /** @param {string} file */
-  const readRecord = file => {
-    if (!containsPath(store, file)) throw new Error(`record ${safePath(file)} is outside the store ${store} — refusing the run`)
-    return readCostRecord(file)
-  }
-  const { runDir, costs } = enrichRunCost({ runId, claudeHome, warnings: o.stderr, readRecord, writeRecord: writeCostRecordAtomically })
-  o.stdout.push(`run ${runId} (${runDir}): ${costs.length} record(s)`)
-  for (const { file, cost } of costs) {
-    const tail =
-      (cost.slice?.tail ? `, ${cost.slice.tail} after the last record's logger` : '') +
-      (cost.absorbed ? `, ${cost.absorbed.reduce((n, x) => n + x.agents, 0)} of nested engines that filed no record` : '')
-    o.stdout.push(`enriched ${file} — slice ${cost.slice?.index}/${cost.slice?.of}${tail}: ${costLine(cost)}`)
-  }
-}
-
-/** @param {Ctx} c */
-function cmdSortingChoice({ argv, cwd, store, project, gitId, o }) {
-  const n = Number(flag(argv, 'n'))
-  const choice = flag(argv, 'choice') || ''
-  if (!Number.isInteger(n) || n < 1 || !choice) throw new Error('usage: sorting-choice --n <n> --choice <question|defect|dropped> [--record <f>]')
-  const recordFile = pathFlag(argv, 'record', cwd) || latestSortedRecord(store, project, gitId.branch)
-  const r = applySortingChoice(readCostRecord(recordFile), n, choice, new Date())
-  if (typeof r === 'string') throw new Error(`${recordFile}: ${r}`)
-  writeFileAtomically(recordFile, JSON.stringify(r.record, null, 2))
-  o.stdout.push(`recorded ${choice} for doubtful finding ${n} (${r.finding.title} @ ${r.finding.file}:${r.finding.line}) in ${recordFile}`)
-}
-
 // A finished review run published on its PR after the fact (`craft review comment`, now written by the binary itself;
 // realm @nick/craft, node #270): its sorting, the findings going against memory and what was posted, written into the
-// SAME run's record by the one writer of the store, as `sorting-choice` appends the reviewer's choices.
+// SAME run's record by the one writer of the store.
 /** @param {Ctx} c */
 function cmdPublication({ argv, cwd, parseStdin, o }) {
   const recordFile = pathFlag(argv, 'record', cwd)
@@ -3458,14 +3354,6 @@ function cmdPublication({ argv, cwd, parseStdin, o }) {
   writeFileAtomically(recordFile, JSON.stringify(record, null, 2))
   o.stdout.push(`recorded the publication in ${recordFile}`)
   if (dropped.length) o.stdout.push(`dropped the choices of doubtful findings no longer listed: ${dropped.join('; ')}`)
-}
-
-// One craft:develop cycle, filed by the same writer as every run (realm @nick/craft, nodes #39, #281): the
-// payload is read strictly and refused by name, and the project, branch, head and time are this script's.
-/** @param {Ctx} c */
-function cmdDevelopCycle({ store, project, session, gitId, workdir, parseStdin, o }) {
-  const { file } = writeRecord(developCycleRecord(parseStdin()), { store, project, session, gitId, workdir })
-  o.stdout.push(`wrote ${file}`)
 }
 
 // The commands that take a record, and so may read it from the logger's transcript (realm @nick/craft, node #429).
@@ -3481,10 +3369,7 @@ const COMMANDS = new Map([
   ['prior-round', cmdPriorRound],
   ['backfill-engine', cmdBackfillEngine],
   ['repair-index', cmdRepairIndex],
-  ['enrich-cost', cmdEnrichCost],
-  ['sorting-choice', cmdSortingChoice],
   ['publication', cmdPublication],
-  ['develop-cycle', cmdDevelopCycle],
 ])
 
 const USAGE = `usage: craft-log-run.mjs <command> [flags]
@@ -3512,16 +3397,8 @@ const USAGE = `usage: craft-log-run.mjs <command> [flags]
   prior-round --branch <b>                newest prior review round for that branch
   backfill-engine --revision <n> --before <ts> [--apply]
   repair-index [--apply]
-  enrich-cost --run-id <wf_id> [--claude-home <dir>]
-                                          every record the Workflow run filed gets the REAL cost of its
-                                          own slice of the run's agents; run by the launcher after the run
-  enrich-cost --run-dir <d> --record <f>  fold the run's REAL cost (cache_read/write, summed from
-                                          <run-dir>/agent-*.jsonl) into the record; run by the launcher
-  sorting-choice --n <n> --choice <question|defect|dropped> [--record <f>]
-                                          the reviewer's choice for a doubtful finding, into its run's record
   publication --record <f>                a finished run's sorting, memoryContradictions and prComments from
                                           stdin, written into its record (craft review comment)
-  develop-cycle                           one craft:develop cycle from stdin: {mode?, outcome, rounds, fullReviews?}
 
   common: --store <dir> --project <dir> [--identity-from-record]
           (--identity-from-record: checkpoint and finalize take the branch, head, commit and dirty the payload
@@ -3585,11 +3462,10 @@ function transcriptRecord(cmd, argv, env) {
  * failed (`craft-log-run FAILED: …` on stderr), 2 on an unknown command (usage on stderr), 3 when
  * `--from-transcript` found no sure record (`craft-log-run TRANSCRIPT-MISS …` on stdout, nothing written).
  * @param {string[]} argv
- * @param {NodeJS.ProcessEnv} [env]  read only by `enrich-cost --run-id` and `--from-transcript` (`CLAUDE_CONFIG_DIR`,
- *   and `CLAUDE_CODE_SESSION_ID` for the latter); the store defaults to
+ * @param {NodeJS.ProcessEnv} [env]  read only by `--from-transcript` (`CLAUDE_CONFIG_DIR` and `CLAUDE_CODE_SESSION_ID`); the store defaults to
  *   ~/.craft/runs under the user's home
  * @param {string} [cwd]  the directory a run without `--project` describes, and the one its relative path flags
- *   (`--store`, `--project`, `--dir`, `--run-dir`, `--record`) resolve against
+ *   (`--store`, `--project`, `--dir`, `--record`) resolve against
  * @param {() => string} [stdin]  the record a command reads
  * @returns {import('./script-main.mjs').ScriptResult | Promise<import('./script-main.mjs').ScriptResult>}  synchronous; the
  *   promise in the type is the script contract (`runIfMain`), so a caller awaits it as any entry
