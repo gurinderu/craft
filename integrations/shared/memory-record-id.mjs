@@ -71,7 +71,7 @@ export function sha256Hex(s) {
 }
 
 // A scope that carries a line or a line range, `path:N` or `path:N-M`: earlier runs wrote such scopes,
-// the skill's grammar keeps the line in `line` (realm @nick/craft, node #598). No valid scope holds a `:`.
+// the skill's grammar keeps the line in `line` (realm @nick/craft, node #606). No valid scope holds a `:`.
 // Read for matching only: the id stays the hash of the scope as written (memoryRecordId), so two legacy
 // records of one title at two ranges stay two records. The cases both readers hold to:
 // content/parity/scope-line-cases.json.

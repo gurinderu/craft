@@ -2,13 +2,13 @@
 //! computes it: `<kind>-` and the first 10 hex characters of sha256 of `<kind>\n<title>\n<scope>`,
 //! the title trimmed, its inner whitespace collapsed and lower-cased, the scope without a leading
 //! `./` or a trailing `/` (realm @nick/craft, node #222). A legacy scope carrying a line is hashed
-//! as written (node #598): `split_scope_line` splits it for matching only, so two ranges of one title
+//! as written (node #606): `split_scope_line` splits it for matching only, so two ranges of one title
 //! stay two records.
 
 use sha2::{Digest, Sha256};
 
 /// A scope split from the line it carries, as `scopeLine` in `integrations/shared/memory-record-id.mjs`:
-/// `path:N` and `path:N-M` (earlier runs wrote such scopes; the line belongs in `line`, node #598)
+/// `path:N` and `path:N-M` (earlier runs wrote such scopes; the line belongs in `line`, node #606)
 /// read as `path` and N, the start line; any other scope — one with a control character among
 /// them — as it is, trimmed, with line 0. Held to the JS by `content/parity/scope-line-cases.json`.
 #[must_use]
