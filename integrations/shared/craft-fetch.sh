@@ -2,10 +2,10 @@
 # The one download of the craft binary into ~/.craft/bin/<version>/craft (craft.exe on Windows) (realm @nick/craft, nodes #457, #500, #550):
 # the release's craft-<target>.tar.gz and its .sha256, the SHA-256 checked, the binary unpacked into place. craft-cli.sh
 # sources it before it runs the binary; integrations/shared/craft-hook.sh runs it in the background when a hook finds the binary absent
-# (the Claude Code delivery has no bin/); under Git Bash, MSYS and Cygwin on Windows these sh callers use it too and cache
-# craft.exe. integrations/shared/craft-bin.mjs ensure, the review engine's fetcher, hands the download to it only off
-# win32: Node on win32, Git Bash included, keeps its own Node download. The cache layout and the binary's name are
-# integrations/shared/craft-bin.mjs's.
+# (the Claude Code delivery has no bin/). Under Git Bash, MSYS and Cygwin on Windows, craft-cli.sh (and bin/craft through it)
+# uses it too and caches craft.exe; the hooks do not cover Windows (craft-hook.sh). integrations/shared/craft-bin.mjs
+# ensure, the review engine's fetcher, hands the download to it only off win32: Node on win32, Git Bash included, keeps
+# its own Node download. The cache layout and the binary's name are integrations/shared/craft-bin.mjs's.
 #
 #   sh integrations/shared/craft-fetch.sh <version> [--background | --failure]
 #
