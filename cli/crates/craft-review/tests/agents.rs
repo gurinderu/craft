@@ -42,6 +42,13 @@ fn no_task_names_an_agent_so_every_one_runs_on_the_hosts_task_agent() {
         p.contains("SKILL FILES") && p.contains("- `rust-review`: `"),
         "{p}"
     );
+    let block = &p[p.find("SKILL FILES").unwrap()..];
+    assert!(
+        block.contains("read each one WHOLE with the Read tool")
+            && block.contains("never `head`")
+            && block.contains("list each file you read whole in `rubricRead`"),
+        "the block tells the lens to read its rubric whole and say so: {block}"
+    );
     let mut medium = finding("Medium", 2);
     medium["title"] = json!("another");
     let round1 = json!({
@@ -126,6 +133,17 @@ fn a_lens_that_read_no_rubric_file_whole_is_named_as_degraded() {
     assert!(
         p.contains("RUBRIC (required)") && p.contains("`rubricRead`"),
         "{p}"
+    );
+    // The lens's answer schema offers the field, else no lens could answer it.
+    let schema: Value = serde_json::from_str(
+        &std::fs::read_to_string(s["tasks"][0]["schemaFile"].as_str().unwrap()).unwrap(),
+    )
+    .unwrap();
+    let field = &schema["properties"]["rubricRead"];
+    assert_eq!(
+        (field["type"].clone(), field["items"]["type"].clone()),
+        (json!("array"), json!("string")),
+        "{schema}"
     );
     let mut skimmed = lens("errors", &[]);
     skimmed["rubricRead"] = json!(["/plugin/skills/rust-review/rules.md"]);

@@ -137,5 +137,8 @@ mod tests {
         assert!(rows_of(&consumers(), &f).contains("`src/a.rs:3-9` `f`"));
         let other = json!({"file": "src/a.rs", "metrics": {"function": "h"}});
         assert!(rows_of(&consumers(), &other).contains("(none:"));
+        // A function of the same name in another file is not this finding's.
+        let elsewhere = json!({"file": "web/app.ts", "metrics": {"function": "f"}});
+        assert!(rows_of(&consumers(), &elsewhere).contains("(none:"));
     }
 }
