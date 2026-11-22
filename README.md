@@ -132,7 +132,7 @@ Install on OpenCode 2.x:
 
 <!-- x-release-please-start-version -->
 ```bash
-opencode plugin add git+https://github.com/gurinderu/craft#opencode-v0.57.0
+opencode plugin add git+https://github.com/gurinderu/craft#opencode-v0.58.0
 ```
 <!-- x-release-please-end -->
 
@@ -148,7 +148,7 @@ root (see `integrations/codex/README.md`).
 
 <!-- x-release-please-start-version -->
 ```
-codex plugin marketplace add gurinderu/craft --ref v0.57.0
+codex plugin marketplace add gurinderu/craft --ref v0.58.0
 codex plugin add craft@craft
 ```
 <!-- x-release-please-end -->
@@ -163,7 +163,7 @@ upgrade craft` only refreshes the ref already pinned. Then add it at the new tag
 <!-- x-release-please-start-version -->
 ```
 codex plugin marketplace remove craft
-codex plugin marketplace add gurinderu/craft --ref v0.57.0
+codex plugin marketplace add gurinderu/craft --ref v0.58.0
 codex plugin add craft@craft
 ```
 <!-- x-release-please-end -->
@@ -190,7 +190,7 @@ Install the package at a release tag:
 
 <!-- x-release-please-start-version -->
 ```sh
-pi install git:github.com/gurinderu/craft@v0.57.0
+pi install git:github.com/gurinderu/craft@v0.58.0
 ```
 <!-- x-release-please-end -->
 
