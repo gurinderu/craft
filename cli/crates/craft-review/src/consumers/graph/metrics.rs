@@ -130,6 +130,17 @@ pub(in crate::consumers) fn graph_metrics(r: &Ready, changed: &Lines) -> Result<
             Err(why) => out.unread.push(format!("{file} ({})", budget_said(why))),
         }
     }
+    // Every file asked answered no function: the graph is asked whether it holds any numbers at
+    // all, else a property it renamed would read as a change with nothing to judge (node #613).
+    let all_empty = out.measured.is_empty() && out.unread.is_empty() && !out.empty.is_empty();
+    if all_empty
+        && !r
+            .cbm
+            .holds_numbers(&r.project, until)
+            .map_err(budget_said)?
+    {
+        return Err(GraphError::NoNumbers);
+    }
     let after = r.cbm.index(&r.project, r.deadline).map_err(budget_said)?;
     if (&after.at, &after.root) != (&r.index.at, &r.index.root) {
         return Err(GraphError::Moved {

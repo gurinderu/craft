@@ -52,11 +52,14 @@ fn properties() -> impl Iterator<Item = &'static str> {
     SPAN.into_iter().chain(metric_names())
 }
 
+/// What makes a node one with numbers: a `Function` or a `Method` carries its cognitive count.
+const MEASURED: &str = "f.cognitive IS NOT NULL";
+
 /// The query for up to `limit` functions of the file `quoted` (a quoted path) that carry metrics.
 fn functions_query(quoted: &str, limit: usize) -> String {
     let cols: Vec<String> = properties().map(|m| format!("f.{m}")).collect();
     format!(
-        "MATCH (f) WHERE f.file_path = {quoted} AND f.cognitive IS NOT NULL RETURN {} LIMIT {limit}",
+        "MATCH (f) WHERE f.file_path = {quoted} AND {MEASURED} RETURN {} LIMIT {limit}",
         cols.join(", ")
     )
 }
@@ -107,11 +110,29 @@ impl Cbm {
             odd: raw.iter().filter(|r| odd(r, &at)).count(),
             read: read.into_iter().take(ROWS_PER_FILE).collect(),
             cut,
-            // An empty answer names no column it needs: its columns are no reason to doubt it.
-            missing: metric_names()
-                .filter(|p| !raw.is_empty() && at(p).is_none())
-                .collect(),
+            // Columns the answer names, rows or none, are its shape: one it lacks is doubt.
+            missing: metric_names().filter(|p| at(p).is_none()).collect(),
         })
+    }
+
+    /// Whether the graph holds the numbers of any function of `project`, asked once by
+    /// `deadline`: an answer of no rows for every file cannot tell files without functions from a
+    /// property the graph no longer names, which answers no rows too (realm @nick/craft, node #613).
+    ///
+    /// # Errors
+    /// When the graph gives no answer that holds rows.
+    pub fn holds_numbers(&self, project: &str, deadline: Instant) -> Result<bool, CbmError> {
+        let left = super::left(deadline)?;
+        let budget_bound = left <= self.timeout;
+        let query = format!("MATCH (f) WHERE {MEASURED} RETURN f.name LIMIT 1");
+        let args = json!({"project": project, "query": query, "max_rows": 1});
+        let answer = self
+            .call("query_graph", args, left.min(self.timeout))
+            .map_err(|e| super::of_budget(e, budget_bound))?;
+        let rows = answer.get("rows").and_then(Value::as_array);
+        let rows =
+            rows.ok_or_else(|| CbmError::Graph("query_graph: its answer holds no rows".into()))?;
+        Ok(!rows.is_empty())
     }
 }
 

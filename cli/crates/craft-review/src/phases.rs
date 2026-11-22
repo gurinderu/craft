@@ -162,10 +162,6 @@ fn plan_tracks(run: &mut RunState, profiles: &[Profile]) {
     let wanted = profiles.iter().filter(taking_part).any(complexity::wanted);
     let index = complexity::indexed(&run.context, wanted);
     let metrics = index.as_ref().is_some_and(|(found, _)| *found);
-    // A lens that could not look is a coverage gap, named once, under Not run.
-    let look = complexity::look(&run.context).filter(|_| wanted);
-    run.capped
-        .extend(look.as_ref().and_then(complexity::look_gap));
     run.notes.extend(index.and_then(|(_, note)| note));
     for (track, p) in run.tracks.iter_mut().zip(profiles) {
         let task = run
@@ -196,6 +192,16 @@ fn plan_tracks(run: &mut RunState, profiles: &[Profile]) {
             design: track.design,
         }));
     }
+    // A lens the plan would run that could not look is a coverage gap, named once, under Not run;
+    // one no plan picked leaves none.
+    let planned = run.tracks.iter().any(|t| {
+        t.plan
+            .as_ref()
+            .is_some_and(|p| !p.metrics_dropped.is_empty())
+    });
+    let look = complexity::look(&run.context).filter(|_| wanted && planned);
+    run.capped
+        .extend(look.as_ref().and_then(complexity::look_gap));
 }
 
 /// Hands out the next lens round, of every track still live; after the last, ends the rounds.

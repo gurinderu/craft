@@ -126,16 +126,33 @@ fn a_later_files_failed_question_names_it_and_keeps_the_others_numbers() {
     );
 }
 
+/// `rows` for the metrics question, `probe` for the graph's probe for any function's numbers.
+fn with_probe(probe: &str, rows: &str) -> String {
+    format!("case \"$4\" in *'RETURN f.name LIMIT 1'*) {probe};; *) {rows};; esac")
+}
+
 #[test]
-fn a_file_that_answered_no_function_is_empty_not_unread() {
+fn a_file_that_answered_no_function_is_empty_not_unread_when_the_graph_holds_numbers() {
     let t = tempfile::tempdir().unwrap();
     let repo = fixture(t.path(), "");
-    let c = read(
-        t.path(),
-        &repo,
-        "",
-        &format!(r#"echo '{{{COLS},"rows":[]}}'"#),
-    );
+    let empty = format!(r#"echo '{{{COLS},"rows":[]}}'"#);
+    let holds = r#"echo '{"columns":["f.name"],"rows":[["g"]]}'"#;
+    let c = read(t.path(), &repo, "", &with_probe(holds, &empty));
     assert!(c.metrics.is_empty() && c.metrics_unread.is_empty(), "{c:?}");
+    assert!(c.metrics_failed.is_empty(), "{}", c.metrics_failed);
     assert_eq!(c.metrics_empty, ["src/lib.rs"]);
+    for (probe, why) in [
+        (
+            r#"echo '{"columns":["f.name"],"rows":[]}'"#,
+            "the graph holds no function numbers",
+        ),
+        (r#"echo '{"error":"probe boom"}'; exit 1"#, "probe boom"),
+    ] {
+        let c = read(t.path(), &repo, "", &with_probe(probe, &empty));
+        assert!(
+            c.metrics_failed.contains(why),
+            "{why}: {}",
+            c.metrics_failed
+        );
+    }
 }

@@ -44,6 +44,10 @@ pub enum GraphError {
     Stale(#[from] Box<Stale>),
     #[error("the graph could not index this checkout ({checkout}) in time for the list: {why}")]
     Reindex { checkout: String, why: CbmError },
+    /// Every file answered no function and the graph holds no numbers at all (realm @nick/craft,
+    /// node #613).
+    #[error("the graph holds no function numbers: its metric properties may have changed")]
+    NoNumbers,
     #[error("the graph's budget ran out before {what}")]
     Spent { what: &'static str },
     /// `during` the question asked, as "its callers were asked".

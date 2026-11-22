@@ -1,5 +1,6 @@
-//! A metrics-only lens that never returned is a coverage gap, not a review that could not run: it
-//! judges only numbers the graph holds, and every other lens still read the change. It caps the
+//! A metrics-only lens that never returned, or one that could not look (`crate::complexity::Look`),
+//! is a coverage gap, not a review that could not run: it judges only numbers the graph holds, and
+//! every other lens still read the change. It caps the
 //! verdict at Warning, never Approve, and the verdict line names it when it is what holds the
 //! verdict; INCOMPLETE stays for what the review itself needed (`not_run`). Findings still raise
 //! the verdict as ever, and every gap is named beside what did not run, whatever the verdict.

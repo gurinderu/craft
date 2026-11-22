@@ -283,7 +283,7 @@ fn plan_lines(state: &RunState, t: &Track, out: &mut String) {
     ));
     if !plan.metrics_dropped.is_empty() {
         out.push_str(&format!(
-            "Dropped for want of a code-metrics index{whose}: {}.\n",
+            "Dropped for want of the code graph's numbers{whose} (the note or the coverage gap says why): {}.\n",
             plan.metrics_dropped.join(", ")
         ));
     }

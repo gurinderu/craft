@@ -88,7 +88,7 @@ fn without_a_code_metrics_index_the_lens_is_dropped_and_said_so() {
     assert_contains_all(
         &report,
         &[
-            "Dropped for want of a code-metrics index: complexity.",
+            "Dropped for want of the code graph's numbers (the note or the coverage gap says why): complexity.",
             "the complexity lens did not run: the codebase-memory index is unavailable (the review profile names no code graph, and",
             "did not answer",
         ],

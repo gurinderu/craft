@@ -30,14 +30,14 @@ pub fn look(ctx: &PromptContext) -> Option<Look> {
     Some(if !c.metrics_failed.is_empty() {
         Look::CouldNotLook(format!(
             "the graph's numbers could not be read ({})",
-            one_line(&c.metrics_failed)
+            bounded(&c.metrics_failed)
         ))
     } else if !c.metrics.is_empty() {
         Look::Measured
     } else if !c.metrics_unread.is_empty() {
         Look::CouldNotLook(format!(
             "no function the change touches was measured, and these files were not wholly read: {}",
-            one_line(&c.metrics_unread.join(" · "))
+            listed(&c.metrics_unread, " · ")
         ))
     } else if c.metrics_empty.is_empty() {
         Look::NothingToJudge(
@@ -46,16 +46,39 @@ pub fn look(ctx: &PromptContext) -> Option<Look> {
     } else {
         Look::NothingToJudge(format!(
             "the graph answered no function with numbers for {}",
-            one_line(&c.metrics_empty.join(", "))
+            listed(&c.metrics_empty, ", ")
         ))
     })
 }
 
-/// `s` on one line, as the report and the verdict line show it: names keep their underscores.
-fn one_line(s: &str) -> String {
-    s.chars()
+/// How many files a gap or a note names before it counts the rest.
+const FILES_SHOWN: usize = 5;
+
+/// How many characters a gap's or a note's own text runs to, so the verdict line stays readable.
+const TEXT_MAX: usize = 600;
+
+/// `s` on one line and at most [`TEXT_MAX`] characters, as the report and the verdict line show
+/// it: names keep their underscores.
+fn bounded(s: &str) -> String {
+    let flat: String = s
+        .chars()
         .map(|c| if c.is_control() { ' ' } else { c })
-        .collect()
+        .collect();
+    if flat.chars().count() <= TEXT_MAX {
+        return flat;
+    }
+    let cut: String = flat.chars().take(TEXT_MAX).collect();
+    format!("{cut}…")
+}
+
+/// `items` joined by `sep`, at most [`FILES_SHOWN`] of them and how many more, [`bounded`].
+fn listed(items: &[String], sep: &str) -> String {
+    let shown = items.iter().take(FILES_SHOWN).map(String::as_str);
+    let mut text = shown.collect::<Vec<_>>().join(sep);
+    if items.len() > FILES_SHOWN {
+        text.push_str(&format!(" +{} more", items.len() - FILES_SHOWN));
+    }
+    bounded(&text)
 }
 
 /// The coverage gap `look` files when the lens could not look, as "Not run" names it.
@@ -66,5 +89,26 @@ pub fn gap(look: &Look) -> Option<String> {
             "metrics-only lens complexity could not look — {why}"
         )),
         Look::Measured | Look::NothingToJudge(_) => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{TEXT_MAX, bounded, listed};
+
+    #[test]
+    fn a_gap_names_a_few_files_and_counts_the_rest_on_one_bounded_line() {
+        let files: Vec<String> = (0..8).map(|i| format!("src/m_{i}.rs (cut)")).collect();
+        let text = listed(&files, " · ");
+        assert!(
+            text.contains("src/m_4.rs") && !text.contains("src/m_5.rs"),
+            "{text}"
+        );
+        assert!(text.ends_with(" +3 more"), "{text}");
+        let long = bounded(&format!("a\nb{}", "x".repeat(2000)));
+        assert!(
+            !long.contains('\n') && long.chars().count() == TEXT_MAX + 1,
+            "{long}"
+        );
     }
 }

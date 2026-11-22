@@ -2,7 +2,7 @@
 
 use serde_json::json;
 
-use super::{function, functions_query, properties};
+use super::{function, functions_query, odd, properties};
 
 /// The column of property `p` in the question's own RETURN order.
 fn at(p: &str) -> Option<usize> {
@@ -55,5 +55,27 @@ fn the_question_returns_each_property_it_reads() {
     assert!(
         q.contains(&format!("RETURN {} LIMIT 3", cols.join(", "))),
         "{q}"
+    );
+}
+
+#[test]
+fn an_empty_or_null_metric_cell_is_absent_not_odd_and_a_cell_that_does_not_read_is() {
+    // The graph prints a property a node does not hold as an empty cell (codebase-memory-mcp 0.12.1,
+    // realm @nick/craft, node #613).
+    let absent = json!([
+        "f", "1", "2", "", null, " ", "0", "1", "0", "", null, "false"
+    ]);
+    assert!(!odd(&absent, &at), "absent cells are no doubt");
+    let bad = json!([
+        "f", "1", "2", "many", "1", "0", "0", "1", "0", "false", "false", "false"
+    ]);
+    assert!(odd(&bad, &at));
+    let bad_flag = json!([
+        "f", "1", "2", "1", "1", "0", "0", "1", "0", "maybe", "false", "false"
+    ]);
+    assert!(odd(&bad_flag, &at));
+    assert!(
+        !odd(&json!(["f", "x", "2", "many"]), &at),
+        "a row that is no function is unreadable, not odd"
     );
 }
