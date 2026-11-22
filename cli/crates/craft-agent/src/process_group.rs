@@ -74,6 +74,7 @@ impl Drop for GroupGuard {
 
 #[cfg(unix)]
 mod unix {
+    use std::io;
     use std::sync::{Mutex, PoisonError};
     use std::thread::JoinHandle;
     use std::time::{Duration, Instant};
@@ -87,10 +88,26 @@ mod unix {
     /// How often a stopping group is checked for being gone.
     const POLL: Duration = Duration::from_millis(20);
 
-    /// The threads still inside a group's grace, joined by [`settle_stops`](super::settle_stops).
+    /// The grace threads of stopped groups: those still inside their grace and those finished but
+    /// not yet joined, which the next stop prunes. [`settle_stops`](super::settle_stops) takes and
+    /// joins them all; [`pending`] counts only the running ones.
     static STOPPING: Mutex<Vec<JoinHandle<()>>> = Mutex::new(Vec::new());
 
+    /// A grace, handed to a thread of its own.
+    pub(super) type Grace = Box<dyn FnOnce() + Send>;
+
     pub(super) fn stop(pgid: Pid) {
+        stop_with(pgid, |grace| {
+            std::thread::Builder::new()
+                .name("craft-grace".to_owned())
+                .spawn(grace)
+        });
+    }
+
+    /// Sends the group SIGTERM and starts its grace on the thread `spawn` gives. When the OS
+    /// refuses the thread, the group is sent SIGKILL at once: Drop cannot wait out the grace
+    /// itself, and a group left with SIGTERM alone could outlive craft.
+    pub(super) fn stop_with(pgid: Pid, spawn: impl FnOnce(Grace) -> io::Result<JoinHandle<()>>) {
         // An error means the group is gone already (ESRCH): nothing to stop.
         if killpg(pgid, Signal::SIGTERM).is_err() {
             return;
@@ -98,28 +115,35 @@ mod unix {
         // Drop cannot wait; a thread finishes the job. The group id could in principle be reused
         // within the grace, but only by a new process made leader of a group of its own pid — the
         // same pid the kernel would have to hand out again within two seconds.
-        let thread = std::thread::spawn(move || {
-            let deadline = Instant::now() + GRACE;
-            while Instant::now() < deadline {
-                // The leader is craft's own child, and until reaped it stays a zombie that still
-                // counts as a member, so a group that obeyed SIGTERM would look alive for the whole
-                // grace: reap it here. It is already reaped (ECHILD) when its run ended normally;
-                // tokio's orphan queue, which holds it after a stop, drops a child found gone.
-                // Reaping by pid shares the reuse caveat above: only a new child of craft could
-                // take that pid within the grace.
-                let _reaped = waitpid(pgid, Some(WaitPidFlag::WNOHANG));
-                // Signal 0 only asks whether the group still has a member.
-                if killpg(pgid, None).is_err() {
-                    return;
-                }
-                std::thread::sleep(POLL);
-            }
+        let Ok(thread) = spawn(Box::new(move || grace(pgid))) else {
             // Gone by now is a usual case, not an error.
             let _gone = killpg(pgid, Signal::SIGKILL);
-        });
+            return;
+        };
         let mut stopping = STOPPING.lock().unwrap_or_else(PoisonError::into_inner);
         stopping.retain(|t| !t.is_finished());
         stopping.push(thread);
+    }
+
+    /// Waits for the group to go, at most [`GRACE`], then sends SIGKILL to whatever is left.
+    fn grace(pgid: Pid) {
+        let deadline = Instant::now() + GRACE;
+        while Instant::now() < deadline {
+            // The leader is craft's own child, and until reaped it stays a zombie that still
+            // counts as a member, so a group that obeyed SIGTERM would look alive for the whole
+            // grace: reap it here. It is already reaped (ECHILD) when its run ended normally;
+            // tokio's orphan queue, which holds it after a stop, drops a child found gone.
+            // Reaping by pid shares the reuse caveat above: only a new child of craft could
+            // take that pid within the grace.
+            let _reaped = waitpid(pgid, Some(WaitPidFlag::WNOHANG));
+            // Signal 0 only asks whether the group still has a member.
+            if killpg(pgid, None).is_err() {
+                return;
+            }
+            std::thread::sleep(POLL);
+        }
+        // Gone by now is a usual case, not an error.
+        let _gone = killpg(pgid, Signal::SIGKILL);
     }
 
     pub(super) fn pending() -> bool {
@@ -141,54 +165,7 @@ mod unix {
     }
 }
 
-#[cfg(all(test, unix))]
-mod tests {
-    use std::io::Read as _;
-    use std::os::unix::process::CommandExt;
-
-    use super::{GroupGuard, settle_stops, stops_pending};
-
-    /// A stopped group is pending while inside its grace, so the exit path that checks first still
-    /// waits it out. The group ignores SIGTERM, so its grace runs whole and no other test's stop
-    /// can prune it as finished before the check.
-    #[test]
-    fn a_stopped_group_inside_its_grace_is_pending() {
-        let mut child = std::process::Command::new("sh")
-            .args(["-c", "trap '' TERM; echo ready; exec sleep 10"])
-            .process_group(0)
-            .stdout(std::process::Stdio::piped())
-            .spawn()
-            .unwrap();
-        // Stopped only once the trap is set, or SIGTERM could end it before it ignores it.
-        let mut ready = [0; 6];
-        child.stdout.take().unwrap().read_exact(&mut ready).unwrap();
-        drop(GroupGuard::new(Some(child.id())));
-        assert!(stops_pending());
-        settle_stops();
-        // The grace ended in SIGKILL, which its thread does not reap: the killed child is reaped
-        // here.
-        let _reaped = child.wait();
-    }
-
-    /// Only a grace still running counts: a thread that finished but was never joined does not,
-    /// so a stop that is over leaves nothing for the exit path to wait on.
-    #[test]
-    fn a_finished_grace_left_unjoined_is_not_running() {
-        let finished = std::thread::spawn(|| {});
-        while !finished.is_finished() {
-            std::thread::yield_now();
-        }
-        let (release, held) = std::sync::mpsc::channel::<()>();
-        let holding = std::thread::spawn(move || {
-            let _released = held.recv();
-        });
-        let mut threads = vec![finished];
-        assert!(!super::unix::running(&threads));
-        threads.push(holding);
-        assert!(super::unix::running(&threads));
-        release.send(()).unwrap();
-        for thread in threads {
-            thread.join().unwrap();
-        }
-    }
-}
+#[cfg(test)]
+#[cfg(unix)]
+#[path = "process_group_tests.rs"]
+mod tests;

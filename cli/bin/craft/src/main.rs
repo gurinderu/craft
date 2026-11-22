@@ -172,14 +172,13 @@ async fn dispatch() -> anyhow::Result<ExitCode> {
 }
 
 async fn finish(outcome: anyhow::Result<ExitCode>) -> ExitCode {
+    finish_with(outcome, &settle::EXIT).await
+}
+
+async fn finish_with(outcome: anyhow::Result<ExitCode>, exit: &settle::Exit) -> ExitCode {
     // Every way out — a stop, an error, a finished run — waits out the grace of the agents'
     // groups, so their SIGKILL is sent before craft is gone.
-    settle::at_exit(
-        craft_agent::stops_pending(),
-        craft_agent::settle_stops,
-        settle::on_thread,
-    )
-    .await;
+    exit.wait().await;
     match outcome {
         Ok(code) => code,
         Err(e) => {
@@ -200,3 +199,7 @@ async fn finish(outcome: anyhow::Result<ExitCode>) -> ExitCode {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "main_tests.rs"]
+mod tests;
