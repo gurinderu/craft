@@ -1,11 +1,13 @@
 //! A list of records read (`parsePriorDecisions` in `integrations/shared/prior-decisions.mjs`; realm @nick/craft,
-//! node #218): under one cap, each refusal named by its label, a repeated id refused.
+//! node #218): under one cap, the project rules counted apart under a cap of their own (node #273),
+//! each refusal named by its label, a repeated id refused.
 
 use serde_json::Value;
 
-use super::{PriorDecision, has_control, js_len, read, record_id};
+use super::{PriorDecision, has_control, js_len, read, record_id, record_kind};
 
-/// The most records one run applies, recalled and passed together.
+/// The most records one run applies, recalled and passed together — and, apart, the most project
+/// rules: a project holds few, and the decisions piled up on its paths must not push them out.
 const PRIOR_DECISIONS_MAX: usize = 100;
 
 /// The records read from a list, and every refusal.
@@ -30,20 +32,20 @@ fn printable_id(item: &Value) -> String {
     }
 }
 
-/// The records past the cap, each named, the names bounded by the cap itself.
-fn cut_names(cut: &[Value], label_of: &dyn Fn(usize) -> String) -> String {
+/// The records of `list` at the indices past the cap, each named, the names bounded by the cap
+/// itself.
+fn cut_names(list: &[Value], cut: &[usize], label_of: &dyn Fn(usize) -> String) -> String {
     let named: Vec<String> = cut
         .iter()
         .take(PRIOR_DECISIONS_MAX)
-        .enumerate()
-        .map(|(k, item)| {
-            let id = printable_id(item);
+        .map(|&i| {
+            let id = list.get(i).map(printable_id).unwrap_or_default();
             let tail = if id.is_empty() {
                 String::new()
             } else {
                 format!(" ({id})")
             };
-            format!("{}{tail}", label_of(PRIOR_DECISIONS_MAX + k))
+            format!("{}{tail}", label_of(i))
         })
         .collect();
     let more = cut.len() - named.len();
@@ -73,7 +75,9 @@ pub(in crate::memory) fn parse(raw: Option<&Value>, label_of: &dyn Fn(usize) -> 
             return out;
         }
     };
-    for (i, item) in list.iter().take(PRIOR_DECISIONS_MAX).enumerate() {
+    let caps = Caps::of(list);
+    for &i in &caps.read {
+        let Some(item) = list.get(i) else { continue };
         match read(item, &label_of(i)) {
             Err(why) => out.refused.push(why),
             Ok(d) if out.decisions.iter().any(|x| x.id == d.id) => out.refused.push(format!(
@@ -84,12 +88,48 @@ pub(in crate::memory) fn parse(raw: Option<&Value>, label_of: &dyn Fn(usize) -> 
             Ok(d) => out.decisions.push(d),
         }
     }
-    if let Some(cut) = list.get(PRIOR_DECISIONS_MAX..).filter(|c| !c.is_empty()) {
+    if !caps.cut.is_empty() {
         out.refused.push(format!(
             "{} decision(s) past the cap of {PRIOR_DECISIONS_MAX} were not applied — findings they would answer are raised normally: {}",
-            cut.len(),
-            cut_names(cut, label_of)
+            caps.cut.len(),
+            cut_names(list, &caps.cut, label_of)
+        ));
+    }
+    if !caps.cut_rules.is_empty() {
+        out.refused.push(format!(
+            "{} project rule(s) past the cap of {PRIOR_DECISIONS_MAX} were not applied — findings they would cover are raised normally: {}",
+            caps.cut_rules.len(),
+            cut_names(list, &caps.cut_rules, label_of)
         ));
     }
     out
+}
+
+/// The indices of a list read, in its order, and those past the caps: the project rules counted
+/// apart from the other records, each under [`PRIOR_DECISIONS_MAX`] (`underCaps`).
+struct Caps {
+    read: Vec<usize>,
+    cut: Vec<usize>,
+    cut_rules: Vec<usize>,
+}
+
+impl Caps {
+    fn of(list: &[Value]) -> Self {
+        let is_rule = |x: &Value| x.as_object().is_some_and(|o| record_kind(o) == "rule");
+        let (rules, others): (Vec<usize>, Vec<usize>) =
+            (0..list.len()).partition(|&i| list.get(i).is_some_and(is_rule));
+        let split = |v: Vec<usize>| {
+            let at = v.len().min(PRIOR_DECISIONS_MAX);
+            let (head, tail) = v.split_at(at);
+            (head.to_vec(), tail.to_vec())
+        };
+        let ((mut read, cut), (rules, cut_rules)) = (split(others), split(rules));
+        read.extend(rules);
+        read.sort_unstable();
+        Self {
+            read,
+            cut,
+            cut_rules,
+        }
+    }
 }

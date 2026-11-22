@@ -6,7 +6,7 @@ import { test } from 'vitest'
 import assert from 'node:assert/strict'
 import { parsePriorDecisions } from './prior-decisions.mjs'
 import { applyPriorDecisions } from './prior-decision-apply.mjs'
-import { RULE_JUDGE_PAIRS_MAX, ruleCandidate, rulePairs, ruleJudgePrompt } from './project-rule-judge.mjs'
+import { RULE_JUDGE_PAIRS_MAX, RULE_JUDGE_SENT_MAX, ruleCandidate, rulePairs, ruleJudgePrompt } from './project-rule-judge.mjs'
 import { applyProjectRules } from './project-rule-apply.mjs'
 import { acceptedMemory, countedRecords, memoryRecallPrompt, memoryRecord, readMemoryRecall } from './memory-recall.mjs'
 import { newMemoryTally, renderMemorySection, tallyMemory } from './memory-tally.mjs'
@@ -118,11 +118,31 @@ test('apply: the judge saying not covered, a dead judge, a missing verdict and a
   assert.match(String(none.notices[0]), /died or answered unreadably/, 'no judge at all is no verdict')
   const silent = await applyProjectRules({ confirmed: [finding()] }, rules(), 'why', async () => ({ verdicts: [] }))
   assert.match(String(silent.notices[0]), /the rule judge returned no verdict for it/)
-  const many = Array.from({ length: RULE_JUDGE_PAIRS_MAX + 2 }, (_, i) => finding({ line: i + 1 }))
+  const many = Array.from({ length: RULE_JUDGE_SENT_MAX + 2 }, (_, i) => finding({ line: i + 1 }))
   const cut = await applyProjectRules({ confirmed: many }, rules(), 'why', judgeSays(true))
-  assert.equal(cut.covered.length, RULE_JUDGE_PAIRS_MAX)
+  assert.equal(cut.covered.length, RULE_JUDGE_SENT_MAX)
   assert.equal(cut.tiers['confirmed']?.length, 2)
-  assert.match(String(cut.notices[0]), /2 finding\(s\)[^\n]*past the rule judge's bound of 40 pairs/)
+  assert.match(String(cut.notices[0]), /2 finding\(s\)[^\n]*past the rule judge's bound of 400 pairs/)
+})
+
+test('apply: pairs past one judge prompt go to the next one; a prompt that dies leaves only its own pairs unjudged', async () => {
+  const many = Array.from({ length: RULE_JUDGE_PAIRS_MAX + 2 }, (_, i) => finding({ line: i + 1 }))
+  /** @type {number[]} */
+  const sizes = []
+  const all = await applyProjectRules({ confirmed: many }, rules(), 'why', async prompt => {
+    sizes.push(JSON.parse(String(prompt.match(/^\[\{"pair".*\]$/m)?.[0])).length)
+    return judgeSays(true)(prompt)
+  })
+  assert.deepEqual(sizes, [RULE_JUDGE_PAIRS_MAX, 2])
+  assert.equal(all.covered.length, RULE_JUDGE_PAIRS_MAX + 2)
+  assert.deepEqual(all.notices, [])
+  let call = 0
+  const half = await applyProjectRules({ confirmed: many }, rules(), 'why', async prompt => {
+    if (call++) throw new Error('x')
+    return judgeSays(true)(prompt)
+  })
+  assert.equal(half.covered.length, RULE_JUDGE_PAIRS_MAX)
+  assert.match(String(half.notices[0]), /^2 finding\(s\) in a project rule's scope NOT covered — the rule judge died or answered unreadably/)
 })
 
 test("apply: no rule, or no finding in a rule's scope, calls no judge", async () => {

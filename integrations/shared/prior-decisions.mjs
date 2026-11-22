@@ -9,10 +9,13 @@
 // This module reads the argument and matches; one decision is read by integrations/shared/prior-decision-record.mjs,
 // scopes are checked by integrations/shared/prior-decision-scope.mjs and findings split by integrations/shared/prior-decision-apply.mjs.
 // Imported by integrations/claude-code/src/rust-audit.js and integrations/claude-code/src/triage-findings.js.
-import { DECISION_FIELD_MAX, decisionScopeParts, hasControlChar, readPriorDecision, recordId } from './prior-decision-record.mjs'
+import { DECISION_FIELD_MAX, decisionScopeParts, hasControlChar, readPriorDecision, recordId, recordKind } from './prior-decision-record.mjs'
 
 // The most decisions one run applies — across the recalled and the passed records together (realm
-// @nick/craft, node #218); the rest are refused by name and their findings raised normally.
+// @nick/craft, node #218); the rest are refused by name and their findings raised normally. Project
+// rules are counted apart, under a cap of the same size (node #273): a rule is a stance on a whole class
+// of findings and a project holds few, so the decisions a long-lived project piles up on its paths must
+// not push them off the end of the list.
 export const PRIOR_DECISIONS_MAX = 100
 // A decision answers a finding when the finding's file sits inside the decision's scope AND their
 // titles share at least this share of words (of the longer one) (realm @nick/craft, node #187).
@@ -34,12 +37,12 @@ export function printableId(item) {
 
 /**
  * The records past the cap, each named (its label and id), the names bounded by the cap itself.
- * @param {unknown[]} cut @param {(i: number) => string} labelOf @returns {string}
+ * @param {unknown[]} list @param {number[]} cut the indices past the cap @param {(i: number) => string} labelOf @returns {string}
  */
-export function cutNames(cut, labelOf) {
-  const named = cut.slice(0, PRIOR_DECISIONS_MAX).map((item, k) => {
-    const id = printableId(item)
-    return `${labelOf(PRIOR_DECISIONS_MAX + k)}${id ? ` (${id})` : ''}`
+export function cutNames(list, cut, labelOf) {
+  const named = cut.slice(0, PRIOR_DECISIONS_MAX).map(i => {
+    const id = printableId(list[i])
+    return `${labelOf(i)}${id ? ` (${id})` : ''}`
   })
   const more = cut.length - named.length
   return `${named.join(', ')}${more ? ` and ${more} more` : ''}`
@@ -68,20 +71,38 @@ export function parsePriorDecisions(raw, labelOf = decisionLabel) {
   const decisions = []
   /** @type {string[]} */
   const refused = []
-  list.slice(0, PRIOR_DECISIONS_MAX).forEach((item, i) => {
-    const d = readPriorDecision(item, labelOf(i))
+  const { read, cut, cutRules } = underCaps(list)
+  read.forEach(i => {
+    const d = readPriorDecision(list[i], labelOf(i))
     if (typeof d === 'string') refused.push(d)
     // The scope check answers by id: two decisions under one id could lend one's unchanged scope to
     // the other, so the second is refused.
     else if (decisions.some(x => x.id === d.id)) refused.push(`${labelOf(i)} (${d.id}) repeats an id already given — not applied`)
     else decisions.push(d)
   })
-  if (list.length > PRIOR_DECISIONS_MAX) {
+  if (cut.length)
     refused.push(
-      `${list.length - PRIOR_DECISIONS_MAX} decision(s) past the cap of ${PRIOR_DECISIONS_MAX} were not applied — findings they would answer are raised normally: ${cutNames(list.slice(PRIOR_DECISIONS_MAX), labelOf)}`,
+      `${cut.length} decision(s) past the cap of ${PRIOR_DECISIONS_MAX} were not applied — findings they would answer are raised normally: ${cutNames(list, cut, labelOf)}`,
     )
-  }
+  if (cutRules.length)
+    refused.push(
+      `${cutRules.length} project rule(s) past the cap of ${PRIOR_DECISIONS_MAX} were not applied — findings they would cover are raised normally: ${cutNames(list, cutRules, labelOf)}`,
+    )
   return { decisions, refused }
+}
+
+/**
+ * The indices of `list` read, in its order, and those past the caps: the project rules counted apart
+ * from the other records, each under PRIOR_DECISIONS_MAX. @param {unknown[]} list
+ * @returns {{ read: number[], cut: number[], cutRules: number[] }}
+ */
+export function underCaps(list) {
+  /** @param {unknown} x */
+  const isRule = x => !!x && typeof x === 'object' && !Array.isArray(x) && recordKind(/** @type {Record<string, unknown>} */ (x)) === 'rule'
+  const rules = list.flatMap((x, i) => (isRule(x) ? [i] : []))
+  const others = list.flatMap((x, i) => (isRule(x) ? [] : [i]))
+  const read = [...others.slice(0, PRIOR_DECISIONS_MAX), ...rules.slice(0, PRIOR_DECISIONS_MAX)].sort((a, b) => a - b)
+  return { read, cut: others.slice(PRIOR_DECISIONS_MAX), cutRules: rules.slice(PRIOR_DECISIONS_MAX) }
 }
 
 /** Lower-cased alphanumeric words of a title. @param {unknown} t */
