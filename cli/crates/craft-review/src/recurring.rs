@@ -19,13 +19,13 @@ const REAL_FINDING_RULE: &str = "rejected, refuted, justified, covered, deferred
 /// Errors from listing the store or representing its paths.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("checking run store {}: {source}", path.display())]
+    #[error("checking run store {}", path.display())]
     Probe {
         path: PathBuf,
         #[source]
         source: std::io::Error,
     },
-    #[error("listing run store {}: {source}", path.display())]
+    #[error("listing run store {}", path.display())]
     List {
         path: PathBuf,
         #[source]
