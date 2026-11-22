@@ -15,12 +15,14 @@ use serde_json::Value;
 use super::apply::noted;
 use super::bounds;
 use super::judge::{self, CUT_NAMED_MAX, Judge, PAIRS_MAX, WHY_MAX};
-use super::matching::{in_scope, reraised_by_severity};
+use super::matching::in_scope;
 use super::{PriorDecision, RecordKind};
 use crate::content::ContentError;
 use crate::state::Task;
 use crate::tool::{finding_lenses, lens_words};
 
+#[cfg(test)]
+mod bound_tests;
 mod section;
 mod verdicts;
 
@@ -81,8 +83,8 @@ impl Pairs {
 
 impl Pairs {
     /// The rules among `records` that apply — those another record supersedes or answers do not
-    /// (`activeRules`) — and their pairs with `findings`: findings a rule can cover before High,
-    /// before Critical ones (`rulePairs`).
+    /// (`activeRules`) — and their pairs with `findings`: findings a rule can cover, a High
+    /// among them, before Critical ones (`rulePairs`).
     /// Past the bound the pairs of findings on the reviewed `focus` paths go first, then each
     /// finding's first rule before any finding's second ([`bounds::spread`]).
     pub(super) fn new(findings: &[Value], records: &[PriorDecision], focus: &[String]) -> Self {
@@ -104,14 +106,13 @@ impl Pairs {
                 }
             }
         }
-        let group = |f: &Value| {
-            if is_critical(f) {
-                2
-            } else {
-                u8::from(reraised_by_severity(f))
-            }
+        // A rule covers a High (node #273): only a Critical is raised whatever the verdict.
+        let group = |fi: usize, _: usize| {
+            findings
+                .get(fi)
+                .map_or(u8::MAX, |f| u8::from(is_critical(f)))
         };
-        pairs.sort_by_key(|&(fi, _)| findings.get(fi).map_or(u8::MAX, group));
+        pairs.sort_by_key(|&(fi, ri)| group(fi, ri));
         let pairs = bounds::spread(pairs, SENT_MAX, findings, focus, &group);
         Self {
             rules,

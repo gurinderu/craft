@@ -19,7 +19,7 @@
 // named in the title: theirs — and a source-less seed's — match a record naming no rule without a judge
 // on the same lens, line and normalized title; a different title goes to the judge (realm @nick/craft, node #236).
 // Imported by integrations/claude-code/src/triage-findings.js.
-import { decisionAnswers, inDecisionScope, reraisedByRank, reraisedBySeverity, titleOverlap } from './prior-decisions.mjs'
+import { decisionAnswers, inDecisionScope, reraisedByRank, titleOverlap } from './prior-decisions.mjs'
 import { spreadPairs } from './memory-bounds.mjs'
 import matchJudgeSchema from '../../content/schemas/match-judge.schema.json' with { type: 'json' }
 import { render } from './content.mjs'
@@ -389,7 +389,7 @@ export function rulelessUnjudgedNote(raised) {
 export function cutPairsNote(cut) {
   const named = cut.slice(0, CUT_NAMED_MAX).map(p => `"${clipLine(p.f.title, 60)}" @ ${clipLine(p.f.file)}:${findingLine(p.f)} ~ ${p.d.id}`)
   const more = cut.length - named.length
-  return `${cut.length} disputed record–finding pair(s) past the judge's bound of ${MATCH_JUDGE_PAIRS_MAX} were not judged — no reviewed paths are given here, so judged first were the findings a record can set aside before Critical and High ones, then each finding's closest record before any finding's second, severity ordering the findings within each of those; to need the judge less, record decisions with the finding's file as scope, its line and its lens (they then match outright), or review a narrower path (path=<dir>); not matched unless a near-verbatim title answers them (for a tool finding naming no rule only a tool record with the same title, near its line when lines compare), the rest raised normally: ${named.join(', ')}${more ? ` and ${more} more` : ''}`
+  return `${cut.length} disputed record–finding pair(s) past the judge's bound of ${MATCH_JUDGE_PAIRS_MAX} were not judged — no reviewed paths are given here, so judged first were the pairs whose record can set the finding aside (a Medium or Low finding, or a High a human's decision answers) before those its severity raises again whatever the record says (a Critical, or a High no human decided), then each finding's closest record before any finding's second, severity ordering the findings within each of those; to need the judge less, record decisions with the finding's file as scope, its line and its lens (they then match outright), or review a narrower path (path=<dir>); not matched unless a near-verbatim title answers them (for a tool finding naming no rule only a tool record with the same title, near its line when lines compare), the rest raised normally: ${named.join(', ')}${more ? ` and ${more} more` : ''}`
 }
 
 /**
@@ -449,8 +449,10 @@ export async function matchFindings(findings, decisions, judge, reraisedSure) {
     .map(p => ({ p, r: pairRank(p) }))
     .sort((a, b) => a.r - b.r)
     .map(x => x.p)
-  // Past the bound, every finding's closest record before any finding's second (memory-bounds.mjs).
-  const pairs = spreadPairs(ranked, MATCH_JUDGE_PAIRS_MAX, [], f => (reraisedBySeverity(f.severity) ? 1 : 0))
+  // Past the bound, the pairs whose record can set the finding aside first — by the same test as pairRank,
+  // so a High a human's decision answers is among them (realm @nick/craft, node #602) — then every
+  // finding's closest record before any finding's second (memory-bounds.mjs).
+  const pairs = spreadPairs(ranked, MATCH_JUDGE_PAIRS_MAX, [], p => (reraisedByRank(p.f.severity, p.d) ? 1 : 0))
   /** @type {string[]} */
   const notes = []
   /** @type {string[]} */

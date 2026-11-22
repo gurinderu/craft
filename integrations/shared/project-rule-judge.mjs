@@ -7,7 +7,7 @@
 // never removes a finding. What the judge sees is quoted data, never the rule's body, as for the
 // decision judge (node #231).
 // Imported by integrations/claude-code/src/triage-findings.js.
-import { inDecisionScope, reraisedBySeverity } from './prior-decisions.mjs'
+import { inDecisionScope } from './prior-decisions.mjs'
 import { MATCH_BODY_MAX, clipLine, findingLenses, findingLine, lensWords, readJudge } from './prior-decision-match.mjs'
 import { spreadPairs } from './memory-bounds.mjs'
 import ruleJudgeSchema from '../../content/schemas/rule-judge.schema.json' with { type: 'json' }
@@ -45,18 +45,18 @@ export function ruleCandidate(f, r) {
 }
 
 /**
- * Every candidate pair, in the order the judge's bound keeps them: findings a rule can cover before
- * Critical and High ones (a Critical is raised whatever the verdict), each finding's rules in the given order;
- * past the bound each finding's first rule before any finding's second.
+ * Every candidate pair, in the order the judge's bound keeps them: findings a rule can cover — a High
+ * among them (node #273) — before Critical ones (a Critical is raised whatever the verdict), each
+ * finding's rules in the given order; past the bound each finding's first rule before any finding's second.
  * @param {DecidableFinding[]} findings @param {PriorDecision[]} rules @returns {RulePair[]}
  */
 export function rulePairs(findings, rules) {
   const pairs = findings.flatMap(f => rules.filter(r => ruleCandidate(f, r)).map(r => ({ f, r })))
-  /** @param {DecidableFinding} f */
-  const group = f => (isCritical(f.severity) ? 2 : reraisedBySeverity(f.severity) ? 1 : 0)
+  /** @param {RulePair} p */
+  const group = p => (isCritical(p.f.severity) ? 1 : 0)
   const ranked = pairs
     .map((p, i) => ({ p, i }))
-    .sort((a, b) => group(a.p.f) - group(b.p.f) || a.i - b.i)
+    .sort((a, b) => group(a.p) - group(b.p) || a.i - b.i)
     .map(x => x.p)
   // Past the bound, every finding's first rule before any finding's second (memory-bounds.mjs).
   return spreadPairs(ranked, RULE_JUDGE_SENT_MAX, [], group)

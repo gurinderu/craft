@@ -48,7 +48,7 @@ export function ruleVerdicts(pairs, sent, answer) {
         p.f,
         i < sent
           ? answer.why(i)
-          : `past the rule judge's bound of ${RULE_JUDGE_SENT_MAX} pairs — no reviewed paths are given here, so judged first were the findings a rule can cover before High and Critical ones, then each finding's first rule before any finding's second; narrow the rule's scope or lens, or review a narrower path (path=<dir>)`,
+          : `past the rule judge's bound of ${RULE_JUDGE_SENT_MAX} pairs — no reviewed paths are given here, so judged first were the findings a rule can cover (a High among them) before Critical ones, then each finding's first rule before any finding's second; narrow the rule's scope or lens, or review a narrower path (path=<dir>)`,
       )
   })
   return { covers, against: ruleContradictions(pairs, answer), unjudged }
