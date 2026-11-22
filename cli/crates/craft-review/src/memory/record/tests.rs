@@ -1,4 +1,4 @@
-//! A record whose scope carries a line, as earlier runs wrote it (realm @nick/craft, node #598).
+//! A record whose scope carries a line, as earlier runs wrote it (realm @nick/craft, node #606).
 
 use serde_json::{Value, json};
 
@@ -38,6 +38,7 @@ fn two_legacy_records_of_one_title_at_two_ranges_both_apply_each_at_its_own_line
     };
     let p = parse(
         Some(&json!([at("src/a.rs:10-12"), at("src/a.rs:500-505")])),
+        &[],
         &plain_label,
     );
     assert!(p.refused.is_empty(), "{:?}", p.refused);
