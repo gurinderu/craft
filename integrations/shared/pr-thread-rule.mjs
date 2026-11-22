@@ -33,7 +33,7 @@ export const NOT_CRAFT_ROOT = 'who is not an owner, member or collaborator: not 
 /**
  * @typedef {{ author?: { login?: unknown } | null, authorAssociation?: unknown, body?: unknown, url?: unknown, createdAt?: unknown, originalCommit?: { oid?: unknown } | null }} ThreadComment
  * @typedef {{ path?: unknown, line?: unknown, originalLine?: unknown, comments?: { totalCount?: unknown, nodes?: ThreadComment[] } }} ReviewThread
- * @typedef {{ id: string, kind: 'decision', title: string, body: string, scope: string, status: 'active', date: string, author: string, commit: string, links: string[], line?: number, lens?: string, toolRule?: string }} DecisionRecord
+ * @typedef {{ id: string, kind: 'decision', title: string, body: string, scope: string, status: 'active', date: string, author: string, decidedBy: 'human', commit: string, links: string[], line?: number, lens?: string, toolRule?: string }} DecisionRecord
  */
 
 /** The memory skill's id: `decision-` + 10 hex of sha256(kind, title, scope). @param {string} title @param {string} scope */
@@ -100,7 +100,8 @@ export function threadAnchor(t, finding) {
 }
 
 /**
- * A rejected thread as the memory skill's decision record: the shape both thread readers write.
+ * A rejected thread as the memory skill's decision record: the shape both thread readers write, a
+ * human's decision (`decidedBy: 'human'`).
  * @param {ReviewThread} t
  * @param {{ cs: ThreadComment[], root: ThreadComment, title: string, scope: string, commit: string }} c
  * @param {{ by: string, reason: string, url: string }} r
@@ -117,6 +118,8 @@ export function decisionRecord(t, c, r, finding) {
     status: 'active',
     date: str(c.cs[c.cs.length - 1]?.createdAt).slice(0, 10),
     author: r.by,
+    // A maintainer's or the PR author's own reply on the thread: a human's call (realm @nick/craft, node #196).
+    decidedBy: 'human',
     commit: c.commit,
     links: [r.url, str(c.root.url)].filter(Boolean),
     ...threadAnchor(t, finding),

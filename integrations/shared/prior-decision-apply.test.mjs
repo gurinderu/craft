@@ -46,8 +46,8 @@ test('split: a Critical, a changed scope, and a missing commit are raised again,
   assert.match(String(nc.kept[0]?.why), /records no commit/)
 })
 
-test("split: a High is set aside only by a human's decision whose code is unchanged since its commit (node #196)", () => {
-  const [human, anonymous] = /** @type {any[]} */ (parsePriorDecisions([decision(), decision({ id: 'd2', who: '' })]).decisions)
+test("split: a High is set aside only by a human's decision (decidedBy: human) whose code is unchanged since its commit (node #196)", () => {
+  const [human, anonymous] = /** @type {any[]} */ (parsePriorDecisions([decision({ decidedBy: 'human' }), decision({ id: 'd2' })]).decisions)
   const high = { file: 'src/parse.rs', title: 'unwrap in parser may panic', severity: 'High', why: 'w' }
   const aside = splitByDecisions([high], [human], new Set([human.id]), 'confirmed')
   assert.equal(aside.setAside.length, 1)
@@ -55,15 +55,22 @@ test("split: a High is set aside only by a human's decision whose code is unchan
   const changed = splitByDecisions([high], [human], new Set(), 'confirmed')
   assert.equal(changed.setAside.length, 0)
   assert.match(String(changed.kept[0]?.why), /changed since abc1234/)
-  const noAuthor = splitByDecisions([high], [anonymous], new Set(['d2']), 'confirmed')
-  assert.equal(noAuthor.setAside.length, 0)
-  assert.match(String(noAuthor.kept[0]?.why), /set aside only by a human's decision, and this one records no author/)
+  const absent = splitByDecisions([high], [anonymous], new Set(['d2']), 'confirmed')
+  assert.equal(absent.setAside.length, 0)
+  assert.match(String(absent.kept[0]?.why), /set aside only by a human's decision \(decidedBy: human\), and this one is not/)
+  const [agent, deferral] = /** @type {any[]} */ (
+    parsePriorDecisions([decision({ id: 'd3', decidedBy: 'agent' }), decision({ id: 'd4', decidedBy: 'human', deferred: true })]).decisions
+  )
+  assert.equal(splitByDecisions([high], [agent], new Set(['d3']), 'confirmed').setAside.length, 0, "an agent's decision raises a High")
+  const deferred = splitByDecisions([high], [deferral], new Set(['d4']), 'confirmed')
+  assert.equal(deferred.setAside.length, 0, 'a deferral recorded as a decision raises a High')
+  assert.match(String(deferred.kept[0]?.why), /recorded deferral/)
   assert.deepEqual(
     decisionsToCheck([high], [human]).map(d => d.id),
     [human.id],
     "a human's decision answering a High is checked",
   )
-  assert.deepEqual(decisionsToCheck([high], [anonymous]), [], 'a decision with no author cannot set a High aside, so nothing to check')
+  assert.deepEqual(decisionsToCheck([high], [anonymous]), [], 'a decision not saying decidedBy: human cannot set a High aside, so nothing to check')
 })
 
 test('check list: only decisions that could set a finding aside and recorded a commit', () => {

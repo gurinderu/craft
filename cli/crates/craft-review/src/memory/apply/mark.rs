@@ -51,7 +51,11 @@ fn severity_reason(f: &Value, d: &PriorDecision) -> String {
     if d.kind == RecordKind::Question {
         return "a High finding is never set aside by a prior deferred question".into();
     }
-    "a High finding is set aside only by a human's decision, and this one records no author".into()
+    if d.deferred {
+        return "a High finding is never set aside by a recorded deferral".into();
+    }
+    "a High finding is set aside only by a human's decision (decidedBy: human), and this one is not"
+        .into()
 }
 
 /// Why record `d` cannot set finding `f` aside; '' when it can (`reraiseReason`).

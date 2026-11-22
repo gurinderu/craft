@@ -68,9 +68,10 @@ pub(super) fn reraised_by_severity(f: &Value) -> bool {
     s == "critical" || s == "high"
 }
 
-/// Whether `d` is a human's decision: a decision that records its author.
+/// Whether `d` is a human's decision: a decision that says `decidedBy: "human"` and records no
+/// deferral. A record without the field is not one, so every record written before it is not.
 pub(super) fn human_decision(d: &PriorDecision) -> bool {
-    d.kind == RecordKind::Decision && !d.who.is_empty()
+    d.kind == RecordKind::Decision && !d.deferred && d.decided_by == "human"
 }
 
 /// Whether `f`'s severity alone raises it again whatever record `d` says (`reraisedByRank`; realm

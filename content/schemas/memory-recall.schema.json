@@ -65,6 +65,10 @@
             "items": {
               "type": "string"
             }
+          },
+          "decidedBy": {
+            "type": "string",
+            "description": "who made the call: human or agent"
           }
         }
       }

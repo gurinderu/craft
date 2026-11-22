@@ -15,6 +15,7 @@
             "status": "active",
             "date": "2026-01-02",
             "author": "nick",
+            "decidedBy": "human",
             "commit": "0123456789abcdef0123456789abcdef01234567",
             "line": 10,
             "lens": "errors",

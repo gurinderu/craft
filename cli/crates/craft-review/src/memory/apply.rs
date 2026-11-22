@@ -3,7 +3,7 @@
 //! #230, #282): a finding a decision answers leaves the verdict and is listed under Rejected before
 //! with who, when, why and a link, never dropped; one a deferred question answers under Known and
 //! deferred. It is raised again when it is Critical, when it is High and its record is not a human's
-//! decision (one recording its author; node #196), when its record names no commit, when the
+//! decision (`decidedBy: "human"`, no deferral; node #196), when its record names no commit, when the
 //! repository lacks that commit, or when the code in the record's scope changed since it; a High a
 //! human's decision sets aside is listed under its own section. Which
 //! record answers a finding a near miss leaves open, the match judge decides ([`judged`]): the run

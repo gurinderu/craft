@@ -3,7 +3,7 @@
 // project keeps (the `memory` skill) for the paths of the diff. The engine never drops a finding a
 // decision answers — it sets it aside under its own section, marked with who rejected it, when, why
 // and where. A finding is raised again normally when it is Critical, when it is High and no human's
-// decision (one recording its author) answers it (realm @nick/craft, node #196), when the code in the
+// decision (`decidedBy: "human"`) answers it (realm @nick/craft, node #196), when the code in the
 // decision's scope changed since the commit the decision was recorded at, or when that cannot be
 // established. The engine recalls them itself on every launch and a passed list adds to that recall
 // (integrations/shared/memory-recall.mjs; realm @nick/craft, node #218); a malformed one applies nothing and is named.
@@ -127,15 +127,19 @@ export function reraisedBySeverity(sev) {
   return /^(critical|high)$/i.test(String(sev ?? '').trim())
 }
 
-/** Whether `d` is a human's decision: a decision that records its author. @param {{ kind: string, who: string }} d */
+/**
+ * Whether `d` is a human's decision: a decision that says `decidedBy: "human"` and records no deferral. A
+ * record without the field is not one, so every record written before it is not.
+ * @param {{ kind: string, deferred?: boolean, decidedBy?: string }} d
+ */
 export function humanDecision(d) {
-  return d.kind === 'decision' && !!d.who
+  return d.kind === 'decision' && !d.deferred && d.decidedBy === 'human'
 }
 
 /**
  * Whether a finding's severity alone raises it again whatever record `d` says (realm @nick/craft, node #196):
  * a Critical always, a High unless `d` is a human's decision.
- * @param {unknown} sev @param {{ kind: string, who: string }} d
+ * @param {unknown} sev @param {{ kind: string, deferred?: boolean, decidedBy?: string }} d
  */
 export function reraisedByRank(sev, d) {
   const s = String(sev ?? '').trim()

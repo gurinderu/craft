@@ -12,13 +12,14 @@ fn finding(severity: &str) -> Value {
     json!({"severity": severity, "title": "unwrap on a checked value", "file": "src/lib.rs", "line": 11, "source": "errors", "tier": "confirmed", "why": "w"})
 }
 
-fn decision(who: &str) -> PriorDecision {
+fn decision(decided_by: &str) -> PriorDecision {
     PriorDecision {
         id: "decision-a".into(),
         title: "unwrap on a checked value".into(),
         scope: "src/lib.rs".into(),
         reason: "checked above".into(),
-        who: who.into(),
+        who: "nick".into(),
+        decided_by: decided_by.into(),
         when: "2026-11-01".into(),
         link: "https://example.com/pr/1#r1".into(),
         commit: COMMIT.into(),
@@ -49,7 +50,7 @@ fn why(f: &Value) -> &str {
 
 #[test]
 fn a_humans_decision_sets_a_high_aside_while_its_code_is_unchanged_under_its_own_section() {
-    let out = applied(finding("High"), decision("nick"), true);
+    let out = applied(finding("High"), decision("human"), true);
     assert_eq!((out.kept.len(), out.set_aside.len()), (0, 1));
     let report = apply::section(&out.set_aside);
     assert!(
@@ -65,7 +66,7 @@ fn a_humans_decision_sets_a_high_aside_while_its_code_is_unchanged_under_its_own
 
 #[test]
 fn a_humans_decision_raises_a_high_again_once_its_code_changed() {
-    let out = applied(finding("High"), decision("nick"), false);
+    let out = applied(finding("High"), decision("human"), false);
     assert_eq!((out.kept.len(), out.set_aside.len()), (1, 0));
     assert!(
         why(&out.kept[0]).contains("changed since"),
@@ -75,14 +76,38 @@ fn a_humans_decision_raises_a_high_again_once_its_code_changed() {
 }
 
 #[test]
-fn a_decision_recording_no_author_raises_a_high_again() {
-    let out = applied(finding("High"), decision(""), true);
+fn an_agents_decision_or_one_not_saying_who_decided_raises_a_high_again() {
+    for by in ["agent", "", "Human?"] {
+        let out = applied(finding("High"), decision(by), true);
+        assert_eq!((out.kept.len(), out.set_aside.len()), (1, 0), "{by}");
+        assert!(
+            why(&out.kept[0]).contains("set aside only by a human's decision (decidedBy: human)"),
+            "{by}: {}",
+            why(&out.kept[0])
+        );
+    }
+}
+
+#[test]
+fn a_humans_decision_recording_a_deferral_raises_a_high_again() {
+    let d = PriorDecision {
+        deferred: true,
+        ..decision("human")
+    };
+    let out = applied(finding("High"), d, true);
     assert_eq!((out.kept.len(), out.set_aside.len()), (1, 0));
     assert!(
-        why(&out.kept[0]).contains("set aside only by a human's decision"),
+        why(&out.kept[0]).contains("recorded deferral"),
         "{}",
         why(&out.kept[0])
     );
+}
+
+#[test]
+fn decided_by_is_read_from_the_record() {
+    let raw = json!({"id": "decision-a", "kind": "decision", "title": "t", "body": "b", "scope": "src", "author": "nick", "decidedBy": "human"});
+    let d = super::record::read(&raw, "record").unwrap();
+    assert_eq!(d.decided_by, "human");
 }
 
 #[test]
@@ -90,7 +115,7 @@ fn a_deferred_question_never_sets_a_high_aside() {
     let q = PriorDecision {
         kind: RecordKind::Question,
         deferred: true,
-        ..decision("nick")
+        ..decision("human")
     };
     let out = applied(finding("High"), q, true);
     assert_eq!((out.kept.len(), out.set_aside.len()), (1, 0));
@@ -98,7 +123,7 @@ fn a_deferred_question_never_sets_a_high_aside() {
 
 #[test]
 fn a_critical_is_raised_again_whatever_decision_answers_it() {
-    let out = applied(finding("Critical"), decision("nick"), true);
+    let out = applied(finding("Critical"), decision("human"), true);
     assert_eq!((out.kept.len(), out.set_aside.len()), (1, 0));
     assert!(
         why(&out.kept[0]).contains("a Critical finding is never set aside"),

@@ -69,6 +69,10 @@ pub struct PriorDecision {
     pub lens: String,
     pub tool_rule: String,
     pub overrides: Vec<String>,
+    /// Who made the call a decision records, `human` or `agent` (`decidedBy`; realm @nick/craft,
+    /// node #196); '' when the record does not say.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub decided_by: String,
 }
 
 /// A string field trimmed, '' when it is no string (`decisionText`).
@@ -229,6 +233,7 @@ fn fields(o: &Map<String, Value>) -> PriorDecision {
         line: u64::try_from(line).unwrap_or(0),
         lens: text(o.get("lens")),
         tool_rule: text(o.get("toolRule")),
+        decided_by: text(o.get("decidedBy")),
         overrides: overrides
             .into_iter()
             .flatten()

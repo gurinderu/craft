@@ -87,7 +87,8 @@ export function severityReason(f, d) {
   if (/^critical$/i.test(String(f.severity ?? '').trim()))
     return `a Critical finding is never set aside by a prior ${d.kind === 'question' ? 'deferred question' : 'decision'}`
   if (d.kind === 'question') return 'a High finding is never set aside by a prior deferred question'
-  return "a High finding is set aside only by a human's decision, and this one records no author"
+  if (d.deferred) return 'a High finding is never set aside by a recorded deferral'
+  return "a High finding is set aside only by a human's decision (decidedBy: human), and this one is not"
 }
 
 /**
