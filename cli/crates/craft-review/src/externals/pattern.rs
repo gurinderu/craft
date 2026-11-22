@@ -117,8 +117,7 @@ impl Engine {
     fn arm(&self, at: Option<Instant>) -> bool {
         self.deadline
             .lock()
-            .map(|mut d| std::mem::replace(&mut *d, (at, false)).1)
-            .unwrap_or(true)
+            .map_or(true, |mut d| std::mem::replace(&mut *d, (at, false)).1)
     }
 
     fn answer(output: &str) -> Result<Vec<Js>, Error> {

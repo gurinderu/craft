@@ -118,7 +118,7 @@ fn text_caps_are_utf16_not_bytes_and_capture_refusals_keep_utf16_prefix() {
 #[test]
 fn a_catastrophically_backtracking_version_match_is_refused_for_its_record_not_a_hang() {
     let root = tempfile::tempdir().unwrap();
-    put(root.path(), "v", &format!("{}!\n", "a".repeat(40)));
+    put(root.path(), "v", format!("{}!\n", "a".repeat(40)));
     put(root.path(), "w", "tag: v1\n");
     let started = std::time::Instant::now();
     let result = import(
