@@ -457,8 +457,7 @@ Where craft's fix loop fans out across subagents:
 
 ## Rust wiring
 
-Which agents to re-dispatch, the fix-to-skill routing, and the "what proves what" proof table →
-[rust.md](rust.md).
+Which agents to re-dispatch, the fix-to-skill routing, and the "what proves what" proof table → [rust.md](rust.md).
 
 ## Doubtful findings a review held back
 
@@ -488,8 +487,7 @@ The rule, the `gh` query and the script → [pr-rejections.md](pr-rejections.md)
 
 ## Closing the loop on GitHub
 
-Reading PR threads, and drafting/posting/resolving replies (only after explicit user OK) →
-[github.md](github.md).
+Reading PR threads, and drafting/posting/resolving replies (only after explicit user OK) → [github.md](github.md).
 
 ## Boundaries
 
