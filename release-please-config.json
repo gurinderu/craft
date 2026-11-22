@@ -11,7 +11,7 @@
         { "type": "json", "path": "integrations/claude-code/.claude-plugin/plugin.json", "jsonpath": "$.version" },
         { "type": "json", "path": ".claude-plugin/marketplace.json", "jsonpath": "$.version" },
         { "type": "json", "path": ".codex-plugin/plugin.json", "jsonpath": "$.version" },
-        { "type": "generic", "path": "bin/craft" },
+        { "type": "generic", "path": "integrations/shared/craft-cli.sh" },
         { "type": "generic", "path": "integrations/shared/pr-opened-hook.sh" },
         { "type": "generic", "path": "integrations/shared/craft-hook.sh" },
         { "type": "generic", "path": "README.md" },

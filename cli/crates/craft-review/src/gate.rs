@@ -68,6 +68,7 @@ mod semgrep;
 pub(crate) mod tests;
 pub mod unknown;
 #[cfg(test)]
+#[cfg(unix)]
 mod unread_tests;
 
 use check::{Acc, Cx};

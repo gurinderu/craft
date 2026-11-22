@@ -31,11 +31,16 @@ go on without it.
 ## 2. Get the binary and propose
 
 ```sh
-CRAFT_BIN="$(node "<this skill's base directory>/../../integrations/shared/craft-bin.mjs" ensure)" || exit $?
+CRAFT_BIN="$(sh "<this skill's base directory>/../../integrations/shared/craft-cli.sh" --ensure --print-path)" || exit $?
 "$CRAFT_BIN" init --propose --cwd "$(git rev-parse --show-toplevel)" --craft-root "<this skill's base directory>/../.." --memory-externals - <<'CRAFT_MEMORY_EXTERNALS'
 <the recalled records as one JSON list, on one line>
 CRAFT_MEMORY_EXTERNALS
 ```
+
+On POSIX, and in Git Bash on Windows (it caches `craft.exe`), acquisition and `init` need no
+system Node. On native Windows without `sh`, obtain
+the same binary with `node "<this skill's base directory>/../../integrations/shared/craft-bin.mjs" ensure`;
+the acquired binary performs discovery and import itself. An exported `CRAFT_BIN` selects a local build.
 
 The quoted heredoc hands the records over as written: the shell reads no `'`, `$` or `\` in
 them. With nothing recalled, drop the heredoc and `--memory-externals -`. A local build (`cargo build

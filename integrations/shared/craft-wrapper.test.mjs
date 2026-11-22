@@ -15,6 +15,7 @@ import { writeExecutable } from './write-executable.mjs'
 
 const ROOT = path.resolve(import.meta.dirname, '../..')
 const WRAPPER = path.join(ROOT, 'bin', 'craft')
+const SHARED = path.join(ROOT, 'integrations/shared/craft-cli.sh')
 const VERSION = JSON.parse(fs.readFileSync(path.join(ROOT, '.release-please-manifest.json'), 'utf8'))['.']
 const ASSET = `craft-${targetOf(process.platform, process.arch)}.tar.gz`
 const FAKE = '#!/bin/sh\nprintf "%s|" "$CRAFT_ROOT" "$@"\n'
@@ -116,14 +117,65 @@ test('with neither curl nor wget on the PATH it says so', async () => {
   assert.equal(got.stderr, `craft: neither curl nor wget is on the PATH to download the craft binary ${VERSION}\n`)
 })
 
-test('the wrapper carries the plugin version on the line release-please moves', () => {
+test('the shared entry carries the plugin version on the line release-please moves', () => {
   const lines = fs
-    .readFileSync(WRAPPER, 'utf8')
+    .readFileSync(SHARED, 'utf8')
     .split('\n')
     .filter(l => l.includes('x-release-please-version'))
   assert.deepEqual(lines, [`version=${VERSION} # x-release-please-version`])
   const extra = JSON.parse(fs.readFileSync(path.join(ROOT, 'release-please-config.json'), 'utf8')).packages['.']['extra-files']
-  assert.ok(extra.some((/** @type {{ type: string, path: string }} */ f) => f.type === 'generic' && f.path === 'bin/craft'))
+  assert.ok(extra.some((/** @type {{ type: string, path: string }} */ f) => f.type === 'generic' && f.path === 'integrations/shared/craft-cli.sh'))
+})
+
+test('--ensure --print-path downloads once and prints only the binary path without executing it', async () => {
+  const expected = { code: 0, stdout: `${cached()}\n`, stderr: '' }
+  assert.deepEqual(await wrapper(['--ensure', '--print-path']), expected)
+  assert.deepEqual(await wrapper(['--ensure', '--print-path']), expected)
+  assert.deepEqual(hits(), [ASSET, `${ASSET}.sha256`])
+})
+
+/** A `uname` on the PATH that answers `sys` for -s and `machine` for -m. @param {string} sys @param {string} machine */
+function fakeUname(sys, machine) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'craft-uname-'))
+  writeExecutable(path.join(dir, 'uname'), `#!/bin/sh\ncase $1 in -s) echo '${sys}' ;; -m) echo '${machine}' ;; esac\n`)
+  return dir
+}
+
+test('under Git Bash, MSYS or Cygwin on x86_64 it fetches the Windows release and caches craft.exe, as craft-bin.mjs does', async () => {
+  const asset = 'craft-x86_64-pc-windows-msvc.tar.gz'
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'craft-pack-'))
+  fs.writeFileSync(path.join(dir, 'craft.exe'), FAKE, { mode: 0o755 })
+  execFileSync('tar', ['-czf', path.join(RELEASE, asset), '-C', dir, 'craft.exe'])
+  const archive = fs.readFileSync(path.join(RELEASE, asset))
+  fs.writeFileSync(path.join(RELEASE, `${asset}.sha256`), `${createHash('sha256').update(archive).digest('hex')}  ${asset}\n`)
+  for (const sys of ['MINGW64_NT-10.0-19045', 'MSYS_NT-10.0-19045', 'CYGWIN_NT-10.0-19045']) {
+    fs.rmSync(path.join(HOME, '.craft'), { recursive: true, force: true })
+    fs.rmSync(path.join(SHIM, 'hits'), { force: true })
+    const PATH = `${fakeUname(sys, 'x86_64')}:${SHIM}:${process.env['PATH'] ?? ''}`
+    const exe = path.join(HOME, '.craft', 'bin', VERSION, 'craft.exe')
+    assert.deepEqual(await wrapper(['--ensure', '--print-path'], { PATH }), { code: 0, stdout: `${exe}\n`, stderr: '' }, sys)
+    assert.deepEqual(hits(), [asset, `${asset}.sha256`], sys)
+    assert.deepEqual(fs.readdirSync(path.dirname(exe)), ['craft.exe'], sys)
+    assert.equal((await wrapper(['x'], { PATH })).stdout, `${ROOT}|x|`, sys)
+    assert.deepEqual(hits(), [asset, `${asset}.sha256`], sys)
+  }
+})
+
+test('Windows on a machine the release does not build for is named, not fetched', async () => {
+  const PATH = `${fakeUname('MINGW64_NT-10.0-22631', 'aarch64')}:${SHIM}:${process.env['PATH'] ?? ''}`
+  const got = await wrapper(['--ensure', '--print-path'], { PATH })
+  assert.equal(got.code, 127)
+  assert.equal(got.stderr, 'craft: no released craft binary for MINGW64_NT-10.0-22631/aarch64: build it from cli/ and set CRAFT_BIN\n')
+  assert.deepEqual(hits(), [])
+})
+
+test('--ensure --print-path validates an override and preserves spaces in its path', async () => {
+  const local = path.join(HOME, 'local craft')
+  fs.writeFileSync(local, FAKE, { mode: 0o755 })
+  assert.deepEqual(await wrapper(['--ensure', '--print-path'], { CRAFT_BIN: local }), { code: 0, stdout: `${local}\n`, stderr: '' })
+  fs.rmSync(local)
+  assert.equal((await wrapper(['--ensure', '--print-path'], { CRAFT_BIN: local })).code, 127)
+  assert.deepEqual(hits(), [])
 })
 
 test('--ensure fetches the binary and runs nothing; with it cached, it fetches nothing', async () => {

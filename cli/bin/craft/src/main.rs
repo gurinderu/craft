@@ -1,6 +1,7 @@
 //! `craft`: the command line over craft's review.
 
 mod comment;
+mod externals;
 mod filing_worker;
 mod hook;
 mod init;
@@ -131,8 +132,25 @@ pub struct ReviewArgs {
 
 #[tokio::main]
 async fn main() -> ExitCode {
+    let outcome = dispatch().await;
+    finish(outcome).await
+}
+
+async fn dispatch() -> anyhow::Result<ExitCode> {
+    // Preserve every raw helper argument, including `--` and `--help`, before clap interprets it.
+    if std::env::args_os()
+        .nth(1)
+        .is_some_and(|s| s == "__craft-externals")
+    {
+        return externals::run(&externals::Args {
+            argv: std::env::args_os()
+                .skip(2)
+                .map(|s| s.to_string_lossy().into_owned())
+                .collect(),
+        });
+    }
     let cli = Cli::parse();
-    let outcome = match cli.command {
+    match cli.command {
         Command::Review(ReviewCommand::Probe(args)) => review::run(args).await,
         Command::Review(ReviewCommand::Start(args)) => steps::start(&args),
         Command::Review(ReviewCommand::Submit(args)) => steps::submit(&args),
@@ -157,7 +175,10 @@ async fn main() -> ExitCode {
         Command::Hook(HookCommand::OpencodeCompacted) => {
             hook::role_hook(hook::RoleHook::OpencodeCompacted)
         }
-    };
+    }
+}
+
+async fn finish(outcome: anyhow::Result<ExitCode>) -> ExitCode {
     // Every way out — a stop, an error, a finished run — waits out the grace of the agents'
     // groups, so their SIGKILL is sent before craft is gone.
     if let Err(e) = tokio::task::spawn_blocking(craft_agent::settle_stops).await {

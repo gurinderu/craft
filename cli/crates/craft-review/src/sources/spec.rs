@@ -1,5 +1,5 @@
-//! The checks a system's source passes before git runs, as `integrations/shared/external-source-spec.mjs` makes
-//! them (realm @nick/craft, node #430): its name, its repository URL and the revision, and the
+//! The checks a system's source passes before git runs
+//! (realm @nick/craft, node #430): its name, its repository URL and the revision, and the
 //! cache directory they give.
 
 use sha2::{Digest, Sha256};

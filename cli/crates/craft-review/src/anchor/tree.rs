@@ -80,5 +80,6 @@ impl Tree for GitTree {
 }
 
 #[cfg(test)]
+#[cfg(unix)]
 #[path = "tree_tests.rs"]
 mod tests;

@@ -158,7 +158,7 @@ const knownOf = (externals, apart) => [...externals, ...recalledList(apart)]
 /**
  * What the recall agent returned, read: the decisions and questions to hand to parsePriorDecisions (a
  * list, possibly empty, each id set by withSkillId), the inactive records that hold back a passed copy,
- * the external-system records as returned (the review reads them, integrations/shared/external-source-spec.mjs), every active one
+ * the external-system records as returned, every active one
  * whatever its scope (`knownExternals`, the scope-matched among them: the discovery's filter), and the
  * source to report. A dead or off-shape answer applies nothing and is named.
  * @param {unknown} raw @param {number} cut paths past RECALL_PATHS_MAX

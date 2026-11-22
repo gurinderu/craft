@@ -1,9 +1,10 @@
 #!/bin/sh
-# The one download of the craft binary into ~/.craft/bin/<version>/craft (realm @nick/craft, nodes #457, #500, #550):
-# the release's craft-<target>.tar.gz and its .sha256, the SHA-256 checked, the binary unpacked into place. bin/craft
+# The one download of the craft binary into ~/.craft/bin/<version>/craft (craft.exe on Windows) (realm @nick/craft, nodes #457, #500, #550):
+# the release's craft-<target>.tar.gz and its .sha256, the SHA-256 checked, the binary unpacked into place. craft-cli.sh
 # sources it before it runs the binary; integrations/shared/craft-hook.sh runs it in the background when a hook finds the binary absent
 # (the Claude Code delivery has no bin/); integrations/shared/craft-bin.mjs ensure, the review engine's fetcher, runs it everywhere sh
-# runs — on Windows, where it does not, that file keeps its own Node download. The cache layout is integrations/shared/craft-bin.mjs's.
+# runs — Git Bash on Windows included; where no sh runs, that file keeps its own Node download. The cache layout and
+# the binary's name are integrations/shared/craft-bin.mjs's.
 #
 #   sh integrations/shared/craft-fetch.sh <version> [--background | --failure]
 #
@@ -35,7 +36,8 @@ craft_fetch() {
   _cf_token=''
   [ -n "${HOME:-}" ] || _cf_die "HOME is not set: no place for ~/.craft/bin/$_cf_version"
   _cf_dir=$HOME/.craft/bin/$_cf_version
-  _cf_bin=$_cf_dir/craft
+  _cf_name=$(craft_bin_name)
+  _cf_bin=$_cf_dir/$_cf_name
   [ -f "$_cf_bin" ] && [ -x "$_cf_bin" ] && return 0
   _cf_target=${CRAFT_TARGET:-$(_cf_target)} || exit 127
   _cf_tools
@@ -50,6 +52,14 @@ craft_fetch() {
   fi
   _cf_cleanup
   trap - INT TERM HUP
+}
+
+# The binary's file name in the cache: craft.exe for a Windows target (craft-bin.mjs's binaryName), craft otherwise.
+craft_bin_name() {
+  case ${CRAFT_TARGET:-$(uname -s 2>/dev/null)} in
+    *-windows-* | MINGW*_NT* | MSYS_NT* | CYGWIN_NT*) printf craft.exe ;;
+    *) printf craft ;;
+  esac
 }
 
 # The state of version $1's download beside its directory: ~/.craft/bin/<version>.$2.
@@ -76,7 +86,8 @@ craft_fetch_background() {
   [ ! -f "$_cf_log" ] || [ "$(wc -c <"$_cf_log")" -le 65536 ] || : >"$_cf_log"
   (craft_fetch "$1" --background) >>"$_cf_log" 2>&1 </dev/null
   _cf_rc=$?
-  if [ -f "$HOME/.craft/bin/$1/craft" ] && [ -x "$HOME/.craft/bin/$1/craft" ]; then
+  _cf_done=$HOME/.craft/bin/$1/$(craft_bin_name)
+  if [ -f "$_cf_done" ] && [ -x "$_cf_done" ]; then
     echo 0 >"$(_cf_state "$1" status)"
     rm -f "$(_cf_state "$1" told)"
   elif [ "$_cf_rc" -ne 0 ]; then
@@ -105,6 +116,8 @@ _cf_target() {
     Linux/aarch64 | Linux/arm64) printf aarch64-unknown-linux-musl ;;
     Darwin/x86_64) printf x86_64-apple-darwin ;;
     Darwin/arm64 | Darwin/aarch64) printf aarch64-apple-darwin ;;
+    MINGW*_NT*/x86_64 | MINGW*_NT*/amd64 | MSYS_NT*/x86_64 | MSYS_NT*/amd64 | CYGWIN_NT*/x86_64 | CYGWIN_NT*/amd64)
+      printf x86_64-pc-windows-msvc ;;
     *) _cf_die "no released craft binary for $(uname -s)/$(uname -m): build it from cli/ and set CRAFT_BIN" ;;
   esac
 }
@@ -182,9 +195,9 @@ _cf_install() {
   [ -n "$_cf_expected" ] || _cf_fail "$_cf_asset.sha256 holds no SHA-256"
   _cf_actual=$(_cf_digest "$_cf_tmp/$_cf_asset" | cut -d' ' -f1)
   [ "$_cf_actual" = "$_cf_expected" ] || _cf_fail "$_cf_asset: SHA-256 $_cf_actual is not the published $_cf_expected"
-  tar -xzf "$_cf_tmp/$_cf_asset" -C "$_cf_tmp" craft 2>/dev/null || _cf_fail "could not unpack craft from $_cf_asset"
-  [ -f "$_cf_tmp/craft" ] && [ ! -L "$_cf_tmp/craft" ] || _cf_fail "craft in $_cf_asset is not a regular file"
-  chmod 755 "$_cf_tmp/craft" && mv -f "$_cf_tmp/craft" "$_cf_bin" || _cf_fail "could not install $_cf_bin"
+  tar -xzf "$_cf_tmp/$_cf_asset" -C "$_cf_tmp" "$_cf_name" 2>/dev/null || _cf_fail "could not unpack $_cf_name from $_cf_asset"
+  [ -f "$_cf_tmp/$_cf_name" ] && [ ! -L "$_cf_tmp/$_cf_name" ] || _cf_fail "$_cf_name in $_cf_asset is not a regular file"
+  chmod 755 "$_cf_tmp/$_cf_name" && mv -f "$_cf_tmp/$_cf_name" "$_cf_bin" || _cf_fail "could not install $_cf_bin"
 }
 
 # Run as a script (not sourced): fetch the version it is given.

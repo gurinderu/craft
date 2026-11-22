@@ -60,6 +60,7 @@ fn a_changed_file_is_listed_by_its_own_name_whatever_its_characters() {
     assert_eq!(files, want);
 }
 
+#[cfg(unix)]
 #[test]
 fn a_changed_path_that_is_not_utf8_lists_the_change_as_git_quotes_it() {
     use std::os::unix::ffi::OsStrExt;
