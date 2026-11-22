@@ -42,7 +42,7 @@ test('memory recall prompt: the skill first, the backend order by capability, re
   assert.match(p, /- src\/a\.rs\n- src\/b\.rs/)
   assert.match(
     p,
-    /id, kind, title, body, scope, status, date, author, commit, deferred, line, lens, toolRule, links \(line, lens and toolRule only when the record carries them/,
+    /id, kind, title, body, scope, status, date, author, decidedBy, commit, deferred, line, lens, toolRule, links \(decidedBy, line, lens and toolRule only when the record carries them/,
   )
 })
 

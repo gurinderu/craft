@@ -40,8 +40,8 @@ The sorting changes nothing in the verdict.
    whether to, with the `craft:memory` skill, one line per write
    (`memory backend: <X> — recorded <kind> <id> (<title>)`, or `memory: no backend available — <why>; not recorded`):
    - "false", "by design", "accepted as it stands" → `record-decision`: title = the finding's
-     title as listed, scope = its file, body = his reason, author = him, commit = `git rev-parse
-     HEAD`, line = its line, lens = its `source`, toolRule = its `toolRule` when not empty,
+     title as listed, scope = its file, body = his reason, author = him, `decidedBy: "human"`,
+     commit = `git rev-parse HEAD`, line = its line, lens = its `source`, toolRule = its `toolRule` when not empty,
      links = the PR;
    - a reason that is a stance of the whole project ("we do not support rollback") →
      `record-rule`, with his word that it is a stance, exactly as in "A stance is a project rule"

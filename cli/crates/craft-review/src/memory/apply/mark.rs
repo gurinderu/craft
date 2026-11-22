@@ -34,15 +34,34 @@ pub(super) fn commit_missing(d: &PriorDecision) -> String {
     )
 }
 
-/// Why record `d` cannot set finding `f` aside; '' when it can (`reraiseReason`).
-pub(super) fn reraise_reason(f: &Value, d: &PriorDecision, scope: &Scope) -> String {
-    if matching::reraised_by_severity(f) {
+/// Why `f`'s severity raises it again whatever `d` says (`severityReason`).
+fn severity_reason(f: &Value, d: &PriorDecision) -> String {
+    let critical = f
+        .get("severity")
+        .and_then(Value::as_str)
+        .is_some_and(|s| s.trim().eq_ignore_ascii_case("critical"));
+    if critical {
         let what = if d.kind == RecordKind::Question {
             "deferred question"
         } else {
             "decision"
         };
-        return format!("a Critical/High finding is never set aside by a prior {what}");
+        return format!("a Critical finding is never set aside by a prior {what}");
+    }
+    if d.kind == RecordKind::Question {
+        return "a High finding is never set aside by a prior deferred question".into();
+    }
+    if d.deferred {
+        return "a High finding is never set aside by a recorded deferral".into();
+    }
+    "a High finding is set aside only by a human's decision (decidedBy: human), and this one is not"
+        .into()
+}
+
+/// Why record `d` cannot set finding `f` aside; '' when it can (`reraiseReason`).
+pub(super) fn reraise_reason(f: &Value, d: &PriorDecision, scope: &Scope) -> String {
+    if matching::reraised_by_rank(f, d) {
+        return severity_reason(f, d);
     }
     if d.commit.is_empty() {
         return format!(

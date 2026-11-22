@@ -12,6 +12,8 @@
 
 mod apply;
 mod asked;
+#[cfg(test)]
+mod high_tests;
 mod id;
 mod judge;
 mod matching;

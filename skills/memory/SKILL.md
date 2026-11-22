@@ -16,7 +16,7 @@ project already has; it never invents one. craft's machine memory — the run st
 | Verb | Input | Effect |
 |---|---|---|
 | `recall(topic, scope)` | keywords, a path or component | the **matching active** records (below); for a review, also a short list of the matching inactive ones' ids, only to block them |
-| `record-decision` | title, scope, body (the reason), author, commit, links | one `decision` record |
+| `record-decision` | title, scope, body (the reason), author, decidedBy, commit, links | one `decision` record |
 | `record-rule` | title (the rule), scope, body (why), author, links; `lens` to narrow it | one `rule` record |
 | `record-lesson` | title, scope, body, links | one `lesson` record |
 | `record-question` | title, scope, body (what would answer it), links; author, commit and `deferred: true` for a deferred finding | one `question` record |
@@ -28,7 +28,7 @@ answered question becomes a `decision` that supersedes it.
 ## Record shape (lowest common denominator)
 
 ```
-{ id, kind, title, body, scope, status, date, author, commit, deferred, line, lens, toolRule, links[] }
+{ id, kind, title, body, scope, status, date, author, decidedBy, commit, deferred, line, lens, toolRule, links[] }
   id      stable hash of kind + title + scope (below) — same fact, same id: re-recording updates it
   kind    decision | rule | lesson | question | external
   title   one line, ≤ 200 chars — the finding title verbatim, the rule's statement, the lesson, the question
@@ -37,6 +37,7 @@ answered question becomes a `decision` that supersedes it.
   status  active | superseded | withdrawn
   date    YYYY-MM-DD of the last write
   author  who decided — a login or a name, ≤ 120 chars (decisions; optional on the others)
+  decidedBy  `human` when a human made or confirmed the call, `agent` when an agent recorded it on its own (decisions; absent on the others) — only a `human` decision sets a High finding aside; a decision without it is not a human's
   commit  the commit the decided code was at, 7–40 hex (decisions and deferred questions on findings; below)
   deferred  `true` on a question that defers a review finding (below); absent on every other record
   line    the finding's line in `scope`'s file (records on review findings; absent when unknown; never on a rule)
@@ -53,7 +54,7 @@ systems a review reads the source of now live in the reviewer's own profile of t
 `craft init` (`craft:review-init`), which proposes these records as its candidates. Recall them only for
 that import — every active `external` record, every scope — and never pass them as `priorDecisions`.
 
-**A decision on a review finding** carries all of `author`, `commit` and a link to where it was
+**A decision on a review finding** carries all of `author`, `decidedBy`, `commit` and a link to where it was
 made (the PR thread, the review comment): the review engine names them when it sets the finding
 aside, and it sets a finding aside only while the code in `scope` is unchanged since `commit`. A
 decision without a `commit` is still recorded, but a review raises its finding again every time.
@@ -227,7 +228,7 @@ passing to stand in for the engine's recall.
    each finding itself; **active** only; never lessons.
 2. To add records, pass them to the workflow as the argument `priorDecisions` — **only in an object argument**,
    `{ …, priorDecisions: [<records>] }`: a list of the records in the shape above, as recalled —
-   `id`, `kind`, `title`, `scope`, `body`, `date`, `author`, `commit`, `deferred`, `lens`, `links` — nothing rewritten,
+   `id`, `kind`, `title`, `scope`, `body`, `date`, `author`, `decidedBy`, `commit`, `deferred`, `lens`, `links` — nothing rewritten,
    nothing summarised; `kind` on every record, or a question or a rule passed without it is read by its id
    (`question-…`, `rule-…`), and anything else as a decision. A record built by hand may leave `id` out when
    it carries `kind`, `title` and `scope`: the engine derives the id by the rule above and its
@@ -240,9 +241,15 @@ passing to stand in for the engine's recall.
    link, also outside the verdict (the review ledger keeps it `deferred`, and a re-review carries it
    like a rejection); one a project rule covers, under **Covered by project rules** (above). A question without `deferred: true` records no deferral: it sets nothing aside
    and labels nothing; a deferral without a `commit` is raised again and named. Either is raised
-   again as a normal finding when it is Critical/High, when the code in the decision's scope changed
-   since its `commit`, when the decision has no `commit`, or when the repository does not know that
-   `commit` (a squash-merged branch, another clone — named under **Prior decisions not applied**).
+   again as a normal finding when it is Critical, when it is High and its record is not a human's
+   decision (`decidedBy: "human"` on a decision that records no deferral; an `agent` decision, one
+   without the field — every record written before it — and a deferral never set a High aside) or a
+   project rule (above), when the code in
+   the decision's scope changed since its `commit`, when the decision has no `commit`, or when the
+   repository does not know that `commit` (a squash-merged branch, another clone — named under
+   **Prior decisions not applied**). A High a human's decision sets aside, its code unchanged since
+   that `commit`, is listed under its own **High rejected by a human** section with who, when, why
+   and the link, outside the verdict.
    More than 100 decisions (project rules are counted apart, up to 100 of their own, so the decisions never push a rule out), or a record that does not fit (a missing title or reason, no `id` and
    no `kind` or `scope` to derive one from, a field past
    its bound, a control character in `id`, `scope` or `commit`, a scope outside the repo or holding

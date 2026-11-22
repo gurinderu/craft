@@ -6,10 +6,12 @@
 
 // The verbatim tool titles ride with them: a decision is recorded by those titles, and a model summarising
 // the nested report would reword them (realm @nick/craft, node #236).
-// The project rules' section rides with them (realm @nick/craft, node #273): what a rule covered is out of the verdict.
+// The project rules' section rides with them (realm @nick/craft, node #273): what a rule covered is out of the verdict;
+// so does a High a human's decision set aside (node #196).
 // The findings going against a memory record ride too (realm @nick/craft, #281): they are in the verdict, but which
 // record each contradicts is memory's fact, and the nested report's file is the only other place it is said.
 export const PRIOR_DECISION_HEADINGS = [
+  '## High rejected by a human (set aside — not in the verdict)',
   '## Rejected before (set aside — not in the verdict)',
   '## Known and deferred (open question — not in the verdict)',
   '## Covered by project rules (not in the verdict)',

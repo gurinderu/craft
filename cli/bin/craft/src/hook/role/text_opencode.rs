@@ -17,7 +17,7 @@ const RECALL: &str = "load the memory skill with the skill tool and";
 // Rust the review this delivery ships.
 const RE_REVIEW: &str = "here in this session over git diff <that commit>..HEAD: for Rust code the rust-review skill or the rust-audit tool, otherwise your own review pass";
 // No sift engine here: the session sifts itself; the plugin's triage-findings tool only validates.
-const TRIAGE: &str = "triage the findings here in this session, never in a subagent, whatever their number: OpenCode has no sift engine, so do the sift steps of addressing-findings (\"Who triages\") yourself (recall; set aside what a recorded decision, deferred question or project rule answers; raise again each Critical/High or scope-changed one; a finding the PR did not introduce → an issue), then validate the rest inline or with the triage-findings tool, which validates and plans but does not sift; record each disposition and file the issues yourself";
+const TRIAGE: &str = "triage the findings here in this session, never in a subagent, whatever their number: OpenCode has no sift engine, so do the sift steps of addressing-findings (\"Who triages\") yourself (recall; set aside what a recorded decision, deferred question or project rule answers; raise again each Critical one, each High neither a human's decision (decidedBy: human) nor a project rule answers, and each scope-changed one; a finding the PR did not introduce → an issue), then validate the rest inline or with the triage-findings tool, which validates and plans but does not sift; record each disposition and file the issues yourself";
 
 fn memory_launcher() -> String {
     launcher("the memory skill", MEMORY)

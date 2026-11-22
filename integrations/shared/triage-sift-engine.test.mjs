@@ -107,7 +107,7 @@ test('a Critical finding a decision answers is raised again and judged; so is on
   assert.equal(validated(r).length, 1)
   assert.match(
     validated(r)[0].prompt,
-    /- project memory: Rejected before \(decision decision-bc2a4e82f6, bob, 2026-09-30\) — raised again: a Critical\/High finding is never set aside/,
+    /- project memory: Rejected before \(decision decision-bc2a4e82f6, bob, 2026-09-30\) — raised again: a Critical finding is never set aside/,
   )
   assert.equal(row(r, idOf(f)).verdict, 'accept')
   assert.equal(filedRecord(r).triage.sifted.reraised, 1)

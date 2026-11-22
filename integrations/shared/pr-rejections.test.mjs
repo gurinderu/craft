@@ -60,6 +60,7 @@ test('rule: a reply opening with a rejection, as the last word, records a decisi
     status: 'active',
     date: '2026-10-02',
     author: 'alice',
+    decidedBy: 'human',
     commit: SHA,
     links: ['https://github.com/o/r/pull/9#discussion_r2', 'https://github.com/o/r/pull/9#discussion_r1'],
   })
