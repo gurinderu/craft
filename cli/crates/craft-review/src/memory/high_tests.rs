@@ -1,11 +1,10 @@
 //! Which record sets a Critical or High finding aside (realm @nick/craft, node #196): a Critical
-//! none; a High only a human's decision whose code is unchanged since its commit; a High a project
-//! rule alone covers stays in the verdict, listed for a human to confirm.
+//! none; a High only a human's decision whose code is unchanged since its commit.
 
 use serde_json::{Value, json};
 
 use super::apply::{self, Scope};
-use super::{Memory, PriorDecision, RecordKind, rules};
+use super::{PriorDecision, RecordKind};
 
 const COMMIT: &str = "0123456789abcdef0123456789abcdef01234567";
 
@@ -105,43 +104,5 @@ fn a_critical_is_raised_again_whatever_decision_answers_it() {
         why(&out.kept[0]).contains("a Critical finding is never set aside"),
         "{}",
         why(&out.kept[0])
-    );
-}
-
-#[test]
-fn a_high_a_rule_alone_covers_stays_in_the_verdict_listed_to_confirm() {
-    let rule = PriorDecision {
-        id: "rule-a".into(),
-        kind: RecordKind::Rule,
-        title: "we do not support rollback".into(),
-        scope: "src".into(),
-        lens: String::new(),
-        ..PriorDecision::default()
-    };
-    let findings = vec![finding("High"), finding("Medium")];
-    let ds = [rule];
-    let pairs = rules::Pairs::new(&findings, &ds);
-    let answer = json!({"verdicts": [
-        {"pair": 0, "covered": true, "violates": false, "why": "declared"},
-        {"pair": 1, "covered": true, "violates": false, "why": "declared"},
-    ]});
-    let out = rules::apply(findings, &pairs, Some(&answer));
-    let severities: Vec<&str> = out
-        .kept
-        .iter()
-        .map(|f| f["severity"].as_str().unwrap_or(""))
-        .collect();
-    assert_eq!(severities, ["High"], "the High counts in the verdict");
-    assert_eq!((out.covered.len(), out.confirm.len()), (1, 1));
-    let memory = Memory {
-        rule_confirm: out.confirm,
-        ..Memory::default()
-    };
-    let report = memory.report(&[], &out.kept);
-    assert!(
-        report.contains(
-            "## High covered by a project rule — confirm (still in the verdict)\n- High · `src/lib.rs:11`"
-        ),
-        "{report}"
     );
 }

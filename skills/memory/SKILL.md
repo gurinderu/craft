@@ -88,10 +88,8 @@ decisions' or the rules') says goes against an active record is not set aside: i
 with the record (`memoryContradicts`), listed under **Contradicts project memory**, and — in `review` with `comment`, the one that posts — goes to the PR as a defect
 even when a doubt sign holds; a line there marked `not confirmed` is a doubt to check (verify it before
 fixing), not a certain defect, and in `review` with `comment` it is also listed under Doubtful, the record
-named first. A Critical finding is raised even under a rule, named there as raised; a High one a
-rule covers stays in the verdict, listed under **High covered by a project rule — confirm** — a rule
-is a stance, not a decision on that finding, so a human confirms it (a decision with its author sets
-it aside); a finding the judge gave no verdict on stays in the verdict, named there too. A rule is retired like any record:
+named first. A Critical finding is raised even under a rule, named there as raised; a finding the
+judge gave no verdict on stays in the verdict, named there too. A rule is retired like any record:
 `superseded` or `withdrawn`. A stance recorded as a decision on one finding does not cover the next
 finding of its class.
 

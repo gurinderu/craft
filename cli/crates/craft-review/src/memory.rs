@@ -60,9 +60,6 @@ pub struct Memory {
     /// verdict for want of the rule judge's verdict.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub rule_notices: Vec<String>,
-    /// The Highs a project rule covers: still in the verdict, listed for a human to confirm.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub rule_confirm: Vec<Value>,
     /// Why the launcher's list could not be read at all, when it could not: refused, the run goes on.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub unread: Option<String>,
@@ -94,7 +91,6 @@ impl Memory {
             source: m.source,
             set_aside: Vec::new(),
             rule_notices: Vec::new(),
-            rule_confirm: Vec::new(),
             unread,
             asked: Asked::default(),
         };
@@ -193,10 +189,9 @@ impl Memory {
     pub fn report(&self, carried: &[Value], findings: &[Value]) -> String {
         let listed: Vec<Value> = self.set_aside.iter().chain(carried).cloned().collect();
         format!(
-            "{}{}{}{}\n\n## Memory\n- {}\n{}",
+            "{}{}{}\n\n## Memory\n- {}\n{}",
             apply::section(&listed),
             rules::section(&self.set_aside, &self.rule_notices),
-            rules::confirm_section(&self.rule_confirm),
             judge::contradiction_section(findings),
             self.source.line(),
             apply::refused_section(&self.refused)

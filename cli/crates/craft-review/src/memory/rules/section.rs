@@ -1,5 +1,5 @@
-//! The report sections of what the project rules covered (`projectRuleSection` in
-//! `integrations/shared/project-rule-apply.mjs`), and of the Highs they cover, which stay in the verdict.
+//! The report section of what the project rules covered (`projectRuleSection` in
+//! `integrations/shared/project-rule-apply.mjs`).
 
 use serde_json::Value;
 
@@ -47,19 +47,5 @@ pub(in crate::memory) fn section(set_aside: &[Value], notices: &[String]) -> Str
     format!(
         "\n\n## Covered by project rules (not in the verdict)\n{}",
         own.join("\n")
-    )
-}
-
-/// The section listing the Highs a rule covers, which stay in the verdict for a human to confirm
-/// (realm @nick/craft, node #196); '' when there is none.
-#[must_use]
-pub(in crate::memory) fn confirm_section(confirm: &[Value]) -> String {
-    if confirm.is_empty() {
-        return String::new();
-    }
-    let lines: Vec<String> = confirm.iter().map(line).collect();
-    format!(
-        "\n\n## High covered by a project rule — confirm (still in the verdict)\n{}",
-        lines.join("\n")
     )
 }

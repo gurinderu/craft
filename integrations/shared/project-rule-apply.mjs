@@ -3,16 +3,13 @@
 // (integrations/shared/project-rule-judge.mjs) puts under a rule leaves the verdict — and so the PR comments, which are
 // posted from the verdict's findings — and is listed under its own report section with the rule's id,
 // its statement and the judge's why. A Critical finding is raised even under a rule, and named there as
-// raised; a High one stays in the verdict, listed apart for a human to confirm — a rule is a stance, not a
-// decision on that finding (realm @nick/craft, node #196); a finding whose pair got no verdict stays in the
-// verdict, and the section says why.
+// raised; a finding whose pair got no verdict stays in the verdict, and the section says why.
 // A rule another given record supersedes or answers no longer applies, as for a decision; a passed rule the
 // store names inactive never reaches here (integrations/shared/memory-recall.mjs holds it back).
 // A finding the judge says goes against a rule — not covered — stays in the verdict marked with the rule
 // (memoryContradicts; integrations/shared/memory-contradiction.mjs, realm @nick/craft, node #282), unless a decision marked it first.
 // Imported by integrations/claude-code/src/triage-findings.js.
 import { RULE_JUDGE_PAIRS_MAX, askRuleJudge, isCritical, rulePairs } from './project-rule-judge.mjs'
-import { reraisedBySeverity } from './prior-decisions.mjs'
 import { CUT_NAMED_MAX, clipLine, findingLine } from './prior-decision-match.mjs'
 import { recordAliases } from './prior-decision-apply.mjs'
 import { markContradicting } from './memory-contradiction.mjs'
@@ -91,11 +88,11 @@ export function activeRules(records) {
 
 /**
  * Applies the rules among `records` to every tier. `judge` is the one rule judge, called only when a
- * candidate pair exists. `notices` are the section's warnings (a Critical raised, a High kept to confirm, a
- * finding left for want of a verdict); `confirm` the Highs a rule covers, kept in the verdict; `notes` the log lines. @template {DecidableFinding} F
+ * candidate pair exists. `notices` are the section's warnings (a Critical raised, a finding left for want
+ * of a verdict); `notes` the log lines. @template {DecidableFinding} F
  * @param {Record<string, F[]>} tiers @param {PriorDecision[]} records @param {string} [noteField] `why` in a review finding
  * @param {(prompt: string) => Promise<unknown>} [judge]
- * @returns {Promise<{ tiers: Record<string, F[]>, covered: Array<Covered<F>>, confirm: F[], notices: string[], notes: string[], rules: number }>}
+ * @returns {Promise<{ tiers: Record<string, F[]>, covered: Array<Covered<F>>, notices: string[], notes: string[], rules: number }>}
  */
 export async function applyProjectRules(tiers, records, noteField = 'why', judge) {
   const { rules, superseded } = activeRules(records)
@@ -105,7 +102,6 @@ export async function applyProjectRules(tiers, records, noteField = 'why', judge
     return {
       tiers,
       covered: [],
-      confirm: [],
       notices: [],
       notes: [...gone, ...(rules.length ? [`${rules.length} project rule(s) given, no finding in their scope`] : [])],
       rules: rules.length,
@@ -116,8 +112,6 @@ export async function applyProjectRules(tiers, records, noteField = 'why', judge
   const covered = []
   /** @type {string[]} */
   const notices = []
-  /** @type {F[]} */
-  const confirm = []
   /** @type {Record<string, F[]>} */
   const out = {}
   for (const [tier, list] of Object.entries(tiers)) {
@@ -130,13 +124,6 @@ export async function applyProjectRules(tiers, records, noteField = 'why', judge
           `Critical ${ruleFindingName(f)} RAISED — a Critical finding is raised even under rule ${c.r.id} "${clipLine(c.r.title)}" (judge: ${c.why})`,
         )
         return [{ ...f, [noteField]: `${note}Raised under project rule ${c.r.id}: a Critical finding is never covered by a rule.` }]
-      }
-      if (reraisedBySeverity(f.severity)) {
-        notices.push(
-          `High ${ruleFindingName(f)} CONFIRM — a rule alone never sets a High aside, so it stays under rule ${c.r.id} "${clipLine(c.r.title)}" (judge: ${c.why})`,
-        )
-        confirm.push(f)
-        return [{ ...f, [noteField]: `${note}High under project rule ${c.r.id}: a rule alone never sets a High aside — confirm.` }]
       }
       covered.push({
         ...f,
@@ -153,7 +140,7 @@ export async function applyProjectRules(tiers, records, noteField = 'why', judge
   notices.push(...unjudgedNotices(new Map([...unjudged].filter(([f]) => !covers.has(f)))))
   const notes = [
     ...gone,
-    `${rules.length} project rule(s) given, ${pairs.length} rule–finding pair(s), ${covered.length} finding(s) covered${confirm.length ? `, ${confirm.length} High(s) left in the verdict to confirm` : ''}${against.size ? `, ${against.size} showing the code against a rule` : ''}`,
+    `${rules.length} project rule(s) given, ${pairs.length} rule–finding pair(s), ${covered.length} finding(s) covered${against.size ? `, ${against.size} showing the code against a rule` : ''}`,
   ]
-  return { tiers: out, covered, confirm, notices, notes, rules: rules.length }
+  return { tiers: out, covered, notices, notes, rules: rules.length }
 }

@@ -144,7 +144,6 @@ fn every_case_applies_as_the_engines_apply_it() {
             source: m.source,
             set_aside,
             rule_notices: ruled.notices,
-            rule_confirm: ruled.confirm,
             ..Memory::default()
         };
         assert_eq!(

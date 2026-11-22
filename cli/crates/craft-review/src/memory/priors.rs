@@ -153,7 +153,6 @@ impl Memory {
         let covered = commit(settled, chain, out.kept, out.covered);
         self.set_aside.extend(covered);
         self.rule_notices = out.notices;
-        self.rule_confirm = out.confirm.into_iter().map(|f| drop_prior_at(&f)).collect();
         notes.extend(out.notes.iter().map(|n| format!("project rules: {n}")));
     }
 }
@@ -221,11 +220,6 @@ fn commit(
             None => f,
         })
         .collect()
-}
-
-/// `f` without the field naming its place in the chain.
-fn drop_prior_at(f: &Value) -> Value {
-    take_prior(f).map_or_else(|| f.clone(), |(_, f)| f)
 }
 
 /// A prior's place in the chain and the finding without it; `None` for a finding of this round.

@@ -46,8 +46,8 @@ not one of them: it is the main session's (→ "Who triages").
 2b. Sift     — before any validator: repeats in the batch collapse onto one; a finding an
                active decision, deferred question or project rule (step 0) already answers is
                settled from memory — rejected / deferred, citing who, when and the link; a
-               Critical one, a High no human's decision answers (a rule alone never settles
-               it), or one whose record's code changed since its commit, goes on to triage; one that goes against a record is a `conflict` for the human
+               Critical one, a High that neither a human's decision nor a project rule answers,
+               or one whose record's code changed since its commit, goes on to triage; one that goes against a record is a `conflict` for the human
                (→ "The sift before triage")
 3. Triage    — per finding, validated against a pinned ref (the workflow fans out its own
                validators — never one subagent per finding of yours):
@@ -170,9 +170,8 @@ fixing (a planned fix turns out wrong) is re-decided and recorded then, once.
 **Without the Workflow tool** (Codex, OpenCode) there is no sift engine: the main session — still
 never a subagent — does the sift's steps itself from this text first: recall for every touched path
 (step 0); set aside a finding an active decision, deferred question or project rule answers,
-citing it; raise again every Critical one, every High no human's decision (one recording its
-author) answers — a project rule alone never sets a High aside — and every one whose record's code
-changed since its commit; collapse repeats. Then it validates what is left: inline, or in OpenCode with its
+citing it; raise again every Critical one, every High that neither a human's decision nor a project
+rule answers, and every one whose record's code changed since its commit; collapse repeats. Then it validates what is left: inline, or in OpenCode with its
 `triage-findings` tool (which validates and plans but does not sift — never a replacement for the
 steps above); either way it names each noise class and turns a finding the PR did not introduce into
 an issue. Say plainly in one line that the sift ran by hand because there is no Workflow tool.
@@ -190,11 +189,10 @@ decided in another PR is not decided again, and the opposite way:
   question answers `defer`, one a project rule covers `reject`; the ledger reason cites the
   record (who, when, link) and how it matched. Matching is the review engine's own: the anchor or
   title in the record's scope, and a judge for the doubtful pairs — never a guess by topic.
-- **Raised again** — a Critical finding is never settled from memory; a High only by a human's
-  decision (one recording its author) whose code is unchanged since its commit — never by a
-  deferred question or a project rule alone, which leaves it in triage for the human to confirm;
-  nor is one whose record's code changed since the record's commit (or that has no commit): it
-  goes to triage with the record cited.
+- **Raised again** — a Critical finding is never settled from memory; a High only by a project
+  rule or a human's decision whose code is unchanged since its commit — never by a deferred
+  question; nor is one whose record's code changed since the record's commit (or that has no
+  commit): it goes to triage with the record cited.
 - **Against a record** — a finding that shows the code going against what a record settled is a
   `conflict`: the human decides whether the record still stands.
 

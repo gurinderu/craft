@@ -4,9 +4,7 @@
 //! stance on a whole class of findings, so its candidates are the findings inside its scope — and
 //! of its lens, when it names one — and the rule judge says of each pair whether the finding's
 //! concern is exactly what the rule declares acceptable. A finding it puts under a rule leaves the
-//! verdict and is listed under its own section; a Critical one is raised even so, and a High one
-//! stays in the verdict, listed under a section of its own for a human to confirm — a rule is a
-//! stance, not a decision on that finding (node #196); one whose pair
+//! verdict and is listed under its own section; a Critical one is raised even so; one whose pair
 //! got no verdict stays, and the section says why. One the judge says goes against a rule is
 //! marked with it, unless a decision marked it first.
 
@@ -25,7 +23,7 @@ use crate::tool::{finding_lenses, lens_words};
 mod section;
 mod verdicts;
 
-pub(super) use section::{confirm_section, section};
+pub(super) use section::section;
 use verdicts::read;
 
 /// Whether a finding is Critical, which no rule covers.
@@ -33,13 +31,6 @@ fn is_critical(f: &Value) -> bool {
     judge::plain(f.get("severity"))
         .trim()
         .eq_ignore_ascii_case("critical")
-}
-
-/// Whether a finding is High, which a rule alone never sets aside (realm @nick/craft, node #196).
-fn is_high(f: &Value) -> bool {
-    judge::plain(f.get("severity"))
-        .trim()
-        .eq_ignore_ascii_case("high")
 }
 
 /// Whether rule `r` may cover `f`: its file inside the rule's scope, and, when the rule names a
@@ -144,9 +135,6 @@ impl Pairs {
 pub(super) struct Covered {
     pub kept: Vec<Value>,
     pub covered: Vec<Value>,
-    /// The Highs a rule covers, kept in the verdict for a human to confirm, each as its section
-    /// lists it.
-    pub confirm: Vec<Value>,
     pub notices: Vec<String>,
     pub notes: Vec<String>,
 }
@@ -201,14 +189,6 @@ pub(super) fn apply(findings: Vec<Value>, p: &Pairs, answer: Option<&Value>) -> 
                 );
                 out.kept.push(noted(&f, &note, &[]));
             }
-            Some((d, why)) if is_high(&f) => {
-                let note = format!(
-                    "High under project rule {}: a rule alone never sets a High aside — confirm.",
-                    d.id
-                );
-                out.confirm.push(covered(&f, d, why));
-                out.kept.push(noted(&f, &note, &[]));
-            }
             Some((d, why)) => out.covered.push(covered(&f, d, why)),
         }
     }
@@ -218,17 +198,11 @@ pub(super) fn apply(findings: Vec<Value>, p: &Pairs, answer: Option<&Value>) -> 
         let shown: Vec<&str> = fs.iter().take(CUT_NAMED_MAX).map(String::as_str).collect();
         format!("{} finding(s) in a project rule's scope NOT covered — {why}, so they stay in the verdict: {}{tail}", fs.len(), shown.join(", "))
     }));
-    let mut tail = if out.confirm.is_empty() {
-        String::new()
+    let tail = if against > 0 {
+        format!(", {against} showing the code against a rule")
     } else {
-        format!(
-            ", {} High(s) left in the verdict to confirm",
-            out.confirm.len()
-        )
+        String::new()
     };
-    if against > 0 {
-        tail.push_str(&format!(", {against} showing the code against a rule"));
-    }
     out.notes.push(format!(
         "{} project rule(s) given, {} rule–finding pair(s), {} finding(s) covered{tail}",
         p.rules.len(),

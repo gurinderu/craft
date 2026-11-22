@@ -18,13 +18,12 @@ test('lift: each prior-decision section leaves the report whole, from its headin
   })
 })
 
-test("lift: a High a human's decision set aside and a High a rule covers ride with the rest (node #196)", () => {
+test("lift: a High a human's decision set aside rides with the rest (node #196)", () => {
   const human = '## High rejected by a human (set aside — not in the verdict)'
-  const confirm = '## High covered by a project rule — confirm (still in the verdict)'
-  const report = ['## Verdict', 'Warning', human, '- h', confirm, '- c', '## Findings', '- f'].join('\n')
+  const report = ['## Verdict', 'Warning', human, '- h', '## Findings', '- f'].join('\n')
   assert.deepEqual(liftPriorDecisionSections(report), {
     rest: ['## Verdict', 'Warning', '## Findings', '- f'].join('\n'),
-    lifted: [human, '- h', confirm, '- c'].join('\n'),
+    lifted: [human, '- h'].join('\n'),
   })
 })
 
