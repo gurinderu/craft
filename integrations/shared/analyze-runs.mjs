@@ -821,13 +821,18 @@ export function partitionByCompleteness(records) {
   return { complete, partial }
 }
 
-/** @param {string} dir @returns {{ records: RunRec[], unreadable: Array<{ file: string, reason: string }> } | null} */
+/**
+ * The store's records, or null when it does not exist; a store that exists but cannot be listed (an ancestor
+ * the user cannot search, not a directory) throws: a degraded read must not read as an empty store.
+ * @param {string} dir @returns {{ records: RunRec[], unreadable: Array<{ file: string, reason: string }> } | null}
+ */
 export function loadRecords(dir) {
   let files
   try {
     files = fs.readdirSync(dir)
-  } catch {
-    return null
+  } catch (e) {
+    if (/** @type {NodeJS.ErrnoException} */ (e).code === 'ENOENT') return null
+    throw e
   }
   /** @type {RunRec[]} */
   const records = []
@@ -1302,6 +1307,16 @@ function partialNotes(slice, unattributed, twins) {
   return notes
 }
 
+/**
+ * How many stopped parts were folded into the runs this report counts: every one without a slice, else those in it.
+ * @param {ReturnType<typeof foldStoppedParts>} parted @param {Parameters<typeof inSlice>[1] | null | undefined} slice
+ * @returns {number}
+ */
+function foldedParts(parted, slice) {
+  if (!slice) return parted.folded
+  return parted.parts.filter(p => inSlice(p, slice) === true).length
+}
+
 /** @param {RunRec} p @returns {string} */
 function partialCost(p) {
   const s = p.runtimeStats
@@ -1322,7 +1337,13 @@ export function run(argv, _env, home = os.homedir()) {
   const o = outputLines()
   const { wantVersion, wantEngine, wantRoundPairs, positional } = parseRunArgs(argv)
   const dir = positional[0] || path.join(home, '.craft', 'runs')
-  const loaded = loadRecords(dir)
+  let loaded
+  try {
+    loaded = loadRecords(dir)
+  } catch (e) {
+    o.stderr.push(`Cannot read the run store at ${dir}: ${/** @type {Error} */ (e).message}`)
+    return { exitCode: 1, ...o }
+  }
   if (loaded === null) {
     o.stdout.push(`No run store at ${dir} — nothing to analyze yet. Run some reviews first.`)
     return { exitCode: 0, ...o }
@@ -1354,7 +1375,7 @@ export function run(argv, _env, home = os.homedir()) {
   const resumed = foldResumedRuns(sliced.usable)
   const usable = resumed.records
   const slice = sliced.slice
-  const folded = resumed.folded + (slice ? parted.parts.filter(p => inSlice(p, slice) === true).length : parted.folded)
+  const folded = resumed.folded + foldedParts(parted, slice)
   const versionNote = sliced.note
   // The old "this store mixes N craft versions" note is gone on purpose: the ENGINE BOUNDARY
   // section states the same thing more precisely (and states the case the version note could not

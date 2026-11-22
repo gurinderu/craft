@@ -188,7 +188,8 @@ fn printed(args: &RunsArgs) -> Result<ExitCode> {
             ExitCode::SUCCESS
         }
         RunsCommand::Check => {
-            let found = craft_store::check::check(&store)?;
+            let found = craft_store::check::check(&store)
+                .with_context(|| format!("checking {}", store.display()))?;
             render::check(&mut out, &found, args.at.json)?;
             skipped = found.skipped.clone();
             if found.clean() {
@@ -259,7 +260,8 @@ fn retro(store: &Path, version: &str, skipped: &mut Skipped) -> Result<craft_sto
         } else if let Err(e) = craft_store::retro::add_record(&mut out, &r) {
             failure = Some(e);
         }
-    })?;
+    })
+    .with_context(|| format!("reading {}", store.display()))?;
     if let Some(e) = failure {
         return Err(e.into());
     }

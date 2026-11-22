@@ -184,6 +184,7 @@ pub(crate) fn fresh(run: &mut RunState) -> Vec<Value> {
             let mut f = f.as_object().cloned().unwrap_or_default();
             f.insert("source".into(), Value::String(lens.clone()));
             f.insert("profile".into(), Value::String(profile.clone()));
+            f.insert("foundBy".into(), Value::from("critic"));
             let f = Value::Object(f);
             let k = key(&f);
             if !seen.contains(&k) {

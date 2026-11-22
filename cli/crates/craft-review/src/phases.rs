@@ -251,6 +251,7 @@ fn end_rounds(dir: &Path, run: &mut RunState, profiles: &[Profile]) -> Result<()
 fn to_pool(dir: &Path, run: &mut RunState, profiles: &[Profile]) -> Result<(), Error> {
     // Nothing to verify: the critic is still asked whether a lens that did not run should have.
     if run.rounds.pool.is_empty() {
+        run.telemetry.nothing_pooled();
         return critic::ask(dir, run);
     }
     let pool = run.rounds.pool.clone();
@@ -308,6 +309,7 @@ fn dedup_answered(run: &mut RunState) {
 /// @nick/craft, node #547), then hands the pool to its verifiers, or ends the run when none is to
 /// be spent.
 fn start_verify(dir: &Path, run: &mut RunState) -> Result<(), Error> {
+    run.telemetry.deduped(&run.findings);
     let moved = anchor::reanchor(run);
     run.notes.extend(moved);
     run.notes.extend(verify::skipped_note(run));

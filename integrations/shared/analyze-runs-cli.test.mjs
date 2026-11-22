@@ -36,6 +36,28 @@ test('a missing store is reported, not failed', async () => {
   assert.ok(r.stdout[0]?.includes(dir))
 })
 
+test(
+  'a store below a directory it cannot search is an error naming the path, never a missing store',
+  { skip: process.getuid?.() === 0 || process.platform === 'win32' },
+  () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'craft-ar-denied-'))
+    const denied = path.join(root, 'denied')
+    const dir = path.join(denied, 'runs')
+    fs.mkdirSync(dir, { recursive: true })
+    fs.chmodSync(denied, 0)
+    try {
+      const r = run([dir], process.env)
+      assert.equal(r.exitCode, 1)
+      assert.ok(!r.stdout.join('\n').includes('No run store'), r.stdout.join('\n'))
+      assert.match(r.stderr.join('\n'), /EACCES/)
+      assert.ok(r.stderr.join('\n').includes(dir), r.stderr.join('\n'))
+    } finally {
+      fs.chmodSync(denied, 0o755)
+      fs.rmSync(root, { recursive: true, force: true })
+    }
+  },
+)
+
 test('with no directory it reads .craft/runs under the home it is given', async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'craft-ar-home-'))
   try {

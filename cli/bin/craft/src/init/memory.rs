@@ -67,7 +67,7 @@ pub(super) fn import(cwd: &Path, recalled: &Recalled, held: &[IntegrationPoint])
         Recalled::Unreadable(why) => return json!({"ran": false, "why": why}),
         Recalled::Records(v) => v,
     };
-    let mut answer = ran(externals(cwd, &["memory"], records));
+    let mut answer = ran(externals(cwd, &["memory"], records, None));
     let candidates = answer.get_mut("candidates").and_then(Value::as_array_mut);
     for c in candidates.into_iter().flatten() {
         annotate(c, held);

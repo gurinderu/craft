@@ -27,7 +27,7 @@ pub(crate) fn step(dir: &Path, run: &RunState, verdict: &str) -> Value {
         "memory": run.memory.source.record(), "strict": run.context.strict,
         "memorySections": report::memory_sections(run),
         "dimensions": telemetry::dimensions(run), "verification": telemetry::verification(run),
-        "lensRounds": run.rounds.yields,
+        "lensRounds": telemetry::lens_rounds(run),
     });
     name_chain(&mut done, run);
     if let Some(obj) = done.as_object_mut() {
@@ -35,6 +35,7 @@ pub(crate) fn step(dir: &Path, run: &RunState, verdict: &str) -> Value {
         if !degraded.is_empty() {
             obj.insert("degraded".into(), json!(degraded));
         }
+        obj.extend(telemetry::apart(run));
         for (k, v) in crate::publish::finished(run) {
             obj.insert(k.into(), v);
         }

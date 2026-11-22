@@ -8,7 +8,7 @@
 // finishes, written by its own store writer byte for byte as integrations/shared/craft-log-run.mjs writes them (realm @nick/craft, nodes
 // #456, #539) — told by each submit what only the driver sees: the task agents dispatched and the output tokens spent. The
 // driver files only the record of a run the binary never finished (integrations/shared/cli-review-record.mjs), and locates the
-// plugin's integrations/shared/craft-bin.mjs the way every plugin script an agent runs is located (plugin-script.mjs).
+// plugin's integrations/shared/craft-cli.sh the way every plugin script an agent runs is located (plugin-script.mjs).
 import { pluginRootCheck, pluginScriptPrelude, shellWord, shq } from './plugin-script.mjs'
 import { SERVICE_AGENT_TYPE, makeDefaultTypeFallback } from './service-agent.mjs'
 import { taskRunner } from './cli-review-task.mjs'
@@ -33,8 +33,10 @@ import { normalizeArgs } from './workflow-args.mjs'
 /** @typedef {(prompt: string, opts?: Record<string, unknown>) => Promise<unknown>} Agent */
 /** @typedef {{ args: unknown, agent: Agent, parallel: <T>(thunks: Array<() => Promise<T>>) => Promise<Array<T | null>>, phase: (title: string) => void, log: (message: string) => void, budget?: { spent: () => number } }} Sandbox */
 
-// The fetcher of the released binary, inside the plugin.
-const FETCHER = 'integrations/shared/craft-bin.mjs'
+// The fetcher of the released binary, inside the plugin: the POSIX entry, so a consumer needs no Node to get it. The
+// service step runs in the harness's Bash; under Git Bash, MSYS or Cygwin the script names the binary craft.exe (not
+// observed on a Windows host).
+const FETCHER = 'integrations/shared/craft-cli.sh'
 // What marks the plugin root a run's records are stamped with (their craftCommit), located beside a given binary: the
 // fetcher, which every Claude Code plugin copy holds. The binary files without it (cli/crates/craft-review/src/filing/store.rs).
 const ROOT_MARK = FETCHER
@@ -68,20 +70,28 @@ const servicePrompt = (steps, stdout = 'one JSON value') => `${steps}
 Return {exitCode, stdout, stderr}: the last command's exit status, and its stdout and stderr each copied VERBATIM and WHOLE. stdout is ${stdout} the caller parses: never summarize, reformat, pretty-print or shorten it. Run nothing else.`
 
 /**
- * The step that gets the binary of this plugin version: integrations/shared/craft-bin.mjs, located like the logger (craftRoot,
- * then CLAUDE_PLUGIN_ROOT, then this version's installed copy), fetches it; the step prints the plugin root it found
- * the fetcher in and the binary's path, so the binary — which, fetched under ~/.craft/bin, finds no plugin root above
- * itself — is handed the root its prompts name.
+ * The step that gets the binary of this plugin version: integrations/shared/craft-cli.sh, located like the logger (craftRoot,
+ * then CLAUDE_PLUGIN_ROOT, then this version's installed copy), fetches the version it is stamped with, so a candidate
+ * stamped with another is skipped like an unusable one and the next tried; the fetch's environment is pinned — CRAFT_BIN
+ * emptied because this step gets the released binary, CRAFT_REPO because the locating shell holds the reviewed repo's
+ * path in it, CRAFT_RELEASE_BASE, CRAFT_API_BASE and CRAFT_TARGET so no stray setting changes which binary runs. The step prints the plugin root it found the fetcher in and the
+ * binary's path, so the binary — which, fetched under ~/.craft/bin, finds no plugin root above itself — is handed the
+ * root its prompts name.
  * @param {Options} o @param {string} version @returns {string}
  */
 function resolvePrompt(o, version) {
-  const locate = pluginScriptPrelude(o.craftRoot || undefined, version, o.repo, FETCHER, 'CRAFT_FETCHER')
+  const stamped = `craft_stamped() {
+  CRAFT_WHY="not stamped with craft ${version} ($1)"
+  grep -q ${shq(`^version=${version} `)} "$1"
+}
+`
+  const locate = stamped + pluginScriptPrelude(o.craftRoot || undefined, version, o.repo, FETCHER, 'CRAFT_FETCHER', 'craft_stamped "$CRAFT_REAL"')
   return servicePrompt(
     `Run this ONCE, exactly as written, in one Bash call:
 
 \`\`\`sh
 ${locate}if [ -z "\${CRAFT_FETCHER:-}" ]; then printf '%s\\n' "no usable ${FETCHER} — \${CRAFT_FETCHER_WHY}" >&2; exit 1; fi
-CRAFT_BIN_PATH="$(node "$CRAFT_FETCHER" ensure --version ${shq(version)})" || exit $?
+CRAFT_BIN_PATH="$(CRAFT_BIN= CRAFT_REPO= CRAFT_RELEASE_BASE= CRAFT_API_BASE= CRAFT_TARGET= sh "$CRAFT_FETCHER" --ensure --print-path)" || exit $?
 ${rootAbove('CRAFT_FETCHER')}printf 'root=%s\\nbin=%s\\n' "$CRAFT_ROOT_PATH" "$CRAFT_BIN_PATH"
 \`\`\``,
     "two lines, root=<the plugin root> and bin=<the binary's path>,",

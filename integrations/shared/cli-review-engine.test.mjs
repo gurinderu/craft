@@ -342,10 +342,17 @@ test('without craftBin the released binary of this version is fetched first, the
   const fetch = run.calls[0]
   assert.ok(fetch)
   assert.deepEqual([fetch.opts.agentType, fetch.opts.model, fetch.opts.phase], ['craft:engine-service', 'haiku', 'Start'])
-  assert.match(fetch.prompt, /CRAFT_TRY='\/opt\/craft-plugin'"\/integrations\/shared\/craft-bin\.mjs"/, 'craftRoot first')
-  assert.match(fetch.prompt, /\$\{CLAUDE_PLUGIN_ROOT:-\}\/integrations\/shared\/craft-bin\.mjs/, 'then the plugin root')
-  assert.match(fetch.prompt, /plugins\/cache\/craft\/craft\/"'\d+\.\d+\.\d+'"\/integrations\/shared\/craft-bin\.mjs/, "then this version's installed copy")
-  assert.match(fetch.prompt, /node "\$CRAFT_FETCHER" ensure --version '\d+\.\d+\.\d+'/, "the engine's own stamp")
+  assert.match(fetch.prompt, /CRAFT_TRY='\/opt\/craft-plugin'"\/integrations\/shared\/craft-cli\.sh"/, 'craftRoot first')
+  assert.match(fetch.prompt, /\$\{CLAUDE_PLUGIN_ROOT:-\}\/integrations\/shared\/craft-cli\.sh/, 'then the plugin root')
+  assert.match(fetch.prompt, /plugins\/cache\/craft\/craft\/"'\d+\.\d+\.\d+'"\/integrations\/shared\/craft-cli\.sh/, "then this version's installed copy")
+  assert.match(fetch.prompt, /grep -q '\^version=\d+\.\d+\.\d+ ' "\$1"/, "each candidate must carry the engine's own stamp")
+  assert.match(fetch.prompt, /if craft_usable "\$CRAFT_TRY" && craft_stamped "\$CRAFT_REAL"; then/, 'checked per candidate, not on the winner')
+  assert.match(
+    fetch.prompt,
+    /CRAFT_BIN_PATH="\$\(CRAFT_BIN= CRAFT_REPO= CRAFT_RELEASE_BASE= CRAFT_API_BASE= CRAFT_TARGET= sh "\$CRAFT_FETCHER" --ensure --print-path\)" \|\| exit \$\?/,
+    'fetched through sh, no Node',
+  )
+  assert.doesNotMatch(fetch.prompt, /\bnode\b/, 'no Node in the fetch')
   assert.match(fetch.prompt, /CRAFT_ROOT_PATH="\$\(dirname "\$\(dirname "\$\(dirname "\$CRAFT_FETCHER"\)"\)"\)"\n/, 'the root the fetcher was found in')
   assert.match(fetch.prompt, /printf 'root=%s\\nbin=%s\\n' "\$CRAFT_ROOT_PATH" "\$CRAFT_BIN_PATH"/, 'printed beside the binary')
   assert.match(fetch.prompt, /stdout is two lines, root=<the plugin root> and bin=<the binary's path>, the caller parses/)
@@ -410,8 +417,8 @@ test('with craftBin, start gets --craft-root when craftRoot is given and checked
   assert.ok(locate)
   assert.deepEqual([locate.opts.agentType, locate.opts.model, locate.opts.phase], ['craft:engine-service', 'haiku', 'Start'])
   assert.doesNotMatch(locate.prompt, /CRAFT_TRY='/, 'no craftRoot to try')
-  assert.match(locate.prompt, /\$\{CLAUDE_PLUGIN_ROOT:-\}\/integrations\/shared\/craft-bin\.mjs/, 'the plugin root first')
-  assert.match(locate.prompt, /plugins\/cache\/craft\/craft\/"'\d+\.\d+\.\d+'"\/integrations\/shared\/craft-bin\.mjs/, "then this version's installed copy")
+  assert.match(locate.prompt, /\$\{CLAUDE_PLUGIN_ROOT:-\}\/integrations\/shared\/craft-cli\.sh/, 'the plugin root first')
+  assert.match(locate.prompt, /plugins\/cache\/craft\/craft\/"'\d+\.\d+\.\d+'"\/integrations\/shared\/craft-cli\.sh/, "then this version's installed copy")
   assert.match(locate.prompt, /CRAFT_REPO="\$\(cd '\/work\/repo' /, 'never inside the reviewed repo')
   assert.match(locate.prompt, /CRAFT_ROOT_PATH="\$\(dirname "\$\(dirname "\$\(dirname "\$CRAFT_ADAPTER"\)"\)"\)"\n/, 'the root its fetcher was found in')
   assert.equal(
@@ -422,14 +429,14 @@ test('with craftBin, start gets --craft-root when craftRoot is given and checked
   const lost = await runEngine('review', {
     args: { craftBin: '/opt/craft' },
     script: {
-      'step:locate': { exitCode: 1, stdout: '', stderr: 'no usable integrations/shared/craft-bin.mjs — CLAUDE_PLUGIN_ROOT: unset; ' },
+      'step:locate': { exitCode: 1, stdout: '', stderr: 'no usable integrations/shared/craft-cli.sh — CLAUDE_PLUGIN_ROOT: unset; ' },
       'step:start': done(),
     },
   })
   assert.equal(lost.calls.at(-1)?.prompt.split('\n\n')[1], `/opt/craft review start --cwd .${RECORD}`, 'none located: the binary looks for one itself')
   assert.ok(
     lost.logs.some(l =>
-      /no craft plugin root was located for the run's telemetry: the command exited 1: no usable integrations\/shared\/craft-bin\.mjs/.test(l),
+      /no craft plugin root was located for the run's telemetry: the command exited 1: no usable integrations\/shared\/craft-cli\.sh/.test(l),
     ),
     lost.logs.join('\n'),
   )

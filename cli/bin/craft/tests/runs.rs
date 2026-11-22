@@ -234,6 +234,10 @@ fn a_retro_sums_one_versions_finished_runs_per_workflow_and_lens() {
     assert_eq!(section("workflow")[0]["name"], json!("review (cli)"));
     assert_eq!(section("workflow")[0]["avgRefute"], json!(0.25));
     assert_eq!(section("notRun")[0]["runs"], json!(1));
+    assert!(
+        section("lensRound").is_empty(),
+        "records with no round yield print none"
+    );
     let lenses = section("lens");
     assert_eq!(lenses[0]["lens"], json!("rust:errors (cli)"));
     assert_eq!(

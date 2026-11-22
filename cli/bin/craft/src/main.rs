@@ -1,7 +1,6 @@
 //! `craft`: the command line over craft's review.
 
 mod comment;
-mod externals;
 mod filing_worker;
 mod hook;
 mod init;
@@ -137,18 +136,6 @@ async fn main() -> ExitCode {
 }
 
 async fn dispatch() -> anyhow::Result<ExitCode> {
-    // Preserve every raw helper argument, including `--` and `--help`, before clap interprets it.
-    if std::env::args_os()
-        .nth(1)
-        .is_some_and(|s| s == "__craft-externals")
-    {
-        return externals::run(&externals::Args {
-            argv: std::env::args_os()
-                .skip(2)
-                .map(|s| s.to_string_lossy().into_owned())
-                .collect(),
-        });
-    }
     let cli = Cli::parse();
     match cli.command {
         Command::Review(ReviewCommand::Probe(args)) => review::run(args).await,
