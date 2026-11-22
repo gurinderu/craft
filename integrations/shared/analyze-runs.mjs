@@ -820,13 +820,18 @@ export function partitionByCompleteness(records) {
   return { complete, partial }
 }
 
-/** @param {string} dir @returns {{ records: RunRec[], unreadable: Array<{ file: string, reason: string }> } | null} */
+/**
+ * The store's records, or null when it does not exist; a store that exists but cannot be listed (an ancestor
+ * the user cannot search, not a directory) throws: a degraded read must not read as an empty store.
+ * @param {string} dir @returns {{ records: RunRec[], unreadable: Array<{ file: string, reason: string }> } | null}
+ */
 export function loadRecords(dir) {
   let files
   try {
     files = fs.readdirSync(dir)
-  } catch {
-    return null
+  } catch (e) {
+    if (/** @type {NodeJS.ErrnoException} */ (e).code === 'ENOENT') return null
+    throw e
   }
   /** @type {RunRec[]} */
   const records = []
@@ -1321,7 +1326,13 @@ export function run(argv, _env, home = os.homedir()) {
   const o = outputLines()
   const { wantVersion, wantEngine, wantRoundPairs, positional } = parseRunArgs(argv)
   const dir = positional[0] || path.join(home, '.craft', 'runs')
-  const loaded = loadRecords(dir)
+  let loaded
+  try {
+    loaded = loadRecords(dir)
+  } catch (e) {
+    o.stderr.push(`Cannot read the run store at ${dir}: ${/** @type {Error} */ (e).message}`)
+    return { exitCode: 1, ...o }
+  }
   if (loaded === null) {
     o.stdout.push(`No run store at ${dir} — nothing to analyze yet. Run some reviews first.`)
     return { exitCode: 0, ...o }
