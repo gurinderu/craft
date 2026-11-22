@@ -151,7 +151,7 @@ fn a_typescript_only_diff_is_reviewed_by_the_general_lenses() {
 }
 
 #[test]
-fn a_nix_only_diff_runs_the_nix_lenses_on_the_nix_reviewer() {
+fn a_nix_only_diff_runs_the_nix_lenses_on_the_hosts_task_agent() {
     let repo = repo_with(&["flake.nix"]);
     let out = tempfile::tempdir().unwrap();
     let (run, s) = start(repo.path(), out.path());

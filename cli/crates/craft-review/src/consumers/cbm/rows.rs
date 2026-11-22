@@ -35,17 +35,7 @@ impl Cbm {
         let args = json!({"project": project, "query": query, "max_rows": max});
         let answer = self
             .call("query_graph", args, left.min(self.timeout))
-            .map_err(|e| match e {
-                CbmError::Timeout(_) if budget_bound => CbmError::TimeBound,
-                e @ (CbmError::Spawn(_)
-                | CbmError::Timeout(_)
-                | CbmError::TimeBound
-                | CbmError::Stopped
-                | CbmError::Locked { .. }
-                | CbmError::StillIndexing(_)
-                | CbmError::Output(_)
-                | CbmError::Graph(_)) => e,
-            })?;
+            .map_err(|e| super::of_budget(e, budget_bound))?;
         let raw = answer
             .get("rows")
             .and_then(Value::as_array)

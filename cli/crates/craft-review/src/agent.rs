@@ -9,9 +9,10 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum AgentKind {
-    /// The Rust reviewer, the agent the engine's Rust lenses run on.
+    /// The Rust reviewer, for a profile that names it as its lens agent: no shipped profile does,
+    /// its lenses run on the host's task agent.
     RustReviewer,
-    /// The Nix reviewer, the agent the engine's Nix lenses run on.
+    /// The Nix reviewer, for a profile that names it as its lens agent: no shipped profile does.
     NixReviewer,
 }
 

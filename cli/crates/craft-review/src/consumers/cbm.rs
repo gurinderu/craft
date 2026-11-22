@@ -143,6 +143,22 @@ pub(super) fn left(deadline: Instant) -> Result<Duration, CbmError> {
     Ok(left)
 }
 
+/// `e`, a question's own time limit run out read as the budget's when `budget_bound`: what was
+/// left of the budget was the shorter limit.
+pub(super) fn of_budget(e: CbmError, budget_bound: bool) -> CbmError {
+    match e {
+        CbmError::Timeout(_) if budget_bound => CbmError::TimeBound,
+        e @ (CbmError::Spawn(_)
+        | CbmError::Timeout(_)
+        | CbmError::TimeBound
+        | CbmError::Stopped
+        | CbmError::Locked { .. }
+        | CbmError::StillIndexing(_)
+        | CbmError::Output(_)
+        | CbmError::Graph(_)) => e,
+    }
+}
+
 /// Whether `s` is an identifier, so it can be quoted into a query as it is.
 pub(super) fn is_ident(s: &str) -> bool {
     let mut cs = s.chars();

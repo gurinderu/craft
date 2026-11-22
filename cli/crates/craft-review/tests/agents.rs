@@ -42,7 +42,7 @@ fn no_task_names_an_agent_so_every_one_runs_on_the_hosts_task_agent() {
         p.contains("SKILL FILES") && p.contains("- `rust-review`: `"),
         "{p}"
     );
-    let block = &p[p.find("SKILL FILES").unwrap()..];
+    let (_, block) = p.split_once("SKILL FILES").unwrap();
     assert!(
         block.contains("read each one WHOLE with the Read tool")
             && block.contains("never `head`")

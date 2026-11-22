@@ -121,6 +121,7 @@ fn a_follow_up_lens_that_read_no_rubric_file_whole_is_named_as_degraded() {
         &run,
         json!({"critic-rust": {"missingLenses": ["maintainability"], "notes": "n"}}),
     );
+    assert_eq!(ids(&s), ["critic-lens-rust-maintainability"]);
     let mut silent = lens("maintainability", &[]);
     silent.as_object_mut().unwrap().remove("rubricRead");
     let s = submit(&run, json!({"critic-lens-rust-maintainability": silent}));

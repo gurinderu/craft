@@ -60,7 +60,7 @@ fn a_confirmed_finding_still_raises_the_verdict_and_the_gap_is_still_named() {
         );
         assert!(not_run(&s).iter().any(|n| n.contains(GAP)), "{severity}");
         let report = markdown(&s, &v);
-        let after = &report[report.find("## Not run").unwrap()..];
+        let (_, after) = report.split_once("## Not run").unwrap();
         assert!(
             after.contains(GAP) && after.contains("a coverage gap"),
             "{report}"
