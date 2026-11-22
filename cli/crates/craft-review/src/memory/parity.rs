@@ -100,12 +100,12 @@ fn every_case_applies_as_the_engines_apply_it() {
     for case in cases {
         let name = case["name"].as_str().unwrap();
         let want = &case["expected"];
-        let recalled = recall::read(Some(&case["recall"]).filter(|r| !r.is_null()), 0);
-        let m = merge::merge(recalled, case.get("passed"));
+        let recalled = recall::read(Some(&case["recall"]).filter(|r| !r.is_null()), 0, 0);
+        let m = merge::merge(recalled, case.get("passed"), &[]);
         let findings = case["findings"].as_array().unwrap().clone();
-        let prepared = apply::prepare(&findings, &m.decisions, &|ds| scope_seen(case, ds));
+        let prepared = apply::prepare(&findings, &m.decisions, &|ds| scope_seen(case, ds), &[]);
         let out = apply::apply(findings, &prepared, case.get("judge"));
-        let pairs = rules::Pairs::new(&out.kept, &m.decisions);
+        let pairs = rules::Pairs::new(&out.kept, &m.decisions, &[]);
         let ruled = rules::apply(out.kept, &pairs, case.get("ruleJudge"));
         let kept: Vec<Value> = ruled
             .kept

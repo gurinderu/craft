@@ -276,7 +276,10 @@ async function recallMemory() {
     return
   }
   const r = await recallDecisions(p => work(p, { label: 'memory-recall', phase: 'Sift', schema: MEMORY_RECALL_SCHEMA, model: 'sonnet', effort: 'low' }), paths, base)
-  const m = mergeRecall(r, A['priorDecisions'], parsePriorDecisions)
+  // The cap keeps the records closest to the gathered findings' files (memory-bounds.mjs).
+  /** @type {(list: unknown, labelOf?: (i: number) => string) => ReturnType<typeof parsePriorDecisions>} */
+  const parseNear = (list, labelOf) => parsePriorDecisions(list, labelOf, paths)
+  const m = mergeRecall(r, A['priorDecisions'], parseNear)
   priorDecisionsIn = m.prior
   memory = m.memory
 }

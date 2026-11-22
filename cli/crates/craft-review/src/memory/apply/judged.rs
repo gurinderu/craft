@@ -9,10 +9,13 @@ use std::collections::BTreeMap;
 use serde_json::Value;
 
 use super::super::PriorDecision;
+use super::super::bounds;
 use super::super::judge::{self, CUT_NAMED_MAX, PAIRS_MAX, Verdict};
 use super::super::matching::{self, Match, Plan};
 
 const FALLBACK: &str = "not matched unless a near-verbatim title answers them (for a tool finding naming no rule only a tool record with the same title, near its line when lines compare), the rest raised normally";
+/// How the pairs the judge saw were chosen past its bound, and how to need it less.
+const CUT_HOW: &str = "judged first were the findings on the reviewed paths and the priors re-adjudicated, then each finding's closest record before any finding's second, the more severe finding first; to need the judge less, record decisions with the finding's file as scope, its line and its lens (they then match outright), or review a narrower path (path=<dir>)";
 
 /// The pairs the judge is asked about, as (finding, record) indices: the candidates first, ranked
 /// and cut at the bound, then the re-raised outright matches in the room left.
@@ -29,11 +32,14 @@ pub(in crate::memory) struct Asked {
 impl Asked {
     /// The pairs for `plans`, `reraised` saying of an outright match whether the split raises it
     /// again.
+    /// Past the bound the pairs of findings on the reviewed `focus` paths go first, then each
+    /// finding's best candidate before any finding's second ([`bounds::spread`]).
     pub(in crate::memory) fn new(
         findings: &[Value],
         ds: &[PriorDecision],
         plans: &[Plan],
         reraised: &dyn Fn(usize, usize) -> bool,
+        focus: &[String],
     ) -> Self {
         let mut ranked: Vec<(usize, usize)> = plans
             .iter()
@@ -45,6 +51,8 @@ impl Asked {
             _ => u8::MAX,
         };
         ranked.sort_by_key(rank);
+        let severe = |f: &Value| u8::from(matching::reraised_by_severity(f));
+        let ranked = bounds::spread(ranked, PAIRS_MAX, findings, focus, &severe);
         let sent = ranked.len().min(PAIRS_MAX);
         let mut pairs: Vec<(usize, usize)> = ranked.iter().take(sent).copied().collect();
         let sure: Vec<(usize, usize)> = plans
@@ -155,7 +163,7 @@ pub(in crate::memory) fn matched(
             .iter()
             .filter_map(|&(fi, di)| Some(cut_name(findings.get(fi)?, ds.get(di)?)))
             .collect();
-        out.refused.push(format!("{} disputed record–finding pair(s) past the judge's bound of {PAIRS_MAX} were not judged — {FALLBACK}: {}", cut.len(), named(&names)));
+        out.refused.push(format!("{} disputed record–finding pair(s) past the judge's bound of {PAIRS_MAX} were not judged — {CUT_HOW}; {FALLBACK}: {}", cut.len(), named(&names)));
     }
     let v = if asked.pairs.is_empty() {
         BTreeMap::new()

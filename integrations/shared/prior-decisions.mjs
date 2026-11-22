@@ -10,10 +10,16 @@
 // scopes are checked by integrations/shared/prior-decision-scope.mjs and findings split by integrations/shared/prior-decision-apply.mjs.
 // Imported by integrations/claude-code/src/rust-audit.js and integrations/claude-code/src/triage-findings.js.
 import { DECISION_FIELD_MAX, decisionScopeParts, hasControlChar, readPriorDecision, recordId } from './prior-decision-record.mjs'
+import { keptRecords } from './memory-bounds.mjs'
 
 // The most decisions one run applies — across the recalled and the passed records together (realm
-// @nick/craft, node #218); the rest are refused by name and their findings raised normally.
+// @nick/craft, node #218); it keeps the run's state and the judges' prompts bounded. Past it the records
+// closest to the reviewed paths are kept (keptRecords), the rest refused by name and their findings raised
+// normally.
 export const PRIOR_DECISIONS_MAX = 100
+// What the refusal of the records past the cap says about how they were chosen and how to apply them.
+const CUT_HOW =
+  'kept are the records closest to the reviewed paths (a scope naming a changed file, then a directory holding one, a deeper scope before a shallower, a newer record before an older); to apply the rest, review a narrower path (path=<dir>) or supersede the records that no longer hold'
 // A decision answers a finding when the finding's file sits inside the decision's scope AND their
 // titles share at least this share of words (of the longer one) (realm @nick/craft, node #187).
 export const DECISION_TITLE_OVERLAP = 0.6
@@ -33,13 +39,14 @@ export function printableId(item) {
 }
 
 /**
- * The records past the cap, each named (its label and id), the names bounded by the cap itself.
- * @param {unknown[]} cut @param {(i: number) => string} labelOf @returns {string}
+ * The records past the cap (by their index in the list), each named (its label and id), the names
+ * bounded by the cap itself.
+ * @param {unknown[]} list @param {number[]} cut @param {(i: number) => string} labelOf @returns {string}
  */
-export function cutNames(cut, labelOf) {
-  const named = cut.slice(0, PRIOR_DECISIONS_MAX).map((item, k) => {
-    const id = printableId(item)
-    return `${labelOf(PRIOR_DECISIONS_MAX + k)}${id ? ` (${id})` : ''}`
+export function cutNames(list, cut, labelOf) {
+  const named = cut.slice(0, PRIOR_DECISIONS_MAX).map(i => {
+    const id = printableId(list[i])
+    return `${labelOf(i)}${id ? ` (${id})` : ''}`
   })
   const more = cut.length - named.length
   return `${named.join(', ')}${more ? ` and ${more} more` : ''}`
@@ -49,9 +56,10 @@ export function cutNames(cut, labelOf) {
  * The `priorDecisions` argument (or a recall's answer merged with it), checked. Absent → nothing of it applied, no refusal
  * (the engine's own recall still runs: integrations/shared/memory-recall.mjs). Anything else that is not a list → nothing applied, each problem named.
  * @param {unknown} raw @param {(i: number) => string} [labelOf] how a refusal names the record at index i
+ * @param {string[]} [paths] the reviewed paths the cap ranks the records by
  * @returns {{ decisions: PriorDecision[], refused: string[] }}
  */
-export function parsePriorDecisions(raw, labelOf = decisionLabel) {
+export function parsePriorDecisions(raw, labelOf = decisionLabel, paths = []) {
   if (raw == null || raw === '') return { decisions: [], refused: [] }
   // Only a list inside an object argument: in the key=value form a value cannot be delimited, and a
   // JSON string invites that form, so any string is refused (integrations/shared/workflow-args.mjs OBJECT_ONLY_OPTIONS; realm @nick/craft, node #183).
@@ -68,7 +76,14 @@ export function parsePriorDecisions(raw, labelOf = decisionLabel) {
   const decisions = []
   /** @type {string[]} */
   const refused = []
-  list.slice(0, PRIOR_DECISIONS_MAX).forEach((item, i) => {
+  const kept = keptRecords(list, paths, PRIOR_DECISIONS_MAX)
+  /** @type {number[]} */
+  const cut = []
+  list.forEach((item, i) => {
+    if (!kept[i]) {
+      cut.push(i)
+      return
+    }
     const d = readPriorDecision(item, labelOf(i))
     if (typeof d === 'string') refused.push(d)
     // The scope check answers by id: two decisions under one id could lend one's unchanged scope to
@@ -76,9 +91,9 @@ export function parsePriorDecisions(raw, labelOf = decisionLabel) {
     else if (decisions.some(x => x.id === d.id)) refused.push(`${labelOf(i)} (${d.id}) repeats an id already given — not applied`)
     else decisions.push(d)
   })
-  if (list.length > PRIOR_DECISIONS_MAX) {
+  if (cut.length) {
     refused.push(
-      `${list.length - PRIOR_DECISIONS_MAX} decision(s) past the cap of ${PRIOR_DECISIONS_MAX} were not applied — findings they would answer are raised normally: ${cutNames(list.slice(PRIOR_DECISIONS_MAX), labelOf)}`,
+      `${cut.length} decision(s) past the cap of ${PRIOR_DECISIONS_MAX} were not applied — ${CUT_HOW}; findings they would answer are raised normally: ${cutNames(list, cut, labelOf)}`,
     )
   }
   return { decisions, refused }

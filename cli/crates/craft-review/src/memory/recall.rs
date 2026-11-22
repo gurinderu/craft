@@ -10,15 +10,22 @@ use serde_json::{Map, Value};
 use super::record::{skill_record_id, text};
 use crate::content::{self, ContentError, vars};
 
-/// The most changed paths one recall prompt lists; the rest are counted.
+/// The most changed paths one recall prompt lists; past it they are listed by directory. It keeps
+/// the read-only recall agent's prompt and its searches bounded: one search per listed entry.
 pub(super) const RECALL_PATHS_MAX: usize = 60;
+
+/// The prompt's entries for the changed `paths`, how many paths a directory entry stands for, and
+/// how many no entry covers ([`super::bounds::path_entries`]).
+pub(super) fn entries(paths: &[String]) -> (Vec<String>, usize, usize) {
+    super::bounds::path_entries(paths, RECALL_PATHS_MAX)
+}
+
 /// The recall agent's prompt for the changed `paths` (`memoryRecallPrompt`).
 ///
 /// # Errors
 /// When the template is missing.
 pub(super) fn prompt(paths: &[String], base: &str) -> Result<String, ContentError> {
-    let listed: Vec<&String> = paths.iter().take(RECALL_PATHS_MAX).collect();
-    let cut = paths.len() - listed.len();
+    let (listed, grouped, cut) = entries(paths);
     let scope = if listed.is_empty() {
         let base = if base.is_empty() {
             "$(git merge-base origin/main HEAD)"
@@ -28,6 +35,14 @@ pub(super) fn prompt(paths: &[String], base: &str) -> Result<String, ContentErro
         format!("the paths of `git diff --name-only {base}...HEAD`")
     } else {
         let lines: Vec<String> = listed.iter().map(|p| format!("- {p}")).collect();
+        let head = if grouped > 0 {
+            format!(
+                " ({} changed paths, past the bound of {RECALL_PATHS_MAX}, listed by directory: an entry ending in `/` stands for every changed file under it, and a record matches it when its scope lies inside that directory as well)",
+                paths.len()
+            )
+        } else {
+            String::new()
+        };
         let tail = if cut > 0 {
             format!(
                 "\n({cut} more path(s) cut at the bound of {RECALL_PATHS_MAX} — not recalled for)"
@@ -36,7 +51,7 @@ pub(super) fn prompt(paths: &[String], base: &str) -> Result<String, ContentErro
             String::new()
         };
         format!(
-            "these changed paths of the diff:\n{}{tail}",
+            "these changed paths of the diff{head}:\n{}{tail}",
             lines.join("\n")
         )
     };
@@ -132,18 +147,30 @@ fn stale_tail(list: Option<&Value>) -> String {
     }
 }
 
-/// The recall agent's answer read (`readMemoryRecall`); `cut` the paths past the prompt's bound. A
-/// dead or off-shape answer applies nothing and says so.
-pub(super) fn read(raw: Option<&Value>, cut: usize) -> Recalled {
+/// The source line's tail on the bound of listed paths: what was recalled by directory, what not
+/// at all, and how to narrow it.
+fn bound_tail(cut: usize, grouped: usize) -> String {
+    let mut tail = String::new();
+    if grouped > 0 {
+        tail.push_str(&format!("; {grouped} changed path(s) past the bound of {RECALL_PATHS_MAX} were recalled by their directory, not file by file"));
+    }
+    if cut > 0 {
+        tail.push_str(&format!(
+            "; {cut} changed path(s) past the bound of {RECALL_PATHS_MAX} were not recalled for"
+        ));
+    }
+    if grouped + cut > 0 {
+        tail.push_str(" — review a narrower path (path=<dir>) to recall file by file");
+    }
+    tail
+}
+
+/// The recall agent's answer read (`readMemoryRecall`); `cut` the paths no prompt entry covered,
+/// `grouped` those recalled by directory. A dead or off-shape answer applies nothing and says so.
+pub(super) fn read(raw: Option<&Value>, cut: usize, grouped: usize) -> Recalled {
     let empty = Map::new();
     let r = raw.and_then(Value::as_object).unwrap_or(&empty);
-    let tail = if cut > 0 {
-        format!(
-            "; {cut} changed path(s) past the bound of {RECALL_PATHS_MAX} were not recalled for"
-        )
-    } else {
-        String::new()
-    };
+    let tail = bound_tail(cut, grouped);
     let inactive = oppose::inactive(r.get("inactive"));
     let Some(list) = r.get("decisions").and_then(Value::as_array) else {
         return Recalled {

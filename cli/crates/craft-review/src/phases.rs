@@ -20,6 +20,7 @@ use crate::complexity;
 use crate::content;
 use crate::dedup;
 use crate::extra;
+use crate::memory::Memory;
 use crate::plan::{self, PlanInput};
 use crate::profile::Profile;
 use crate::prompts;
@@ -68,7 +69,8 @@ pub(crate) fn advance(dir: &Path, run: &mut RunState) -> Result<(), Error> {
     let profiles = profiles_of(run)?;
     match run.phase {
         Phase::Scout => {
-            run.memory.take_recall(&run.tasks);
+            let focus = Memory::focus(&run.diff.files, &run.chain);
+            run.memory.take_recall(&run.tasks, &focus);
             let memory = &run.memory;
             let released = rereview::hold_deferrals(&mut run.chain, &|row| memory.holds(row));
             run.notes.extend(released);

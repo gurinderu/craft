@@ -84,9 +84,10 @@ fn fresh_at(recalled: &[Value], given: &[Value]) -> Vec<usize> {
         .collect()
 }
 
-/// The recall's records merged with the launcher's `passed` list and read once.
-pub(super) fn merge(r: Recalled, passed: Option<&Value>) -> Merged {
-    let alone = record::parse(passed, &plain_label);
+/// The recall's records merged with the launcher's `passed` list and read once, the cap keeping
+/// those closest to the reviewed `paths`.
+pub(super) fn merge(r: Recalled, passed: Option<&Value>, paths: &[String]) -> Merged {
+    let alone = record::parse(passed, paths, &plain_label);
     let given: &[Value] = passed.and_then(Value::as_array).map_or(&[], Vec::as_slice);
     // A passed record the memory opposes is held back, or applied over it when newer (#224, #229).
     let block = oppose::blocked(given, &r.inactive, &fresh_at(&r.records, given), &r.records);
@@ -109,7 +110,7 @@ pub(super) fn merge(r: Recalled, passed: Option<&Value>) -> Merged {
         None => format!("recalled decision #{i}"),
         Some(k) => format!("passed decision #{}", added_at.get(k).copied().unwrap_or(k)),
     };
-    let Parsed { decisions, refused } = record::parse(Some(&Value::Array(list)), &label_of);
+    let Parsed { decisions, refused } = record::parse(Some(&Value::Array(list)), paths, &label_of);
     let ids = recalled_ids(&r.records);
     let from_recall: Vec<&PriorDecision> =
         decisions.iter().filter(|d| ids.contains(&d.id)).collect();
@@ -139,7 +140,7 @@ pub(super) fn merge(r: Recalled, passed: Option<&Value>) -> Merged {
 /// The launcher's records alone, before any recall (`readLaunch`): applied as passed, the source
 /// not yet recalled.
 pub(super) fn launch(passed: Option<&Value>) -> Merged {
-    let Parsed { decisions, refused } = record::parse(passed, &plain_label);
+    let Parsed { decisions, refused } = record::parse(passed, &[], &plain_label);
     let mut source = MemorySource::default();
     if !decisions.is_empty() {
         source.passed = Some(decisions.len());

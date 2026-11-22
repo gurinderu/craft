@@ -46,7 +46,9 @@ pub(super) fn read(p: &Pairs, n: usize, answer: Option<&Value>) -> Read {
                 let why = if i < sent {
                     why.to_owned()
                 } else {
-                    format!("past the rule judge's bound of {PAIRS_MAX} pairs")
+                    format!(
+                        "past the rule judge's bound of {PAIRS_MAX} pairs — judged first were the findings on the reviewed paths, each finding's first rule before any finding's second; narrow the rule's scope or lens, or review a narrower path (path=<dir>)"
+                    )
                 };
                 out.unjudged.push((fi, why));
             }

@@ -294,7 +294,10 @@ plan's panel bought only when those two disagree — each finding's severity cap
 memory already rejected or deferred — recalled by one agent beside the scouts, plus the launcher's own records — set aside
 under its own section when the code in its record's scope is unchanged since the record's commit, a near miss between a
 record and a finding decided by a match judge, then a finding a project rule covers set aside under its own,
-decided by a rule judge (on a re-review a red team attacks each resolved Critical or High prior first;
+decided by a rule judge — past their bounds (60 recalled paths, 100 records, 40 pairs per judge) the paths are
+recalled by directory and the records and pairs closest to the reviewed paths kept, by
+`cli/crates/craft-review/src/memory/bounds.rs` and its JavaScript twin `integrations/shared/memory-bounds.mjs`
+(on a re-review a red team attacks each resolved Critical or High prior first;
 the reviewed repository's own reviewing agents run as extra lenses beside the first round — named, or discovered on a light
 pass among the session project's `.claude/agents`; on a large or security-sensitive plan a completeness critic names roster
 lenses that should have run, which then run and whose findings are verified as a pass of their own; with `--unit-scope`,

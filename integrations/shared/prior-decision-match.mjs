@@ -20,6 +20,7 @@
 // on the same lens, line and normalized title; a different title goes to the judge (realm @nick/craft, node #236).
 // Imported by integrations/claude-code/src/triage-findings.js.
 import { decisionAnswers, inDecisionScope, reraisedBySeverity, titleOverlap } from './prior-decisions.mjs'
+import { spreadPairs } from './memory-bounds.mjs'
 import matchJudgeSchema from '../../content/schemas/match-judge.schema.json' with { type: 'json' }
 import { render } from './content.mjs'
 import matchJudgeTpl from '../../content/prompts/match-judge.md'
@@ -388,7 +389,7 @@ export function rulelessUnjudgedNote(raised) {
 export function cutPairsNote(cut) {
   const named = cut.slice(0, CUT_NAMED_MAX).map(p => `"${clipLine(p.f.title, 60)}" @ ${clipLine(p.f.file)}:${findingLine(p.f)} ~ ${p.d.id}`)
   const more = cut.length - named.length
-  return `${cut.length} disputed record–finding pair(s) past the judge's bound of ${MATCH_JUDGE_PAIRS_MAX} were not judged — not matched unless a near-verbatim title answers them (for a tool finding naming no rule only a tool record with the same title, near its line when lines compare), the rest raised normally: ${named.join(', ')}${more ? ` and ${more} more` : ''}`
+  return `${cut.length} disputed record–finding pair(s) past the judge's bound of ${MATCH_JUDGE_PAIRS_MAX} were not judged — judged first were the findings on the reviewed paths and the priors re-adjudicated, then each finding's closest record before any finding's second, the more severe finding first; to need the judge less, record decisions with the finding's file as scope, its line and its lens (they then match outright), or review a narrower path (path=<dir>); not matched unless a near-verbatim title answers them (for a tool finding naming no rule only a tool record with the same title, near its line when lines compare), the rest raised normally: ${named.join(', ')}${more ? ` and ${more} more` : ''}`
 }
 
 /**
@@ -444,10 +445,12 @@ export async function matchFindings(findings, decisions, judge, reraisedSure) {
   const ordered = triedOrder(decisions)
   const plans = new Map(findings.map(f => [f, findingPlan(f, ordered)]))
   const all = [...plans].flatMap(([f, p]) => p.disputed.map(d => ({ f, d })))
-  const pairs = all
+  const ranked = all
     .map(p => ({ p, r: pairRank(p) }))
     .sort((a, b) => a.r - b.r)
     .map(x => x.p)
+  // Past the bound, every finding's closest record before any finding's second (memory-bounds.mjs).
+  const pairs = spreadPairs(ranked, MATCH_JUDGE_PAIRS_MAX, [], f => (reraisedBySeverity(f.severity) ? 1 : 0))
   /** @type {string[]} */
   const notes = []
   /** @type {string[]} */

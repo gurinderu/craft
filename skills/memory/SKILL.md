@@ -239,7 +239,12 @@ passing to stand in for the engine's recall.
    again as a normal finding when it is Critical/High, when the code in the decision's scope changed
    since its `commit`, when the decision has no `commit`, or when the repository does not know that
    `commit` (a squash-merged branch, another clone — named under **Prior decisions not applied**).
-   More than 100 decisions, or a record that does not fit (a missing title or reason, no `id` and
+   More than 100 records keep the 100 closest to the reviewed paths (a scope naming a changed file,
+   then a directory holding one, deeper before shallower, newer before older; on a re-review, the
+   delta's paths and the prior findings it re-adjudicates), the rest named; past 60 changed paths the
+   recall lists them by directory; past 40 pairs a judge sees those of the reviewed paths first, each
+   finding's closest record before any finding's second. Record a decision with the finding's file,
+   line and lens so it matches without the judge. A record that does not fit (a missing title or reason, no `id` and
    no `kind` or `scope` to derive one from, a field past
    its bound, a control character in `id`, `scope` or `commit`, a scope outside the repo or holding
    characters other than letters, digits and `._@+/ -`),

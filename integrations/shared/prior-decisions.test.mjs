@@ -65,7 +65,7 @@ test('bound: past PRIOR_DECISIONS_MAX the rest are refused by count and by name,
   assert.equal(r.decisions.length, PRIOR_DECISIONS_MAX)
   assert.equal(
     r.refused.join('\n'),
-    '3 decision(s) past the cap of 100 were not applied — findings they would answer are raised normally: decision #100 (d100), decision #101 (d101), decision #102 (d102)',
+    '3 decision(s) past the cap of 100 were not applied — kept are the records closest to the reviewed paths (a scope naming a changed file, then a directory holding one, a deeper scope before a shallower, a newer record before an older); to apply the rest, review a narrower path (path=<dir>) or supersede the records that no longer hold; findings they would answer are raised normally: decision #100 (d100), decision #101 (d101), decision #102 (d102)',
   )
   const labelled = parsePriorDecisions([...list.slice(0, PRIOR_DECISIONS_MAX), 'junk'], i => `passed decision #${i}`)
   assert.match(String(labelled.refused[0]), /raised normally: passed decision #100$/, 'a record without a printable id is named by its label')
