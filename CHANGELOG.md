@@ -1,5 +1,87 @@
 # Changelog
 
+## [0.58.0](https://github.com/gurinderu/craft/compare/v0.57.0...v0.58.0) (2026-11-22)
+
+
+### Features
+
+* deliver native init through legacy adapters and POSIX entry ([8a45ac5](https://github.com/gurinderu/craft/commit/8a45ac585574828a2a503a2edb00b47781afba8f))
+* discover init integrations without system Node ([434d7fe](https://github.com/gurinderu/craft/commit/434d7fecb55e3815bc4e5bea405e4068328de865))
+* drop the legacy Node entries and let craft init read named manifests ([d6d8296](https://github.com/gurinderu/craft/commit/d6d82964c5a73b2d87d0fc8e7527663af8c40f11))
+* fold cost, sorting choice and develop cycle into run records from the binary ([31edb4b](https://github.com/gurinderu/craft/commit/31edb4bab4de2cb0f0a2cb309cf4013a2a38ca0f))
+* fold cost, sorting choice and develop cycle into run records from the binary ([ca309b9](https://github.com/gurinderu/craft/commit/ca309b93edc52587050a7e007263988414dff106))
+* get the craft binary through sh, not Node, in skills and the review engine ([d15a0be](https://github.com/gurinderu/craft/commit/d15a0be04cdb02349e676ad02ab940431d1985ed))
+* get the craft binary through sh, not Node, in skills and the review engine ([e679603](https://github.com/gurinderu/craft/commit/e6796034ef2c50d1597276996210f4fa38b30b20))
+* record each lens round's unique yield after dedup ([1fba601](https://github.com/gurinderu/craft/commit/1fba601b645f603dcaa8970db497a708b8ad5f5e))
+* record each lens round's unique yield after dedup ([e94ecaf](https://github.com/gurinderu/craft/commit/e94ecafb10ce6ed2c1a54ecb21d906e3a8fdd579))
+* resolve structural-search paths by module, imports and crate ([271907d](https://github.com/gurinderu/craft/commit/271907dd29d920c45148ae50676128f892b389b7))
+* run craft init natively without system Node ([1f7e247](https://github.com/gurinderu/craft/commit/1f7e247e08985b6b1c7061ca327959521e37d1c4))
+* run the review engine's untyped tasks on a lean task agent ([04170fa](https://github.com/gurinderu/craft/commit/04170fa2cf9828dcbe3e3f0842b608d71fda3c2a))
+* run the review engine's untyped tasks on a lean task agent ([fb41670](https://github.com/gurinderu/craft/commit/fb4167049b69078aac1a042a67e48c03362069fe))
+
+
+### Bug Fixes
+
+* attribute round yield only to lens rounds and split it by severity and origin ([216858c](https://github.com/gurinderu/craft/commit/216858c32c49fb192ba5a2f2752543020e6179c1))
+* bound native origin stdout by the git deadline ([d9a4e7f](https://github.com/gurinderu/craft/commit/d9a4e7f81eff4f09b129213e97bfc8b3aaf66f6d))
+* check the dev shell's clippy matches its rustc and print the exact nix command ([924f022](https://github.com/gurinderu/craft/commit/924f0221b555a5810a4a4e129bbff9aadadbfbb6))
+* **cli:** write a symlinked MEMORY.md through its link ([3b2ecd7](https://github.com/gurinderu/craft/commit/3b2ecd729893289589831abb41e9c4cd031150ee))
+* count a High a human set aside as not open in develop ([54e8e42](https://github.com/gurinderu/craft/commit/54e8e4222763f01a53dd8ae5e51c057374f2bebb))
+* count only active records as missing from the index and narrow the no-write marker ([8a70729](https://github.com/gurinderu/craft/commit/8a70729b58d9ea3ef8282d7b44831369061b30b1))
+* fetch and cache craft.exe under Git Bash, MSYS and Cygwin on Windows ([c925bc6](https://github.com/gurinderu/craft/commit/c925bc613e9b4208493dfd25b5dad305dd981adc))
+* fold a resumed run before the version slice and sum each workflow's cost once ([f57e57a](https://github.com/gurinderu/craft/commit/f57e57aae7ee868b8120304359876b8dfba8a1ef))
+* fold a stopped run's fallback record into its resumed run ([35ba31b](https://github.com/gurinderu/craft/commit/35ba31b495e3b4a20cb874c2f16c8411a1a40d79))
+* fold a stopped run's fallback record into its resumed run ([2e11c85](https://github.com/gurinderu/craft/commit/2e11c85095877b73d0459dce56d31c0fac01ab4a))
+* give craft's memory its own index and rank what the memory bounds keep ([8ea2213](https://github.com/gurinderu/craft/commit/8ea2213fb808ea0efb42b0dc68484d45bdafb73f))
+* give craft's memory its own index under harness memory ([91c633f](https://github.com/gurinderu/craft/commit/91c633f0571d335834f9a8f8ed8652c223739231))
+* honour a no-write marker after a heading or note prefix ([39a61ca](https://github.com/gurinderu/craft/commit/39a61ca5b5e5a144a27ca551bb55c42753324ff4))
+* **init:** interrupt a versionMatch past its time and memory budget ([e75c4e9](https://github.com/gurinderu/craft/commit/e75c4e99fd518fdb50c64a3d46a7c5f37d76f45e))
+* judge a human-decided High within the bound and bound a record's pattern ([fdbe336](https://github.com/gurinderu/craft/commit/fdbe3361ec8e71ecaf9f770e9a0ff8c40eaac3c6))
+* keep a legacy record's id as written so two ranges stay two records ([09f9d13](https://github.com/gurinderu/craft/commit/09f9d138c2acee8aa7e0e6367317e9d12b0c1a61))
+* keep project rules setting Highs aside as before ([a7b3a62](https://github.com/gurinderu/craft/commit/a7b3a626b52f6d801fdcfff126777f1da08bb964))
+* keep the addressing-findings skill under its line bound ([83b6947](https://github.com/gurinderu/craft/commit/83b6947956b3b71288bbdb0f03b1311e63a1f8f4))
+* keep the pattern budget to a record's versionMatch and let a manifest fail alone ([81b5377](https://github.com/gurinderu/craft/commit/81b5377592648c2e230e955de54c3e531e474ea5))
+* keep the prior-decisions note outside the quoted refused command ([54a802e](https://github.com/gurinderu/craft/commit/54a802e5f4cda466d912c3d5c6c1b8276fe435ed))
+* keep the repo's own reviewers out of light re-review rounds ([f965073](https://github.com/gurinderu/craft/commit/f965073c47962d7511ee276fc91143b9d78ab75c))
+* let a human's decision set a High aside while its code is unchanged ([8a2c1d1](https://github.com/gurinderu/craft/commit/8a2c1d13bf5dce264821e808f05e838d01eb6226))
+* let a human's decision set a High aside while its code is unchanged ([91ad0c3](https://github.com/gurinderu/craft/commit/91ad0c34943e97421480024c7a896b31cbc6c41e))
+* let a project rule strike the findings and plan items it covers ([313b707](https://github.com/gurinderu/craft/commit/313b7072f8da1353f75b65ae66201b6c2ed02097))
+* let a project rule strike the findings and plan items it covers ([1e50708](https://github.com/gurinderu/craft/commit/1e50708e7a710778575e8a6a7497ef30a4528a3d))
+* let a review agent find its rubric without the root variable and say when it can't ([e6f714f](https://github.com/gurinderu/craft/commit/e6f714fed77623d7dcf862fc52bb4a5836c8ae7f))
+* let craft init read named manifests past the walk bound ([2d7af92](https://github.com/gurinderu/craft/commit/2d7af92c4a43cd48d1143e49a70a20af240ca3cf))
+* log the lean task agent's fallback as a cost, not a degraded run ([c6252ab](https://github.com/gurinderu/craft/commit/c6252abe3d60fd1ab14e353ba581cd146f74627f))
+* mark a run's cost partial when a part was not measured, and fold stopped-only runs before the slice ([784ed9f](https://github.com/gurinderu/craft/commit/784ed9f463ddda7c922550f70e4a6b9a0e676576))
+* match skill names without building a regexp ([1a91410](https://github.com/gurinderu/craft/commit/1a914109282a8f9293f991c77f99933d0cf68250))
+* **memory:** group pairs past the judges' bound by the rank-aware test ([eca50d0](https://github.com/gurinderu/craft/commit/eca50d05ef0d3379f612e70ba536436a521ce1b5))
+* **memory:** rank capped records by the audit's changed files and say so ([4cb969f](https://github.com/gurinderu/craft/commit/4cb969ff9fff04f6ebad66a460c0664198971411))
+* name every rubric by its path in the task prompt ([f0f5931](https://github.com/gurinderu/craft/commit/f0f5931e5f66d80f0d84e8527c53d5f11670cc5b))
+* name the refused command and how to allow it when a service step is denied ([24a1066](https://github.com/gurinderu/craft/commit/24a10661749f9b8b450f25cc99b461a4748fe95a))
+* never write harness memory on a recall and find records the index missed ([2b88083](https://github.com/gurinderu/craft/commit/2b88083b19f26400b71b9f731b2a51e7de6212be))
+* point the review agents at their rubric files ([771042f](https://github.com/gurinderu/craft/commit/771042fff2eb5c0bbe021e9770d2cd25754708c7))
+* point the review agents at their rubric files ([4d17514](https://github.com/gurinderu/craft/commit/4d17514962b689952b4611fca100d14ec34c64d3))
+* rank what the memory bounds keep instead of cutting at random ([3dd3cb5](https://github.com/gurinderu/craft/commit/3dd3cb57006fd6b6aaa37fabb4143ab6f2f5a821))
+* re-cost a record by run directory again and refuse an amend without touching any record ([c69a48b](https://github.com/gurinderu/craft/commit/c69a48b905c0e74ca417eca9703df14e9351ff94))
+* re-review rounds of develop run light ([d8c216a](https://github.com/gurinderu/craft/commit/d8c216a5e1c15eb3cd290bc453a82e3c54aeb00b))
+* re-review rounds of develop run light ([8dc7c65](https://github.com/gurinderu/craft/commit/8dc7c65eb0915df152ff981aab249716794e7029))
+* read a memory scope that carries a line range and refuse writing one ([dee93f0](https://github.com/gurinderu/craft/commit/dee93f0954df73a69738722a14cbd6c9642fabb3))
+* read a memory scope that carries a line range and refuse writing one ([b111e38](https://github.com/gurinderu/craft/commit/b111e387985923f9aa7de21667687b8f3e186e71))
+* recall every project rule whatever its scope in the skill and the prompt ([379357b](https://github.com/gurinderu/craft/commit/379357b8d6fd53b7b9708c2dc46db3496fd10bb9))
+* report an unreadable run store instead of treating it as missing ([60f4414](https://github.com/gurinderu/craft/commit/60f44145cb5a2c226fe567af69335574931c8597))
+* report an unreadable run store instead of treating it as missing ([c87466a](https://github.com/gurinderu/craft/commit/c87466a8ce8c33e4856f703342150e18418de217)), closes [#450](https://github.com/gurinderu/craft/issues/450)
+* route code-graph tasks to an agent with the graph tools on every host ([7ad05d5](https://github.com/gurinderu/craft/commit/7ad05d520f1c0c2fb301ea9257c8b64029d881f7))
+* run the Rust gate inside the checkout's Nix dev shell when it has one ([ef659e4](https://github.com/gurinderu/craft/commit/ef659e42a23a9145a26af9d2604271327c64ff14))
+* run the Rust gate inside the checkout's Nix dev shell when it has one ([829da22](https://github.com/gurinderu/craft/commit/829da2207a0022cf5840cdc02e5b3dcfdd815471))
+* say an unreadable store's error once and tell the skills to report it ([d26e316](https://github.com/gurinderu/craft/commit/d26e316dfeccfe47487d92dd83a2634928ffad30))
+* tell a human's decision by an explicit field ([d1f7153](https://github.com/gurinderu/craft/commit/d1f7153eb63a93912f092d1a193bb1f6d4a22db9))
+* tell the dev shell's clippy from the host's by sysroot and read E0514 as unknown ([7a961e7](https://github.com/gurinderu/craft/commit/7a961e758adf7fee0a83f580061efa3e5aa69006))
+* walk past a plugin copy of another version and pin the fetch's environment ([a9f6037](https://github.com/gurinderu/craft/commit/a9f60375c9e2275ff9555d2207f6cdf999ca755b))
+* word the memory bounds' notes by what ranked them and normalise recalled paths ([3b5a8c8](https://github.com/gurinderu/craft/commit/3b5a8c86babb47536f97df244f6d4a27269b65df))
+
+
+### Performance Improvements
+
+* match a manifest's lines in batches through one engine script ([8e15b6e](https://github.com/gurinderu/craft/commit/8e15b6e68408e72d07cf9f2cd29a421afabad65f))
+
 ## [0.57.0](https://github.com/gurinderu/craft/compare/v0.56.0...v0.57.0) (2026-11-21)
 
 
