@@ -211,9 +211,10 @@ store's current state; a passed record the store withdrew or superseded is held 
 holds some the store may not — rejections just read from PR threads, say — and never relies on
 passing to stand in for the engine's recall.
 
-1. `recall(<no topic>, <each path of the diff>)` — `git diff --name-only <base>...HEAD`. Decisions,
-   questions and project rules (`kind: decision`, `kind: question`, `kind: rule`), **active** only;
-   never lessons.
+1. `recall(<no topic>, <each path of the diff>)` — `git diff --name-only <base>...HEAD`. Decisions
+   and questions (`kind: decision`, `kind: question`) for those paths, and every project rule
+   (`kind: rule`) whatever its scope — a project holds few, and the engine matches a rule's scope to
+   each finding itself; **active** only; never lessons.
 2. To add records, pass them to the workflow as the argument `priorDecisions` — **only in an object argument**,
    `{ …, priorDecisions: [<records>] }`: a list of the records in the shape above, as recalled —
    `id`, `kind`, `title`, `scope`, `body`, `date`, `author`, `commit`, `deferred`, `lens`, `links` — nothing rewritten,
