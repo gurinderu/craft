@@ -36,12 +36,22 @@ pub fn stopped(r: &Obj) -> bool {
     r.text_units("verdict").starts_with("INCOMPLETE")
 }
 
+/// A run's stopped parts held back: the newest's time and name and whether it is inside what the
+/// reader counts (its version, its filter), and how many held parts are inside.
+#[derive(Debug)]
+struct Held {
+    ts: String,
+    name: String,
+    inside: bool,
+    inside_n: u64,
+}
+
 /// The parts read so far: the runs that filed a finished record, and the stopped parts held back
-/// until every record is read — per run the newest's time and name, and how many there were.
+/// until every record is read.
 #[derive(Debug, Default)]
 pub struct Parts {
     finished: BTreeSet<String>,
-    held: BTreeMap<String, (String, String, u64)>,
+    held: BTreeMap<String, Held>,
 }
 
 impl Parts {
@@ -53,61 +63,48 @@ impl Parts {
         }
     }
 
-    /// Holds a stopped part named `name` back until every record is read; `false` for any other
-    /// record, which the reader counts as it reads it.
+    /// Holds a stopped part named `name` back until every record is read, whether or not it is
+    /// `inside` what the reader counts — the run is folded before any version or filter, then
+    /// counted where its standing part is; `false` for any other record.
     /// # Errors
     /// When its time cannot be represented as UTF-8.
-    pub fn hold(&mut self, name: &str, r: &Obj) -> Result<bool, Utf16Error> {
+    pub fn hold(&mut self, name: &str, r: &Obj, inside: bool) -> Result<bool, Utf16Error> {
         let Some(key) = part_key(r).filter(|_| stopped(r)) else {
             return Ok(false);
         };
         let ts = r.try_text("ts")?.to_owned();
-        let seen = self
-            .held
-            .entry(key)
-            .or_insert_with(|| (ts.clone(), name.to_owned(), 0));
-        seen.2 += 1;
-        if ts > seen.0 {
-            (seen.0, seen.1) = (ts, name.to_owned());
+        let seen = self.held.entry(key).or_insert_with(|| Held {
+            ts: ts.clone(),
+            name: name.to_owned(),
+            inside,
+            inside_n: 0,
+        });
+        seen.inside_n += u64::from(inside);
+        if ts > seen.ts {
+            (seen.ts, seen.name, seen.inside) = (ts, name.to_owned(), inside);
         }
         Ok(true)
     }
 
-    /// The held parts still to count — per run whose every part stopped, its newest, by its run's
-    /// key, time and name — and how many held parts fold into another record.
+    /// The held parts still to count inside — per run whose every part stopped, its newest when
+    /// that is inside, by its run's key, time and name — and how many held parts inside fold into
+    /// another record.
     #[must_use]
     pub fn standing(self) -> (Vec<(String, String, String)>, u64) {
         let mut out = Vec::new();
         let mut folded = 0;
-        for (key, (ts, name, n)) in self.held {
+        for (key, h) in self.held {
             if self.finished.contains(&key) {
-                folded += n;
+                folded += h.inside_n;
             } else {
-                folded += n - 1;
-                out.push((key, ts, name));
+                folded += h.inside_n - u64::from(h.inside);
+                if h.inside {
+                    out.push((key, h.ts, h.name));
+                }
             }
         }
         (out, folded)
     }
-}
-
-/// `records` with each stopped part folded, and how many were; `parts` has noted every record
-/// that did not die, of any version, beforehand.
-/// # Errors
-/// When a stopped part's time cannot be represented as UTF-8.
-pub fn fold_parts(records: Vec<Obj>, mut parts: Parts) -> Result<(Vec<Obj>, u64), Utf16Error> {
-    let mut kept = Vec::new();
-    let mut held = BTreeMap::new();
-    for (i, r) in records.into_iter().enumerate() {
-        if parts.hold(&i.to_string(), &r)? {
-            held.insert(i.to_string(), r);
-        } else {
-            kept.push(r);
-        }
-    }
-    let (standing, folded) = parts.standing();
-    kept.extend(standing.iter().filter_map(|(_, _, name)| held.remove(name)));
-    Ok((kept, folded))
 }
 
 #[cfg(test)]
@@ -122,18 +119,22 @@ mod tests {
         parse(&text).unwrap().as_obj().unwrap().clone()
     }
 
-    fn folded(records: &[Obj], noted: &[Obj]) -> (Vec<String>, u64) {
+    /// The records read, each `inside` or not: the names still to count and how many folded.
+    fn folded(records: &[(Obj, bool)]) -> (Vec<String>, u64) {
         let mut parts = Parts::default();
-        for r in noted {
+        for (r, _) in records {
             parts.note(r);
         }
-        let (kept, n) = fold_parts(records.to_vec(), parts).unwrap();
-        (
-            kept.iter()
-                .map(|r| r.try_text("ts").unwrap().to_owned())
-                .collect(),
-            n,
-        )
+        let mut counted = Vec::new();
+        for (r, inside) in records {
+            let name = r.try_text("ts").unwrap();
+            if !parts.hold(name, r, *inside).unwrap() && *inside {
+                counted.push(name.to_owned());
+            }
+        }
+        let (standing, n) = parts.standing();
+        counted.extend(standing.into_iter().map(|(_, _, name)| name));
+        (counted, n)
     }
 
     #[test]
@@ -141,32 +142,45 @@ mod tests {
         let stopped = rec("1", "/r/a", "INCOMPLETE");
         let finished = rec("2", "/r/a", "Block");
         assert_eq!(
-            folded(
-                &[stopped.clone(), finished.clone()],
-                &[stopped.clone(), finished.clone()]
-            ),
+            folded(&[(stopped.clone(), true), (finished.clone(), true)]),
             (vec!["2".into()], 1)
         );
         assert_eq!(
-            folded(std::slice::from_ref(&stopped), &[stopped.clone(), finished]),
+            folded(&[(stopped.clone(), true), (finished.clone(), false)]),
             (vec![], 1),
             "its finished record read under another version"
+        );
+        assert_eq!(
+            folded(&[(stopped, false), (finished, true)]),
+            (vec!["2".into()], 0),
+            "the stopped part's own version is not this one"
         );
     }
 
     #[test]
-    fn a_run_whose_every_part_stopped_stands_as_its_newest() {
-        let parts = [
+    fn a_run_whose_every_part_stopped_stands_as_its_newest_where_that_is_counted() {
+        let (old, new) = (
             rec("1", "/r/b", "INCOMPLETE"),
             rec("3", "/r/b", "INCOMPLETE"),
-            rec("2", "/r/c", "INCOMPLETE"),
-        ];
-        assert_eq!(folded(&parts, &parts), (vec!["3".into(), "2".into()], 1));
+        );
+        let other = rec("2", "/r/c", "INCOMPLETE");
+        assert_eq!(
+            folded(&[(old.clone(), true), (new.clone(), true), (other, true)]),
+            (vec!["3".into(), "2".into()], 1)
+        );
+        assert_eq!(
+            folded(&[(old.clone(), true), (new.clone(), false)]),
+            (vec![], 1)
+        );
+        assert_eq!(folded(&[(old, false), (new, true)]), (vec!["3".into()], 0));
     }
 
     #[test]
     fn a_record_naming_no_run_directory_folds_on_nothing() {
-        let parts = [rec("1", "", "INCOMPLETE"), rec("2", "", "Block")];
-        assert_eq!(folded(&parts, &parts), (vec!["1".into(), "2".into()], 0));
+        let parts = [
+            (rec("1", "", "INCOMPLETE"), true),
+            (rec("2", "", "Block"), true),
+        ];
+        assert_eq!(folded(&parts), (vec!["1".into(), "2".into()], 0));
     }
 }

@@ -226,14 +226,17 @@ fn retro(store: &Path, version: &str, skipped: &mut Skipped) -> Result<craft_sto
         if r.get("schemaVersion").is_some_and(Js::truthy) && !died {
             parts.note(&r);
         }
-        if !r.get("schemaVersion").is_some_and(Js::truthy)
-            || r.text_units("craftVersion") != version
+        let inside = r.text_units("craftVersion") == version;
+        if r.get("schemaVersion").is_some_and(Js::truthy)
+            && !died
+            && held(&mut parts, (name, &r, inside), &mut failure)
         {
+            // Counted, or folded, once every record is read, as the run's standing part is.
+            out.other += u64::from(!inside);
+        } else if !r.get("schemaVersion").is_some_and(Js::truthy) || !inside {
             out.other += 1;
         } else if died {
             out.unfinished += 1;
-        } else if held(&mut parts, name, &r, &mut failure) {
-            // Counted, or folded, once every record is read.
         } else if let Some(key) = craft_store::retro::run_key(&r) {
             let ts = match r.try_text("ts") {
                 Ok(ts) => ts.to_owned(),
@@ -290,11 +293,10 @@ fn retro(store: &Path, version: &str, skipped: &mut Skipped) -> Result<craft_sto
 /// ([`craft_store::parts`]); a time that does not read is kept as the read's failure.
 fn held(
     parts: &mut Parts,
-    name: &str,
-    r: &Obj,
+    (name, r, inside): (&str, &Obj, bool),
     failure: &mut Option<craft_store::js::Utf16Error>,
 ) -> bool {
-    parts.hold(name, r).unwrap_or_else(|e| {
+    parts.hold(name, r, inside).unwrap_or_else(|e| {
         *failure = Some(e);
         true
     })
@@ -389,7 +391,11 @@ fn stats(
         if finished {
             parts.note(&r);
         }
-        if !finished || !filter.keeps(&r) || held(&mut parts, name, &r, &mut failure) {
+        if !finished {
+            return;
+        }
+        let inside = filter.keeps(&r);
+        if held(&mut parts, (name, &r, inside), &mut failure) || !inside {
             return;
         }
         if let Some(key) = craft_store::retro::run_key(&r) {

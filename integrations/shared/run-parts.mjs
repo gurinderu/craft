@@ -4,7 +4,8 @@
 // filed a finished record folds into it, the finished record standing for the run; a run whose every part stopped
 // stands as its newest. A part is mostly its own Workflow run with its own cost, so the standing record carries the
 // sum of every Workflow run's share once (by the cost's `source` and slice; a repeated share is the latest part's), its
-// token pool once per Workflow run, and how many shares carry no usable cost as `partsUnmeasured`. The fold runs before
+// token pool once per Workflow run, and how many shares carry no usable cost as `partsUnmeasured`, which with a
+// share's own `skipped` makes the run's cost partial (run-record.mjs, costProblem), never averaged in as whole. The fold runs before
 // any version or engine slice: the run is counted under its standing record's version, and a slice of the stopped
 // part's version says it folded. A record that names no run directory, filed before records named it, folds on
 // nothing here.
@@ -56,13 +57,18 @@ function costShare(p) {
  */
 function summedCost(parts) {
   const shares = perShare(parts, costShare)
-  const usable = shares.map(p => /** @type {RecordCost} */ (p['cost'])).filter(c => costProblem(c) === null)
+  // A partial cost is a measured lower bound: its share is summed and its `skipped` carried, so the sum is partial too.
+  const counted = (/** @type {RecordCost} */ c) => [null, 'partial'].includes(costProblem(c))
+  const usable = shares.map(p => /** @type {RecordCost} */ (p['cost'])).filter(counted)
   const own = /** @type {RecordCost} */ (parts[0]?.['cost'])
   if (!usable.length) return own
   /** @type {Record<string, unknown>} */
-  const sum = { ...(costProblem(own) === null ? own : usable[0]) }
+  const sum = { ...(counted(own) ? own : usable[0]) }
   for (const k of COUNTS) sum[k] = usable.reduce((n, c) => n + (Number(c[k]) || 0), 0)
   sum['total'] = usable.reduce((n, c) => n + costTotal(c), 0)
+  const skipped = usable.reduce((n, c) => n + (Number(c.skipped) || 0), 0)
+  if (skipped) sum['skipped'] = skipped
+  else delete sum['skipped']
   const unmeasured = shares.length - usable.length
   return unmeasured ? { ...sum, partsUnmeasured: unmeasured } : sum
 }

@@ -3,6 +3,7 @@
 import { test } from 'vitest'
 import assert from 'node:assert/strict'
 import { foldResumedRuns } from './run-duplicates.mjs'
+import { costProblem } from './run-record.mjs'
 
 /** @param {number} total @param {string} source */
 const cost = (total, source) => ({
@@ -49,10 +50,14 @@ test("a stopped part folds into its run's finished record, which carries both pa
   assert.equal(foldResumedRuns([finished, stopped]).records.length, 1, 'whatever order they are read in')
 })
 
-test('a part whose cost was never measured leaves the run measured in part, not whole', () => {
-  const { records } = foldResumedRuns([{ ...stopped, cost: null }, finished])
-  const run = /** @type {Record<string, any>} */ (records[0])
-  assert.deepEqual([run['cost'].partsUnmeasured, run['cost'].skipped], [1, undefined], 'skipped counts transcripts, not parts')
+test('a part whose cost was never measured, or measured in part, leaves the run measured in part, not whole', () => {
+  const unmeasured = /** @type {Record<string, any>} */ (foldResumedRuns([{ ...stopped, cost: null }, finished]).records[0])
+  assert.deepEqual([unmeasured['cost'].partsUnmeasured, unmeasured['cost'].skipped], [1, undefined], 'skipped counts transcripts, not parts')
+  assert.equal(costProblem(unmeasured['cost']), 'partial', 'a lower bound is never averaged in as a whole cost')
+  const lower = { ...stopped, cost: { ...cost(10, 'wf_a'), skipped: 2 } }
+  const partial = /** @type {Record<string, any>} */ (foldResumedRuns([lower, finished]).records[0])
+  assert.deepEqual([partial['cost'].total, partial['cost'].skipped], [10 + 53805638, 2], "the partial part's measured share is kept")
+  assert.equal(costProblem(partial['cost']), 'partial')
 })
 
 test('a run whose every part stopped stands as its newest; a record naming no run directory folds on nothing', () => {

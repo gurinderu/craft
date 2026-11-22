@@ -174,29 +174,30 @@ fn finished_of(
 ) -> Result<Vec<Obj>, Utf16Error> {
     let records: Vec<Obj> = records.into_iter().collect();
     let mut parts = crate::parts::Parts::default();
-    for r in &records {
-        if r.get("schemaVersion").is_some_and(Js::truthy)
-            && !r.get("partial").is_some_and(Js::truthy)
-        {
-            parts.note(r);
-        }
+    let live = |r: &Obj| {
+        r.get("schemaVersion").is_some_and(Js::truthy) && !r.get("partial").is_some_and(Js::truthy)
+    };
+    for r in records.iter().filter(|r| live(r)) {
+        parts.note(r);
     }
     let mut kept = Vec::new();
-    for r in records {
-        if !r.get("schemaVersion").is_some_and(Js::truthy)
-            || r.text_units("craftVersion") != version
-        {
+    let mut held = BTreeMap::new();
+    for (i, r) in records.into_iter().enumerate() {
+        let inside = r.text_units("craftVersion") == version;
+        if live(&r) && parts.hold(&i.to_string(), &r, inside)? {
+            retro.other += u64::from(!inside);
+            held.insert(i.to_string(), r);
+        } else if !r.get("schemaVersion").is_some_and(Js::truthy) || !inside {
             retro.other += 1;
-            continue;
-        }
-        if r.get("partial").is_some_and(Js::truthy) {
+        } else if r.get("partial").is_some_and(Js::truthy) {
             retro.unfinished += 1;
-            continue;
+        } else {
+            kept.push(r);
         }
-        kept.push(r);
     }
-    let (kept, parts) = crate::parts::fold_parts(kept, parts)?;
-    retro.folded += parts;
+    let (standing, folded) = parts.standing();
+    retro.folded += folded;
+    kept.extend(standing.iter().filter_map(|(_, _, name)| held.remove(name)));
     let before = kept.len();
     let folded = fold_runs(kept);
     retro.folded += u64::try_from(before - folded.len()).unwrap_or(u64::MAX);
