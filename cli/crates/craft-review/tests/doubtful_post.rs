@@ -1,8 +1,9 @@
 //! Posting one doubtful finding the reviewer chose (`craft review post`) through a stand-in `gh`:
 //! a question carries its ask, kind line and the marker last, a second post adds nothing, a line
 //! outside the diff or refused by GitHub goes on its file, a PR head that moved is posted to on the
-//! reviewed commit only when its new commits leave the finding's line alone, and a number the
-//! record does not list is refused before gh is asked.
+//! reviewed commit only when its new commits leave the finding's line alone, the PR is the record's
+//! own branch's (or a named one holding the reviewed commit), a record naming no reviewed commit
+//! posts nothing, and a number the record does not list is refused before gh is asked.
 
 mod common;
 
@@ -23,10 +24,20 @@ fn findings() -> Vec<Value> {
 }
 
 fn post(
-    (repo, scratch): (&Path, &Path),
+    at: (&Path, &Path),
     n: u64,
     question: bool,
     reviewed: Option<&str>,
+    setup: &PostSetup,
+) -> Result<Posting, PostError> {
+    post_to(at, (n, question), (reviewed, Some("main"), None), setup)
+}
+
+/// Posts finding `n` of a record of `branch` reviewed at `reviewed`, on `pr` when named.
+fn post_to(
+    (repo, scratch): (&Path, &Path),
+    (n, question): (u64, bool),
+    (reviewed, branch, pr): (Option<&str>, Option<&str>, Option<u64>),
     setup: &PostSetup,
 ) -> Result<Posting, PostError> {
     let fs = findings();
@@ -36,8 +47,9 @@ fn post(
         question,
         lines_judged: true,
         reviewed,
+        branch,
     };
-    publish::post_doubtful(repo, &d, None, setup, scratch)
+    publish::post_doubtful(repo, &d, pr, setup, scratch)
 }
 
 #[test]
@@ -80,13 +92,14 @@ fn a_question_goes_on_its_line_with_its_ask_kind_line_and_marker_and_only_once()
 fn a_finding_outside_the_diff_goes_on_its_file_and_a_refused_line_too() {
     let (repo, out) = (fixture(true), tempfile::tempdir().unwrap());
     let gh = out.path().join("gh");
-    let setup = stand_in(&gh, &head(repo.path()));
-    let p = post((repo.path(), out.path()), 2, false, None, &setup).unwrap();
+    let h = head(repo.path());
+    let setup = stand_in(&gh, &h);
+    let p = post((repo.path(), out.path()), 2, false, Some(&h), &setup).unwrap();
     assert!(p.to_file && p.posted);
     assert_eq!(posted(&gh)[0]["subject_type"], json!("file"));
     assert!(posted(&gh)[0].get("line").is_none());
     std::fs::write(gh.join("no-lines"), "").unwrap();
-    let p = post((repo.path(), out.path()), 1, false, None, &setup).unwrap();
+    let p = post((repo.path(), out.path()), 1, false, Some(&h), &setup).unwrap();
     assert!(p.to_file && p.posted, "{p:?}");
     assert_eq!(posted(&gh)[1]["subject_type"], json!("file"));
 }
@@ -132,9 +145,77 @@ fn a_number_the_record_lacks_is_refused_before_gh_and_a_gh_failure_is_named() {
     );
     assert!(!gh.join("calls").exists(), "gh never asked");
     std::fs::write(gh.join("fail"), "").unwrap();
-    let e = post((repo.path(), out.path()), 1, true, None, &setup).unwrap_err();
+    let h = head(repo.path());
+    let e = post((repo.path(), out.path()), 1, true, Some(&h), &setup).unwrap_err();
     assert!(
-        matches!(&e, PostError::Gh(w) if w.contains("HTTP 401")),
+        matches!(&e, PostError::Pr(w) if w.contains("HTTP 401")),
         "{e}"
     );
+}
+
+#[test]
+fn without_pr_only_the_one_open_pr_of_the_records_branch_is_posted_to() {
+    let (repo, out) = (fixture(true), tempfile::tempdir().unwrap());
+    let (gh, h) = (out.path().join("gh"), head(repo.path()));
+    let setup = stand_in(&gh, &h);
+    let at = (repo.path(), out.path());
+    let e = post_to(at, (1, true), (Some(&h), None, None), &setup).unwrap_err();
+    assert!(
+        matches!(&e, PostError::Pr(w) if w.contains("names no branch")),
+        "{e}"
+    );
+    std::fs::write(gh.join("prs"), "[]").unwrap();
+    let e = post(at, 1, true, Some(&h), &setup).unwrap_err();
+    assert!(
+        matches!(&e, PostError::Pr(w) if w.contains("no open PR has the record's branch main")),
+        "{e}"
+    );
+    let two = format!(
+        r#"[{{"number":7,"url":"u","headRefOid":"{h}","headRefName":"main"}},{{"number":8,"url":"u","headRefOid":"{h}","headRefName":"main"}}]"#
+    );
+    std::fs::write(gh.join("prs"), two).unwrap();
+    let e = post(at, 1, true, Some(&h), &setup).unwrap_err();
+    assert!(
+        matches!(&e, PostError::Pr(w) if w.starts_with("2 open PRs")),
+        "{e}"
+    );
+    assert!(posted(&gh).is_empty());
+    let calls = std::fs::read_to_string(gh.join("calls")).unwrap();
+    assert!(
+        calls.contains("pr list --head main --state open"),
+        "{calls}"
+    );
+}
+
+#[test]
+fn a_named_pr_of_another_branch_is_taken_only_when_its_head_holds_the_reviewed_commit() {
+    let (repo, out) = (fixture(true), tempfile::tempdir().unwrap());
+    let (gh, h) = (out.path().join("gh"), head(repo.path()));
+    let setup = stand_in(&gh, &h);
+    std::fs::write(gh.join("branch"), "other").unwrap();
+    let at = (repo.path(), out.path());
+    let p = post_to(at, (1, true), (Some(&h), Some("main"), Some(7)), &setup).unwrap();
+    assert!(p.posted, "the PR's head holds the reviewed commit");
+    std::fs::write(gh.join("head"), "f".repeat(40)).unwrap();
+    let e = post_to(at, (1, false), (Some(&h), Some("main"), Some(7)), &setup).unwrap_err();
+    assert!(
+        matches!(&e, PostError::Pr(w) if w.contains("PR #7 has head branch other, not the record's main")),
+        "{e}"
+    );
+    assert_eq!(posted(&gh).len(), 1);
+}
+
+#[test]
+fn a_record_naming_no_reviewed_commit_posts_nothing() {
+    let (repo, out) = (fixture(true), tempfile::tempdir().unwrap());
+    let gh = out.path().join("gh");
+    let setup = stand_in(&gh, &head(repo.path()));
+    for reviewed in [None, Some("abc1234")] {
+        let e = post((repo.path(), out.path()), 1, true, reviewed, &setup).unwrap_err();
+        assert!(
+            matches!(&e, PostError::Refused(w) if w.contains("names no reviewed commit")),
+            "{e}"
+        );
+    }
+    assert!(posted(&gh).is_empty());
 }

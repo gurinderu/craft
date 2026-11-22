@@ -15,6 +15,48 @@ pub(in crate::publish) struct Pr {
     pub(in crate::publish) number: u64,
     pub(in crate::publish) url: String,
     pub(in crate::publish) head: String,
+    /// Its head branch, '' when gh did not say.
+    pub(in crate::publish) head_ref: String,
+}
+
+/// The fields every pull request is read with.
+const FIELDS: &str = "number,url,headRefOid,headRefName";
+
+/// A pull request as gh prints it.
+fn pr_of(v: &Value) -> Result<Pr, String> {
+    let text = |k: &str| v.get(k).and_then(Value::as_str).unwrap_or("").to_owned();
+    let number = v.get("number").and_then(Value::as_u64).unwrap_or(0);
+    if number == 0 {
+        return Err("gh named no pull request number".into());
+    }
+    Ok(Pr {
+        number,
+        url: text("url"),
+        head: text("headRefOid"),
+        head_ref: text("headRefName"),
+    })
+}
+
+/// The open pull requests whose head branch is `branch`.
+pub(in crate::publish) fn open_prs(
+    runner: &Runner,
+    repo: &Path,
+    branch: &str,
+) -> Result<Vec<Pr>, String> {
+    if branch.starts_with('-') {
+        return Err(format!("{branch:?} is no branch name"));
+    }
+    let args = [
+        "pr", "list", "--head", branch, "--state", "open", "--json", FIELDS,
+    ];
+    let out = gh(runner, repo, &args)?;
+    let v: Value =
+        serde_json::from_str(&out).map_err(|e| format!("gh pr list printed no JSON: {e}"))?;
+    v.as_array()
+        .ok_or_else(|| "gh pr list printed no list".to_owned())?
+        .iter()
+        .map(pr_of)
+        .collect()
 }
 
 /// The pull request `which` names — its number, or a branch whose pull request it is — the
@@ -26,7 +68,7 @@ pub(in crate::publish) fn pull_request(
 ) -> Result<Pr, String> {
     let mut args = vec!["pr", "view"];
     args.extend(which.filter(|b| !b.starts_with('-')));
-    args.extend(["--json", "number,url,headRefOid"]);
+    args.extend(["--json", FIELDS]);
     let out = gh(runner, repo, &args).map_err(|e| {
         if e.starts_with("gh pr view failed") {
             format!("{e} (no pull request for the checked-out branch, or gh is not authenticated)")
@@ -36,16 +78,7 @@ pub(in crate::publish) fn pull_request(
     })?;
     let v: Value =
         serde_json::from_str(&out).map_err(|e| format!("gh pr view printed no JSON: {e}"))?;
-    let text = |k: &str| v.get(k).and_then(Value::as_str).unwrap_or("").to_owned();
-    let number = v.get("number").and_then(Value::as_u64).unwrap_or(0);
-    if number == 0 {
-        return Err("gh pr view named no pull request number".into());
-    }
-    Ok(Pr {
-        number,
-        url: text("url"),
-        head: text("headRefOid"),
-    })
+    pr_of(&v)
 }
 
 /// A posted comment's identity: its file, its line (0 for a comment on the file) and its first

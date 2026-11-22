@@ -1,4 +1,5 @@
-//! What the two thread readers share, as `integrations/shared/pr-thread-rule.mjs` held it (realm
+//! What the two thread readers share, as the JavaScript reader held it (frozen in
+//! `content/parity/pr-rejections-cases.json`; realm
 //! @nick/craft, nodes #177, #182, #185, #196): the last word a rejection only when it opens with a
 //! rejection phrase and comes from the PR author or an OWNER/MEMBER/COLLABORATOR, and what keeps
 //! one from becoming a record.

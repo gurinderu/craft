@@ -66,12 +66,15 @@ pub fn pr(cmd: &PrCommand) -> Result<ExitCode> {
             Err(e) => return Ok(unreadable(&format!("cannot read {}: {e}", path.display()))),
         }
     } else {
-        let scratch = std::env::temp_dir().join(format!("craft-pr-{}", std::process::id()));
+        let cwd = match std::env::current_dir() {
+            Ok(d) => d,
+            Err(e) => return Ok(unreadable(&format!("reading the working directory: {e}"))),
+        };
+        let scratch = crate::scratch::dir("craft-pr")?;
         let which = fetch::Which {
             pr: args.pr,
             repo: args.repo.as_deref(),
         };
-        let cwd = std::env::current_dir().context("reading the working directory")?;
         let got = fetch::answer(&cwd, &which, &PostSetup::default(), &scratch);
         drop(std::fs::remove_dir_all(&scratch));
         match got {

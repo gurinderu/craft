@@ -3,8 +3,9 @@
 //! record; for each the human picks "ask the author" or "post as a defect", and this posts that one —
 //! read from the record, never from a hand-copied list — with the craft-finding marker, by the rules
 //! the defects are posted by: not a second time when its comment is on the PR already, on its file
-//! when GitHub refuses its line (node #285), on the reviewed commit when the PR's head moved past it
-//! without touching its line, and nothing when it did.
+//! when GitHub refuses its line (node #285), only on the PR of the record's own branch, on the
+//! reviewed commit when the PR's head moved past it without touching its line, and nothing when it
+//! did or the record names no reviewed commit.
 
 use std::path::Path;
 
@@ -12,13 +13,15 @@ use serde::Serialize;
 use serde_json::Value;
 
 use super::after::moved_over;
-use super::gh::{Moved, read, send::To};
+use super::gh::read;
+use super::gh::{Moved, send::To};
 use super::{Defect, PostSetup, body, short, sort};
 use crate::gate::runner::Runner;
 
 #[cfg(test)]
 mod parity;
 mod request;
+mod target;
 
 /// The doubtful finding to post, from its run record.
 pub struct Doubtful<'a> {
@@ -31,6 +34,8 @@ pub struct Doubtful<'a> {
     pub lines_judged: bool,
     /// The head the review read, when the record names it.
     pub reviewed: Option<&'a str>,
+    /// The branch the review ran on, when the record names it.
+    pub branch: Option<&'a str>,
 }
 
 /// What came of posting it.
@@ -55,6 +60,9 @@ pub enum PostError {
     /// The record lists no such finding, or it names no file.
     #[error("{0}")]
     Finding(String),
+    /// The pull request cannot be told: none, several, or one of another branch (`--pr`).
+    #[error("{0}")]
+    Pr(String),
     /// gh failed, or the PR names no commit to post on.
     #[error("{0}")]
     Gh(String),
@@ -63,7 +71,8 @@ pub enum PostError {
     Refused(String),
 }
 
-/// Posts `d` on the pull request `pr` names, else the checked-out branch's, from the checkout
+/// Posts `d` on its branch's pull request (`pr`, checked against it, or the one open PR of the
+/// record's branch), from the checkout
 /// `repo`, gh's output kept in `scratch`.
 ///
 /// # Errors
@@ -82,31 +91,24 @@ pub fn post(
     let c = request::chosen(d.findings, d.n as f64, d.question, d.lines_judged)
         .map_err(PostError::Finding)?;
     let runner = Runner::new(setup.budget, setup.path.clone(), scratch.to_path_buf());
-    let which = pr.map(|n| n.to_string());
-    let p = read::pull_request(&runner, repo, which.as_deref()).map_err(PostError::Gh)?;
-    let full = |h: &&str| matches!(h.len(), 40 | 64) && request::is_sha(h);
-    let (commit, note) = match d.reviewed.filter(|h| full(h) && *h != p.head) {
-        Some(h) => {
-            let line = sort::line(c.finding);
-            let title = sort::text(c.finding, "title");
-            let touched = |old: &crate::gate::lines::Lines| {
-                (line > 0 && old.touches(&c.file, line))
-                    .then(|| format!("`{}:{line}` {title}", c.file))
-                    .into_iter()
-                    .collect()
-            };
-            match moved_over(repo, h, &p.head, &touched) {
-                Moved::Post(note) => (h.to_owned(), format!(" · {note}")),
-                Moved::Refuse(why) | Moved::Skip(why) => return Err(PostError::Refused(why)),
-            }
+    let p = target::which_pr(&runner, repo, d, pr)?;
+    let reviewed = target::full(d).ok_or_else(|| PostError::Refused(target::NO_REVIEWED.into()))?;
+    let (commit, note) = if reviewed == p.head {
+        (reviewed.to_owned(), String::new())
+    } else {
+        let line = sort::line(c.finding);
+        let title = sort::text(c.finding, "title");
+        let touched = |old: &crate::gate::lines::Lines| {
+            (line > 0 && old.touches(&c.file, line))
+                .then(|| format!("`{}:{line}` {title}", c.file))
+                .into_iter()
+                .collect()
+        };
+        match moved_over(repo, reviewed, &p.head, &touched) {
+            Moved::Post(note) => (reviewed.to_owned(), format!(" · {note}")),
+            Moved::Refuse(why) | Moved::Skip(why) => return Err(PostError::Refused(why)),
         }
-        None => (p.head.clone(), String::new()),
     };
-    if !request::is_sha(&commit) {
-        return Err(PostError::Gh(format!(
-            "the PR's head {commit:?} is no commit sha"
-        )));
-    }
     let mut out = Posting {
         pr: p.number,
         url: p.url.clone(),

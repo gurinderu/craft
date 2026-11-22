@@ -1,4 +1,4 @@
-//! The reader held to what `integrations/shared/pr-rejections.mjs` printed, frozen in
+//! The reader held to what the JavaScript reader printed, frozen in
 //! `content/parity/pr-rejections-cases.json` when it was ported here.
 
 use serde_json::{Value, json};

@@ -12,6 +12,7 @@ mod process_identity;
 mod review;
 mod run;
 mod runs;
+mod scratch;
 mod steps;
 
 use std::num::NonZeroUsize;
