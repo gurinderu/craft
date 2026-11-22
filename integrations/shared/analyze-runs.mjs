@@ -26,6 +26,7 @@ import { roundPairs, renderRoundPairs, excludedRounds } from './round-pairs.mjs'
 import { outputLines, runIfMain } from './script-main.mjs'
 import { readAgentUnavailable } from './agent-fallback.mjs'
 import { foldResumedRuns } from './run-duplicates.mjs'
+import { foldStoppedParts } from './run-parts.mjs'
 import { splitSuperseded } from './partial-twins.mjs'
 import { slicePartials, inSlice, engineSlice } from './partial-slice.mjs'
 import { newMemoryTally, tallyMemory, renderMemorySection } from './memory-tally.mjs'
@@ -158,7 +159,7 @@ function tallyPool(w, r) {
 // Fold one run's REAL cost into the workflow bucket. `outputTokens` (tallyPool above) is
 // `budget.spent()` — the harness pool, under 1% of real spend; the record's `cost` object carries the
 // other ~99% (cache_read/cache_write), summed post-hoc from the per-agent transcripts by
-// `craft-log-run enrich-cost`. Which costs count, and what total each stands for, is the one rule in
+// `craft runs enrich-cost`. Which costs count, and what total each stands for, is the one rule in
 // integrations/shared/run-record.mjs (costProblem, costTotal), shared with --round-pairs: only a usable cost enters
 // the averages and `costRuns`; a malformed, partial or empty one is counted apart and named; a record
 // never enriched contributes nothing — not measured is not zero.
@@ -582,7 +583,7 @@ function newBucket() {
     poolReReviewN: 0,
     poolUnclassified: 0,
     poolUnclassifiedN: 0,
-    // REAL cost, from records enriched post-hoc by `craft-log-run enrich-cost` (see tallyCost).
+    // REAL cost, from records enriched post-hoc by `craft runs enrich-cost` (see tallyCost).
     // Counted apart from the pool above: the pool is the harness's <1%, this is the ~99% that lives
     // only in the per-agent transcripts. `costRuns` keeps un-enriched runs from reading as zero.
     costRuns: 0,
@@ -820,13 +821,18 @@ export function partitionByCompleteness(records) {
   return { complete, partial }
 }
 
-/** @param {string} dir @returns {{ records: RunRec[], unreadable: Array<{ file: string, reason: string }> } | null} */
+/**
+ * The store's records, or null when it does not exist; a store that exists but cannot be listed (an ancestor
+ * the user cannot search, not a directory) throws: a degraded read must not read as an empty store.
+ * @param {string} dir @returns {{ records: RunRec[], unreadable: Array<{ file: string, reason: string }> } | null}
+ */
 export function loadRecords(dir) {
   let files
   try {
     files = fs.readdirSync(dir)
-  } catch {
-    return null
+  } catch (e) {
+    if (/** @type {NodeJS.ErrnoException} */ (e).code === 'ENOENT') return null
+    throw e
   }
   /** @type {RunRec[]} */
   const records = []
@@ -1301,6 +1307,16 @@ function partialNotes(slice, unattributed, twins) {
   return notes
 }
 
+/**
+ * How many stopped parts were folded into the runs this report counts: every one without a slice, else those in it.
+ * @param {ReturnType<typeof foldStoppedParts>} parted @param {Parameters<typeof inSlice>[1] | null | undefined} slice
+ * @returns {number}
+ */
+function foldedParts(parted, slice) {
+  if (!slice) return parted.folded
+  return parted.parts.filter(p => inSlice(p, slice) === true).length
+}
+
 /** @param {RunRec} p @returns {string} */
 function partialCost(p) {
   const s = p.runtimeStats
@@ -1321,7 +1337,13 @@ export function run(argv, _env, home = os.homedir()) {
   const o = outputLines()
   const { wantVersion, wantEngine, wantRoundPairs, positional } = parseRunArgs(argv)
   const dir = positional[0] || path.join(home, '.craft', 'runs')
-  const loaded = loadRecords(dir)
+  let loaded
+  try {
+    loaded = loadRecords(dir)
+  } catch (e) {
+    o.stderr.push(`Cannot read the run store at ${dir}: ${/** @type {Error} */ (e).message}`)
+    return { exitCode: 1, ...o }
+  }
   if (loaded === null) {
     o.stdout.push(`No run store at ${dir} — nothing to analyze yet. Run some reviews first.`)
     return { exitCode: 0, ...o }
@@ -1341,13 +1363,19 @@ export function run(argv, _env, home = os.homedir()) {
   // reason these records exist is that a dead run used to leave no trace at all.
   const split = partitionByCompleteness(records.filter(r => r.schemaVersion))
   const partials = split.partial
-  const sliced = sliceRuns(split.complete, records, { wantEngine, wantVersion }, o)
+  // A run stopped and resumed is one run, folded before the slice: counted under the version and engine of the
+  // record standing for it, its stopped part's slice saying it folded (integrations/shared/run-parts.mjs).
+  const parted = foldStoppedParts(split.complete)
+  const sliced = sliceRuns(parted.records, records, { wantEngine, wantVersion }, o)
   if ('stop' in sliced) {
     o.stdout.push(sliced.stop)
     return { exitCode: 0, ...o }
   }
   // A resumed run files a second record of itself; it is one run (realm @nick/craft, node #249).
-  const { records: usable, folded } = foldResumedRuns(sliced.usable)
+  const resumed = foldResumedRuns(sliced.usable)
+  const usable = resumed.records
+  const slice = sliced.slice
+  const folded = resumed.folded + foldedParts(parted, slice)
   const versionNote = sliced.note
   // The old "this store mixes N craft versions" note is gone on purpose: the ENGINE BOUNDARY
   // section states the same thing more precisely (and states the case the version note could not

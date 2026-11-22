@@ -19,11 +19,20 @@ import { cliRecord, publicationKept } from './cli-review-record.mjs'
 import { finishedStep } from './cli-review-step.mjs'
 import { runClock } from './cli-review-clock.mjs'
 import { logRunOutcome } from './run-logging.mjs'
-import { filedIn } from './run-agents.mjs'
 import { outputLines } from './script-main.mjs'
 import { parseJson, parseJsonObject } from './json-object.mjs'
 
 /** @typedef {import('./cli-review-clock.mjs').Told} Told */
+
+// What craft-log-run prints for a filed record (`write`/`finalize`, or a proven retry).
+const FILED_LINE = /^(?:wrote|already filed) (\/.+?\.json)(?: \(.*\))?$/gm
+
+/** The last record file `text` says craft-log-run filed, '' when none. @param {string} text */
+function filedIn(text) {
+  let file = ''
+  for (const m of text.matchAll(FILED_LINE)) file = String(m[1])
+  return file
+}
 /** @typedef {import('./cli-review-clock.mjs').RuntimeStats} RuntimeStats */
 /** @typedef {{ repo: string, craftVersion: string, session: string, dir: string, rejoin: boolean, steps: Told[] }} Common */
 
@@ -168,7 +177,7 @@ async function finalize(req, store) {
   const record = { ...cliRecord({ ...read.step, runtimeStats: replay(c.steps).stats }, at), ...kept?.fields }
   const retry = req['retry'] === true ? ['--retry'] : []
   const r = await craftLogRun(['finalize', ...retry, ...loggerFlags(c, store, kept)], {}, c.repo, () => JSON.stringify(record))
-  // The record's file, which the run's cost is enriched into (integrations/shared/run-agents.mjs reads it off the step).
+  // The record's file, which the run's cost is enriched into (craft runs enrich-cost reads it off the step).
   return { ...logRunOutcome({ ok: r.exitCode === 0, output: [...r.stdout, ...r.stderr] }), file: filedIn(r.stdout.join('\n')) }
 }
 

@@ -25,6 +25,20 @@ test("the classifier's refusal is the harness's, with the command it quotes", ()
   assert.deepEqual(harnessRefusal({ exitCode: -1, stdout: '', stderr: 'Permission to use Bash has been denied.' }), { command: '' }, 'the generic shape')
 })
 
+test('a refusal that quotes no command names the one the driver asked run, and the quoted one wins', () => {
+  // Claude Code 2.1.319's classifier wording: a reason, no `Denied command:` line.
+  const unquoted = {
+    exitCode: 1,
+    stdout: '',
+    stderr:
+      "Permission for this action was denied by the Claude Code auto mode classifier. Reason: runs an unreviewed binary. If you have other tasks that don't depend on this action, continue working on those.",
+  }
+  assert.deepEqual(harnessRefusal({ ...unquoted, sent: DENIED }), { command: DENIED })
+  assert.deepEqual(harnessRefusal(unquoted), { command: '' })
+  assert.deepEqual(harnessRefusal({ ...classifier, sent: `${BIN} review status --run '${RUN}'` }), { command: DENIED })
+  assert.equal(harnessRefusal({ exitCode: 1, stdout: '', stderr: 'boom', sent: DENIED }), null, 'a command that ran and failed is no refusal')
+})
+
 test('the quoted command is cut only at the trailing timeout or the end of its line, not at a ". " inside it', () => {
   const dotted = `${BIN} review submit --run '/r/a. b' --limit 'resets 3am. Later' --agents 1`
   assert.deepEqual(harnessRefusal(classifierSaid(dotted)), { command: dotted })

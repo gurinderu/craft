@@ -159,11 +159,11 @@ test('release-please bumps every stamped engine in integrations/claude-code/src/
   const config = JSON.parse(fs.readFileSync(path.join(ROOT, 'release-please-config.json'), 'utf8'))
   /** @type {{ type: string, path: string }[]} */
   const extra = config.packages['.']['extra-files']
-  // No engines: bin/craft's version line is the wrapper's own (integrations/shared/craft-wrapper.test.mjs), integrations/shared/pr-opened-hook.sh's and
+  // No engines: craft-cli.sh's version line is the wrapper's own (integrations/shared/craft-wrapper.test.mjs), integrations/shared/pr-opened-hook.sh's and
   // integrations/shared/craft-hook.sh's the hooks' (integrations/shared/pr-opened-hook.test.mjs, integrations/shared/craft-hook.test.mjs), the docs' are the pinned install
   // tags (integrations/shared/install-pin.test.mjs).
   const notEngines = new Set([
-    'bin/craft',
+    'integrations/shared/craft-cli.sh',
     'integrations/shared/pr-opened-hook.sh',
     'integrations/shared/craft-hook.sh',
     'README.md',

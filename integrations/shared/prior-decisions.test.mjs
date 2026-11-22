@@ -61,16 +61,36 @@ test('bound: a field over its ceiling refuses the decision rather than truncatin
 
 test('bound: past PRIOR_DECISIONS_MAX the rest are refused by count and by name, not dropped silently', () => {
   const list = Array.from({ length: PRIOR_DECISIONS_MAX + 3 }, (_, i) => decision({ id: `d${i}` }))
-  const r = parsePriorDecisions(list)
+  const r = parsePriorDecisions(list, undefined, ['src/g.rs'])
   assert.equal(r.decisions.length, PRIOR_DECISIONS_MAX)
+  assert.match(
+    parsePriorDecisions(list).refused[0] ?? '',
+    /— no reviewed paths are given here, so kept are the records with a scope before those over the whole repository,/,
+  )
   assert.equal(
     r.refused.join('\n'),
-    '3 decision(s) past the cap of 100 were not applied — findings they would answer are raised normally: decision #100 (d100), decision #101 (d101), decision #102 (d102)',
+    '3 decision(s) past the cap of 100 were not applied — kept are the records closest to the reviewed paths (a scope naming a changed file, then a directory holding one, a deeper scope before a shallower, a newer record before an older); to apply the rest, review a narrower path (path=<dir>) or supersede the records that no longer hold; findings they would answer are raised normally: decision #100 (d100), decision #101 (d101), decision #102 (d102)',
   )
   const labelled = parsePriorDecisions([...list.slice(0, PRIOR_DECISIONS_MAX), 'junk'], i => `passed decision #${i}`)
   assert.match(String(labelled.refused[0]), /raised normally: passed decision #100$/, 'a record without a printable id is named by its label')
   const huge = parsePriorDecisions(Array.from({ length: 3 * PRIOR_DECISIONS_MAX }, (_, i) => decision({ id: `d${i}` })))
   assert.match(String(huge.refused[0]), /decision #199 \(d199\) and 100 more$/, 'the names are bounded by the cap')
+})
+
+test('bound: project rules are counted apart, so decisions past the cap never push a rule off the end of the list', () => {
+  const rule = { kind: 'rule', title: 'no guards for theoretical races', body: 'b', scope: '.', status: 'active', date: '2026-11-04' }
+  const list = [...Array.from({ length: PRIOR_DECISIONS_MAX + 20 }, (_, i) => decision({ id: `d${i}` })), rule]
+  const r = parsePriorDecisions(list)
+  assert.equal(r.decisions.length, PRIOR_DECISIONS_MAX + 1)
+  assert.equal(r.decisions.at(-1)?.kind, 'rule')
+  assert.match(String(r.refused[0]), /^20 decision\(s\) past the cap of 100 .*decision #100 \(d100\)/)
+  assert.equal(r.refused.length, 1)
+  const rules = parsePriorDecisions(Array.from({ length: PRIOR_DECISIONS_MAX + 1 }, (_, i) => ({ ...rule, title: `rule ${i}` })))
+  assert.equal(rules.decisions.length, PRIOR_DECISIONS_MAX)
+  assert.match(
+    String(rules.refused[0]),
+    /^1 project rule\(s\) past the cap of 100 were not applied — findings they would cover are raised normally: decision #100 \(rule-/,
+  )
 })
 
 test('match: scope containment by segments, and title overlap', () => {

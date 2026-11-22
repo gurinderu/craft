@@ -14,18 +14,17 @@ import { copyDereferenced } from './materialize-claude-code.mjs'
 export const PACKAGE_NAME = 'craft-opencode'
 const PLUGIN = 'integrations/opencode/plugin'
 export const EXPORTS = { './server': `./${PLUGIN}/index.ts`, './tui': `./${PLUGIN}/tui/tui.mjs` }
-// Explicit command roots, including compatibility entries no longer named by skills (realm @nick/craft, node #515).
-const COMMAND_SCRIPTS = ['integrations/shared/craft-externals.mjs', 'integrations/shared/recurring-findings.mjs']
 // The skills install.sh leaves out too: they drive the review through Claude Code's Workflow tool and `codex exec`.
 export const SKIPPED_SKILLS = ['develop', 'codex-review']
 // Read whole at run time: the review's content, OpenCode's agents and commands, and the Claude Code agents whose
 // prompts the binary puts before a task (its rubric_of reads `<root>/integrations/claude-code/agents`).
 const TREES = ['content', 'integrations/opencode/agents', 'integrations/opencode/commands', 'integrations/claude-code/agents']
-// The binary takes CRAFT_ROOT (bin/craft sets it to the package root) as a plugin root only when a Claude Code
+// The binary takes CRAFT_ROOT (craft-cli.sh sets it to the package root) as a plugin root only when a Claude Code
 // manifest is there or under integrations/claude-code (cli prompts.rs plugin_root_at), and reads the plugin version
 // from it: without it `review run` stops at "no craft plugin root is known".
 const FILES = [
   'bin/craft',
+  'integrations/shared/craft-cli.sh',
   'integrations/shared/craft-fetch.sh',
   'integrations/shared/craft-fetch-http.sh',
   'integrations/shared/craft-hook-repo.sh',
@@ -125,7 +124,7 @@ function skillFiles(root) {
  */
 export function packageFiles(root) {
   const content = [...TREES.flatMap(d => filesUnder(root, d)), ...skillFiles(root)]
-  const modules = moduleClosure(root, [...Object.values(EXPORTS).map(e => e.slice(2)), ...COMMAND_SCRIPTS, ...scriptsNamed(root, content)])
+  const modules = moduleClosure(root, [...Object.values(EXPORTS).map(e => e.slice(2)), ...scriptsNamed(root, content)])
   return [...new Set([...modules, ...content, ...FILES])].sort()
 }
 

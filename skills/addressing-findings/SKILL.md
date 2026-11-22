@@ -46,8 +46,9 @@ not one of them: it is the main session's (→ "Who triages").
 2b. Sift     — before any validator: repeats in the batch collapse onto one; a finding an
                active decision, deferred question or project rule (step 0) already answers is
                settled from memory — rejected / deferred, citing who, when and the link; a
-               Critical/High one, or one whose record's code changed since its commit, goes on
-               to triage; one that goes against a record is a `conflict` for the human
+               Critical one, a High that neither a human's decision (`decidedBy: "human"`) nor a
+               project rule answers,
+               or one whose record's code changed since its commit, goes on to triage; one that goes against a record is a `conflict` for the human
                (→ "The sift before triage")
 3. Triage    — per finding, validated against a pinned ref (the workflow fans out its own
                validators — never one subagent per finding of yours):
@@ -80,10 +81,14 @@ not one of them: it is the main session's (→ "Who triages").
                commits named, or a base after the merge. Run the `craft:review` workflow, on a
                diff in any language — Rust, Nix and SQL under their profiles, other source under
                its general lenses — with
-               `{ base: <that commit>, fresh: true, delta: true, fullEvery: 0 }` when the findings did not
+               `{ base: <that commit>, fresh: true, delta: true, fullEvery: 0, depth: 'light', extraLenses: [] }` when the findings did not
                come from its last round on this branch (a human's PR review, any other review):
                `fresh` keeps it from chaining to an older run on the branch, which would widen
-               the scan and carry that run's settled findings, and `delta` tells it the run
+               the scan and carry that run's settled findings, `depth: 'light'` runs the
+               diff-scoped lenses once and verifies Medium and above (a chained run still
+               adjudicates every finding its previous round left open), `extraLenses: []` keeps
+               the light pass from running the repository's own reviewers over the fix commits,
+               and `delta` tells it the run
                covers only the fix commits, so a clean one reads Warning, never Approve (Approve
                comes only from a full review; the whole-PR base above drops `delta`, and the
                binary refuses `delta` before anything runs when its base reaches back to or past
@@ -99,7 +104,7 @@ not one of them: it is the main session's (→ "Who triages").
                rubric where it applies. Once the `craft:review`
                run has ended (completed, failed or stopped — not while you may still resume
                it), fold its real cost into the records it filed:
-               `node "<this skill's base directory>/../../integrations/shared/craft-log-run.mjs" enrich-cost --run-id <wf_…>`,
+               `sh "<this skill's base directory>/../../integrations/shared/craft-cli.sh" runs enrich-cost --run-id <wf_…>`,
                with the run id the Workflow completion names. Best-effort: if it fails, say
                so in one line and go on.
                PR-thread rejections recorded again; the review workflow recalls the active
@@ -130,7 +135,7 @@ that place is in the bundled engine:
 gives it in the plugin's source.
 Once a run of either has ended (completed, failed or stopped — not while you may still resume it),
 fold its real cost into the records it filed:
-`node "<this skill's base directory>/../../integrations/shared/craft-log-run.mjs" enrich-cost --run-id <wf_…>`, with the
+`sh "<this skill's base directory>/../../integrations/shared/craft-cli.sh" runs enrich-cost --run-id <wf_…>`, with the
 run id the Workflow completion names. Best-effort: if it fails, say so in one line and go on.
 
 Launch it with its sources — `report` = a path to the findings whenever they live in a report (one
@@ -170,8 +175,8 @@ fixing (a planned fix turns out wrong) is re-decided and recorded then, once.
 **Without the Workflow tool** (Codex, OpenCode) there is no sift engine: the main session — still
 never a subagent — does the sift's steps itself from this text first: recall for every touched path
 (step 0); set aside a finding an active decision, deferred question or project rule answers,
-citing it; raise again every Critical/High one and every one whose record's code changed since its
-commit; collapse repeats. Then it validates what is left: inline, or in OpenCode with its
+citing it; raise again every Critical one, every High that neither a human's decision nor a project
+rule answers, and every one whose record's code changed since its commit; collapse repeats. Then it validates what is left: inline, or in OpenCode with its
 `triage-findings` tool (which validates and plans but does not sift — never a replacement for the
 steps above); either way it names each noise class and turns a finding the PR did not introduce into
 an issue. Say plainly in one line that the sift ran by hand because there is no Workflow tool.
@@ -189,9 +194,10 @@ decided in another PR is not decided again, and the opposite way:
   question answers `defer`, one a project rule covers `reject`; the ledger reason cites the
   record (who, when, link) and how it matched. Matching is the review engine's own: the anchor or
   title in the record's scope, and a judge for the doubtful pairs — never a guess by topic.
-- **Raised again** — a Critical or High finding is never settled from memory, nor one whose
-  record's code changed since the record's commit (or that has no commit): it goes to triage
-  with the record cited.
+- **Raised again** — a Critical finding is never settled from memory; a High only by a project
+  rule or a human's decision (`decidedBy: "human"`) whose code is unchanged since its commit —
+  never by an agent's decision, a decision not saying who decided, or a deferral; nor is one whose record's code changed since the record's commit (or that has no
+  commit): it goes to triage with the record cited.
 - **Against a record** — a finding that shows the code going against what a record settled is a
   `conflict`: the human decides whether the record still stands.
 
@@ -270,7 +276,10 @@ one itself). Only a **lesson** waits for the author's yes (below).
   only when the human re-decides it.
 - **On a disposition** — `record-decision` with title = the finding's title (for a gate tool's finding without toolRule, the title the report lists for its `file:line` under **Tool finding titles (verbatim)** — the one equal to the report line's text, or the only one listed there; when several are listed and none is equal, the report line's text, never a guess between them, and the finding then goes to the judge each round; when none is listed there (a PR thread, an older report), the review ledger row's `title` only when the ledger holds exactly one live gate-tool row without toolRule at that `file:line` (live: `disposition` other than `closed` — a `closed` row is a tombstone, not a row of a finding) — several there (two deadnix bindings on one line) is no source: never pick between them — else the report line's text, which then goes to the judge each round; any other finding's title as the report printed it; never from a refusal note, which clips titles), scope = its file path
   (the component, or `.`, for a locationless finding), body = the reason, author = who decided
-  (the user, or the PR author whose reply it was), commit = `git rev-parse HEAD` at triage, line =
+  (the user, or the PR author whose reply it was), decidedBy = `"human"` only when a human made or
+  confirmed the call (the user's own reject or justification, a PR-thread rejection by the PR author
+  or a maintainer — `pr-rejections.mjs` writes it so), `"agent"` for a validator's reject recorded
+  without the human's word — only a `"human"` decision sets a High aside in the next review, commit = `git rev-parse HEAD` at triage, line =
   the finding's line, lens = the lens that raised it (the review ledger row's `source` / `sources` — the engine's lens names; the record's `lens` comes from the finding's lens, never from the normalized finding's `source`, which names only where it came from: `review`, `adversarial-review`, `rust-audit`, `rust-reviewer`, `nix-review`, `report` or `github-pr`; or
   adversarial-review's `lens`; leave either out when the finding has none), toolRule = the gate
   tool's own rule name — a clippy lint, a semgrep rule id, a statix code — read, like the lens, from
@@ -310,9 +319,14 @@ one itself). Only a **lesson** waits for the author's yes (below).
   the touched paths:
 
   ```bash
-  CRAFT_BIN="$(node "<this skill's base directory>/../../integrations/shared/craft-bin.mjs" ensure)" || exit $?
+  CRAFT_BIN="$(sh "<this skill's base directory>/../../integrations/shared/craft-cli.sh" --ensure --print-path)" || exit $?
   "$CRAFT_BIN" runs recurring --path <path> [--path <path> …]
   ```
+
+  Getting the binary needs no Node; under Git Bash on Windows the script caches `craft.exe` (not
+  observed on a Windows host). Only on native Windows
+  without `sh`, fall back to `node "<this skill's base directory>/../../integrations/shared/craft-bin.mjs" ensure`
+  for `CRAFT_BIN`.
 
   It prints one JSON object: `groups` of `{file, titles, branches, runs, severities, lastSeen}` —
   the same finding (same file, overlapping title) in the review ledgers of at least two different
@@ -328,7 +342,10 @@ one itself). Only a **lesson** waits for the author's yes (below).
   whether to record a lesson. Yes → `record-lesson` with scope = the file, title = the pattern in one
   line, body = the pattern and what avoids it (in the author's words), links = the runs or PRs.
   No answer or no → write nothing. No run store, or no group → say so in one line
-  (`recurring findings: none — <the note>`) and continue.
+  (`recurring findings: none — <the note>`) and continue. A non-zero exit is not "no group": the
+  store exists but could not be read (a directory you cannot search, a path that is not a
+  directory) — tell the human its stderr in one line (`recurring findings: not read — <stderr>`),
+  never `none`, and continue.
 - **Subagents** (fix only — triage is never theirs) lack the memory tools and never write memory:
   the launcher puts the matching records, verbatim with ids, and the plan's verdicts into each
   brief. Every disposition is written by the main session right after the triage workflow returns;
@@ -440,8 +457,7 @@ Where craft's fix loop fans out across subagents:
 
 ## Rust wiring
 
-Which agents to re-dispatch, the fix-to-skill routing, and the "what proves what" proof table →
-[rust.md](rust.md).
+Which agents to re-dispatch, the fix-to-skill routing, and the "what proves what" proof table → [rust.md](rust.md).
 
 ## Doubtful findings a review held back
 
@@ -471,8 +487,7 @@ The rule, the `gh` query and the script → [pr-rejections.md](pr-rejections.md)
 
 ## Closing the loop on GitHub
 
-Reading PR threads, and drafting/posting/resolving replies (only after explicit user OK) →
-[github.md](github.md).
+Reading PR threads, and drafting/posting/resolving replies (only after explicit user OK) → [github.md](github.md).
 
 ## Boundaries
 

@@ -35,13 +35,22 @@ export function stopNoteOf(s) {
 }
 
 /**
+ * The round of the branch's chain a step is in and what its lenses review — which a pending step names too, so the
+ * record of a run stopped short says the round it stood in, not round 1.
+ * @param {Record<string, unknown>} v @returns {{ round: number, lensScope: 'delta' | 'full' }}
+ */
+export const chainOf = v => ({
+  round: Number.isInteger(v['round']) && Number(v['round']) > 0 ? Number(v['round']) : 1,
+  lensScope: v['lensScope'] === 'delta' ? 'delta' : 'full',
+})
+
+/**
  * What the next round of the branch needs from a finished step: its round, its ledger, how it built on the last.
  * A round that reviewed only the fix commits is `delta`, so no reader takes it for coverage of the whole diff at its head.
  * @param {Record<string, unknown>} v @returns {{ round: number, lensScope: 'delta' | 'full', ledger: LedgerRow[] | null, reReview: Record<string, unknown> | null }}
  */
 export const roundOf = v => ({
-  round: Number.isInteger(v['round']) && Number(v['round']) > 0 ? Number(v['round']) : 1,
-  lensScope: v['lensScope'] === 'delta' ? 'delta' : 'full',
+  ...chainOf(v),
   ledger: Array.isArray(v['ledger']) ? v['ledger'].filter(isObject).map(ledgerRowOf) : null,
   reReview: isObject(v['reReview']) ? v['reReview'] : null,
 })
@@ -66,7 +75,22 @@ export const telemetryOf = v => ({
   dimensions: Array.isArray(v['dimensions']) ? v['dimensions'].filter(isObject) : [],
   verification: isObject(v['verification']) ? v['verification'] : null,
   lensRounds: Array.isArray(v['lensRounds']) ? v['lensRounds'].filter(isObject) : null,
+  ...roundYieldOf(v),
 })
+
+/**
+ * What the lens rounds' yield leaves beside them (realm @nick/craft, node #248): the seeds' yield, the other origins'
+ * and their confirmed count, null when the binary sent none.
+ * @param {Record<string, unknown>} v
+ */
+const roundYieldOf = v => {
+  const n = v['unattributedConfirmed']
+  return {
+    seedYield: isObject(v['seedYield']) ? v['seedYield'] : null,
+    unattributedYield: isObject(v['unattributedYield']) ? v['unattributedYield'] : null,
+    unattributedConfirmed: typeof n === 'number' && Number.isFinite(n) ? n : null,
+  }
+}
 
 /** One row of the binary's ledger, its fields as strings and its line a number. @param {Record<string, unknown>} r @returns {LedgerRow} */
 const ledgerRowOf = r => ({

@@ -8,7 +8,7 @@
 // finishes, written by its own store writer byte for byte as integrations/shared/craft-log-run.mjs writes them (realm @nick/craft, nodes
 // #456, #539) — told by each submit what only the driver sees: the task agents dispatched and the output tokens spent. The
 // driver files only the record of a run the binary never finished (integrations/shared/cli-review-record.mjs), and locates the
-// plugin's integrations/shared/craft-bin.mjs the way every plugin script an agent runs is located (plugin-script.mjs).
+// plugin's integrations/shared/craft-cli.sh the way every plugin script an agent runs is located (plugin-script.mjs).
 import { pluginRootCheck, pluginScriptPrelude, shellWord, shq } from './plugin-script.mjs'
 import { SERVICE_AGENT_TYPE, makeDefaultTypeFallback } from './service-agent.mjs'
 import { taskRunner } from './cli-review-task.mjs'
@@ -22,7 +22,7 @@ import { MAX_ROUNDS, briefStatusCommand, commentCommand, startCommand, statusCom
 import { absolutePath, argumentRefused, commandOutput, isObject, readStep } from './cli-review-step.mjs'
 import { briefOf, endedOf, standingOf, statusUnreadable } from './cli-review-ended.mjs'
 import { harnessRefused, harnessStop } from './cli-review-refusal.mjs'
-import { gateAnswer, gateCommand } from './cli-review-gate.mjs'
+import { gateAnswer, gateCommand, gateShell } from './cli-review-gate.mjs'
 import { telemetryLostSection } from './review-coverage.mjs'
 import { argumentRefusal } from './run-record.mjs'
 import { normalizeArgs } from './workflow-args.mjs'
@@ -33,8 +33,10 @@ import { normalizeArgs } from './workflow-args.mjs'
 /** @typedef {(prompt: string, opts?: Record<string, unknown>) => Promise<unknown>} Agent */
 /** @typedef {{ args: unknown, agent: Agent, parallel: <T>(thunks: Array<() => Promise<T>>) => Promise<Array<T | null>>, phase: (title: string) => void, log: (message: string) => void, budget?: { spent: () => number } }} Sandbox */
 
-// The fetcher of the released binary, inside the plugin.
-const FETCHER = 'integrations/shared/craft-bin.mjs'
+// The fetcher of the released binary, inside the plugin: the POSIX entry, so a consumer needs no Node to get it. The
+// service step runs in the harness's Bash; under Git Bash, MSYS or Cygwin the script names the binary craft.exe (not
+// observed on a Windows host).
+const FETCHER = 'integrations/shared/craft-cli.sh'
 // What marks the plugin root a run's records are stamped with (their craftCommit), located beside a given binary: the
 // fetcher, which every Claude Code plugin copy holds. The binary files without it (cli/crates/craft-review/src/filing/store.rs).
 const ROOT_MARK = FETCHER
@@ -68,20 +70,28 @@ const servicePrompt = (steps, stdout = 'one JSON value') => `${steps}
 Return {exitCode, stdout, stderr}: the last command's exit status, and its stdout and stderr each copied VERBATIM and WHOLE. stdout is ${stdout} the caller parses: never summarize, reformat, pretty-print or shorten it. Run nothing else.`
 
 /**
- * The step that gets the binary of this plugin version: integrations/shared/craft-bin.mjs, located like the logger (craftRoot,
- * then CLAUDE_PLUGIN_ROOT, then this version's installed copy), fetches it; the step prints the plugin root it found
- * the fetcher in and the binary's path, so the binary — which, fetched under ~/.craft/bin, finds no plugin root above
- * itself — is handed the root its prompts name.
+ * The step that gets the binary of this plugin version: integrations/shared/craft-cli.sh, located like the logger (craftRoot,
+ * then CLAUDE_PLUGIN_ROOT, then this version's installed copy), fetches the version it is stamped with, so a candidate
+ * stamped with another is skipped like an unusable one and the next tried; the fetch's environment is pinned — CRAFT_BIN
+ * emptied because this step gets the released binary, CRAFT_REPO because the locating shell holds the reviewed repo's
+ * path in it, CRAFT_RELEASE_BASE, CRAFT_API_BASE and CRAFT_TARGET so no stray setting changes which binary runs. The step prints the plugin root it found the fetcher in and the
+ * binary's path, so the binary — which, fetched under ~/.craft/bin, finds no plugin root above itself — is handed the
+ * root its prompts name.
  * @param {Options} o @param {string} version @returns {string}
  */
 function resolvePrompt(o, version) {
-  const locate = pluginScriptPrelude(o.craftRoot || undefined, version, o.repo, FETCHER, 'CRAFT_FETCHER')
+  const stamped = `craft_stamped() {
+  CRAFT_WHY="not stamped with craft ${version} ($1)"
+  grep -q ${shq(`^version=${version} `)} "$1"
+}
+`
+  const locate = stamped + pluginScriptPrelude(o.craftRoot || undefined, version, o.repo, FETCHER, 'CRAFT_FETCHER', 'craft_stamped "$CRAFT_REAL"')
   return servicePrompt(
     `Run this ONCE, exactly as written, in one Bash call:
 
 \`\`\`sh
 ${locate}if [ -z "\${CRAFT_FETCHER:-}" ]; then printf '%s\\n' "no usable ${FETCHER} — \${CRAFT_FETCHER_WHY}" >&2; exit 1; fi
-CRAFT_BIN_PATH="$(node "$CRAFT_FETCHER" ensure --version ${shq(version)})" || exit $?
+CRAFT_BIN_PATH="$(CRAFT_BIN= CRAFT_REPO= CRAFT_RELEASE_BASE= CRAFT_API_BASE= CRAFT_TARGET= sh "$CRAFT_FETCHER" --ensure --print-path)" || exit $?
 ${rootAbove('CRAFT_FETCHER')}printf 'root=%s\\nbin=%s\\n' "$CRAFT_ROOT_PATH" "$CRAFT_BIN_PATH"
 \`\`\``,
     "two lines, root=<the plugin root> and bin=<the binary's path>,",
@@ -187,14 +197,36 @@ function startPrompt(o, where, version) {
 }
 
 /**
- * The submit (integrations/shared/cli-review-commands.mjs): with `--resume` (`run=`) an answer still missing is handed out again, not
- * counted as a failed attempt; an `--abandoned` task the binary fails at once.
- * @param {string} bin @param {string} run @param {import('./cli-review-commands.mjs').Said} said
- * @param {import('./cli-review-commands.mjs').Spent} spent @returns {string}
+ * The start as the service agent is asked to issue it, for naming a refused one: its first line, the heredoc that
+ * hands the launcher's records on stdin opened, not copied (the refusal names its body outside the quote).
+ * @param {Options} o @param {import('./cli-review-commands.mjs').Where} where @param {string} version @returns {string}
  */
-const submitPrompt = (bin, run, said, spent) => servicePrompt(`Run exactly this one command, ${SUBMIT_TIMEOUT}:\n\n${submitCommand(bin, run, said, spent)}`)
+function startIssued(o, where, version) {
+  const cmd = startCommand(o, where, version)
+  return o.priorDecisions ? `${cmd} --prior-decisions - <<'${PRIOR_DECISIONS_EOF}'` : cmd
+}
 
-/** @typedef {(label: string, title: string, prompt: string) => Promise<unknown>} Serve */
+/**
+ * The step that runs a submit or a comment (integrations/shared/cli-review-commands.mjs), `cmd` its command: with `--resume`
+ * (`run=`) an answer still missing is handed out again, not counted as a failed attempt; an `--abandoned` task the
+ * binary fails at once. @param {string} cmd @returns {string}
+ */
+const submitPrompt = cmd => servicePrompt(`Run exactly this one command, ${SUBMIT_TIMEOUT}:\n\n${cmd}`)
+
+/**
+ * A service step: `sent` is the one command its prompt asks run ('' for a script), which names the refused command when
+ * the harness's refusal quotes none, as auto mode's classifier does not.
+ * @typedef {(label: string, title: string, prompt: string, sent?: string) => Promise<unknown>} Serve
+ */
+
+/**
+ * The submit's step, its command named to `serve`. @param {Serve} serve @param {string} label @param {string} title
+ * @param {Parameters<typeof submitCommand>} parts @returns {Promise<unknown>}
+ */
+function submitStep(serve, label, title, ...parts) {
+  const cmd = submitCommand(...parts)
+  return serve(label, title, submitPrompt(cmd), cmd)
+}
 
 /**
  * The binary to run and the plugin root to hand it: a given craftBin as is, with a given craftRoot checked first, or
@@ -291,7 +323,7 @@ export async function runCliReview(sb, craftVersion) {
   // The task agents counted for the binary's runtimeStats, and the binary's clock read off its steps for the record of
   // a run it never finished.
   const clock = runClock()
-  const recorder = cliRecorder(sb, { craftVersion, repo: o.repo, depth: o.depth || 'full', strict: o.strict, via: o.via, service })
+  const recorder = cliRecorder(sb, { craftVersion, repo: o.repo, run: o.run, depth: o.depth || 'full', strict: o.strict, via: o.via, service })
   const ending = await drive({ ...sb, limit, clock }, o, craftVersion, service, recorder)
   if (!('stopped' in ending)) return endedAnswer(sb, ending, recorder, { craftVersion, via: o.via })
   sb.phase('Record')
@@ -349,10 +381,13 @@ function serviceOf(sb) {
  * One service step through `service`: a step that came back with nothing once the usage limit was seen stopped on it.
  * @param {import('./cli-review-record.mjs').Service} service @param {ReturnType<typeof limitWatch>} limit @returns {Serve}
  */
-const serveWith = (service, limit) => async (label, title, prompt) => {
-  const got = await service.run(prompt, { label, phase: title, schema: RUN_SCHEMA, model: 'haiku', effort: 'low', agentType: SERVICE_AGENT_TYPE })
-  return got == null && limit.seen() ? { limit: limit.seen() } : got
-}
+const serveWith =
+  (service, limit) =>
+  async (label, title, prompt, sent = '') => {
+    const got = await service.run(prompt, { label, phase: title, schema: RUN_SCHEMA, model: 'haiku', effort: 'low', agentType: SERVICE_AGENT_TYPE })
+    if (got == null && limit.seen()) return { limit: limit.seen() }
+    return sent && isObject(got) ? { ...got, sent } : got
+  }
 
 /**
  * The gate alone (`gateOnly`): the binary got as for a review, then `craft review gate`, its answer the verdict block
@@ -366,7 +401,7 @@ async function gateAlone(sb, o, craftVersion, serve) {
   // A given craftBin runs as it is: the gate files nothing, so no plugin root is located for a record.
   const where = o.craftBin !== null && !o.craftRoot ? { bin: o.craftBin } : await binAndRoot(o, craftVersion, serve)
   if ('incomplete' in where) return stoppedAnswer(where.incomplete)
-  const read = gateAnswer(await serve('step:gate', 'Start', servicePrompt(gateCommand(where.bin, o))))
+  const read = gateAnswer(await serve('step:gate', 'Start', servicePrompt(gateCommand(where.bin, o)), gateShell(where.bin, o)))
   if ('answer' in read) return read.answer
   // The gate opens no run, so there is none to resume (realm @nick/craft, node #485).
   return stoppedAnswer(`review's gate did not run: ${read.harness === undefined ? read.error : harnessRefused(read.harness, where.bin)}`)
@@ -395,11 +430,8 @@ async function publishAfter(sb, o, craftVersion, serve) {
   const where = await binAndRoot(o, craftVersion, serve)
   if ('incomplete' in where) return stoppedAnswer(where.incomplete)
   if (where.note) sb.log(where.note)
-  const read = resumed(
-    o.run,
-    await serve('step:comment', 'Submit', servicePrompt(`Run exactly this one command, ${SUBMIT_TIMEOUT}:\n\n${commentCommand(where, o)}`)),
-    'published on its PR',
-  )
+  const comment = commentCommand(where, o)
+  const read = resumed(o.run, await serve('step:comment', 'Submit', submitPrompt(comment), comment), 'published on its PR')
   if ('error' in read) return unpublished(o.run, read, where.bin)
   if (!read.step.done) return unknownPublication(o.run, `the binary answered with no finished run: ${JSON.stringify(read.step).slice(0, 200)}`)
   const lost = read.step.filing?.lost ?? []
@@ -511,8 +543,8 @@ async function drive(sb, o, craftVersion, service, recorder) {
  */
 async function opening(sb, o, craftVersion, serve, where) {
   if (o.run)
-    return resumed(o.run, await serve('step:resume', 'Start', submitPrompt(where.bin, o.run, { resume: true, recordRoot: where.filedThrough }, spentSoFar(sb))))
-  const got = await serve('step:start', 'Start', startPrompt(o, where, craftVersion))
+    return resumed(o.run, await submitStep(serve, 'step:resume', 'Start', where.bin, o.run, { resume: true, recordRoot: where.filedThrough }, spentSoFar(sb)))
+  const got = await serve('step:start', 'Start', startPrompt(o, where, craftVersion), startIssued(o, where, craftVersion))
   const argument = argumentRefused(got)
   return argument ? { argument } : readStep(got)
 }
@@ -565,10 +597,14 @@ async function rounds(sb, bin, first, serve, recorder) {
     if (sb.limit.seen())
       sb.log(`\u26d4 usage limit reached (${sb.limit.seen()}) — no further review agents are dispatched; the run reports what it has as INCOMPLETE`)
     read = readStep(
-      await serve(
+      await submitStep(
+        serve,
         `step:submit:${round}`,
         'Submit',
-        submitPrompt(bin, step.run, { degraded: tasks.degraded(round), abandoned: tasks.abandoned(), limit: sb.limit.seen() }, spentSoFar(sb)),
+        bin,
+        step.run,
+        { degraded: tasks.degraded(round), abandoned: tasks.abandoned(), limit: sb.limit.seen() },
+        spentSoFar(sb),
       ),
     )
     if ('step' in read) {
@@ -590,12 +626,12 @@ async function rounds(sb, bin, first, serve, recorder) {
  * @returns {Promise<{ finished: Finished } | { unrecorded: string } | { standing: string } | { unread: Brief }>}
  */
 async function recovered(sb, bin, run, serve, recorder) {
-  const said = await serve('step:status', 'Submit', statusPrompt(bin, run))
+  const said = await serve('step:status', 'Submit', statusPrompt(bin, run), statusCommand(bin, run))
   if (statusUnreadable(said)) return briefly(sb, bin, run, serve, recorder)
   const truth = endedOf(said)
   if (!truth) return { standing: standingOf(said) }
   if ('unrecorded' in truth) return truth
-  const again = truth.refile ? readStep(await serve('step:refile', 'Submit', submitPrompt(bin, run, { resume: true }, spentSoFar(sb)))) : null
+  const again = truth.refile ? readStep(await submitStep(serve, 'step:refile', 'Submit', bin, run, { resume: true }, spentSoFar(sb))) : null
   // A re-file that could not be read leaves the run as the binary left it, its record said missing — never a
   // second, INCOMPLETE record of a run the binary finished.
   const ended = again && 'step' in again && again.step.done ? again.step : truth.finished
@@ -614,14 +650,15 @@ async function recovered(sb, bin, run, serve, recorder) {
  * @returns {Promise<{ finished: Finished } | { unrecorded: string } | { standing: string } | { unread: Brief }>}
  */
 async function briefly(sb, bin, run, serve, recorder) {
-  const ask = () => serve('step:brief', 'Submit', servicePrompt(`Run exactly this one command:\n\n${briefStatusCommand(bin, run)}`))
+  const brief = briefStatusCommand(bin, run)
+  const ask = () => serve('step:brief', 'Submit', servicePrompt(`Run exactly this one command:\n\n${brief}`), brief)
   const said = await ask()
   const first = briefOf(said)
   if (!first) return { standing: standingOf(said) }
   if (!('unread' in first)) return first
   let ended = first.unread
   if (first.refile) {
-    const again = readStep(await serve('step:refile', 'Submit', submitPrompt(bin, run, { resume: true }, spentSoFar(sb))))
+    const again = readStep(await submitStep(serve, 'step:refile', 'Submit', bin, run, { resume: true }, spentSoFar(sb)))
     if ('step' in again && again.step.done) {
       recorder.heard(again.step)
       return { finished: again.step }

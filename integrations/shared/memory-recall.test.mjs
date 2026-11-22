@@ -42,7 +42,7 @@ test('memory recall prompt: the skill first, the backend order by capability, re
   assert.match(p, /- src\/a\.rs\n- src\/b\.rs/)
   assert.match(
     p,
-    /id, kind, title, body, scope, status, date, author, commit, deferred, line, lens, toolRule, links \(line, lens and toolRule only when the record carries them/,
+    /id, kind, title, body, scope, status, date, author, decidedBy, commit, deferred, line, lens, toolRule, links \(decidedBy, line, lens and toolRule only when the record carries them/,
   )
 })
 
@@ -63,8 +63,13 @@ test('memory recall prompt: both key spellings hold on every MCP path, pinned (a
   assert.equal(p.split('search and filter by both').length, 2)
 })
 
-test('memory recall prompt: the path list is bounded and the cut is named; no list → the diff against the base', () => {
-  const many = Array.from({ length: RECALL_PATHS_MAX + 7 }, (_, i) => `f${i}.rs`)
+test('memory recall prompt: past the bound the paths are listed by directory, only what no entry covers is cut; no list → the diff against the base', () => {
+  const nested = Array.from({ length: RECALL_PATHS_MAX + 7 }, (_, i) => `src/m${i % 3}/f${i}.rs`)
+  const grouped = memoryRecallPrompt(nested, 'main')
+  assert.ok(grouped.includes('- src/m0/\n- src/m1/\n- src/m2/'), grouped)
+  assert.match(grouped, /67 changed paths, past the bound of 60, listed by directory/)
+  assert.ok(!grouped.includes('cut at the bound'))
+  const many = Array.from({ length: RECALL_PATHS_MAX + 7 }, (_, i) => `f${String(i).padStart(2, '0')}.rs`)
   const p = memoryRecallPrompt(many, 'main')
   assert.ok(p.includes(`- f${RECALL_PATHS_MAX - 1}.rs`))
   assert.ok(!p.includes(`- f${RECALL_PATHS_MAX}.rs`))
@@ -88,7 +93,11 @@ test('memory recall result: decisions → recalled with backend and why; [] → 
   }
   assert.match(
     memoryLine(readMemoryRecall({ backend: 'repo', why: 'w', decisions: [REC] }, 3).memory),
-    /3 changed path\(s\) past the bound of \d+ were not recalled for/,
+    /3 changed path\(s\) past the bound of \d+ were not recalled for — review a narrower path \(path=<dir>\) to recall file by file/,
+  )
+  assert.match(
+    memoryLine(readMemoryRecall({ backend: 'repo', why: 'w', decisions: [REC] }, 0, 70).memory),
+    /; 70 changed path\(s\) past the bound of 60 were recalled by their directory, not file by file — review a narrower path/,
   )
 })
 

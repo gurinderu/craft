@@ -15,8 +15,8 @@ the lockfile pins on its own.
 
 The profile is read, never built. The review itself is another matter: unless it is started
 with `gate=false` (`craft review start --no-gate`), its mechanical gate **builds and runs the
-branch's code** on your machine — clippy runs its build scripts and proc macros, `nix flake
-check` its checks. Review a branch you do not trust with `gate=false`.
+branch's code** on your machine — clippy runs its build scripts and proc macros (inside the repository's
+flake dev shell when it defines one, whose `shellHook` runs too), `nix flake check` its checks. Review a branch you do not trust with `gate=false`.
 
 The binary cannot ask you anything inside an agent session. So: **propose, ask, write.**
 
@@ -31,11 +31,16 @@ go on without it.
 ## 2. Get the binary and propose
 
 ```sh
-CRAFT_BIN="$(node "<this skill's base directory>/../../integrations/shared/craft-bin.mjs" ensure)" || exit $?
+CRAFT_BIN="$(sh "<this skill's base directory>/../../integrations/shared/craft-cli.sh" --ensure --print-path)" || exit $?
 "$CRAFT_BIN" init --propose --cwd "$(git rev-parse --show-toplevel)" --craft-root "<this skill's base directory>/../.." --memory-externals - <<'CRAFT_MEMORY_EXTERNALS'
 <the recalled records as one JSON list, on one line>
 CRAFT_MEMORY_EXTERNALS
 ```
+
+On POSIX, and in Git Bash on Windows (it caches `craft.exe`), acquisition and `init` need no
+system Node. On native Windows without `sh`, obtain
+the same binary with `node "<this skill's base directory>/../../integrations/shared/craft-bin.mjs" ensure`;
+the acquired binary performs discovery and import itself. An exported `CRAFT_BIN` selects a local build.
 
 The quoted heredoc hands the records over as written: the shell reads no `'`, `$` or `\` in
 them. With nothing recalled, drop the heredoc and `--memory-externals -`. A local build (`cargo build
@@ -56,7 +61,10 @@ so the review indexes the checkout it reads and adds the graph's callers to the 
 - `discovery` — the candidates the repository's deployment manifests name (Helm charts and
   values, kustomizations, compose files, plain manifests, Terraform git modules) that neither the
   profile nor the memory covers, each with `system`, `repo` (empty or `repoGuessed` when unsure)
-  and the `version` the manifest reads; `ran: false` with `why` when it could not run.
+  and the `version` the manifest reads; `ran: false` with `why` when it could not run. A
+  `walkCut` says the walk stopped at its bound: run `--propose` again with `--path <file>` for
+  each manifest past it (repeatable, at most 24, relative to the repository's top or absolute
+  inside it) — named, only those files are read, in the order given.
 - `ciCandidates` — what the repository's `.github/workflows/*.yml` hold for the CI map:
   `resolved`, a job whose `run:` names the cargo command itself, each with `check` (the job's
   `name:`, else its id — the name GitHub reports; a job of a reusable workflow is reported
@@ -194,6 +202,19 @@ At most 8; a name is letters, digits, `.`, `_` or `-`. A confirmed memory record
 `point`, as printed. A refused point is named on stderr and nothing is written; so is a profile
 written by a craft of another format. Report the file's path, the points and the CI map entries written,
 and `codeGraphSays` in one line.
+
+## Allowing the review's commands
+
+In Claude Code the review engine runs the binary through its service agent (`craft:engine-service`)
+in the harness's Bash: `<binary> review start | submit | status | gate | comment`, `<binary>` the
+path step 2 printed (`~/.craft/bin/<version>/craft`). Under auto mode or a strict permission set
+the harness may refuse one mid-run; the review then stops `INCOMPLETE`, names the refused command
+and the rule meant to allow it, `Bash(<binary> review:*)`, and keeps the run's steps. A plugin cannot
+grant this itself — Claude Code ignores `permissionMode` on a plugin's agent, and a plugin's
+settings carry no permissions — so craft never adds it: the user adds the rule with `/permissions`
+and continues with `craft:review run=<the run directory>`. The rule should let the run go on; that
+an allow rule overrides auto mode's classifier is not yet observed. The path holds the version, so the
+rule is added again after each plugin update.
 
 ## What the review does with it
 

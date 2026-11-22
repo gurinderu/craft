@@ -9,9 +9,11 @@
 // severity. The newest stands for the run. Never folded, because their identity is too weak: a record
 // missing its head or digest; a died run (`partial`); a nested per-crate review and a record with no
 // branch, whose round never advances; a run that found nothing, since every clean run of one diff
-// lands the same all-zero counts.
+// lands the same all-zero counts. A stopped part of a CLI run is folded first, into the record its resume finished
+// (integrations/shared/run-parts.mjs).
 
 import { engineKey } from './run-record.mjs'
+import { foldStoppedParts } from './run-parts.mjs'
 
 // The run's own settings a resume carries unchanged.
 const KEPT = ['base', 'path', 'strict', 'dirty', 'lensScope', 'intentDigest', 'specDigest', 'unitScope']
@@ -60,12 +62,13 @@ function runKey(r) {
  * @returns {{ records: R[], folded: number }}
  */
 export function foldResumedRuns(records) {
+  const parted = foldStoppedParts(records)
   /** @type {Map<string, R>} */
   const newest = new Map()
   /** @type {R[]} */
   const kept = []
-  let folded = 0
-  for (const r of records) {
+  let folded = parted.folded
+  for (const r of parted.records) {
     const key = runKey(r)
     if (!key) {
       kept.push(r)

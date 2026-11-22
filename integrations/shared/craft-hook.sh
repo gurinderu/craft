@@ -16,7 +16,7 @@
 # it always exits 0. Windows is not covered (no sh), as for integrations/shared/pr-opened-hook.sh.
 set -u
 
-version=0.57.0 # x-release-please-version
+version=0.58.0 # x-release-please-version
 
 hook=${1:-}
 case $hook in

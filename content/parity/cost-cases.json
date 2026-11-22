@@ -1,0 +1,871 @@
+{
+  "note": "Frozen golden data: what the JavaScript enrich-cost --run-id (`cases`) and --run-dir --record (`runDirCases`) (integrations/shared/craft-log-run.mjs, before craft runs enrich-cost replaced it) wrote for each case, `<home>` the Claude home that is also the store. Read by cli/crates/craft-store/tests/cost_parity.rs; edited by hand. An error or warning is held as its start: the reason the operating system gives after it is the host's own.",
+  "runId": "wf_abc123-def",
+  "cases": [
+    {
+      "name": "one record takes every agent of its run",
+      "runId": "wf_abc123-def",
+      "files": {
+        "r1.json": "{\"schemaVersion\":1,\"name\":\"review\"}",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"id\":\"msg_a\",\"usage\":{\"input_tokens\":1,\"output_tokens\":10,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"lens\",\"workflowPhase\":\"Lenses\"}",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-b.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"id\":\"msg_b\",\"usage\":{\"input_tokens\":1,\"output_tokens\":20,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"wrote <home>/r1.json (folded 2 checkpoint(s))\"}]}}\n",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-b.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"log-run (30KB)\",\"workflowPhase\":\"Lenses\"}"
+      },
+      "links": {},
+      "expected": {
+        "ok": true,
+        "stdout": [
+          "run wf_abc123-def (<home>/projects/-repo/s1/subagents/workflows/wf_abc123-def): 1 record(s)",
+          "enriched <home>/r1.json — slice 1/1: 2 agent(s): cacheRead 200, cacheWrite 0, input 2, output 30, total 232 tok (real cost; outputTokens is the harness pool, ~<1%)"
+        ],
+        "warnings": [],
+        "error": "",
+        "home": {
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"id\":\"msg_a\",\"usage\":{\"input_tokens\":1,\"output_tokens\":10,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"lens\",\"workflowPhase\":\"Lenses\"}",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-b.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"id\":\"msg_b\",\"usage\":{\"input_tokens\":1,\"output_tokens\":20,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"wrote <home>/r1.json (folded 2 checkpoint(s))\"}]}}\n",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-b.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"log-run (30KB)\",\"workflowPhase\":\"Lenses\"}",
+          "r1.json": "{\n  \"schemaVersion\": 1,\n  \"name\": \"review\",\n  \"cost\": {\n    \"output\": 30,\n    \"input\": 2,\n    \"cacheRead\": 200,\n    \"cacheWrite\": 0,\n    \"total\": 232,\n    \"agents\": 2,\n    \"source\": \"wf_abc123-def\",\n    \"rule\": \"per-message\",\n    \"slice\": {\n      \"index\": 1,\n      \"of\": 1\n    }\n  }\n}"
+        },
+        "elsewhere": {}
+      }
+    },
+    {
+      "name": "a resumed tail's second record gets only the agents after the first record's logger",
+      "runId": "wf_abc123-def",
+      "files": {
+        "r1.json": "{\"schemaVersion\":1,\"name\":\"review\"}",
+        "r2.json": "{\"schemaVersion\":1,\"name\":\"review\"}",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"id\":\"msg_a\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"lens\",\"workflowPhase\":\"Lenses\"}",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-b.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"id\":\"msg_b\",\"usage\":{\"input_tokens\":1,\"output_tokens\":2,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"wrote <home>/r1.json\"}]}}\n",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-b.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"log-run\",\"workflowPhase\":\"Lenses\"}",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-c.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:03:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:03:00.000Z\",\"message\":{\"id\":\"msg_c\",\"usage\":{\"input_tokens\":1,\"output_tokens\":4,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-c.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"lens\",\"workflowPhase\":\"Lenses\"}",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-d.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:04:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:04:00.000Z\",\"message\":{\"id\":\"msg_d\",\"usage\":{\"input_tokens\":1,\"output_tokens\":8,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:04:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"craft-log-run WARNING: x\\nwrote <home>/r2.json\"}]}}\n",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-d.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"log-run\",\"workflowPhase\":\"Lenses\"}"
+      },
+      "links": {},
+      "expected": {
+        "ok": true,
+        "stdout": [
+          "run wf_abc123-def (<home>/projects/-repo/s1/subagents/workflows/wf_abc123-def): 2 record(s)",
+          "enriched <home>/r1.json — slice 1/2: 2 agent(s): cacheRead 200, cacheWrite 0, input 2, output 3, total 205 tok (real cost; outputTokens is the harness pool, ~<1%)",
+          "enriched <home>/r2.json — slice 2/2: 2 agent(s): cacheRead 200, cacheWrite 0, input 2, output 12, total 214 tok (real cost; outputTokens is the harness pool, ~<1%)"
+        ],
+        "warnings": [],
+        "error": "",
+        "home": {
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"id\":\"msg_a\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"lens\",\"workflowPhase\":\"Lenses\"}",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-b.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"id\":\"msg_b\",\"usage\":{\"input_tokens\":1,\"output_tokens\":2,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"wrote <home>/r1.json\"}]}}\n",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-b.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"log-run\",\"workflowPhase\":\"Lenses\"}",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-c.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:03:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:03:00.000Z\",\"message\":{\"id\":\"msg_c\",\"usage\":{\"input_tokens\":1,\"output_tokens\":4,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-c.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"lens\",\"workflowPhase\":\"Lenses\"}",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-d.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:04:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:04:00.000Z\",\"message\":{\"id\":\"msg_d\",\"usage\":{\"input_tokens\":1,\"output_tokens\":8,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:04:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"craft-log-run WARNING: x\\nwrote <home>/r2.json\"}]}}\n",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-d.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"log-run\",\"workflowPhase\":\"Lenses\"}",
+          "r1.json": "{\n  \"schemaVersion\": 1,\n  \"name\": \"review\",\n  \"cost\": {\n    \"output\": 3,\n    \"input\": 2,\n    \"cacheRead\": 200,\n    \"cacheWrite\": 0,\n    \"total\": 205,\n    \"agents\": 2,\n    \"source\": \"wf_abc123-def\",\n    \"rule\": \"per-message\",\n    \"slice\": {\n      \"index\": 1,\n      \"of\": 2\n    }\n  }\n}",
+          "r2.json": "{\n  \"schemaVersion\": 1,\n  \"name\": \"review\",\n  \"cost\": {\n    \"output\": 12,\n    \"input\": 2,\n    \"cacheRead\": 200,\n    \"cacheWrite\": 0,\n    \"total\": 214,\n    \"agents\": 2,\n    \"source\": \"wf_abc123-def\",\n    \"rule\": \"per-message\",\n    \"slice\": {\n      \"index\": 2,\n      \"of\": 2\n    }\n  }\n}"
+        },
+        "elsewhere": {}
+      }
+    },
+    {
+      "name": "agents after the last record's logger go to the last record, counted as its tail",
+      "runId": "wf_abc123-def",
+      "files": {
+        "r1.json": "{\"schemaVersion\":1,\"name\":\"review\"}",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"id\":\"msg_a\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"already filed <home>/r1.json\"}]}}\n",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"log-run\",\"workflowPhase\":\"Lenses\"}",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-b.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:05:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:05:00.000Z\",\"message\":{\"id\":\"msg_b\",\"usage\":{\"input_tokens\":1,\"output_tokens\":2,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-b.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"lens\",\"workflowPhase\":\"Lenses\"}",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-c.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:06:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:06:00.000Z\",\"message\":{\"id\":\"msg_c\",\"usage\":{\"input_tokens\":1,\"output_tokens\":4,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-c.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"lens\",\"workflowPhase\":\"Lenses\"}"
+      },
+      "links": {},
+      "expected": {
+        "ok": true,
+        "stdout": [
+          "run wf_abc123-def (<home>/projects/-repo/s1/subagents/workflows/wf_abc123-def): 1 record(s)",
+          "enriched <home>/r1.json — slice 1/1, 2 after the last record's logger: 3 agent(s): cacheRead 300, cacheWrite 0, input 3, output 7, total 310 tok (real cost; outputTokens is the harness pool, ~<1%)"
+        ],
+        "warnings": [],
+        "error": "",
+        "home": {
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"id\":\"msg_a\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"already filed <home>/r1.json\"}]}}\n",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"log-run\",\"workflowPhase\":\"Lenses\"}",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-b.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:05:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:05:00.000Z\",\"message\":{\"id\":\"msg_b\",\"usage\":{\"input_tokens\":1,\"output_tokens\":2,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-b.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"lens\",\"workflowPhase\":\"Lenses\"}",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-c.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:06:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:06:00.000Z\",\"message\":{\"id\":\"msg_c\",\"usage\":{\"input_tokens\":1,\"output_tokens\":4,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-c.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"lens\",\"workflowPhase\":\"Lenses\"}",
+          "r1.json": "{\n  \"schemaVersion\": 1,\n  \"name\": \"review\",\n  \"cost\": {\n    \"output\": 7,\n    \"input\": 3,\n    \"cacheRead\": 300,\n    \"cacheWrite\": 0,\n    \"total\": 310,\n    \"agents\": 3,\n    \"source\": \"wf_abc123-def\",\n    \"rule\": \"per-message\",\n    \"slice\": {\n      \"index\": 1,\n      \"of\": 1,\n      \"tail\": 2\n    }\n  }\n}"
+        },
+        "elsewhere": {}
+      }
+    },
+    {
+      "name": "a run id with no transcript directory is refused by name",
+      "runId": "wf_abc123-def",
+      "files": {
+        "r1.json": "{\"schemaVersion\":1,\"name\":\"review\"}"
+      },
+      "links": {},
+      "expected": {
+        "ok": false,
+        "stdout": [],
+        "warnings": [],
+        "error": "no transcript directory for run wf_abc123-def under <home>/projects",
+        "home": {
+          "r1.json": "{\"schemaVersion\":1,\"name\":\"review\"}"
+        },
+        "elsewhere": {}
+      }
+    },
+    {
+      "name": "a malformed run id is refused",
+      "runId": "../etc",
+      "files": {},
+      "links": {},
+      "expected": {
+        "ok": false,
+        "stdout": [],
+        "warnings": [],
+        "error": "not a Workflow run id: ../etc",
+        "home": {},
+        "elsewhere": {}
+      }
+    },
+    {
+      "name": "a run that filed no record writes nothing",
+      "runId": "wf_abc123-def",
+      "files": {
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"id\":\"msg_a\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"craft-log-run FAILED: no\"}]}}\n",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"log-run\",\"workflowPhase\":\"Lenses\"}"
+      },
+      "links": {},
+      "expected": {
+        "ok": false,
+        "stdout": [],
+        "warnings": [],
+        "error": "no log-run agent of the top-level engine reported a filed record",
+        "home": {
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"id\":\"msg_a\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"craft-log-run FAILED: no\"}]}}\n",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"log-run\",\"workflowPhase\":\"Lenses\"}"
+        },
+        "elsewhere": {}
+      }
+    },
+    {
+      "name": "an unreadable record refuses the whole run before any record is written",
+      "runId": "wf_abc123-def",
+      "files": {
+        "r1.json": "{\"schemaVersion\":1,\"name\":\"review\"}",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"id\":\"msg_a\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"wrote <home>/r1.json\"}]}}\n",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"log-run\",\"workflowPhase\":\"Lenses\"}",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-b.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"id\":\"msg_b\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"wrote <home>/gone.json\"}]}}\n",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-b.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"log-run\",\"workflowPhase\":\"Lenses\"}"
+      },
+      "links": {},
+      "expected": {
+        "ok": false,
+        "stdout": [],
+        "warnings": [],
+        "error": "record not readable at <home>/gone.json: ",
+        "home": {
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"id\":\"msg_a\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"wrote <home>/r1.json\"}]}}\n",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"log-run\",\"workflowPhase\":\"Lenses\"}",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-b.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"id\":\"msg_b\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"wrote <home>/gone.json\"}]}}\n",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-b.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"log-run\",\"workflowPhase\":\"Lenses\"}",
+          "r1.json": "{\"schemaVersion\":1,\"name\":\"review\"}"
+        },
+        "elsewhere": {}
+      }
+    },
+    {
+      "name": "a nested run: each engine's record gets its own agents, however their start times interleave",
+      "runId": "wf_abc123-def",
+      "files": {
+        "review.json": "{\"schemaVersion\":1,\"name\":\"review\"}",
+        "audit.json": "{\"schemaVersion\":1,\"name\":\"rust-audit\"}",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-o1.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"id\":\"msg_o1\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-o1.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"lens\",\"workflowPhase\":\"Scout\"}",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-i1.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"id\":\"msg_i1\",\"usage\":{\"input_tokens\":1,\"output_tokens\":10,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-i1.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"lens\",\"workflowPhase\":\"▸ craft:review\"}",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-o2.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:03:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:03:00.000Z\",\"message\":{\"id\":\"msg_o2\",\"usage\":{\"input_tokens\":1,\"output_tokens\":2,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-o2.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"lens\",\"workflowPhase\":\"Audit\"}",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-i2.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:04:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:04:00.000Z\",\"message\":{\"id\":\"msg_i2\",\"usage\":{\"input_tokens\":1,\"output_tokens\":20,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-i2.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"lens\",\"workflowPhase\":\"▸ craft:review\"}",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-il.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:05:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:05:00.000Z\",\"message\":{\"id\":\"msg_il\",\"usage\":{\"input_tokens\":1,\"output_tokens\":40,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:05:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"wrote <home>/review.json\"}]}}\n",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-il.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"log-run\",\"workflowPhase\":\"▸ craft:review\"}",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-o3.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:06:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:06:00.000Z\",\"message\":{\"id\":\"msg_o3\",\"usage\":{\"input_tokens\":1,\"output_tokens\":4,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-o3.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"lens\",\"workflowPhase\":\"Audit\"}",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-ol.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:07:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:07:00.000Z\",\"message\":{\"id\":\"msg_ol\",\"usage\":{\"input_tokens\":1,\"output_tokens\":8,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:07:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"wrote <home>/audit.json\"}]}}\n",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-ol.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"log-run\",\"workflowPhase\":\"Synthesize\"}"
+      },
+      "links": {},
+      "expected": {
+        "ok": true,
+        "stdout": [
+          "run wf_abc123-def (<home>/projects/-repo/s1/subagents/workflows/wf_abc123-def): 2 record(s)",
+          "enriched <home>/review.json — slice 1/2: 3 agent(s): cacheRead 300, cacheWrite 0, input 3, output 70, total 373 tok (real cost; outputTokens is the harness pool, ~<1%)",
+          "enriched <home>/audit.json — slice 2/2: 4 agent(s): cacheRead 400, cacheWrite 0, input 4, output 15, total 419 tok (real cost; outputTokens is the harness pool, ~<1%)"
+        ],
+        "warnings": [],
+        "error": "",
+        "home": {
+          "audit.json": "{\n  \"schemaVersion\": 1,\n  \"name\": \"rust-audit\",\n  \"cost\": {\n    \"output\": 15,\n    \"input\": 4,\n    \"cacheRead\": 400,\n    \"cacheWrite\": 0,\n    \"total\": 419,\n    \"agents\": 4,\n    \"source\": \"wf_abc123-def\",\n    \"rule\": \"per-message\",\n    \"slice\": {\n      \"index\": 2,\n      \"of\": 2\n    }\n  }\n}",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-i1.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"id\":\"msg_i1\",\"usage\":{\"input_tokens\":1,\"output_tokens\":10,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-i1.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"lens\",\"workflowPhase\":\"▸ craft:review\"}",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-i2.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:04:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:04:00.000Z\",\"message\":{\"id\":\"msg_i2\",\"usage\":{\"input_tokens\":1,\"output_tokens\":20,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-i2.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"lens\",\"workflowPhase\":\"▸ craft:review\"}",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-il.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:05:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:05:00.000Z\",\"message\":{\"id\":\"msg_il\",\"usage\":{\"input_tokens\":1,\"output_tokens\":40,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:05:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"wrote <home>/review.json\"}]}}\n",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-il.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"log-run\",\"workflowPhase\":\"▸ craft:review\"}",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-o1.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"id\":\"msg_o1\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-o1.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"lens\",\"workflowPhase\":\"Scout\"}",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-o2.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:03:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:03:00.000Z\",\"message\":{\"id\":\"msg_o2\",\"usage\":{\"input_tokens\":1,\"output_tokens\":2,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-o2.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"lens\",\"workflowPhase\":\"Audit\"}",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-o3.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:06:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:06:00.000Z\",\"message\":{\"id\":\"msg_o3\",\"usage\":{\"input_tokens\":1,\"output_tokens\":4,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-o3.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"lens\",\"workflowPhase\":\"Audit\"}",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-ol.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:07:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:07:00.000Z\",\"message\":{\"id\":\"msg_ol\",\"usage\":{\"input_tokens\":1,\"output_tokens\":8,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:07:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"wrote <home>/audit.json\"}]}}\n",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-ol.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"log-run\",\"workflowPhase\":\"Synthesize\"}",
+          "review.json": "{\n  \"schemaVersion\": 1,\n  \"name\": \"review\",\n  \"cost\": {\n    \"output\": 70,\n    \"input\": 3,\n    \"cacheRead\": 300,\n    \"cacheWrite\": 0,\n    \"total\": 373,\n    \"agents\": 3,\n    \"source\": \"wf_abc123-def\",\n    \"rule\": \"per-message\",\n    \"slice\": {\n      \"index\": 1,\n      \"of\": 2\n    }\n  }\n}"
+        },
+        "elsewhere": {}
+      }
+    },
+    {
+      "name": "a nested engine with a resumed tail is cut by time within that engine only",
+      "runId": "wf_abc123-def",
+      "files": {
+        "review-1.json": "{\"schemaVersion\":1,\"name\":\"review\"}",
+        "review-2.json": "{\"schemaVersion\":1,\"name\":\"review\"}",
+        "audit.json": "{\"schemaVersion\":1,\"name\":\"rust-audit\"}",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-i1.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"id\":\"msg_i1\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-i1.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"lens\",\"workflowPhase\":\"▸ craft:review #2\"}",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-il1.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"id\":\"msg_il1\",\"usage\":{\"input_tokens\":1,\"output_tokens\":2,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"wrote <home>/review-1.json\"}]}}\n",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-il1.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"log-run\",\"workflowPhase\":\"▸ craft:review #2\"}",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-o1.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:03:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:03:00.000Z\",\"message\":{\"id\":\"msg_o1\",\"usage\":{\"input_tokens\":1,\"output_tokens\":100,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-o1.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"lens\",\"workflowPhase\":\"Audit\"}",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-i2.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:04:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:04:00.000Z\",\"message\":{\"id\":\"msg_i2\",\"usage\":{\"input_tokens\":1,\"output_tokens\":4,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-i2.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"lens\",\"workflowPhase\":\"▸ craft:review #2\"}",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-il2.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:05:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:05:00.000Z\",\"message\":{\"id\":\"msg_il2\",\"usage\":{\"input_tokens\":1,\"output_tokens\":8,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:05:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"wrote <home>/review-2.json\"}]}}\n",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-il2.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"log-run\",\"workflowPhase\":\"▸ craft:review #2\"}",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-ol.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:06:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:06:00.000Z\",\"message\":{\"id\":\"msg_ol\",\"usage\":{\"input_tokens\":1,\"output_tokens\":200,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:06:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"wrote <home>/audit.json\"}]}}\n",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-ol.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"log-run\",\"workflowPhase\":\"Synthesize\"}"
+      },
+      "links": {},
+      "expected": {
+        "ok": true,
+        "stdout": [
+          "run wf_abc123-def (<home>/projects/-repo/s1/subagents/workflows/wf_abc123-def): 3 record(s)",
+          "enriched <home>/review-1.json — slice 1/3: 2 agent(s): cacheRead 200, cacheWrite 0, input 2, output 3, total 205 tok (real cost; outputTokens is the harness pool, ~<1%)",
+          "enriched <home>/review-2.json — slice 2/3: 2 agent(s): cacheRead 200, cacheWrite 0, input 2, output 12, total 214 tok (real cost; outputTokens is the harness pool, ~<1%)",
+          "enriched <home>/audit.json — slice 3/3: 2 agent(s): cacheRead 200, cacheWrite 0, input 2, output 300, total 502 tok (real cost; outputTokens is the harness pool, ~<1%)"
+        ],
+        "warnings": [],
+        "error": "",
+        "home": {
+          "audit.json": "{\n  \"schemaVersion\": 1,\n  \"name\": \"rust-audit\",\n  \"cost\": {\n    \"output\": 300,\n    \"input\": 2,\n    \"cacheRead\": 200,\n    \"cacheWrite\": 0,\n    \"total\": 502,\n    \"agents\": 2,\n    \"source\": \"wf_abc123-def\",\n    \"rule\": \"per-message\",\n    \"slice\": {\n      \"index\": 3,\n      \"of\": 3\n    }\n  }\n}",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-i1.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"id\":\"msg_i1\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-i1.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"lens\",\"workflowPhase\":\"▸ craft:review #2\"}",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-i2.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:04:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:04:00.000Z\",\"message\":{\"id\":\"msg_i2\",\"usage\":{\"input_tokens\":1,\"output_tokens\":4,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-i2.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"lens\",\"workflowPhase\":\"▸ craft:review #2\"}",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-il1.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"id\":\"msg_il1\",\"usage\":{\"input_tokens\":1,\"output_tokens\":2,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"wrote <home>/review-1.json\"}]}}\n",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-il1.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"log-run\",\"workflowPhase\":\"▸ craft:review #2\"}",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-il2.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:05:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:05:00.000Z\",\"message\":{\"id\":\"msg_il2\",\"usage\":{\"input_tokens\":1,\"output_tokens\":8,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:05:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"wrote <home>/review-2.json\"}]}}\n",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-il2.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"log-run\",\"workflowPhase\":\"▸ craft:review #2\"}",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-o1.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:03:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:03:00.000Z\",\"message\":{\"id\":\"msg_o1\",\"usage\":{\"input_tokens\":1,\"output_tokens\":100,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-o1.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"lens\",\"workflowPhase\":\"Audit\"}",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-ol.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:06:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:06:00.000Z\",\"message\":{\"id\":\"msg_ol\",\"usage\":{\"input_tokens\":1,\"output_tokens\":200,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:06:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"wrote <home>/audit.json\"}]}}\n",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-ol.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"log-run\",\"workflowPhase\":\"Synthesize\"}",
+          "review-1.json": "{\n  \"schemaVersion\": 1,\n  \"name\": \"review\",\n  \"cost\": {\n    \"output\": 3,\n    \"input\": 2,\n    \"cacheRead\": 200,\n    \"cacheWrite\": 0,\n    \"total\": 205,\n    \"agents\": 2,\n    \"source\": \"wf_abc123-def\",\n    \"rule\": \"per-message\",\n    \"slice\": {\n      \"index\": 1,\n      \"of\": 3\n    }\n  }\n}",
+          "review-2.json": "{\n  \"schemaVersion\": 1,\n  \"name\": \"review\",\n  \"cost\": {\n    \"output\": 12,\n    \"input\": 2,\n    \"cacheRead\": 200,\n    \"cacheWrite\": 0,\n    \"total\": 214,\n    \"agents\": 2,\n    \"source\": \"wf_abc123-def\",\n    \"rule\": \"per-message\",\n    \"slice\": {\n      \"index\": 2,\n      \"of\": 3\n    }\n  }\n}"
+        },
+        "elsewhere": {}
+      }
+    },
+    {
+      "name": "a nested engine's record that is not that engine's refuses the whole run",
+      "runId": "wf_abc123-def",
+      "files": {
+        "audit.json": "{\"schemaVersion\":1,\"name\":\"rust-audit\"}",
+        "odd.json": "{\"schemaVersion\":1,\"name\":\"triage-findings\"}",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-il.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"id\":\"msg_il\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"wrote <home>/odd.json\"}]}}\n",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-il.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"log-run\",\"workflowPhase\":\"▸ craft:review\"}",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-ol.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"id\":\"msg_ol\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"wrote <home>/audit.json\"}]}}\n",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-ol.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"log-run\",\"workflowPhase\":\"Synthesize\"}"
+      },
+      "links": {},
+      "expected": {
+        "ok": false,
+        "stdout": [],
+        "warnings": [],
+        "error": "record <home>/odd.json is \"triage-findings\", but its logger ran under \"▸ craft:review\" — not matched, refusing the run",
+        "home": {
+          "audit.json": "{\"schemaVersion\":1,\"name\":\"rust-audit\"}",
+          "odd.json": "{\"schemaVersion\":1,\"name\":\"triage-findings\"}",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-il.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"id\":\"msg_il\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"wrote <home>/odd.json\"}]}}\n",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-il.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"log-run\",\"workflowPhase\":\"▸ craft:review\"}",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-ol.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"id\":\"msg_ol\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"wrote <home>/audit.json\"}]}}\n",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-ol.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"log-run\",\"workflowPhase\":\"Synthesize\"}"
+        },
+        "elsewhere": {}
+      }
+    },
+    {
+      "name": "a nested engine that filed no record counts under the top-level engine, said on stderr",
+      "runId": "wf_abc123-def",
+      "files": {
+        "audit.json": "{\"schemaVersion\":1,\"name\":\"rust-audit\"}",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-i1.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"id\":\"msg_i1\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-i1.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"lens\",\"workflowPhase\":\"▸ craft:review #3\"}",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-ol.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"id\":\"msg_ol\",\"usage\":{\"input_tokens\":1,\"output_tokens\":2,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"wrote <home>/audit.json\"}]}}\n",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-ol.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"log-run\",\"workflowPhase\":\"Synthesize\"}"
+      },
+      "links": {},
+      "expected": {
+        "ok": true,
+        "stdout": [
+          "run wf_abc123-def (<home>/projects/-repo/s1/subagents/workflows/wf_abc123-def): 1 record(s)",
+          "enriched <home>/audit.json — slice 1/1, 1 of nested engines that filed no record: 2 agent(s): cacheRead 200, cacheWrite 0, input 2, output 3, total 205 tok (real cost; outputTokens is the harness pool, ~<1%)"
+        ],
+        "warnings": [
+          "1 agent(s) of \"▸ craft:review #3\" filed no record — counted under the top-level engine"
+        ],
+        "error": "",
+        "home": {
+          "audit.json": "{\n  \"schemaVersion\": 1,\n  \"name\": \"rust-audit\",\n  \"cost\": {\n    \"output\": 3,\n    \"input\": 2,\n    \"cacheRead\": 200,\n    \"cacheWrite\": 0,\n    \"total\": 205,\n    \"agents\": 2,\n    \"source\": \"wf_abc123-def\",\n    \"rule\": \"per-message\",\n    \"slice\": {\n      \"index\": 1,\n      \"of\": 1\n    },\n    \"absorbed\": [\n      {\n        \"engine\": \"review\",\n        \"instance\": \"▸ craft:review #3\",\n        \"agents\": 1\n      }\n    ]\n  }\n}",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-i1.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"id\":\"msg_i1\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-i1.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"lens\",\"workflowPhase\":\"▸ craft:review #3\"}",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-ol.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"id\":\"msg_ol\",\"usage\":{\"input_tokens\":1,\"output_tokens\":2,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"wrote <home>/audit.json\"}]}}\n",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-ol.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"log-run\",\"workflowPhase\":\"Synthesize\"}"
+        },
+        "elsewhere": {}
+      }
+    },
+    {
+      "name": "a filed record outside the store refuses the whole run before any record is written",
+      "runId": "wf_abc123-def",
+      "files": {
+        "r1.json": "{\"schemaVersion\":1,\"name\":\"review\"}",
+        "<elsewhere>/r2.json": "{\"schemaVersion\":1,\"name\":\"review\"}",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"id\":\"msg_a\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"wrote <home>/r1.json\"}]}}\n",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"log-run\",\"workflowPhase\":\"Lenses\"}",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-b.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"id\":\"msg_b\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"wrote <elsewhere>/r2.json\"}]}}\n",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-b.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"log-run\",\"workflowPhase\":\"Lenses\"}"
+      },
+      "links": {},
+      "expected": {
+        "ok": false,
+        "stdout": [],
+        "warnings": [],
+        "error": "record <elsewhere>/r2.json is outside the store <home> — refusing the run",
+        "home": {
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"id\":\"msg_a\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"wrote <home>/r1.json\"}]}}\n",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"log-run\",\"workflowPhase\":\"Lenses\"}",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-b.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"id\":\"msg_b\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"wrote <elsewhere>/r2.json\"}]}}\n",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-b.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"log-run\",\"workflowPhase\":\"Lenses\"}",
+          "r1.json": "{\"schemaVersion\":1,\"name\":\"review\"}"
+        },
+        "elsewhere": {
+          "r2.json": "{\"schemaVersion\":1,\"name\":\"review\"}"
+        }
+      }
+    },
+    {
+      "name": "a cli-review run the binary filed: its record is found through its own steps",
+      "runId": "wf_abc123-def",
+      "files": {
+        "cli.json": "{\"schemaVersion\":1,\"name\":\"cli-review\"}",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"id\":\"msg_a\",\"usage\":{\"input_tokens\":1,\"output_tokens\":10,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"{\\\"run\\\":\\\"/r\\\",\\\"done\\\":false,\\\"tasks\\\":[]}\"}]}}\n",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"step:start\",\"workflowPhase\":\"Lenses\"}",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-b.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"id\":\"msg_b\",\"usage\":{\"input_tokens\":1,\"output_tokens\":20,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-b.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"lens:errors\",\"workflowPhase\":\"Lenses\"}",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-c.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:03:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:03:00.000Z\",\"message\":{\"id\":\"msg_c\",\"usage\":{\"input_tokens\":1,\"output_tokens\":5,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:03:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"{\\\"run\\\":\\\"/r\\\",\\\"done\\\":true,\\\"verdict\\\":\\\"Block\\\",\\\"filing\\\":{\\\"runDir\\\":\\\"\\\",\\\"rejoin\\\":false,\\\"lost\\\":[],\\\"record\\\":\\\"filed\\\",\\\"recordFile\\\":\\\"<home>/cli.json\\\"}}\"}]}}\n",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-c.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"step:submit:1\",\"workflowPhase\":\"Lenses\"}"
+      },
+      "links": {},
+      "expected": {
+        "ok": true,
+        "stdout": [
+          "run wf_abc123-def (<home>/projects/-repo/s1/subagents/workflows/wf_abc123-def): 1 record(s)",
+          "enriched <home>/cli.json — slice 1/1: 3 agent(s): cacheRead 300, cacheWrite 0, input 3, output 35, total 338 tok (real cost; outputTokens is the harness pool, ~<1%)"
+        ],
+        "warnings": [],
+        "error": "",
+        "home": {
+          "cli.json": "{\n  \"schemaVersion\": 1,\n  \"name\": \"cli-review\",\n  \"cost\": {\n    \"output\": 35,\n    \"input\": 3,\n    \"cacheRead\": 300,\n    \"cacheWrite\": 0,\n    \"total\": 338,\n    \"agents\": 3,\n    \"source\": \"wf_abc123-def\",\n    \"rule\": \"per-message\",\n    \"slice\": {\n      \"index\": 1,\n      \"of\": 1\n    }\n  }\n}",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"id\":\"msg_a\",\"usage\":{\"input_tokens\":1,\"output_tokens\":10,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"{\\\"run\\\":\\\"/r\\\",\\\"done\\\":false,\\\"tasks\\\":[]}\"}]}}\n",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"step:start\",\"workflowPhase\":\"Lenses\"}",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-b.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"id\":\"msg_b\",\"usage\":{\"input_tokens\":1,\"output_tokens\":20,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-b.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"lens:errors\",\"workflowPhase\":\"Lenses\"}",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-c.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:03:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:03:00.000Z\",\"message\":{\"id\":\"msg_c\",\"usage\":{\"input_tokens\":1,\"output_tokens\":5,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:03:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"{\\\"run\\\":\\\"/r\\\",\\\"done\\\":true,\\\"verdict\\\":\\\"Block\\\",\\\"filing\\\":{\\\"runDir\\\":\\\"\\\",\\\"rejoin\\\":false,\\\"lost\\\":[],\\\"record\\\":\\\"filed\\\",\\\"recordFile\\\":\\\"<home>/cli.json\\\"}}\"}]}}\n",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-c.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"step:submit:1\",\"workflowPhase\":\"Lenses\"}"
+        },
+        "elsewhere": {}
+      }
+    },
+    {
+      "name": "a same-run recovery by step:status names the run's own record",
+      "runId": "wf_abc123-def",
+      "files": {
+        "cli.json": "{\"schemaVersion\":1,\"name\":\"cli-review\"}",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"id\":\"msg_a\",\"usage\":{\"input_tokens\":1,\"output_tokens\":10,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"{\\\"run\\\":\\\"/r\\\",\\\"done\\\":false,\\\"tasks\\\":[]}\"}]}}\n",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"step:start\",\"workflowPhase\":\"Lenses\"}",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-b.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"id\":\"msg_b\",\"usage\":{\"input_tokens\":1,\"output_tokens\":20,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-b.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"lens:errors\",\"workflowPhase\":\"Lenses\"}",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-c.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:03:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:03:00.000Z\",\"message\":{\"id\":\"msg_c\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:03:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"Error: the output was cut\"}]}}\n",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-c.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"step:submit:1\",\"workflowPhase\":\"Lenses\"}",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-d.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:04:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:04:00.000Z\",\"message\":{\"id\":\"msg_d\",\"usage\":{\"input_tokens\":1,\"output_tokens\":2,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:04:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"{\\\"run\\\":\\\"/r\\\",\\\"filing\\\":{\\\"record\\\":\\\"filed\\\",\\\"recordFile\\\":\\\"<home>/cli.json\\\"}}\"}]}}\n",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-d.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"step:status\",\"workflowPhase\":\"Lenses\"}"
+      },
+      "links": {},
+      "expected": {
+        "ok": true,
+        "stdout": [
+          "run wf_abc123-def (<home>/projects/-repo/s1/subagents/workflows/wf_abc123-def): 1 record(s)",
+          "enriched <home>/cli.json — slice 1/1: 4 agent(s): cacheRead 400, cacheWrite 0, input 4, output 33, total 437 tok (real cost; outputTokens is the harness pool, ~<1%)"
+        ],
+        "warnings": [],
+        "error": "",
+        "home": {
+          "cli.json": "{\n  \"schemaVersion\": 1,\n  \"name\": \"cli-review\",\n  \"cost\": {\n    \"output\": 33,\n    \"input\": 4,\n    \"cacheRead\": 400,\n    \"cacheWrite\": 0,\n    \"total\": 437,\n    \"agents\": 4,\n    \"source\": \"wf_abc123-def\",\n    \"rule\": \"per-message\",\n    \"slice\": {\n      \"index\": 1,\n      \"of\": 1\n    }\n  }\n}",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"id\":\"msg_a\",\"usage\":{\"input_tokens\":1,\"output_tokens\":10,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"{\\\"run\\\":\\\"/r\\\",\\\"done\\\":false,\\\"tasks\\\":[]}\"}]}}\n",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"step:start\",\"workflowPhase\":\"Lenses\"}",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-b.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"id\":\"msg_b\",\"usage\":{\"input_tokens\":1,\"output_tokens\":20,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-b.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"lens:errors\",\"workflowPhase\":\"Lenses\"}",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-c.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:03:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:03:00.000Z\",\"message\":{\"id\":\"msg_c\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:03:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"Error: the output was cut\"}]}}\n",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-c.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"step:submit:1\",\"workflowPhase\":\"Lenses\"}",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-d.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:04:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:04:00.000Z\",\"message\":{\"id\":\"msg_d\",\"usage\":{\"input_tokens\":1,\"output_tokens\":2,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:04:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"{\\\"run\\\":\\\"/r\\\",\\\"filing\\\":{\\\"record\\\":\\\"filed\\\",\\\"recordFile\\\":\\\"<home>/cli.json\\\"}}\"}]}}\n",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-d.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"step:status\",\"workflowPhase\":\"Lenses\"}"
+        },
+        "elsewhere": {}
+      }
+    },
+    {
+      "name": "a same-run recovery by step:refile names the run's own record",
+      "runId": "wf_abc123-def",
+      "files": {
+        "cli.json": "{\"schemaVersion\":1,\"name\":\"cli-review\"}",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"id\":\"msg_a\",\"usage\":{\"input_tokens\":1,\"output_tokens\":10,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"{\\\"run\\\":\\\"/r\\\",\\\"done\\\":false,\\\"tasks\\\":[]}\"}]}}\n",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"step:start\",\"workflowPhase\":\"Lenses\"}",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-b.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"id\":\"msg_b\",\"usage\":{\"input_tokens\":1,\"output_tokens\":20,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-b.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"lens:errors\",\"workflowPhase\":\"Lenses\"}",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-c.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:03:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:03:00.000Z\",\"message\":{\"id\":\"msg_c\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:03:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"Error: the output was cut\"}]}}\n",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-c.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"step:submit:1\",\"workflowPhase\":\"Lenses\"}",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-d.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:04:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:04:00.000Z\",\"message\":{\"id\":\"msg_d\",\"usage\":{\"input_tokens\":1,\"output_tokens\":2,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:04:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"{\\\"run\\\":\\\"/r\\\",\\\"filing\\\":{\\\"record\\\":\\\"filed\\\",\\\"refiledFile\\\":\\\"<home>/cli.json\\\"}}\"}]}}\n",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-d.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"step:refile\",\"workflowPhase\":\"Lenses\"}"
+      },
+      "links": {},
+      "expected": {
+        "ok": true,
+        "stdout": [
+          "run wf_abc123-def (<home>/projects/-repo/s1/subagents/workflows/wf_abc123-def): 1 record(s)",
+          "enriched <home>/cli.json — slice 1/1: 4 agent(s): cacheRead 400, cacheWrite 0, input 4, output 33, total 437 tok (real cost; outputTokens is the harness pool, ~<1%)"
+        ],
+        "warnings": [],
+        "error": "",
+        "home": {
+          "cli.json": "{\n  \"schemaVersion\": 1,\n  \"name\": \"cli-review\",\n  \"cost\": {\n    \"output\": 33,\n    \"input\": 4,\n    \"cacheRead\": 400,\n    \"cacheWrite\": 0,\n    \"total\": 437,\n    \"agents\": 4,\n    \"source\": \"wf_abc123-def\",\n    \"rule\": \"per-message\",\n    \"slice\": {\n      \"index\": 1,\n      \"of\": 1\n    }\n  }\n}",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"id\":\"msg_a\",\"usage\":{\"input_tokens\":1,\"output_tokens\":10,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"{\\\"run\\\":\\\"/r\\\",\\\"done\\\":false,\\\"tasks\\\":[]}\"}]}}\n",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"step:start\",\"workflowPhase\":\"Lenses\"}",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-b.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"id\":\"msg_b\",\"usage\":{\"input_tokens\":1,\"output_tokens\":20,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-b.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"lens:errors\",\"workflowPhase\":\"Lenses\"}",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-c.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:03:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:03:00.000Z\",\"message\":{\"id\":\"msg_c\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:03:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"Error: the output was cut\"}]}}\n",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-c.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"step:submit:1\",\"workflowPhase\":\"Lenses\"}",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-d.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:04:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:04:00.000Z\",\"message\":{\"id\":\"msg_d\",\"usage\":{\"input_tokens\":1,\"output_tokens\":2,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:04:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"{\\\"run\\\":\\\"/r\\\",\\\"filing\\\":{\\\"record\\\":\\\"filed\\\",\\\"refiledFile\\\":\\\"<home>/cli.json\\\"}}\"}]}}\n",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-d.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"step:refile\",\"workflowPhase\":\"Lenses\"}"
+        },
+        "elsewhere": {}
+      }
+    },
+    {
+      "name": "a later run's resume finishing its own segment names that record",
+      "runId": "wf_abc123-def",
+      "files": {
+        "cli.json": "{\"schemaVersion\":1,\"name\":\"cli-review\"}",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"id\":\"msg_a\",\"usage\":{\"input_tokens\":1,\"output_tokens\":7,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"{\\\"run\\\":\\\"/r\\\",\\\"done\\\":true,\\\"verdict\\\":\\\"Block\\\",\\\"filing\\\":{\\\"runDir\\\":\\\"\\\",\\\"rejoin\\\":false,\\\"lost\\\":[],\\\"record\\\":\\\"filed\\\",\\\"recordFile\\\":\\\"<home>/cli.json\\\"}}\"}]}}\n",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"step:resume\",\"workflowPhase\":\"Lenses\"}"
+      },
+      "links": {},
+      "expected": {
+        "ok": true,
+        "stdout": [
+          "run wf_abc123-def (<home>/projects/-repo/s1/subagents/workflows/wf_abc123-def): 1 record(s)",
+          "enriched <home>/cli.json — slice 1/1: 1 agent(s): cacheRead 100, cacheWrite 0, input 1, output 7, total 108 tok (real cost; outputTokens is the harness pool, ~<1%)"
+        ],
+        "warnings": [],
+        "error": "",
+        "home": {
+          "cli.json": "{\n  \"schemaVersion\": 1,\n  \"name\": \"cli-review\",\n  \"cost\": {\n    \"output\": 7,\n    \"input\": 1,\n    \"cacheRead\": 100,\n    \"cacheWrite\": 0,\n    \"total\": 108,\n    \"agents\": 1,\n    \"source\": \"wf_abc123-def\",\n    \"rule\": \"per-message\",\n    \"slice\": {\n      \"index\": 1,\n      \"of\": 1\n    }\n  }\n}",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"id\":\"msg_a\",\"usage\":{\"input_tokens\":1,\"output_tokens\":7,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"{\\\"run\\\":\\\"/r\\\",\\\"done\\\":true,\\\"verdict\\\":\\\"Block\\\",\\\"filing\\\":{\\\"runDir\\\":\\\"\\\",\\\"rejoin\\\":false,\\\"lost\\\":[],\\\"record\\\":\\\"filed\\\",\\\"recordFile\\\":\\\"<home>/cli.json\\\"}}\"}]}}\n",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"step:resume\",\"workflowPhase\":\"Lenses\"}"
+        },
+        "elsewhere": {}
+      }
+    },
+    {
+      "name": "a later run's resume that only re-filed takes none of its cost",
+      "runId": "wf_abc123-def",
+      "files": {
+        "cli.json": "{\"schemaVersion\":1,\"name\":\"cli-review\"}",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"id\":\"msg_a\",\"usage\":{\"input_tokens\":1,\"output_tokens\":7,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"{\\\"filing\\\":{\\\"record\\\":\\\"filed\\\",\\\"refiledFile\\\":\\\"<home>/cli.json\\\"}}\"}]}}\n",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"step:resume\",\"workflowPhase\":\"Lenses\"}"
+      },
+      "links": {},
+      "expected": {
+        "ok": false,
+        "stdout": [],
+        "warnings": [],
+        "error": "no log-run agent of the top-level engine reported a filed record",
+        "home": {
+          "cli.json": "{\"schemaVersion\":1,\"name\":\"cli-review\"}",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"id\":\"msg_a\",\"usage\":{\"input_tokens\":1,\"output_tokens\":7,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"{\\\"filing\\\":{\\\"record\\\":\\\"filed\\\",\\\"refiledFile\\\":\\\"<home>/cli.json\\\"}}\"}]}}\n",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"step:resume\",\"workflowPhase\":\"Lenses\"}"
+        },
+        "elsewhere": {}
+      }
+    },
+    {
+      "name": "a message's lines count once at their largest, a line with no id alone, and the per-line rule is named",
+      "runId": "wf_abc123-def",
+      "files": {
+        "r1.json": "{\"2\":\"two\",\"10\":\"ten\",\"schemaVersion\":1,\"name\":\"review\",\"cost\":{\"output\":999,\"stale\":true},\"after\":[1,2]}",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00Z\",\"message\":{\"content\":\"x\"}}\n{\"type\":\"assistant\",\"message\":{\"id\":\"m1\",\"usage\":{\"input_tokens\":1,\"output_tokens\":5,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"assistant\",\"message\":{\"id\":\"m1\",\"usage\":{\"input_tokens\":\"3\",\"output_tokens\":7,\"cache_read_input_tokens\":null,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"assistant\",\"message\":{\"id\":\"m1\",\"usage\":{\"output_tokens\":2}}\n{\"type\":\"assistant\",\"message\":{\"usage\":{\"input_tokens\":1,\"output_tokens\":1.5,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"assistant\",\"message\":{\"id\":\"m2\",\"usage\":{\"output_tokens\":true,\"input_tokens\":\"x\",\"cache_creation_input_tokens\":4}}}\n\n   \n{\"type\":\"assistant\",\"message\":{\"id\":\"m3\"}}\n[1,2]\n{\"type\":\"assistant\",\"message\":{\"id\":7,\"usage\":{\"input_tokens\":1,\"output_tokens\":2,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.meta.json": "{\"description\":\"lens\",\"workflowPhase\":\"Lenses\"}",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-b.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"id\":\"msg_b\",\"usage\":{\"input_tokens\":1,\"output_tokens\":3,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"wrote <home>/r1.json\"}]}}\n",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-b.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"log-run\",\"workflowPhase\":\"Lenses\"}"
+      },
+      "links": {},
+      "expected": {
+        "ok": true,
+        "stdout": [
+          "run wf_abc123-def (<home>/projects/-repo/s1/subagents/workflows/wf_abc123-def): 1 record(s)",
+          "enriched <home>/r1.json — slice 1/1: 2 agent(s): cacheRead 400, cacheWrite 4, input 6, output 14.5, total 424.5 tok (real cost; outputTokens is the harness pool, ~<1%)"
+        ],
+        "warnings": [
+          "1 usage line(s) without a message id, each counted alone — the cost may be overstated; marked rule \"per-line\" (realm @nick/craft, node #98)"
+        ],
+        "error": "",
+        "home": {
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00Z\",\"message\":{\"content\":\"x\"}}\n{\"type\":\"assistant\",\"message\":{\"id\":\"m1\",\"usage\":{\"input_tokens\":1,\"output_tokens\":5,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"assistant\",\"message\":{\"id\":\"m1\",\"usage\":{\"input_tokens\":\"3\",\"output_tokens\":7,\"cache_read_input_tokens\":null,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"assistant\",\"message\":{\"id\":\"m1\",\"usage\":{\"output_tokens\":2}}\n{\"type\":\"assistant\",\"message\":{\"usage\":{\"input_tokens\":1,\"output_tokens\":1.5,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"assistant\",\"message\":{\"id\":\"m2\",\"usage\":{\"output_tokens\":true,\"input_tokens\":\"x\",\"cache_creation_input_tokens\":4}}}\n\n   \n{\"type\":\"assistant\",\"message\":{\"id\":\"m3\"}}\n[1,2]\n{\"type\":\"assistant\",\"message\":{\"id\":7,\"usage\":{\"input_tokens\":1,\"output_tokens\":2,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.meta.json": "{\"description\":\"lens\",\"workflowPhase\":\"Lenses\"}",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-b.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"id\":\"msg_b\",\"usage\":{\"input_tokens\":1,\"output_tokens\":3,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"wrote <home>/r1.json\"}]}}\n",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-b.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"log-run\",\"workflowPhase\":\"Lenses\"}",
+          "r1.json": "{\n  \"2\": \"two\",\n  \"10\": \"ten\",\n  \"schemaVersion\": 1,\n  \"name\": \"review\",\n  \"cost\": {\n    \"output\": 14.5,\n    \"input\": 6,\n    \"cacheRead\": 400,\n    \"cacheWrite\": 4,\n    \"total\": 424.5,\n    \"agents\": 2,\n    \"source\": \"wf_abc123-def\",\n    \"rule\": \"per-line\",\n    \"slice\": {\n      \"index\": 1,\n      \"of\": 1\n    }\n  },\n  \"after\": [\n    1,\n    2\n  ]\n}"
+        },
+        "elsewhere": {}
+      }
+    },
+    {
+      "name": "an unreadable transcript is skipped and counted, a zero sum is warned of",
+      "runId": "wf_abc123-def",
+      "files": {
+        "r1.json": "{\"schemaVersion\":1,\"name\":\"review\"}",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-z.jsonl/inner": "a directory named like a transcript",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00Z\",\"message\":{\"content\":[{\"type\":\"tool_result\",\"content\":[{\"type\":\"text\",\"text\":\"noise\"},{\"type\":\"text\",\"text\":\"wrote <home>/r1.json\"},{\"type\":\"image\"}]}]}}\n",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.meta.json": "{\"description\":\"log-run\",\"workflowPhase\":null}"
+      },
+      "links": {},
+      "expected": {
+        "ok": true,
+        "stdout": [
+          "run wf_abc123-def (<home>/projects/-repo/s1/subagents/workflows/wf_abc123-def): 1 record(s)",
+          "enriched <home>/r1.json — slice 1/1, 1 after the last record's logger: 1 agent(s) (1 unreadable, skipped): cacheRead 0, cacheWrite 0, input 0, output 0, total 0 tok (real cost; outputTokens is the harness pool, ~<1%)"
+        ],
+        "warnings": [
+          "skipped unreadable transcript agent-z.jsonl: ",
+          "1 transcript(s) summed to zero tokens — a real run is never free; likely the transcript usage schema drifted (realm @nick/craft, node #98)"
+        ],
+        "error": "",
+        "home": {
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00Z\",\"message\":{\"content\":[{\"type\":\"tool_result\",\"content\":[{\"type\":\"text\",\"text\":\"noise\"},{\"type\":\"text\",\"text\":\"wrote <home>/r1.json\"},{\"type\":\"image\"}]}]}}\n",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.meta.json": "{\"description\":\"log-run\",\"workflowPhase\":null}",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-z.jsonl/inner": "a directory named like a transcript",
+          "r1.json": "{\n  \"schemaVersion\": 1,\n  \"name\": \"review\",\n  \"cost\": {\n    \"output\": 0,\n    \"input\": 0,\n    \"cacheRead\": 0,\n    \"cacheWrite\": 0,\n    \"total\": 0,\n    \"agents\": 1,\n    \"skipped\": 1,\n    \"source\": \"wf_abc123-def\",\n    \"rule\": \"per-message\",\n    \"slice\": {\n      \"index\": 1,\n      \"of\": 1,\n      \"tail\": 1\n    }\n  }\n}"
+        },
+        "elsewhere": {}
+      }
+    },
+    {
+      "name": "start times in other spellings order the agents as Date.parse reads them",
+      "runId": "wf_abc123-def",
+      "files": {
+        "r1.json": "{\"schemaVersion\":1,\"name\":\"review\"}",
+        "r2.json": "{\"schemaVersion\":1,\"name\":\"review\"}",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T12:00:30+02:00\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T12:00:30+02:00\",\"message\":{\"id\":\"msg_a\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"lens\",\"workflowPhase\":\"Lenses\"}",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-b.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:00:40.5Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:00:40.5Z\",\"message\":{\"id\":\"msg_b\",\"usage\":{\"input_tokens\":1,\"output_tokens\":2,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:00:40.5Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"wrote <home>/r1.json\"}]}}\n",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-b.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"log-run\",\"workflowPhase\":\"Lenses\"}",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-c.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:00:45.123456Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:00:45.123456Z\",\"message\":{\"id\":\"msg_c\",\"usage\":{\"input_tokens\":1,\"output_tokens\":4,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-c.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"lens\",\"workflowPhase\":\"Lenses\"}",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-d.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-30\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-30\",\"message\":{\"id\":\"msg_d\",\"usage\":{\"input_tokens\":1,\"output_tokens\":8,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-30\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"wrote <home>/r2.json (x)\"}]}}\n",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-d.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"log-run\",\"workflowPhase\":\"Lenses\"}"
+      },
+      "links": {},
+      "expected": {
+        "ok": true,
+        "stdout": [
+          "run wf_abc123-def (<home>/projects/-repo/s1/subagents/workflows/wf_abc123-def): 2 record(s)",
+          "enriched <home>/r1.json — slice 1/2: 2 agent(s): cacheRead 200, cacheWrite 0, input 2, output 3, total 205 tok (real cost; outputTokens is the harness pool, ~<1%)",
+          "enriched <home>/r2.json — slice 2/2: 2 agent(s): cacheRead 200, cacheWrite 0, input 2, output 12, total 214 tok (real cost; outputTokens is the harness pool, ~<1%)"
+        ],
+        "warnings": [],
+        "error": "",
+        "home": {
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T12:00:30+02:00\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T12:00:30+02:00\",\"message\":{\"id\":\"msg_a\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"lens\",\"workflowPhase\":\"Lenses\"}",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-b.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:00:40.5Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:00:40.5Z\",\"message\":{\"id\":\"msg_b\",\"usage\":{\"input_tokens\":1,\"output_tokens\":2,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:00:40.5Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"wrote <home>/r1.json\"}]}}\n",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-b.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"log-run\",\"workflowPhase\":\"Lenses\"}",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-c.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:00:45.123456Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:00:45.123456Z\",\"message\":{\"id\":\"msg_c\",\"usage\":{\"input_tokens\":1,\"output_tokens\":4,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-c.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"lens\",\"workflowPhase\":\"Lenses\"}",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-d.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-30\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-30\",\"message\":{\"id\":\"msg_d\",\"usage\":{\"input_tokens\":1,\"output_tokens\":8,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-30\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"wrote <home>/r2.json (x)\"}]}}\n",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-d.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"log-run\",\"workflowPhase\":\"Lenses\"}",
+          "r1.json": "{\n  \"schemaVersion\": 1,\n  \"name\": \"review\",\n  \"cost\": {\n    \"output\": 3,\n    \"input\": 2,\n    \"cacheRead\": 200,\n    \"cacheWrite\": 0,\n    \"total\": 205,\n    \"agents\": 2,\n    \"source\": \"wf_abc123-def\",\n    \"rule\": \"per-message\",\n    \"slice\": {\n      \"index\": 1,\n      \"of\": 2\n    }\n  }\n}",
+          "r2.json": "{\n  \"schemaVersion\": 1,\n  \"name\": \"review\",\n  \"cost\": {\n    \"output\": 12,\n    \"input\": 2,\n    \"cacheRead\": 200,\n    \"cacheWrite\": 0,\n    \"total\": 214,\n    \"agents\": 2,\n    \"source\": \"wf_abc123-def\",\n    \"rule\": \"per-message\",\n    \"slice\": {\n      \"index\": 2,\n      \"of\": 2\n    }\n  }\n}"
+        },
+        "elsewhere": {}
+      }
+    },
+    {
+      "name": "a linked run directory counts once",
+      "runId": "wf_abc123-def",
+      "files": {
+        "r1.json": "{\"schemaVersion\":1,\"name\":\"review\"}",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"id\":\"msg_a\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"wrote <home>/r1.json\"}]}}\n",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"log-run\",\"workflowPhase\":\"Lenses\"}"
+      },
+      "links": {
+        "projects/-repo/s2/subagents/workflows/wf_abc123-def": "projects/-repo/s1/subagents/workflows/wf_abc123-def"
+      },
+      "expected": {
+        "ok": true,
+        "stdout": [
+          "run wf_abc123-def (<home>/projects/-repo/s1/subagents/workflows/wf_abc123-def): 1 record(s)",
+          "enriched <home>/r1.json — slice 1/1: 1 agent(s): cacheRead 100, cacheWrite 0, input 1, output 1, total 102 tok (real cost; outputTokens is the harness pool, ~<1%)"
+        ],
+        "warnings": [],
+        "error": "",
+        "home": {
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"id\":\"msg_a\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"wrote <home>/r1.json\"}]}}\n",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"log-run\",\"workflowPhase\":\"Lenses\"}",
+          "projects/-repo/s2/subagents/workflows/wf_abc123-def": "link:<home>/projects/-repo/s1/subagents/workflows/wf_abc123-def",
+          "r1.json": "{\n  \"schemaVersion\": 1,\n  \"name\": \"review\",\n  \"cost\": {\n    \"output\": 1,\n    \"input\": 1,\n    \"cacheRead\": 100,\n    \"cacheWrite\": 0,\n    \"total\": 102,\n    \"agents\": 1,\n    \"source\": \"wf_abc123-def\",\n    \"rule\": \"per-message\",\n    \"slice\": {\n      \"index\": 1,\n      \"of\": 1\n    }\n  }\n}"
+        },
+        "elsewhere": {}
+      }
+    },
+    {
+      "name": "a run found in two real directories, neither holding the other, is refused",
+      "runId": "wf_abc123-def",
+      "files": {
+        "r1.json": "{\"schemaVersion\":1,\"name\":\"review\"}",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"id\":\"msg_a\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"wrote <home>/r1.json\"}]}}\n",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"log-run\",\"workflowPhase\":\"Lenses\"}",
+        "projects/-other/s3/subagents/workflows/wf_abc123-def/agent-b.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"id\":\"msg_b\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n",
+        "projects/-other/s3/subagents/workflows/wf_abc123-def/agent-b.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"lens\",\"workflowPhase\":\"Lenses\"}"
+      },
+      "links": {},
+      "expected": {
+        "ok": false,
+        "stdout": [],
+        "warnings": [],
+        "error": "run wf_abc123-def has 2 transcript directories and none holds the others' agents, refusing to pick one: <home>/projects/-other/s3/subagents/workflows/wf_abc123-def, <home>/projects/-repo/s1/subagents/workflows/wf_abc123-def",
+        "home": {
+          "projects/-other/s3/subagents/workflows/wf_abc123-def/agent-b.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"id\":\"msg_b\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n",
+          "projects/-other/s3/subagents/workflows/wf_abc123-def/agent-b.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"lens\",\"workflowPhase\":\"Lenses\"}",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"id\":\"msg_a\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"wrote <home>/r1.json\"}]}}\n",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"log-run\",\"workflowPhase\":\"Lenses\"}",
+          "r1.json": "{\"schemaVersion\":1,\"name\":\"review\"}"
+        },
+        "elsewhere": {}
+      }
+    },
+    {
+      "name": "of a run copied by the session that resumed it, the copy holding every agent is the run",
+      "runId": "wf_abc123-def",
+      "files": {
+        "r1.json": "{\"schemaVersion\":1,\"name\":\"review\"}",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"id\":\"msg_a\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"wrote <home>/r1.json\"}]}}\n",
+        "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"log-run\",\"workflowPhase\":\"Lenses\"}",
+        "projects/-repo/s2/subagents/workflows/wf_abc123-def/agent-a.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"id\":\"msg_a\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"wrote <home>/r1.json\"}]}}\n",
+        "projects/-repo/s2/subagents/workflows/wf_abc123-def/agent-a.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"log-run\",\"workflowPhase\":\"Lenses\"}",
+        "projects/-repo/s2/subagents/workflows/wf_abc123-def/agent-b.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"id\":\"msg_b\",\"usage\":{\"input_tokens\":1,\"output_tokens\":5,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n",
+        "projects/-repo/s2/subagents/workflows/wf_abc123-def/agent-b.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"lens\",\"workflowPhase\":\"Lenses\"}"
+      },
+      "links": {},
+      "expected": {
+        "ok": true,
+        "stdout": [
+          "run wf_abc123-def (<home>/projects/-repo/s2/subagents/workflows/wf_abc123-def): 1 record(s)",
+          "enriched <home>/r1.json — slice 1/1, 1 after the last record's logger: 2 agent(s): cacheRead 200, cacheWrite 0, input 2, output 6, total 208 tok (real cost; outputTokens is the harness pool, ~<1%)"
+        ],
+        "warnings": [],
+        "error": "",
+        "home": {
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"id\":\"msg_a\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"wrote <home>/r1.json\"}]}}\n",
+          "projects/-repo/s1/subagents/workflows/wf_abc123-def/agent-a.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"log-run\",\"workflowPhase\":\"Lenses\"}",
+          "projects/-repo/s2/subagents/workflows/wf_abc123-def/agent-a.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"id\":\"msg_a\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:01:00.000Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t\",\"content\":\"wrote <home>/r1.json\"}]}}\n",
+          "projects/-repo/s2/subagents/workflows/wf_abc123-def/agent-a.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"log-run\",\"workflowPhase\":\"Lenses\"}",
+          "projects/-repo/s2/subagents/workflows/wf_abc123-def/agent-b.jsonl": "{\"type\":\"user\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"role\":\"user\",\"content\":\"task\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-10-29T10:02:00.000Z\",\"message\":{\"id\":\"msg_b\",\"usage\":{\"input_tokens\":1,\"output_tokens\":5,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":0}}}\n",
+          "projects/-repo/s2/subagents/workflows/wf_abc123-def/agent-b.meta.json": "{\"agentType\":\"workflow-subagent\",\"description\":\"lens\",\"workflowPhase\":\"Lenses\"}",
+          "r1.json": "{\n  \"schemaVersion\": 1,\n  \"name\": \"review\",\n  \"cost\": {\n    \"output\": 6,\n    \"input\": 2,\n    \"cacheRead\": 200,\n    \"cacheWrite\": 0,\n    \"total\": 208,\n    \"agents\": 2,\n    \"source\": \"wf_abc123-def\",\n    \"rule\": \"per-message\",\n    \"slice\": {\n      \"index\": 1,\n      \"of\": 1,\n      \"tail\": 1\n    }\n  }\n}"
+        },
+        "elsewhere": {}
+      }
+    }
+  ],
+  "runDirCases": [
+    {
+      "name": "every transcript of the directory summed into the one record, its cost replaced, the rest kept",
+      "runDir": "run-x",
+      "record": "rec.json",
+      "files": {
+        "rec.json": "{\"2\":\"two\",\"schemaVersion\":1,\"cost\":{\"output\":1,\"stale\":true},\"after\":true}",
+        "run-x/agent-a.jsonl": "{\"type\":\"assistant\",\"message\":{\"id\":\"m1\",\"usage\":{\"input_tokens\":2,\"output_tokens\":5,\"cache_read_input_tokens\":1000,\"cache_creation_input_tokens\":10}}}\n{\"type\":\"assistant\",\"message\":{\"id\":\"m1\",\"usage\":{\"input_tokens\":2,\"output_tokens\":7,\"cache_read_input_tokens\":1000,\"cache_creation_input_tokens\":10}}}\n{\"type\":\"assistant\",\"message\":{\"id\":\"m2\",\"usage\":{\"input_tokens\":2,\"output_tokens\":1,\"cache_read_input_tokens\":1000,\"cache_creation_input_tokens\":10}}}\n",
+        "run-x/agent-b.jsonl": "{\"type\":\"assistant\",\"message\":{\"id\":\"m3\",\"usage\":{\"input_tokens\":2,\"output_tokens\":4,\"cache_read_input_tokens\":1000,\"cache_creation_input_tokens\":10}}}\n",
+        "run-x/notes.txt": "not a transcript"
+      },
+      "expected": {
+        "ok": true,
+        "stdout": [
+          "enriched <home>/rec.json — 2 agent(s): cacheRead 3000, cacheWrite 30, input 6, output 12, total 3048 tok (real cost; outputTokens is the harness pool, ~<1%)"
+        ],
+        "warnings": [],
+        "error": "",
+        "home": {
+          "rec.json": "{\n  \"2\": \"two\",\n  \"schemaVersion\": 1,\n  \"cost\": {\n    \"output\": 12,\n    \"input\": 6,\n    \"cacheRead\": 3000,\n    \"cacheWrite\": 30,\n    \"total\": 3048,\n    \"agents\": 2,\n    \"source\": \"run-x\",\n    \"rule\": \"per-message\"\n  },\n  \"after\": true\n}",
+          "run-x/agent-a.jsonl": "{\"type\":\"assistant\",\"message\":{\"id\":\"m1\",\"usage\":{\"input_tokens\":2,\"output_tokens\":5,\"cache_read_input_tokens\":1000,\"cache_creation_input_tokens\":10}}}\n{\"type\":\"assistant\",\"message\":{\"id\":\"m1\",\"usage\":{\"input_tokens\":2,\"output_tokens\":7,\"cache_read_input_tokens\":1000,\"cache_creation_input_tokens\":10}}}\n{\"type\":\"assistant\",\"message\":{\"id\":\"m2\",\"usage\":{\"input_tokens\":2,\"output_tokens\":1,\"cache_read_input_tokens\":1000,\"cache_creation_input_tokens\":10}}}\n",
+          "run-x/agent-b.jsonl": "{\"type\":\"assistant\",\"message\":{\"id\":\"m3\",\"usage\":{\"input_tokens\":2,\"output_tokens\":4,\"cache_read_input_tokens\":1000,\"cache_creation_input_tokens\":10}}}\n",
+          "run-x/notes.txt": "not a transcript"
+        }
+      }
+    },
+    {
+      "name": "a line with no message id counts alone and names the per-line rule",
+      "runDir": "run-y",
+      "record": "rec.json",
+      "files": {
+        "rec.json": "{\"schemaVersion\":1}",
+        "run-y/agent-a.jsonl": "{\"type\":\"assistant\",\"message\":{\"id\":\"m1\",\"usage\":{\"input_tokens\":2,\"output_tokens\":5,\"cache_read_input_tokens\":1000,\"cache_creation_input_tokens\":10}}}\n{\"type\":\"assistant\",\"message\":{\"usage\":{\"input_tokens\":2,\"output_tokens\":5,\"cache_read_input_tokens\":1000,\"cache_creation_input_tokens\":10}}}"
+      },
+      "expected": {
+        "ok": true,
+        "stdout": [
+          "enriched <home>/rec.json — 1 agent(s): cacheRead 2000, cacheWrite 20, input 4, output 10, total 2034 tok (real cost; outputTokens is the harness pool, ~<1%)"
+        ],
+        "warnings": [
+          "1 usage line(s) without a message id, each counted alone — the cost may be overstated; marked rule \"per-line\" (realm @nick/craft, node #98)"
+        ],
+        "error": "",
+        "home": {
+          "rec.json": "{\n  \"schemaVersion\": 1,\n  \"cost\": {\n    \"output\": 10,\n    \"input\": 4,\n    \"cacheRead\": 2000,\n    \"cacheWrite\": 20,\n    \"total\": 2034,\n    \"agents\": 1,\n    \"source\": \"run-y\",\n    \"rule\": \"per-line\"\n  }\n}",
+          "run-y/agent-a.jsonl": "{\"type\":\"assistant\",\"message\":{\"id\":\"m1\",\"usage\":{\"input_tokens\":2,\"output_tokens\":5,\"cache_read_input_tokens\":1000,\"cache_creation_input_tokens\":10}}}\n{\"type\":\"assistant\",\"message\":{\"usage\":{\"input_tokens\":2,\"output_tokens\":5,\"cache_read_input_tokens\":1000,\"cache_creation_input_tokens\":10}}}"
+        }
+      }
+    },
+    {
+      "name": "an unreadable transcript is skipped and counted; a zero sum is warned of",
+      "runDir": "run-z",
+      "record": "rec.json",
+      "files": {
+        "rec.json": "{}",
+        "run-z/agent-b.jsonl/inner": "x",
+        "run-z/agent-a.jsonl": "{\"type\":\"user\",\"message\":{\"content\":\"x\"}}\n"
+      },
+      "expected": {
+        "ok": true,
+        "stdout": [
+          "enriched <home>/rec.json — 1 agent(s) (1 unreadable, skipped): cacheRead 0, cacheWrite 0, input 0, output 0, total 0 tok (real cost; outputTokens is the harness pool, ~<1%)"
+        ],
+        "warnings": [
+          "skipped unreadable transcript agent-b.jsonl: ",
+          "1 transcript(s) summed to zero tokens — a real run is never free; likely the transcript usage schema drifted (realm @nick/craft, node #98)"
+        ],
+        "error": "",
+        "home": {
+          "rec.json": "{\n  \"cost\": {\n    \"output\": 0,\n    \"input\": 0,\n    \"cacheRead\": 0,\n    \"cacheWrite\": 0,\n    \"total\": 0,\n    \"agents\": 1,\n    \"skipped\": 1,\n    \"source\": \"run-z\",\n    \"rule\": \"per-message\"\n  }\n}",
+          "run-z/agent-a.jsonl": "{\"type\":\"user\",\"message\":{\"content\":\"x\"}}\n",
+          "run-z/agent-b.jsonl/inner": "x"
+        }
+      }
+    },
+    {
+      "name": "a directory with no transcript is refused",
+      "runDir": "run-e",
+      "record": "rec.json",
+      "files": {
+        "rec.json": "{}",
+        "run-e/agent-a.txt": "x"
+      },
+      "expected": {
+        "ok": false,
+        "stdout": [],
+        "warnings": [],
+        "error": "no agent-*.jsonl transcripts under <home>/run-e",
+        "home": {
+          "rec.json": "{}",
+          "run-e/agent-a.txt": "x"
+        }
+      }
+    },
+    {
+      "name": "every transcript unreadable is refused",
+      "runDir": "run-u",
+      "record": "rec.json",
+      "files": {
+        "rec.json": "{}",
+        "run-u/agent-a.jsonl/inner": "x"
+      },
+      "expected": {
+        "ok": false,
+        "stdout": [],
+        "warnings": [
+          "skipped unreadable transcript agent-a.jsonl: "
+        ],
+        "error": "no readable agent-*.jsonl transcripts under <home>/run-u (1 matched but unreadable)",
+        "home": {
+          "rec.json": "{}",
+          "run-u/agent-a.jsonl/inner": "x"
+        }
+      }
+    },
+    {
+      "name": "a run directory that is not there is refused",
+      "runDir": "run-gone",
+      "record": "rec.json",
+      "files": {
+        "rec.json": "{}"
+      },
+      "expected": {
+        "ok": false,
+        "stdout": [],
+        "warnings": [],
+        "error": "run directory not readable: <home>/run-gone (",
+        "home": {
+          "rec.json": "{}"
+        }
+      }
+    },
+    {
+      "name": "a record that is not a JSON object is refused and left as it is",
+      "runDir": "run-x",
+      "record": "rec.json",
+      "files": {
+        "rec.json": "[1]",
+        "run-x/agent-a.jsonl": "{\"type\":\"assistant\",\"message\":{\"id\":\"m1\",\"usage\":{\"input_tokens\":2,\"output_tokens\":1,\"cache_read_input_tokens\":1000,\"cache_creation_input_tokens\":10}}}"
+      },
+      "expected": {
+        "ok": false,
+        "stdout": [],
+        "warnings": [],
+        "error": "record not readable at <home>/rec.json: not a JSON object",
+        "home": {
+          "rec.json": "[1]",
+          "run-x/agent-a.jsonl": "{\"type\":\"assistant\",\"message\":{\"id\":\"m1\",\"usage\":{\"input_tokens\":2,\"output_tokens\":1,\"cache_read_input_tokens\":1000,\"cache_creation_input_tokens\":10}}}"
+        }
+      }
+    }
+  ]
+}

@@ -20,3 +20,22 @@ test('step 7 and the hook texts check for a merge since the reviewed commit befo
   assert.deepEqual([...new Set(nudges.map((/** @type {{ entry: { harness: string } }} */ c) => c.entry.harness))].sort(), ['claude-code', 'codex'])
   for (const c of nudges) assert.match(c.stdout, /a merge since it, as trunk merged in, means ask the human first/)
 })
+
+// A re-review round over fix commits runs at depth light (the diff-scoped lenses once, Medium and above verified,
+// every prior the chain left open adjudicated whatever the depth); full depth runs in develop's first round and its
+// final full review only.
+test("develop's later rounds, step 7 and the hook nudges run the re-review at depth light", () => {
+  const develop = fs.readFileSync(new URL('../../skills/develop/SKILL.md', import.meta.url), 'utf8')
+  const row = (/** @type {string} */ name) => develop.split('\n').find(l => l.startsWith(`| ${name} |`)) ?? ''
+  assert.match(row('1'), /`\{ base: <trunk>, fresh: true, fullEvery: 0 \}`/)
+  assert.match(row('2 and later, light'), /`\{ base: <trunk>, fullEvery: 0, depth: 'light', extraLenses: \[\] \}`/)
+  const phase5 = develop.slice(develop.indexOf('## Phase 5'), develop.indexOf('## Phase 6'))
+  assert.match(phase5, /`\{ base: <trunk>, strict: true, fresh: true \}`/)
+  assert.doesNotMatch(phase5, /depth: 'light'/)
+  const skill = fs.readFileSync(new URL('../../skills/addressing-findings/SKILL.md', import.meta.url), 'utf8')
+  const step7 = skill.slice(skill.indexOf('7. Re-review'), skill.indexOf('\n8. '))
+  assert.match(step7, /`\{ base: <that commit>, fresh: true, delta: true, fullEvery: 0, depth: 'light', extraLenses: \[\] \}`/)
+  const cases = JSON.parse(fs.readFileSync(new URL('../../content/parity/hook-cases.json', import.meta.url), 'utf8')).cases
+  const nudges = cases.filter((/** @type {{ entry: { reason?: string } | null }} */ c) => c.entry?.reason === 're-review-nudge')
+  for (const c of nudges) assert.match(c.stdout, /fullEvery: 0, depth: 'light', extraLenses: \[\] \}|--full-every 0 --depth light --extra-lenses off/)
+})

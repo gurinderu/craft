@@ -47,6 +47,7 @@ test("another reviewer's remark rejected by a PR author who maintains the repo i
       status: 'active',
       date: '2026-10-02',
       author: 'carol',
+      decidedBy: 'human',
       commit: SHA,
       links: ['https://x/pull/9#r2', 'https://x/pull/9#r1'],
       line: 40,

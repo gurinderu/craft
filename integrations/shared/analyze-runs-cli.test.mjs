@@ -36,6 +36,28 @@ test('a missing store is reported, not failed', async () => {
   assert.ok(r.stdout[0]?.includes(dir))
 })
 
+test(
+  'a store below a directory it cannot search is an error naming the path, never a missing store',
+  { skip: process.getuid?.() === 0 || process.platform === 'win32' },
+  () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'craft-ar-denied-'))
+    const denied = path.join(root, 'denied')
+    const dir = path.join(denied, 'runs')
+    fs.mkdirSync(dir, { recursive: true })
+    fs.chmodSync(denied, 0)
+    try {
+      const r = run([dir], process.env)
+      assert.equal(r.exitCode, 1)
+      assert.ok(!r.stdout.join('\n').includes('No run store'), r.stdout.join('\n'))
+      assert.match(r.stderr.join('\n'), /EACCES/)
+      assert.ok(r.stderr.join('\n').includes(dir), r.stderr.join('\n'))
+    } finally {
+      fs.chmodSync(denied, 0o755)
+      fs.rmSync(root, { recursive: true, force: true })
+    }
+  },
+)
+
 test('with no directory it reads .craft/runs under the home it is given', async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'craft-ar-home-'))
   try {
@@ -107,6 +129,42 @@ test('a resumed run filed twice is one run, and the fold is said (realm @nick/cr
     assert.match(out, /3 run\(s\)/)
     assert.match(out, /1 record\(s\) folded into a newer record of the same run/)
     assert.doesNotMatch(out, /record\(s\) skipped: no schemaVersion/)
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('a run stopped under one version and resumed under the next is counted once, under the version that finished it', async () => {
+  const part = { driver: 'cli', project: '/p', branch: 'feat/x', head: 'abc', cliRun: '/s/cli/1-1' }
+  const dir = store([
+    record({ ...part, craftVersion: '0.9.0', ts: '2026-11-22T09-42-49Z', verdict: 'INCOMPLETE' }),
+    record({ ...part, craftVersion: '0.10.0', ts: '2026-11-22T09-56-50Z', verdict: 'Block', round: 2 }),
+  ])
+  try {
+    const stoppedUnder = run([dir, '--version', '0.9.0'], process.env).stdout.join('\n')
+    assert.match(stoppedUnder, /— 0 run\(s\)/, stoppedUnder)
+    assert.match(stoppedUnder, /1 record\(s\) folded into a newer record of the same run/)
+    const finishedUnder = run([dir, '--version', '0.10.0'], process.env).stdout.join('\n')
+    assert.match(finishedUnder, /— 1 run\(s\), 0 with partial coverage/, finishedUnder)
+    assert.doesNotMatch(finishedUnder, /folded/)
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('a run that only stopped, under two versions, is counted once under the version of its newest part', async () => {
+  const part = { driver: 'cli', project: '/p', branch: 'feat/x', head: 'abc', cliRun: '/s/cli/1-1', verdict: 'INCOMPLETE' }
+  const dir = store([
+    record({ ...part, craftVersion: '0.9.0', ts: '2026-11-22T09-42-49Z' }),
+    record({ ...part, craftVersion: '0.10.0', ts: '2026-11-22T09-56-50Z' }),
+  ])
+  try {
+    const older = run([dir, '--version', '0.9.0'], process.env).stdout.join('\n')
+    assert.match(older, /— 0 run\(s\)/, older)
+    assert.match(older, /1 record\(s\) folded into a newer record of the same run/)
+    const newer = run([dir, '--version', '0.10.0'], process.env).stdout.join('\n')
+    assert.match(newer, /— 1 run\(s\), 1 with partial coverage/, newer)
+    assert.doesNotMatch(newer, /folded/)
   } finally {
     fs.rmSync(dir, { recursive: true, force: true })
   }

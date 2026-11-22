@@ -15,7 +15,7 @@ import { effectivePrBase, classOneBaseLine, classifiedVerdict, issueOf } from '.
 export const meta = {
   name: 'triage-findings',
   description: 'Triage review findings (craft agents + GitHub PR comments) into one ordered, validated fix plan — no edits',
-  whenToUse: 'For every batch of review findings, whatever its size — from the report file of any review engine or the inline comments of a PR — when you want them validated against the code, deduped, conflict-checked, and turned into an ordered fix plan. It reads the checkout the session runs in, or the one `repo=` names (an absolute path), as in `craft:review`; an argument it does not take is refused the same way, and a repo= that is not an absolute path (or is blank, or holds a control character) is refused: it files an INCOMPLETE run record with only the logger run, no work agent. Pass `prBase` = `git merge-base origin/<trunk> <reviewed head>` (the commit the PR forks from) only when the reviewed head is a branch diverging from trunk, and with it `base` = the reviewed head\'s SHA; on trunk or with no branch leave prBase out. prBase counts only beside a `base` it differs from (with no base, or one equal to it, or HEAD, it is absent): a finding is deferred as not this PR\'s only when shown there, else it comes back needs-decision. `base` is the ref the findings were generated against — the reviewed head — which validation pins to. Once a workflow run has ended (completed, failed or stopped — not while you may still resume it), fold its real cost into the records it filed: `node "<craft plugin root>/integrations/shared/craft-log-run.mjs" enrich-cost --run-id <wf_…>` (the plugin root is two directories above a craft skill\'s base directory), with the run id the Workflow completion names. Best-effort: if it fails, say so in one line and go on.',
+  whenToUse: 'For every batch of review findings, whatever its size — from the report file of any review engine or the inline comments of a PR — when you want them validated against the code, deduped, conflict-checked, and turned into an ordered fix plan. It reads the checkout the session runs in, or the one `repo=` names (an absolute path), as in `craft:review`; an argument it does not take is refused the same way, and a repo= that is not an absolute path (or is blank, or holds a control character) is refused: it files an INCOMPLETE run record with only the logger run, no work agent. Pass `prBase` = `git merge-base origin/<trunk> <reviewed head>` (the commit the PR forks from) only when the reviewed head is a branch diverging from trunk, and with it `base` = the reviewed head\'s SHA; on trunk or with no branch leave prBase out. prBase counts only beside a `base` it differs from (with no base, or one equal to it, or HEAD, it is absent): a finding is deferred as not this PR\'s only when shown there, else it comes back needs-decision. `base` is the ref the findings were generated against — the reviewed head — which validation pins to. Once a workflow run has ended (completed, failed or stopped — not while you may still resume it), fold its real cost into the records it filed: `sh "<craft plugin root>/integrations/shared/craft-cli.sh" runs enrich-cost --run-id <wf_…>` (the plugin root is two directories above a craft skill\'s base directory), with the run id the Workflow completion names. Best-effort: if it fails, say so in one line and go on.',
   phases: [
     { title: 'Gather', detail: 'pull raw findings from the requested sources (a report file from any review engine, GitHub PR threads)', model: 'sonnet' },
     { title: 'Sift', detail: 'collapse repeats in the batch; recall the project memory and set aside what an active decision, deferred question or project rule already answers — no validator for those', model: 'sonnet' },
@@ -159,7 +159,7 @@ const PLAN_SCHEMA = {
 // aggregate can be filtered to ONE engine version: without it, runs from every rubric the store
 // has ever seen blend together. MUST match `.claude-plugin/plugin.json` — `integrations/shared/check-workflows.mjs`
 // fails the build if it drifts. The build lifts this line verbatim into the engine's banner.
-const CRAFT_VERSION = '0.57.0' // x-release-please-version
+const CRAFT_VERSION = '0.58.0' // x-release-please-version
 
 // Imported from integrations/shared/: the one write path (shared with every other record-filing engine); how to find a
 // pinned dependency's source; the banner that leads the plan when a write did not land, the same one
@@ -276,7 +276,10 @@ async function recallMemory() {
     return
   }
   const r = await recallDecisions(p => work(p, { label: 'memory-recall', phase: 'Sift', schema: MEMORY_RECALL_SCHEMA, model: 'sonnet', effort: 'low' }), paths, base)
-  const m = mergeRecall(r, A['priorDecisions'], parsePriorDecisions)
+  // The cap keeps the records closest to the gathered findings' files (memory-bounds.mjs).
+  /** @type {(list: unknown, labelOf?: (i: number) => string) => ReturnType<typeof parsePriorDecisions>} */
+  const parseNear = (list, labelOf) => parsePriorDecisions(list, labelOf, paths)
+  const m = mergeRecall(r, A['priorDecisions'], parseNear)
   priorDecisionsIn = m.prior
   memory = m.memory
 }

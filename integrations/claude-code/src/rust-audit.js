@@ -19,7 +19,7 @@ import { cliReviewResult, cliDegraded, gateResult } from '../../shared/rust-audi
 export const meta = {
   name: 'rust-audit',
   description: 'Full Rust crate audit — the mechanical gate once for the whole change, first, then a nested CLI review per crate in parallel (craft:review, the craft binary\'s step protocol, each with path=<crate>, fresh and the gate\'s kept result as gateFrom, so its seeds reach that crate\'s lenses; a red gate starts no review; the nested CLI review is not yet observed live), inter-crate contracts, architecture, crate decomposition, security, Miri, semver, build-matrix, deps, unused-crate detection (verified), and test/doc health in parallel, synthesized into one report',
-  whenToUse: 'Before a release or a big merge, when you want the comprehensive full review — every craft dimension run at once and consolidated into a single verdict. Pass {base} to fix the diff base; {priorDecisions: [<recalled decision records>]} — an object argument only; a string is refused by the nested reviews — is handed to the nested reviews. The engine itself always recalls the active decisions and questions for the paths of the diff through the craft:memory skill, once, and hands them to the nested CLI reviews as priorDecisions with _recalled, so they do not recall again (the external-system records and the split into parts that recall returns have no carrier in a CLI review and stay on the memory line of this audit); priorDecisions is optional and ADDS to that recall, never replaces it (merged by id, the recalled record kept on a clash; an empty list adds nothing; a passed record may leave out id when it carries kind, title and scope, the id then derived from them by the memory skill rule), and the report names both parts. Pass {mutants:true} to include the slow mutation pass. The mechanical gate (clippy and semgrep, through the craft binary\'s `craft review gate`) BUILDS AND RUNS THE BRANCH\'S CODE on this machine, once, before the reviews, which take its result and seeds rather than gate again (with none kept, they run with gate=false); a red gate starts no review — each is NOT RUN (gate red) — and the audit\'s verdict is Block, its report led by the gate\'s line in the review\'s own words, the gate\'s section appended once; each review\'s answer carries its verdict, the path of the report the binary wrote and its findings, which the synthesis reads (not yet observed live). It audits ONLY the checkout the session runs in: there is no `repo` argument, and passing one is refused with nothing run (use `craft:review` with repo=, or start a session inside that repository). It posts nothing to a PR: to post findings there run review with comment — never post findings by hand (they would lack the marker that ties a later rejection to its finding). Once a workflow run has ended (completed, failed or stopped — not while you may still resume it), fold its real cost into the records it filed: `node "<craft plugin root>/integrations/shared/craft-log-run.mjs" enrich-cost --run-id <wf_…>` (the plugin root is two directories above a craft skill\'s base directory), with the run id the Workflow completion names. Best-effort: if it fails, say so in one line and go on.',
+  whenToUse: 'Before a release or a big merge, when you want the comprehensive full review — every craft dimension run at once and consolidated into a single verdict. Pass {base} to fix the diff base; {priorDecisions: [<recalled decision records>]} — an object argument only; a string is refused by the nested reviews — is handed to the nested reviews. The engine itself always recalls the active decisions and questions for the paths of the diff through the craft:memory skill, once, and hands them to the nested CLI reviews as priorDecisions with _recalled, so they do not recall again (the external-system records and the split into parts that recall returns have no carrier in a CLI review and stay on the memory line of this audit); priorDecisions is optional and ADDS to that recall, never replaces it (merged by id, the recalled record kept on a clash; an empty list adds nothing; a passed record may leave out id when it carries kind, title and scope, the id then derived from them by the memory skill rule), and the report names both parts. Pass {mutants:true} to include the slow mutation pass. The mechanical gate (clippy and semgrep, through the craft binary\'s `craft review gate`) BUILDS AND RUNS THE BRANCH\'S CODE on this machine, once, before the reviews, which take its result and seeds rather than gate again (with none kept, they run with gate=false); a red gate starts no review — each is NOT RUN (gate red) — and the audit\'s verdict is Block, its report led by the gate\'s line in the review\'s own words, the gate\'s section appended once; each review\'s answer carries its verdict, the path of the report the binary wrote and its findings, which the synthesis reads (not yet observed live). It audits ONLY the checkout the session runs in: there is no `repo` argument, and passing one is refused with nothing run (use `craft:review` with repo=, or start a session inside that repository). It posts nothing to a PR: to post findings there run review with comment — never post findings by hand (they would lack the marker that ties a later rejection to its finding). Once a workflow run has ended (completed, failed or stopped — not while you may still resume it), fold its real cost into the records it filed: `sh "<craft plugin root>/integrations/shared/craft-cli.sh" runs enrich-cost --run-id <wf_…>` (the plugin root is two directories above a craft skill\'s base directory), with the run id the Workflow completion names. Best-effort: if it fails, say so in one line and go on.',
   phases: [
     { title: 'Scout', detail: 'detect the diff base, unsafe code, and the workspace crates + dependency edges', model: 'haiku' },
     { title: 'Audit', detail: 'parallel: the mechanical gate once (review gateOnly), then per-crate CLI review taking it (gateFrom; none on a red gate) + per-edge contracts + architecture + crate-decomposition + security + Miri + semver/build-matrix/deps/unused-crates/tests-cov' },
@@ -130,6 +130,7 @@ const SCOUT_SCHEMA = {
     repoRoot: { type: 'string', description: 'absolute path of the repository root (`git rev-parse --show-toplevel`), empty if it cannot be resolved — used ONLY to relativize a crate path that came back absolute' },
     crates: { type: 'array', items: CRATE_ITEM, description: 'workspace members; empty if cargo metadata is unavailable' },
     changedCrates: { type: 'array', items: CRATE_ITEM, description: 'subset of crates with a changed .rs file vs the base; empty if no base / no changes' },
+    changedFiles: { type: 'array', items: { type: 'string' }, description: 'every file the diff changes vs the base, repo-relative; empty if no base / no changes' },
     edges: { type: 'array', items: EDGE_ITEM, description: 'intra-workspace dependency edges; empty if cargo metadata is unavailable' },
     notes: { type: 'string', description: 'one line on what was detected' },
   },
@@ -199,7 +200,7 @@ const UNUSED_VERDICT_SCHEMA = {
 /** @typedef {{ from: string, to: string }} EdgeItem */
 /**
  * @typedef {{ hasDiff: boolean, hasUnsafe: boolean, baseRef: string, repoRoot: string, crates: CrateItem[],
- *   changedCrates: CrateItem[], edges: EdgeItem[], notes: string }} ScoutResult
+ *   changedCrates: CrateItem[], changedFiles?: string[], edges: EdgeItem[], notes: string }} ScoutResult
  */
 /** @typedef {{ severity: string, title: string, location: string, detail: string }} Finding */
 /** @typedef {{ dimension: string, verdict: string, summary: string, findings: Finding[], evidence: string }} FindingsResult */
@@ -217,7 +218,7 @@ const UNUSED_VERDICT_SCHEMA = {
 // aggregate can be filtered to ONE engine version: without it, runs from every rubric the store
 // has ever seen blend together. MUST match `.claude-plugin/plugin.json` — `integrations/shared/check-workflows.mjs`
 // fails the build if it drifts. The build lifts this line verbatim into the engine's banner.
-const CRAFT_VERSION = '0.57.0' // x-release-please-version
+const CRAFT_VERSION = '0.58.0' // x-release-please-version
 
 // The unused-crates find→verify pipeline's bookkeeping (integrations/shared/audit-verification.mjs). In integrations/shared/ because its
 // interesting cases are the DEATH paths — a verifier that resolves null, one that throws, most of a fan-out
@@ -406,6 +407,7 @@ const scout = /** @type {ScoutResult | null} */ (await auditAgent(
 5. crates = workspace members from \`cargo metadata --no-deps --format-version 1\` — each as {name, path} where path is the crate's manifest directory RELATIVE to the repo root. \`cargo metadata\` prints \`manifest_path\` as an ABSOLUTE file path: strip the repo root and the trailing \`/Cargo.toml\` yourself (the workspace root crate is \`.\`). An absolute path here cannot be used as a git pathspec and the per-crate review it feeds will refuse to run. Empty array if \`cargo metadata\` is unavailable.
 5b. repoRoot = \`git rev-parse --show-toplevel\` (empty string if it fails). It is the fallback that lets the script repair an absolute crate path; it is not a substitute for step 5.
 6. changedCrates = the subset of \`crates\` whose directory contains a \`.rs\` file listed by \`git diff --name-only <base>...HEAD\` (or \`git status --porcelain\` for uncommitted work). Empty if no base or no changed \`.rs\`.
+6b. changedFiles = every path \`git diff --name-only <base>...HEAD\` lists (any file, not only \`.rs\`), plus uncommitted ones from \`git status --porcelain\`, repo-relative. Empty if no base or no changes.
 7. edges = intra-workspace dependency edges from \`cargo metadata --locked --format-version 1\`; if \`--locked\` refuses (Cargo.lock missing or stale), read them from \`cargo metadata --no-deps --format-version 1\` instead — it does not resolve dependencies, so it never writes Cargo.lock; there each member's \`dependencies\` entry with a \`path\` inside another member is an edge. Never run it without one of those two flags: a plain call rewrites the lockfile of the checkout under audit. {from, to} where BOTH \`from\` and \`to\` are workspace members and \`from\` depends on \`to\`. Empty array if \`cargo metadata\` is unavailable.`,
   // Scout is pure mechanics (git refs + grep) — run it cheap: Haiku at low effort.
   { label: 'scout', schema: SCOUT_SCHEMA, model: 'haiku', effort: 'low' },
@@ -414,30 +416,38 @@ const scout = /** @type {ScoutResult | null} */ (await auditAgent(
  * What the audit reads from the scout. scout is null if the agent was skipped or died — fall back to
  * safe defaults rather than crash.
  * @param {ScoutResult | null} s
- * @returns {{ baseRef: string, hasUnsafe: boolean, repoRoot: string, crates: CrateItem[], changedCrates: CrateItem[], edges: EdgeItem[], notes: string }}
+ * @returns {{ baseRef: string, hasUnsafe: boolean, repoRoot: string, crates: CrateItem[], changedCrates: CrateItem[], changedFiles: string[], edges: EdgeItem[], notes: string }}
  */
 function scoutFacts(s) {
   const noNotes = 'scout produced no result — assuming unsafe present, no base ref'
   // fail-safe: run Miri when detection didn't resolve
-  if (!s) return { baseRef: '', hasUnsafe: true, repoRoot: '', crates: [], changedCrates: [], edges: [], notes: noNotes }
+  if (!s) return { baseRef: '', hasUnsafe: true, repoRoot: '', crates: [], changedCrates: [], changedFiles: [], edges: [], notes: noNotes }
   return {
     baseRef: s.baseRef ?? '',
     hasUnsafe: s.hasUnsafe ?? true,
     repoRoot: typeof s.repoRoot === 'string' ? s.repoRoot.trim() : '',
     crates: Array.isArray(s.crates) ? s.crates : [],
     changedCrates: Array.isArray(s.changedCrates) ? s.changedCrates : [],
+    changedFiles: Array.isArray(s.changedFiles) ? s.changedFiles.filter(f => typeof f === 'string' && f !== '') : [],
     edges: Array.isArray(s.edges) ? s.edges : [],
     notes: s.notes ?? noNotes,
   }
 }
-const { baseRef, hasUnsafe, repoRoot, crates, changedCrates, edges, notes: scoutNotes } = scoutFacts(scout)
+const { baseRef, hasUnsafe, repoRoot, crates, changedCrates, changedFiles, edges, notes: scoutNotes } = scoutFacts(scout)
+// The records past the cap are ranked by the diff's paths (keptRecords), so the cap keeps those closest to them.
+/** @type {(list: unknown, labelOf?: (i: number) => string) => ReturnType<typeof parsePriorDecisions>} */
+const parseNear = (list, labelOf) => parsePriorDecisions(list, labelOf, changedFiles)
 // The one recall of this audit (realm @nick/craft, node #203): the agent lists the diff's paths from
 // the base itself. Whatever it yields — an empty list included — goes to the nested reviews, the
 // launcher's records merged in (the recalled one kept on an id clash).
 async function recallOnce() {
-  if (recalledByLauncher) return
+  // A launcher's recall: its records are read again by the diff's paths, now that the scout named them.
+  if (recalledByLauncher) {
+    memory = withDerived(initialMemory(passedAccepted, true, A['_memory']), parseNear(passedList).decisions)
+    return
+  }
   const r = await recallDecisions(p => auditAgent(p, { label: 'memory-recall', phase: 'Scout', schema: MEMORY_RECALL_SCHEMA, model: 'sonnet', effort: 'low' }), [], baseRef || baseArg)
-  const { merged, read, blocked, overrides } = mergeAndRead(r.decisions, passedList, parsePriorDecisions, r.inactive)
+  const { merged, read, blocked, overrides } = mergeAndRead(r.decisions, passedList, parseNear, r.inactive)
   memory = withDerived(withPassed(r.memory, passedAccepted, read.passed), read.prior.decisions)
   // A passed copy of a record the store withdrew or superseded is not forwarded; the audit names it on
   // its memory line, the nested reviews never see it (realm @nick/craft, node #224).

@@ -1,7 +1,7 @@
 ---
 name: memory
 description: >-
-  Memory of the consumer project's own facts — decisions on review findings, project rules (a stance on a class of findings), lessons, open questions (deferred findings too) — kept across sessions in the project's own store (a setting, an MCP server, harness memory, .craft/memory). Verbs: recall(topic, scope), record-decision, record-rule, record-lesson, record-question; the `external` records earlier releases wrote are recalled only for `craft init` to import. Use when such a fact should outlive the session, before working on a path to learn what was decided there, or before a craft review (its engine recalls itself; priorDecisions only adds). Triggers: remember this decision, record why we rejected, make it a project rule, what did we decide about, note this lesson, open question for later. Not for memory leaks or usage (rust-performance, rust-ownership), nor craft's run records and ledger.
+  Memory of the consumer project's own facts — decisions on review findings, project rules (a stance on a class of findings), lessons, open questions (deferred findings too) — kept across sessions in the project's own store (a setting, an MCP server, harness memory with its own craft-memory.md index, .craft/memory). Verbs: recall(topic, scope), record-decision, record-rule, record-lesson, record-question (a scope is a path or component, never a line); the `external` records earlier releases wrote are recalled only for `craft init` to import. Use when such a fact should outlive the session, before working on a path to learn what was decided there, or before a craft review (its engine recalls itself; priorDecisions only adds). Triggers: remember this decision, record why we rejected, make it a project rule, what did we decide about, note this lesson, open question for later, MEMORY.md too long. Not for memory leaks or usage (rust-performance, rust-ownership), nor craft's run records and ledger.
 ---
 
 # Memory — the project's decisions, rules, lessons and questions
@@ -16,7 +16,7 @@ project already has; it never invents one. craft's machine memory — the run st
 | Verb | Input | Effect |
 |---|---|---|
 | `recall(topic, scope)` | keywords, a path or component | the **matching active** records (below); for a review, also a short list of the matching inactive ones' ids, only to block them |
-| `record-decision` | title, scope, body (the reason), author, commit, links | one `decision` record |
+| `record-decision` | title, scope, body (the reason), author, decidedBy, commit, links | one `decision` record |
 | `record-rule` | title (the rule), scope, body (why), author, links; `lens` to narrow it | one `rule` record |
 | `record-lesson` | title, scope, body, links | one `lesson` record |
 | `record-question` | title, scope, body (what would answer it), links; author, commit and `deferred: true` for a deferred finding | one `question` record |
@@ -28,15 +28,16 @@ answered question becomes a `decision` that supersedes it.
 ## Record shape (lowest common denominator)
 
 ```
-{ id, kind, title, body, scope, status, date, author, commit, deferred, line, lens, toolRule, links[] }
+{ id, kind, title, body, scope, status, date, author, decidedBy, commit, deferred, line, lens, toolRule, links[] }
   id      stable hash of kind + title + scope (below) — same fact, same id: re-recording updates it
   kind    decision | rule | lesson | question | external
   title   one line, ≤ 200 chars — the finding title verbatim, the rule's statement, the lesson, the question
   body    the reason / why the rule holds / the lesson / what would answer it — ≤ 1200 chars
-  scope   a repo-relative path (file or directory) or a component name; `.` for the whole repo (required on a rule)
+  scope   a repo-relative path (file or directory) or a component name; `.` for the whole repo (required on a rule); never a line — the line goes in `line`
   status  active | superseded | withdrawn
   date    YYYY-MM-DD of the last write
   author  who decided — a login or a name, ≤ 120 chars (decisions; optional on the others)
+  decidedBy  `human` when a human made or confirmed the call, `agent` when an agent recorded it on its own (decisions; absent on the others) — only a `human` decision sets a High finding aside; a decision without it is not a human's
   commit  the commit the decided code was at, 7–40 hex (decisions and deferred questions on findings; below)
   deferred  `true` on a question that defers a review finding (below); absent on every other record
   line    the finding's line in `scope`'s file (records on review findings; absent when unknown; never on a rule)
@@ -53,7 +54,7 @@ systems a review reads the source of now live in the reviewer's own profile of t
 `craft init` (`craft:review-init`), which proposes these records as its candidates. Recall them only for
 that import — every active `external` record, every scope — and never pass them as `priorDecisions`.
 
-**A decision on a review finding** carries all of `author`, `commit` and a link to where it was
+**A decision on a review finding** carries all of `author`, `decidedBy`, `commit` and a link to where it was
 made (the PR thread, the review comment): the review engine names them when it sets the finding
 aside, and it sets a finding aside only while the code in `scope` is unchanged since `commit`. A
 decision without a `commit` is still recorded, but a review raises its finding again every time.
@@ -108,6 +109,16 @@ trailing `/` (e.g. `printf '%s\n%s\n%s' decision 'unwrap in parser is fine' src/
 sha256sum | cut -c1-10`). Re-recording the same kind + title + scope **updates** that record
 (body, date, links) instead of adding a duplicate.
 
+**The scope never carries a line.** A record verb given a scope of the form `path:N` or
+`path:N-M` does not write it: it refuses and names the corrected form — scope = `path`,
+line = `N` (the start line). Earlier runs wrote such scopes; a reader takes them as that path and
+line `N` for matching (a `line` the record carries itself wins), while their id stays the hash of
+the scope as written, so two old records of one title at two ranges stay two records.
+Re-recording such an old record writes scope = `path` and its `line` under the id of the path,
+sets the old record `superseded` and links `supersedes: <old id>` — unless an active record of the
+same kind and title already holds that path: then the id rule above would make them one record,
+so the old one is left as it is written, and the reader keeps applying it at its own line.
+
 **Bounds — what happens when one is reached.** These are refusals, never silent truncation:
 
 - `title` over 200 chars → shorten it to the claim yourself before writing; a title cut mid-word
@@ -117,6 +128,11 @@ sha256sum | cut -c1-10`). Re-recording the same kind + title + scope **updates**
   fit is reported to the caller as not written, with why.
 - Index line over 150 chars (harness project memory, below) → the index line shortens its title
   with `…`; the record file keeps the full title, so nothing is lost and the id is unchanged.
+- The harness's own `MEMORY.md` is loaded every session and truncated past its load limit, so
+  craft never puts a line per record there: its records are indexed in its own
+  `craft-memory.md` beside it, and `MEMORY.md` carries one pointer line to it; craft lines an
+  earlier release left in `MEMORY.md` are moved over by the migration in
+  [backends.md](backends.md), which never touches a line that is not craft's.
 - `recall` over 10 matches → return the 10 most specific (exact path before directory before
   component, newer before older) and say `N more — narrow the scope or the topic`; never drop the
   rest silently.
@@ -156,7 +172,10 @@ reason names the rule.
    agent, a subagent) derives it from the repository's main checkout root, never a worktree or
    subdirectory — path rule in
    [backends.md](backends.md). Written without asking (it is private to the
-   user and tied to this project). A refused write — a `PreToolUse` guard, a permission denial,
+   user and tied to this project); craft's records are indexed in its own `craft-memory.md`
+   there, with one pointer line in the harness's `MEMORY.md`, rebuilt after each `record-*`, when
+   the craft lines an earlier release wrote into `MEMORY.md` are moved over too (migration in
+   [backends.md](backends.md)); a recall writes nothing and also finds the records the index missed. A refused write — a `PreToolUse` guard, a permission denial,
    the consumer's instructions forbidding that directory — means **unavailable**: go to 4. Format
    → [backends.md](backends.md).
 4. **Files in the consumer repo**, `.craft/memory/<kind>/<id>.md` — only when `.craft/memory/`
@@ -177,12 +196,14 @@ rule 3. Never put secrets, credentials or personal data in a record, whatever th
 
 1. **Scope match.** A record matches a touched path when its `scope` equals the path, is a
    directory containing it, or names the component the path belongs to; `.` matches everything
-   and ranks last.
+   and ranks last. An old scope `path:N` or `path:N-M` matches as `path`.
 2. **Keyword match.** `topic` keywords against `title` and `body`; with both scope and topic,
    a record must match the scope and at least one keyword.
 3. **Only matches come back.** Use the backend's search (the MCP search tool, `grep -l` over the
-   memory files, the harness index `MEMORY.md`) — never load the whole store into
-   context.
+   memory files, craft's harness index `craft-memory.md` and any craft lines not yet moved out of
+   `MEMORY.md`, then the record files neither lists, found by their `craft_kind` frontmatter; only an active one
+   among them makes the index stale) —
+   never load the whole store into context. A recall writes nothing.
 4. **Active only by default.** `superseded` and `withdrawn` stay hidden unless the caller asks for
    history; a superseded record shown on request carries its successor's id. A review engine's
    recall also returns the matching `superseded` and `withdrawn` records apart, in an `inactive`
@@ -211,12 +232,13 @@ store's current state; a passed record the store withdrew or superseded is held 
 holds some the store may not — rejections just read from PR threads, say — and never relies on
 passing to stand in for the engine's recall.
 
-1. `recall(<no topic>, <each path of the diff>)` — `git diff --name-only <base>...HEAD`. Decisions,
-   questions and project rules (`kind: decision`, `kind: question`, `kind: rule`), **active** only;
-   never lessons.
+1. `recall(<no topic>, <each path of the diff>)` — `git diff --name-only <base>...HEAD`. Decisions
+   and questions (`kind: decision`, `kind: question`) for those paths, and every project rule
+   (`kind: rule`) whatever its scope — a project holds few, and the engine matches a rule's scope to
+   each finding itself; **active** only; never lessons.
 2. To add records, pass them to the workflow as the argument `priorDecisions` — **only in an object argument**,
    `{ …, priorDecisions: [<records>] }`: a list of the records in the shape above, as recalled —
-   `id`, `kind`, `title`, `scope`, `body`, `date`, `author`, `commit`, `deferred`, `lens`, `links` — nothing rewritten,
+   `id`, `kind`, `title`, `scope`, `body`, `date`, `author`, `decidedBy`, `commit`, `deferred`, `lens`, `links` — nothing rewritten,
    nothing summarised; `kind` on every record, or a question or a rule passed without it is read by its id
    (`question-…`, `rule-…`), and anything else as a decision. A record built by hand may leave `id` out when
    it carries `kind`, `title` and `scope`: the engine derives the id by the rule above and its
@@ -229,13 +251,27 @@ passing to stand in for the engine's recall.
    link, also outside the verdict (the review ledger keeps it `deferred`, and a re-review carries it
    like a rejection); one a project rule covers, under **Covered by project rules** (above). A question without `deferred: true` records no deferral: it sets nothing aside
    and labels nothing; a deferral without a `commit` is raised again and named. Either is raised
-   again as a normal finding when it is Critical/High, when the code in the decision's scope changed
-   since its `commit`, when the decision has no `commit`, or when the repository does not know that
-   `commit` (a squash-merged branch, another clone — named under **Prior decisions not applied**).
-   More than 100 decisions, or a record that does not fit (a missing title or reason, no `id` and
+   again as a normal finding when it is Critical, when it is High and its record is not a human's
+   decision (`decidedBy: "human"` on a decision that records no deferral; an `agent` decision, one
+   without the field — every record written before it — and a deferral never set a High aside) or a
+   project rule (above), when the code in
+   the decision's scope changed since its `commit`, when the decision has no `commit`, or when the
+   repository does not know that `commit` (a squash-merged branch, another clone — named under
+   **Prior decisions not applied**). A High a human's decision sets aside, its code unchanged since
+   that `commit`, is listed under its own **High rejected by a human** section with who, when, why
+   and the link, outside the verdict.
+   More than 100 decisions keep the 100 closest to the reviewed paths (a scope naming a changed file,
+   then a directory holding one, deeper before shallower, newer before older; on a re-review, the
+   delta's paths and the prior findings it re-adjudicates), the rest named; project rules are counted
+   apart, up to 100 of their own, so the decisions never push a rule out. Past 60 changed paths the
+   recall lists them by directory; past a judge's bound (40 pairs for the match judge, 400 over
+   several prompts for the rule judge) it sees those of the reviewed paths first, each finding's
+   closest record before any finding's second. Record a decision with the finding's file, line and
+   lens so it matches without the judge. A record that does not fit (a missing title or reason, no `id` and
    no `kind` or `scope` to derive one from, a field past
    its bound, a control character in `id`, `scope` or `commit`, a scope outside the repo or holding
-   characters other than letters, digits and `._@+/ -`),
+   characters other than letters, digits and `._@+/ -` — a scope `path:N` or `path:N-M` is read as
+   `path` and line `N` instead),
    is refused and named — the report's **Prior decisions not applied** section — narrow the recall.
 
 ## Subagents

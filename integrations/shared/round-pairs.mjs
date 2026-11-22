@@ -187,12 +187,12 @@ export const REASON = {
   'cost-malformed': "a round's cost is not an object, has a field that is not a non-negative number, or a total of 0 beside measured parts (corrupt store)",
   'cost-empty': "a round's cost was written but measured nothing — enrich-cost found transcripts without usage (schema drift?)",
   'cost-overcounted':
-    "a round's cost was summed per transcript line, counting a message once per line — re-run `node integrations/shared/craft-log-run.mjs enrich-cost --run-dir <workflow transcript dir> --record <record>` on it",
+    "a round's cost was summed per transcript line, counting a message once per line — re-run `craft runs enrich-cost --run-id <wf_…>` on its run, or `craft runs enrich-cost --run-dir <workflow transcript dir> --record <record>` on the record",
   'cost-unknown-rule': "a round's cost names a counting rule this reader does not know — its tokens may not be counted as the other round's",
   'counts-malformed': "a round's candidate, finding or lens-dispatch count is not a non-negative number (corrupt store) — it would read as 0",
   'cost-partial': "a round's cost is partial (enrich-cost skipped transcripts it could not read) — a lower bound is not a cost",
   'cost-missing':
-    'no real cost on both rounds — run `node integrations/shared/craft-log-run.mjs enrich-cost --run-dir <workflow transcript dir> --record <record>` on each',
+    'no real cost on both rounds — run `craft runs enrich-cost --run-id <wf_…>` on each run (or `--run-dir <workflow transcript dir> --record <record>` on each record)',
 }
 
 // The stored timestamp ('2026-10-01T15-50-24Z') as milliseconds; NaN when it is not one.

@@ -59,6 +59,7 @@ cross-linking is the collection's cohesion.
 | agent | `rust-security-scanner` | Runs the security toolchain, consolidates findings, returns a verdict |
 | agent | `rust-miri` | Runs unsafe code under Miri to detect undefined behavior |
 | agent | `engine-service` | Runs the engines' service steps (the review's `craft review` calls, checkpoints, the run record) exactly as their prompts say; defined with `omitClaudeMd: true`, so that it is not handed the project's instructions; launched by the engines, not by hand |
+| agent | `review-task` | Runs one task of a review (a lens, a scout, a verifier) read-only from the prompt file it is handed; defined with `omitClaudeMd: true` and no Skill tool, so that it is handed neither the project's instructions nor the skill listing; launched by the engines, not by hand |
 | agent | `rust-architecture-reviewer` | Audits the whole-project structure against the `rust-architecture-review` rubric, returns a Healthy/Concerns/At-risk rating |
 | hook | `SessionStart` (Claude Code) | When the repo declares its own agents (`.claude/agents/*.md`) or work rules (an `AGENTS.md` / `CLAUDE.md` that names the process: pull request, PR, code review, reviewer, review loop, before merging), adds four lines of context: the repo's roles and rules win on every step they cover, whichever declared role develops there runs its cycle with craft's tools (`craft:memory` before the work, `craft:develop`'s review loop before a PR), and a role running as a subagent hands the review loop back to the main session. Silent otherwise; off with `CRAFT_ROLE_HOOK=0` or a `craft-role-hook: off` line in `AGENTS.md` / `CLAUDE.md`. These hooks, the two below and the OpenCode one are the `craft` binary of the plugin's version (`craft hook …`), run from `~/.craft/bin/<version>/`; a hook never waits for it: where it is not there yet and the repo declares roles or rules (the switch on), the start hook downloads it in the background and says so in one line, the others say so on stderr, and they speak from the next session on; elsewhere they say nothing. Each run appends one line to `~/.craft/hooks.jsonl` (spoke or why silent; rotated past 256 KiB), which `integrations/shared/analyze-runs.mjs` reports beside the review runs made after it first spoke in their repo |
 | hook | `UserPromptSubmit`, `SubagentStart` (Claude Code) | In the same repos and with the same off switch: on a message that asks for review work — English words such as review, findings, PR comments, pull request, merge request, a PR or MR link, or a comment or fix word beside a PR word ("check the PR for new comments") — adds its lines (eight for findings, five for a review) once per session for each kind of request (again after a compact or clear). A message written mostly in another script than Latin (Russian, Greek, Chinese…) gets one conditional text instead, the first in a session (again after a compact or clear), standing for that and every later request in the session and letting the model decide whether one asks for findings work or a review; each later such message gets one reminder line that those lines apply to it if it is about findings, PR comments or a review. The conditional text and the per-kind texts do not stand in for each other: an English request after it still gets its kind's lines, and a non-Latin one after them still gets the conditional text. It answers only a human's word: a subagent's report or a task notification the harness hands back as a prompt gets nothing, except one conditional line (if the report completes the fixes, re-review before posting replies) on the first subagent report in a session that heard the findings lines, again only after a compact or clear; a bare English "continue" ("keep going", "finish it") takes the kind of the session's latest prompt (none if that one asked for something else), or, as a session's first prompt, of the repo's latest prompt from another session within 12 hours; prompts it leaves unclassed are logged as `no-kind` for that. For findings: one call before the first tool call, `craft:addressing-findings`; right after it, the `craft:memory` recall for every path the findings touch, before triage; after the fixes are in and before any reply is posted, the re-review in the main session (the `craft:review` workflow on any language: Rust, Nix and SQL under their profiles, other source under its general lenses, in one run) until no Medium-or-higher finding is open; what the skill gives over working by hand; the main session holds the memory — it puts the records `craft:memory` recalls into each subagent's brief and records every triage disposition itself, right after triage (checking the `memory backend:` line); triage, whatever the number of findings, is the `craft:triage-findings` workflow launched in the main session (`report` = the findings written to a file whenever they live in a report, `pr` whenever there is a PR, at least one, and `prBase` with `base` = the reviewed head's SHA only when the reviewed head is a branch diverging from trunk — on trunk or with no branch `prBase` is left out and the findings claimed not this PR's go to the human), never handed to a subagent, and the main session files its issues; only the fixes may be delegated, with a ready line to paste into each fixer's brief with its file group that has the fixer never re-triage nor write memory and report a planned fix it finds wrong. For a review: `craft:develop` for the loop or, for one pass, the `craft:review` workflow on any language (Rust, Nix and SQL under their profiles, other source under its general lenses, in one run), both in the main session, never handed to a subagent; the same memory line; a ready brief line for a delegated reviewer, which reports findings only, changes no code and records nothing. In that session, a subagent started with the Agent tool gets five lines of its own (triage, replies and fixes per PR comments count as findings work; triage is never its own — asked to triage, it reports that back; it fixes a plan's file group with its verdicts as given, never writes memory and reports a planned fix it finds wrong; a pure review changes and records nothing) (craft's own agents get none: a `craft:` agent, one of craft's shipped agents by its bare name, or the Workflow tool's, none of them logged). Each firing goes to `~/.craft/hooks.jsonl` with its event, counted per event in the "craft hooks" section of `integrations/shared/analyze-runs.mjs` (the re-review line and the reminder line as rows of their own) (the review-run join stays on SessionStart) |
@@ -108,7 +109,8 @@ The marketplace installs the plugin from the `claude-code-plugin` branch (a `url
 release rebuilds from `integrations/claude-code` with its symlinks replaced by real files, so the install has
 nothing to dereference. On Linux with `core.symlinks=false` (the Windows default) the plugin installs with all its
 files. It has not been observed on Windows, where the hooks are POSIX shell commands run by Claude Code's shell. The `review` workflow's mechanical gate builds and runs the reviewed branch's code on your machine (clippy runs
-its build scripts and proc macros, `nix flake check` its checks): pass `gate=false` for a branch you do not trust. Its
+its build scripts and proc macros, inside the repository's flake dev shell when it defines one, whose `shellHook` runs too;
+`nix flake check` its checks): pass `gate=false` for a branch you do not trust. Its
 released binary covers x86_64 Windows too (`craft-x86_64-pc-windows-msvc.tar.gz`, unpacked with the system's
 `tar.exe`), built by the release but not yet run on Windows. Working from a checkout,
 `claude --plugin-dir integrations/claude-code` loads the delivery in place through its symlinks (Linux, macOS).
@@ -130,7 +132,7 @@ Install on OpenCode 2.x:
 
 <!-- x-release-please-start-version -->
 ```bash
-opencode plugin add git+https://github.com/gurinderu/craft#opencode-v0.57.0
+opencode plugin add git+https://github.com/gurinderu/craft#opencode-v0.58.0
 ```
 <!-- x-release-please-end -->
 
@@ -146,7 +148,7 @@ root (see `integrations/codex/README.md`).
 
 <!-- x-release-please-start-version -->
 ```
-codex plugin marketplace add gurinderu/craft --ref v0.57.0
+codex plugin marketplace add gurinderu/craft --ref v0.58.0
 codex plugin add craft@craft
 ```
 <!-- x-release-please-end -->
@@ -161,7 +163,7 @@ upgrade craft` only refreshes the ref already pinned. Then add it at the new tag
 <!-- x-release-please-start-version -->
 ```
 codex plugin marketplace remove craft
-codex plugin marketplace add gurinderu/craft --ref v0.57.0
+codex plugin marketplace add gurinderu/craft --ref v0.58.0
 codex plugin add craft@craft
 ```
 <!-- x-release-please-end -->
@@ -188,7 +190,7 @@ Install the package at a release tag:
 
 <!-- x-release-please-start-version -->
 ```sh
-pi install git:github.com/gurinderu/craft@v0.57.0
+pi install git:github.com/gurinderu/craft@v0.58.0
 ```
 <!-- x-release-please-end -->
 

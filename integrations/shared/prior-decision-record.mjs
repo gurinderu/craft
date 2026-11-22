@@ -17,7 +17,9 @@
 // @nick/craft, node #273): read here the same way, but its scope is never defaulted — a rule without one
 // is refused by name; integrations/shared/project-rule-apply.mjs applies it after the review, apart from the decisions.
 // Imported by integrations/claude-code/src/rust-audit.js and integrations/claude-code/src/triage-findings.js.
-import { memoryRecordId } from './memory-record-id.mjs'
+// A scope that carries a line (`path:N`, `path:N-M`), as earlier runs wrote it, reads as the path and the
+// start line; a `line` the record gives itself wins (realm @nick/craft, node #606).
+import { memoryRecordId, scopeLine } from './memory-record-id.mjs'
 
 // Per-field ceilings. A field over its ceiling refuses the whole decision (said so) — a reason cut
 // mid-sentence would mark a finding with a rationale nobody wrote.
@@ -32,7 +34,7 @@ export const DECISION_FIELD_MAX = { id: 80, title: 200, scope: 300, reason: 1200
  * `toolRule`: the gate tool's own rule name its finding fired (a clippy lint, a semgrep rule id…), beside them (realm @nick/craft, node #236).
  * `overrides`: the ids of the successors an overriding passed record was applied over (realm
  * @nick/craft, node #229) — set by the engine's merge, so the record is tried before them.
- * @typedef {{ id: string, title: string, scope: string, reason: string, who: string, when: string, link: string, commit: string, kind: 'decision' | 'question' | 'rule', deferred: boolean, supersedes: string[], stores?: string[], derived?: true, line?: number, lens?: string, toolRule?: string, overrides?: string[] }} PriorDecision
+ * @typedef {{ id: string, title: string, scope: string, reason: string, who: string, when: string, link: string, commit: string, kind: 'decision' | 'question' | 'rule', deferred: boolean, supersedes: string[], stores?: string[], derived?: true, line?: number, lens?: string, toolRule?: string, overrides?: string[], decidedBy?: string }} PriorDecision
  */
 
 // The longest lens a record may name, and the longest toolRule.
@@ -130,7 +132,7 @@ export function linkedIds(links, re) {
  * The decision's fields as strings, trimmed. A memory record (skills/memory) is read as it is
  * recalled: `body`, `date` and `author` stand in for `reason`, `when` and `who`, and the first
  * http(s) URL in `links` for `link`. `kind` is `question` or `rule` only when recordKind reads one;
- * `deferred` only a boolean `true`.
+ * `deferred` only a boolean `true`; `decidedBy` (`human` or `agent`, realm @nick/craft, node #196) only when given.
  * @param {Record<string, unknown>} o @returns {PriorDecision}
  */
 export function decisionFields(o) {
@@ -140,10 +142,11 @@ export function decisionFields(o) {
   const url = decisionText(links.find(l => /^https?:\/\//.test(decisionText(l))))
   const derived = derivedRecordId(o)
   const stores = linkedIds(links, /^store:\s*(\S+)$/i)
+  const split = scopeLine(f('scope'))
   return {
     id: f('id') || derived,
     title: f('title'),
-    scope: f('scope') || '.',
+    scope: split.scope || '.',
     reason: f('reason', 'body'),
     who: f('who', 'author'),
     when: f('when', 'date'),
@@ -154,7 +157,8 @@ export function decisionFields(o) {
     supersedes: supersededIds(links),
     ...(stores.length ? { stores } : {}),
     ...(derived ? { derived: /** @type {const} */ (true) } : {}),
-    ...recordAnchor(o),
+    ...recordAnchor(o, split.line),
+    ...(decisionText(o['decidedBy']) ? { decidedBy: decisionText(o['decidedBy']) } : {}),
   }
 }
 
@@ -164,12 +168,14 @@ export function priorKind(k) {
 }
 
 /**
- * The record's anchor and overrides, each present only when given: `line` above 0, `lens` and `toolRule`
- * non-empty (realm @nick/craft, node #236), `overrides` the ids of a list of strings. @param {Record<string, unknown>} o
+ * The record's anchor and overrides, each present only when given: `line` above 0 — its own, else
+ * `scopeAt`, the line its scope carried —, `lens` and `toolRule` non-empty (realm @nick/craft, node #236),
+ * `overrides` the ids of a list of strings. @param {Record<string, unknown>} o @param {number} [scopeAt]
  * @returns {{ line?: number, lens?: string, toolRule?: string, overrides?: string[] }}
  */
-export function recordAnchor(o) {
-  const line = recordLine(o['line'])
+export function recordAnchor(o, scopeAt = 0) {
+  const own = recordLine(o['line'])
+  const line = own > 0 ? own : scopeAt
   const lens = decisionText(o['lens'])
   const toolRule = decisionText(o['toolRule'])
   const overrides = Array.isArray(o['overrides']) ? o['overrides'].map(decisionText).filter(Boolean) : []

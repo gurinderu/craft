@@ -19,7 +19,8 @@
 // named in the title: theirs — and a source-less seed's — match a record naming no rule without a judge
 // on the same lens, line and normalized title; a different title goes to the judge (realm @nick/craft, node #236).
 // Imported by integrations/claude-code/src/triage-findings.js.
-import { decisionAnswers, inDecisionScope, reraisedBySeverity, titleOverlap } from './prior-decisions.mjs'
+import { decisionAnswers, inDecisionScope, reraisedByRank, titleOverlap } from './prior-decisions.mjs'
+import { spreadPairs } from './memory-bounds.mjs'
 import matchJudgeSchema from '../../content/schemas/match-judge.schema.json' with { type: 'json' }
 import { render } from './content.mjs'
 import matchJudgeTpl from '../../content/prompts/match-judge.md'
@@ -207,13 +208,13 @@ export function placeGap(f, d) {
 }
 
 /**
- * A disputed pair's rank under the judge's bound, lowest first: settable findings before Critical/High,
+ * A disputed pair's rank under the judge's bound, lowest first: settable findings before those their severity raises again,
  * and within each a near line before a shared lens before title words alone.
  * @param {DisputedPair} p @returns {number}
  */
 export function pairRank(p) {
   const { near, same } = anchorOf(p.f, p.d)
-  return (reraisedBySeverity(p.f.severity) ? 3 : 0) + (near ? 0 : same ? 1 : 2)
+  return (reraisedByRank(p.f.severity, p.d) ? 3 : 0) + (near ? 0 : same ? 1 : 2)
 }
 
 /** The records in the order they are tried: those overriding another first. @param {PriorDecision[]} ds @returns {PriorDecision[]} */
@@ -388,7 +389,7 @@ export function rulelessUnjudgedNote(raised) {
 export function cutPairsNote(cut) {
   const named = cut.slice(0, CUT_NAMED_MAX).map(p => `"${clipLine(p.f.title, 60)}" @ ${clipLine(p.f.file)}:${findingLine(p.f)} ~ ${p.d.id}`)
   const more = cut.length - named.length
-  return `${cut.length} disputed record–finding pair(s) past the judge's bound of ${MATCH_JUDGE_PAIRS_MAX} were not judged — not matched unless a near-verbatim title answers them (for a tool finding naming no rule only a tool record with the same title, near its line when lines compare), the rest raised normally: ${named.join(', ')}${more ? ` and ${more} more` : ''}`
+  return `${cut.length} disputed record–finding pair(s) past the judge's bound of ${MATCH_JUDGE_PAIRS_MAX} were not judged — no reviewed paths are given here, so judged first were the pairs whose record can set the finding aside (a Medium or Low finding, or a High a human's decision answers) before those its severity raises again whatever the record says (a Critical, or a High no human decided), then each finding's closest record before any finding's second, severity ordering the findings within each of those; to need the judge less, record decisions with the finding's file as scope, its line and its lens (they then match outright), or review a narrower path (path=<dir>); not matched unless a near-verbatim title answers them (for a tool finding naming no rule only a tool record with the same title, near its line when lines compare), the rest raised normally: ${named.join(', ')}${more ? ` and ${more} more` : ''}`
 }
 
 /**
@@ -444,10 +445,14 @@ export async function matchFindings(findings, decisions, judge, reraisedSure) {
   const ordered = triedOrder(decisions)
   const plans = new Map(findings.map(f => [f, findingPlan(f, ordered)]))
   const all = [...plans].flatMap(([f, p]) => p.disputed.map(d => ({ f, d })))
-  const pairs = all
+  const ranked = all
     .map(p => ({ p, r: pairRank(p) }))
     .sort((a, b) => a.r - b.r)
     .map(x => x.p)
+  // Past the bound, the pairs whose record can set the finding aside first — by the same test as pairRank,
+  // so a High a human's decision answers is among them (realm @nick/craft, node #602) — then every
+  // finding's closest record before any finding's second (memory-bounds.mjs).
+  const pairs = spreadPairs(ranked, MATCH_JUDGE_PAIRS_MAX, [], p => (reraisedByRank(p.f.severity, p.d) ? 1 : 0))
   /** @type {string[]} */
   const notes = []
   /** @type {string[]} */
@@ -505,7 +510,7 @@ export async function matchFindings(findings, decisions, judge, reraisedSure) {
 }
 
 /**
- * The sure matches the split will raise again (`reraisedSure`: a Critical/High finding, a record without a
+ * The sure matches the split will raise again (`reraisedSure`: a Critical finding, a High no human's decision answers, a record without a
  * commit, a changed scope), as pairs the one judge is asked about `violates` only, after the disputed ones
  * and within the room the bound leaves; the rest are counted in `notes` (realm @nick/craft, node #282).
  * @param {Map<DecidableFinding, { sure?: PriorMatch, disputed: PriorDecision[] }>} plans

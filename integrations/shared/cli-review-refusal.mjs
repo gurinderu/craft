@@ -19,8 +19,9 @@ const deniedCommand = text =>
     .slice(0, 600) ?? ''
 
 /**
- * The refused command when a service step's answer is the harness refusing it, else null. The binary's own refusal
- * (`craft: …` on stderr, main.rs) never is, whatever it says.
+ * The refused command when a service step's answer is the harness refusing it, else null: the one its refusal quotes,
+ * else the one the driver asked run (`sent`, set by the driver beside the agent's answer) — auto mode's classifier
+ * quotes none. The binary's own refusal (`craft: …` on stderr, main.rs) never is, whatever it says.
  * @param {unknown} got @returns {{ command: string } | null}
  */
 export function harnessRefusal(got) {
@@ -28,15 +29,23 @@ export function harnessRefusal(got) {
   const stderr = typeof got['stderr'] === 'string' ? got['stderr'] : ''
   if (/^craft: /.test(stderr.trim())) return null
   const text = `${stderr}\n${typeof got['stdout'] === 'string' ? got['stdout'] : ''}`
-  return MARKERS.some(m => m.test(text)) ? { command: deniedCommand(text) } : null
+  if (!MARKERS.some(m => m.test(text))) return null
+  const sent = typeof got['sent'] === 'string' ? got['sent'].trim().slice(0, 600) : ''
+  return { command: deniedCommand(text) || sent }
 }
+
+/**
+ * `command` quoted as it can be copied: a heredoc it opens (the start's, the only one a review command carries) has its
+ * body named after the quote, never inside it. @param {string} command @returns {string}
+ */
+const quotedCommand = command => (/<<'[^']+'$/.test(command) ? `\`${command}\` (the launcher's prior decisions on stdin)` : `\`${command}\``)
 
 /**
  * Who refused `command` ('' when the refusal quoted none: `what` stands for it). @param {string} command
  * @param {string} what @returns {string}
  */
 const refusedSentence = (command, what) =>
-  `the harness's permission check refused the command, not craft — it was not run: ${command ? `\`${command}\`` : what}.`
+  `the harness's permission check refused the command, not craft — it was not run: ${command ? quotedCommand(command) : what}.`
 
 /**
  * The Bash rule that allows the binary's review commands, its prefix spelled as the commands spell the binary (bare,
