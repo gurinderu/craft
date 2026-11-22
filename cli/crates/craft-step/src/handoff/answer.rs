@@ -12,7 +12,7 @@ use super::{HandoffError, answer_file, answers_dir, safe};
 use crate::kind::Kind;
 use crate::task::Task;
 
-/// The most bytes an answer file is read to.
+/// The most bytes an answer may hold.
 const MAX_ANSWER: u64 = 64 * 1024 * 1024;
 
 /// How many `<stem>.<n>.json` names a refused file may take after `<stem>.json` before its
@@ -32,47 +32,58 @@ pub struct Written {
 /// What the agent of `task` wrote: its answer, or why there is none to read, and its file's print.
 #[must_use]
 pub fn read_answer<K: Kind>(dir: &Path, task: &Task<K>) -> Written {
-    let path = match answer_file(dir, &task.id) {
-        Ok(p) => p,
+    match answer_file(dir, &task.id) {
+        Ok(path) => read_capped(&path, MAX_ANSWER),
+        Err(e) => Written {
+            answer: Err(e.to_string()),
+            print: None,
+        },
+    }
+}
+
+/// The answer file at `path`, read through one open handle to at most `cap` bytes. One over it is
+/// refused, yet printed over what was read, so left in place it is known again.
+fn read_capped(path: &Path, cap: u64) -> Written {
+    let unread = |why: String, print: Option<String>| Written {
+        answer: Err(why),
+        print,
+    };
+    let file = match fs::File::open(path) {
+        Ok(f) => f,
+        Err(e) if e.kind() == ErrorKind::NotFound => {
+            return unread(
+                format!("no answer file was written at {}", path.display()),
+                None,
+            );
+        }
         Err(e) => {
-            return Written {
-                answer: Err(e.to_string()),
-                print: None,
-            };
+            return unread(
+                format!("the answer file {} cannot be read: {e}", path.display()),
+                None,
+            );
         }
     };
-    let read = fs::File::open(&path).and_then(|f| {
-        let meta = f.metadata()?;
-        if meta.len() > MAX_ANSWER {
-            return Err(std::io::Error::other(format!(
-                "it holds {} bytes, over the {MAX_ANSWER} an answer may",
-                meta.len()
-            )));
-        }
-        let mut bytes = Vec::with_capacity(usize::try_from(meta.len()).unwrap_or(0));
-        f.take(MAX_ANSWER + 1).read_to_end(&mut bytes)?;
-        if u64::try_from(bytes.len()).map_or(true, |n| n > MAX_ANSWER) {
-            return Err(std::io::Error::other(format!(
-                "it grew over the {MAX_ANSWER} bytes an answer may while read"
-            )));
-        }
-        Ok((bytes, meta.modified().ok()))
-    });
-    let (bytes, modified) = match read {
-        Ok(r) => r,
-        Err(e) => {
-            let why = if e.kind() == ErrorKind::NotFound {
-                format!("no answer file was written at {}", path.display())
-            } else {
-                format!("the answer file {} cannot be read: {e}", path.display())
-            };
-            return Written {
-                answer: Err(why),
-                print: None,
-            };
-        }
-    };
+    let meta = file.metadata().ok();
+    let modified = meta.as_ref().and_then(|m| m.modified().ok());
+    let size = meta.map_or(0, |m| m.len()).min(cap.saturating_add(1));
+    let mut bytes = Vec::with_capacity(usize::try_from(size).unwrap_or(0));
+    // One byte past the bound, whatever size the file reports, so one over it is told apart.
+    if let Err(e) = file.take(cap.saturating_add(1)).read_to_end(&mut bytes) {
+        return unread(
+            format!("the answer file {} cannot be read: {e}", path.display()),
+            None,
+        );
+    }
     let print = Some(print(&bytes, modified));
+    if u64::try_from(bytes.len()).map_or(true, |n| n > cap) {
+        return unread(
+            format!(
+                "the answer file {} holds over the {cap} bytes an answer may",
+                path.display()
+            ),
+            print,
+        );
+    }
     let answer = serde_json::from_slice(&bytes)
         .map_err(|e| format!("the answer file {} is not JSON: {e}", path.display()));
     Written { answer, print }

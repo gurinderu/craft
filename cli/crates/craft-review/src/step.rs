@@ -330,62 +330,62 @@ fn save_and_next(
     said: &Said<'_>,
     aside: Aside,
 ) -> Result<Value, Error> {
+    save_and_next_with(dir, run, said, aside, &state::save)
+}
+
+/// The state's writer of a step.
+type Save<'a> = &'a dyn Fn(&Path, &RunState) -> Result<(), state::StateError>;
+
+/// [`save_and_next`], the state written by `save`.
+fn save_and_next_with(
+    dir: &Path,
+    run: &mut RunState,
+    said: &Said<'_>,
+    aside: Aside,
+    save: Save<'_>,
+) -> Result<Value, Error> {
     let setup = said.post.cloned().unwrap_or_default();
     publish::deliver(dir, run, &setup)?;
     handoff::write_pending(dir, run)?;
-    state::save(dir, run)?;
-    let unsaved = set_aside(dir, run, aside, state::save);
-    let step = if run.stopped.is_some() {
-        stop::step(dir, run)?
-    } else {
-        next(dir, run)?
-    };
-    Ok(warned(step, unsaved))
+    save(dir, run)?;
+    set_aside(dir, run, aside, save)?;
+    if run.stopped.is_some() {
+        return stop::step(dir, run);
+    }
+    next(dir, run)
 }
 
 /// Moves the refused answers aside once the state counting their refusal is saved. One that cannot
-/// be moved stays where its agent wrote it: a note on the run, saved again with `save`, not a failed
-/// submit, since the state already advanced. When that save fails too, the notes are lost from the
-/// run; what says so is returned, and kept among this step's degraded notes, for the host to show.
-fn set_aside(
-    dir: &Path,
-    run: &mut RunState,
-    aside: Aside,
-    save: fn(&Path, &RunState) -> Result<(), state::StateError>,
-) -> Option<String> {
+/// be moved stays where its agent wrote it, and the run notes it, saved again with `save`.
+///
+/// # Errors
+/// When that second save fails: the submit fails loudly, and submitted again it reads each file
+/// left in place as the refusal already counted (`Task::counted`), never counting it twice.
+fn set_aside(dir: &Path, run: &mut RunState, aside: Aside, save: Save<'_>) -> Result<(), Error> {
     let unmoved = aside.apply();
     if unmoved.is_empty() {
-        return None;
+        return Ok(());
     }
     let notes: Vec<String> = unmoved.iter().map(|u| unmoved_note(run, u)).collect();
     take::note(&mut run.notes, &notes);
-    let e = save(dir, run).err()?;
-    let warning = format!(
-        "refused answer files were left in place and the run could not record it ({}): {}",
-        crate::sources::chain(&e),
-        notes.join("; ")
-    );
-    take::note(&mut run.degraded, std::slice::from_ref(&warning));
-    Some(warning)
+    save(dir, run)?;
+    Ok(())
 }
 
-/// `step` carrying `warning` under `warnings`, which a host shows and hands back as a degraded note
-/// on its next submit, so the run keeps it.
-fn warned(mut step: Value, warning: Option<String>) -> Value {
-    if let (Some(w), Some(obj)) = (warning, step.as_object_mut()) {
-        obj.insert("warnings".into(), json!([w]));
-    }
-    step
-}
-
-/// The run's note on a refused answer file `u` left in place: a pending task's is read again, and
-/// once more only as a missing answer.
+/// The run's note on a refused answer file `u` left in place, saying what its next read does.
 fn unmoved_note(run: &RunState, u: &craft_step::Unmoved) -> String {
-    let pending = run.phase != Phase::Done && run.tasks.iter().any(|t| t.id == u.id && t.pending());
-    let then = if pending {
-        "read again, it is set aside uncounted, and found there once more it counts as a missing answer"
-    } else {
-        "its task is settled, so it stays there"
+    let task = run
+        .tasks
+        .iter()
+        .find(|t| t.id == u.id)
+        .filter(|t| run.phase != Phase::Done && t.pending());
+    let then = match task.map(|t| t.counted.as_ref().map(|c| c.again)) {
+        None => "its task is settled, so it stays there",
+        Some(None) => "read again, it is taken as a new answer",
+        Some(Some(false)) => {
+            "read again, it is set aside uncounted, and found there once more it counts as a missing answer"
+        }
+        Some(Some(true)) => "found there again, it counts as a missing answer",
     };
     format!("{}: left in place; {then}", crate::sources::chain(&u.error))
 }

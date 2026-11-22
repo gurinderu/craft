@@ -129,7 +129,8 @@ pub fn deaths(text: String) -> Stop {
 }
 
 /// Stops the run: every task not answered is held as first handed out, to be handed out again —
-/// but one abandoned at its deadline, which stays failed.
+/// but one abandoned at its deadline, which stays failed. Its counted refused file (`counted`) is
+/// kept, so one still in place is not read as a new answer on the resume.
 pub(crate) fn hold(run: &mut RunState, stop: Stop) {
     for t in run
         .tasks

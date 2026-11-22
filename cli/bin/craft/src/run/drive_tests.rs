@@ -41,8 +41,6 @@ struct Fake {
     slow_start: Option<std::cell::Cell<bool>>,
     /// The start fails with this error once it returns.
     start_fails: Option<&'static str>,
-    /// The warning the first step carries, as a submit whose notes could not be saved leaves one.
-    warning: Option<&'static str>,
 }
 
 impl Fake {
@@ -57,7 +55,6 @@ impl Fake {
             filed: RefCell::default(),
             slow_start: None,
             start_fails: None,
-            warning: None,
         }
     }
 
@@ -111,11 +108,7 @@ impl Protocol for Fake {
                 schema.to_string(),
             )?;
         }
-        let mut first = self.pending(&self.tasks.iter().collect::<Vec<_>>());
-        if let Some(w) = self.warning {
-            first["warnings"] = json!([w]);
-        }
-        Ok(first)
+        Ok(self.pending(&self.tasks.iter().collect::<Vec<_>>()))
     }
 
     fn submit(&self, run: &Path, said: &Said) -> Result<Value> {
@@ -584,26 +577,5 @@ async fn the_tasks_run_in_the_worktree_the_step_names_and_the_answer_names_it() 
         )),
         "{}",
         answer.text
-    );
-}
-
-#[tokio::test]
-async fn a_steps_warning_is_emitted_and_handed_back_as_a_degraded_note() {
-    let bench = Bench::new(HostKind::Codex);
-    let mut fake = bench.fake(vec![Spec("a", "do a", None)]);
-    fake.warning = Some("refused answer files were left in place");
-    let answer = bench.drive(&fake).await;
-    assert!(answer.finished, "{}", answer.text);
-    assert!(bench.events.borrow().contains(&Event::Degraded {
-        note: "refused answer files were left in place".into()
-    }));
-    let submits = fake.submits.borrow();
-    assert!(
-        submits[0]
-            .degraded
-            .iter()
-            .any(|n| n == "refused answer files were left in place"),
-        "{:?}",
-        submits[0].degraded
     );
 }

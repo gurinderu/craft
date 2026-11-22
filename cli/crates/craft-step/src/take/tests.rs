@@ -205,3 +205,19 @@ fn a_resume_counts_a_counted_file_found_there_again() {
     );
     assert!(tasks[0].counted.is_some());
 }
+
+#[test]
+fn a_resume_keeps_the_counted_file_when_its_answer_is_missing() {
+    let (d, answers) = answers_with("{}");
+    let mut tasks = [task()];
+    take_unmoved(d.path(), &mut tasks);
+    let counted = tasks[0].counted.clone();
+    assert!(counted.is_some());
+    // A resume reads the file gone (moved aside meanwhile): handed out again as first written.
+    std::fs::remove_file(answers.join("t.json")).unwrap();
+    let mut aside = Aside::default();
+    let live = take_pending(d.path(), &mut tasks, None, Hold::Missing, &mut aside).unwrap();
+    drop(aside);
+    assert!(!live);
+    assert_eq!((tasks[0].retries, tasks[0].counted.clone()), (0, counted));
+}

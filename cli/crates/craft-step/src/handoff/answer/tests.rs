@@ -95,14 +95,24 @@ fn a_failed_rename_gives_the_claimed_name_back() {
 }
 
 #[test]
-fn an_answer_over_the_bound_is_not_read() {
+fn an_answer_at_the_bound_is_read_and_one_over_it_refused_with_its_print() {
     let d = tempfile::tempdir().unwrap();
-    let dir = answers_dir(d.path());
-    fs::create_dir_all(&dir).unwrap();
-    let file = fs::File::create(dir.join("t.json")).unwrap();
-    file.set_len(MAX_ANSWER + 1).unwrap();
-    let task = crate::test_kind::task();
-    let got = read_answer(d.path(), &task);
-    assert!(got.print.is_none());
-    assert!(got.answer.unwrap_err().contains("over the"));
+    let at = d.path().join("at.json");
+    fs::write(&at, "[1, 2]").unwrap();
+    let got = read_capped(&at, 6);
+    assert_eq!(got.answer.unwrap(), serde_json::json!([1, 2]));
+    let over = d.path().join("over.json");
+    fs::write(&over, "[1, 2] ").unwrap();
+    let got = read_capped(&over, 6);
+    assert!(got.answer.unwrap_err().contains("holds over the 6 bytes"));
+    let print = got.print.expect("printed, so known again in place");
+    assert_eq!(read_capped(&over, 6).print, Some(print));
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn a_file_reporting_no_size_is_still_read_only_to_the_bound() {
+    // procfs reports a length of 0 for a file that holds far more.
+    let got = read_capped(Path::new("/proc/self/status"), 8);
+    assert!(got.answer.unwrap_err().contains("holds over the 8 bytes"));
 }

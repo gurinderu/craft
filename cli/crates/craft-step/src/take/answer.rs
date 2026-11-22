@@ -12,8 +12,10 @@ use crate::validate;
 
 /// Takes the answer of one pending task, from `given` or the file its agent wrote; one refused is
 /// asked for again until its retries are spent — unless `hold` keeps it waiting uncounted: every
-/// one on the host's limit, a missing one on a resume (handed out again as first written). Says
-/// whether its agent answered at all, valid or not. A refused answer file is marked in `aside`.
+/// one on the host's limit, a missing one on a resume (handed out again as first written). The
+/// file whose refusal was counted (`Task::counted`), found there again, is set aside uncounted
+/// once and then counts as a missing answer, a resume's included. Says whether its agent answered
+/// at all, valid or not. A refused answer file is marked in `aside`.
 ///
 /// # Errors
 /// When the task's id cannot be a file name.
@@ -96,11 +98,15 @@ pub fn take_answer<K: Kind>(
     }
     if given.is_none() {
         aside.mark(dir, task)?;
-        task.counted = print.map(|print| Counted {
-            print,
-            at: task.retries,
-            again: false,
-        });
+        // A read with no file to print keeps the last one counted: a file written anew never
+        // matches it, and one still in place is not taken as new.
+        if let Some(print) = print {
+            task.counted = Some(Counted {
+                print,
+                at: task.retries,
+                again: false,
+            });
+        }
     }
     Ok(refused(task, hold, live))
 }
