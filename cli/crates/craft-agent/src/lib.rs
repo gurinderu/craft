@@ -19,7 +19,7 @@ mod subprocess;
 use std::future::Future;
 use std::path::PathBuf;
 
-pub use process_group::settle_stops;
+pub use process_group::{settle_stops, stops_pending};
 pub use reply::{AgentReply, Usage};
 
 /// One agent to run.

@@ -50,6 +50,18 @@ pub fn settle_stops() {
     unix::settle();
 }
 
+/// Whether a guard has stopped a group whose grace [`settle_stops`] would still wait out. False
+/// when no agent group was ever stopped, as in every command that runs no agent; always false off
+/// unix.
+#[must_use]
+pub fn stops_pending() -> bool {
+    #[cfg(unix)]
+    let pending = unix::pending();
+    #[cfg(not(unix))]
+    let pending = false;
+    pending
+}
+
 #[cfg(unix)]
 impl Drop for GroupGuard {
     fn drop(&mut self) {
@@ -109,6 +121,13 @@ mod unix {
         stopping.push(thread);
     }
 
+    pub(super) fn pending() -> bool {
+        !STOPPING
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .is_empty()
+    }
+
     pub(super) fn settle() {
         let stopping =
             std::mem::take(&mut *STOPPING.lock().unwrap_or_else(PoisonError::into_inner));
@@ -116,5 +135,34 @@ mod unix {
             // The thread only signals; a panic there leaves nothing more to do here.
             let _panicked = thread.join();
         }
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use std::io::Read as _;
+    use std::os::unix::process::CommandExt;
+
+    use super::{GroupGuard, settle_stops, stops_pending};
+
+    /// A stopped group is pending while inside its grace, so the exit path that checks first still
+    /// waits it out. The group ignores SIGTERM, so its grace runs whole and no other test's stop
+    /// can prune it as finished before the check.
+    #[test]
+    fn a_stopped_group_inside_its_grace_is_pending() {
+        let mut child = std::process::Command::new("sh")
+            .args(["-c", "trap '' TERM; echo ready; exec sleep 10"])
+            .process_group(0)
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        // Stopped only once the trap is set, or SIGTERM could end it before it ignores it.
+        let mut ready = [0; 6];
+        child.stdout.take().unwrap().read_exact(&mut ready).unwrap();
+        drop(GroupGuard::new(Some(child.id())));
+        assert!(stops_pending());
+        settle_stops();
+        // The grace has reaped it already (ECHILD); waiting leaves no zombie either way.
+        let _reaped = child.wait();
     }
 }

@@ -172,8 +172,12 @@ async fn dispatch() -> anyhow::Result<ExitCode> {
 
 async fn finish(outcome: anyhow::Result<ExitCode>) -> ExitCode {
     // Every way out — a stop, an error, a finished run — waits out the grace of the agents'
-    // groups, so their SIGKILL is sent before craft is gone.
-    if let Err(e) = tokio::task::spawn_blocking(craft_agent::settle_stops).await {
+    // groups, so their SIGKILL is sent before craft is gone. With no group stopped there is nothing
+    // to wait out, and no blocking thread is started: a command that ran no agent cannot fail at
+    // exit on a thread it never needed.
+    if craft_agent::stops_pending()
+        && let Err(e) = tokio::task::spawn_blocking(craft_agent::settle_stops).await
+    {
         std::panic::resume_unwind(e.into_panic());
     }
     match outcome {
@@ -196,3 +200,7 @@ async fn finish(outcome: anyhow::Result<ExitCode>) -> ExitCode {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "main_tests.rs"]
+mod tests;
