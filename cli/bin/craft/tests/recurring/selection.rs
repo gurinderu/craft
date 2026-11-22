@@ -152,5 +152,7 @@ fn existing_store_that_cannot_be_listed_is_an_error() {
     let out = s.output(&[]);
     assert_eq!(out.status.code(), Some(1));
     assert!(out.stdout.is_empty());
-    assert!(String::from_utf8_lossy(&out.stderr).contains("listing run store"));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("listing run store"), "{stderr}");
+    assert_eq!(stderr.matches("os error").count(), 1, "said once: {stderr}");
 }

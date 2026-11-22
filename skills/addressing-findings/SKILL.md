@@ -328,7 +328,10 @@ one itself). Only a **lesson** waits for the author's yes (below).
   whether to record a lesson. Yes → `record-lesson` with scope = the file, title = the pattern in one
   line, body = the pattern and what avoids it (in the author's words), links = the runs or PRs.
   No answer or no → write nothing. No run store, or no group → say so in one line
-  (`recurring findings: none — <the note>`) and continue.
+  (`recurring findings: none — <the note>`) and continue. A non-zero exit is not "no group": the
+  store exists but could not be read (a directory you cannot search, a path that is not a
+  directory) — tell the human its stderr in one line (`recurring findings: not read — <stderr>`),
+  never `none`, and continue.
 - **Subagents** (fix only — triage is never theirs) lack the memory tools and never write memory:
   the launcher puts the matching records, verbatim with ids, and the plan's verdicts into each
   brief. Every disposition is written by the main session right after the triage workflow returns;

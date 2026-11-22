@@ -166,7 +166,8 @@ One **round** is:
    recurring-findings check that step 3 no longer reaches (addressing-findings' step 0): run
    `"$CRAFT_BIN" runs recurring --path <path> …` for the paths the round's findings touch, resolving
    `CRAFT_BIN` with `node "<this skill's base directory>/../../integrations/shared/craft-bin.mjs" ensure`
-   first (stop this check and report a failed resolution). Show each group, and offer
+   first (stop this check and report a failed resolution; a non-zero exit of `runs recurring` —
+   an unreadable store — is reported to the human with its stderr, never as no group). Show each group, and offer
    the author a lesson per group — recorded only on their yes (addressing-findings, "Recurring
    findings").
 3. **Address** — `craft:addressing-findings`, entered at its step 5 with step 2's plan in hand (its
