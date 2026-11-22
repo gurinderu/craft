@@ -37,7 +37,8 @@ CRAFT_BIN="$(sh "<this skill's base directory>/../../integrations/shared/craft-c
 CRAFT_MEMORY_EXTERNALS
 ```
 
-On POSIX, acquisition and `init` need no system Node. On native Windows without `sh`, obtain
+On POSIX, and in Git Bash on Windows (it caches `craft.exe`), acquisition and `init` need no
+system Node. On native Windows without `sh`, obtain
 the same binary with `node "<this skill's base directory>/../../integrations/shared/craft-bin.mjs" ensure`;
 the acquired binary performs discovery and import itself. An exported `CRAFT_BIN` selects a local build.
 

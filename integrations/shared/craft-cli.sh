@@ -1,7 +1,8 @@
 #!/bin/sh
 # Shared POSIX entry, also shipped in packages without bin/ (realm @nick/craft, node #500).
 # --ensure --print-path returns the executable without running it. Other ensure modes stay silent
-# except --failure, which says a failed background try once. Native Windows uses craft-bin.mjs.
+# except --failure, which says a failed background try once. Git Bash on Windows caches craft.exe; Windows
+# without sh uses craft-bin.mjs.
 set -u
 
 version=0.57.0 # x-release-please-version
@@ -27,7 +28,7 @@ if [ "${1:-}" = --ensure ] && [ "${2:-}" = --print-path ]; then
   [ -n "${HOME:-}" ] || die "HOME is not set: no place for ~/.craft/bin/$version"
   . "$helpers/craft-fetch.sh" || die "cannot read $helpers/craft-fetch.sh"
   craft_fetch "$version"
-  printf '%s\n' "$HOME/.craft/bin/$version/craft"
+  printf '%s\n' "$HOME/.craft/bin/$version/$(craft_bin_name)"
   exit 0
 fi
 
@@ -49,11 +50,11 @@ if [ -n "${CRAFT_BIN:-}" ]; then
 fi
 
 [ -n "${HOME:-}" ] || die "HOME is not set: no place for ~/.craft/bin/$version"
-bin=$HOME/.craft/bin/$version/craft
+# The download itself is integrations/shared/craft-fetch.sh's, shared with the hooks (realm @nick/craft, node #550).
+. "$helpers/craft-fetch.sh" || die "cannot read $helpers/craft-fetch.sh"
+bin=$HOME/.craft/bin/$version/$(craft_bin_name)
 if [ -f "$bin" ] && [ -x "$bin" ]; then
   exec "$bin" "$@"
 fi
-# The download itself is integrations/shared/craft-fetch.sh's, shared with the hooks (realm @nick/craft, node #550).
-. "$helpers/craft-fetch.sh" || die "cannot read $helpers/craft-fetch.sh"
 craft_fetch "$version"
 exec "$bin" "$@"

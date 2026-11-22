@@ -134,6 +134,41 @@ test('--ensure --print-path downloads once and prints only the binary path witho
   assert.deepEqual(hits(), [ASSET, `${ASSET}.sha256`])
 })
 
+/** A `uname` on the PATH that answers `sys` for -s and `machine` for -m. @param {string} sys @param {string} machine */
+function fakeUname(sys, machine) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'craft-uname-'))
+  writeExecutable(path.join(dir, 'uname'), `#!/bin/sh\ncase $1 in -s) echo '${sys}' ;; -m) echo '${machine}' ;; esac\n`)
+  return dir
+}
+
+test('under Git Bash, MSYS or Cygwin on x86_64 it fetches the Windows release and caches craft.exe, as craft-bin.mjs does', async () => {
+  const asset = 'craft-x86_64-pc-windows-msvc.tar.gz'
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'craft-pack-'))
+  fs.writeFileSync(path.join(dir, 'craft.exe'), FAKE, { mode: 0o755 })
+  execFileSync('tar', ['-czf', path.join(RELEASE, asset), '-C', dir, 'craft.exe'])
+  const archive = fs.readFileSync(path.join(RELEASE, asset))
+  fs.writeFileSync(path.join(RELEASE, `${asset}.sha256`), `${createHash('sha256').update(archive).digest('hex')}  ${asset}\n`)
+  for (const sys of ['MINGW64_NT-10.0-19045', 'MSYS_NT-10.0-19045', 'CYGWIN_NT-10.0-19045']) {
+    fs.rmSync(path.join(HOME, '.craft'), { recursive: true, force: true })
+    fs.rmSync(path.join(SHIM, 'hits'), { force: true })
+    const PATH = `${fakeUname(sys, 'x86_64')}:${SHIM}:${process.env['PATH'] ?? ''}`
+    const exe = path.join(HOME, '.craft', 'bin', VERSION, 'craft.exe')
+    assert.deepEqual(await wrapper(['--ensure', '--print-path'], { PATH }), { code: 0, stdout: `${exe}\n`, stderr: '' }, sys)
+    assert.deepEqual(hits(), [asset, `${asset}.sha256`], sys)
+    assert.deepEqual(fs.readdirSync(path.dirname(exe)), ['craft.exe'], sys)
+    assert.equal((await wrapper(['x'], { PATH })).stdout, `${ROOT}|x|`, sys)
+    assert.deepEqual(hits(), [asset, `${asset}.sha256`], sys)
+  }
+})
+
+test('Windows on a machine the release does not build for is named, not fetched', async () => {
+  const PATH = `${fakeUname('MINGW64_NT-10.0-22631', 'aarch64')}:${SHIM}:${process.env['PATH'] ?? ''}`
+  const got = await wrapper(['--ensure', '--print-path'], { PATH })
+  assert.equal(got.code, 127)
+  assert.equal(got.stderr, 'craft: no released craft binary for MINGW64_NT-10.0-22631/aarch64: build it from cli/ and set CRAFT_BIN\n')
+  assert.deepEqual(hits(), [])
+})
+
 test('--ensure --print-path validates an override and preserves spaces in its path', async () => {
   const local = path.join(HOME, 'local craft')
   fs.writeFileSync(local, FAKE, { mode: 0o755 })
