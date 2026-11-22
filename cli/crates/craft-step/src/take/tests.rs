@@ -1,53 +1,14 @@
 //! Taking answers over a kind that adds nothing: a refused answer file stays where its agent wrote
 //! it until the kind applies the set-aside after saving its state.
 
-use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::path::Path;
 use std::time::SystemTime;
 
 use super::{Hold, take_pending};
 use crate::handoff::{Aside, answers_dir};
-use crate::{Kind, Model, Task, TaskState};
-
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-struct Empty {}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind")]
-enum Plain {
-    #[serde(rename = "plain")]
-    Plain,
-}
-
-impl Kind for Plain {
-    type Agent = String;
-    type Marks = Empty;
-    type Flags = Empty;
-
-    fn tag(&self) -> &'static str {
-        "plain"
-    }
-
-    fn blocked(_task: &Task<Self>, answer: &serde_json::Value) -> Option<String> {
-        answer
-            .get("blocked")
-            .and_then(serde_json::Value::as_str)
-            .map(str::to_owned)
-    }
-}
-
-fn task() -> Task<Plain> {
-    let schema = json!({"type": "object", "required": ["ok"]});
-    Task::new(
-        "t".into(),
-        "t".into(),
-        "p".into(),
-        Model::Haiku,
-        schema,
-        Plain::Plain,
-    )
-}
+use crate::test_kind::{Plain, task};
+use crate::{Task, TaskState};
 
 #[test]
 fn a_refused_answer_is_moved_aside_only_when_applied() {
@@ -219,4 +180,28 @@ fn a_refusal_given_by_the_host_keeps_the_counted_file() {
     .unwrap();
     assert!(aside.apply().is_empty());
     assert_eq!((tasks[0].retries, tasks[0].counted.clone()), (2, counted));
+}
+
+#[test]
+fn a_resume_counts_a_counted_file_found_there_again() {
+    let (d, _answers) = answers_with("{}");
+    let mut tasks = [task()];
+    take_unmoved(d.path(), &mut tasks);
+    let mut seen = Vec::new();
+    for _ in 0..10 {
+        if !tasks[0].pending() {
+            break;
+        }
+        let mut aside = Aside::default();
+        take_pending(d.path(), &mut tasks, None, Hold::Missing, &mut aside).unwrap();
+        drop(aside);
+        seen.push(tasks[0].retries);
+    }
+    assert_eq!(tasks[0].state, TaskState::Failed, "{seen:?}");
+    assert_eq!(
+        seen,
+        [1, 2, 2],
+        "read again free, then counted, not reset by the resume"
+    );
+    assert!(tasks[0].counted.is_some());
 }

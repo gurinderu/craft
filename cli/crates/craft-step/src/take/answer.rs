@@ -50,6 +50,13 @@ pub fn take_answer<K: Kind>(
                 "no new answer was written: {} still holds the answer refused before, which could not be set aside",
                 path.display()
             ));
+            task.refused = None;
+            // Not one of a resume's agents never run: the file is there, so it is counted.
+            let hold = if hold == Hold::Missing {
+                Hold::Nothing
+            } else {
+                hold
+            };
             return Ok(refused(task, hold, false));
         }
     }
@@ -134,7 +141,7 @@ fn refused<K: Kind>(task: &mut Task<K>, hold: Hold, live: bool) -> bool {
             task.retries = 0;
             task.error = None;
             task.refused = None;
-            task.counted = None;
+            // `counted` stays: a refused file still in place is no new answer when read again.
             return false;
         }
         Hold::Missing | Hold::Nothing => {}

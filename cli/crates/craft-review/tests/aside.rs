@@ -112,7 +112,7 @@ fn a_file_the_set_aside_could_not_move_is_counted_once() {
     let s = s.expect("a set-aside that fails after the save fails no submit");
     assert_eq!((ids(&s), retries(&run)), (vec![SCOUT.to_owned()], 2));
     assert!(answers.join("scout-rust.json").is_file());
-    assert!(noted(&run, "the refusal already counted"));
+    assert!(noted(&run, "set aside uncounted"));
     // Read again, the same file is the refusal already counted: its retries are not spent by it.
     let s = step::submit(&run, None).unwrap();
     assert_eq!((ids(&s), retries(&run)), (vec![SCOUT.to_owned()], 2));

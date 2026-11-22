@@ -67,8 +67,10 @@ pub struct Task<K: Kind> {
     /// retries counts as an off-schema vote rather than a dead one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub refused: Option<Value>,
-    /// The answer file whose refusal was counted last, until it is set aside: the same file read
-    /// again — its set-aside cut off or failed — is set aside then, not counted twice.
+    /// The answer file whose refusal was counted last, kept until an answer is taken or the task
+    /// fails as blocked, across a stop and a resume: the same file read again — its set-aside cut
+    /// off or failed — is set aside uncounted once, and found there once more counts as a missing
+    /// answer.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub counted: Option<Counted>,
     /// The host abandoned its agent at its deadline (`submit --abandoned`): failed for good, never

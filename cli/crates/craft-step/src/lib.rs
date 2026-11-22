@@ -11,6 +11,8 @@ mod kind;
 mod model;
 pub mod take;
 mod task;
+#[cfg(test)]
+mod test_kind;
 pub mod validate;
 pub mod wire;
 

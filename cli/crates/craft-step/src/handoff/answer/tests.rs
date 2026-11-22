@@ -93,3 +93,16 @@ fn a_failed_rename_gives_the_claimed_name_back() {
     assert!(!dir.join("t.rejected-0.json").exists());
     assert!(dir.join("t.json").join("x").is_file());
 }
+
+#[test]
+fn an_answer_over_the_bound_is_not_read() {
+    let d = tempfile::tempdir().unwrap();
+    let dir = answers_dir(d.path());
+    fs::create_dir_all(&dir).unwrap();
+    let file = fs::File::create(dir.join("t.json")).unwrap();
+    file.set_len(MAX_ANSWER + 1).unwrap();
+    let task = crate::test_kind::task();
+    let got = read_answer(d.path(), &task);
+    assert!(got.print.is_none());
+    assert!(got.answer.unwrap_err().contains("over the"));
+}

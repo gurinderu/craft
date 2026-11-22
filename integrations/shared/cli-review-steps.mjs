@@ -586,6 +586,7 @@ async function rounds(sb, bin, first, serve, recorder) {
     maxRounds: MAX_ROUNDS,
     dispatch: async (step, round) => {
       sb.phase('Agents')
+      for (const w of step.warnings) sb.log(`\u26a0\ufe0f ${w}`)
       sb.log(`round ${round}: ${step.tasks.length} task(s) — ${step.tasks.map(t => t.label).join(', ')}`)
       // No schema: the binary checks each answer file. A dead agent leaves no file, which the binary asks for again.
       await sb.parallel(step.tasks.map(t => () => tasks.run(t)))
@@ -594,7 +595,8 @@ async function rounds(sb, bin, first, serve, recorder) {
       sb.phase('Submit')
       if (sb.limit.seen())
         sb.log(`\u26d4 usage limit reached (${sb.limit.seen()}) — no further review agents are dispatched; the run reports what it has as INCOMPLETE`)
-      const said = { degraded: tasks.degraded(round), abandoned: tasks.abandoned(), limit: sb.limit.seen() }
+      // The binary's warnings go back as degraded notes, so the run keeps them for its report and answer.
+      const said = { degraded: [...tasks.degraded(round), ...step.warnings], abandoned: tasks.abandoned(), limit: sb.limit.seen() }
       return readStep(await submitStep(serve, `step:submit:${round}`, 'Submit', bin, step.run, said, spentSoFar(sb)))
     },
     heard: step => {

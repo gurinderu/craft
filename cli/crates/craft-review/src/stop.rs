@@ -140,7 +140,7 @@ pub(crate) fn hold(run: &mut RunState, stop: Stop) {
         t.retries = 0;
         t.error = None;
         t.refused = None;
-        t.counted = None;
+        // `counted` stays: a refused file still in place is no new answer on the resume.
     }
     run.watch = Watch::default();
     run.stopped = Some(stop);

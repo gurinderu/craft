@@ -1,7 +1,7 @@
 //! An answer file read back, or set aside once refused — after the state that says why is saved.
 
 use std::fs::{self, OpenOptions};
-use std::io::ErrorKind;
+use std::io::{ErrorKind, Read};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
@@ -11,6 +11,9 @@ use sha2::{Digest, Sha256};
 use super::{HandoffError, answer_file, answers_dir, safe};
 use crate::kind::Kind;
 use crate::task::Task;
+
+/// The most bytes an answer file is read to.
+const MAX_ANSWER: u64 = 64 * 1024 * 1024;
 
 /// How many `<stem>.<n>.json` names a refused file may take after `<stem>.json` before its
 /// set-aside gives up.
@@ -38,10 +41,22 @@ pub fn read_answer<K: Kind>(dir: &Path, task: &Task<K>) -> Written {
             };
         }
     };
-    let read = fs::File::open(&path).and_then(|mut f| {
-        let mut bytes = Vec::new();
-        std::io::copy(&mut f, &mut bytes)?;
-        Ok((bytes, f.metadata().and_then(|m| m.modified()).ok()))
+    let read = fs::File::open(&path).and_then(|f| {
+        let meta = f.metadata()?;
+        if meta.len() > MAX_ANSWER {
+            return Err(std::io::Error::other(format!(
+                "it holds {} bytes, over the {MAX_ANSWER} an answer may",
+                meta.len()
+            )));
+        }
+        let mut bytes = Vec::with_capacity(usize::try_from(meta.len()).unwrap_or(0));
+        f.take(MAX_ANSWER + 1).read_to_end(&mut bytes)?;
+        if u64::try_from(bytes.len()).map_or(true, |n| n > MAX_ANSWER) {
+            return Err(std::io::Error::other(format!(
+                "it grew over the {MAX_ANSWER} bytes an answer may while read"
+            )));
+        }
+        Ok((bytes, meta.modified().ok()))
     });
     let (bytes, modified) = match read {
         Ok(r) => r,
@@ -81,8 +96,8 @@ fn print(bytes: &[u8], modified: Option<SystemTime>) -> String {
 /// refusal is saved ([`Aside::apply`]): a submit cut off before that leaves each where its agent
 /// wrote it, to be read again, rather than gone with nothing saying why. The state keeps the print
 /// of the file it counted ([`Task::counted`]), so a file read again before it was moved aside is
-/// moved aside then without counting twice. Moved aside, a file is not read again as the same
-/// refused answer by a retry whose agent writes nothing.
+/// moved aside then uncounted once, and counts as a missing answer if found there once more. Moved
+/// aside, a file is not read again as the same refused answer by a retry whose agent writes nothing.
 #[derive(Debug, Default)]
 #[must_use = "the refused files stay in place until applied"]
 pub struct Aside(Vec<Marked>);

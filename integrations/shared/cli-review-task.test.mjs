@@ -260,3 +260,24 @@ test('an agent name this plugin does not ship runs on the default type, said onc
     'round 1: 2 task(s) named `no-such-agent`, which this plugin does not ship, and ran on the default agent type — this run is weaker than a normal one, not broken.',
   ])
 })
+
+test("a step's warning is logged, handed back as a degraded note, and the answer says it", async () => {
+  const warning = 'refused answer files were left in place and the run could not record it (disk full): a.json'
+  const run = await runEngine('review', {
+    args: { craftBin: '/opt/craft' },
+    script: {
+      'step:start': ran({ run: RUN, tasks: [task('v')], done: false, warnings: [warning] }),
+      'lens:v': writes,
+      'step:submit:1': done([warning]),
+    },
+  })
+  const submit = run.calls.find(c => c.label === 'step:submit:1')
+  assert.ok(submit)
+  assert.deepEqual(notes(submit.prompt), [warning])
+  assert.ok(
+    run.logs.some(l => l.includes(warning)),
+    JSON.stringify(run.logs),
+  )
+  assert.match(run.report, /⚠️ Degraded: part of this review ran weaker than asked/)
+  assert.ok(run.report.includes(`- ${warning}`), run.report)
+})

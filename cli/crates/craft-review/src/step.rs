@@ -334,43 +334,56 @@ fn save_and_next(
     publish::deliver(dir, run, &setup)?;
     handoff::write_pending(dir, run)?;
     state::save(dir, run)?;
-    let unsaved = set_aside(dir, run, aside);
-    let mut step = if run.stopped.is_some() {
+    let unsaved = set_aside(dir, run, aside, state::save);
+    let step = if run.stopped.is_some() {
         stop::step(dir, run)?
     } else {
         next(dir, run)?
     };
-    if let (Some(warning), Some(obj)) = (unsaved, step.as_object_mut()) {
-        obj.insert("warnings".into(), json!([warning]));
-    }
-    Ok(step)
+    Ok(warned(step, unsaved))
 }
 
 /// Moves the refused answers aside once the state counting their refusal is saved. One that cannot
-/// be moved stays where its agent wrote it: a note on the run, not a failed submit, since the state
-/// already advanced. A pending task's file read again is the refusal already counted
-/// (`Task::counted`), moved aside then. Says, as a warning for the step, why those notes could not
-/// be saved: the first save holds the run's step, so only they are lost.
-fn set_aside(dir: &Path, run: &mut RunState, aside: Aside) -> Option<String> {
+/// be moved stays where its agent wrote it: a note on the run, saved again with `save`, not a failed
+/// submit, since the state already advanced. When that save fails too, the notes are lost from the
+/// run; what says so is returned, and kept among this step's degraded notes, for the host to show.
+fn set_aside(
+    dir: &Path,
+    run: &mut RunState,
+    aside: Aside,
+    save: fn(&Path, &RunState) -> Result<(), state::StateError>,
+) -> Option<String> {
     let unmoved = aside.apply();
     if unmoved.is_empty() {
         return None;
     }
     let notes: Vec<String> = unmoved.iter().map(|u| unmoved_note(run, u)).collect();
     take::note(&mut run.notes, &notes);
-    let e = state::save(dir, run).err()?;
-    Some(format!(
-        "{} not saved on the run: {}",
-        notes.join("; "),
-        crate::sources::chain(&e)
-    ))
+    let e = save(dir, run).err()?;
+    let warning = format!(
+        "refused answer files were left in place and the run could not record it ({}): {}",
+        crate::sources::chain(&e),
+        notes.join("; ")
+    );
+    take::note(&mut run.degraded, std::slice::from_ref(&warning));
+    Some(warning)
 }
 
-/// The run's note on a refused answer file `u` left in place.
+/// `step` carrying `warning` under `warnings`, which a host shows and hands back as a degraded note
+/// on its next submit, so the run keeps it.
+fn warned(mut step: Value, warning: Option<String>) -> Value {
+    if let (Some(w), Some(obj)) = (warning, step.as_object_mut()) {
+        obj.insert("warnings".into(), json!([w]));
+    }
+    step
+}
+
+/// The run's note on a refused answer file `u` left in place: a pending task's is read again, and
+/// once more only as a missing answer.
 fn unmoved_note(run: &RunState, u: &craft_step::Unmoved) -> String {
     let pending = run.phase != Phase::Done && run.tasks.iter().any(|t| t.id == u.id && t.pending());
     let then = if pending {
-        "read again, it is the refusal already counted and set aside then"
+        "read again, it is set aside uncounted, and found there once more it counts as a missing answer"
     } else {
         "its task is settled, so it stays there"
     };
@@ -395,3 +408,6 @@ fn next(dir: &Path, run: &RunState) -> Result<Value, Error> {
         }
     }
 }
+
+#[cfg(test)]
+mod aside_tests;

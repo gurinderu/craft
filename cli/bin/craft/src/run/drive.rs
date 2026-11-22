@@ -179,6 +179,7 @@ async fn rounds<P: Protocol>(
 ) -> Ending {
     let mut last_phase = String::new();
     for round in 1.. {
+        let warnings = warned(d, &at);
         if is_done(&at) {
             return Ending::Finished(at);
         }
@@ -200,7 +201,9 @@ async fn rounds<P: Protocol>(
         if let Some(code) = *d.round.stop.borrow() {
             return Ending::Signalled(code, Caught::Running);
         }
-        let said = heard(r, res);
+        let mut said = heard(r, res);
+        // Handed back, so the run keeps them among its degraded notes.
+        said.0.degraded.extend(warnings);
         // Not logged in: no task can answer, so nothing is submitted; a resume hands the step's
         // missing answers out again.
         if let Some(login) = said.1 {
@@ -216,6 +219,24 @@ async fn rounds<P: Protocol>(
         }
     }
     Ending::Stopped("review ran out of rounds".into())
+}
+
+/// The warnings `step` carries (a submit's notes the binary could not save), each logged and
+/// emitted as a degraded note.
+fn warned<P>(d: &Driver<'_, P>, step: &Value) -> Vec<String> {
+    let warnings: Vec<String> = step
+        .get("warnings")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(str::to_owned)
+        .collect();
+    for w in &warnings {
+        d.log(&format!("warning: {w}"));
+        d.emit(Event::Degraded { note: w.clone() });
+    }
+    warnings
 }
 
 /// A round's start, said: the phase when it moved, then the round and its tasks.
