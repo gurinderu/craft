@@ -353,6 +353,28 @@ test('a submit refused by a classifier that quotes no command names the command 
   assert.ok(line.includes(`Bash(${FETCHED} review:*)`), line)
 })
 
+test('a start with prior decisions refused by a classifier that quotes no command is named as issued, its heredoc named', async () => {
+  const run = await runEngine('review', {
+    args: { priorDecisions: [{ kind: 'decision', title: 't', scope: 'src/a.rs' }] },
+    script: {
+      'step:resolve': resolved(),
+      'step:start': {
+        exitCode: 1,
+        stdout: '',
+        stderr: 'Permission for this action was denied by the Claude Code auto mode classifier. Reason: runs an unreviewed binary.',
+      },
+    },
+  })
+  const issued =
+    run.calls
+      .find(c => c.label === 'step:start')
+      ?.prompt.split('\n\n')[1]
+      ?.split('\n')[0] ?? ''
+  assert.ok(issued.endsWith("--prior-decisions - <<'CRAFT_PRIOR_DECISIONS'"), issued)
+  const line = verdictOf(run)
+  assert.ok(line.includes(`it was not run: \`${issued} (the launcher's prior decisions on stdin)\`.`), line)
+})
+
 test('a spent budget fails the run closed rather than reporting a verdict', async () => {
   const script = { 'step:resolve': resolved(), 'step:start': pending([lens()]), lens: writes(FINDINGS), 'step:submit:1': done() }
   await assert.rejects(runEngine('review', { args: {}, script, budgetTotal: CALL_SPEND * 2 }), /budget exhausted/)

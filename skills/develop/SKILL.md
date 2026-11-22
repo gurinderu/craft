@@ -104,7 +104,8 @@ run id the Workflow completion names. Best-effort: if it fails, say so in one li
 
 **The loop is light by default.** The first round reviews the whole branch diff; every later round
 reviews only the delta the fixes changed, together with the findings that delta touched — not the
-whole diff again — and at `depth: 'light'`: the diff-scoped lenses once, Medium and above verified.
+whole diff again — and at `depth: 'light'`: the diff-scoped lenses once, Medium and above verified,
+with `extraLenses: []` so a light round does not run the repository's own reviewers over a delta.
 Full depth runs only in round 1 and in phase 5, where the whole diff is reviewed once more. Only on the human's word ("full
 rounds") does every round review the whole branch diff. Before each round, note `git rev-parse HEAD`
 — the commit that round reviews.
@@ -114,7 +115,7 @@ The engine's argument for each round, as an object (never a string):
 | Round | `craft:review` |
 |---|---|
 | 1 | `{ base: <trunk>, fresh: true, fullEvery: 0 }` |
-| 2 and later, light | `{ base: <trunk>, fullEvery: 0, depth: 'light' }` |
+| 2 and later, light | `{ base: <trunk>, fullEvery: 0, depth: 'light', extraLenses: [] }` |
 | 2 and later, full rounds | `{ base: <trunk>, fresh: true }` |
 
 - `craft:review` keeps the loop's memory itself: `fresh` on round 1 starts a new chain (an older run
@@ -129,8 +130,10 @@ The engine's argument for each round, as an object (never a string):
   just read from PR threads, or a decision from this loop whose write failed — verbatim, each with
   its `kind`, `title` and `scope`. The engine recalls the project's active decisions, questions and
   project rules for the diff's paths itself on every launch.
-- `craft:review` also takes `depth` and `extraLenses` (the loop sets `depth: 'light'` on its later
-  light rounds, as the table says, and leaves `extraLenses` at its default unless the human asks).
+- `craft:review` also takes `depth` and `extraLenses` (the loop's later light rounds set
+  `depth: 'light'` and `extraLenses: []`, as the table says: a light pass with `extraLenses` absent
+  would discover and run the repository's own reviewers over each delta; the human may name them).
+  Round 1 and full rounds leave `extraLenses` at its default.
   `depth: 'light'` is a cheaper pass: one round of the diff-scoped lenses only (no negative-space or invariants lens; `tests`
   and `intent` still run whenever the diff changes production code, `reconciler` and
   `failure-windows` on controller code, `compat` on a public contract path),
@@ -202,7 +205,7 @@ record named first.
   if the cause is transient (the retry is the same round); still no verdict → stop as above and
   tell the human. An `INCOMPLETE` that says the harness's permission check refused a command is
   no transient: show the human the refused command and the `Bash(<binary> review:*)` rule it names,
-  and once they have allowed it, continue with `run=<the run directory it names>` — the same
+  which should let the run go on (not yet observed under auto mode); once they have added it, continue with `run=<the run directory it names>` — the same
   round, its steps so far kept; never add the rule yourself. A craft engine that died with `at workflow.js:<line>:<column>`:
   `node "<this skill's base directory>/../../integrations/shared/engine-source-map.mjs" <engine> workflow.js:<line>:<column>`
   gives the place in the plugin's source (or, for an engine without a map, the line of

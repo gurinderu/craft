@@ -7,7 +7,7 @@ Run craft's review by invoking the `review` tool.
 If the user passed arguments, call the tool with `args` set to them exactly as written (the review's
 flags, such as `--base main`, `--depth light`, `--pr 123`, `--run <dir>` to resume a run, or
 `--models <provider/model>`; a re-review of fix commits is `--base <the commit the review was made on>
---fresh --delta --full-every 0 --depth light`, whose clean verdict reads Warning, never Approve; `--delta` needs a base
+--fresh --delta --full-every 0 --depth light --extra-lenses off`, whose clean verdict reads Warning, never Approve; `--delta` needs a base
 after the merge-base: with the merge-base or an older commit — or no `--base` and no earlier round of the
 branch — the binary refuses it before anything runs, since that round would review the whole branch):
 

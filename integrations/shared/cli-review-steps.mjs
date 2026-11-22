@@ -197,6 +197,16 @@ function startPrompt(o, where, version) {
 }
 
 /**
+ * The start as the service agent is asked to issue it, for naming a refused one: its first line, and the heredoc that
+ * hands the launcher's records on stdin named, not copied.
+ * @param {Options} o @param {import('./cli-review-commands.mjs').Where} where @param {string} version @returns {string}
+ */
+function startIssued(o, where, version) {
+  const cmd = startCommand(o, where, version)
+  return o.priorDecisions ? `${cmd} --prior-decisions - <<'${PRIOR_DECISIONS_EOF}' (the launcher's prior decisions on stdin)` : cmd
+}
+
+/**
  * The step that runs a submit or a comment (integrations/shared/cli-review-commands.mjs), `cmd` its command: with `--resume`
  * (`run=`) an answer still missing is handed out again, not counted as a failed attempt; an `--abandoned` task the
  * binary fails at once. @param {string} cmd @returns {string}
@@ -534,7 +544,7 @@ async function drive(sb, o, craftVersion, service, recorder) {
 async function opening(sb, o, craftVersion, serve, where) {
   if (o.run)
     return resumed(o.run, await submitStep(serve, 'step:resume', 'Start', where.bin, o.run, { resume: true, recordRoot: where.filedThrough }, spentSoFar(sb)))
-  const got = await serve('step:start', 'Start', startPrompt(o, where, craftVersion), startCommand(o, where, craftVersion))
+  const got = await serve('step:start', 'Start', startPrompt(o, where, craftVersion), startIssued(o, where, craftVersion))
   const argument = argumentRefused(got)
   return argument ? { argument } : readStep(got)
 }

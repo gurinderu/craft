@@ -209,10 +209,11 @@ In Claude Code the review engine runs the binary through its service agent (`cra
 in the harness's Bash: `<binary> review start | submit | status | gate | comment`, `<binary>` the
 path step 2 printed (`~/.craft/bin/<version>/craft`). Under auto mode or a strict permission set
 the harness may refuse one mid-run; the review then stops `INCOMPLETE`, names the refused command
-and the rule that allows it, `Bash(<binary> review:*)`, and keeps the run's steps. A plugin cannot
+and the rule meant to allow it, `Bash(<binary> review:*)`, and keeps the run's steps. A plugin cannot
 grant this itself — Claude Code ignores `permissionMode` on a plugin's agent, and a plugin's
 settings carry no permissions — so craft never adds it: the user adds the rule with `/permissions`
-and continues with `craft:review run=<the run directory>`. The path holds the version, so the
+and continues with `craft:review run=<the run directory>`. The rule should let the run go on; that
+an allow rule overrides auto mode's classifier is not yet observed. The path holds the version, so the
 rule is added again after each plugin update.
 
 ## What the review does with it
