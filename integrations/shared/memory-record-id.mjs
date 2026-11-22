@@ -70,8 +70,36 @@ export function sha256Hex(s) {
   return h.map(x => (x >>> 0).toString(16).padStart(8, '0')).join('')
 }
 
+// A scope that carries a line or a line range, `path:N` or `path:N-M`: earlier runs wrote such scopes,
+// the skill's grammar keeps the line in `line` (realm @nick/craft, node #598). No valid scope holds a `:`.
+// Read for matching only: the id stays the hash of the scope as written (memoryRecordId), so two legacy
+// records of one title at two ranges stay two records. The cases both readers hold to:
+// content/parity/scope-line-cases.json.
+export const SCOPE_LINE = /^([\s\S]*[^ :]):(\d{1,9})(?:-(\d{1,9}))?$/
+
 /**
- * The memory skill's id of a record of `kind` with `title` and `scope`.
+ * A scope split from the line it carries: `path:N` and `path:N-M` read as `path` and N (the start
+ * line); any other scope — one with a control character among them — as it is (trimmed) with line 0.
+ * @param {string} scope @returns {{ scope: string, line: number }}
+ */
+export function scopeLine(scope) {
+  const control = Array.from(scope).some(c => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127)
+  const m = control ? null : SCOPE_LINE.exec(scope.trim())
+  return m ? { scope: String(m[1]), line: Number(m[2]) } : { scope: scope.trim(), line: 0 }
+}
+
+/**
+ * What refuses writing a record whose scope carries a line, with the corrected form; '' when it carries
+ * none. A writer refuses it, a reader takes it (scopeLine). @param {string} scope @returns {string}
+ */
+export function scopeLineProblem(scope) {
+  const { scope: path, line } = scopeLine(scope)
+  return path === scope.trim() ? '' : `scope ${JSON.stringify(scope.trim())} carries a line: write scope=${path}, line=${line}`
+}
+
+/**
+ * The memory skill's id of a record of `kind` with `title` and `scope`, the scope as written — a line
+ * a legacy scope carries included (scopeLine).
  * @param {string} kind @param {string} title @param {string} scope @returns {string}
  */
 export function memoryRecordId(kind, title, scope) {
