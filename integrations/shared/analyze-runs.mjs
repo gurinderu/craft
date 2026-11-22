@@ -369,6 +369,9 @@ export function aggregate(records) {
     if (r.savedByFloorPremiseHeld === false) savedByFloorRevokedRuns++
     tallyHarmCap(harmCap, r)
     countEach(notRun, r.notRun)
+    // A coverage gap is fragility a re-run fixes too: ranked beside notRun, though the record keeps it apart from
+    // notRun, which marks a run INCOMPLETE (cli/crates/craft-review/src/report/gap_cap.rs).
+    countEach(notRun, r['capped'])
     // Files no language profile covered are NOT a `notRun` entry and must never be folded into one:
     // `notRun` is ranked by exact string to surface REPEATED fragility, and a note embedding a count
     // and file names is unique per run — it filled the ranking with count-1 rows and sank the real

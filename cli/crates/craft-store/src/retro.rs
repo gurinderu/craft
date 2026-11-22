@@ -246,8 +246,12 @@ pub fn add_record(out: &mut Retro, r: &Obj) -> Result<(), Utf16Error> {
     let verdict = r.get("verdict").filter(|v| v.truthy()).map(Js::to_js_text);
     out.partial_coverage +=
         u64::from(verdict.is_some_and(|v| crate::tally::is_incomplete_units(&v)));
-    for item in r.get("notRun").and_then(Js::as_arr).unwrap_or(&[]) {
-        *out.not_run.entry(item.to_js_string()?).or_default() += 1;
+    // A coverage gap (`capped`) is fragility a re-run fixes too, ranked beside what did not run
+    // though the record keeps it apart from `notRun`, which marks a run INCOMPLETE.
+    for key in ["notRun", "capped"] {
+        for item in r.get(key).and_then(Js::as_arr).unwrap_or(&[]) {
+            *out.not_run.entry(item.to_js_string()?).or_default() += 1;
+        }
     }
     rounds::add(r, &mut out.rounds);
     rounds::add_apart(r, &mut out.apart);
