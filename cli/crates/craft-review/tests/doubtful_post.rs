@@ -167,7 +167,7 @@ fn without_pr_only_the_one_open_pr_of_the_records_branch_is_posted_to() {
     std::fs::write(gh.join("prs"), "[]").unwrap();
     let e = post(at, 1, true, Some(&h), &setup).unwrap_err();
     assert!(
-        matches!(&e, PostError::Pr(w) if w.contains("no open PR has the record's branch main")),
+        matches!(&e, PostError::Pr(w) if w.contains("no open PR of this repository has the record's branch main")),
         "{e}"
     );
     let two = format!(
@@ -188,21 +188,73 @@ fn without_pr_only_the_one_open_pr_of_the_records_branch_is_posted_to() {
 }
 
 #[test]
-fn a_named_pr_of_another_branch_is_taken_only_when_its_head_holds_the_reviewed_commit() {
+fn a_mistyped_pr_of_another_branch_is_refused_even_when_its_head_holds_the_commit() {
     let (repo, out) = (fixture(true), tempfile::tempdir().unwrap());
     let (gh, h) = (out.path().join("gh"), head(repo.path()));
     let setup = stand_in(&gh, &h);
-    std::fs::write(gh.join("branch"), "other").unwrap();
     let at = (repo.path(), out.path());
-    let p = post_to(at, (1, true), (Some(&h), Some("main"), Some(7)), &setup).unwrap();
-    assert!(p.posted, "the PR's head holds the reviewed commit");
-    std::fs::write(gh.join("head"), "f".repeat(40)).unwrap();
-    let e = post_to(at, (1, false), (Some(&h), Some("main"), Some(7)), &setup).unwrap_err();
+    std::fs::write(gh.join("branch"), "other").unwrap();
+    let e = post_to(at, (1, true), (Some(&h), Some("main"), Some(7)), &setup).unwrap_err();
     assert!(
         matches!(&e, PostError::Pr(w) if w.contains("PR #7 has head branch other, not the record's main")),
         "{e}"
     );
+    std::fs::write(gh.join("branch"), "main").unwrap();
+    let p = post_to(at, (1, true), (Some(&h), Some("main"), Some(7)), &setup).unwrap();
+    assert!(p.posted, "the PR of the record's branch, named");
     assert_eq!(posted(&gh).len(), 1);
+}
+
+#[test]
+fn a_fork_pr_of_a_same_named_branch_is_not_the_records() {
+    let (repo, out) = (fixture(true), tempfile::tempdir().unwrap());
+    let (gh, h) = (out.path().join("gh"), head(repo.path()));
+    let setup = stand_in(&gh, &h);
+    let at = (repo.path(), out.path());
+    let pr = |n: u64, fork: bool| {
+        format!(
+            r#"{{"number":{n},"url":"u{n}","headRefOid":"{h}","headRefName":"main","isCrossRepository":{fork},"headRepositoryOwner":{{"login":"x"}}}}"#
+        )
+    };
+    std::fs::write(gh.join("prs"), format!("[{}]", pr(9, true))).unwrap();
+    let e = post(at, 1, true, Some(&h), &setup).unwrap_err();
+    assert!(
+        matches!(&e, PostError::Pr(w) if w.starts_with("no open PR of this repository")),
+        "{e}"
+    );
+    std::fs::write(
+        gh.join("prs"),
+        format!("[{},{}]", pr(9, true), pr(8, false)),
+    )
+    .unwrap();
+    let p = post(at, 1, true, Some(&h), &setup).unwrap();
+    assert_eq!(
+        (p.pr, p.url.as_str()),
+        (8, "u8"),
+        "the same-repository PR, not the fork's"
+    );
+}
+
+#[test]
+fn a_pr_whose_head_does_not_hold_the_reviewed_commit_is_refused() {
+    let (repo, out) = (fixture(true), tempfile::tempdir().unwrap());
+    let gh = out.path().join("gh");
+    let reviewed = head(repo.path());
+    let setup = stand_in(&gh, &"e".repeat(40));
+    for pr in [None, Some(7)] {
+        let e = post_to(
+            (repo.path(), out.path()),
+            (1, true),
+            (Some(&reviewed), Some("main"), pr),
+            &setup,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(&e, PostError::Pr(w) if w.contains("does not hold the reviewed commit")),
+            "{e}"
+        );
+    }
+    assert!(posted(&gh).is_empty());
 }
 
 #[test]

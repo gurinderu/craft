@@ -19,43 +19,74 @@ pub(super) fn full<'a>(d: &Doubtful<'a>) -> Option<&'a str> {
 }
 
 /// The pull request of the record's own branch (realm @nick/craft, node #270: the PR is never
-/// guessed by the branch checked out now): `pr` when its head branch is the record's, or the
-/// reviewed head is on its history; without `pr`, the one open PR whose head is the record's
-/// branch.
+/// guessed by the branch checked out now) whose head holds the reviewed commit `reviewed`: `pr`
+/// when its head branch is the record's; without `pr`, the one open same-repository PR whose head
+/// is the record's branch — a fork's PR of a branch of the same name is not this record's.
 pub(super) fn which_pr(
     runner: &Runner,
     repo: &Path,
-    d: &Doubtful<'_>,
+    (d, reviewed): (&Doubtful<'_>, &str),
     pr: Option<u64>,
 ) -> Result<Pr, PostError> {
-    let branch = d.branch.filter(|b| !b.is_empty());
-    let Some(n) = pr else {
-        let b = branch.ok_or_else(|| {
-            PostError::Pr(
-                "the record names no branch (a review on a detached HEAD): name the PR with --pr"
-                    .into(),
-            )
-        })?;
-        let mut prs = read::open_prs(runner, repo, b).map_err(PostError::Pr)?;
-        return match prs.len() {
-            1 => Ok(prs.remove(0)),
-            0 => Err(PostError::Pr(format!(
-                "no open PR has the record's branch {b} as its head: name it with --pr"
-            ))),
-            k => Err(PostError::Pr(format!(
-                "{k} open PRs have the record's branch {b} as their head: name one with --pr"
-            ))),
-        };
+    let branch = d.branch.filter(|b| !b.is_empty()).ok_or_else(|| {
+        PostError::Pr("the record names no branch (a review on a detached HEAD), so no PR can be told to be its own: nothing posted".into())
+    })?;
+    let p = match pr {
+        None => only_pr(runner, repo, branch)?,
+        Some(n) => {
+            let p =
+                read::pull_request(runner, repo, Some(&n.to_string())).map_err(PostError::Pr)?;
+            if p.head_ref != branch {
+                return Err(PostError::Pr(format!(
+                    "PR #{n} has head branch {}, not the record's {branch}: name the PR of the reviewed branch",
+                    p.head_ref
+                )));
+            }
+            p
+        }
     };
-    let p = read::pull_request(runner, repo, Some(&n.to_string())).map_err(PostError::Pr)?;
-    let held = full(d).is_some_and(|h| crate::git::holds(repo, &p.head, h));
-    if branch == Some(p.head_ref.as_str()) || held {
-        return Ok(p);
+    if !holds(repo, &p, reviewed) {
+        return Err(PostError::Pr(format!(
+            "PR #{}'s head {} does not hold the reviewed commit {} (fetched from origin when missing): it is not the PR the review read",
+            p.number,
+            short(&p.head),
+            short(reviewed)
+        )));
     }
-    Err(PostError::Pr(format!(
-        "PR #{n} has head branch {}, not the record's {}, and its head {} does not hold the reviewed commit: name the PR of the reviewed branch",
-        p.head_ref,
-        branch.unwrap_or("(none)"),
-        short(&p.head)
-    )))
+    Ok(p)
+}
+
+/// The one open same-repository PR whose head branch is `branch`.
+fn only_pr(runner: &Runner, repo: &Path, branch: &str) -> Result<Pr, PostError> {
+    let mut prs = read::open_prs(runner, repo, branch).map_err(PostError::Pr)?;
+    prs.retain(|p| !p.cross_repository);
+    match prs.len() {
+        1 => Ok(prs.remove(0)),
+        0 => Err(PostError::Pr(format!(
+            "no open PR of this repository has the record's branch {branch} as its head: name it with --pr"
+        ))),
+        k => Err(PostError::Pr(format!(
+            "{k} open PRs of this repository have the record's branch {branch} as their head: name one with --pr"
+        ))),
+    }
+}
+
+/// Whether the PR's head holds `reviewed`, the head fetched from `origin`'s `pull/<n>/head` first
+/// when this repository lacks it.
+fn holds(repo: &Path, p: &Pr, reviewed: &str) -> bool {
+    if !crate::git::has_commit(repo, &p.head) {
+        let refspec = format!("pull/{}/head", p.number);
+        drop(crate::git::git(
+            repo,
+            &[
+                "fetch",
+                "--no-tags",
+                "--no-write-fetch-head",
+                "--quiet",
+                "origin",
+                &refspec,
+            ],
+        ));
+    }
+    crate::git::holds(repo, &p.head, reviewed)
 }

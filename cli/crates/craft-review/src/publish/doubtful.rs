@@ -3,7 +3,8 @@
 //! record; for each the human picks "ask the author" or "post as a defect", and this posts that one —
 //! read from the record, never from a hand-copied list — with the craft-finding marker, by the rules
 //! the defects are posted by: not a second time when its comment is on the PR already, on its file
-//! when GitHub refuses its line (node #285), only on the PR of the record's own branch, on the
+//! when GitHub refuses its line (node #285), only on a same-repository PR of the record's own
+//! branch whose head holds the reviewed commit, on the
 //! reviewed commit when the PR's head moved past it without touching its line, and nothing when it
 //! did or the record names no reviewed commit.
 
@@ -60,7 +61,8 @@ pub enum PostError {
     /// The record lists no such finding, or it names no file.
     #[error("{0}")]
     Finding(String),
-    /// The pull request cannot be told: none, several, or one of another branch (`--pr`).
+    /// The pull request cannot be told: none, several, one of another branch (`--pr`), or one
+    /// whose head does not hold the reviewed commit.
     #[error("{0}")]
     Pr(String),
     /// gh failed, or the PR names no commit to post on.
@@ -71,8 +73,9 @@ pub enum PostError {
     Refused(String),
 }
 
-/// Posts `d` on its branch's pull request (`pr`, checked against it, or the one open PR of the
-/// record's branch), from the checkout
+/// Posts `d` on its branch's pull request (`pr`, checked against it, or the one open
+/// same-repository PR of the record's branch, its head holding the reviewed commit), from the
+/// checkout
 /// `repo`, gh's output kept in `scratch`.
 ///
 /// # Errors
@@ -91,8 +94,9 @@ pub fn post(
     let c = request::chosen(d.findings, d.n as f64, d.question, d.lines_judged)
         .map_err(PostError::Finding)?;
     let runner = Runner::new(setup.budget, setup.path.clone(), scratch.to_path_buf());
-    let p = target::which_pr(&runner, repo, d, pr)?;
     let reviewed = target::full(d).ok_or_else(|| PostError::Refused(target::NO_REVIEWED.into()))?;
+    let p = target::which_pr(&runner, repo, (d, reviewed), pr)?;
+
     let (commit, note) = if reviewed == p.head {
         (reviewed.to_owned(), String::new())
     } else {
