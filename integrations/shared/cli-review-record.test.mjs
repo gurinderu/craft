@@ -95,7 +95,7 @@ async function cliRun({ args = {}, over = {} } = {}) {
     .trim()
     .split('\n')
     .map(l => JSON.parse(l))
-  return { repo, store, first, engine, lines }
+  return { repo, store, first, engine, lines, runDir }
 }
 
 test('a finished review files one record under the branch and head it started on', async () => {
@@ -113,7 +113,7 @@ test('a finished review files one record under the branch and head it started on
 })
 
 test('the record carries the findings by severity, a ledger row each and the uncovered files; the run-store report reads it', async () => {
-  const { store } = await cliRun({ args: { depth: 'light' } })
+  const { store, runDir } = await cliRun({ args: { depth: 'light' } })
   const file = fs.readdirSync(store).find(f => f.endsWith('.json'))
   const rec = JSON.parse(fs.readFileSync(path.join(store, String(file)), 'utf8'))
   assert.equal(rec.findings.total, 2)
@@ -127,6 +127,7 @@ test('the record carries the findings by severity, a ledger row each and the unc
     "each row is fingerprinted as review's are",
   )
   assert.deepEqual([rec.uncoveredFiles, rec.notRun, rec.base, rec.depth], [['app.py'], [], 'origin/main', 'light'])
+  assert.equal(rec.cliRun, runDir, "the record names the binary's run directory, which a stopped part of the run names too")
   const out = analyzeRuns([store], process.env).stdout.join('\n')
   assert.match(out, /- review \(cli\): 1 run\(s\)/, out)
 })

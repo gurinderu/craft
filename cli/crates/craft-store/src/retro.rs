@@ -1,6 +1,7 @@
 //! A version's retro: the finished runs of one craft version summed as the run-store report
 //! (`integrations/shared/analyze-runs.mjs --version <v>`) sums them — records that carry a schema version and did
-//! not die, a resumed run's second record folded into its newest (`integrations/shared/run-duplicates.mjs`), develop
+//! not die, a resumed run's second record folded into its newest and a stopped part into the
+//! record its resume finished (`integrations/shared/run-duplicates.mjs`, [`crate::parts`]), develop
 //! cycles apart — per workflow, per engine, per lens, and what did not run.
 
 use std::collections::BTreeMap;
@@ -172,30 +173,43 @@ pub fn fold_runs(records: Vec<Obj>) -> Vec<Obj> {
     kept
 }
 
-/// The version's finished runs among `records`, a resumed run once.
+/// The version's finished runs among `records`, a resumed run once: a re-filed record into its
+/// newest, a stopped part into the record its resume finished ([`crate::parts`]).
 fn finished_of(
     version: &str,
     records: impl IntoIterator<Item = Obj>,
     retro: &mut Retro,
-) -> Vec<Obj> {
-    let mut kept = Vec::new();
-    for r in records {
-        if !r.get("schemaVersion").is_some_and(Js::truthy)
-            || r.text_units("craftVersion") != version
-        {
-            retro.other += 1;
-            continue;
-        }
-        if r.get("partial").is_some_and(Js::truthy) {
-            retro.unfinished += 1;
-            continue;
-        }
-        kept.push(r);
+) -> Result<Vec<Obj>, Utf16Error> {
+    let records: Vec<Obj> = records.into_iter().collect();
+    let mut parts = crate::parts::Parts::default();
+    let live = |r: &Obj| {
+        r.get("schemaVersion").is_some_and(Js::truthy) && !r.get("partial").is_some_and(Js::truthy)
+    };
+    for r in records.iter().filter(|r| live(r)) {
+        parts.note(r);
     }
+    let mut kept = Vec::new();
+    let mut held = BTreeMap::new();
+    for (i, r) in records.into_iter().enumerate() {
+        let inside = r.text_units("craftVersion") == version;
+        if live(&r) && parts.hold(&i.to_string(), &r, inside)? {
+            retro.other += u64::from(!inside);
+            held.insert(i.to_string(), r);
+        } else if !r.get("schemaVersion").is_some_and(Js::truthy) || !inside {
+            retro.other += 1;
+        } else if r.get("partial").is_some_and(Js::truthy) {
+            retro.unfinished += 1;
+        } else {
+            kept.push(r);
+        }
+    }
+    let (standing, folded) = parts.standing();
+    retro.folded += folded;
+    kept.extend(standing.iter().filter_map(|(_, _, name)| held.remove(name)));
     let before = kept.len();
     let folded = fold_runs(kept);
     retro.folded += u64::try_from(before - folded.len()).unwrap_or(u64::MAX);
-    folded
+    Ok(folded)
 }
 
 /// The retro of `version` over every record.
@@ -203,7 +217,7 @@ fn finished_of(
 /// When a report field cannot be represented as Unicode.
 pub fn retro(version: &str, records: impl IntoIterator<Item = Obj>) -> Result<Retro, Utf16Error> {
     let mut out = Retro::default();
-    for r in finished_of(version, records, &mut out) {
+    for r in finished_of(version, records, &mut out)? {
         add_record(&mut out, &r)?;
     }
     Ok(out)

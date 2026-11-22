@@ -134,6 +134,42 @@ test('a resumed run filed twice is one run, and the fold is said (realm @nick/cr
   }
 })
 
+test('a run stopped under one version and resumed under the next is counted once, under the version that finished it', async () => {
+  const part = { driver: 'cli', project: '/p', branch: 'feat/x', head: 'abc', cliRun: '/s/cli/1-1' }
+  const dir = store([
+    record({ ...part, craftVersion: '0.9.0', ts: '2026-11-22T09-42-49Z', verdict: 'INCOMPLETE' }),
+    record({ ...part, craftVersion: '0.10.0', ts: '2026-11-22T09-56-50Z', verdict: 'Block', round: 2 }),
+  ])
+  try {
+    const stoppedUnder = run([dir, '--version', '0.9.0'], process.env).stdout.join('\n')
+    assert.match(stoppedUnder, /— 0 run\(s\)/, stoppedUnder)
+    assert.match(stoppedUnder, /1 record\(s\) folded into a newer record of the same run/)
+    const finishedUnder = run([dir, '--version', '0.10.0'], process.env).stdout.join('\n')
+    assert.match(finishedUnder, /— 1 run\(s\), 0 with partial coverage/, finishedUnder)
+    assert.doesNotMatch(finishedUnder, /folded/)
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('a run that only stopped, under two versions, is counted once under the version of its newest part', async () => {
+  const part = { driver: 'cli', project: '/p', branch: 'feat/x', head: 'abc', cliRun: '/s/cli/1-1', verdict: 'INCOMPLETE' }
+  const dir = store([
+    record({ ...part, craftVersion: '0.9.0', ts: '2026-11-22T09-42-49Z' }),
+    record({ ...part, craftVersion: '0.10.0', ts: '2026-11-22T09-56-50Z' }),
+  ])
+  try {
+    const older = run([dir, '--version', '0.9.0'], process.env).stdout.join('\n')
+    assert.match(older, /— 0 run\(s\)/, older)
+    assert.match(older, /1 record\(s\) folded into a newer record of the same run/)
+    const newer = run([dir, '--version', '0.10.0'], process.env).stdout.join('\n')
+    assert.match(newer, /— 1 run\(s\), 1 with partial coverage/, newer)
+    assert.doesNotMatch(newer, /folded/)
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('--round-pairs pairs a resumed round once, not once per record (realm @nick/craft, #249)', async () => {
   /** @param {number} round @param {string} ts @returns {Record<string, unknown>} */
   const roundRec = (round, ts) =>

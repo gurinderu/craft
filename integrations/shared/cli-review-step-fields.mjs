@@ -35,13 +35,22 @@ export function stopNoteOf(s) {
 }
 
 /**
+ * The round of the branch's chain a step is in and what its lenses review — which a pending step names too, so the
+ * record of a run stopped short says the round it stood in, not round 1.
+ * @param {Record<string, unknown>} v @returns {{ round: number, lensScope: 'delta' | 'full' }}
+ */
+export const chainOf = v => ({
+  round: Number.isInteger(v['round']) && Number(v['round']) > 0 ? Number(v['round']) : 1,
+  lensScope: v['lensScope'] === 'delta' ? 'delta' : 'full',
+})
+
+/**
  * What the next round of the branch needs from a finished step: its round, its ledger, how it built on the last.
  * A round that reviewed only the fix commits is `delta`, so no reader takes it for coverage of the whole diff at its head.
  * @param {Record<string, unknown>} v @returns {{ round: number, lensScope: 'delta' | 'full', ledger: LedgerRow[] | null, reReview: Record<string, unknown> | null }}
  */
 export const roundOf = v => ({
-  round: Number.isInteger(v['round']) && Number(v['round']) > 0 ? Number(v['round']) : 1,
-  lensScope: v['lensScope'] === 'delta' ? 'delta' : 'full',
+  ...chainOf(v),
   ledger: Array.isArray(v['ledger']) ? v['ledger'].filter(isObject).map(ledgerRowOf) : null,
   reReview: isObject(v['reReview']) ? v['reReview'] : null,
 })
