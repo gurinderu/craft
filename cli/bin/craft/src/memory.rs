@@ -75,11 +75,25 @@ fn entries(dir: &Path) -> Result<(Vec<Entry>, Vec<String>)> {
     Ok((out, skipped))
 }
 
-/// Writes `text` to `path` through a sibling temporary file, unless it already holds it.
+/// Writes `text` to `path` through a sibling temporary file, unless it already holds it. A
+/// symbolic link is followed and its target written, so the rename never replaces the link with
+/// a plain file; a link whose target is missing is refused.
 fn write_if_changed(path: &Path, text: &str) -> Result<bool> {
     if fs::read_to_string(path).ok().as_deref() == Some(text) {
         return Ok(false);
     }
+    let resolved;
+    let path = if fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_symlink()) {
+        resolved = fs::canonicalize(path).with_context(|| {
+            format!(
+                "{} is a symbolic link whose target cannot be resolved — refused, so the link is not replaced; nothing written to it",
+                path.display()
+            )
+        })?;
+        resolved.as_path()
+    } else {
+        path
+    };
     let tmp = path.with_extension("md.craft-tmp");
     fs::write(&tmp, text).with_context(|| format!("writing {}", tmp.display()))?;
     fs::rename(&tmp, path).with_context(|| format!("replacing {}", path.display()))?;
