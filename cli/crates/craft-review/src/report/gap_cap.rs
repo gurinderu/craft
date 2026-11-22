@@ -28,12 +28,14 @@ pub(super) fn reason(state: &RunState, uncapped: &str) -> Option<String> {
     })
 }
 
-/// What did not run, as the report's "Not run", the finished step and the run's record name it:
-/// `not_run`, then each coverage gap, marked as one.
+/// Each coverage gap as the report's "Not run" and the finished step's `capped` name it: marked as
+/// one, which holds an otherwise clean verdict at Warning and leaves `not_run` alone.
 pub(super) fn named(state: &RunState) -> Vec<String> {
-    let gaps = state
+    state
         .capped
         .iter()
-        .map(|g| format!("{g} (a coverage gap: it caps the verdict at Warning, never Approve)"));
-    state.not_run.iter().cloned().chain(gaps).collect()
+        .map(|g| {
+            format!("{g} (a coverage gap: alone it holds the verdict at Warning, never Approve)")
+        })
+        .collect()
 }

@@ -120,6 +120,16 @@ fn every_narrowing_of_a_review_takes_it_out() {
 }
 
 #[test]
+fn a_warning_held_by_a_coverage_gap_alone_counts_as_a_full_review() {
+    // A metrics-only lens that never returned is a coverage gap, filed apart from `notRun`: the run
+    // is a full review, and asking for another would hit the same gap.
+    let (mut l, mut d) = review();
+    l["verdict"] = json!("Warning");
+    d["capped"] = json!(["general metrics-only lenses that never returned — complexity: died"]);
+    assert!(judge(&l, &d));
+}
+
+#[test]
 fn an_unreadable_detail_file_never_counts() {
     let (l, _) = review();
     let line: Line = serde_json::from_value(l).unwrap();

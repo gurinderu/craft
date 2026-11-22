@@ -57,7 +57,7 @@ pub fn status(dir: &Path) -> Result<Value, StateError> {
         "files": run.diff.files.len(), "profiles": profiles, "rounds": run.rounds.yields, "pool": run.rounds.pool.len(),
         "findings": run.findings.len(),
         "tiers": {"confirmed": confirmed, "suspected": suspected, "refuted": refuted, "unverified": unverified},
-        "tasks": tasks, "notRun": report::not_run(&run), "notes": run.notes,
+        "tasks": tasks, "notRun": run.not_run, "capped": report::capped(&run), "notes": run.notes,
         "round": run.chain.round.max(1), "priors": run.chain.priors.len(),
     });
     if let (Some(v), Some(obj)) = (&run.verdict, s.as_object_mut()) {

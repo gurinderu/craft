@@ -39,6 +39,7 @@ const STEP = {
   ],
   uncovered: ['flake.nix', 7],
   notRun: ['the tests lens'],
+  capped: ['general metrics-only lenses that never returned — complexity: died', 3],
   round: 2,
   lensScope: 'delta',
   ledger: [

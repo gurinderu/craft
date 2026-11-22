@@ -403,10 +403,19 @@ fn listed(heading: Option<&str>, files: &[String], out: &mut String) {
     out.push('\n');
 }
 
-/// What did not run, each coverage gap named beside it as one: the report's "Not run", the
-/// finished step's and the status's `notRun`, and so the run's record.
+/// What did not run, each coverage gap named beside it as one: the report's "Not run".
 #[must_use]
 pub fn not_run(state: &RunState) -> Vec<String> {
+    let mut all = state.not_run.clone();
+    all.extend(capped(state));
+    all
+}
+
+/// Each coverage gap, marked as one: the finished step's and the status's `capped`, and so the
+/// run's record — apart from `notRun`, which holds only what the review needed, so no reader
+/// takes a gap for an INCOMPLETE run (realm @nick/craft, node #541).
+#[must_use]
+pub fn capped(state: &RunState) -> Vec<String> {
     gap_cap::named(state)
 }
 

@@ -218,6 +218,13 @@ pub fn cli_record(step: &Obj, stats: Obj, at: &At<'_>) -> Obj {
     r.set("ledger", Js::Arr(ledger));
     r.set("uncoveredFiles", strings(step.get("uncovered")));
     r.set("notRun", strings(step.get("notRun")));
+    // The coverage gaps apart from what did not run, only when there are any (realm @nick/craft,
+    // node #541).
+    if let Js::Arr(gaps) = strings(step.get("capped"))
+        && !gaps.is_empty()
+    {
+        r.set("capped", Js::Arr(gaps));
+    }
     r.set(
         "dimensions",
         Js::Arr(objects(step.get("dimensions")).unwrap_or_default()),

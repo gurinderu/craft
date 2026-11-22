@@ -243,12 +243,19 @@ fn a_metrics_lens_that_could_not_look_caps_the_verdict_at_warning_not_incomplete
         s = submit(&run, Value::Object(answers));
     }
     assert_eq!(s["verdict"], json!("Warning"), "{s}");
-    // The finished step names the gap in `notRun`, as the run's record files it.
-    assert!(
-        s["notRun"].to_string().contains("complexity")
-            && s["notRun"].to_string().contains("a coverage gap"),
-        "{s}"
-    );
+    // The finished step and the status name the gap in `capped`, as the run's record files it,
+    // and leave `notRun` to what the review needed.
+    let st = craft_review::status::status(&run).unwrap();
+    for (what, v) in [("finished", &s), ("status", &st)] {
+        assert_eq!(v["notRun"], json!([]), "{what}: {v}");
+        assert_contains_all(
+            &v["capped"].to_string(),
+            &[
+                "general metrics-only lenses that never returned — complexity:",
+                "a coverage gap",
+            ],
+        );
+    }
     let report = std::fs::read_to_string(s["report"].as_str().unwrap()).unwrap();
     assert_contains_all(
         &report,
