@@ -13,7 +13,7 @@ fn origin_discards_output_when_a_successful_parent_leaves_stdout_open() {
     let git = root.join("bin/git");
     std::fs::write(
         &git,
-        "#!/bin/sh\n/bin/sleep 12 &\nprintf '%s' \"$!\" > \"$2/descendant\"\nprintf 'https://github.com/acme/db\\n'\nexit 0\n",
+        "#!/bin/sh\ncase \"$3\" in\nrev-parse) printf '%s\\n' \"$2\" ;;\nremote) /bin/sleep 12 &\n  printf '%s' \"$!\" > \"$2/descendant\"\n  printf 'https://github.com/acme/db\\n' ;;\nesac\nexit 0\n",
     )
     .unwrap();
     std::fs::set_permissions(git, std::fs::Permissions::from_mode(0o755)).unwrap();
@@ -22,10 +22,12 @@ fn origin_discards_output_when_a_successful_parent_leaves_stdout_open() {
     let out = run(
         root,
         &[
-            "__craft-externals",
-            "discover",
-            "--repo-root",
+            "init",
+            "--propose",
+            "--cwd",
             root.to_str().unwrap(),
+            "--craft-root",
+            "/missing-plugin",
         ],
         "",
     );
@@ -39,7 +41,7 @@ fn origin_discards_output_when_a_successful_parent_leaves_stdout_open() {
         );
     }
     let got = value(&out, 0);
-    assert_eq!(got["candidates"][0]["system"], "db", "{got}");
+    assert_eq!(got["discovery"]["candidates"][0]["system"], "db", "{got}");
     assert!(elapsed < Duration::from_secs(12), "{elapsed:?}");
 }
 

@@ -61,7 +61,10 @@ so the review indexes the checkout it reads and adds the graph's callers to the 
 - `discovery` — the candidates the repository's deployment manifests name (Helm charts and
   values, kustomizations, compose files, plain manifests, Terraform git modules) that neither the
   profile nor the memory covers, each with `system`, `repo` (empty or `repoGuessed` when unsure)
-  and the `version` the manifest reads; `ran: false` with `why` when it could not run.
+  and the `version` the manifest reads; `ran: false` with `why` when it could not run. A
+  `walkCut` says the walk stopped at its bound: run `--propose` again with `--path <file>` for
+  each manifest past it (repeatable, at most 24, relative to the repository's top or absolute
+  inside it) — named, only those files are read, in the order given.
 - `ciCandidates` — what the repository's `.github/workflows/*.yml` hold for the CI map:
   `resolved`, a job whose `run:` names the cargo command itself, each with `check` (the job's
   `name:`, else its id — the name GitHub reports; a job of a reusable workflow is reported

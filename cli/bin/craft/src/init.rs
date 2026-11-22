@@ -23,6 +23,7 @@ use serde_json::{Value, json};
 mod ci;
 mod graph;
 mod memory;
+mod paths;
 
 #[derive(Debug, clap::Args)]
 #[command(group(clap::ArgGroup::new("mode").required(true).args(["propose", "write"])))]
@@ -51,6 +52,11 @@ pub struct InitArgs {
     /// proposed as an integration point with the revision its version file names now.
     #[arg(long = "memory-externals", requires = "propose", value_name = "-")]
     pub memory_externals: Option<String>,
+    /// A deployment manifest to read, relative to the repository's top or absolute inside it;
+    /// repeatable, at most 24. Named, they are read in the order given in place of the walk:
+    /// the way to a manifest past its bound.
+    #[arg(long = "path", requires = "propose", value_name = "MANIFEST")]
+    pub paths: Vec<String>,
     /// Accepted for older callers; native proposal discovery does not need a plugin root.
     #[arg(long, env = "CRAFT_ROOT")]
     pub craft_root: Option<PathBuf>,
@@ -116,6 +122,11 @@ pub fn init(args: &InitArgs) -> Result<ExitCode> {
             "codeGraphSays": says,
         }));
     }
+    let named = if args.paths.is_empty() {
+        None
+    } else {
+        paths::named(&git::toplevel(&args.cwd)?, &args.paths)?
+    };
     let held = project::load(&path)?;
     let integrations = held
         .as_ref()
@@ -124,7 +135,7 @@ pub fn init(args: &InitArgs) -> Result<ExitCode> {
     let held_ci = held.as_ref().map(|p| p.ci.clone()).unwrap_or_default();
     let recalled = memory::recalled(args.memory_externals.as_deref())?;
     let imported = memory::import(&args.cwd, &recalled, &integrations);
-    let discovery = discover(&args.cwd, &integrations, &recalled);
+    let discovery = discover(&args.cwd, &integrations, &recalled, named.as_deref());
     print(&json!({
         "profile": path,
         "exists": held.is_some(),
@@ -156,8 +167,13 @@ fn ran(answer: Result<Value>) -> Value {
 }
 
 /// The discovery's answer over the repository at `cwd`, the profile's points and the memory's
-/// `recalled` records left out as known.
-fn discover(cwd: &Path, known: &[IntegrationPoint], recalled: &memory::Recalled) -> Value {
+/// `recalled` records left out as known; `named`, the manifests to read in place of the walk.
+fn discover(
+    cwd: &Path,
+    known: &[IntegrationPoint],
+    recalled: &memory::Recalled,
+    named: Option<&[craft_store::js::JsString]>,
+) -> Value {
     let mut records: Vec<Value> = known
         .iter()
         .map(|p| json!({"system": p.name, "repo": p.repo, "version": p.rev}))
@@ -167,12 +183,19 @@ fn discover(cwd: &Path, known: &[IntegrationPoint], recalled: &memory::Recalled)
         cwd,
         &["discover", "--known", "-"],
         &Value::Array(records),
+        named,
     ))
 }
 
 /// What `craft_review::externals` answers for `<verb>` over the repository's top, `stdin` its
-/// records as JSON; a refusal is an error.
-fn externals(cwd: &Path, args: &[&str], stdin: &Value) -> Result<Value> {
+/// records as JSON, `named` the manifests a discovery reads in place of the walk; a refusal is an
+/// error.
+fn externals(
+    cwd: &Path,
+    args: &[&str],
+    stdin: &Value,
+    named: Option<&[craft_store::js::JsString]>,
+) -> Result<Value> {
     let top = git::toplevel(cwd)?;
     let input = craft_store::js::Js::from(stdin);
     let verb = args.first().context("no verb")?;
@@ -181,7 +204,7 @@ fn externals(cwd: &Path, args: &[&str], stdin: &Value) -> Result<Value> {
     } else {
         craft_review::externals::discover(
             &top,
-            None,
+            named,
             craft_review::externals::record_list(&input).unwrap_or(&[]),
         )
     }

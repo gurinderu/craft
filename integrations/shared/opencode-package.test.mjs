@@ -114,8 +114,6 @@ test("the checkout's package carries the entries, what they reach, the binary's 
     'integrations/shared/craft-fetch.sh',
     'integrations/shared/craft-fetch-http.sh',
     'integrations/shared/craft-hook-repo.sh',
-    'integrations/shared/craft-externals.mjs',
-    'integrations/shared/recurring-findings.mjs',
     'integrations/opencode/agents/review-task.md',
     'integrations/opencode/commands/craft-review.md',
     'integrations/claude-code/agents/rust-reviewer.md',
@@ -159,8 +157,7 @@ test('the laid-out package holds what the binary needs to take it as its root', 
   // The binary's plugin_root_at: a manifest at the root or under integrations/claude-code; then the parts it reads.
   const manifest = JSON.parse(fs.readFileSync(path.join(out, 'integrations/claude-code/.claude-plugin/plugin.json'), 'utf8'))
   assert.equal(manifest.version, JSON.parse(fs.readFileSync(path.join(REPO, '.release-please-manifest.json'), 'utf8'))['.'])
-  for (const f of ['integrations/claude-code/agents/rust-reviewer.md', 'skills/review-rules/SKILL.md', 'integrations/shared/craft-externals.mjs'])
-    assert.ok(fs.existsSync(path.join(out, f)), f)
+  for (const f of ['integrations/claude-code/agents/rust-reviewer.md', 'skills/review-rules/SKILL.md']) assert.ok(fs.existsSync(path.join(out, f)), f)
 })
 
 test('every lib script a shipped Markdown file names is in the laid-out package', () => {

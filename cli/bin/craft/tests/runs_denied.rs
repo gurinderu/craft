@@ -3,7 +3,6 @@
 #![cfg(unix)]
 #![expect(clippy::unwrap_used, reason = "fixtures fail loudly")]
 
-use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -71,34 +70,4 @@ fn a_store_below_an_unsearchable_directory_is_an_error_for_every_reader() {
             "{sub:?} says the OS error other than once: {stderr}"
         );
     }
-    legacy_entry_fails_too(root.path(), store_arg, project);
-}
-
-/// The legacy Node entry, given this binary, exits as the binary does and passes its stderr on.
-/// Without Node on PATH there is nothing to run, and the test says so on stderr.
-fn legacy_entry_fails_too(home: &Path, store: &str, project: &str) {
-    let entry = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../integrations/shared/recurring-findings.mjs");
-    let run = Command::new("node")
-        .arg(&entry)
-        .args(["--store", store, "--project", project])
-        .env("CRAFT_BIN", env!("CARGO_BIN_EXE_craft"))
-        .env("HOME", home)
-        .current_dir(home)
-        .output();
-    if matches!(&run, Err(e) if e.kind() == std::io::ErrorKind::NotFound) {
-        drop(writeln!(
-            std::io::stderr(),
-            "no node on PATH: the legacy entry was not run"
-        ));
-        return;
-    }
-    let out = run.unwrap();
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert_eq!(out.status.code(), Some(1), "legacy entry: {stderr}");
-    assert!(out.stdout.is_empty(), "legacy entry printed a result");
-    assert!(
-        stderr.contains(store),
-        "legacy entry names no path: {stderr}"
-    );
 }
