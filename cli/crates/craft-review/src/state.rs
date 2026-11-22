@@ -112,9 +112,12 @@ pub enum TaskKind {
     CarryCheck {
         prior: usize,
     },
-    /// The recall of the project's memory; `cut` changed paths past its prompt's bound.
+    /// The recall of the project's memory; `cut` changed paths its prompt covers by no entry,
+    /// `grouped` those it recalls by their directory, past its bound of listed paths.
     Recall {
         cut: usize,
+        #[serde(default, skip_serializing_if = "is_zero")]
+        grouped: usize,
     },
     /// The red team attacking the fix of the prior round's finding `prior`, adjudicated resolved.
     RedTeam {
@@ -454,4 +457,13 @@ pub fn save(dir: &Path, state: &RunState) -> Result<(), StateError> {
         source,
     })?;
     std::fs::rename(&tmp, &path).map_err(|source| StateError::Unwritable { path, source })
+}
+
+/// Whether a count is zero, so a field that is leaves a state's shape as it was.
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde's skip_serializing_if hands a reference"
+)]
+const fn is_zero(n: &usize) -> bool {
+    *n == 0
 }

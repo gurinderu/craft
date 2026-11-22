@@ -29,7 +29,7 @@ fn the_match_judges_answer_is_read_against_the_scopes_kept_when_it_was_asked() {
     let settled = vec![tool_finding()];
     // Handing the task out keeps what git saw: the commit is missing, so the match is raised
     // again and the judge is asked whether the code goes against it.
-    let task = m.match_task(repo, &settled, &chain).unwrap();
+    let task = m.match_task(repo, &settled, &chain, &[]).unwrap();
     assert!(task.is_some());
     let kept = m.asked.matched.clone().unwrap();
     assert_eq!(
@@ -44,7 +44,7 @@ fn the_match_judges_answer_is_read_against_the_scopes_kept_when_it_was_asked() {
         pairs: kept.pairs,
     });
     let (mut aside, mut notes) = (settled.clone(), Vec::new());
-    m.apply(repo, &mut aside, &mut chain, &mut notes, None);
+    m.apply(repo, &mut aside, &mut chain, &mut notes, (None, &[]));
     assert_eq!((m.set_aside.len(), aside.len()), (1, 0), "{notes:?}");
     assert!(m.asked.matched.is_none(), "read once");
     // With nothing kept, git is asked, and the missing commit raises it again.
@@ -53,7 +53,7 @@ fn the_match_judges_answer_is_read_against_the_scopes_kept_when_it_was_asked() {
         decisions: m.decisions.clone(),
         ..Memory::default()
     };
-    fresh.apply(repo, &mut again, &mut chain, &mut notes, None);
+    fresh.apply(repo, &mut again, &mut chain, &mut notes, (None, &[]));
     assert_eq!((fresh.set_aside.len(), again.len()), (0, 1));
 }
 
@@ -71,13 +71,13 @@ fn the_rule_judges_answer_is_read_against_the_pairs_kept_when_it_was_asked() {
         ..Memory::default()
     };
     let settled = vec![tool_finding()];
-    assert_eq!(m.rule_tasks(&settled, &chain).unwrap().len(), 1);
+    assert_eq!(m.rule_tasks(&settled, &chain, &[]).unwrap().len(), 1);
     assert_eq!(m.asked.ruled.as_deref(), Some([(0, 0), (0, 1)].as_slice()));
     // Asked about the second rule only, its verdict on pair 0 is that rule's.
     m.asked.ruled = Some(vec![(0, 1)]);
     let answer = json!({"verdicts": [{"pair": 0, "covered": true, "violates": false, "why": "y"}]});
     let (mut kept, mut notes) = (settled, Vec::new());
-    m.cover(&mut kept, &mut chain, &mut notes, &[Some(answer)]);
+    m.cover(&mut kept, &mut chain, &mut notes, (&[Some(answer)], &[]));
     assert!(kept.is_empty() && m.asked.ruled.is_none());
     let aside = m.set_aside[0].to_string();
     assert!(
@@ -163,7 +163,7 @@ fn project_rules_are_counted_apart_so_decisions_past_the_cap_never_push_one_out(
         )
         .collect();
     list.push(json!({"kind": "rule", "title": "no guards for theoretical races", "body": "b", "scope": "."}));
-    let p = parse(Some(&json!(list)), &plain_label);
+    let p = parse(Some(&json!(list)), &[], &plain_label);
     assert_eq!(p.decisions.len(), 101);
     assert_eq!(p.decisions.last().map(|d| d.kind), Some(RecordKind::Rule));
     assert_eq!(p.refused.len(), 1);
@@ -175,7 +175,7 @@ fn project_rules_are_counted_apart_so_decisions_past_the_cap_never_push_one_out(
     let rules: Vec<_> = (0..101)
         .map(|i| json!({"kind": "rule", "title": format!("rule {i}"), "body": "b", "scope": "."}))
         .collect();
-    let p = parse(Some(&json!(rules)), &plain_label);
+    let p = parse(Some(&json!(rules)), &[], &plain_label);
     assert_eq!(p.decisions.len(), 100);
     assert!(
         p.refused[0].starts_with("1 project rule(s) past the cap of 100 were not applied — findings they would cover are raised normally: decision #100 (rule-"),
@@ -191,12 +191,12 @@ fn a_list_past_the_cap_names_what_it_did_not_apply() {
             |i| json!({"id": format!("decision-{i}"), "title": "t", "reason": "r", "scope": "src"}),
         )
         .collect();
-    let p = parse(Some(&json!(list)), &plain_label);
+    let p = parse(Some(&json!(list)), &[], &plain_label);
     assert_eq!(p.decisions.len(), 100);
     assert_eq!(
         p.refused,
         [
-            "2 decision(s) past the cap of 100 were not applied — findings they would answer are raised normally: decision #100 (decision-100), decision #101 (decision-101)"
+            "2 decision(s) past the cap of 100 were not applied — kept are the records closest to the reviewed paths (a scope naming a changed file, then a directory holding one, a deeper scope before a shallower, a newer record before an older); to apply the rest, review a narrower path (path=<dir>) or supersede the records that no longer hold; findings they would answer are raised normally: decision #100 (decision-100), decision #101 (decision-101)"
         ]
     );
 }

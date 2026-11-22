@@ -12,6 +12,7 @@
 
 mod apply;
 mod asked;
+mod bounds;
 #[cfg(test)]
 mod high_tests;
 mod id;
@@ -42,6 +43,7 @@ pub(crate) use record::scope_parts;
 use crate::agent::Model;
 use crate::content::{self, ContentError};
 use crate::ledger::LedgerRow;
+use crate::rereview::Chain;
 use crate::state::{Task, TaskKind, TaskState};
 
 /// A run's memory: the records it applies, what of them was refused, where they came from, and the
@@ -122,24 +124,40 @@ impl Memory {
     /// When its prompt or schema is missing.
     pub fn recall_task(repo: &str, paths: &[String], base: &str) -> Result<Task, ContentError> {
         let prompt = recall::prompt(paths, base)?;
+        let (_, grouped, cut) = recall::entries(paths);
         Ok(Task::new(
             "memory-recall".into(),
             "memory-recall".into(),
             format!("{}{prompt}", crate::prompts::repo_directive(repo)),
             Model::Sonnet,
             content::schema("memory-recall")?,
-            TaskKind::Recall {
-                cut: paths.len().saturating_sub(recall::RECALL_PATHS_MAX),
-            },
+            TaskKind::Recall { cut, grouped },
         ))
     }
 
+    /// The paths a round reviews, for the memory's bounds to rank by: the changed files of its
+    /// diff (a re-review's delta) and those of the prior findings it re-adjudicates.
+    #[must_use]
+    pub fn focus(files: &[String], chain: &Chain) -> Vec<String> {
+        let mut out = files.to_vec();
+        for p in &chain.priors {
+            let f = p.row.finding();
+            if let Some(file) = f.get("file").and_then(Value::as_str)
+                && !out.iter().any(|x| x == file)
+            {
+                out.push(file.to_owned());
+            }
+        }
+        out
+    }
+
     /// Reads the recall's answer among `tasks`, if one was asked for, and merges the launcher's
-    /// records into it. A recall that gave no answer applies the launcher's records alone.
-    pub(crate) fn take_recall(&mut self, tasks: &[Task]) {
-        let Some((task, cut)) = tasks.iter().find_map(|t| {
-            if let TaskKind::Recall { cut } = t.kind {
-                Some((t, cut))
+    /// records into it, the cap keeping those closest to the reviewed `paths`. A recall that gave
+    /// no answer applies the launcher's records alone.
+    pub(crate) fn take_recall(&mut self, tasks: &[Task], paths: &[String]) {
+        let Some((task, cut, grouped)) = tasks.iter().find_map(|t| {
+            if let TaskKind::Recall { cut, grouped } = t.kind {
+                Some((t, cut, grouped))
             } else {
                 None
             }
@@ -150,7 +168,11 @@ impl Memory {
             .answer
             .as_ref()
             .filter(|_| task.state == TaskState::Answered);
-        let m = merge::merge(recall::read(answer, cut), self.passed.as_ref());
+        let m = merge::merge(
+            recall::read(answer, cut, grouped),
+            self.passed.as_ref(),
+            paths,
+        );
         self.decisions = m.decisions;
         self.set_refused(m.refused);
         self.source = m.source;

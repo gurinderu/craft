@@ -22,7 +22,10 @@ pub(crate) fn settle(dir: &Path, run: &mut RunState) -> Result<(), Error> {
     let absorbed = rereview::absorb(&mut run.chain, &mut run.settled);
     run.notes.extend(absorbed);
     let repo = PathBuf::from(&run.context.repo);
-    if let Some(task) = run.memory.match_task(&repo, &run.settled, &run.chain)? {
+    if let Some(task) = run
+        .memory
+        .match_task(&repo, &run.settled, &run.chain, &run.diff.files)?
+    {
         run.tasks = vec![task];
         run.phase = Phase::Match;
         return Ok(());
@@ -33,7 +36,7 @@ pub(crate) fn settle(dir: &Path, run: &mut RunState) -> Result<(), Error> {
         &mut run.settled,
         &mut run.chain,
         &mut run.notes,
-        None,
+        (None, &run.diff.files),
     );
     cover_by_rules(dir, run)
 }
@@ -41,14 +44,21 @@ pub(crate) fn settle(dir: &Path, run: &mut RunState) -> Result<(), Error> {
 /// After the decisions: the project rules over what they left, the rule judge handed out first
 /// when a finding sits in a rule's scope.
 fn cover_by_rules(dir: &Path, run: &mut RunState) -> Result<(), Error> {
-    let tasks = run.memory.rule_tasks(&run.settled, &run.chain)?;
+    let tasks = run
+        .memory
+        .rule_tasks(&run.settled, &run.chain, &run.diff.files)?;
     if !tasks.is_empty() {
         run.tasks = tasks;
         run.phase = Phase::Rules;
         return Ok(());
     }
     let m = &mut run.memory;
-    m.cover(&mut run.settled, &mut run.chain, &mut run.notes, &[]);
+    m.cover(
+        &mut run.settled,
+        &mut run.chain,
+        &mut run.notes,
+        (&[], &run.diff.files),
+    );
     finish(dir, run)
 }
 
@@ -62,7 +72,7 @@ pub(super) fn matched(dir: &Path, run: &mut RunState) -> Result<(), Error> {
         &mut run.settled,
         &mut run.chain,
         &mut run.notes,
-        answer.as_ref(),
+        (answer.as_ref(), &run.diff.files),
     );
     cover_by_rules(dir, run)
 }
@@ -75,6 +85,11 @@ pub(super) fn ruled(dir: &Path, run: &mut RunState) -> Result<(), Error> {
         .map(|t| t.answer.clone().filter(|_| t.state == TaskState::Answered))
         .collect();
     let m = &mut run.memory;
-    m.cover(&mut run.settled, &mut run.chain, &mut run.notes, &answers);
+    m.cover(
+        &mut run.settled,
+        &mut run.chain,
+        &mut run.notes,
+        (&answers, &run.diff.files),
+    );
     finish(dir, run)
 }

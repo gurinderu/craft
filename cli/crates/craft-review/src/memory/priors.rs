@@ -68,6 +68,7 @@ impl Memory {
         repo: &Path,
         settled: &[Value],
         chain: &Chain,
+        focus: &[String],
     ) -> Result<Option<Task>, ContentError> {
         self.asked.matched = None;
         let judged = pool(settled, chain);
@@ -75,13 +76,13 @@ impl Memory {
             return Ok(None);
         }
         let check = |ds: &[&PriorDecision]| scope_check(repo, ds);
-        let prepared = apply::prepare(&judged, &self.decisions, &check);
+        let prepared = apply::prepare(&judged, &self.decisions, &check, focus);
         self.asked.matched = Some(prepared.to_keep());
         prepared.task(&judged)
     }
 
     /// Sets aside what a record answers among the same findings and priors as
-    /// [`Memory::match_task`], `answer` the match judge's when it was asked, read against the pairs
+    /// [`Memory::match_task`] (its `focus` the same), `answer` the match judge's when it was asked, read against the pairs
     /// and scopes that task kept — its scope checked by git in `repo` only when none was kept; what
     /// it did goes to `notes`. A prior set aside leaves the chain's ledger for the memory's; one
     /// raised again keeps the note why.
@@ -91,7 +92,7 @@ impl Memory {
         settled: &mut Vec<Value>,
         chain: &mut Chain,
         notes: &mut Vec<String>,
-        answer: Option<&Value>,
+        (answer, focus): (Option<&Value>, &[String]),
     ) {
         let kept = self.asked.matched.take();
         let judged = pool(settled, chain);
@@ -99,10 +100,10 @@ impl Memory {
             return;
         }
         let prepared = if let Some(asked) = &kept {
-            apply::prepare_asked(&judged, &self.decisions, asked)
+            apply::prepare_asked(&judged, &self.decisions, asked, focus)
         } else {
             let check = |ds: &[&PriorDecision]| scope_check(repo, ds);
-            apply::prepare(&judged, &self.decisions, &check)
+            apply::prepare(&judged, &self.decisions, &check, focus)
         };
         let out = apply::apply(judged, &prepared, answer);
         self.set_aside = commit(settled, chain, out.kept, out.set_aside);
@@ -119,9 +120,10 @@ impl Memory {
         &mut self,
         settled: &[Value],
         chain: &Chain,
+        focus: &[String],
     ) -> Result<Vec<Task>, ContentError> {
         let judged = pool(settled, chain);
-        let pairs = rules::Pairs::new(&judged, &self.decisions);
+        let pairs = rules::Pairs::new(&judged, &self.decisions, focus);
         self.asked.ruled = Some(pairs.pairs().to_vec());
         pairs.tasks(&judged)
     }
@@ -134,14 +136,14 @@ impl Memory {
         settled: &mut Vec<Value>,
         chain: &mut Chain,
         notes: &mut Vec<String>,
-        answers: &[Option<Value>],
+        (answers, focus): (&[Option<Value>], &[String]),
     ) {
         let kept = self.asked.ruled.take();
         let judged = pool(settled, chain);
         if !self.decisions.iter().any(|d| d.kind == RecordKind::Rule) || judged.is_empty() {
             return;
         }
-        let mut pairs = rules::Pairs::new(&judged, &self.decisions);
+        let mut pairs = rules::Pairs::new(&judged, &self.decisions, focus);
         if let Some(asked) = kept {
             pairs.asked(asked);
         }

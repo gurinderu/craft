@@ -244,6 +244,12 @@ the manifests read in place of the walk) calls that library. Library coverage is
 `externals/tests/`; binary-boundary coverage is in `cli/bin/craft/tests/externals.rs`
 and `externals/`. The embedded regex engine is pinned through `cli/Cargo.lock`.
 
+`craft memory reindex --dir <memory dir>` (`cli/bin/craft/src/memory.rs`, its pure text work in
+`memory/index.rs`, tests in `memory/tests.rs`) rebuilds `craft-memory.md`, craft's own index of
+its records in the harness's project memory directory, and moves the per-record lines earlier
+releases wrote out of the harness's `MEMORY.md`, leaving one pointer line; the memory skill's
+`backends.md` calls it after each record write.
+
 `cli/` is a Cargo workspace for `craft review`, designed so the binary decides a review's work and
 a host (the `review` engine above) runs its agents. The step protocol was observed end to end
 in a live session (craft 0.41.0, a Rust diff, finished with Approve); the full-lens review it runs
@@ -289,7 +295,10 @@ plan's panel bought only when those two disagree — each finding's severity cap
 memory already rejected or deferred — recalled by one agent beside the scouts, plus the launcher's own records — set aside
 under its own section when the code in its record's scope is unchanged since the record's commit, a near miss between a
 record and a finding decided by a match judge, then a finding a project rule covers set aside under its own,
-decided by a rule judge (on a re-review a red team attacks each resolved Critical or High prior first;
+decided by a rule judge — past their bounds (60 recalled paths, 100 records, 40 pairs per judge) the paths are
+recalled by directory and the records and pairs closest to the reviewed paths kept, by
+`cli/crates/craft-review/src/memory/bounds.rs` and its JavaScript twin `integrations/shared/memory-bounds.mjs`
+(on a re-review a red team attacks each resolved Critical or High prior first;
 the reviewed repository's own reviewing agents run as extra lenses beside the first round — named, or discovered on a light
 pass among the session project's `.claude/agents`; on a large or security-sensitive plan a completeness critic names roster
 lenses that should have run, which then run and whose findings are verified as a pass of their own; with `--unit-scope`,

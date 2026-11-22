@@ -18,7 +18,7 @@
 // is refused by name; integrations/shared/project-rule-apply.mjs applies it after the review, apart from the decisions.
 // Imported by integrations/claude-code/src/rust-audit.js and integrations/claude-code/src/triage-findings.js.
 // A scope that carries a line (`path:N`, `path:N-M`), as earlier runs wrote it, reads as the path and the
-// start line; a `line` the record gives itself wins (realm @nick/craft, node #598).
+// start line; a `line` the record gives itself wins (realm @nick/craft, node #606).
 import { memoryRecordId, scopeLine } from './memory-record-id.mjs'
 
 // Per-field ceilings. A field over its ceiling refuses the whole decision (said so) — a reason cut

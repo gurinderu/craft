@@ -41,11 +41,16 @@
 // Imported by integrations/claude-code/src/rust-audit.js and integrations/claude-code/src/triage-findings.js.
 import { decisionText, derivedRecordId, hasControlChar, linkedIds, recordId, skillRecordId, supersededIds } from './prior-decision-record.mjs'
 import { render } from './content.mjs'
+import { pathEntries } from './memory-bounds.mjs'
 import memoryRecallTpl from '../../content/prompts/memory-recall.md'
 import memoryRecallSchema from '../../content/schemas/memory-recall.schema.json' with { type: 'json' }
 
-// The most changed paths one recall prompt lists; the rest are counted, and the count is reported.
+// The most changed paths one recall prompt lists; past it they are listed by directory (pathEntries), and
+// the report says so. It keeps the read-only recall agent's prompt and its searches bounded.
 export const RECALL_PATHS_MAX = 60
+
+/** The prompt's entries for the changed `paths`. @param {string[]} paths */
+export const recallEntries = paths => pathEntries(paths, RECALL_PATHS_MAX)
 
 // The record shape of skills/memory/SKILL.md, verbatim; a content file, so the craft CLI asks for the same answer.
 export const MEMORY_RECALL_SCHEMA = memoryRecallSchema
@@ -57,10 +62,12 @@ export const MEMORY_RECALL_SCHEMA = memoryRecallSchema
  * @param {string} base @returns {string}
  */
 export function memoryRecallPrompt(paths, base) {
-  const listed = paths.slice(0, RECALL_PATHS_MAX)
-  const cut = paths.length - listed.length
+  const { entries: listed, grouped, cut } = recallEntries(paths)
+  const head = grouped
+    ? ` (${paths.length} changed paths, past the bound of ${RECALL_PATHS_MAX}, listed by directory: an entry ending in \`/\` stands for every changed file under it, and a record matches it when its scope lies inside that directory as well)`
+    : ''
   const scope = listed.length
-    ? `these changed paths of the diff:\n${listed.map(p => `- ${p}`).join('\n')}${cut ? `\n(${cut} more path(s) cut at the bound of ${RECALL_PATHS_MAX} — not recalled for)` : ''}`
+    ? `these changed paths of the diff${head}:\n${listed.map(p => `- ${p}`).join('\n')}${cut ? `\n(${cut} more path(s) cut at the bound of ${RECALL_PATHS_MAX} — not recalled for)` : ''}`
     : `the paths of \`git diff --name-only ${base || '$(git merge-base origin/main HEAD)'}...HEAD\``
   return render(memoryRecallTpl, { scope })
 }
@@ -156,17 +163,28 @@ export function kindCounts(questions, rules, externals = 0) {
 const knownOf = (externals, apart) => [...externals, ...recalledList(apart)]
 
 /**
+ * The source line's tail on the bound of listed paths: what was recalled by directory, what not at all,
+ * and how to narrow it.
+ * @param {number} cut @param {number} grouped @returns {string}
+ */
+function boundTail(cut, grouped) {
+  const byDir = grouped > 0 ? `; ${grouped} changed path(s) past the bound of ${RECALL_PATHS_MAX} were recalled by their directory, not file by file` : ''
+  const none = cut > 0 ? `; ${cut} changed path(s) past the bound of ${RECALL_PATHS_MAX} were not recalled for` : ''
+  return `${byDir}${none}${grouped + cut > 0 ? ' — review a narrower path (path=<dir>) to recall file by file' : ''}`
+}
+
+/**
  * What the recall agent returned, read: the decisions and questions to hand to parsePriorDecisions (a
  * list, possibly empty, each id set by withSkillId), the inactive records that hold back a passed copy,
  * the external-system records as returned, every active one
  * whatever its scope (`knownExternals`, the scope-matched among them: the discovery's filter), and the
  * source to report. A dead or off-shape answer applies nothing and is named.
- * @param {unknown} raw @param {number} cut paths past RECALL_PATHS_MAX
+ * @param {unknown} raw @param {number} cut paths no prompt entry covered @param {number} [grouped] paths recalled by directory
  * @returns {{ decisions: unknown[], memory: MemorySource, inactive: InactiveRecord[], externals: unknown[], knownExternals: unknown[] }}
  */
-export function readMemoryRecall(raw, cut) {
+export function readMemoryRecall(raw, cut, grouped = 0) {
   const r = /** @type {Record<string, unknown>} */ (raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {})
-  const tail = cut > 0 ? `; ${cut} changed path(s) past the bound of ${RECALL_PATHS_MAX} were not recalled for` : ''
+  const tail = boundTail(cut, grouped)
   /** @type {unknown} */
   const list = r['decisions']
   const inactive = inactiveRecords(r['inactive'])
@@ -683,5 +701,6 @@ export async function recallDecisions(ask, paths, base) {
       memory: { source: 'none', count: 0, why: `the recall agent did not run (${msg}) — nothing recalled applied; findings are raised normally` },
     }
   }
-  return readMemoryRecall(raw, Math.max(0, paths.length - RECALL_PATHS_MAX))
+  const { cut, grouped } = recallEntries(paths)
+  return readMemoryRecall(raw, cut, grouped)
 }

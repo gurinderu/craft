@@ -13,6 +13,7 @@ use std::collections::BTreeSet;
 use serde_json::Value;
 
 use super::apply::noted;
+use super::bounds;
 use super::judge::{self, CUT_NAMED_MAX, Judge, PAIRS_MAX, WHY_MAX};
 use super::matching::{in_scope, reraised_by_severity};
 use super::{PriorDecision, RecordKind};
@@ -82,7 +83,9 @@ impl Pairs {
     /// The rules among `records` that apply — those another record supersedes or answers do not
     /// (`activeRules`) — and their pairs with `findings`: findings a rule can cover before High,
     /// before Critical ones (`rulePairs`).
-    pub(super) fn new(findings: &[Value], records: &[PriorDecision]) -> Self {
+    /// Past the bound the pairs of findings on the reviewed `focus` paths go first, then each
+    /// finding's first rule before any finding's second ([`bounds::spread`]).
+    pub(super) fn new(findings: &[Value], records: &[PriorDecision], focus: &[String]) -> Self {
         let replaced: BTreeSet<&String> = records.iter().flat_map(|d| &d.supersedes).collect();
         let (gone, rules): (Vec<&PriorDecision>, Vec<&PriorDecision>) = records
             .iter()
@@ -101,12 +104,15 @@ impl Pairs {
                 }
             }
         }
-        let rank = |&(fi, _): &(usize, usize)| match findings.get(fi) {
-            Some(f) if is_critical(f) => 2,
-            Some(f) if reraised_by_severity(f) => 1,
-            _ => 0,
+        let group = |f: &Value| {
+            if is_critical(f) {
+                2
+            } else {
+                u8::from(reraised_by_severity(f))
+            }
         };
-        pairs.sort_by_key(rank);
+        pairs.sort_by_key(|&(fi, _)| findings.get(fi).map_or(u8::MAX, group));
+        let pairs = bounds::spread(pairs, SENT_MAX, findings, focus, &group);
         Self {
             rules,
             superseded: gone.iter().map(|d| d.id.clone()).collect(),

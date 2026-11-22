@@ -208,7 +208,7 @@ fn fields(o: &Map<String, Value>) -> PriorDecision {
         .find(|l| l.starts_with("http://") || l.starts_with("https://"))
         .unwrap_or_default();
     let derived = derived_record_id(o);
-    // A scope carrying a line reads as its path and start line; the record's own `line` wins (#598).
+    // A scope carrying a line reads as its path and start line; the record's own `line` wins (#606).
     let scope = f("scope", "");
     let (scope, scope_at) = split_scope_line(&scope);
     let line = Some(record_line(o.get("line")))

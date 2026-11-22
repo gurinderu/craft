@@ -52,7 +52,9 @@ pub(super) fn read(p: &Pairs, n: usize, answers: &[Option<Value>]) -> Read {
             None if !out.unjudged.iter().any(|(f, _)| *f == fi) => {
                 let why = match whys.get(i / PAIRS_MAX).filter(|_| i < sent) {
                     Some(w) => (*w).to_owned(),
-                    None => format!("past the rule judge's bound of {SENT_MAX} pairs"),
+                    None => format!(
+                        "past the rule judge's bound of {SENT_MAX} pairs — judged first were the findings on the reviewed paths, then those a rule can cover before High and Critical ones, then each finding's first rule before any finding's second; narrow the rule's scope or lens, or review a narrower path (path=<dir>)"
+                    ),
                 };
                 out.unjudged.push((fi, why));
             }

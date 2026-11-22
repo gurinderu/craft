@@ -1,4 +1,4 @@
-// A memory record whose scope carries a line, as earlier runs wrote it (realm @nick/craft, node #598):
+// A memory record whose scope carries a line, as earlier runs wrote it (realm @nick/craft, node #606):
 // read as the path and its start line for matching, its id the hash of the scope as written, refused by a writer.
 import { test } from 'vitest'
 import assert from 'node:assert/strict'

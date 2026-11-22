@@ -100,13 +100,15 @@ pub(in crate::memory) struct Prepared {
     pub(super) notes: Vec<String>,
 }
 
-/// Readies `records` for `findings` (none refuted), `check` observing the scopes of the records it
+/// Readies `records` for `findings` (none refuted), the judge's pairs ranked by the reviewed
+/// `focus` paths past its bound, `check` observing the scopes of the records it
 /// is handed (never none). The scope check runs first, so the one judge call is also asked about
 /// the outright matches it raises again.
 pub(in crate::memory) fn prepare(
     findings: &[Value],
     records: &[PriorDecision],
     check: &dyn Fn(&[&PriorDecision]) -> Scope,
+    focus: &[String],
 ) -> Prepared {
     let mut notes = Vec::new();
     let ds = applicable(records, &mut notes);
@@ -134,7 +136,7 @@ pub(in crate::memory) fn prepare(
         (Some(f), Some(d)) => !reraise_reason(f, d, &scope).is_empty(),
         _ => false,
     };
-    let asked = Asked::new(findings, &ds, &plans, &reraised);
+    let asked = Asked::new(findings, &ds, &plans, &reraised, focus);
     Prepared {
         ds,
         scope,
@@ -150,12 +152,13 @@ pub(in crate::memory) fn prepare_asked(
     findings: &[Value],
     records: &[PriorDecision],
     saved: &MatchAsked,
+    focus: &[String],
 ) -> Prepared {
     let seen = Scope {
         unchanged: saved.unchanged.clone(),
         missing: saved.missing.clone(),
     };
-    let mut p = prepare(findings, records, &|_| seen.clone());
+    let mut p = prepare(findings, records, &|_| seen.clone(), focus);
     p.asked.pairs.clone_from(&saved.pairs);
     p
 }

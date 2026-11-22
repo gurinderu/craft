@@ -40,7 +40,7 @@ fn applied(f: Value, d: PriorDecision, unchanged: bool) -> apply::Applied {
         },
         ..Scope::default()
     };
-    let p = apply::prepare(std::slice::from_ref(&f), &ds, &check);
+    let p = apply::prepare(std::slice::from_ref(&f), &ds, &check, &[]);
     apply::apply(vec![f], &p, None)
 }
 

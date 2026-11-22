@@ -1,7 +1,7 @@
 ---
 name: memory
 description: >-
-  Memory of the consumer project's own facts — decisions on review findings, project rules (a stance on a class of findings), lessons, open questions (deferred findings too) — kept across sessions in the project's own store (a setting, an MCP server, harness memory, .craft/memory). Verbs: recall(topic, scope), record-decision, record-rule, record-lesson, record-question (a scope is a path or component, never a line); the `external` records earlier releases wrote are recalled only for `craft init` to import. Use when such a fact should outlive the session, before working on a path to learn what was decided there, or before a craft review (its engine recalls itself; priorDecisions only adds). Triggers: remember this decision, record why we rejected, make it a project rule, what did we decide about, note this lesson, open question for later. Not for memory leaks or usage (rust-performance, rust-ownership), nor craft's run records and ledger.
+  Memory of the consumer project's own facts — decisions on review findings, project rules (a stance on a class of findings), lessons, open questions (deferred findings too) — kept across sessions in the project's own store (a setting, an MCP server, harness memory with its own craft-memory.md index, .craft/memory). Verbs: recall(topic, scope), record-decision, record-rule, record-lesson, record-question (a scope is a path or component, never a line); the `external` records earlier releases wrote are recalled only for `craft init` to import. Use when such a fact should outlive the session, before working on a path to learn what was decided there, or before a craft review (its engine recalls itself; priorDecisions only adds). Triggers: remember this decision, record why we rejected, make it a project rule, what did we decide about, note this lesson, open question for later, MEMORY.md too long. Not for memory leaks or usage (rust-performance, rust-ownership), nor craft's run records and ledger.
 ---
 
 # Memory — the project's decisions, rules, lessons and questions
@@ -128,6 +128,11 @@ so the old one is left as it is written, and the reader keeps applying it at its
   fit is reported to the caller as not written, with why.
 - Index line over 150 chars (harness project memory, below) → the index line shortens its title
   with `…`; the record file keeps the full title, so nothing is lost and the id is unchanged.
+- The harness's own `MEMORY.md` is loaded every session and truncated past its load limit, so
+  craft never puts a line per record there: its records are indexed in its own
+  `craft-memory.md` beside it, and `MEMORY.md` carries one pointer line to it; craft lines an
+  earlier release left in `MEMORY.md` are moved over by the migration in
+  [backends.md](backends.md), which never touches a line that is not craft's.
 - `recall` over 10 matches → return the 10 most specific (exact path before directory before
   component, newer before older) and say `N more — narrow the scope or the topic`; never drop the
   rest silently.
@@ -167,7 +172,10 @@ reason names the rule.
    agent, a subagent) derives it from the repository's main checkout root, never a worktree or
    subdirectory — path rule in
    [backends.md](backends.md). Written without asking (it is private to the
-   user and tied to this project). A refused write — a `PreToolUse` guard, a permission denial,
+   user and tied to this project); craft's records are indexed in its own `craft-memory.md`
+   there, with one pointer line in the harness's `MEMORY.md`, rebuilt after each `record-*`, when
+   the craft lines an earlier release wrote into `MEMORY.md` are moved over too (migration in
+   [backends.md](backends.md)); a recall writes nothing and also finds the records the index missed. A refused write — a `PreToolUse` guard, a permission denial,
    the consumer's instructions forbidding that directory — means **unavailable**: go to 4. Format
    → [backends.md](backends.md).
 4. **Files in the consumer repo**, `.craft/memory/<kind>/<id>.md` — only when `.craft/memory/`
@@ -192,8 +200,10 @@ rule 3. Never put secrets, credentials or personal data in a record, whatever th
 2. **Keyword match.** `topic` keywords against `title` and `body`; with both scope and topic,
    a record must match the scope and at least one keyword.
 3. **Only matches come back.** Use the backend's search (the MCP search tool, `grep -l` over the
-   memory files, the harness index `MEMORY.md`) — never load the whole store into
-   context.
+   memory files, craft's harness index `craft-memory.md` and any craft lines not yet moved out of
+   `MEMORY.md`, then the record files neither lists, found by their `craft_kind` frontmatter; only an active one
+   among them makes the index stale) —
+   never load the whole store into context. A recall writes nothing.
 4. **Active only by default.** `superseded` and `withdrawn` stay hidden unless the caller asks for
    history; a superseded record shown on request carries its successor's id. A review engine's
    recall also returns the matching `superseded` and `withdrawn` records apart, in an `inactive`
@@ -250,7 +260,14 @@ passing to stand in for the engine's recall.
    **Prior decisions not applied**). A High a human's decision sets aside, its code unchanged since
    that `commit`, is listed under its own **High rejected by a human** section with who, when, why
    and the link, outside the verdict.
-   More than 100 decisions (project rules are counted apart, up to 100 of their own, so the decisions never push a rule out), or a record that does not fit (a missing title or reason, no `id` and
+   More than 100 decisions keep the 100 closest to the reviewed paths (a scope naming a changed file,
+   then a directory holding one, deeper before shallower, newer before older; on a re-review, the
+   delta's paths and the prior findings it re-adjudicates), the rest named; project rules are counted
+   apart, up to 100 of their own, so the decisions never push a rule out. Past 60 changed paths the
+   recall lists them by directory; past a judge's bound (40 pairs for the match judge, 400 over
+   several prompts for the rule judge) it sees those of the reviewed paths first, each finding's
+   closest record before any finding's second. Record a decision with the finding's file, line and
+   lens so it matches without the judge. A record that does not fit (a missing title or reason, no `id` and
    no `kind` or `scope` to derive one from, a field past
    its bound, a control character in `id`, `scope` or `commit`, a scope outside the repo or holding
    characters other than letters, digits and `._@+/ -` — a scope `path:N` or `path:N-M` is read as

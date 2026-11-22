@@ -43,7 +43,13 @@ export function ruleVerdicts(pairs, sent, answer) {
   pairs.forEach((p, i) => {
     const v = i < sent ? answer.verdicts.get(i) : undefined
     if (v?.same && !covers.has(p.f)) covers.set(p.f, { r: p.r, why: v.why })
-    if (!v && !unjudged.has(p.f)) unjudged.set(p.f, i < sent ? answer.why(i) : `past the rule judge's bound of ${RULE_JUDGE_SENT_MAX} pairs`)
+    if (!v && !unjudged.has(p.f))
+      unjudged.set(
+        p.f,
+        i < sent
+          ? answer.why(i)
+          : `past the rule judge's bound of ${RULE_JUDGE_SENT_MAX} pairs — no reviewed paths are given here, so judged first were the findings a rule can cover before High and Critical ones, then each finding's first rule before any finding's second; narrow the rule's scope or lens, or review a narrower path (path=<dir>)`,
+      )
   })
   return { covers, against: ruleContradictions(pairs, answer), unjudged }
 }

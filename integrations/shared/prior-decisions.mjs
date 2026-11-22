@@ -11,13 +11,18 @@
 // scopes are checked by integrations/shared/prior-decision-scope.mjs and findings split by integrations/shared/prior-decision-apply.mjs.
 // Imported by integrations/claude-code/src/rust-audit.js and integrations/claude-code/src/triage-findings.js.
 import { DECISION_FIELD_MAX, decisionScopeParts, hasControlChar, readPriorDecision, recordId, recordKind } from './prior-decision-record.mjs'
+import { keptRecords } from './memory-bounds.mjs'
 
 // The most decisions one run applies — across the recalled and the passed records together (realm
 // @nick/craft, node #218); the rest are refused by name and their findings raised normally. Project
 // rules are counted apart, under a cap of the same size (node #273): a rule is a stance on a whole class
 // of findings and a project holds few, so the decisions a long-lived project piles up on its paths must
-// not push them off the end of the list.
+// not push them off the end of the list. Past the cap the decisions closest to the reviewed paths are
+// kept (keptRecords), never simply the first in the list.
 export const PRIOR_DECISIONS_MAX = 100
+// What the refusal of the records past the cap says about how they were chosen and how to apply them.
+const CUT_HOW =
+  'kept are the records closest to the reviewed paths (a scope naming a changed file, then a directory holding one, a deeper scope before a shallower, a newer record before an older); to apply the rest, review a narrower path (path=<dir>) or supersede the records that no longer hold'
 // A decision answers a finding when the finding's file sits inside the decision's scope AND their
 // titles share at least this share of words (of the longer one) (realm @nick/craft, node #187).
 export const DECISION_TITLE_OVERLAP = 0.6
@@ -53,9 +58,10 @@ export function cutNames(list, cut, labelOf) {
  * The `priorDecisions` argument (or a recall's answer merged with it), checked. Absent → nothing of it applied, no refusal
  * (the engine's own recall still runs: integrations/shared/memory-recall.mjs). Anything else that is not a list → nothing applied, each problem named.
  * @param {unknown} raw @param {(i: number) => string} [labelOf] how a refusal names the record at index i
+ * @param {string[]} [paths] the reviewed paths the cap ranks the records by
  * @returns {{ decisions: PriorDecision[], refused: string[] }}
  */
-export function parsePriorDecisions(raw, labelOf = decisionLabel) {
+export function parsePriorDecisions(raw, labelOf = decisionLabel, paths = []) {
   if (raw == null || raw === '') return { decisions: [], refused: [] }
   // Only a list inside an object argument: in the key=value form a value cannot be delimited, and a
   // JSON string invites that form, so any string is refused (integrations/shared/workflow-args.mjs OBJECT_ONLY_OPTIONS; realm @nick/craft, node #183).
@@ -72,7 +78,7 @@ export function parsePriorDecisions(raw, labelOf = decisionLabel) {
   const decisions = []
   /** @type {string[]} */
   const refused = []
-  const { read, cut, cutRules } = underCaps(list)
+  const { read, cut, cutRules } = underCaps(list, paths)
   read.forEach(i => {
     const d = readPriorDecision(list[i], labelOf(i))
     if (typeof d === 'string') refused.push(d)
@@ -83,7 +89,7 @@ export function parsePriorDecisions(raw, labelOf = decisionLabel) {
   })
   if (cut.length)
     refused.push(
-      `${cut.length} decision(s) past the cap of ${PRIOR_DECISIONS_MAX} were not applied — findings they would answer are raised normally: ${cutNames(list, cut, labelOf)}`,
+      `${cut.length} decision(s) past the cap of ${PRIOR_DECISIONS_MAX} were not applied — ${CUT_HOW}; findings they would answer are raised normally: ${cutNames(list, cut, labelOf)}`,
     )
   if (cutRules.length)
     refused.push(
@@ -94,16 +100,23 @@ export function parsePriorDecisions(raw, labelOf = decisionLabel) {
 
 /**
  * The indices of `list` read, in its order, and those past the caps: the project rules counted apart
- * from the other records, each under PRIOR_DECISIONS_MAX. @param {unknown[]} list
+ * from the other records, each under PRIOR_DECISIONS_MAX; past it the decisions closest to the reviewed
+ * `paths` are kept (keptRecords), the rules in the order given.
+ * @param {unknown[]} list @param {string[]} paths
  * @returns {{ read: number[], cut: number[], cutRules: number[] }}
  */
-export function underCaps(list) {
+export function underCaps(list, paths) {
   /** @param {unknown} x */
   const isRule = x => !!x && typeof x === 'object' && !Array.isArray(x) && recordKind(/** @type {Record<string, unknown>} */ (x)) === 'rule'
   const rules = list.flatMap((x, i) => (isRule(x) ? [i] : []))
   const others = list.flatMap((x, i) => (isRule(x) ? [] : [i]))
-  const read = [...others.slice(0, PRIOR_DECISIONS_MAX), ...rules.slice(0, PRIOR_DECISIONS_MAX)].sort((a, b) => a - b)
-  return { read, cut: others.slice(PRIOR_DECISIONS_MAX), cutRules: rules.slice(PRIOR_DECISIONS_MAX) }
+  const kept = keptRecords(
+    others.map(i => list[i]),
+    paths,
+    PRIOR_DECISIONS_MAX,
+  )
+  const read = [...others.filter((_, k) => kept[k]), ...rules.slice(0, PRIOR_DECISIONS_MAX)].sort((a, b) => a - b)
+  return { read, cut: others.filter((_, k) => !kept[k]), cutRules: rules.slice(PRIOR_DECISIONS_MAX) }
 }
 
 /** Lower-cased alphanumeric words of a title. @param {unknown} t */
