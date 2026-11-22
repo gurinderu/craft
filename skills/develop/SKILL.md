@@ -193,9 +193,9 @@ record named first.
 - **Converged** — the round's review returned a verdict and **no finding of Medium severity or
   higher is open**: none raised by this round, and none carried open from an earlier round. *Open*
   means not set aside by a decision or deferred question in memory, nor covered by a project rule
-  (the report's **Rejected before** / **Known and deferred** / **Covered by project rules**) — a
-  Medium+ finding raised again after its fix holds the loop like a new one. Low findings never hold
-  the loop. A delta or light round never says Approve — a clean one says Warning and names that
+  (the report's **High rejected by a human** / **Rejected before** / **Known and deferred** /
+  **Covered by project rules**) — a Medium+ finding raised again after its fix holds the loop like a
+  new one. Low findings never hold the loop. A delta or light round never says Approve — a clean one says Warning and names that
   cap — so convergence reads the open Medium+ count, not the verdict word. → go to phase 5.
 - **Round 4 ended without converging** — stop. Tell the human what is left: each open Medium+
   finding (title, file, severity, why it is still open) and the rounds' verdicts. **No PR** without

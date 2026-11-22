@@ -19,7 +19,7 @@
 // named in the title: theirs — and a source-less seed's — match a record naming no rule without a judge
 // on the same lens, line and normalized title; a different title goes to the judge (realm @nick/craft, node #236).
 // Imported by integrations/claude-code/src/triage-findings.js.
-import { decisionAnswers, inDecisionScope, reraisedBySeverity, titleOverlap } from './prior-decisions.mjs'
+import { decisionAnswers, inDecisionScope, reraisedByRank, titleOverlap } from './prior-decisions.mjs'
 import matchJudgeSchema from '../../content/schemas/match-judge.schema.json' with { type: 'json' }
 import { render } from './content.mjs'
 import matchJudgeTpl from '../../content/prompts/match-judge.md'
@@ -207,13 +207,13 @@ export function placeGap(f, d) {
 }
 
 /**
- * A disputed pair's rank under the judge's bound, lowest first: settable findings before Critical/High,
+ * A disputed pair's rank under the judge's bound, lowest first: settable findings before those their severity raises again,
  * and within each a near line before a shared lens before title words alone.
  * @param {DisputedPair} p @returns {number}
  */
 export function pairRank(p) {
   const { near, same } = anchorOf(p.f, p.d)
-  return (reraisedBySeverity(p.f.severity) ? 3 : 0) + (near ? 0 : same ? 1 : 2)
+  return (reraisedByRank(p.f.severity, p.d) ? 3 : 0) + (near ? 0 : same ? 1 : 2)
 }
 
 /** The records in the order they are tried: those overriding another first. @param {PriorDecision[]} ds @returns {PriorDecision[]} */
@@ -505,7 +505,7 @@ export async function matchFindings(findings, decisions, judge, reraisedSure) {
 }
 
 /**
- * The sure matches the split will raise again (`reraisedSure`: a Critical/High finding, a record without a
+ * The sure matches the split will raise again (`reraisedSure`: a Critical finding, a High no human's decision answers, a record without a
  * commit, a changed scope), as pairs the one judge is asked about `violates` only, after the disputed ones
  * and within the room the bound leaves; the rest are counted in `notes` (realm @nick/craft, node #282).
  * @param {Map<DecidableFinding, { sure?: PriorMatch, disputed: PriorDecision[] }>} plans

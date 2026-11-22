@@ -1,7 +1,7 @@
 {
   "cases": [
     {
-      "name": "a recalled decision sets aside its anchored finding, never a High one or one whose scope changed",
+      "name": "a recalled decision sets aside its anchored finding, a High one only as a human's decision with its code unchanged, never one whose scope changed",
       "recall": {
         "backend": "repo",
         "why": "the .craft/memory directory",
@@ -15,6 +15,7 @@
             "status": "active",
             "date": "2026-01-02",
             "author": "nick",
+            "decidedBy": "human",
             "commit": "0123456789abcdef0123456789abcdef01234567",
             "line": 10,
             "lens": "errors",
@@ -89,10 +90,6 @@
       "expected": {
         "kept": [
           {
-            "title": "unwrap of a value checked earlier",
-            "why": "w · Rejected before (decision decision-aaaaaaaaaa, nick, 2026-01-02) — raised again: a Critical/High finding is never set aside by a prior decision."
-          },
-          {
             "title": "the slow loop is fine here",
             "why": "w · Rejected before (decision decision-bbbbbbbbbb, nick, 2026-01-03) — raised again: the code in src changed since fedcba9876543210fedcba9876543210fedcba98 (or that could not be checked)."
           },
@@ -109,10 +106,18 @@
             "priorDecision": "decision-aaaaaaaaaa",
             "priorKind": "decision",
             "priorMatch": "matched by file:line+lens"
+          },
+          {
+            "title": "unwrap of a value checked earlier",
+            "why": "w · REJECTED BEFORE: checked above — nick, 2026-01-02, https://example.com/pr/1#r1 (decision decision-aaaaaaaaaa)",
+            "priorTier": "confirmed",
+            "priorDecision": "decision-aaaaaaaaaa",
+            "priorKind": "decision",
+            "priorMatch": "matched by file:line+lens"
           }
         ],
         "notes": [
-          "2 decision(s) given, 1 finding(s) set aside as rejected before, 2 raised again"
+          "2 decision(s) given, 2 finding(s) set aside as rejected before, 1 raised again"
         ],
         "memory": {
           "source": "recalled",
@@ -120,7 +125,7 @@
           "why": "repo (the .craft/memory directory); stale, left out: decision-cccccccccc (the guard is gone)",
           "backend": "repo"
         },
-        "report": "\n\n## Rejected before (set aside — not in the verdict)\n- Medium · `src/lib.rs:11` · unwrap of a value checked earlier · w · REJECTED BEFORE: checked above — nick, 2026-01-02, https://example.com/pr/1#r1 (decision decision-aaaaaaaaaa) · matched by file:line+lens\n\n## Memory\n- memory: recalled 2 decision(s) from repo (the .craft/memory directory); stale, left out: decision-cccccccccc (the guard is gone)\n\n\n## Prior decisions not applied\n- ⚠️ the match judge died or answered unreadably — 2 disputed record–finding pair(s) not matched unless a near-verbatim title answers them (for a tool finding naming no rule only a tool record with the same title, near its line when lines compare), the rest raised normally\n"
+        "report": "\n\n## High rejected by a human (set aside — not in the verdict)\n- High · `src/lib.rs:12` · unwrap of a value checked earlier · w · REJECTED BEFORE: checked above — nick, 2026-01-02, https://example.com/pr/1#r1 (decision decision-aaaaaaaaaa) · matched by file:line+lens\n\n## Rejected before (set aside — not in the verdict)\n- Medium · `src/lib.rs:11` · unwrap of a value checked earlier · w · REJECTED BEFORE: checked above — nick, 2026-01-02, https://example.com/pr/1#r1 (decision decision-aaaaaaaaaa) · matched by file:line+lens\n\n## Memory\n- memory: recalled 2 decision(s) from repo (the .craft/memory directory); stale, left out: decision-cccccccccc (the guard is gone)\n\n\n## Prior decisions not applied\n- ⚠️ the match judge died or answered unreadably — 2 disputed record–finding pair(s) not matched unless a near-verbatim title answers them (for a tool finding naming no rule only a tool record with the same title, near its line when lines compare), the rest raised normally\n"
       }
     },
     {
@@ -766,7 +771,7 @@
       }
     },
     {
-      "name": "the match judge sets aside a reworded finding, says another differs and that a third and a re-raised High go against the record",
+      "name": "the match judge sets aside a reworded finding, says another differs and that a third and a re-raised Critical go against the record",
       "recall": {
         "backend": "repo",
         "why": "the .craft/memory directory",
@@ -815,7 +820,7 @@
           "tier": "confirmed"
         },
         {
-          "severity": "High",
+          "severity": "Critical",
           "title": "unwrap on a checked value",
           "file": "src/lib.rs",
           "line": 11,
@@ -873,7 +878,7 @@
           },
           {
             "title": "unwrap on a checked value",
-            "why": "w · Rejected before (decision decision-a1a1a1a1a1, nick, 2026-05-01) — raised again: a Critical/High finding is never set aside by a prior decision.",
+            "why": "w · Rejected before (decision decision-a1a1a1a1a1, nick, 2026-05-01) — raised again: a Critical finding is never set aside by a prior decision.",
             "memoryContradicts": {
               "id": "decision-a1a1a1a1a1",
               "kind": "decision",
@@ -901,7 +906,7 @@
           "why": "repo (the .craft/memory directory)",
           "backend": "repo"
         },
-        "report": "\n\n## Rejected before (set aside — not in the verdict)\n- Medium · `src/lib.rs:30` · the guarded value is unwrapped · w · REJECTED BEFORE: checked above — nick, 2026-05-01, no link (decision decision-a1a1a1a1a1) · matched by judge: the same unwrap, reworded\n\n## Contradicts project memory — a defect when confirmed, whatever the other doubt signs say\n- Low · `src/lib.rs:60` · the guard was removed · goes against decision decision-a1a1a1a1a1: the guard the record kept is gone\n- High · `src/lib.rs:11` · unwrap on a checked value · goes against decision decision-a1a1a1a1a1: the check the record relies on was dropped\n\n\n## Memory\n- memory: recalled 1 decision(s) from repo (the .craft/memory directory)\n"
+        "report": "\n\n## Rejected before (set aside — not in the verdict)\n- Medium · `src/lib.rs:30` · the guarded value is unwrapped · w · REJECTED BEFORE: checked above — nick, 2026-05-01, no link (decision decision-a1a1a1a1a1) · matched by judge: the same unwrap, reworded\n\n## Contradicts project memory — a defect when confirmed, whatever the other doubt signs say\n- Low · `src/lib.rs:60` · the guard was removed · goes against decision decision-a1a1a1a1a1: the guard the record kept is gone\n- Critical · `src/lib.rs:11` · unwrap on a checked value · goes against decision decision-a1a1a1a1a1: the check the record relies on was dropped\n\n\n## Memory\n- memory: recalled 1 decision(s) from repo (the .craft/memory directory)\n"
       }
     },
     {
