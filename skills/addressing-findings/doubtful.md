@@ -53,7 +53,7 @@ The sorting changes nothing in the verdict.
    branch's it is refused, and `--record <file>` must name the run meant):
 
    ```bash
-   node "<this skill's base directory>/../../integrations/shared/craft-log-run.mjs" sorting-choice --n <n> --choice <question|defect|dropped>
+   sh "<this skill's base directory>/../../integrations/shared/craft-cli.sh" runs sorting-choice --n <n> --choice <question|defect|dropped>
    ```
 
    It prints the finding it recorded against — check it is the one chosen. A failure is named in

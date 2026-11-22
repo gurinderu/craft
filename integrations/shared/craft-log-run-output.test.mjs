@@ -6,8 +6,8 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { execFileSync, spawnSync } from 'node:child_process'
-import { run, checkpointDir, writeCheckpoint, repoKey, enrichCost } from './craft-log-run.mjs'
+import { execFileSync } from 'node:child_process'
+import { run, checkpointDir, writeCheckpoint, repoKey } from './craft-log-run.mjs'
 
 const RECORD = { schemaVersion: 1, runtime: 'claude-code', kind: 'workflow', name: 'review', verdict: 'Approve' }
 
@@ -53,28 +53,6 @@ test('finalize returns the moved-working-copy warning in stderr, after nothing i
   }
 })
 
-test('enrich-cost returns its skipped-transcript and zero-sum warnings in stderr, in that order', async () => {
-  const dir = tmp('craft-out-cost-')
-  try {
-    const runDir = path.join(dir, 'run')
-    fs.mkdirSync(runDir)
-    fs.writeFileSync(path.join(runDir, 'agent-a.jsonl'), JSON.stringify({ type: 'assistant', message: { content: 'hi' } }) + '\n')
-    fs.mkdirSync(path.join(runDir, 'agent-b.jsonl')) // matches the glob, unreadable as a file
-    const recordFile = path.join(dir, 'rec.json')
-    fs.writeFileSync(recordFile, JSON.stringify({ schemaVersion: 1, name: 'review' }))
-    const spies = spyConsole()
-    const r = await run(['enrich-cost', '--run-dir', runDir, '--record', recordFile, '--store', dir, '--project', dir], process.env, dir)
-    assertSilent(spies)
-    assert.equal(r.exitCode, 0, r.stderr.join('\n'))
-    assert.match(r.stdout[0] ?? '', /^enriched .* 1 agent\(s\) \(1 unreadable, skipped\)/)
-    assert.equal(r.stderr.length, 2, r.stderr.join('\n'))
-    assert.match(r.stderr[0] ?? '', /^craft-log-run WARNING: skipped unreadable transcript agent-b\.jsonl: /)
-    assert.match(r.stderr[1] ?? '', /^craft-log-run WARNING: 1 transcript\(s\) summed to zero tokens/)
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true })
-  }
-})
-
 test('a throw while resolving the common flags is a FAILED line with 1, not a rejected run', async () => {
   const store = tmp('craft-out-flags-')
   try {
@@ -88,28 +66,6 @@ test('a throw while resolving the common flags is a FAILED line with 1, not a re
     assert.deepEqual(fs.readdirSync(store), [])
   } finally {
     fs.rmSync(store, { recursive: true, force: true })
-  }
-})
-
-// A warning raised before a later throw is part of what the run said: it goes into stderr the moment it
-// arises, so the FAILED line follows it instead of replacing it — the order the printing logger had.
-test('enrich-cost keeps its skipped-transcript warning ahead of the FAILED line when the record is missing', async () => {
-  const dir = tmp('craft-out-costfail-')
-  try {
-    const runDir = path.join(dir, 'run')
-    fs.mkdirSync(runDir)
-    fs.writeFileSync(path.join(runDir, 'agent-a.jsonl'), JSON.stringify({ type: 'assistant', message: { id: 'msg_1', usage: { output_tokens: 3 } } }) + '\n')
-    fs.mkdirSync(path.join(runDir, 'agent-c.jsonl'))
-    const spies = spyConsole()
-    const r = await run(['enrich-cost', '--run-dir', runDir, '--record', path.join(dir, 'missing.json'), '--store', dir, '--project', dir], process.env, dir)
-    assertSilent(spies)
-    assert.equal(r.exitCode, 1)
-    assert.deepEqual(r.stdout, [])
-    assert.equal(r.stderr.length, 2, r.stderr.join('\n'))
-    assert.match(r.stderr[0] ?? '', /^craft-log-run WARNING: skipped unreadable transcript agent-c\.jsonl: .*EISDIR/)
-    assert.match(r.stderr[1] ?? '', /^craft-log-run FAILED: record not readable at /)
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true })
   }
 })
 
@@ -133,67 +89,5 @@ test('finalize keeps the moved-working-copy warning ahead of the FAILED line whe
     assert.match(r.stderr[1] ?? '', /^craft-log-run FAILED: .*EISDIR/)
   } finally {
     for (const d of [store, repo]) fs.rmSync(d, { recursive: true, force: true })
-  }
-})
-
-// From the command line the two streams are one record when read together (`2>&1`): a warning that arose
-// before the result line must be written before it, as the printing logger did (realm @nick/craft, #172).
-test('enrich-cost on the command line writes its zero-sum warning before the enriched line on a merged stream', () => {
-  const dir = tmp('craft-out-merged-')
-  try {
-    const runDir = path.join(dir, 'run')
-    fs.mkdirSync(runDir)
-    fs.writeFileSync(path.join(runDir, 'agent-a.jsonl'), JSON.stringify({ type: 'assistant', message: { content: 'hi' } }) + '\n')
-    const recordFile = path.join(dir, 'rec.json')
-    fs.writeFileSync(recordFile, JSON.stringify({ schemaVersion: 1, name: 'review' }))
-    const merged = path.join(dir, 'out.txt')
-    const fd = fs.openSync(merged, 'w')
-    try {
-      const r = spawnSync(
-        process.execPath,
-        [
-          path.resolve('integrations/shared', 'craft-log-run.mjs'),
-          'enrich-cost',
-          '--run-dir',
-          runDir,
-          '--record',
-          recordFile,
-          '--store',
-          dir,
-          '--project',
-          dir,
-        ],
-        { cwd: dir, stdio: ['ignore', fd, fd] },
-      )
-      assert.equal(r.status, 0)
-    } finally {
-      fs.closeSync(fd)
-    }
-    const text = fs.readFileSync(merged, 'utf8')
-    const warned = text.indexOf('craft-log-run WARNING: 1 transcript(s) summed to zero tokens')
-    assert.ok(warned >= 0, text)
-    assert.ok(warned < text.indexOf('enriched '), text)
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true })
-  }
-})
-
-// A library caller that hands no sink is not the CLI: the warning reaches stderr as it arises, as it did when
-// the logger printed it, instead of landing in an array nobody reads.
-test('enrichCost called without a warnings sink still writes its zero-sum warning to stderr', () => {
-  const dir = tmp('craft-out-nosink-')
-  try {
-    const runDir = path.join(dir, 'run')
-    fs.mkdirSync(runDir)
-    fs.writeFileSync(path.join(runDir, 'agent-a.jsonl'), JSON.stringify({ type: 'assistant', message: { content: 'hi' } }) + '\n')
-    const recordFile = path.join(dir, 'rec.json')
-    fs.writeFileSync(recordFile, JSON.stringify({ schemaVersion: 1, name: 'review' }))
-    const [log, err] = spyConsole()
-    const { warnings } = enrichCost({ runDir, recordFile })
-    assert.equal(log?.mock.calls.length, 0)
-    assert.deepEqual(err?.mock.calls, [[warnings[0]]])
-    assert.match(warnings[0] ?? '', /^craft-log-run WARNING: 1 transcript\(s\) summed to zero tokens/)
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true })
   }
 })

@@ -18,8 +18,8 @@ const SENTENCE = (/** @type {string} */ cmd) =>
       esc(cmd) + '[^,]*' + esc(', with the run id the Workflow completion names. Best-effort: if it fails, say so in one line and go on.'),
     ].join('\\s+'),
   )
-const ENGINE_CMD = '`node "<craft plugin root>/integrations/shared/craft-log-run.mjs" enrich-cost --run-id <wf_…>`'
-const SKILL_CMD = '`node "<this skill\'s base directory>/../../integrations/shared/craft-log-run.mjs" enrich-cost --run-id <wf_…>`'
+const ENGINE_CMD = '`sh "<craft plugin root>/integrations/shared/craft-cli.sh" runs enrich-cost --run-id <wf_…>`'
+const SKILL_CMD = '`sh "<this skill\'s base directory>/../../integrations/shared/craft-cli.sh" runs enrich-cost --run-id <wf_…>`'
 
 for (const engine of ['review', 'rust-audit', 'triage-findings']) {
   test(`${engine}: whenToUse teaches enrich-cost after the run`, () => {

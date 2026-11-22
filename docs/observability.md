@@ -143,8 +143,11 @@ runs sandboxed with no filesystem, so no engine can ever record them from inside
 summed **after** the run instead, by the party that holds the runId (the launcher):
 
 ```bash
-node integrations/shared/craft-log-run.mjs enrich-cost --run-id <wf_…>
+craft runs enrich-cost --run-id <wf_…>
 ```
+
+(The `craft` binary — `cli/crates/craft-store/src/cost/`; a skill reaches it with no Node through
+`sh "<plugin root>/integrations/shared/craft-cli.sh" runs enrich-cost …`.)
 
 The launcher reads the run id (`wf_…`) off the Workflow completion and runs this once the run has
 ended — the engine skills say so where they launch an engine. It finds the run's transcript directory,
@@ -171,13 +174,7 @@ the last logger, present only when there were any. A run that resumed and filed 
 longer hands its first record a partial cost that says nothing of it. Every record is measured and read
 before any is written, so a refusal leaves them all as they were.
 
-The older form names the directory and one record by hand and sums every transcript into it:
-
-```bash
-node integrations/shared/craft-log-run.mjs enrich-cost --run-dir <run-dir> --record <detail-record.json>
-```
-
-It sums every `agent-*.jsonl` under the run directory over the `type:"assistant"` records'
+Each slice sums its `agent-*.jsonl` transcripts over the `type:"assistant"` records'
 `.message.usage`, counting each model message once: the runtime writes one message as several lines
 sharing `message.id`, so the lines of one id count as one (the largest value of each token kind they
 carry), and a line without an id counts alone — then the cost is named `rule: "per-line"` instead,
@@ -187,7 +184,8 @@ token sums, `agents` the transcript count, `rule: "per-message"` the counting ru
 could not be read (>0). The write is atomic (temp file + rename) and **idempotent**: `cost`
 is replaced on every run, never appended, so re-running after more transcripts land simply re-sums.
 It exits non-zero if the run directory is missing, holds no `agent-*.jsonl`, has every matching
-transcript unreadable, or the record is missing/unparseable. `cost` is **optional** — absent until a
+transcript of a slice unreadable, or a record is missing/unparseable. In the store the records are
+rewritten under the index lock, after any pending filing is replayed. `cost` is **optional** — absent until a
 run is enriched — and it does not enter the `index.jsonl` projection.
 
 `node integrations/shared/analyze-runs.mjs` surfaces it per workflow beside the three-state pool, leading with
@@ -303,7 +301,7 @@ older record — an unknown input is not the same input); a different configurat
 memory was not in full effect (`reReview` not chained, its prior ledger degraded or rebuilt from a stalled
 run, fingerprints not comparable, tombstones dropped); a later round whose recorded prior (`reReview.priorRound`
 / `priorHead`) is not this round; a different head, base or path; and no real `cost` (from
-`craft-log-run enrich-cost`) on both, or a cost that is malformed, empty (measured nothing — usage missing from the transcripts, realm #98), overcounted (summed per line: no `cost.rule`, or `per-line`), counted by an unknown rule, or partial (`cost.skipped`), or a malformed candidate, finding or lens-dispatch count. A cost with no `total` is compared on the sum of its four token parts. The totals are an unweighted sum
+`craft runs enrich-cost`) on both, or a cost that is malformed, empty (measured nothing — usage missing from the transcripts, realm #98), overcounted (summed per line: no `cost.rule`, or `per-line`), counted by an unknown rule, or partial (`cost.skipped`), or a malformed candidate, finding or lens-dispatch count. A cost with no `total` is compared on the sum of its four token parts. The totals are an unweighted sum
 of token kinds, so the report also prints output, input and cache-read deltas — read those as money, not
 the ratio alone. A record of the wrong shape is judged or named, never crashes the report. The
 configuration compared includes the lenses the completeness critic added and a digest of the `intent`

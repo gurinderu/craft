@@ -1,7 +1,7 @@
 // The outcome of the sorting before publication, on the run store (realm @nick/craft, node #281): a review
 // run with `comment` records how many findings it posted as defects and which it held back as doubtful
 // (`sorting`, integrations/claude-code/src/review.js); the reviewer's later choice for each doubtful one — asked the author, posted
-// as a defect, not posted — is appended to the SAME run's record by `craft-log-run sorting-choice`, the
+// as a defect, not posted — is appended to the SAME run's record by `craft runs sorting-choice` (cli/crates/craft-store/src/sorting.rs; craft-log-run's verb is kept as the parity source), the
 // one writer of the store (node #39); analyze-runs tallies how the doubtful ones ended (the precision of
 // the sorting, node #270).
 import fs from 'node:fs'

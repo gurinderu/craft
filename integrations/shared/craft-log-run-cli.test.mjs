@@ -96,12 +96,7 @@ test('prior-round degrades to "none" with exit 0, and warns on stderr about a da
 test('commands missing their arguments fail with 1', () =>
   scratch(async (store, dir) => {
     // from-journal takes its directory positionally, so it is given no flag that could be read as one.
-    const cases = [
-      ['enrich-cost', '--store', store],
-      ['enrich-cost', '--run-dir', dir, '--store', store],
-      ['backfill-engine', '--store', store],
-      ['from-journal'],
-    ]
+    const cases = [['sorting-choice', '--store', store], ['backfill-engine', '--store', store], ['from-journal']]
     for (const argv of cases) {
       const r = await run(argv, process.env, dir)
       assert.equal(r.exitCode, 1, argv.join(' '))

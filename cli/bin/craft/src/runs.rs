@@ -3,6 +3,7 @@
 //! jq; a line or record that does not read is passed over and counted on stderr.
 
 mod render;
+mod write;
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -110,6 +111,40 @@ pub enum RunsCommand {
         #[arg(long = "path")]
         paths: Vec<String>,
     },
+    /// Once a Workflow run has ended, folds its real cost — counted from the harness's per-agent
+    /// transcripts — into each record it filed, each record its own slice of the run's agents.
+    EnrichCost {
+        /// The run id the Workflow completion names (`wf_…`).
+        #[arg(long)]
+        run_id: String,
+        /// Where Claude Code keeps its transcripts; `$CLAUDE_CONFIG_DIR`, else `~/.claude`.
+        #[arg(long, value_parser = path_value())]
+        claude_home: Option<PathBuf>,
+    },
+    /// The reviewer's choice for doubtful finding `n` of a review run with comment, into that
+    /// run's record: the one `--record` names, else the newest of this branch carrying doubtful findings.
+    SortingChoice {
+        #[arg(long)]
+        n: String,
+        /// question, defect or dropped.
+        #[arg(long)]
+        choice: String,
+        #[arg(long, value_parser = path_value())]
+        record: Option<PathBuf>,
+        /// The repository (default: the working directory).
+        #[arg(long, value_parser = path_value())]
+        project: Option<PathBuf>,
+    },
+    /// One craft:develop cycle, read from stdin (`{mode?, outcome, rounds, fullReviews?}`), filed
+    /// as a `develop` record of this repository.
+    DevelopCycle {
+        /// The repository (default: the working directory).
+        #[arg(long, value_parser = path_value())]
+        project: Option<PathBuf>,
+        /// The harness session the cycle ran in.
+        #[arg(long)]
+        session: Option<String>,
+    },
 }
 
 #[derive(Debug, clap::Args)]
@@ -210,6 +245,19 @@ fn printed(args: &RunsArgs) -> Result<ExitCode> {
             let result = craft_review::recurring::recurring(&store, &project, paths)?;
             writeln!(out, "{}", result.pretty())?;
             ExitCode::SUCCESS
+        }
+        RunsCommand::EnrichCost {
+            run_id,
+            claude_home,
+        } => write::enrich_cost(&store, run_id, claude_home.as_deref())?,
+        RunsCommand::SortingChoice {
+            n,
+            choice,
+            record,
+            project,
+        } => write::sorting_choice(&store, n, choice, record.as_deref(), project.as_deref())?,
+        RunsCommand::DevelopCycle { project, session } => {
+            write::develop_cycle(&store, project.as_deref(), session.as_deref())?
         }
     };
     said_skipped(&skipped);

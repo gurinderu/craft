@@ -2,7 +2,8 @@
 // one's engine, whether it reviewed the whole branch diff or the fixed delta (the light loop, node #278),
 // its verdict and its open Medium+ count — whether it converged, hit the round cap or stopped without a
 // verdict (node #263), and every full review run after convergence with what it found. The develop skill
-// hands the cycle to `craft-log-run develop-cycle`, the one writer of the store (node #39); analyze-runs
+// hands the cycle to `craft runs develop-cycle` (cli/crates/craft-store/src/develop.rs, held to this module and craft-log-run's
+// verb by content/parity/store-cases.json), the one writer of the store (node #39); analyze-runs
 // prints the DEVELOP section from these records and keeps them out of the review aggregates.
 
 export const DEVELOP_KIND = 'develop'

@@ -55,7 +55,7 @@ pub(super) fn outcome(run: &Path, filing: &Filing, lost: &[String], done: bool) 
     if let Some(obj) = v.as_object_mut().filter(|_| done) {
         obj.insert("record".into(), json!(filing.record));
         // A re-file names its file apart: the work it records was not this invocation's, so a later
-        // run's cost is not enriched into it (integrations/shared/run-agents.mjs).
+        // run's cost is not enriched into it (craft-store's `cost/agents.rs`).
         let key = if filing.refiled {
             "refiledFile"
         } else {
