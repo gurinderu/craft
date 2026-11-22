@@ -231,7 +231,19 @@ fn next_round(dir: &Path, run: &mut RunState, profiles: &[Profile]) -> Result<()
 fn end_rounds(dir: &Path, run: &mut RunState, profiles: &[Profile]) -> Result<(), Error> {
     extra::join(run);
     for p in profiles {
-        let holes = run.rounds.holes(&p.id);
+        // A metrics-only lens that never returned is a coverage gap, not a review that did not run.
+        let (gaps, holes): (Vec<String>, Vec<String>) =
+            run.rounds.holes(&p.id).into_iter().partition(|h| {
+                let lens = h.split(':').next().unwrap_or_default();
+                p.lens(lens).is_some_and(|l| l.metrics)
+            });
+        if !gaps.is_empty() {
+            run.capped.push(format!(
+                "{} metrics-only lenses that never returned — {}",
+                p.id,
+                gaps.join(" · ")
+            ));
+        }
         if !holes.is_empty() {
             run.not_run.push(format!(
                 "{} lenses that never returned — {}",

@@ -171,10 +171,10 @@ fn lens_task(
             slice: slice.map(|(_, s)| s.key.clone()),
         },
     );
-    // Only the lenses name the profile's agent, and not a metrics lens, which needs the code graph's
-    // tools; the scout, the dedup and the verifiers name none, and each host picks the agent for those.
+    // Only the lenses name the profile's agent, and not a metrics lens, which judges from the
+    // numbers in its prompt alone; the scout, the dedup and the verifiers name none, and each host
+    // picks the agent for those.
     task.agent_type = profile.agent_of(lens);
-    task.graph = spec.is_some_and(|l| l.metrics);
     task.consumers = crate::validate::listed(&task.prompt, &ctx.consumers);
     Ok(task)
 }

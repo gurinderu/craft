@@ -29,7 +29,7 @@ mod symbols;
 mod tests;
 mod text;
 
-pub use graph::{GraphError, craft_project, graph_found, graph_of};
+pub use graph::{GraphError, Measured, craft_project, graph_found, graph_of};
 pub use make::{build, build_for_metrics, of_checkout};
 pub use save::{keep, prepare};
 pub use section::{gap_line, section};
@@ -93,6 +93,16 @@ pub struct Consumers {
     pub graph_indexed: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub symbols: Vec<Listed>,
+    /// The graph's numbers for each function the change touches, read for the metrics lenses and
+    /// their verifier when one takes part ([`graph::graph_metrics`]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub metrics: Vec<Measured>,
+    /// Why no numbers were read, though the graph was ready.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub metrics_failed: String,
+    /// The changed files whose functions' numbers were not read, each with why: `file (why)`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub metrics_unread: Vec<String>,
     /// The changed symbols not searched by name: too common a name, or the search failed, each with
     /// why when it is not the name alone.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

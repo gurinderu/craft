@@ -31,13 +31,13 @@ pub fn with_profile(
 }
 
 /// A stand-in graph over the checkout at `top`: every `index_repository` logged to `log`, a ready
-/// index of `top`, and no callers.
+/// index of `top`, no callers, and the numbers of one function `f` at `web/app.ts:1`.
 pub fn stand_in(dir: &Path, top: &Path) -> (PathBuf, PathBuf) {
     let tool = dir.join("cbm");
     let log = dir.join("index-calls");
     let top = top.canonicalize().unwrap();
     let script = format!(
-        "#!/bin/sh\ncase \"$3\" in\n index_repository) echo \"$4\" >> {log}; echo '{{\"status\":\"indexed\"}}';;\n index_status) echo '{{\"status\":\"ready\",\"indexed_at\":\"2099-01-01T00:00:00Z\",\"root_path\":\"{top}\"}}';;\n query_graph) echo '{{\"rows\":[]}}';;\n *) echo '{{\"projects\":[]}}';;\nesac\n",
+        "#!/bin/sh\ncase \"$3\" in\n index_repository) echo \"$4\" >> {log}; echo '{{\"status\":\"indexed\"}}';;\n index_status) echo '{{\"status\":\"ready\",\"indexed_at\":\"2099-01-01T00:00:00Z\",\"root_path\":\"{top}\"}}';;\n query_graph) case \"$4\" in *web/app.ts*'IS NOT NULL'*) echo '{{\"rows\":[[\"f\",\"1\",\"1\",\"3\",\"2\",\"1\",\"1\",\"0\",\"0\",\"false\",\"false\",\"false\"]]}}';; *) echo '{{\"rows\":[]}}';; esac;;\n *) echo '{{\"projects\":[]}}';;\nesac\n",
         log = log.display(),
         top = top.display(),
     );

@@ -223,8 +223,7 @@ impl Profile {
     }
 
     /// The agent `lens`'s tasks run on: the profile's lens agent, except for a metrics-or-nothing
-    /// lens, whose prompt asks for the code graph's MCP tools that agent does not have — it runs
-    /// on the host's default agent.
+    /// lens, which judges from the numbers in its prompt alone and runs on the host's task agent.
     #[must_use]
     pub fn agent_of(&self, lens: &str) -> Option<AgentKind> {
         if self.lens(lens).is_some_and(|l| l.metrics) {

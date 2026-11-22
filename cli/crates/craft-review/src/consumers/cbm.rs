@@ -13,6 +13,7 @@ use crate::cancel::Cancel;
 
 mod callers;
 mod error;
+mod functions;
 mod index;
 mod lock;
 mod probe;
@@ -24,6 +25,8 @@ mod run;
 use run::{bounded, payload};
 
 pub use error::CbmError;
+pub use functions::Function;
+pub(crate) use functions::ROWS_PER_FILE;
 pub use index::Index;
 pub use lock::scratch_locks;
 

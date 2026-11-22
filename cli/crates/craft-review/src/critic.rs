@@ -155,7 +155,6 @@ fn lens_task(run: &RunState, p: &Profile, plan: &Plan, lens: &str) -> Result<Tas
         },
     );
     task.agent_type = p.agent_of(lens);
-    task.graph = p.lens(lens).is_some_and(|l| l.metrics);
     task.consumers = crate::validate::listed(&task.prompt, &run.context.consumers);
     Ok(task)
 }

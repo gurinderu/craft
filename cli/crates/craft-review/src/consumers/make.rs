@@ -92,6 +92,11 @@ fn build_until(
     });
     let ready = graph.and_then(|g| graph::ready(top, &diff.merge_base, (&g, locks), cancel));
     let mut indexed = ready.is_ok();
+    // The metrics lenses' numbers, read before the callers: their gate is these, not the list.
+    let read = match (&ready, metrics) {
+        (Ok(r), true) => Some(graph::graph_metrics(r, &changed)),
+        _ => None,
+    };
     // Indexed for the metrics lenses alone, the graph is asked nothing and is no source.
     let asked = ready.and_then(|r| {
         (!found.symbols.is_empty())
@@ -113,6 +118,14 @@ fn build_until(
         out.graph_unasked = a.unasked;
     }
     out.graph_skipped = graph_skipped;
+    match read {
+        Some(Ok(r)) => (out.metrics, out.metrics_unread) = (r.measured, r.unread),
+        Some(Err(why)) => {
+            indexed &= !matches!(why, GraphError::Moved { .. });
+            out.metrics_failed = why.to_string();
+        }
+        None => {}
+    }
     out.graph_indexed = indexed;
     out.unplaced = found.unplaced;
     out.unlisted = found.unlisted;

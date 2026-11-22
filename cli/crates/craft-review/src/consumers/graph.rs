@@ -13,6 +13,7 @@ use crate::project::CodeGraph;
 
 mod error;
 mod found;
+mod metrics;
 mod owner;
 mod sites;
 mod target;
@@ -24,6 +25,8 @@ const RECHECK: Duration = Duration::from_secs(5);
 
 pub use error::GraphError;
 pub use found::{graph_found, graph_of};
+pub use metrics::Measured;
+pub(super) use metrics::graph_metrics;
 pub(super) use sites::graph_sites;
 
 /// The graph brought to `top` and found ready to ask: its program, craft's own project, that

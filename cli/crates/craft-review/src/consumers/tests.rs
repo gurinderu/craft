@@ -23,6 +23,7 @@ mod heartbeat;
 mod index;
 mod lists;
 mod lock;
+mod metrics;
 mod nested;
 mod paths;
 mod reindex;

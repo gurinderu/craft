@@ -178,6 +178,7 @@ fn a_metrics_lens_is_no_candidate_without_an_index() {
     );
     run.context.graph_project = "craft-review-x".into();
     run.context.consumers.graph_indexed = true;
+    run.context.consumers.metrics = vec![crate::complexity::tests::measured("src/a.rs", "f")];
     let asked = tasks(&run, &profiles).unwrap();
     assert!(
         asked[0].prompt.contains("\"complexity\""),

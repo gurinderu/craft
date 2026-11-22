@@ -6,6 +6,7 @@ use crate::coverage;
 use crate::state::{RunState, Track};
 
 mod consumer_lines;
+mod gap_cap;
 mod gate_cap;
 #[cfg(test)]
 mod gate_cap_tests;
@@ -86,6 +87,12 @@ pub fn verdict_line(state: &RunState, verdict: &str) -> String {
         Some(why) => format!("{line} · {why}"),
         None => line,
     };
+    // A metrics-only lens that never returned says why it holds an otherwise clean verdict.
+    let line = match gap_cap::reason(state, gate_cap::cap(state, findings_verdict(state))) {
+        Some(why) if line == verdict => format!("{line} — {why}"),
+        Some(why) => format!("{line} · {why}"),
+        None => line,
+    };
     let line = match reduced {
         Some(why) if line == verdict => format!("{line} — {why}"),
         Some(why) => format!("{line} · {why}"),
@@ -116,7 +123,7 @@ fn severity_verdict(state: &RunState) -> String {
     }
     // After the exit: a red gate's Block stands over another profile's unknown one; what did not
     // run makes it INCOMPLETE before a reduced round's cap could name another cause.
-    let worst = gate_cap::cap(state, worst);
+    let worst = gap_cap::cap(state, gate_cap::cap(state, worst));
     match (state.not_run.is_empty(), worst) {
         (true, w) => reduced_cap::cap(state, w).into(),
         (false, "Approve") => "INCOMPLETE".into(),

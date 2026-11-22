@@ -123,9 +123,8 @@ fn with_an_index_a_finding_stands_on_the_metrics_it_carries_and_the_verifier_rer
             "lens-general-design-r1"
         ]
     );
-    // Only the metrics lens reaches for the graph's MCP tools, and the wire says so.
-    assert_eq!(s["tasks"][0]["graph"], json!(true));
-    assert!(s["tasks"][1].get("graph").is_none(), "{}", s["tasks"][1]);
+    // No lens reaches for the graph's MCP tools: the metrics lens reads the binary's numbers.
+    assert!(s["tasks"][0].get("graph").is_none(), "{}", s["tasks"][0]);
     // A judging lens names its rubric's file by an absolute path any agent can read.
     let rules = prompt_of(&s["tasks"][1]);
     let line = rules
@@ -141,9 +140,10 @@ fn with_an_index_a_finding_stands_on_the_metrics_it_carries_and_the_verifier_rer
     assert_contains_all(
         &p,
         &[
-            "You are the complexity review lens, grounded in the codebase-memory knowledge graph.",
-            "Step 1: detect_changes (diff base: `origin/main`)",
-            "A finding that carries no value read from the graph is dropped unread",
+            "You are the complexity review lens. This lens is metrics-or-nothing",
+            "You need no MCP tool and no ToolSearch",
+            r#"- `web/app.ts:1-1` `f`: {"alloc_in_loop":false,"cognitive":3,"complexity":2,"linear_scan_in_loop":false,"loop_depth":1,"param_count":0,"recursion_in_loop":false,"transitive_loop_depth":1,"unguarded_recursion":false}"#,
+            "A finding that carries no value from the table is dropped unread",
         ],
     );
     let schema: Value = serde_json::from_str(
@@ -176,10 +176,9 @@ fn with_an_index_a_finding_stands_on_the_metrics_it_carries_and_the_verifier_rer
         .collect();
     let s = submit(&run, Value::Object(quiet));
     assert_eq!(ids(&s), ["verify-0-v0"], "one verifier, not a panel");
-    assert_eq!(
-        s["tasks"][0]["graph"],
-        json!(true),
-        "the metric verifier asks the graph too"
+    assert!(
+        s["tasks"][0].get("graph").is_none(),
+        "the metric verifier reads the review's rows, not the graph"
     );
     let v = prompt_of(&s["tasks"][0]);
     assert_contains_all(
@@ -188,6 +187,7 @@ fn with_an_index_a_finding_stands_on_the_metrics_it_carries_and_the_verifier_rer
             "You are an adversarial verifier for a METRIC-BACKED complexity finding.",
             "f is hard to follow",
             "[metrics: cognitive 3, loop_depth 1]",
+            "Its rows for this finding's function:\n- `web/app.ts:1-1` `f`:",
             "Metric-decided as above",
         ],
     );
@@ -219,4 +219,42 @@ fn a_graph_answering_where_no_profile_records_one_is_indexed_and_the_lens_runs()
             "lens-general-design-r1"
         ]
     );
+}
+
+#[test]
+fn a_metrics_lens_that_could_not_look_caps_the_verdict_at_warning_not_incomplete() {
+    let (repo, out) = (typescript(), tempfile::tempdir().unwrap());
+    let run = out.path().join("run");
+    let graphs = tempfile::tempdir().unwrap();
+    let (tool, _) = common::cbm::stand_in(graphs.path(), repo.path());
+    let mut s = planned(
+        repo.path(),
+        out.path(),
+        (Some(&tool), &out.path().join("unused")),
+    );
+    while s["done"] == json!(false) {
+        let answers: serde_json::Map<String, Value> = ids(&s)
+            .into_iter()
+            .map(|id| {
+                let name = id.strip_prefix("lens-general-").unwrap();
+                let name = name.split('-').next().unwrap().to_owned();
+                let mut a = lens(&name, &[]);
+                if name == "complexity" {
+                    a["blocked"] = json!({"couldNotLook": true, "what": "no graph tools"});
+                }
+                (id, a)
+            })
+            .collect();
+        s = submit(&run, Value::Object(answers));
+    }
+    assert_eq!(s["verdict"], json!("Warning"), "{s}");
+    let report = std::fs::read_to_string(s["report"].as_str().unwrap()).unwrap();
+    assert_contains_all(
+        &report,
+        &[
+            "a coverage gap holds it at Warning, never Approve: general metrics-only lenses that never returned — complexity:",
+            "no graph tools",
+        ],
+    );
+    assert!(!report.contains("INCOMPLETE"), "{report}");
 }
