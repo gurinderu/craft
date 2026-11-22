@@ -132,6 +132,20 @@ test("optional, _recalled and _via reach the binary's start as --optional, --no-
   assert.doesNotMatch(plain, /--optional|--no-recall|--nested|--via/)
 })
 
+test("_recallFailed beside _recalled reaches the binary's start as --recall-failed; without _recalled it is refused", async () => {
+  /** @param {Record<string, unknown>} args */
+  const start = async args => String((await runWith(args)).calls.find(c => c.label === 'step:start')?.prompt)
+  assert.match(
+    await start({ _recalled: true, _recallFailed: 'iskron_search refused: q required' }),
+    /--no-recall --recall-failed 'iskron_search refused: q required' --record '[^']+'$/m,
+  )
+  assert.doesNotMatch(await start({ _recalled: true }), /--recall-failed/)
+  const refused = await runWith({ _recallFailed: 'x' })
+  assert.match(refused.report, /_recallFailed is taken only beside _recalled=true/)
+  const multi = await runWith({ _recalled: true, _recallFailed: 'a\nb' })
+  assert.match(multi.report, /_recallFailed=.* is not one line of text/)
+})
+
 test('_via files the record nested under the parent engine', async () => {
   const { repo, store, record, head } = repoAndStore()
   const run = await runEngine('review', {

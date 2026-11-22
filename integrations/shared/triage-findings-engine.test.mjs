@@ -260,3 +260,25 @@ test('the report gatherer is told the verbatim tool titles are titles, not findi
     'a lens finding beside the tool finding never takes its listed title',
   )
 })
+
+test('a recall whose backend query may have failed leads the plan as memory degraded; a clean one adds nothing', async () => {
+  // A fresh plan per run: the engine extends the answer it is handed.
+  const plan = () => ({ plan_markdown: 'BODY', summary: 'SUM', ledger: [] })
+  const validate = { stable_id: ID1, verdict: 'accept', reason: 'r', fix_pointer: '', premise_checked: '' }
+  const q = 'iskron_search(q: "craft_kind") answered: not found'
+  const failed = await run({
+    'gather:report': gathered,
+    validate,
+    plan: plan(),
+    'memory-recall': { backend: 'mcp iskron', why: 'w', decisions: [], queryError: q },
+  })
+  assert.match(
+    failed.reportValue.plan_markdown,
+    /^> \*\*MEMORY DEGRADED\*\*[\s\S]*> - memory: not read — recall found nothing, backend query may have failed: /,
+  )
+  assert.equal(failed.reportValue.memoryDegraded.length, 1)
+  assert.match(failed.reportValue.memory, /^memory: not read — w; recall found nothing/)
+  const clean = await run({ 'gather:report': gathered, validate, plan: plan(), 'memory-recall': { backend: 'mcp iskron', why: 'w', decisions: [] } })
+  assert.equal(clean.reportValue.memoryDegraded, undefined)
+  assert.doesNotMatch(clean.reportValue.plan_markdown, /MEMORY DEGRADED/)
+})

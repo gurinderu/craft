@@ -165,7 +165,7 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
         verdict: None,
         exit: None,
         chain,
-        memory: memory.recalling(opts.recall),
+        memory: memory.recalling(opts.recall, opts.recall_failed.as_deref()),
         gate: gate::Gate::default(),
         critic: crate::critic::Critic::default(),
         extra: extra::Extra::default(),

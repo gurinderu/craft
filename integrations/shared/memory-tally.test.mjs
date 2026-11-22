@@ -66,6 +66,8 @@ test('memory tally: recalled by backend, none by reason, runs before the field a
     rules: 0,
     externals: 0,
     covered: 0,
+    failed: 0,
+    truncated: 0,
     byBackend: { harness: 1 },
     noneWhy: {
       'not recalled — nothing to review': 2,
@@ -83,4 +85,17 @@ test('memory tally: recalled by backend, none by reason, runs before the field a
     '- 1× none — budget below the floor',
     '- 1× none — the recall agent died or returned no list',
   ])
+})
+
+test('memory tally: an empty recall whose backend query may have failed is its own class, apart from a clean none, and a truncated one is counted', () => {
+  const t = newMemoryTally()
+  tallyMemory(t, { memory: readMemoryRecall({ backend: 'mcp iskron', why: 'w', decisions: [], queryError: 'q refused' }, 0).memory })
+  tallyMemory(t, { memory: readMemoryRecall({ backend: 'mcp iskron', why: 'no craft record', decisions: [] }, 0).memory })
+  tallyMemory(t, { memory: readMemoryRecall({ backend: 'mcp iskron', why: 'w', decisions: [REC], truncated: '12 found, 10 shown' }, 0).memory })
+  assert.deepEqual([t.failed, t.truncated, t.none, t.recalled], [1, 1, 2, 1])
+  assert.deepEqual(t.noneWhy, { 'backend query may have failed in mcp iskron': 1, 'recall found nothing in mcp iskron': 1 })
+  assert.match(
+    renderMemorySection(t).join('\n'),
+    /- DEGRADED — 1 empty recall\(s\) whose backend query may have failed .* · 1 read only part of the backend's answer/,
+  )
 })

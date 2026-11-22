@@ -32,6 +32,7 @@ const TAKEN = [
   'optional',
   '_via',
   '_recalled',
+  '_recallFailed',
   'gateOnly',
   'gateFrom',
   'pr',
@@ -88,6 +89,7 @@ const START_ONLY = [
   'comment',
   'optional',
   '_recalled',
+  '_recallFailed',
   'gateFrom',
 ]
 
@@ -189,8 +191,9 @@ function optionalOption(v) {
 /**
  * The launch options beside the review's own: the optional pass, the parent engine that launched this run (`_via`, the
  * record then filed nested under it) and whether that launcher recalled the project's memory itself (`_recalled`,
- * the binary's `--no-recall`).
- * @param {Record<string, unknown>} a @returns {{ optional: string, via: string, recalled: boolean } | { refused: string }}
+ * the binary's `--no-recall`), with why that recall found nothing when its backend query may have failed (`_recallFailed`,
+ * the binary's `--recall-failed`, taken only beside `_recalled=true`).
+ * @param {Record<string, unknown>} a @returns {{ optional: string, via: string, recalled: boolean, recallFailed: string } | { refused: string }}
  */
 export function launchOptions(a) {
   const opt = optionalOption(a['optional'])
@@ -199,13 +202,28 @@ export function launchOptions(a) {
   if (via === null) return { refused: `_via=${JSON.stringify(a['_via'])} is not an engine name` }
   const recalled = a['_recalled'] ?? false
   if (recalled !== true && recalled !== false) return { refused: `_recalled=${JSON.stringify(recalled)} is not true or false` }
-  return { ...opt, via, recalled }
+  const failed = recallFailedOption(a['_recallFailed'], recalled)
+  if (typeof failed !== 'string') return failed
+  return { ...opt, via, recalled, recallFailed: failed }
+}
+
+/**
+ * The launcher's failed recall (`_recallFailed`): one line of text beside `_recalled=true`, '' when not given.
+ * @param {unknown} v @param {boolean} recalled @returns {string | { refused: string }}
+ */
+function recallFailedOption(v, recalled) {
+  if (v == null || v === '') return ''
+  if (typeof v !== 'string' || hasControl(v)) return { refused: `_recallFailed=${JSON.stringify(v)} is not one line of text` }
+  if (!recalled) return { refused: '_recallFailed is taken only beside _recalled=true' }
+  return v.trim()
 }
 
 /**
  * The start's flags for the launch options: `--optional` with its text, `--no-recall` when the launcher recalled, and
  * `--nested` under a parent engine, so the run builds on no round of the branch's chain and files none, as the engine
  * keeps a nested review out of it (selectPriorRounds, integrations/shared/run-record.mjs).
- * @param {{ optional: string, recalled: boolean, via: string }} o @returns {string}
+ * `--recall-failed` with the launcher's failed query when it named one.
+ * @param {{ optional: string, recalled: boolean, recallFailed?: string, via: string }} o @returns {string}
  */
-export const launchFlags = o => `${o.optional ? ` --optional ${shq(o.optional)}` : ''}${o.recalled ? ' --no-recall' : ''}${o.via ? ' --nested' : ''}`
+export const launchFlags = o =>
+  `${o.optional ? ` --optional ${shq(o.optional)}` : ''}${o.recalled ? ' --no-recall' : ''}${o.recalled && o.recallFailed ? ` --recall-failed ${shq(o.recallFailed)}` : ''}${o.via ? ' --nested' : ''}`

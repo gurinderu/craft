@@ -174,6 +174,25 @@ fn the_given_root_wins_over_the_checkout_above_the_binary() {
 
 /// The gate `review start` ran over the fixture, with `extra` arguments, as its state keeps it.
 fn gate_of(extra: &[&str]) -> Value {
+    state_of(extra)["gate"].clone()
+}
+
+#[test]
+fn a_launchers_failed_recall_handed_on_is_kept_as_the_runs_memory_query_error() {
+    let state = state_of(&[
+        "--no-gate",
+        "--recall-failed",
+        "iskron_search refused: q required",
+    ]);
+    assert_eq!(
+        state["memory"]["source"]["queryError"], "iskron_search refused: q required",
+        "{}",
+        state["memory"]
+    );
+}
+
+/// The state `review start` wrote over the fixture, with `extra` arguments.
+fn state_of(extra: &[&str]) -> Value {
     let tmp = tempfile::tempdir().unwrap();
     let code = tmp.path().join("repo");
     std::fs::create_dir_all(&code).unwrap();
@@ -193,9 +212,7 @@ fn gate_of(extra: &[&str]) -> Value {
         "{}",
         String::from_utf8_lossy(&out.stderr)
     );
-    let state: Value =
-        serde_json::from_str(&std::fs::read_to_string(run.join("state.json")).unwrap()).unwrap();
-    state["gate"].clone()
+    serde_json::from_str(&std::fs::read_to_string(run.join("state.json")).unwrap()).unwrap()
 }
 
 #[test]

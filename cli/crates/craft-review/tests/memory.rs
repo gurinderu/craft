@@ -584,34 +584,44 @@ fn a_priors_deferral_released_by_a_record_that_answers_its_question_counts_again
     );
 }
 
+/// A recall answer from `mcp iskron` that found nothing because its query `error`ed.
+fn failed_recall(error: &str) -> Value {
+    json!({
+        "backend": "mcp iskron", "why": "found by capability", "decisions": [],
+        "questions": [], "rules": [], "queryError": error
+    })
+}
+
+const QUERY_ERROR: &str =
+    "iskron_search(q: \"craft_kind\") answered: nodes for query «craft_kind» not found";
+
+/// The degraded notes of a finished step.
+fn degraded_of(s: &Value) -> Vec<String> {
+    s["degraded"]
+        .as_array()
+        .map(|l| l.iter().map(|d| d.as_str().unwrap().to_owned()).collect())
+        .unwrap_or_default()
+}
+
 #[test]
 fn an_empty_recall_whose_backend_query_failed_reads_as_degraded_not_as_no_memory() {
     let repo = fixture(true);
     let out = tempfile::tempdir().unwrap();
-    let error = "iskron_search(q: \"craft_kind\") answered: nodes for query «craft_kind» not found";
-    let failed = json!({
-        "backend": "mcp iskron", "why": "found by capability", "decisions": [],
-        "questions": [], "rules": [], "queryError": error
-    });
-    let (run, s) = recalled_run(repo.path(), out.path(), None, &failed);
+    let (run, s) = recalled_run(repo.path(), out.path(), None, &failed_recall(QUERY_ERROR));
     let s = drive(&run, s, &[]);
-    let line = format!("memory: recall found nothing — backend query may have failed: {error}");
-    let degraded = s["degraded"].as_array().unwrap();
-    assert!(
-        degraded
-            .iter()
-            .any(|d| d.as_str().unwrap().starts_with(&line)),
-        "{degraded:?}"
+    let note = format!(
+        "memory: not read — recall found nothing, backend query may have failed: {QUERY_ERROR}; none of the project's decisions or rules were applied"
     );
-    assert_eq!(s["memory"]["queryError"], json!(error));
+    assert_eq!(degraded_of(&s), [note.as_str()]);
+    assert_eq!(s["memory"]["queryError"], json!(QUERY_ERROR));
     let report = std::fs::read_to_string(s["report"].as_str().unwrap()).unwrap();
     assert_contains_all(
         &report,
         &[
             "## Degraded\n",
-            &format!("- {line}"),
+            &format!("- {note}"),
             &format!(
-                "## Memory\n- memory: none — recall found nothing — backend query may have failed: {error} (backend mcp iskron)"
+                "## Memory\n- memory: not read — found by capability; recall found nothing — backend query may have failed: {QUERY_ERROR} (backend mcp iskron)"
             ),
         ],
     );
@@ -620,4 +630,49 @@ fn an_empty_recall_whose_backend_query_failed_reads_as_degraded_not_as_no_memory
     let (run, s) = recalled_run(repo.path(), clean.path(), None, &nothing_recalled());
     let s = drive(&run, s, &[]);
     assert!(s.get("degraded").is_none(), "{:?}", s["degraded"]);
+}
+
+#[test]
+fn a_failed_recall_stays_degraded_beside_the_launchers_records_and_says_they_applied() {
+    let repo = fixture(true);
+    let out = tempfile::tempdir().unwrap();
+    let passed = json!([{
+        "kind": "decision", "title": "f returns 1 instead of 0", "body": "intended",
+        "scope": "src/lib.rs", "author": "rev", "date": "2026-05-01"
+    }]);
+    let (run, s) = recalled_run(
+        repo.path(),
+        out.path(),
+        Some(passed),
+        &failed_recall(QUERY_ERROR),
+    );
+    let s = drive(&run, s, &[]);
+    assert_eq!(s["memory"]["queryError"], json!(QUERY_ERROR));
+    assert_eq!(s["memory"]["passed"], json!(1));
+    assert_eq!(
+        degraded_of(&s),
+        [format!(
+            "memory: not read — recall found nothing, backend query may have failed: {QUERY_ERROR}; only the 1 record(s) the launcher passed were applied"
+        )]
+    );
+}
+
+#[test]
+fn a_recall_that_read_only_part_of_the_backends_answer_is_degraded_with_its_records_applied() {
+    let repo = fixture(true);
+    let out = tempfile::tempdir().unwrap();
+    let recall = json!({
+        "backend": "mcp iskron", "why": "found by capability", "questions": [], "rules": [],
+        "decisions": [{"kind": "decision", "title": "t", "body": "b", "scope": "src/lib.rs", "status": "active", "date": "2026-05-01"}],
+        "truncated": "iskron_search said 12 found, 10 shown, and took no offset"
+    });
+    let (run, s) = recalled_run(repo.path(), out.path(), None, &recall);
+    let s = drive(&run, s, &[]);
+    assert_eq!(s["memory"]["source"], json!("recalled"), "{}", s["memory"]);
+    assert_eq!(
+        degraded_of(&s),
+        [
+            "memory: recall read only part of the backend's answer (iskron_search said 12 found, 10 shown, and took no offset): the records past it were not applied"
+        ]
+    );
 }

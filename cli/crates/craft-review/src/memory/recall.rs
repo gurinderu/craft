@@ -4,6 +4,7 @@
 //! each record given the skill's id where the store keeps its own, and the source it came from is
 //! named in one line of the report.
 
+use super::source::bounded;
 use super::{MemorySource, oppose};
 use serde_json::{Map, Value};
 
@@ -188,6 +189,10 @@ pub(super) fn read(raw: Option<&Value>, cut: usize, grouped: usize) -> Recalled 
         .filter(|w| !w.is_empty())
         .unwrap_or_else(|| "no reason given".into());
     let stale = stale_tail(r.get("stale"));
+    let truncated = bounded(&one_line(r.get("truncated")));
+    let cut_tail = truncated.as_ref().map_or_else(String::new, |t| {
+        format!("; truncated — the backend held more than was read: {t}")
+    });
     let questions = of_kind(r.get("questions"), "question");
     let rules = of_kind(r.get("rules"), "rule");
     let externals = of_kind(r.get("externals"), "external").len();
@@ -200,22 +205,26 @@ pub(super) fn read(raw: Option<&Value>, cut: usize, grouped: usize) -> Recalled 
         .map(with_skill_id)
         .collect();
     if records.is_empty() && externals == 0 {
-        let failed = Some(one_line(r.get("queryError"))).filter(|q| !q.is_empty());
-        let why = failed.as_ref().map_or(why, |q| {
-            format!("recall found nothing — backend query may have failed: {q}")
-        });
-        let mut source = MemorySource::none(format!("{why} (backend {backend}){stale}{tail}"));
+        let failed = bounded(&one_line(r.get("queryError")));
+        let why = failed.as_ref().map_or_else(
+            || why.clone(),
+            |q| format!("{why}; recall found nothing — backend query may have failed: {q}"),
+        );
+        let mut source =
+            MemorySource::none(format!("{why} (backend {backend}){cut_tail}{stale}{tail}"));
         source.backend = Some(backend);
         source.query_error = failed;
+        source.truncated = truncated;
         return Recalled {
             records,
             source,
             inactive,
         };
     }
-    let mut source =
-        MemorySource::none(format!("{backend} ({why}){stale}{tail}")).with_kinds(nq, nr, externals);
+    let mut source = MemorySource::none(format!("{backend} ({why}){cut_tail}{stale}{tail}"))
+        .with_kinds(nq, nr, externals);
     source.source = "recalled".into();
+    source.truncated = truncated;
     source.count = records.len();
     source.backend = Some(backend);
     Recalled {

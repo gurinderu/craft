@@ -200,3 +200,39 @@ fn a_list_past_the_cap_names_what_it_did_not_apply() {
         ]
     );
 }
+
+#[test]
+fn a_launchers_failed_recall_handed_on_makes_the_memory_not_read_and_degraded() {
+    let m = Memory::default().recalling(false, Some("iskron_search(q: \"\") refused: q required"));
+    assert_eq!(
+        m.source.query_error.as_deref(),
+        Some("iskron_search(q: \"\") refused: q required")
+    );
+    assert!(
+        m.source.line().starts_with(
+            "memory: not read — not recalled — the launcher asked for none (--no-recall): only its own records apply; the launcher's recall found nothing — backend query may have failed: iskron_search"
+        ),
+        "{}",
+        m.source.line()
+    );
+    assert_eq!(m.source.degraded_notes().len(), 1);
+    // A blank note, or a run that recalls itself: no failure is kept.
+    assert!(
+        Memory::default()
+            .recalling(true, Some("q"))
+            .source
+            .query_error
+            .is_none()
+    );
+    let clean = Memory::default().recalling(false, Some("  "));
+    assert!(clean.source.query_error.is_none() && clean.source.degraded_notes().is_empty());
+}
+
+#[test]
+fn a_recalls_query_error_is_kept_to_its_bound() {
+    let long = "e".repeat(super::source::RECALL_NOTE_MAX + 50);
+    let m = Memory::default().recalling(false, Some(&long));
+    let kept = m.source.query_error.unwrap();
+    assert_eq!(kept.chars().count(), super::source::RECALL_NOTE_MAX + 1);
+    assert!(kept.ends_with('…'));
+}

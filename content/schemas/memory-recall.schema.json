@@ -307,6 +307,10 @@
     "queryError": {
       "type": "string",
       "description": "only when every list is empty and a search call errored, was refused, answered not-found for a text query, or the attribute listing came back empty while the store shows craft records exist (never for records the scope narrowing left out): the call (tool and arguments) and its error or answer, one line"
+    },
+    "truncated": {
+      "type": "string",
+      "description": "only when the backend said it held more than the recall read and gave no way to read the rest (no offset, page or higher limit): what it said, one line"
     }
   }
 }

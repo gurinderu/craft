@@ -68,6 +68,8 @@ test('aggregate on empty input is all-zero', () => {
       rules: 0,
       externals: 0,
       covered: 0,
+      failed: 0,
+      truncated: 0,
       byBackend: {},
       noneWhy: {},
     },

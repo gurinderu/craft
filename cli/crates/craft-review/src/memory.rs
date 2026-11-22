@@ -107,15 +107,29 @@ impl Memory {
     }
 
     /// The memory of a run that recalls, or that recalls nothing itself: its launcher's records
-    /// alone, said so.
+    /// alone, said so, with the launcher's `failed` recall when it named one.
     #[must_use]
-    pub fn recalling(mut self, recall: bool) -> Self {
+    pub fn recalling(mut self, recall: bool, failed: Option<&str>) -> Self {
         if recall {
             return self;
         }
         self.source.why =
             "not recalled — the launcher asked for none (--no-recall): only its own records apply"
                 .into();
+        self.recall_failed(failed)
+    }
+
+    /// The memory of a run whose launcher recalled for it and found nothing because its backend
+    /// query may have failed (`--recall-failed`): named, and the run degraded, never read as no
+    /// memory.
+    fn recall_failed(mut self, failed: Option<&str>) -> Self {
+        if let Some(q) = failed.and_then(source::bounded) {
+            self.source.why = format!(
+                "{}; the launcher's recall found nothing — backend query may have failed: {q}",
+                self.source.why
+            );
+            self.source.query_error = Some(q);
+        }
         self
     }
 

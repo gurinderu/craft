@@ -8,10 +8,12 @@
 // rules recalled count with the records (at the recall, so once); the findings a rule covered count on
 // every run that applied rules, a nested review included: each covers its own (realm @nick/craft, node #273).
 // External-system records (node #431) are counted apart from `records`: they set no finding aside, and a
-// recall of those alone is still a recall.
+// recall of those alone is still a recall. An empty recall whose backend query may have failed (`queryError`) is
+// counted apart from a clean none, and a recall that read only part of the backend's answer (`truncated`) is counted
+// too: neither is "the project has no memory".
 /**
  * @typedef {{ runs: number, carrying: number, recalled: number, passedOnly: number, nested: number, none: number,
- *   records: number, questions: number, rules: number, externals: number, covered: number, byBackend: Record<string, number>, noneWhy: Record<string, number> }} MemoryTally
+ *   records: number, questions: number, rules: number, externals: number, covered: number, failed: number, truncated: number, byBackend: Record<string, number>, noneWhy: Record<string, number> }} MemoryTally
  */
 
 /** @returns {MemoryTally} */
@@ -28,6 +30,8 @@ export function newMemoryTally() {
     rules: 0,
     externals: 0,
     covered: 0,
+    failed: 0,
+    truncated: 0,
     byBackend: {},
     noneWhy: {},
   }
@@ -73,6 +77,7 @@ export function tallyMemory(t, r) {
   const o = /** @type {Record<string, unknown>} */ (m)
   t.carrying++
   t.covered += count(o['covered'])
+  if (text(o['truncated'], '')) t.truncated++
   const source = o['source']
   if (source === 'launcher') {
     t.nested++
@@ -90,11 +95,25 @@ export function tallyMemory(t, r) {
   t.none++
   // Recall did not run or found nothing, yet the launcher's own records were applied.
   if (count(o['passed'])) t.passedOnly++
-  bump(t.noneWhy, noneClass(text(o['why'], 'no reason recorded'), text(o['backend'], 'an unnamed backend')))
+  const backend = text(o['backend'], 'an unnamed backend')
+  if (text(o['queryError'], '')) {
+    t.failed++
+    bump(t.noneWhy, `backend query may have failed in ${backend}`)
+    return
+  }
+  bump(t.noneWhy, noneClass(text(o['why'], 'no reason recorded'), backend))
 }
 
 /** @param {Record<string, number>} counts @returns {Array<[string, number]>} */
 const ranked = counts => Object.entries(counts).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+
+/** The recalls that may not have read the store, as one line; none when every run read it. @param {MemoryTally} t @returns {string[]} */
+const degradedLines = t =>
+  t.failed || t.truncated
+    ? [
+        `- DEGRADED — ${t.failed} empty recall(s) whose backend query may have failed (not read, not "no memory") · ${t.truncated} read only part of the backend's answer`,
+      ]
+    : []
 
 /**
  * The section's lines.
@@ -111,6 +130,7 @@ export function renderMemorySection(t) {
   L.push(
     `- ${t.carrying} run(s) carry the field${silent ? ` (${silent} without it, excluded)` : ''} · ${t.recalled} recalled · ${t.none} none (${t.passedOnly} of them applied the launcher's records)${nested} · ${t.records} record(s) recalled, ${t.questions} of them open questions`,
   )
+  L.push(...degradedLines(t))
   if (t.externals) L.push(`- external systems: ${t.externals} recalled beside the records, their source read by the lenses`)
   if (t.rules || t.covered) L.push(`- project rules: ${t.rules} recalled · ${t.covered} finding(s) covered by one, out of the verdict`)
   for (const [backend, n] of ranked(t.byBackend).slice(0, 10)) L.push(`- ${n}× from ${backend}`)

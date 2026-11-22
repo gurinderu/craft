@@ -37,6 +37,9 @@ pub struct StartOptions {
     pub prior_decisions: Option<Result<Value, String>>,
     /// Recall the project's memory beside the scouts; without it only `prior_decisions` apply.
     pub recall: bool,
+    /// The launcher's own recall found nothing because its backend query may have failed: the
+    /// query and its error, which the run names and reads as degraded (`--recall-failed`).
+    pub recall_failed: Option<String>,
     /// Where the reviewer's profile and the sources cache are: the integration points' sources are
     /// prepared before the first tasks. `None`, none are.
     pub sources: Option<SourcesSetup>,

@@ -65,6 +65,7 @@ fn accepted(m: MemorySource, applied: &[&PriorDecision]) -> MemorySource {
     out.source = m.source;
     out.backend = m.backend;
     out.externals = m.externals;
+    out.truncated = m.truncated;
     out.with_kinds(q, r, 0)
 }
 
