@@ -7,6 +7,8 @@ use crate::state::{RunState, Track};
 
 mod consumer_lines;
 mod gap_cap;
+#[cfg(test)]
+mod gap_cap_tests;
 mod gate_cap;
 #[cfg(test)]
 mod gate_cap_tests;
@@ -123,9 +125,10 @@ fn severity_verdict(state: &RunState) -> String {
     }
     // After the exit: a red gate's Block stands over another profile's unknown one; what did not
     // run makes it INCOMPLETE before a reduced round's cap could name another cause.
-    let worst = gap_cap::cap(state, gate_cap::cap(state, worst));
+    // A coverage gap caps only a run with nothing missing: else INCOMPLETE names the cause.
+    let worst = gate_cap::cap(state, worst);
     match (state.not_run.is_empty(), worst) {
-        (true, w) => reduced_cap::cap(state, w).into(),
+        (true, w) => reduced_cap::cap(state, gap_cap::cap(state, w)).into(),
         (false, "Approve") => "INCOMPLETE".into(),
         (false, w) => format!("{w} (INCOMPLETE)"),
     }
@@ -368,7 +371,7 @@ pub fn markdown(state: &RunState, verdict: &str) -> String {
     out.push_str(&crate::critic::section(state));
     out.push_str(&crate::units::section(&state.units));
     out.push_str("\n## Not run\n\n");
-    for n in &state.not_run {
+    for n in &not_run(state) {
         out.push_str(&format!("- {n}\n"));
     }
     out.push_str(&format!("- {}\n", light::cli_not_run(state)));
@@ -398,6 +401,13 @@ fn listed(heading: Option<&str>, files: &[String], out: &mut String) {
         out.push_str(&format!("- {f}\n"));
     }
     out.push('\n');
+}
+
+/// What did not run, each coverage gap named beside it as one: the report's "Not run", the
+/// finished step's and the status's `notRun`, and so the run's record.
+#[must_use]
+pub fn not_run(state: &RunState) -> Vec<String> {
+    gap_cap::named(state)
 }
 
 /// How the run was weaker than asked: the host's notes, the gate's unread changed lines, then the

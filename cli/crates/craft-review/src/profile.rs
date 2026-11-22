@@ -204,6 +204,13 @@ impl Profile {
             .find(|l| l.id == id)
     }
 
+    /// Whether `lens` is metrics-or-nothing: it judges only the graph's numbers, so one that never
+    /// returned is a coverage gap that caps the verdict, not a review that could not run.
+    #[must_use]
+    pub fn metrics_only(&self, lens: &str) -> bool {
+        self.lens(lens).is_some_and(|l| l.metrics)
+    }
+
     /// The ids of the lenses `flag` holds for, roster and floors, in order.
     #[must_use]
     pub fn flagged(&self, flag: impl Fn(&Lens) -> bool) -> Vec<String> {
@@ -226,7 +233,7 @@ impl Profile {
     /// lens, which judges from the numbers in its prompt alone and runs on the host's task agent.
     #[must_use]
     pub fn agent_of(&self, lens: &str) -> Option<AgentKind> {
-        if self.lens(lens).is_some_and(|l| l.metrics) {
+        if self.metrics_only(lens) {
             None
         } else {
             self.lens_agent

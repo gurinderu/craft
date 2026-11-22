@@ -130,9 +130,10 @@ fn a_follow_up_finding_the_pool_holds_is_not_new_and_a_dead_lens_is_a_gap() {
             {"file": "src/lib.rs", "line": 2, "title": "new"}]})),
         ),
         lens("b", "concurrency", None),
+        lens("c", "complexity", None),
     ];
     run.tasks[1].consumers = vec!["src/x.rs:9".into()];
-    let fresh = fresh(&mut run);
+    let fresh = fresh(&mut run, &[Profile::rust().unwrap()]);
     assert_eq!(fresh.len(), 1);
     assert_eq!(
         (fresh[0]["source"].as_str(), fresh[0]["profile"].as_str()),
@@ -140,6 +141,9 @@ fn a_follow_up_finding_the_pool_holds_is_not_new_and_a_dead_lens_is_a_gap() {
     );
     assert_eq!(run.not_run.len(), 1);
     assert!(run.not_run[0].starts_with("rust critic follow-up lens concurrency"));
+    // A dead metrics-only lens is a coverage gap, as on the rounds' path: it caps, never INCOMPLETE.
+    assert_eq!(run.capped.len(), 1, "{:?}", run.capped);
+    assert!(run.capped[0].starts_with("rust critic follow-up lens complexity"));
     // The line only the dead lens was shown is named as such.
     assert_eq!(run.rounds.unanswered(), ["src/x.rs:9"]);
 }

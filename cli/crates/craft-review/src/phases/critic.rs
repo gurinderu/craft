@@ -63,7 +63,7 @@ pub(super) fn lenses_back(
     run: &mut RunState,
     profiles: &[Profile],
 ) -> Result<(), Error> {
-    let fresh = critic::fresh(run);
+    let fresh = critic::fresh(run, profiles);
     run.notes.push(format!(
         "critic follow-up: {} new finding(s) to verify",
         fresh.len()

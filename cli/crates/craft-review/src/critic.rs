@@ -160,9 +160,10 @@ fn lens_task(run: &RunState, p: &Profile, plan: &Plan, lens: &str) -> Result<Tas
 }
 
 /// What the admitted lenses found that the pool does not hold, each once, its `source` the lens
-/// and its `profile` the critic's; each lens that gave no findings is named in `not_run`. The
-/// CONSUMERS lines each lens was shown are noted as the rounds note a lens's.
-pub(crate) fn fresh(run: &mut RunState) -> Vec<Value> {
+/// and its `profile` the critic's; each lens that gave no findings is named in `not_run`, a
+/// metrics-only one in `capped`, as the rounds name theirs. The CONSUMERS lines each lens was
+/// shown are noted as the rounds note a lens's.
+pub(crate) fn fresh(run: &mut RunState, profiles: &[Profile]) -> Vec<Value> {
     let mut seen: Vec<String> = run.rounds.pool.iter().map(key).collect();
     let mut out = Vec::new();
     for t in &run.tasks {
@@ -177,7 +178,18 @@ pub(crate) fn fresh(run: &mut RunState) -> Vec<Value> {
             .and_then(Value::as_array);
         run.rounds.note_lines(t, found.is_some());
         let Some(found) = found else {
-            run.not_run.push(format!("{profile} critic follow-up lens {lens} — dispatched and returned no findings (died, or answered off-schema)"));
+            let hole = format!(
+                "{profile} critic follow-up lens {lens} — dispatched and returned no findings (died, or answered off-schema)"
+            );
+            let gap = profiles
+                .iter()
+                .any(|p| &p.id == profile && p.metrics_only(lens));
+            if gap {
+                &mut run.capped
+            } else {
+                &mut run.not_run
+            }
+            .push(hole);
             continue;
         };
         for f in found {
