@@ -74,6 +74,44 @@ fn cost_line(cost: &Obj) -> String {
     )
 }
 
+/// `craft runs enrich-cost --run-dir <d> --record <f>`: every transcript under `run_dir` summed into
+/// the one record named, its `cost` replaced (`source` the directory's name, no slice) — the form
+/// that re-costs a record whose run cannot be sliced, such as one an older engine filed. Under
+/// `store`'s lock when the record lies inside it.
+///
+/// # Errors
+/// When the directory cannot be read, holds no readable transcript, or the record cannot be read
+/// or written.
+pub fn enrich_dir(run_dir: &Path, record: &Path, store: &Path) -> Result<Enriched, String> {
+    let names = run_dir::transcripts(run_dir)?;
+    if names.is_empty() {
+        return Err(format!(
+            "no agent-*.jsonl transcripts under {}",
+            run_dir.display()
+        ));
+    }
+    let absolute = crate::git::lexical(
+        &std::path::absolute(run_dir).unwrap_or_else(|_| run_dir.to_path_buf()),
+    );
+    let source = absolute
+        .file_name()
+        .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+    let mut said = Enriched::default();
+    let cost = count::measure(run_dir, &names, &mut said.warnings, &source)?;
+    let inside = contains_path(store, record).then_some(store);
+    let warned = crate::amend::rewrite(inside, &[record], &mut |_, mut r| {
+        r.set("cost", Js::Obj(cost.clone()));
+        Ok(r)
+    })?;
+    said.warnings.extend(warned);
+    said.lines.push(format!(
+        "enriched {} — {}",
+        record.display(),
+        cost_line(&cost)
+    ));
+    Ok(said)
+}
+
 /// Folds the run's real cost into each record it filed in `store`.
 ///
 /// # Errors

@@ -113,13 +113,21 @@ pub enum RunsCommand {
     },
     /// Once a Workflow run has ended, folds its real cost — counted from the harness's per-agent
     /// transcripts — into each record it filed, each record its own slice of the run's agents.
+    /// `--run-dir <d> --record <f>` instead sums every transcript of one directory into one
+    /// record, as for a record whose run cannot be sliced.
     EnrichCost {
         /// The run id the Workflow completion names (`wf_…`).
-        #[arg(long)]
-        run_id: String,
+        #[arg(long, required_unless_present = "run_dir", conflicts_with_all = ["run_dir", "record"])]
+        run_id: Option<String>,
         /// Where Claude Code keeps its transcripts; `$CLAUDE_CONFIG_DIR`, else `~/.claude`.
-        #[arg(long, value_parser = path_value())]
+        #[arg(long, value_parser = path_value(), conflicts_with = "run_dir")]
         claude_home: Option<PathBuf>,
+        /// A run's transcript directory, every `agent-*.jsonl` of it summed into `--record`.
+        #[arg(long, value_parser = path_value(), requires = "record")]
+        run_dir: Option<PathBuf>,
+        /// The record the directory's cost is folded into.
+        #[arg(long, value_parser = path_value(), requires = "run_dir")]
+        record: Option<PathBuf>,
     },
     /// The reviewer's choice for doubtful finding `n` of a review run with comment, into that
     /// run's record: the one `--record` names, else the newest of this branch carrying doubtful findings.
@@ -249,7 +257,13 @@ fn printed(args: &RunsArgs) -> Result<ExitCode> {
         RunsCommand::EnrichCost {
             run_id,
             claude_home,
-        } => write::enrich_cost(&store, run_id, claude_home.as_deref())?,
+            run_dir,
+            record,
+        } => match (run_id, run_dir, record) {
+            (_, Some(dir), Some(record)) => write::enrich_dir(&store, dir, record)?,
+            (Some(id), _, _) => write::enrich_cost(&store, id, claude_home.as_deref())?,
+            _ => bail!("enrich-cost takes --run-id <wf_…>, or --run-dir <d> --record <f>"),
+        },
         RunsCommand::SortingChoice {
             n,
             choice,

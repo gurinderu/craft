@@ -65,6 +65,17 @@ fn claude_home(given: Option<&Path>) -> Result<PathBuf> {
 pub fn enrich_cost(store: &Path, run_id: &str, home: Option<&Path>) -> Result<ExitCode> {
     let home = claude_home(home)?;
     let said = craft_store::cost::enrich_run(run_id, &home, store).map_err(|why| anyhow!(why))?;
+    said_all(&said)
+}
+
+/// Every transcript of `run_dir` summed into `record`.
+pub fn enrich_dir(store: &Path, run_dir: &Path, record: &Path) -> Result<ExitCode> {
+    let (dir, record) = (repo_relative(run_dir), repo_relative(record));
+    let said = craft_store::cost::enrich_dir(&dir, &record, store).map_err(|why| anyhow!(why))?;
+    said_all(&said)
+}
+
+fn said_all(said: &craft_store::cost::Enriched) -> Result<ExitCode> {
     warn("enrich-cost", &said.warnings);
     let mut out = std::io::stdout().lock();
     for line in &said.lines {

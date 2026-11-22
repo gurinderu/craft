@@ -174,7 +174,15 @@ the last logger, present only when there were any. A run that resumed and filed 
 longer hands its first record a partial cost that says nothing of it. Every record is measured and read
 before any is written, so a refusal leaves them all as they were.
 
-Each slice sums its `agent-*.jsonl` transcripts over the `type:"assistant"` records'
+The older form names the directory and one record by hand and sums every transcript into it, for
+a record whose run cannot be sliced (one an older engine filed, whose logger output the patterns
+above do not read):
+
+```bash
+craft runs enrich-cost --run-dir <run-dir> --record <detail-record.json>
+```
+
+Each slice, or that directory, sums its `agent-*.jsonl` transcripts over the `type:"assistant"` records'
 `.message.usage`, counting each model message once: the runtime writes one message as several lines
 sharing `message.id`, so the lines of one id count as one (the largest value of each token kind they
 carry), and a line without an id counts alone — then the cost is named `rule: "per-line"` instead,

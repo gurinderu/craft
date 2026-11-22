@@ -25,7 +25,7 @@ computed the fingerprints — what a later round decides their basis by; `engine
 An optional `cost{output,input,cacheRead,cacheWrite,total,agents,source,rule}` (with a `skipped` count
 added only when a transcript could not be read, and `slice{index,of,tail?}` when the record is one of
 several a run filed) is folded in AFTER the run by
-`craft runs enrich-cost --run-id <wf_id>` — the REAL per-agent spend summed
+`craft runs enrich-cost --run-id <wf_id>` (or `--run-dir <d> --record <f>`) — the REAL per-agent spend summed
 from the run's agent-*.jsonl transcripts (cacheRead is ~99% of it). `outputTokens` above is only the
 harness pool, under 1% of real cost. Absent until a run is enriched. A cost without `rule: "per-message"`
 was summed per transcript line and overstates the run ~1.8x: re-run enrich-cost on it while its transcripts exist.

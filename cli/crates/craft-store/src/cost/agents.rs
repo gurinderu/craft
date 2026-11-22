@@ -1,7 +1,7 @@
 //! The agents of one Workflow run, as enrich-cost slices them (realm @nick/craft, node #393): when
 //! each started, the engine it ran under, and the record it filed. Read off the harness's files —
-//! `agent-*.jsonl` transcripts and `agent-*.meta.json` (`description`, `workflowPhase`), Claude Code
-//! 2.1.x (realm @nick/craft, node #98).
+//! `agent-*.jsonl` transcripts (their lines' shape: realm @nick/craft, node #98) and
+//! `agent-*.meta.json` (`description`, `workflowPhase`: node #367), harness contracts pinned there.
 
 use std::path::Path;
 use std::sync::LazyLock;

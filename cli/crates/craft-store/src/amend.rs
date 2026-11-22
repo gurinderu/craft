@@ -27,7 +27,8 @@ pub fn read_object(file: &Path) -> Result<Obj, String> {
 }
 
 /// Each of `files` read again, changed by `change` and written back; under `store`'s lock when it
-/// is given. Returns the warnings of the filings replayed first.
+/// is given. Every record is read and changed before any is written, so a refusal leaves them all
+/// as they were. Returns the warnings of the filings replayed first.
 ///
 /// # Errors
 /// When the lock cannot be taken, a record cannot be read, `change` refuses it, or a write fails.
@@ -37,8 +38,11 @@ pub fn rewrite(
     change: &mut dyn FnMut(usize, Obj) -> Result<Obj, String>,
 ) -> Result<Vec<String>, String> {
     let mut each = || -> Result<(), String> {
+        let mut changed = Vec::with_capacity(files.len());
         for (i, file) in files.iter().enumerate() {
-            let record = change(i, read_object(file)?)?;
+            changed.push(change(i, read_object(file)?)?);
+        }
+        for (file, record) in files.iter().zip(changed) {
             write_atomically(file, Js::Obj(record).pretty()).map_err(|e| e.to_string())?;
         }
         Ok(())
@@ -95,6 +99,29 @@ mod tests {
         );
         set_field(d.path(), "cost", &values).unwrap();
         assert_eq!(std::fs::read_to_string(&file).unwrap(), once);
+    }
+
+    #[test]
+    fn a_refusal_mid_set_leaves_every_record_as_it_was() {
+        let d = tempfile::tempdir().unwrap();
+        let (first, second) = (d.path().join("a.json"), d.path().join("b.json"));
+        std::fs::write(&first, r#"{"a":1}"#).unwrap();
+        std::fs::write(&second, "not json").unwrap();
+        let values = [(first.clone(), Obj::new()), (second.clone(), Obj::new())];
+        set_field(d.path(), "cost", &values).unwrap_err();
+        assert_eq!(std::fs::read_to_string(&first).unwrap(), r#"{"a":1}"#);
+        assert_eq!(std::fs::read_to_string(&second).unwrap(), "not json");
+        let mut calls = 0;
+        let refused = rewrite(None, &[&first, &first], &mut |i, r| {
+            calls += 1;
+            if i == 1 {
+                Err("no".into())
+            } else {
+                Ok(r.with("b", Js::Num(2.0)))
+            }
+        });
+        assert_eq!((refused, calls), (Err("no".to_owned()), 2));
+        assert_eq!(std::fs::read_to_string(&first).unwrap(), r#"{"a":1}"#);
     }
 
     #[test]
