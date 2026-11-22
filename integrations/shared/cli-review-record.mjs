@@ -15,7 +15,7 @@
 // binary counted them, and what the run cost as the driver observed it (`runtimeStats`, integrations/shared/cli-review-clock.mjs).
 import { makeRunLogger, quietly, telemetryLossNoter } from './run-logging.mjs'
 import { telemetryLostSection } from './review-coverage.mjs'
-import { fingerprint, summarizeFindings } from './run-record.mjs'
+import { fingerprint, summarizeFindings, scopedTokens, tokensScope } from './run-record.mjs'
 import { resumeHint } from './cli-review-verdict.mjs'
 
 /** @typedef {{ severity: string, file: string, line: number, title: string, ruleId: string, tier: string }} Finding  as the finished step names it */
@@ -117,10 +117,11 @@ const hostOf = r => r || 'claude-code'
  * the record's. A run a parent engine launched (`_via`, as rust-audit launches its per-crate reviews) is filed nested,
  * naming the parent. Its `runtime` is the host its tasks ran in: `craft review run`'s backend (codex, pi, opencode),
  * else Claude Code, whose engine drives the binary itself.
- * @param {Outcome} o @param {{ craftVersion: string, depth: string, strict: boolean, via: string | null, outputTokens: number | null, runtime?: string }} at
+ * @param {Outcome} o @param {{ craftVersion: string, depth: string, strict: boolean, via: string | null, outputTokens: number | null, outputTokensScope?: string, runtime?: string }} at
+ *   outputTokensScope: what outputTokens counts (`turn-delta`), on the record only when named
  * @returns {Record<string, unknown>}
  */
-export function cliRecord(o, { craftVersion, depth, strict, via, outputTokens, runtime }) {
+export function cliRecord(o, { craftVersion, depth, strict, via, outputTokens, outputTokensScope, runtime }) {
   const findings = o.findings ?? []
   return {
     schemaVersion: 1,
@@ -156,6 +157,7 @@ export function cliRecord(o, { craftVersion, depth, strict, via, outputTokens, r
     strict,
     ...publicationKept(o),
     outputTokens,
+    ...tokensScope(outputTokens, outputTokensScope),
   }
 }
 
@@ -201,7 +203,7 @@ export function settledNotes(finished, lost, noteLoss, driver) {
  * not file; `missing(why)` those of a run whose record no one can file; `file(outcome)` files the record of a run the binary never finished into the directory its checkpoints
  * went to, `refusal(record)` a refused argument's record as it stands, and `notes()` the telemetry section the answer
  * carries when a write did not land. A lost write never fails the run.
- * @param {{ agent: Call, log: (line: string) => void, budget?: { spent: () => number } }} sb
+ * @param {{ agent: Call, log: (line: string) => void, budget?: { spent: () => number | null } }} sb
  * @param {{ craftVersion: string, repo: string, run?: string, depth: string, strict: boolean, via?: string, service: Service }} o  run: the run directory a resume names
  */
 export function cliRecorder(sb, { craftVersion, repo: given, run = '', depth, strict, via = '', service }) {
@@ -240,7 +242,7 @@ export function cliRecorder(sb, { craftVersion, repo: given, run = '', depth, st
   }
   /** @param {Outcome} outcome */
   const file = outcome =>
-    logRun(cliRecord({ ...seen, ...outcome }, { craftVersion, depth, strict, via: via || null, outputTokens: sb.budget?.spent() ?? null }))
+    logRun(cliRecord({ ...seen, ...outcome }, { craftVersion, depth, strict, via: via || null, ...scopedTokens(sb.budget?.spent() ?? null) }))
   // keyTo: the repository the run reviews, when the binary names it (a resumed run, `run=`), over the one given;
   // keyed: whether the record has a repository of its own, given or named.
   return {

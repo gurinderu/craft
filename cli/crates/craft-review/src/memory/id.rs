@@ -12,7 +12,7 @@ use sha2::{Digest, Sha256};
 /// read as `path` and N, the start line; any other scope — one with a control character among
 /// them — as it is, trimmed, with line 0. Held to the JS by `content/parity/scope-line-cases.json`.
 #[must_use]
-pub(super) fn split_scope_line(scope: &str) -> (&str, u64) {
+pub(crate) fn split_scope_line(scope: &str) -> (&str, u64) {
     let s = scope.trim();
     if super::record::has_control(scope) {
         return (s, 0);
@@ -33,7 +33,7 @@ pub(super) fn split_scope_line(scope: &str) -> (&str, u64) {
 
 /// The id of a record of `kind` with `title` and `scope`.
 #[must_use]
-pub(super) fn memory_record_id(kind: &str, title: &str, scope: &str) -> String {
+pub(crate) fn memory_record_id(kind: &str, title: &str, scope: &str) -> String {
     let t = title
         .split_whitespace()
         .collect::<Vec<_>>()

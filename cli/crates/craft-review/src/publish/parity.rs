@@ -1,6 +1,6 @@
-//! The sorting and the comment body held to the engine's by `content/parity/sort-cases.json`, whose
-//! expected side `integrations/shared/finding-sort-parity.test.mjs` computes with `integrations/shared/finding-sort.mjs`,
-//! `integrations/shared/memory-contradiction.mjs` and `integrations/shared/finding-comment.mjs`.
+//! The sorting and the comment body held to the engine's by `content/parity/sort-cases.json`, frozen
+//! golden data whose expected side the JavaScript sorting, memory contradiction and comment body
+//! computed.
 
 use std::collections::BTreeMap;
 

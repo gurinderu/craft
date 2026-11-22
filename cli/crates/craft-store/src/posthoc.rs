@@ -50,14 +50,22 @@ pub fn sorting_choice(n: f64, choice: &str, record: Option<&Path>, req: &Obj, en
                 .into(),
         );
     }
-    let file = if let Some(f) = record {
-        f.to_path_buf()
-    } else {
-        let w = writing(req, env, None).map_err(|e| e.to_string())?;
-        crate::sorting::latest_sorted_record(&env.store, &w.project, &w.git_id.branch)?
-    };
+    let file = sorted_record(record, req, env)?;
     let (line, warned) = crate::sorting::record_choice(&env.store, &file, n, choice, env.now)?;
     Ok((file, line, warned))
+}
+
+/// The review record holding the doubtful findings: `record` when named, else the newest of the
+/// repository's branch carrying them.
+///
+/// # Errors
+/// When none is named or found, or the newest is another branch's.
+pub fn sorted_record(record: Option<&Path>, req: &Obj, env: &Env) -> Result<PathBuf, String> {
+    if let Some(f) = record {
+        return Ok(f.to_path_buf());
+    }
+    let w = writing(req, env, None).map_err(|e| e.to_string())?;
+    crate::sorting::latest_sorted_record(&env.store, &w.project, &w.git_id.branch)
 }
 
 /// A request's answer, for the parity cases.

@@ -37,6 +37,7 @@ pub use asked::{Asked, MatchAsked};
 pub use record::{PriorDecision, RecordKind};
 pub use source::MemorySource;
 
+pub(crate) use id::{memory_record_id, split_scope_line};
 pub(crate) use judge::{contradiction_of, contradiction_record};
 pub(crate) use record::scope_parts;
 

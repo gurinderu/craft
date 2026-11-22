@@ -11,22 +11,67 @@ use crate::gate::runner::Runner;
 use crate::publish::body::{self, MARKER};
 
 /// The pull request of the checked-out branch, as `gh pr view` names it.
-pub(super) struct Pr {
-    pub(super) number: u64,
-    pub(super) url: String,
-    pub(super) head: String,
+pub(in crate::publish) struct Pr {
+    pub(in crate::publish) number: u64,
+    pub(in crate::publish) url: String,
+    pub(in crate::publish) head: String,
+    /// Its head branch, '' when gh did not say.
+    pub(in crate::publish) head_ref: String,
+    /// Its head is in a fork (`isCrossRepository`; false when gh did not say).
+    pub(in crate::publish) cross_repository: bool,
+}
+
+/// The fields every pull request is read with.
+const FIELDS: &str = "number,url,headRefOid,headRefName,isCrossRepository,headRepositoryOwner";
+
+/// A pull request as gh prints it.
+fn pr_of(v: &Value) -> Result<Pr, String> {
+    let text = |k: &str| v.get(k).and_then(Value::as_str).unwrap_or("").to_owned();
+    let number = v.get("number").and_then(Value::as_u64).unwrap_or(0);
+    if number == 0 {
+        return Err("gh named no pull request number".into());
+    }
+    Ok(Pr {
+        number,
+        url: text("url"),
+        head: text("headRefOid"),
+        head_ref: text("headRefName"),
+        cross_repository: v.get("isCrossRepository").and_then(Value::as_bool) == Some(true),
+    })
+}
+
+/// The open pull requests whose head branch is `branch`.
+pub(in crate::publish) fn open_prs(
+    runner: &Runner,
+    repo: &Path,
+    branch: &str,
+) -> Result<Vec<Pr>, String> {
+    if branch.starts_with('-') {
+        return Err(format!("{branch:?} is no branch name"));
+    }
+    let args = [
+        "pr", "list", "--head", branch, "--state", "open", "--json", FIELDS,
+    ];
+    let out = gh(runner, repo, &args)?;
+    let v: Value =
+        serde_json::from_str(&out).map_err(|e| format!("gh pr list printed no JSON: {e}"))?;
+    v.as_array()
+        .ok_or_else(|| "gh pr list printed no list".to_owned())?
+        .iter()
+        .map(pr_of)
+        .collect()
 }
 
 /// The pull request `which` names — its number, or a branch whose pull request it is — the
 /// checked-out branch's when `None`.
-pub(super) fn pull_request(
+pub(in crate::publish) fn pull_request(
     runner: &Runner,
     repo: &Path,
     which: Option<&str>,
 ) -> Result<Pr, String> {
     let mut args = vec!["pr", "view"];
     args.extend(which.filter(|b| !b.starts_with('-')));
-    args.extend(["--json", "number,url,headRefOid"]);
+    args.extend(["--json", FIELDS]);
     let out = gh(runner, repo, &args).map_err(|e| {
         if e.starts_with("gh pr view failed") {
             format!("{e} (no pull request for the checked-out branch, or gh is not authenticated)")
@@ -36,21 +81,12 @@ pub(super) fn pull_request(
     })?;
     let v: Value =
         serde_json::from_str(&out).map_err(|e| format!("gh pr view printed no JSON: {e}"))?;
-    let text = |k: &str| v.get(k).and_then(Value::as_str).unwrap_or("").to_owned();
-    let number = v.get("number").and_then(Value::as_u64).unwrap_or(0);
-    if number == 0 {
-        return Err("gh pr view named no pull request number".into());
-    }
-    Ok(Pr {
-        number,
-        url: text("url"),
-        head: text("headRefOid"),
-    })
+    pr_of(&v)
 }
 
 /// A posted comment's identity: its file, its line (0 for a comment on the file) and its first
 /// line, `[Severity] title` — two findings sharing a title on one file are told apart by line.
-pub(super) type Key = (String, u64, String);
+pub(in crate::publish) type Key = (String, u64, String);
 
 /// The craft finding comments already on the pull request, by file, line and first line: each
 /// under the line GitHub keeps for the comment now and under the one it was posted on
@@ -58,7 +94,7 @@ pub(super) type Key = (String, u64, String);
 /// earlier commit), 0 for a comment on its file. `--paginate`
 /// prints the pages as one array (gh 2.102, observed) or, in older releases, one array after
 /// another: read here as a stream of values, either way.
-pub(super) fn posted_already(
+pub(in crate::publish) fn posted_already(
     runner: &Runner,
     repo: &Path,
     pr: u64,

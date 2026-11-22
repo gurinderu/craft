@@ -19,7 +19,7 @@ fn warn(verb: &str, warnings: &[String]) {
 }
 
 /// The repository a write describes: `--project` against the working directory, else it.
-fn repo(project: Option<&Path>) -> Result<PathBuf> {
+pub(crate) fn repo(project: Option<&Path>) -> Result<PathBuf> {
     let cwd = std::env::current_dir().context("reading the working directory")?;
     Ok(project
         .filter(|p| !p.as_os_str().is_empty())
@@ -27,7 +27,7 @@ fn repo(project: Option<&Path>) -> Result<PathBuf> {
 }
 
 /// What the store writer needs: where, the writing craft's commit, and now.
-fn env(store: &Path) -> Env {
+pub(crate) fn env(store: &Path) -> Env {
     craft_store::begin_write();
     let root = std::env::var_os("CRAFT_ROOT")
         .filter(|r| !r.is_empty())
@@ -43,7 +43,7 @@ fn env(store: &Path) -> Env {
     }
 }
 
-fn request(repo: &Path, session: Option<&str>) -> Obj {
+pub(crate) fn request(repo: &Path, session: Option<&str>) -> Obj {
     Obj::new()
         .with("repo", Js::str(repo.display().to_string()))
         .with("session", Js::str(session.unwrap_or_default()))
@@ -104,7 +104,7 @@ pub fn sorting_choice(
 }
 
 /// A path flag against the working directory, as the JavaScript writer resolved it.
-fn repo_relative(p: &Path) -> PathBuf {
+pub(crate) fn repo_relative(p: &Path) -> PathBuf {
     std::env::current_dir().map_or_else(|_| p.to_path_buf(), |cwd| cwd.join(p))
 }
 

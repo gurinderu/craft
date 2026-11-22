@@ -1,13 +1,12 @@
 // A memory record whose scope carries a line, as earlier runs wrote it (realm @nick/craft, node #606):
-// read as the path and its start line for matching, its id the hash of the scope as written, refused by a writer.
+// read as the path and its start line for matching, its id the hash of the scope as written; a writer refuses it (the craft binary, `craft pr rejections`).
 import { test } from 'vitest'
 import assert from 'node:assert/strict'
-import { memoryRecordId, scopeLine, scopeLineProblem } from './memory-record-id.mjs'
+import { memoryRecordId, scopeLine } from './memory-record-id.mjs'
 import { readFileSync } from 'node:fs'
 import { readPriorDecision } from './prior-decision-record.mjs'
 import { parsePriorDecisions } from './prior-decisions.mjs'
 import { findingPlan, sureMatchOf, triedOrder } from './prior-decision-match.mjs'
-import { recordProblem } from './pr-thread-rule.mjs'
 
 // The cases the CLI's split_scope_line is held to as well (cli/crates/craft-review/src/memory/id.rs).
 const CASES = new URL('../../content/parity/scope-line-cases.json', import.meta.url)
@@ -77,11 +76,4 @@ test('two legacy records of one title at two ranges both apply, each at its own 
 test('a scope with any other colon is still refused', () => {
   const why = readPriorDecision({ ...old(), scope: 'src/users.rs:12a' }, 0)
   assert.ok(typeof why === 'string' && why.includes('has a character outside'), JSON.stringify(why))
-})
-
-test('a writer refuses a scope that carries a line and names the corrected form', () => {
-  assert.equal(scopeLineProblem(SCOPE), `scope "${SCOPE}" carries a line: write scope=src/api/src/users.rs, line=1230`)
-  assert.equal(scopeLineProblem('src/users.rs'), '')
-  assert.equal(recordProblem('t', SCOPE, 'abcdef1', 'r'), scopeLineProblem(SCOPE))
-  assert.equal(recordProblem('t', 'src/users.rs', 'abcdef1', 'r'), '')
 })

@@ -96,24 +96,35 @@ pub(super) fn lines_at_head(run: &RunState) -> Result<Lines, String> {
 /// otherwise nothing is posted, saying which.
 fn moved(run: &RunState, pr_head: &str) -> Moved {
     let repo = Path::new(&run.context.repo);
-    let (head, now) = (short(&run.diff.head), short(pr_head));
+    moved_over(repo, &run.diff.head, pr_head, &|old| touched(run, old))
+}
+
+/// [`moved`] for the reviewed head `reviewed` in `repo`, `touched` naming the defects whose line the
+/// commits since rewrote or removed (`old`: those lines, in the reviewed head's numbering).
+pub(super) fn moved_over(
+    repo: &Path,
+    reviewed: &str,
+    pr_head: &str,
+    touched: &dyn Fn(&Lines) -> Vec<String>,
+) -> Moved {
+    let (head, now) = (short(reviewed), short(pr_head));
     if !git::has_commit(repo, pr_head) {
         return Moved::Refuse(format!(
             "the PR's head {now} is not the reviewed head {head} and is not in {}: fetch it and run again",
             repo.display()
         ));
     }
-    if !git::holds(repo, pr_head, &run.diff.head) {
+    if !git::holds(repo, pr_head, reviewed) {
         return Moved::Refuse(format!(
             "the PR's head {now} does not hold the reviewed head {head} (the branch was rebased or force-pushed): review the PR's head again"
         ));
     }
-    let Ok(diff) = git::zero_context_between(repo, &run.diff.head, pr_head, false) else {
+    let Ok(diff) = git::zero_context_between(repo, reviewed, pr_head, false) else {
         return Moved::Refuse(format!(
             "git could not diff the reviewed head {head} against the PR's head {now}"
         ));
     };
-    let touched = touched(run, &Lines::parse_old(&diff));
+    let touched = touched(&Lines::parse_old(&diff));
     if touched.is_empty() {
         return Moved::Post(format!(
             "the PR's head moved to {now} since the reviewed head {head}; its new commits change none of the defects' lines, so they are posted on the reviewed commit"

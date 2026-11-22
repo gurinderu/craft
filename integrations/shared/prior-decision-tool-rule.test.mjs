@@ -2,7 +2,8 @@
 // the tool's own rule name, not the catalog ruleId many lints share. The sure match (same lens, line ±3)
 // needs the same toolRule, a different toolRule is no candidate, a record without one goes to the
 // judge, who sees both sides' toolRule; a finding of a review lens behaves as before. The record's
-// toolRule is read, checked and carried from a PR thread's finding comment.
+// toolRule is read and checked; the craft binary carries it from a PR thread's finding comment
+// (`craft pr rejections`, held by content/parity/pr-rejections-cases.json).
 import { test } from 'vitest'
 import assert from 'node:assert/strict'
 import {
@@ -22,8 +23,6 @@ import {
 } from './prior-decision-match.mjs'
 import { normalizeLedger } from './craft-log-run.mjs'
 import { readPriorDecision } from './prior-decision-record.mjs'
-import { findingCommentBody, readFindingComment } from './finding-comment.mjs'
-import { threadAnchor } from './pr-thread-rule.mjs'
 
 /** @param {Record<string, unknown>} [over] @returns {any} */
 const rec = (over = {}) => ({
@@ -130,27 +129,6 @@ test('the record reader keeps toolRule and refuses a malformed one by name', () 
   assert.match(read(7), /toolRule 7 is not a string/)
   assert.match(read('x'.repeat(121)), /toolRule is 121 chars/)
   assert.match(read('a\u0007b'), /toolRule contains a control character/)
-})
-
-test('the finding comment carries toolRule on a hidden line, and a thread hands it to the record', () => {
-  const body = findingCommentBody({
-    severity: 'Medium',
-    title: 't',
-    why: 'w',
-    fix: 'f',
-    source: 'clippy-pedantic',
-    toolRule: 'clippy::cast_possible_truncation',
-  })
-  assert.match(body, /^<!-- craft-tool-rule: clippy::cast_possible_truncation -->$/m)
-  const read = readFindingComment(body)
-  assert.deepEqual(read, { severity: 'Medium', title: 't', lens: 'clippy-pedantic', toolRule: 'clippy::cast_possible_truncation' })
-  assert.doesNotMatch(findingCommentBody({ severity: 'Low', title: 't', toolRule: 'bad rule -->' }), /craft-tool-rule/, 'an unfit toolRule is left out')
-  assert.equal(readFindingComment(findingCommentBody({ severity: 'Low', title: 't', toolRule: '' }))?.toolRule, undefined)
-  assert.deepEqual(threadAnchor(/** @type {any} */ ({ originalLine: 43 }), read), {
-    line: 43,
-    lens: 'clippy-pedantic',
-    toolRule: 'clippy::cast_possible_truncation',
-  })
 })
 
 test('toolRule names compare without the tool prefix, case and edge spaces', () => {

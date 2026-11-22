@@ -166,9 +166,16 @@ pub struct SubmitArgs {
     /// For the run's telemetry (`start --record`): the task agents the host has dispatched so far.
     #[arg(long)]
     pub agents: Option<u64>,
-    /// For the run's telemetry: the output tokens the host's run has spent so far.
+    /// For the run's telemetry: the output tokens the host reports — with `--output-tokens-scope
+    /// turn-delta`, the turn's shared pool grown while its engine ran; without it, an older host's
+    /// session total.
     #[arg(long)]
     pub output_tokens: Option<u64>,
+    /// What `--output-tokens` counts, stamped on the record as `outputTokensScope`: `turn-delta`,
+    /// the turn's shared pool grown while the host's engine ran. Without it the record carries no
+    /// scope, as an older host's session total does.
+    #[arg(long, value_parser = ["turn-delta"], requires = "output_tokens")]
+    pub output_tokens_scope: Option<String>,
     /// The craft plugin root the run's records are stamped with, for a run whose telemetry knows
     /// none (started with none known, or its own uninstalled): kept from now on. It names nothing
     /// in the prompts.
@@ -476,6 +483,7 @@ pub(crate) fn submit_step(args: &SubmitArgs) -> Result<Value> {
     let host = filing::Host {
         agents: args.agents,
         output_tokens: args.output_tokens,
+        output_tokens_scope: args.output_tokens_scope.clone(),
         resume: args.resume,
         session: session(),
     };

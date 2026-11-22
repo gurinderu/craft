@@ -11,7 +11,7 @@ use crate::publish::Defect;
 
 /// The request of one review comment (REST `POST /repos/{owner}/{repo}/pulls/{pr}/comments`, as
 /// `findingPostRequest` builds it): on `line` when the diff changed it, else on its file.
-fn request(file: &str, line: Option<u32>, head: &str, body: &str) -> Value {
+pub(in crate::publish) fn request(file: &str, line: Option<u32>, head: &str, body: &str) -> Value {
     match line {
         Some(line) => {
             json!({"commit_id": head, "path": file, "line": line, "side": "RIGHT", "body": body})
@@ -21,12 +21,12 @@ fn request(file: &str, line: Option<u32>, head: &str, body: &str) -> Value {
 }
 
 /// The pull request the comments go to, and where gh runs and keeps its request files.
-pub(super) struct To<'a> {
-    pub(super) runner: &'a Runner,
-    pub(super) repo: &'a Path,
-    pub(super) dir: &'a Path,
-    pub(super) pr: u64,
-    pub(super) head: &'a str,
+pub(in crate::publish) struct To<'a> {
+    pub(in crate::publish) runner: &'a Runner,
+    pub(in crate::publish) repo: &'a Path,
+    pub(in crate::publish) dir: &'a Path,
+    pub(in crate::publish) pr: u64,
+    pub(in crate::publish) head: &'a str,
 }
 
 impl To<'_> {
@@ -51,7 +51,12 @@ impl To<'_> {
 
     /// Posts defect `n`: on its line, and on its file when GitHub refuses the line as outside the
     /// PR's diff (HTTP 422; realm @nick/craft, node #285). Says whether it went on its file so.
-    pub(super) fn defect(&self, n: usize, d: &Defect, body: &str) -> Result<bool, String> {
+    pub(in crate::publish) fn defect(
+        &self,
+        n: usize,
+        d: &Defect,
+        body: &str,
+    ) -> Result<bool, String> {
         let name = format!("comment-{n}");
         match self.send(&name, &request(&d.file, d.line, self.head, body)) {
             Ok(()) => Ok(false),

@@ -307,7 +307,7 @@ on each touched crate, and after the rounds a coordinator answers the questions 
 decides each finding that depends on one and judges the seam between the crates; with `--comment` the finished run
 sorts its findings into defects and doubtful ones and posts the defects on the branch's PR through `gh` itself, never twice,
 a line GitHub refuses going on its file; `craft review comment --run <dir>` does the same for a run already finished,
-its record amended with what came of it),
+its record amended with what came of it; `craft review post --n <n> --as question|defect` posts one doubtful finding the reviewer chose by the same rules (`src/publish/doubtful.rs`) and records the choice; `craft pr rejections` reads a PR's review threads through `gh api graphql` into the decision records of the author's and maintainers' rejections (`src/rejections/`) — `content/parity/finding-post-cases.json` and `pr-rejections-cases.json` freeze what the JavaScript `finding-post` and `pr-rejections` they replaced built),
 then a Markdown report of the findings by tier, the lenses that ran, the rounds and what the CLI does not run — rendered
 from `content/`, which it compiles in, its plans, prompts and verification rules pinned by the shared cases in
 `content/parity/`, with the run's state in `state.json` of its run directory, each task's prompt and
