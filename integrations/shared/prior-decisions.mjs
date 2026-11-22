@@ -20,9 +20,12 @@ import { keptRecords } from './memory-bounds.mjs'
 // not push them off the end of the list. Past the cap the decisions closest to the reviewed paths are
 // kept (keptRecords), never simply the first in the list.
 export const PRIOR_DECISIONS_MAX = 100
-// What the refusal of the records past the cap says about how they were chosen and how to apply them.
+// What the refusal of the records past the cap says about how they were chosen and how to apply them:
+// by the reviewed paths when the caller gave them, else by the records' own scopes alone (keptRecords).
 const CUT_HOW =
   'kept are the records closest to the reviewed paths (a scope naming a changed file, then a directory holding one, a deeper scope before a shallower, a newer record before an older); to apply the rest, review a narrower path (path=<dir>) or supersede the records that no longer hold'
+const CUT_HOW_PATHLESS =
+  'no reviewed paths are given here, so kept are the records with a scope before those over the whole repository, a deeper scope before a shallower, a newer record before an older; to apply the rest, review a narrower path (path=<dir>) or supersede the records that no longer hold'
 // A decision answers a finding when the finding's file sits inside the decision's scope AND their
 // titles share at least this share of words (of the longer one) (realm @nick/craft, node #187).
 export const DECISION_TITLE_OVERLAP = 0.6
@@ -89,7 +92,7 @@ export function parsePriorDecisions(raw, labelOf = decisionLabel, paths = []) {
   })
   if (cut.length)
     refused.push(
-      `${cut.length} decision(s) past the cap of ${PRIOR_DECISIONS_MAX} were not applied — ${CUT_HOW}; findings they would answer are raised normally: ${cutNames(list, cut, labelOf)}`,
+      `${cut.length} decision(s) past the cap of ${PRIOR_DECISIONS_MAX} were not applied — ${paths.length ? CUT_HOW : CUT_HOW_PATHLESS}; findings they would answer are raised normally: ${cutNames(list, cut, labelOf)}`,
     )
   if (cutRules.length)
     refused.push(
