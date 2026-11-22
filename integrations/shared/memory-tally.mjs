@@ -8,9 +8,11 @@
 // rules recalled count with the records (at the recall, so once); the findings a rule covered count on
 // every run that applied rules, a nested review included: each covers its own (realm @nick/craft, node #273).
 // External-system records (node #431) are counted apart from `records`: they set no finding aside, and a
-// recall of those alone is still a recall. An empty recall whose backend query may have failed (`queryError`) is
-// counted apart from a clean none, and a recall that read only part of the backend's answer (`truncated`) is counted
-// too: neither is "the project has no memory".
+// recall of those alone is still a recall. A recall that may not have read the store is DEGRADED, never "the project has
+// no memory", in one of three classes: not read (a failed backend query, `queryError`, or a dead agent, `recallDied`, or
+// a truncated answer, `truncated`, with nothing found), partly read (a failed call or a truncated answer beside records)
+// — each counted once, on the run that recalled — and handed a launcher's degraded recall (`recallDegraded`): a nested
+// run counted apart, its launcher's one recall already counted at the launcher.
 /**
  * @typedef {{ runs: number, carrying: number, recalled: number, passedOnly: number, nested: number, none: number,
  *   records: number, questions: number, rules: number, externals: number, covered: number, notRead: number, partlyRead: number, launcherDegraded: number, byBackend: Record<string, number>, noneWhy: Record<string, number> }} MemoryTally
@@ -119,7 +121,7 @@ const ranked = counts => Object.entries(counts).sort((a, b) => b[1] - a[1] || a[
 const degradedLines = t =>
   t.notRead || t.partlyRead || t.launcherDegraded
     ? [
-        `- DEGRADED — ${t.notRead} recall(s) not read (a failed backend query, a dead agent or a truncated answer — not "no memory") · ${t.partlyRead} partly read (a failed call or a truncated answer beside records) · ${t.launcherDegraded} handed a launcher's degraded recall`,
+        `- DEGRADED — ${t.notRead} recall(s) not read (a failed backend query, a dead agent or a truncated answer — not "no memory") · ${t.partlyRead} partly read (a failed call or a truncated answer beside records) · ${t.launcherDegraded} nested run(s) handed a launcher's degraded recall (counted once, at the launcher)`,
       ]
     : []
 

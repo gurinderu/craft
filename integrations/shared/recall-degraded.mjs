@@ -9,16 +9,30 @@ export const RECALL_NOTE_MAX = 300
 
 /**
  * A recall's note as one line: control characters dropped, whitespace collapsed, cut by code points to RECALL_NOTE_MAX
- * UTF-16 units, its `…` included, as the binary's `clip` cuts it (no lone surrogate); '' when blank.
- * @param {unknown} v @returns {string}
+ * UTF-16 units (or `max`), its `…` included, as the binary's `clip` cuts it (no lone surrogate); '' when blank — the
+ * same rule the binary's `--recall-degraded` refuses a blank note by.
+ * @param {unknown} v @param {number} [max] @returns {string}
  */
-export function recallNote(v) {
+export function recallNote(v, max = RECALL_NOTE_MAX) {
   if (typeof v !== 'string') return ''
   const s = Array.from(v, c => (isControl(c.charCodeAt(0)) ? ' ' : c))
     .join('')
     .replace(/\s+/g, ' ')
     .trim()
-  return cutUnits(s, RECALL_NOTE_MAX)
+  return cutUnits(s, max)
+}
+
+/**
+ * A launcher's `_recallDegraded` as the note a launching engine keeps and hands on: '' when not given (null or absent),
+ * and one that cannot be read — not a string, or nothing but whitespace and control characters, which the binary and
+ * the review driver refuse — is itself a degradation, named by its cleaned, cut value, never read as clean.
+ * @param {unknown} v @returns {string}
+ */
+export function launcherDegradedNote(v) {
+  if (v == null) return ''
+  // JSON.stringify gives no text for a function or a symbol: its type names it.
+  const shown = typeof v === 'function' || typeof v === 'symbol' ? typeof v : JSON.stringify(v)
+  return recallNote(v) || `the launcher passed an unreadable _recallDegraded (${recallNote(shown, 60) || 'blank'})`
 }
 
 /**

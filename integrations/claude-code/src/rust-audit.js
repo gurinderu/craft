@@ -1,6 +1,6 @@
 import { normalizeArgs } from '../../shared/workflow-args.mjs'
 import { parsePriorDecisions } from '../../shared/prior-decisions.mjs'
-import { forwardedDegraded, memoryDegradedNotes, recallNote } from '../../shared/recall-degraded.mjs'
+import { forwardedDegraded, launcherDegradedNote, memoryDegradedNotes } from '../../shared/recall-degraded.mjs'
 import { MEMORY_RECALL_SCHEMA, recallText, memoryRecord, initialMemory, withPassed, withDerived, withDerivedIds, mergeAndRead, memorySection, recallDecisions } from '../../shared/memory-recall.mjs'
 import { summarizeFindings, worstVerdict, repoRefusal } from '../../shared/run-record.mjs'
 import { wrapVerdict, tallyVerification, unusedCratesResult, unusedEvidence } from '../../shared/audit-verification.mjs'
@@ -452,7 +452,7 @@ async function recallOnce() {
   // have read the whole store, when the launcher said, is kept and handed on.
   if (recalledByLauncher) {
     memory = withDerived(initialMemory(passedAccepted, true, A['_memory']), parseNear(passedList).decisions)
-    const upstream = launcherDegraded(A['_recallDegraded'])
+    const upstream = launcherDegradedNote(A['_recallDegraded'])
     if (upstream) memory = { ...memory, recallDegraded: upstream }
     noteDegraded()
     return
@@ -472,15 +472,6 @@ async function recallOnce() {
     log('⚠️ priorDecisions is not a list — not forwarded to the nested reviews')
     memory = { ...memory, why: `${memory.why}; the launcher's priorDecisions was not a list — not applied` }
   }
-}
-/**
- * The launcher's `_recallDegraded` as a note: '' when not given, and one that cannot be read is itself a degradation,
- * never read as clean.
- * @param {unknown} v @returns {string}
- */
-function launcherDegraded(v) {
-  if (v == null) return ''
-  return recallNote(v) || `the launcher passed an unreadable _recallDegraded (${JSON.stringify(v).slice(0, 60)})`
 }
 /** Why this audit's memory may not have read the whole store, logged and kept for the nested reviews. */
 function noteDegraded() {

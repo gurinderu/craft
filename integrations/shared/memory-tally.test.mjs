@@ -80,7 +80,7 @@ test('memory tally: recalled by backend, none by reason, runs before the field a
   assert.deepEqual(renderMemorySection(t), [
     '## MEMORY — what the review recalled before judging',
     "- 9 run(s) carry the field (2 without it, excluded) · 1 recalled · 6 none (1 of them applied the launcher's records) · 2 nested under an audit, its one recall counted at the audit · 1 record(s) recalled, 0 of them open questions",
-    '- DEGRADED — 1 recall(s) not read (a failed backend query, a dead agent or a truncated answer — not "no memory") · 0 partly read (a failed call or a truncated answer beside records) · 0 handed a launcher\'s degraded recall',
+    '- DEGRADED — 1 recall(s) not read (a failed backend query, a dead agent or a truncated answer — not "no memory") · 0 partly read (a failed call or a truncated answer beside records) · 0 nested run(s) handed a launcher\'s degraded recall (counted once, at the launcher)',
     '- 1× from harness',
     '- 2× none — not recalled — nothing to review',
     '- 2× none — recall found nothing in repo',
@@ -104,5 +104,20 @@ test('memory tally: not read, partly read and a launcher-degraded run are each D
     'recall found nothing in mcp iskron': 1,
     'not recalled — the launcher asked for none (--no-recall)': 1,
   })
-  assert.match(renderMemorySection(t).join('\n'), /- DEGRADED — 1 recall\(s\) not read .* · 2 partly read .* · 1 handed a launcher's degraded recall/)
+  assert.match(
+    renderMemorySection(t).join('\n'),
+    /- DEGRADED — 1 recall\(s\) not read .* · 2 partly read .* · 1 nested run\(s\) handed a launcher's degraded recall \(counted once, at the launcher\)/,
+  )
+})
+
+test("memory tally: an audit's one degraded recall counts once at the audit, its nested runs apart, whether CLI or launcher-sourced", () => {
+  const t = newMemoryTally()
+  // The audit: its own recall failed.
+  tallyMemory(t, { memory: readMemoryRecall({ backend: 'kg', why: 'w', decisions: [], queryError: 'kg refused' }, 0).memory })
+  // Two nested CLI reviews and one nested JS run, each handed that recall.
+  const nestedCli = { source: 'none', count: 0, why: 'not recalled — the launcher asked for none (--no-recall)', recallDegraded: 'not read — kg refused' }
+  tallyMemory(t, { memory: nestedCli })
+  tallyMemory(t, { memory: nestedCli })
+  tallyMemory(t, { memory: { source: 'launcher', count: 0, why: '', recallDegraded: 'not read — kg refused' } })
+  assert.deepEqual([t.notRead, t.partlyRead, t.launcherDegraded, t.nested], [1, 0, 3, 1])
 })

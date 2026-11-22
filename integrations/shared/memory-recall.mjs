@@ -659,7 +659,7 @@ export function launcherLine(m) {
 /** launcherLine without the launcher's degraded recall. @param {MemorySource} m @returns {string} */
 function launcherHead(m) {
   const parts = m.passed ? ` — ${m.count - (m.added ?? 0)} recalled, ${m.added ?? 0} of the ${m.passed} passed by its launcher` : ''
-  if (!m.why) return `memory: recalled by the launching audit — ${m.count ? `applied ${countedRecords(m)}${parts}` : `none${parts}`}`
+  if (!m.why) return `memory: recalled by the launching audit — ${m.count ? `applied ${countedRecords(m)}${parts}` : `${launcherNone(m)}${parts}`}`
   // Of the audit's K when it said K, so its line and this one count the same records (realm @nick/craft, node #244).
   const applied = m.passed ? `; applied ${m.added ?? m.count} of the ${m.passed} passed by its launcher` : `; applied ${m.count} passed by its launcher`
   return `memory: recalled by the launching audit — ${launcherNone(m)} (${m.why})${m.count || m.passed ? applied : ''}`

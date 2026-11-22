@@ -193,6 +193,8 @@ fn recall_degraded_is_taken_only_with_an_equals_sign_a_text_and_no_recall() {
     for extra in [
         &["--no-recall", "--recall-degraded", "--no-gate"][..],
         &["--no-recall", "--recall-degraded", "-q refused"][..],
+        // A plain text, space-separated: only `require_equals` refuses it.
+        &["--no-recall", "--recall-degraded", "kg refused"][..],
         &["--no-recall", "--recall-degraded="][..],
         &["--no-recall", "--recall-degraded= \u{1b} "][..],
         &["--recall-degraded=q refused"][..],

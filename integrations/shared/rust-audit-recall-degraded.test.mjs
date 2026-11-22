@@ -95,10 +95,36 @@ test('rust-audit: a clean empty recall forwards no _recallDegraded and reads as 
 })
 
 test("rust-audit: a launcher's unreadable _recallDegraded is itself a degradation; a clean launcher recall forwards none", async () => {
-  for (const bad of ['   ', 7, '\u001b']) {
+  for (const bad of ['   ', 7, '\u001b', '\u007f\u007f', '\u0085']) {
     const r = await audit(null, { _recalled: true, priorDecisions: [REC], _recallDegraded: bad })
     forwarded(r, /^the launcher's recall may not have read the whole store \(the launcher passed an unreadable _recallDegraded/)
   }
   const clean = await audit(null, { _recalled: true, priorDecisions: [REC] })
   for (const a of nestedArgs(clean.calls)) assert.ok(!('_recallDegraded' in a))
+})
+
+test('rust-audit: an unreadable launcher note is forwarded cleaned, so no nested review refuses it; a null one reads clean', async () => {
+  const r = await audit(null, { _recalled: true, priorDecisions: [REC], _recallDegraded: '\u007f\u007f' })
+  for (const a of nestedArgs(r.calls))
+    assert.ok(
+      !Array.from(String(a['_recallDegraded'])).some(c => c.charCodeAt(0) < 0x20 || (c.charCodeAt(0) >= 0x7f && c.charCodeAt(0) <= 0x9f)),
+      JSON.stringify(a['_recallDegraded']),
+    )
+  const nul = await audit(null, { _recalled: true, priorDecisions: [REC], _recallDegraded: null })
+  for (const a of nestedArgs(nul.calls)) assert.ok(!('_recallDegraded' in a))
+  assert.doesNotMatch(nul.report, /degraded: memory/)
+})
+
+test("rust-audit: its memory line names the launcher's degraded recall, never 'none', with or without a _memory note", async () => {
+  const bare = await audit(null, { _recalled: true, _recallDegraded: 'kg refused' })
+  assert.match(
+    bare.report,
+    /## Memory\n- memory: recalled by the launching audit — not read whole; the launcher's recall may not have read the whole store: kg refused/,
+  )
+  assert.doesNotMatch(bare.report, /launching audit — none/)
+  const noted = await audit(null, { _recalled: true, _recallDegraded: 'kg refused', _memory: 'the store answered nothing' })
+  assert.match(
+    noted.report,
+    /## Memory\n- memory: recalled by the launching audit — not read whole \(the store answered nothing\); the launcher's recall may not have read the whole store: kg refused/,
+  )
 })
