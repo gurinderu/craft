@@ -26,7 +26,7 @@ pub struct Env {
 
 /// The run's identity as the binary kept it when it started, for a re-file or a write after the
 /// working copy is gone: the git directory it is keyed through and the fields it stamps.
-struct Kept {
+pub(crate) struct Kept {
     git_dir: String,
     fields: Obj,
 }
@@ -55,7 +55,7 @@ fn kept_identity(req: &Obj, refile: bool) -> Result<Option<Kept>, Utf16Error> {
 
 /// What the logger's flags made of the request: the repository keyed through the kept git
 /// directory when there is one, else the reviewed one.
-fn writing(req: &Obj, env: &Env, kept: Option<&Kept>) -> Result<Writing, Utf16Error> {
+pub(crate) fn writing(req: &Obj, env: &Env, kept: Option<&Kept>) -> Result<Writing, Utf16Error> {
     let repo = req.text("repo")?;
     let cwd = if repo.is_empty() {
         std::env::current_dir().unwrap_or_default()

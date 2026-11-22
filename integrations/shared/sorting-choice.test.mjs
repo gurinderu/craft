@@ -1,22 +1,14 @@
 // The outcome of the sorting before publication on the run store (integrations/shared/sorting-choice.mjs, the
-// `craft-log-run sorting-choice` command; realm @nick/craft, node #281): the reviewer's choice appended to
-// the same run's record, the newest sorted record of the project found, and the tally analyze-runs prints.
+// choice the binary appends, `craft runs sorting-choice`; realm @nick/craft, node #281): the newest sorted
+// record of the project found, a publication's carried choices, and the tally analyze-runs prints.
 import { test } from 'vitest'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { run } from './craft-log-run.mjs'
 import { aggregate, renderReport } from './analyze-runs.mjs'
-import { applyPublication, applySortingChoice, latestSortedRecord, newSortingTally, renderSortingSection, tallySorting } from './sorting-choice.mjs'
+import { applyPublication, latestSortedRecord, newSortingTally, renderSortingSection, tallySorting } from './sorting-choice.mjs'
 
-/** The refusal line a call answered with, asserted to be one. @param {unknown} v @returns {string} */
-function refusal(v) {
-  assert.ok(typeof v === 'string', `expected a refusal line, got ${JSON.stringify(v)}`)
-  return v
-}
-
-const AT = new Date('2026-10-20T10:00:00Z')
 const SORTING = {
   defect: 2,
   doubtful: 3,
@@ -38,26 +30,6 @@ const rec = (over = {}) => ({
   verdict: 'Warning',
   sorting: SORTING,
   ...over,
-})
-
-test('apply: the choice under the finding number, a later one replacing it; the rest of the record kept', () => {
-  const first = applySortingChoice(rec(), 2, 'question', AT)
-  assert.ok(typeof first === 'object')
-  assert.equal(first.finding.title, 'old replicas')
-  assert.deepEqual(/** @type {any} */ (first.record).sorting.choices, { 2: { choice: 'question', at: '2026-10-20T10:00:00.000Z' } })
-  assert.equal(first.record['verdict'], 'Warning')
-  const again = applySortingChoice(first.record, 2, 'dropped', AT)
-  assert.ok(typeof again === 'object')
-  assert.equal(/** @type {any} */ (again.record).sorting.choices[2].choice, 'dropped')
-  const third = applySortingChoice(again.record, 1, 'defect', AT)
-  assert.ok(typeof third === 'object')
-  assert.deepEqual(Object.keys(/** @type {any} */ (third.record).sorting.choices).sort(), ['1', '2'])
-})
-
-test('apply: refused, named — an unknown choice, no sorting, a number not listed', () => {
-  assert.match(refusal(applySortingChoice(rec(), 1, 'ignore', AT)), /--choice must be one of question, defect, dropped/)
-  assert.match(refusal(applySortingChoice(rec({ sorting: null }), 1, 'defect', AT)), /carries no sorting/)
-  assert.match(refusal(applySortingChoice(rec(), 4, 'defect', AT)), /no doubtful finding numbered 4/)
 })
 
 test('tally and section: of the doubtful, how many ended as defect, question, dropped, still undecided', () => {
@@ -82,7 +54,7 @@ test('analyze-runs prints the section from the records', () => {
   )
 })
 
-test('craft-log-run sorting-choice: appends to the newest sorted record of this project, through the one writer', async () => {
+test("latestSortedRecord: the newest sorted record of this project, refused when it is another branch's", () => {
   const store = fs.mkdtempSync(path.join(os.tmpdir(), 'sorting-choice-'))
   const project = fs.mkdtempSync(path.join(os.tmpdir(), 'sorting-project-'))
   try {
@@ -97,23 +69,6 @@ test('craft-log-run sorting-choice: appends to the newest sorted record of this 
     assert.equal(latestSortedRecord(store, key, ''), newer, 'a detached HEAD takes the newest')
     assert.throws(() => latestSortedRecord(store, key, 'main'), /is of branch "feat\/x", not "main" — name the one meant with --record/)
     assert.throws(() => latestSortedRecord(path.join(store, 'nope'), key, 'feat/x'), /carries doubtful findings/)
-    const branchless = await run(['sorting-choice', '--n', '2', '--choice', 'question', '--store', store, '--project', project], {})
-    assert.equal(branchless.exitCode, 0, 'the project is no git checkout: no branch, the newest is taken')
-    fs.writeFileSync(newer, JSON.stringify(rec({ project: key })))
-    const ok = await run(['sorting-choice', '--n', '2', '--choice', 'question', '--store', store, '--project', project], {})
-    assert.equal(ok.exitCode, 0, ok.stderr.join('\n'))
-    assert.match(String(ok.stdout[0]), /recorded question for doubtful finding 2 \(old replicas @ b\.rs:9\)/)
-    assert.equal(JSON.parse(fs.readFileSync(newer, 'utf8')).sorting.choices[2].choice, 'question')
-    assert.equal(JSON.parse(fs.readFileSync(older, 'utf8')).sorting.choices, undefined)
-    const named = await run(['sorting-choice', '--n', '1', '--choice', 'dropped', '--record', older, '--store', store, '--project', project], {})
-    assert.equal(named.exitCode, 0)
-    assert.equal(JSON.parse(fs.readFileSync(older, 'utf8')).sorting.choices[1].choice, 'dropped')
-    const bad = await run(['sorting-choice', '--n', '7', '--choice', 'defect', '--store', store, '--project', project], {})
-    assert.equal(bad.exitCode, 1)
-    assert.match(String(bad.stderr[0]), /no doubtful finding numbered 7/)
-    assert.equal((await run(['sorting-choice', '--choice', 'defect', '--store', store, '--project', project], {})).exitCode, 1)
-    const none = await run(['sorting-choice', '--n', '1', '--choice', 'defect', '--store', path.join(store, 'empty'), '--project', project], {})
-    assert.match(String(none.stderr[0]), /carries doubtful findings/)
   } finally {
     fs.rmSync(store, { recursive: true, force: true })
     fs.rmSync(project, { recursive: true, force: true })

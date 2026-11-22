@@ -1,5 +1,7 @@
 //! The Rust writer held to the JavaScript one by `content/parity/store-cases.json`, which
-//! `integrations/shared/store-parity.test.mjs` writes from `integrations/shared/binary-filing-replay.mjs` over `integrations/shared/craft-log-run.mjs`:
+//! `integrations/shared/store-parity.test.mjs` writes from `integrations/shared/binary-filing-replay.mjs` over `integrations/shared/craft-log-run.mjs`,
+//! and by `posthoc-store-cases.json`, frozen from it before the JavaScript sorting-choice and
+//! develop-cycle verbs were removed:
 //! each case's requests answered in a fresh repository and store, the answers and every file the
 //! store holds afterwards byte for byte, with the same placeholders put back.
 #![expect(
@@ -15,9 +17,12 @@ use std::process::Command;
 use craft_store::adapter::Env;
 use craft_store::js::{Js, Obj, parse};
 
-fn cases() -> Js {
-    let file =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../content/parity/store-cases.json");
+/// The cases of one parity file: `store-cases.json`, which the JavaScript test writes, or
+/// `posthoc-store-cases.json`, the frozen cases of the writes only the binary makes now.
+fn cases(name: &str) -> Js {
+    let file = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../content/parity")
+        .join(name);
     parse(&std::fs::read_to_string(file).unwrap()).unwrap()
 }
 
@@ -146,16 +151,19 @@ fn request(raw: &Obj) -> Obj {
 
 #[test]
 fn every_case_files_as_the_javascript_writer_filed_it() {
-    let file = cases();
-    let all = file
-        .as_obj()
-        .unwrap()
-        .get("cases")
-        .unwrap()
-        .as_arr()
-        .unwrap();
-    assert!(all.len() >= 5);
-    for case in all {
+    let (store_cases, posthoc) = (cases("store-cases.json"), cases("posthoc-store-cases.json"));
+    let of = |f: &Js| {
+        f.as_obj()
+            .unwrap()
+            .get("cases")
+            .unwrap()
+            .as_arr()
+            .unwrap()
+            .to_vec()
+    };
+    let (written, frozen) = (of(&store_cases), of(&posthoc));
+    assert!(written.len() >= 5 && frozen.len() >= 2);
+    for case in written.iter().chain(&frozen) {
         let case = case.as_obj().unwrap();
         let name = case.text("name").unwrap();
         let (repo_dir, store_dir) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());

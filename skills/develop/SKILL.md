@@ -99,7 +99,7 @@ profiles and other source under its general lenses, in one run, with one verdict
 
 Once each engine run of this cycle has ended (completed, failed or stopped — not while you may still
 resume it), fold its real cost into the records it filed:
-`node "<this skill's base directory>/../../integrations/shared/craft-log-run.mjs" enrich-cost --run-id <wf_…>`, with the
+`sh "<this skill's base directory>/../../integrations/shared/craft-cli.sh" runs enrich-cost --run-id <wf_…>`, with the
 run id the Workflow completion names. Best-effort: if it fails, say so in one line and go on.
 
 **The loop is light by default.** The first round reviews the whole branch diff; every later round
@@ -232,7 +232,7 @@ When the cycle ends — converged with a clean full review, capped at round 4, o
 verdict — file one record of it in craft's run store, from the reviewed repository on the branch:
 
 ```bash
-node "<this skill's base directory>/../../integrations/shared/craft-log-run.mjs" develop-cycle <<'JSON'
+sh "<this skill's base directory>/../../integrations/shared/craft-cli.sh" runs develop-cycle <<'JSON'
 {"mode": "light", "outcome": "converged",
  "rounds": [{"engine": "craft:review", "scope": "full", "verdict": "Warning", "mediumPlus": 2},
             {"engine": "craft:review", "scope": "delta", "verdict": "Warning", "mediumPlus": 0}],

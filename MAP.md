@@ -310,7 +310,7 @@ the JavaScript writer's by `content/parity/store-cases.json`) and `crates/craft-
 on a terminal, one line per event otherwise); `test-support/` holds the one copy of a helper every crate's tests
 include by path (an executable a test writes and runs). In `craft-store`, `js/string.rs` holds lossless JavaScript
 strings, `filing.rs` replays pending writes through `filing_io.rs`'s publication primitives, and `lock/turn.rs` coordinates local writers
-with `lock/ticket.rs` validating immutable names. `process_identity.rs` and its native modules query boot and process incarnations;
+with `lock/ticket.rs` validating immutable names. The writes made after a run — `craft runs enrich-cost` (`cost/`: the harness's per-agent transcripts counted once per message and sliced per record), `sorting-choice` (`sorting.rs`) and `develop-cycle` (`develop.rs`), answered in `posthoc.rs` and rewritten under the lock by `amend.rs` — are what the skills and engines run through `integrations/shared/craft-cli.sh`; `content/parity/cost-cases.json` and `posthoc-store-cases.json` freeze what the JavaScript enrich-cost, sorting-choice and develop-cycle wrote. `process_identity.rs` and its native modules query boot and process incarnations;
 `bin/craft/src/process_identity.rs` exposes them through the hidden `__craft-process-identity` command.
 The JavaScript counterparts are `integrations/shared/filing-transaction.mjs`, `integrations/shared/index-turn.mjs` and `integrations/shared/process-identity.mjs` (direct Linux reads,
 cached-binary queries on macOS/Windows); `tests/lock_interop.rs` exercises both lock callers, and

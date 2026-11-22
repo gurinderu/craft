@@ -5,22 +5,27 @@
 //! and the streaming reader `craft runs` lists, sums and checks the store with (#540).
 
 pub mod adapter;
+pub mod amend;
 pub mod check;
 pub mod checkpoint;
 mod cli_record;
 mod clock;
+pub mod cost;
+pub mod develop;
 pub mod filter;
 pub mod finalize;
 pub mod git;
 pub mod js;
 pub mod lock;
 pub mod parts;
+pub mod posthoc;
 pub mod process_identity;
 pub mod proof;
 mod publication;
 pub mod read;
 pub mod record;
 pub mod retro;
+pub mod sorting;
 pub mod tally;
 pub mod time;
 pub mod write;
@@ -53,7 +58,8 @@ impl From<js::Utf16Error> for StoreError {
     }
 }
 
-/// Answers one of the binary's writes — `checkpoint`, `finalize` or `publication` — over the
+/// Answers one of the binary's writes — `checkpoint`, `finalize`, `publication`, `sorting-choice` or
+/// `develop-cycle` — over the
 /// request it built, as the JavaScript adapter answered it.
 ///
 /// # Errors
@@ -87,7 +93,8 @@ pub fn answer_js(command: &str, req: &js::Obj, env: &adapter::Env) -> Result<js:
         "checkpoint" => adapter::checkpoint(req, env),
         "finalize" => adapter::record(req, env),
         "publication" => publication::answer(req),
-        other => return Err(StoreError::Refused(format!("no write is called {other}"))),
+        other => posthoc::answer_request(other, req, env)
+            .ok_or_else(|| StoreError::Refused(format!("no write is called {other}")))?,
     })
 }
 

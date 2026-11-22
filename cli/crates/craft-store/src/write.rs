@@ -122,6 +122,18 @@ pub(crate) fn recover_filings(store: &Path) -> Result<Vec<String>, StoreError> {
     with_index_lock(store, || filing::recover(store))
 }
 
+/// Runs `f` under the index lock once the pending intents are replayed; their warnings.
+pub(crate) fn under_lock_replayed(
+    store: &Path,
+    f: impl FnOnce() -> Result<(), StoreError>,
+) -> Result<Vec<String>, StoreError> {
+    with_index_lock(store, || {
+        let warned = filing::recover(store)?;
+        f()?;
+        Ok(warned)
+    })
+}
+
 pub(crate) fn retire_finalized(dir: &Path, store: &Path) -> Result<(), StoreError> {
     filing::retire(dir, store)
 }

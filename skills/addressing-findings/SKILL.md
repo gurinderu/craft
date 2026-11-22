@@ -99,7 +99,7 @@ not one of them: it is the main session's (→ "Who triages").
                rubric where it applies. Once the `craft:review`
                run has ended (completed, failed or stopped — not while you may still resume
                it), fold its real cost into the records it filed:
-               `node "<this skill's base directory>/../../integrations/shared/craft-log-run.mjs" enrich-cost --run-id <wf_…>`,
+               `sh "<this skill's base directory>/../../integrations/shared/craft-cli.sh" runs enrich-cost --run-id <wf_…>`,
                with the run id the Workflow completion names. Best-effort: if it fails, say
                so in one line and go on.
                PR-thread rejections recorded again; the review workflow recalls the active
@@ -130,7 +130,7 @@ that place is in the bundled engine:
 gives it in the plugin's source.
 Once a run of either has ended (completed, failed or stopped — not while you may still resume it),
 fold its real cost into the records it filed:
-`node "<this skill's base directory>/../../integrations/shared/craft-log-run.mjs" enrich-cost --run-id <wf_…>`, with the
+`sh "<this skill's base directory>/../../integrations/shared/craft-cli.sh" runs enrich-cost --run-id <wf_…>`, with the
 run id the Workflow completion names. Best-effort: if it fails, say so in one line and go on.
 
 Launch it with its sources — `report` = a path to the findings whenever they live in a report (one

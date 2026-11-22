@@ -2,7 +2,8 @@
 // one's engine, whether it reviewed the whole branch diff or the fixed delta (the light loop, node #278),
 // its verdict and its open Medium+ count — whether it converged, hit the round cap or stopped without a
 // verdict (node #263), and every full review run after convergence with what it found. The develop skill
-// hands the cycle to `craft-log-run develop-cycle`, the one writer of the store (node #39); analyze-runs
+// hands the cycle to `craft runs develop-cycle` (cli/crates/craft-store/src/develop.rs, which reads the cycle as
+// readDevelopCycle does), the one writer of the store (node #39); analyze-runs
 // prints the DEVELOP section from these records and keeps them out of the review aggregates.
 
 export const DEVELOP_KIND = 'develop'
@@ -105,15 +106,6 @@ export function readDevelopCycle(payload) {
   if (outcome === 'converged' && !endsClean(rounds, fullReviews))
     throw new Error('outcome "converged" needs the last round, and a full review after it, to leave no open Medium+')
   return { mode, outcome, rounds, fullReviews }
-}
-
-/**
- * The run record of a cycle: `kind` develop, the outcome as its verdict, its round count as `round`, the
- * cycle under `develop`; the writer stamps the project, branch, head and time. @param {unknown} payload @returns {RunRecord}
- */
-export function developCycleRecord(payload) {
-  const cycle = readDevelopCycle(payload)
-  return { schemaVersion: 1, runtime: 'claude-code', kind: DEVELOP_KIND, name: 'develop', verdict: cycle.outcome, round: cycle.rounds.length, develop: cycle }
 }
 
 /** Whether a stored record is a develop cycle. @param {{ kind?: unknown }} r @returns {boolean} */
