@@ -360,11 +360,13 @@ fn save_and_next_with(
 ///
 /// # Errors
 /// When that second save fails while the run goes on with a pending task's file left in place:
-/// the submit fails loudly, and the file, read again by the next submit, is known by its print
-/// (`Task::counted`) — set aside uncounted, and found there once more counted as a missing answer
-/// only after a round that ran (a resume holds it). Once the run is done or stopped, or only
-/// settled tasks' files stay, the note is information alone: a failed save of it is let go, so
-/// the finished or stopped step is still returned and filed.
+/// the submit fails loudly. A file left there that the first save's `Task::counted` names is
+/// known by its print when read again: set aside uncounted the first time; found there once more,
+/// counted as a missing answer after a round that ran, held uncounted by a resume or the host's
+/// limit. A file read with no print (unreadable) is not known, and its next read is taken as a new
+/// answer. Once the run is done or stopped, or only settled tasks' files stay, the note is
+/// information alone: a failed save of it is let go, so the finished or stopped step is still
+/// returned and filed.
 fn set_aside(dir: &Path, run: &mut RunState, aside: Aside, save: Save<'_>) -> Result<(), Error> {
     let unmoved = aside.apply();
     if unmoved.is_empty() {

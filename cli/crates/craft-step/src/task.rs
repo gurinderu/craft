@@ -29,8 +29,9 @@ pub struct Counted {
     pub print: String,
     /// The retries the task had when it was refused, which its set-aside name carries.
     pub at: u32,
-    /// Already read again once, left in place: read again once more, it is no new answer and
-    /// counts as a missing one, so a file that never moves does not hold its task forever.
+    /// Already read again once, left in place: read again once more after a round that ran, it is
+    /// no new answer and counts as a missing one, so a file that never moves fails its task while
+    /// rounds run; a resume or the host's limit holds it uncounted.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub again: bool,
 }
@@ -69,9 +70,10 @@ pub struct Task<K: Kind> {
     pub refused: Option<Value>,
     /// The answer file whose refusal was counted last: set by a refusal read from a file, cleared
     /// when an answer is taken or the task fails as blocked; a missing file, a stop, a resume and a
-    /// host-given answer's refusal leave it as it was. The same file
-    /// read again — its set-aside cut off or failed — is set aside uncounted once, and found there
-    /// once more counts as a missing answer.
+    /// host-given answer's refusal leave it as it was. The same file read again — its set-aside
+    /// cut off or failed — is set aside uncounted once; found there once more it counts as a
+    /// missing answer after a round that ran, while a resume or the host's limit holds it
+    /// uncounted, so a file that never moves is bounded only while rounds run.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub counted: Option<Counted>,
     /// The host abandoned its agent at its deadline (`submit --abandoned`): failed for good, never

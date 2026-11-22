@@ -14,8 +14,10 @@ use crate::validate;
 /// asked for again until its retries are spent — unless `hold` keeps it waiting uncounted: every
 /// one on the host's limit, a missing one on a resume (handed out again as first written). The
 /// file whose refusal was counted (`Task::counted`), found there again, is set aside uncounted
-/// once and then counts as a missing answer, a resume's included. Says whether its agent answered
-/// at all, valid or not. A refused answer file is marked in `aside`.
+/// once; found there once more it counts as a missing answer after a round that ran, while a
+/// resume or the host's limit holds it uncounted — so a file that never moves fails its task only
+/// as long as rounds run. Says whether its agent answered at all, valid or not. A refused answer
+/// file is marked in `aside`.
 ///
 /// # Errors
 /// When the task's id cannot be a file name.

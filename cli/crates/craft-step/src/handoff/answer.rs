@@ -107,8 +107,10 @@ fn print(bytes: &[u8], modified: Option<SystemTime>) -> String {
 /// refusal is saved ([`Aside::apply`]): a submit cut off before that leaves each where its agent
 /// wrote it, to be read again, rather than gone with nothing saying why. The state keeps the print
 /// of the file it counted ([`Task::counted`]), so a file read again before it was moved aside is
-/// moved aside then uncounted once, and counts as a missing answer if found there once more. Moved
-/// aside, a file is not read again as the same refused answer by a retry whose agent writes nothing.
+/// moved aside then uncounted once; found there once more it counts as a missing answer after a
+/// round that ran, while a resume or the host's limit holds it uncounted, so a file that never
+/// moves is bounded only while rounds run. Moved aside, a file is not read again as the same
+/// refused answer by a retry whose agent writes nothing.
 #[derive(Debug, Default)]
 #[must_use = "the refused files stay in place until applied"]
 pub struct Aside(Vec<Marked>);

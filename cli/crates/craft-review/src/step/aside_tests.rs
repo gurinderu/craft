@@ -182,6 +182,55 @@ fn a_settled_tasks_file_is_said_to_stay_and_its_failed_save_let_go() {
 }
 
 #[test]
+fn a_stopped_submit_whose_second_save_fails_still_returns_its_stopped_step() {
+    let mut task = task();
+    task.counted = Some(counted(false));
+    let (d, aside) = unmovable(&task);
+    let mut run = run_with(&task);
+    run.stopped = Some(crate::stop::Stop {
+        cause: crate::stop::Cause::Limit,
+        text: "resets 5pm".into(),
+    });
+    let calls = Cell::new(0);
+    let step = save_and_next_with(
+        d.path(),
+        &mut run,
+        &Said::default(),
+        aside,
+        &second_fails(&calls),
+    )
+    .expect("a stopped run's note is information alone");
+    assert_eq!(calls.get(), 2);
+    assert_eq!(
+        (step["done"].clone(), step["stopped"]["cause"].clone()),
+        (json!(true), json!("limit"))
+    );
+    assert!(
+        state::report_path(d.path()).is_file(),
+        "the stopped report is written"
+    );
+}
+
+#[test]
+fn a_pending_tasks_file_beside_a_settled_ones_still_fails_the_submit() {
+    let mut settled = task();
+    settled.id = "critic-nix".into();
+    settled.state = TaskState::Failed;
+    let mut pending = task();
+    pending.counted = Some(counted(false));
+    let (d, mut aside) = unmovable(&pending);
+    let file = d.path().join("answers").join("critic-nix.json");
+    std::fs::create_dir_all(&file).unwrap();
+    std::fs::write(file.join("x"), "").unwrap();
+    aside.mark(d.path(), &settled).unwrap();
+    let mut run = run_with(&pending);
+    run.tasks.insert(0, settled);
+    let failed = set_aside(d.path(), &mut run, aside, &second_fails(&Cell::new(1)));
+    assert!(failed.is_err(), "the pending task's file is read again");
+    assert!(has(&run.notes, "its task is settled") && has(&run.notes, "set aside uncounted"));
+}
+
+#[test]
 fn a_stop_keeps_the_counted_file_a_resume_reads_again() {
     let mut task = task();
     task.retries = 2;

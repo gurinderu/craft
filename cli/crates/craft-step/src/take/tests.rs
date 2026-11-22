@@ -231,3 +231,25 @@ fn a_resume_keeps_the_counted_file_when_its_answer_is_missing() {
     assert!(!live);
     assert_eq!((tasks[0].retries, tasks[0].counted.clone()), (0, counted));
 }
+
+#[test]
+fn the_hosts_limit_holds_a_counted_file_found_there_again_uncounted() {
+    let (d, _answers) = answers_with("{}");
+    let mut tasks = [task()];
+    take_unmoved(d.path(), &mut tasks);
+    for _ in 0..3 {
+        let mut aside = Aside::default();
+        let live = take_pending(d.path(), &mut tasks, None, Hold::Every, &mut aside).unwrap();
+        drop(aside);
+        assert!(!live);
+    }
+    let held = &tasks[0];
+    assert_eq!(
+        (
+            held.state,
+            held.retries,
+            held.counted.as_ref().map(|c| c.again)
+        ),
+        (TaskState::Pending, 1, Some(true))
+    );
+}
