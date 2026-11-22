@@ -328,6 +328,31 @@ test('a submit the harness refused says so, how to continue and what to allow, a
   )
 })
 
+// Claude Code 2.1.319's auto mode classifier quotes no command: the stop names the one the driver had the service agent run.
+test('a submit refused by a classifier that quotes no command names the command the driver issued and the rule for it', async () => {
+  const run = await runEngine('review', {
+    args: {},
+    script: {
+      'step:resolve': resolved(),
+      'step:start': pending([lens()]),
+      lens: writes(FINDINGS),
+      'step:submit:1': {
+        exitCode: 1,
+        stdout: '',
+        stderr:
+          "Permission for this action was denied by the Claude Code auto mode classifier. Reason: runs an unreviewed binary. If you have other tasks that don't depend on this action, continue working on those.",
+      },
+      'step:status': ran({ run: RUN, phase: 'scout', round: 1, done: false }),
+    },
+  })
+  const line = verdictOf(run)
+  const issued = run.calls.find(c => c.label === 'step:submit:1')?.prompt.split('\n\n')[1] ?? ''
+  assert.ok(issued.startsWith(`${FETCHED} review submit --run `), issued)
+  assert.ok(line.includes(`it was not run: \`${issued}\`.`), line)
+  assert.ok(line.includes(`continue the review with the Workflow \`craft:review run=${RUN}\``), line)
+  assert.ok(line.includes(`Bash(${FETCHED} review:*)`), line)
+})
+
 test('a spent budget fails the run closed rather than reporting a verdict', async () => {
   const script = { 'step:resolve': resolved(), 'step:start': pending([lens()]), lens: writes(FINDINGS), 'step:submit:1': done() }
   await assert.rejects(runEngine('review', { args: {}, script, budgetTotal: CALL_SPEND * 2 }), /budget exhausted/)
