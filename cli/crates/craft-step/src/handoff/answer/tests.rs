@@ -3,6 +3,7 @@ use super::*;
 fn aside_of(dir: &Path, stem: &str) -> Aside {
     Aside(vec![Marked {
         id: "t".into(),
+        known: false,
         from: dir.join("t.json"),
         dir: dir.to_owned(),
         stem: stem.into(),
@@ -39,7 +40,7 @@ fn every_name_taken_leaves_the_file_and_says_so() {
     fs::write(dir.join("t.json"), "new").unwrap();
     let failed = aside_of(dir, "t.rejected-0").apply();
     assert!(
-        matches!(failed.as_slice(), [Unmoved { id, error: HandoffError::Unmovable { path, .. } }] if id == "t" && *path == dir.join("t.json")),
+        matches!(failed.as_slice(), [Unmoved { id, error: HandoffError::Unmovable { path, .. }, .. }] if id == "t" && *path == dir.join("t.json")),
         "{failed:?}"
     );
     assert_eq!(fs::read_to_string(dir.join("t.json")).unwrap(), "new");

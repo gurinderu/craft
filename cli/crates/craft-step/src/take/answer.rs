@@ -38,27 +38,25 @@ pub fn take_answer<K: Kind>(
     };
     // The very file whose refusal the state already counts, left in place by a set-aside cut off
     // or failed after the save: moved aside now, its task as the state left it, its agent not
-    // read as alive; found there yet again, no new answer came, and it counts as a missing one.
+    // read as alive; found there yet again, no new answer came, and it counts as a missing one —
+    // but on a resume or the host's limit, whose round no agent ran, it waits uncounted.
     match recount(task, print.as_deref()) {
         Recount::New => {}
         Recount::Again(at) => {
-            aside.mark_at(dir, task, at)?;
+            aside.mark_at(dir, task, at, true)?;
             return Ok(false);
         }
         Recount::Missing(at) => {
-            aside.mark_at(dir, task, at)?;
+            aside.mark_at(dir, task, at, true)?;
+            if hold != Hold::Nothing {
+                return Ok(false);
+            }
             let path = handoff::answer_file(dir, &task.id)?;
             task.error = Some(format!(
                 "no new answer was written: {} still holds the answer refused before, which could not be set aside",
                 path.display()
             ));
             task.refused = None;
-            // Not one of a resume's agents never run: the file is there, so it is counted.
-            let hold = if hold == Hold::Missing {
-                Hold::Nothing
-            } else {
-                hold
-            };
             return Ok(refused(task, hold, false));
         }
     }
@@ -97,9 +95,10 @@ pub fn take_answer<K: Kind>(
         }
     }
     if given.is_none() {
-        aside.mark(dir, task)?;
         // A read with no file to print keeps the last one counted: a file written anew never
         // matches it, and one still in place is not taken as new.
+        let known = print.is_some();
+        aside.mark_at(dir, task, task.retries, known)?;
         if let Some(print) = print {
             task.counted = Some(Counted {
                 print,

@@ -183,27 +183,37 @@ fn a_refusal_given_by_the_host_keeps_the_counted_file() {
 }
 
 #[test]
-fn a_resume_counts_a_counted_file_found_there_again() {
+fn a_resume_holds_a_counted_file_found_there_again_and_the_next_round_counts_it() {
     let (d, _answers) = answers_with("{}");
     let mut tasks = [task()];
     take_unmoved(d.path(), &mut tasks);
-    let mut seen = Vec::new();
-    for _ in 0..10 {
-        if !tasks[0].pending() {
-            break;
-        }
+    let resume = |tasks: &mut [Task<Plain>]| {
         let mut aside = Aside::default();
-        take_pending(d.path(), &mut tasks, None, Hold::Missing, &mut aside).unwrap();
+        let live = take_pending(d.path(), tasks, None, Hold::Missing, &mut aside).unwrap();
         drop(aside);
-        seen.push(tasks[0].retries);
+        live
+    };
+    let mut seen = Vec::new();
+    for _ in 0..3 {
+        assert!(!resume(&mut tasks));
+        seen.push((tasks[0].retries, tasks[0].counted.clone().unwrap().again));
     }
-    assert_eq!(tasks[0].state, TaskState::Failed, "{seen:?}");
     assert_eq!(
         seen,
-        [1, 2, 2],
-        "read again free, then counted, not reset by the resume"
+        [(1, true), (1, true), (1, true)],
+        "no resume, its round unrun, spends a retry"
     );
-    assert!(tasks[0].counted.is_some());
+    assert_eq!(tasks[0].state, TaskState::Pending);
+    // A round that ran and left the same file there counts it as a missing answer.
+    take_unmoved(d.path(), &mut tasks);
+    assert_eq!(tasks[0].retries, 2);
+    assert!(
+        tasks[0]
+            .error
+            .as_deref()
+            .unwrap()
+            .contains("no new answer was written")
+    );
 }
 
 #[test]

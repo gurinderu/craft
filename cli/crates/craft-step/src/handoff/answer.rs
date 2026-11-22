@@ -117,6 +117,7 @@ pub struct Aside(Vec<Marked>);
 #[derive(Debug)]
 struct Marked {
     id: String,
+    known: bool,
     from: PathBuf,
     dir: PathBuf,
     stem: String,
@@ -126,6 +127,8 @@ struct Marked {
 #[derive(Debug)]
 pub struct Unmoved {
     pub id: String,
+    /// The file is the one its task's `counted` names ([`Aside::mark_at`]).
+    pub known: bool,
     pub error: HandoffError,
 }
 
@@ -135,10 +138,11 @@ impl Aside {
     /// # Errors
     /// When the task's id cannot be a file name.
     pub fn mark<K: Kind>(&mut self, dir: &Path, task: &Task<K>) -> Result<(), HandoffError> {
-        self.mark_at(dir, task, task.retries)
+        self.mark_at(dir, task, task.retries, false)
     }
 
-    /// Marks `task`'s answer file to be set aside as refused at `retries`.
+    /// Marks `task`'s answer file to be set aside as refused at `retries`; `known`, it is the
+    /// file `task.counted` names, so read again in place it is known by its print.
     ///
     /// # Errors
     /// When the task's id cannot be a file name.
@@ -147,9 +151,11 @@ impl Aside {
         dir: &Path,
         task: &Task<K>,
         retries: u32,
+        known: bool,
     ) -> Result<(), HandoffError> {
         self.0.push(Marked {
             id: task.id.clone(),
+            known,
             from: answer_file(dir, &task.id)?,
             dir: answers_dir(dir),
             stem: format!("{}.rejected-{retries}", safe(&task.id)?),
@@ -166,7 +172,11 @@ impl Aside {
             .into_iter()
             .filter_map(|m| {
                 let error = move_aside(&m.from, &m.dir, &m.stem).err()?;
-                Some(Unmoved { id: m.id, error })
+                Some(Unmoved {
+                    id: m.id,
+                    known: m.known,
+                    error,
+                })
             })
             .collect()
     }

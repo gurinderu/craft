@@ -359,33 +359,45 @@ fn save_and_next_with(
 /// be moved stays where its agent wrote it, and the run notes it, saved again with `save`.
 ///
 /// # Errors
-/// When that second save fails: the submit fails loudly, and submitted again it reads each file
-/// left in place as the refusal already counted (`Task::counted`), never counting it twice.
+/// When that second save fails while the run goes on with a pending task's file left in place:
+/// the submit fails loudly, and the file, read again by the next submit, is known by its print
+/// (`Task::counted`) — set aside uncounted, and found there once more counted as a missing answer
+/// only after a round that ran (a resume holds it). Once the run is done or stopped, or only
+/// settled tasks' files stay, the note is information alone: a failed save of it is let go, so
+/// the finished or stopped step is still returned and filed.
 fn set_aside(dir: &Path, run: &mut RunState, aside: Aside, save: Save<'_>) -> Result<(), Error> {
     let unmoved = aside.apply();
     if unmoved.is_empty() {
         return Ok(());
     }
     let notes: Vec<String> = unmoved.iter().map(|u| unmoved_note(run, u)).collect();
+    let goes_on = run.stopped.is_none() && unmoved.iter().any(|u| pending(run, &u.id).is_some());
     take::note(&mut run.notes, &notes);
-    save(dir, run)?;
-    Ok(())
+    match save(dir, run) {
+        Err(e) if goes_on => Err(e.into()),
+        Ok(()) | Err(_) => Ok(()),
+    }
+}
+
+/// The task `id` while the run still waits for its answer.
+fn pending<'a>(run: &'a RunState, id: &str) -> Option<&'a state::Task> {
+    run.tasks
+        .iter()
+        .find(|t| t.id == id)
+        .filter(|t| run.phase != Phase::Done && t.pending())
 }
 
 /// The run's note on a refused answer file `u` left in place, saying what its next read does.
 fn unmoved_note(run: &RunState, u: &craft_step::Unmoved) -> String {
-    let task = run
-        .tasks
-        .iter()
-        .find(|t| t.id == u.id)
-        .filter(|t| run.phase != Phase::Done && t.pending());
-    let then = match task.map(|t| t.counted.as_ref().map(|c| c.again)) {
+    let then = match pending(run, &u.id) {
         None => "its task is settled, so it stays there",
-        Some(None) => "read again, it is taken as a new answer",
-        Some(Some(false)) => {
-            "read again, it is set aside uncounted, and found there once more it counts as a missing answer"
+        Some(_) if !u.known => "read again, it is taken as a new answer",
+        Some(t) if t.counted.as_ref().is_some_and(|c| c.again) => {
+            "found there again after a round that ran, it counts as a missing answer"
         }
-        Some(Some(true)) => "found there again, it counts as a missing answer",
+        Some(_) => {
+            "read again, it is set aside uncounted, and found there once more after a round that ran it counts as a missing answer"
+        }
     };
     format!("{}: left in place; {then}", crate::sources::chain(&u.error))
 }
