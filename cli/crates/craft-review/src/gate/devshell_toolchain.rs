@@ -1,15 +1,18 @@
 //! Whether the flake's dev shell enters and its clippy is its rustc's. `nix develop` keeps the
 //! caller's PATH behind the shell's, so a shell with cargo and rustc but no clippy runs the host's
-//! `cargo-clippy`: a clippy-driver built for another rustc fails the workspace's crates against
-//! the dependencies the shell's rustc built (E0514), which would read as a red gate. Both report
-//! their versions inside the shell — `clippy 0.1.N (<commit> <date>)` and
-//! `rustc 1.N.P (<commit> <date>)` — and must name the same release, and the same commit and date
-//! where both print them.
+//! `cargo-clippy`: a clippy-driver of another rustc fails the workspace's crates against the
+//! dependencies the shell's rustc built (E0514, which compares the whole version string, so one
+//! release built twice differs — nixpkgs' rustc says `(built from a source tarball)`, rustup's
+//! does not). Each names the toolchain it belongs to by its sysroot: `clippy-driver --print
+//! sysroot` and `rustc --print sysroot`, inside the shell, must be the same directory. Observed
+//! with nixpkgs' rustc 1.99.1 beside rustup's clippy (two sysroots) and beside nixpkgs' clippy
+//! (one).
 
+use std::path::Path;
 use std::time::Duration;
 
 use super::check::Cx;
-use super::devshell::{inside, named};
+use super::devshell::{inside, named, why};
 use super::runner::Ran;
 
 /// How long entering the dev shell may take: its first entry builds it.
@@ -23,16 +26,16 @@ const NO_CLIPPY: [&str; 2] = [
 
 /// Why the dev shell is not one clippy runs in.
 pub(super) enum Fault {
-    /// A call into the dev shell came to nothing: the command, as named, and what came of it.
+    /// Entering the dev shell came to nothing: the command, as named, and what came of it.
     Ran { cmd: String, ran: Ran },
-    /// It has no clippy of its rustc's toolchain: what each said.
+    /// It has no clippy of its rustc's toolchain: what was seen.
     NoClippy(String),
 }
 
 /// Enters the dev shell and checks its clippy is its rustc's.
 pub(super) fn toolchain(cx: &Cx<'_>) -> Result<(), Fault> {
-    let clippy = version(cx, "cargo", &["clippy", "--version"]);
-    let clippy = match clippy {
+    let clippy = match first_line(cx, "cargo", &["clippy", "--version"]) {
+        Ok(v) => v,
         Err(Fault::Ran {
             ran: Ran::Exited { ok: false, err, .. },
             ..
@@ -41,20 +44,39 @@ pub(super) fn toolchain(cx: &Cx<'_>) -> Result<(), Fault> {
                 "`cargo clippy --version`: not installed".into(),
             ));
         }
-        other => other?,
+        Err(e) => return Err(e),
     };
-    let rustc = version(cx, "rustc", &["--version"])?;
-    if same_toolchain(&clippy, &rustc) {
-        Ok(())
-    } else {
-        Err(Fault::NoClippy(format!(
-            "`cargo clippy --version`: {clippy}; `rustc --version`: {rustc}"
-        )))
+    // The shell entered: what fails from here is its toolchain's.
+    let driver = first_line(cx, "clippy-driver", &["--print", "sysroot"]).map_err(seen)?;
+    let rustc = first_line(cx, "rustc", &["--print", "sysroot"]).map_err(seen)?;
+    if !driver.is_empty() && same_dir(&driver, &rustc) {
+        return Ok(());
+    }
+    let version = first_line(cx, "rustc", &["--version"]).unwrap_or_else(|f| match f {
+        Fault::Ran { ran, .. } => why(&ran),
+        Fault::NoClippy(s) => s,
+    });
+    Err(Fault::NoClippy(format!(
+        "clippy's sysroot {driver}, rustc's {rustc}; `cargo clippy --version`: {clippy}; `rustc --version`: {version}"
+    )))
+}
+
+/// A call into the entered shell that came to nothing, as what was seen.
+fn seen(f: Fault) -> Fault {
+    match f {
+        Fault::Ran { cmd, ran } => Fault::NoClippy(format!("{cmd}: {}", why(&ran))),
+        f @ Fault::NoClippy(_) => f,
     }
 }
 
+/// Whether two sysroots are one directory.
+fn same_dir(a: &str, b: &str) -> bool {
+    let real = |p: &str| std::fs::canonicalize(Path::new(p)).ok();
+    a == b || real(a).is_some_and(|r| Some(r) == real(b))
+}
+
 /// The first line `program args` prints inside the dev shell.
-fn version(cx: &Cx<'_>, program: &str, args: &[&str]) -> Result<String, Fault> {
+fn first_line(cx: &Cx<'_>, program: &str, args: &[&str]) -> Result<String, Fault> {
     let ran = cx
         .runner
         .run_within(cx.top, "nix", &inside(program, args), ENTRY_MAX);
@@ -67,36 +89,4 @@ fn version(cx: &Cx<'_>, program: &str, args: &[&str]) -> Result<String, Fault> {
             })
         }
     }
-}
-
-/// Whether `clippy` (`clippy 0.1.N …`) and `rustc` (`rustc 1.N.P …`) name one toolchain.
-pub(super) fn same_toolchain(clippy: &str, rustc: &str) -> bool {
-    let (Some((cv, cid)), Some((rv, rid))) = (parse(clippy, "clippy"), parse(rustc, "rustc"))
-    else {
-        return false;
-    };
-    let release = |v: &str, at: usize| {
-        v.split('-')
-            .next()
-            .and_then(|v| v.split('.').nth(at))
-            .map(str::to_owned)
-    };
-    if release(cv, 2).is_none() || release(cv, 2) != release(rv, 1) {
-        return false;
-    }
-    match (cid, rid) {
-        (Some((ch, cd)), Some((rh, rd))) => cd == rd && (ch.starts_with(rh) || rh.starts_with(ch)),
-        _ => true,
-    }
-}
-
-/// The version and, when printed, the `(<commit> <date>)` of `<name> <version> (<commit> <date>)`.
-fn parse<'a>(line: &'a str, name: &str) -> Option<(&'a str, Option<(&'a str, &'a str)>)> {
-    let rest = line.trim().strip_prefix(name)?.strip_prefix(' ')?;
-    let (version, rest) = rest.split_once(' ').unwrap_or((rest, ""));
-    let id = rest
-        .strip_prefix('(')
-        .and_then(|r| r.split_once(')'))
-        .and_then(|(id, _)| id.split_once(' '));
-    Some((version, id))
 }

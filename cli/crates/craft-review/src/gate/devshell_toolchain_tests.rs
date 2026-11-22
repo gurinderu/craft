@@ -1,47 +1,21 @@
-//! The dev shell's clippy against its rustc: a clippy of another toolchain, or none, is a named
-//! unknown before any build, never the red a host clippy-driver's E0514 would give.
+//! The dev shell's clippy against its rustc, by sysroot: a clippy of another toolchain, or none,
+//! is a named unknown before any build; and an E0514 from clippy, in a shell or out of one, is a
+//! toolchain mismatch, unknown, never the red it would read as.
 
 use super::Status;
-use super::devshell_tests::{LABEL, World, gate_of, world};
-use super::devshell_toolchain::same_toolchain;
+use super::devshell_tests::{LABEL, NIXPKGS_RUSTC, World, gate_of, world};
 
 #[test]
-fn clippy_and_rustc_of_one_toolchain_match() {
-    let stable = "rustc 1.99.0 (b940084d7 2026-09-28)";
-    assert!(same_toolchain(
-        "clippy 0.1.99 (b940084d7e 2026-09-28)",
-        stable
-    ));
-    assert!(same_toolchain(
-        "clippy 0.1.100-nightly (0123abcd 2026-11-01)",
-        "rustc 1.100.0-nightly (0123abcd9 2026-11-01)"
-    ));
-    // A build that prints no commit is held to its release alone.
-    assert!(same_toolchain(
-        "clippy 0.1.85",
-        "rustc 1.85.1 (4eb161250 2025-03-15)"
-    ));
-    for other in [
-        "clippy 0.1.98 (b940084d7e 2026-09-28)",
-        "clippy 0.1.99 (ffff00000 2026-09-28)",
-        "clippy 0.1.99 (b940084d7e 2026-09-29)",
-        "clippy 0.1.9 (b940084d7e 2026-09-28)",
-        "",
-        "error: something",
-    ] {
-        assert!(!same_toolchain(other, stable), "{other}");
-    }
-    assert!(!same_toolchain("clippy 0.1.99", ""));
+fn nixpkgs_clippy_beside_nixpkgs_rustc_shares_its_sysroot_and_runs() {
+    let r = gate_of(&world());
+    assert_eq!(r.track().status, Status::Pass, "{:?}", r.gate);
+    assert_eq!(r.cargo.lines().count(), 3, "{}", r.cargo);
 }
 
-/// The gate where the dev shell's clippy answers `clippy` and its rustc `rustc`: unknown, not red,
-/// no clippy run, the reason named.
-fn not_its_rustc(clippy: &str, rustc: &str, seen: &str) {
-    let r = gate_of(&World {
-        clippy,
-        rustc,
-        ..world()
-    });
+/// The gate where the dev shell's clippy answers as `w` gives: unknown, not red, no clippy run,
+/// the reason and each of `seen` named.
+fn not_its_rustc(w: &World<'_>, seen: &[&str]) {
+    let r = gate_of(w);
     let t = r.track();
     assert_eq!(t.status, Status::Unknown, "{:?}", r.gate);
     assert!(t.failed_checks.is_empty(), "not red: {t:?}");
@@ -64,31 +38,71 @@ fn not_its_rustc(clippy: &str, rustc: &str, seen: &str) {
     );
     let notes = r.notes();
     assert!(
-        notes.contains("no clippy matching its rustc")
-            && notes.contains("E0514")
-            && notes.contains(seen)
-            && notes.contains("clippy did not run"),
+        notes.contains("no clippy matching its rustc") && notes.contains("clippy did not run"),
         "{notes}"
     );
+    for s in seen {
+        assert!(notes.contains(s), "{s}: {notes}");
+    }
 }
 
 #[test]
-fn a_dev_shell_with_another_toolchains_clippy_is_a_named_unknown() {
-    let host = "echo 'clippy 0.1.99 (b940084d7e 2026-09-28)'; exit 0";
-    let shell = "echo 'rustc 1.85.0 (4d91de4e4 2025-02-17)'";
+fn rustups_clippy_of_the_same_release_beside_nixpkgs_rustc_is_a_named_unknown() {
+    // The pair a version comparison passes and E0514 refuses: one release, two builds.
     not_its_rustc(
-        host,
-        shell,
-        "`rustc --version`: rustc 1.85.0 (4d91de4e4 2025-02-17)",
+        &World {
+            clippy: "echo 'clippy 0.1.99 (58cf8f9c35 2026-10-13)'; exit 0",
+            driver: Some("echo /home/u/.rustup/toolchains/1.99.1-x86_64-unknown-linux-gnu"),
+            rustc: NIXPKGS_RUSTC,
+            ..world()
+        },
+        &[
+            "clippy's sysroot /home/u/.rustup/toolchains/1.99.1-x86_64-unknown-linux-gnu",
+            "rustc's /nix/store/r-rustc-1.99.1",
+            "`cargo clippy --version`: clippy 0.1.99 (58cf8f9c35 2026-10-13)",
+            "`rustc --version`: rustc 1.99.1 (58cf8f9c3 2026-10-13) (built from a source tarball)",
+        ],
     );
 }
 
 #[test]
-fn a_dev_shell_and_host_with_no_clippy_is_a_named_unknown() {
-    let none = "echo 'error: no such command: `clippy`' >&2; exit 101";
+fn a_dev_shell_with_no_clippy_or_no_clippy_driver_is_a_named_unknown() {
     not_its_rustc(
-        none,
-        "echo 'rustc 1.99.0 (b940084d7 2026-09-28)'",
-        "not installed",
+        &World {
+            clippy: "echo 'error: no such command: `clippy`' >&2; exit 101",
+            ..world()
+        },
+        &["`cargo clippy --version`: not installed"],
     );
+    not_its_rustc(
+        &World {
+            driver: None,
+            ..world()
+        },
+        &["clippy-driver --print sysroot`: exit 127"],
+    );
+}
+
+/// What clippy prints of a crate another rustc built, as clippy 0.1.99 over nixpkgs' rustc 1.99.1
+/// was observed to, and its exit.
+const E0514: &str = r#"printf '%s\n' '{"reason":"compiler-message","manifest_path":"Cargo.toml","message":{"level":"error","code":{"code":"E0514"},"message":"found crate `dep` compiled by an incompatible version of rustc","spans":[{"file_name":"src/lib.rs","line_start":1,"is_primary":true}]}}'; exit 101"#;
+
+#[test]
+fn an_e0514_from_clippy_is_a_toolchain_mismatch_not_a_red_gate() {
+    for files in [&[][..], &["flake.nix"][..]] {
+        let r = gate_of(&World {
+            files,
+            build: E0514,
+            ..world()
+        });
+        let t = r.track();
+        assert_eq!(t.status, Status::Unknown, "{:?}", r.gate);
+        assert!(t.failed_checks.is_empty(), "not red: {t:?}");
+        assert!(r.gate.exit().is_none());
+        assert!(
+            t.provenance.contains("`: toolchain mismatch: E0514"),
+            "{t:?}"
+        );
+        assert!(r.notes().contains("not a failure"), "{}", r.notes());
+    }
 }

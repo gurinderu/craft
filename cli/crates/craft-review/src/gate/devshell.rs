@@ -6,7 +6,7 @@
 //! always did; only a flake's dev shell is entered, never `.envrc` or `shell.nix` alone. The dev
 //! shell runs the flake's own `shellHook` too: one more piece of the branch's code the gate runs,
 //! so `--no-gate` skips it with the rest. It is probed once per gate, over the one head the gate
-//! reviews, and entered only when its clippy is its rustc's (`gate/devshell_toolchain.rs`).
+//! reviews, and entered only when its clippy is its rustc's, by sysroot (`gate/devshell_toolchain.rs`).
 
 use std::time::Duration;
 
@@ -161,7 +161,7 @@ fn probe(cx: &Cx<'_>, acc: &mut Acc) -> bool {
 }
 
 /// Why a nix call came to nothing, in one line.
-fn why(ran: &Ran) -> String {
+pub(super) fn why(ran: &Ran) -> String {
     match ran {
         Ran::Exited { code, err, .. } => format!(
             "exit {}, {}",

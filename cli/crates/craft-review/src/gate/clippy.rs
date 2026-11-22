@@ -34,6 +34,10 @@ impl Package {
 /// Why a lockfile cargo would update leaves the build unknown in craft's own worktree of a PR.
 const LOCKED: &str = "the review ran in craft's own worktree of the PR, shared by every run on its head, so clippy ran `--locked` and wrote no tracked file there: the PR's Cargo.lock is not up to date with its manifests";
 
+/// The error of a crate built by another rustc than the one reading it: a clippy-driver of another
+/// toolchain than the build's, never the change's.
+const MISMATCH: &str = "E0514";
+
 /// At most this many red diagnostics are listed per package.
 const ERRORS_MAX: usize = 5;
 
@@ -181,6 +185,15 @@ pub(super) fn gate_check(cx: &Cx<'_>, acc: &mut Acc, package: &Package, shell: S
         return Status::Unknown;
     };
     let red: Vec<&Diag> = all.iter().filter(|d| d.level == "error").collect();
+    if red.iter().any(|d| d.code == MISMATCH) {
+        acc.unbuilt = true;
+        acc.parts
+            .push(format!("{label}: toolchain mismatch: {MISMATCH}"));
+        acc.notes.push(format!(
+            "{label} failed with {MISMATCH}, a crate built by another rustc: clippy's driver is not the build's rustc — this machine's toolchain, not the change — so the build signal is unknown, not a failure"
+        ));
+        return Status::Unknown;
+    }
     if !red.is_empty() {
         acc.parts.push(format!("{label}: red"));
         for d in red.iter().take(ERRORS_MAX) {

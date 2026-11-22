@@ -42,12 +42,15 @@ impl Ran {
 }
 
 /// The machine and checkout a gate runs on: the files beside the package, a stand-in nix's
-/// answers to `eval` and `develop` (`None`: no nix on the PATH), what `cargo clippy --version`
-/// and `rustc --version` run, and the budget.
+/// answers to `eval` and `develop` (`None`: no nix on the PATH), what `cargo clippy --version`,
+/// any other cargo call, `clippy-driver` and `rustc` run (`None`: no clippy-driver), and the
+/// budget.
 pub(super) struct World<'a> {
     pub files: &'a [&'a str],
     pub nix: Option<(&'a str, &'a str)>,
     pub clippy: &'a str,
+    pub build: &'a str,
+    pub driver: Option<&'a str>,
     pub rustc: &'a str,
     pub budget: Duration,
 }
@@ -55,13 +58,21 @@ pub(super) struct World<'a> {
 pub(super) const HAS_SHELL: &str = "echo true";
 pub(super) const ENTERS: &str = ":";
 
-/// A flake with a default dev shell that enters, its clippy its rustc's.
+/// nixpkgs' rustc 1.99.1 as it answers: its sysroot, and its version with nixpkgs' suffix.
+pub(super) const NIXPKGS_RUSTC: &str = r#"case "$*" in
+  "--print sysroot") echo /nix/store/r-rustc-1.99.1 ;;
+  *) echo 'rustc 1.99.1 (58cf8f9c3 2026-10-13) (built from a source tarball)' ;;
+esac"#;
+
+/// A flake with a default dev shell that enters, its clippy nixpkgs' own beside nixpkgs' rustc.
 pub(super) fn world() -> World<'static> {
     World {
         files: &["flake.nix"],
         nix: Some((HAS_SHELL, ENTERS)),
-        clippy: "echo 'clippy 0.1.99 (b940084d7e 2026-09-28)'; exit 0",
-        rustc: "echo 'rustc 1.99.0 (b940084d7 2026-09-28)'",
+        clippy: "echo 'clippy 0.1.99'; exit 0",
+        build: "exit 0",
+        driver: Some("echo /nix/store/r-rustc-1.99.1"),
+        rustc: NIXPKGS_RUSTC,
         budget: Duration::from_secs(30),
     }
 }
@@ -81,12 +92,16 @@ pub(super) fn gate_of(w: &World<'_>) -> Ran {
         tool(tools.path(), "nix", &nix(&nix_log, eval, develop));
     }
     let cargo = format!(
-        "echo \"$*\" >> '{}'\ncase \"$*\" in \"clippy --version\") {} ;; esac\nexit 0",
+        "echo \"$*\" >> '{}'\ncase \"$*\" in \"clippy --version\") {} ;; *) {} ;; esac",
         cargo_log.display(),
-        w.clippy
+        w.clippy,
+        w.build
     );
     tool(tools.path(), "cargo", &cargo);
     tool(tools.path(), "rustc", w.rustc);
+    if let Some(driver) = w.driver {
+        tool(tools.path(), "clippy-driver", driver);
+    }
     let run_dir = tempfile::tempdir().unwrap();
     let (gate, _) = run(
         repo.path(),
@@ -118,8 +133,8 @@ fn a_default_dev_shell_for_this_system_runs_cargo_inside_it() {
     let nix: Vec<&str> = r.nix.lines().collect();
     assert_eq!(
         nix.len(),
-        5,
-        "probe, clippy and rustc versions, two clippy runs: {}",
+        6,
+        "probe, clippy, both sysroots, two clippy runs: {}",
         r.nix
     );
     assert!(
@@ -129,10 +144,11 @@ fn a_default_dev_shell_for_this_system_runs_cargo_inside_it() {
         nix[0]
     );
     assert_eq!(nix[1], format!("{DEVELOP} cargo clippy --version"));
-    assert_eq!(nix[2], format!("{DEVELOP} rustc --version"));
+    assert_eq!(nix[2], format!("{DEVELOP} clippy-driver --print sysroot"));
+    assert_eq!(nix[3], format!("{DEVELOP} rustc --print sysroot"));
     let clippy = format!("{DEVELOP} cargo clippy --manifest-path Cargo.toml --all-targets");
-    assert!(nix[3].starts_with(&clippy), "{}", nix[3]);
-    assert!(nix[4].contains("clippy::pedantic"), "{}", nix[4]);
+    assert!(nix[4].starts_with(&clippy), "{}", nix[4]);
+    assert!(nix[5].contains("clippy::pedantic"), "{}", nix[5]);
     assert_eq!(
         r.cargo.lines().count(),
         3,
