@@ -66,7 +66,22 @@ export const telemetryOf = v => ({
   dimensions: Array.isArray(v['dimensions']) ? v['dimensions'].filter(isObject) : [],
   verification: isObject(v['verification']) ? v['verification'] : null,
   lensRounds: Array.isArray(v['lensRounds']) ? v['lensRounds'].filter(isObject) : null,
+  ...roundYieldOf(v),
 })
+
+/**
+ * What the lens rounds' yield leaves beside them (realm @nick/craft, node #248): the seeds' yield, the other origins'
+ * and their confirmed count, null when the binary sent none.
+ * @param {Record<string, unknown>} v
+ */
+const roundYieldOf = v => {
+  const n = v['unattributedConfirmed']
+  return {
+    seedYield: isObject(v['seedYield']) ? v['seedYield'] : null,
+    unattributedYield: isObject(v['unattributedYield']) ? v['unattributedYield'] : null,
+    unattributedConfirmed: typeof n === 'number' && Number.isFinite(n) ? n : null,
+  }
+}
 
 /** One row of the binary's ledger, its fields as strings and its line a number. @param {Record<string, unknown>} r @returns {LedgerRow} */
 const ledgerRowOf = r => ({

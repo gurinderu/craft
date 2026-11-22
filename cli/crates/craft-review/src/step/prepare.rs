@@ -121,7 +121,10 @@ pub(super) fn prepare(
         Some((gate, seeds)) => {
             // A red gate ends the run before any lens: its seeds are no one's to read.
             if gate.exit().is_none() {
-                run.rounds.pool = seeds;
+                run.rounds.pool = seeds
+                    .into_iter()
+                    .map(|f| crate::dedup::stamped(f, crate::dedup::GATE, None))
+                    .collect();
             }
             run.gate = gate;
         }

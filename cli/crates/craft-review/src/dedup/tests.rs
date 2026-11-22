@@ -4,7 +4,8 @@ use super::*;
 
 fn f(sev: &str, source: &str, title: &str, line: u32) -> Value {
     json!({"severity": sev, "title": title, "file": "src/a.rs", "line": line, "why": "w", "source": source,
-           "ruleId": "", "whereChecked": "", "foundInRound": line % 2 + 1, "profile": "rust"})
+           "ruleId": "", "whereChecked": "", "foundInRound": line % 2 + 1, "profile": "rust",
+           "foundBy": "lens", "lensRound": line % 2 + 1})
 }
 
 #[test]
@@ -38,6 +39,11 @@ fn a_rule_flood_is_rolled_up_past_three_worst_first() {
         out[4]["foundInRound"], 1,
         "the earliest round of what it folds"
     );
+    assert_eq!(
+        out[4]["foundInRounds"],
+        json!([1, 2]),
+        "every round it folds"
+    );
 }
 
 #[test]
@@ -62,6 +68,11 @@ fn same_spot_and_model_groups_merge_as_one_component() {
             .ends_with("(same defect also reported by: errors, tests)")
     );
     assert_eq!(m["foundInRound"], 1);
+    assert_eq!(
+        m["foundInRounds"],
+        json!([1, 2]),
+        "the rounds its members were raised in"
+    );
     let (same, n) = merge(&pool, None);
     assert_eq!(
         (same.len(), n),
