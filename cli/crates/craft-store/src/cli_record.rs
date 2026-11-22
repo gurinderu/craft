@@ -225,6 +225,15 @@ pub fn cli_record(step: &Obj, stats: Obj, at: &At<'_>) -> Obj {
     if let Some(rounds) = objects(step.get("lensRounds")) {
         r.set("lensRounds", Js::Arr(rounds));
     }
+    for k in ["seedYield", "unattributedYield"] {
+        if let Some(o) = is_obj(step.get(k)) {
+            r.set(k, Js::Obj(o.clone()));
+        }
+    }
+    let unattributed = step.get("unattributedConfirmed").and_then(Js::as_num);
+    if let Some(n) = unattributed.filter(|n| n.is_finite()) {
+        r.set("unattributedConfirmed", Js::Num(n));
+    }
     r.set("runtimeStats", Js::Obj(stats));
     r.set("memory", obj_or_null(step.get("memory")));
     r.set("strict", Js::Bool(at.strict));

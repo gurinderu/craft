@@ -3,6 +3,7 @@
 //! defect differently, a deterministic pass groups those at one `file:line` with near-identical
 //! titles, and each connected component of both merges into one finding.
 
+mod found;
 mod merge;
 
 use serde_json::{Value, json};
@@ -10,6 +11,7 @@ use serde_json::{Value, json};
 use crate::harm::{raise_path_floor, raise_weak_floor};
 use crate::profile::Profile;
 
+pub(crate) use found::{GATE, LENS, stamped, with_rounds};
 pub(crate) use merge::merge;
 
 /// At most this many findings of one roll-up rule from one lens are kept as they are, as
@@ -27,18 +29,6 @@ pub(crate) fn sev_rank(f: &Value) -> usize {
 
 fn text<'a>(f: &'a Value, k: &str) -> &'a str {
     f.get(k).and_then(Value::as_str).unwrap_or("")
-}
-
-/// `f` as the merge of `members`: first found when the earliest of them was.
-pub(crate) fn with_earliest_round(mut f: Value, members: &[&Value]) -> Value {
-    let earliest = members
-        .iter()
-        .filter_map(|m| m.get("foundInRound").and_then(Value::as_u64))
-        .min();
-    if let (Some(r), Some(obj)) = (earliest, f.as_object_mut()) {
-        obj.insert("foundInRound".into(), json!(r));
-    }
-    f
 }
 
 /// Whether `f`'s rule is one its profile rolls up.
@@ -121,7 +111,7 @@ fn rolled_up(mut g: Vec<Value>) -> Vec<Value> {
         if folded.len() > 6 { ", …" } else { "" }
     )));
     let members: Vec<&Value> = folded.iter().collect();
-    g.push(with_earliest_round(Value::Object(one), &members));
+    g.push(with_rounds(Value::Object(one), &members));
     g
 }
 

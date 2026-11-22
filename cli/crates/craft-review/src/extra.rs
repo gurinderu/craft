@@ -151,6 +151,7 @@ pub(crate) fn take(extra: &mut Extra, tasks: &[Task], first: &str) {
             f.insert("source".into(), Value::String(format!("extra:{agent}")));
             f.insert("profile".into(), Value::String(first.to_owned()));
             f.insert("foundInRound".into(), Value::from(1));
+            f.insert("foundBy".into(), Value::from("extra"));
             extra.found.push(Value::Object(f));
         }
     }

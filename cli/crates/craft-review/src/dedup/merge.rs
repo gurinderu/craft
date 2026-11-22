@@ -8,7 +8,7 @@ use std::collections::BTreeSet;
 
 use serde_json::{Map, Value, json};
 
-use super::{sev_rank, text, with_earliest_round};
+use super::{sev_rank, text, with_rounds};
 use crate::harm::floor_note;
 use crate::harm::raise::group_claims;
 
@@ -228,7 +228,7 @@ fn merged_group(members: &[&Value]) -> Value {
     out.insert("sources".into(), Value::Array(sources));
     out.insert("whereChecked".into(), json!(checked.join("; ")));
     out.insert("why".into(), json!(why));
-    with_earliest_round(Value::Object(out), members)
+    with_rounds(Value::Object(out), members)
 }
 
 /// The pool with each same-defect component merged into one finding: the model's `groups`

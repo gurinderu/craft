@@ -145,7 +145,7 @@ fn lens_rounds(run: &std::path::Path) {
     );
     assert_eq!(
         st["rounds"][1],
-        json!({"round": 2, "agents": 4, "returned": 4, "newFindings": 0})
+        json!({"round": 2, "agents": 4, "returned": 4, "newFindings": 0, "raw": 1})
     );
 }
 
@@ -256,6 +256,7 @@ fn a_full_run_goes_scout_lenses_two_rounds_dedup_verify_done() {
 /// in review's record shape: a row per planned lens, the merged High under the lens that kept it.
 #[expect(
     clippy::indexing_slicing,
+    clippy::unwrap_used,
     reason = "a step of the test above, failing loudly like it"
 )]
 fn finished_telemetry(s: &Value) {
@@ -280,9 +281,49 @@ fn finished_telemetry(s: &Value) {
         json!({"candidates": 2, "confirmed": 1, "refuteRate": 0.5, "unverified": 1, "thinned": 0,
                "suspected": 0, "refuted": 1, "votes": {"sent": 3, "returned": 3}})
     );
+    // Round 1's four raw findings dedup to three, one confirmed (a High); round 2's one copy adds
+    // none; no seed, extra or critic finding, so the rounds hold every confirmed one.
+    let pick = |r: &Value| {
+        let keys = [
+            "round",
+            "raw",
+            "newUnique",
+            "confirmed",
+            "confirmedMediumPlus",
+            "suspected",
+        ];
+        keys.map(|k| r[k].clone())
+    };
+    let rows: Vec<_> = s["lensRounds"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(pick)
+        .collect();
     assert_eq!(
-        s["lensRounds"][0],
-        json!({"round": 1, "agents": 4, "returned": 4, "newFindings": 4})
+        rows,
+        [
+            [1, 4, 3, 1, 1, 0].map(|n| json!(n)),
+            [2, 1, 0, 0, 0, 0].map(|n| json!(n))
+        ]
+    );
+    assert_eq!(s["lensRounds"][0]["confirmedBySeverity"]["High"], 1);
+    assert_eq!(
+        (&s["seedYield"]["unique"], &s["unattributedConfirmed"]),
+        (&json!(0), &json!(0))
+    );
+    let in_rounds: u64 = s["lensRounds"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|r| r["confirmed"].as_u64())
+        .sum();
+    let apart = s["seedYield"]["confirmed"].as_u64().unwrap()
+        + s["unattributedConfirmed"].as_u64().unwrap();
+    assert_eq!(
+        Some(in_rounds + apart),
+        s["verification"]["confirmed"].as_u64(),
+        "the rounds, the seeds and the unattributed add up to every confirmed finding"
     );
 }
 

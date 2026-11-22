@@ -10,6 +10,8 @@ use craft_store::tally::Tally;
 
 use super::{TALLY_HEAD, line, num, opt, table, tally_cells, tally_obj};
 
+mod rounds;
+
 pub fn retro(out: &mut dyn Write, version: &str, r: &Retro, json: bool) -> io::Result<()> {
     if json {
         return retro_json(out, version, r);
@@ -71,7 +73,8 @@ pub fn retro(out: &mut dyn Write, version: &str, r: &Retro, json: bool) -> io::R
         row.push(num(l.unverified));
         cells.push(row);
     }
-    table(out, &cells)
+    table(out, &cells)?;
+    rounds::text(out, r)
 }
 
 fn retro_json(out: &mut dyn Write, version: &str, r: &Retro) -> io::Result<()> {
@@ -128,5 +131,5 @@ fn retro_json(out: &mut dyn Write, version: &str, r: &Retro) -> io::Result<()> {
             .with("unverified", Js::Num(l.unverified));
         line(out, o)?;
     }
-    Ok(())
+    rounds::json(out, r)
 }
