@@ -310,9 +310,13 @@ one itself). Only a **lesson** waits for the author's yes (below).
   the touched paths:
 
   ```bash
-  CRAFT_BIN="$(node "<this skill's base directory>/../../integrations/shared/craft-bin.mjs" ensure)" || exit $?
+  CRAFT_BIN="$(sh "<this skill's base directory>/../../integrations/shared/craft-cli.sh" --ensure --print-path)" || exit $?
   "$CRAFT_BIN" runs recurring --path <path> [--path <path> …]
   ```
+
+  Getting the binary needs no Node (Git Bash on Windows caches `craft.exe`). Only on native Windows
+  without `sh`, fall back to `node "<this skill's base directory>/../../integrations/shared/craft-bin.mjs" ensure`
+  for `CRAFT_BIN`.
 
   It prints one JSON object: `groups` of `{file, titles, branches, runs, severities, lastSeen}` —
   the same finding (same file, overlapping title) in the review ledgers of at least two different
