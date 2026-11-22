@@ -93,6 +93,7 @@ with a skill for the rubric and degrades gracefully when a tool is absent.
 | `rust-security-scanner` | cargo-audit/deny/geiger + semgrep | `rust-security` |
 | `rust-miri` | `cargo +nightly miri test` (UB) | `rust-unsafe` |
 | `engine-service` | the engines' service steps (the `review` driver's `craft review` calls and the binary fetch, checkpoints and the run record); defined with `omitClaudeMd: true`, so that it is not handed the project's instructions; not for review judgement | — |
+| `review-task` | one task of the `review` driver that names no agent (a general or SQL lens, a scout, the dedup, a verifier, an adjudicator, the critic), read-only with Read, Grep, Glob and Bash; defined with `omitClaudeMd: true` and no Skill or MCP tool, so it is handed neither the project's instructions nor the skill listing; the memory's recall and the code-graph tasks keep the default type | — |
 
 clippy/test/coverage stay as commands inside `rust-reviewer` / the testing tooling — not separate
 agents (would duplicate).

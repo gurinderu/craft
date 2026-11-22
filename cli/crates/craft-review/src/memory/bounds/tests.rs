@@ -140,7 +140,7 @@ fn past_the_rule_judges_bound_the_findings_on_the_reviewed_paths_go_first() {
         reason: "r".into(),
         ..PriorDecision::default()
     };
-    let mut settled: Vec<Value> = (0..45)
+    let mut settled: Vec<Value> = (0..405)
         .map(|k| finding(&format!("o{k}.rs"), "Low"))
         .collect();
     settled.push(finding("a.rs", "Medium"));
@@ -150,13 +150,16 @@ fn past_the_rule_judges_bound_the_findings_on_the_reviewed_paths_go_first() {
     };
     let focus = strings(&["a.rs"]);
     assert!(
-        m.rule_task(&settled, &Chain::default(), &focus)
+        !m.rule_tasks(&settled, &Chain::default(), &focus)
             .unwrap()
-            .is_some()
+            .is_empty()
     );
     let pairs = m.asked.ruled.clone().unwrap();
-    assert_eq!(pairs.len(), 46);
-    assert!(pairs.iter().take(40).any(|&(fi, _)| fi == 45), "{pairs:?}");
+    assert_eq!(pairs.len(), 406);
+    assert!(
+        pairs.iter().take(400).any(|&(fi, _)| fi == 405),
+        "{pairs:?}"
+    );
 }
 
 #[test]

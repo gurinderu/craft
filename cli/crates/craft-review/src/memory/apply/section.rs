@@ -28,18 +28,33 @@ fn section_line(f: &Value) -> String {
     )
 }
 
-/// The report sections listing the findings set aside (`priorRejectedSection`).
+/// The report sections listing the findings set aside (`priorRejectedSection`): a High a human's
+/// decision set aside under its own (realm @nick/craft, node #196), every other decision's under
+/// Rejected before, a deferral's under Known and deferred.
 #[must_use]
 pub(in crate::memory) fn section(set_aside: &[Value]) -> String {
-    let of = |kind: &str| -> Vec<String> {
+    let high = |f: &&Value| text(f, "severity").trim().eq_ignore_ascii_case("high");
+    let of = |kind: &str, want_high: bool| -> Vec<String> {
         set_aside
             .iter()
-            .filter(|f| text(f, "priorKind") == kind)
+            .filter(|f| {
+                text(f, "priorKind") == kind && (kind != "decision" || high(f) == want_high)
+            })
             .map(section_line)
             .collect()
     };
-    let (rejected, deferred) = (of("decision"), of("question"));
+    let (human, rejected, deferred) = (
+        of("decision", true),
+        of("decision", false),
+        of("question", false),
+    );
     let mut out = String::new();
+    if !human.is_empty() {
+        out.push_str(&format!(
+            "\n\n## High rejected by a human (set aside — not in the verdict)\n{}",
+            human.join("\n")
+        ));
+    }
     if !rejected.is_empty() {
         out.push_str(&format!(
             "\n\n## Rejected before (set aside — not in the verdict)\n{}",

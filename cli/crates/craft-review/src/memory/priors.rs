@@ -111,32 +111,32 @@ impl Memory {
         self.refused.extend(out.refused);
     }
 
-    /// The rule judge's task over what the decisions left, `None` when no finding sits in a rule's
-    /// scope. The pairs it is asked about are kept for [`Memory::cover`].
+    /// The rule judge's tasks over what the decisions left, none when no finding sits in a rule's
+    /// scope. The pairs they are asked about are kept for [`Memory::cover`].
     ///
     /// # Errors
     /// When its template or schema is missing.
-    pub(crate) fn rule_task(
+    pub(crate) fn rule_tasks(
         &mut self,
         settled: &[Value],
         chain: &Chain,
         focus: &[String],
-    ) -> Result<Option<Task>, ContentError> {
+    ) -> Result<Vec<Task>, ContentError> {
         let judged = pool(settled, chain);
         let pairs = rules::Pairs::new(&judged, &self.decisions, focus);
         self.asked.ruled = Some(pairs.pairs().to_vec());
-        pairs.task(&judged)
+        pairs.tasks(&judged)
     }
 
-    /// Covers by the project rules what the decisions left, `answer` the rule judge's when it was
-    /// asked, read against the pairs [`Memory::rule_task`] kept; a covered prior leaves the chain's
-    /// ledger for the memory's, as `covered`.
+    /// Covers by the project rules what the decisions left, `answers` the rule judges' in their
+    /// tasks' order when they were asked, read against the pairs [`Memory::rule_tasks`] kept; a
+    /// covered prior leaves the chain's ledger for the memory's, as `covered`.
     pub(crate) fn cover(
         &mut self,
         settled: &mut Vec<Value>,
         chain: &mut Chain,
         notes: &mut Vec<String>,
-        (answer, focus): (Option<&Value>, &[String]),
+        (answers, focus): (&[Option<Value>], &[String]),
     ) {
         let kept = self.asked.ruled.take();
         let judged = pool(settled, chain);
@@ -151,7 +151,7 @@ impl Memory {
         if !pairs.any() {
             return;
         }
-        let out = rules::apply(judged, &pairs, answer);
+        let out = rules::apply(judged, &pairs, answers);
         let covered = commit(settled, chain, out.kept, out.covered);
         self.set_aside.extend(covered);
         self.rule_notices = out.notices;

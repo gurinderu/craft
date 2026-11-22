@@ -293,3 +293,23 @@ fn every_profile_extending_the_general_one_holds_the_design_lens_optional_and_co
     }
     assert!(Profile::load("sql").unwrap().lens("design").is_none());
 }
+
+#[test]
+fn a_metrics_lens_runs_on_the_hosts_default_agent_not_the_profiles_lens_agent() {
+    let rust = Profile::rust().unwrap();
+    assert!(
+        rust.lens("complexity").is_some_and(|l| l.metrics),
+        "Rust inherits the complexity lens"
+    );
+    assert_eq!(
+        rust.agent_of("complexity"),
+        None,
+        "it asks for the code graph's MCP tools"
+    );
+    assert_eq!(rust.agent_of("correctness"), Some(AgentKind::RustReviewer));
+    for p in Profile::all().unwrap() {
+        for lens in p.lenses.iter().chain(&p.floor_lenses).filter(|l| l.metrics) {
+            assert_eq!(p.agent_of(&lens.id), None, "{}:{}", p.id, lens.id);
+        }
+    }
+}

@@ -1,14 +1,16 @@
 //! A list of records read (`parsePriorDecisions` in `integrations/shared/prior-decisions.mjs`; realm @nick/craft,
-//! node #218): under one cap, each refusal named by its label, a repeated id refused. The cap keeps
-//! the run's state and the judges' prompts bounded; past it the records closest to the reviewed
-//! paths are kept ([`super::super::bounds::kept_records`]), never simply the first in the list.
+//! node #218): under one cap, the project rules counted apart under a cap of their own (node #273),
+//! each refusal named by its label, a repeated id refused. The cap keeps the run's state and the
+//! judges' prompts bounded; past it the decisions closest to the reviewed paths are kept
+//! ([`super::super::bounds::kept_records`]), never simply the first in the list.
 
 use serde_json::Value;
 
 use super::super::bounds::kept_records;
-use super::{PriorDecision, has_control, js_len, read, record_id};
+use super::{PriorDecision, has_control, js_len, read, record_id, record_kind};
 
-/// The most records one run applies, recalled and passed together.
+/// The most records one run applies, recalled and passed together — and, apart, the most project
+/// rules: a project holds few, and the decisions piled up on its paths must not push them out.
 const PRIOR_DECISIONS_MAX: usize = 100;
 /// What the refusal of the records past the cap says about how they were chosen and how to apply
 /// them.
@@ -36,20 +38,20 @@ fn printable_id(item: &Value) -> String {
     }
 }
 
-/// The records past the cap (by their index in the list), each named, the names bounded by the
-/// cap itself.
+/// The records of `list` at the indices past the cap, each named, the names bounded by the cap
+/// itself.
 fn cut_names(list: &[Value], cut: &[usize], label_of: &dyn Fn(usize) -> String) -> String {
     let named: Vec<String> = cut
         .iter()
         .take(PRIOR_DECISIONS_MAX)
-        .filter_map(|&i| {
-            let id = printable_id(list.get(i)?);
+        .map(|&i| {
+            let id = list.get(i).map(printable_id).unwrap_or_default();
             let tail = if id.is_empty() {
                 String::new()
             } else {
                 format!(" ({id})")
             };
-            Some(format!("{}{tail}", label_of(i)))
+            format!("{}{tail}", label_of(i))
         })
         .collect();
     let more = cut.len() - named.len();
@@ -84,13 +86,9 @@ pub(in crate::memory) fn parse(
             return out;
         }
     };
-    let kept = kept_records(list, paths, PRIOR_DECISIONS_MAX);
-    let mut cut = Vec::new();
-    for (i, item) in list.iter().enumerate() {
-        if !kept.get(i).copied().unwrap_or(false) {
-            cut.push(i);
-            continue;
-        }
+    let caps = Caps::of(list, paths);
+    for &i in &caps.read {
+        let Some(item) = list.get(i) else { continue };
         match read(item, &label_of(i)) {
             Err(why) => out.refused.push(why),
             Ok(d) if out.decisions.iter().any(|x| x.id == d.id) => out.refused.push(format!(
@@ -101,12 +99,58 @@ pub(in crate::memory) fn parse(
             Ok(d) => out.decisions.push(d),
         }
     }
-    if !cut.is_empty() {
+    if !caps.cut.is_empty() {
         out.refused.push(format!(
             "{} decision(s) past the cap of {PRIOR_DECISIONS_MAX} were not applied — {CUT_HOW}; findings they would answer are raised normally: {}",
-            cut.len(),
-            cut_names(list, &cut, label_of)
+            caps.cut.len(),
+            cut_names(list, &caps.cut, label_of)
+        ));
+    }
+    if !caps.cut_rules.is_empty() {
+        out.refused.push(format!(
+            "{} project rule(s) past the cap of {PRIOR_DECISIONS_MAX} were not applied — findings they would cover are raised normally: {}",
+            caps.cut_rules.len(),
+            cut_names(list, &caps.cut_rules, label_of)
         ));
     }
     out
+}
+
+/// The indices of a list read, in its order, and those past the caps: the project rules counted
+/// apart from the other records, each under [`PRIOR_DECISIONS_MAX`] (`underCaps`); past it the
+/// decisions closest to the reviewed `paths` are kept, the rules in the order given.
+struct Caps {
+    read: Vec<usize>,
+    cut: Vec<usize>,
+    cut_rules: Vec<usize>,
+}
+
+impl Caps {
+    fn of(list: &[Value], paths: &[String]) -> Self {
+        let is_rule = |x: &Value| x.as_object().is_some_and(|o| record_kind(o) == "rule");
+        let (rules, others): (Vec<usize>, Vec<usize>) =
+            (0..list.len()).partition(|&i| list.get(i).is_some_and(is_rule));
+        let split = |v: Vec<usize>| {
+            let at = v.len().min(PRIOR_DECISIONS_MAX);
+            let (head, tail) = v.split_at(at);
+            (head.to_vec(), tail.to_vec())
+        };
+        let others_list: Vec<Value> = others
+            .iter()
+            .filter_map(|&i| list.get(i).cloned())
+            .collect();
+        let kept = kept_records(&others_list, paths, PRIOR_DECISIONS_MAX);
+        let (mut read, mut cut) = (Vec::new(), Vec::new());
+        for (&i, &k) in others.iter().zip(&kept) {
+            if k { read.push(i) } else { cut.push(i) }
+        }
+        let (rules, cut_rules) = split(rules);
+        read.extend(rules);
+        read.sort_unstable();
+        Self {
+            read,
+            cut,
+            cut_rules,
+        }
+    }
 }

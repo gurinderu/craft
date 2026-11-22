@@ -9,7 +9,7 @@
 // A finding the judge says goes against a rule — not covered — stays in the verdict marked with the rule
 // (memoryContradicts; integrations/shared/memory-contradiction.mjs, realm @nick/craft, node #282), unless a decision marked it first.
 // Imported by integrations/claude-code/src/triage-findings.js.
-import { RULE_JUDGE_PAIRS_MAX, askRuleJudge, isCritical, rulePairs } from './project-rule-judge.mjs'
+import { RULE_JUDGE_SENT_MAX, askRuleJudge, isCritical, rulePairs } from './project-rule-judge.mjs'
 import { CUT_NAMED_MAX, clipLine, findingLine } from './prior-decision-match.mjs'
 import { recordAliases } from './prior-decision-apply.mjs'
 import { markContradicting } from './memory-contradiction.mjs'
@@ -33,7 +33,7 @@ export function ruleFindingName(f) {
  * The verdicts read per finding: the first rule (in pair order) the judge put it under, the first it says
  * the code goes against (`against`, realm @nick/craft, node #282), and for a finding with a pair the judge
  * gave no verdict, why. @param {Array<{ f: DecidableFinding, r: PriorDecision }>} pairs
- * @param {number} sent how many pairs went to the judge @param {{ verdicts: Map<number, import('./prior-decision-match.mjs').JudgeVerdict>, why: string }} answer
+ * @param {number} sent how many pairs went to the judge @param {{ verdicts: Map<number, import('./prior-decision-match.mjs').JudgeVerdict>, why: (i: number) => string }} answer
  */
 export function ruleVerdicts(pairs, sent, answer) {
   /** @type {Map<DecidableFinding, { r: PriorDecision, why: string }>} */
@@ -47,8 +47,8 @@ export function ruleVerdicts(pairs, sent, answer) {
       unjudged.set(
         p.f,
         i < sent
-          ? answer.why
-          : `past the rule judge's bound of ${RULE_JUDGE_PAIRS_MAX} pairs — no reviewed paths are given here, so judged first were the findings a rule can cover before High and Critical ones, then each finding's first rule before any finding's second; narrow the rule's scope or lens, or review a narrower path (path=<dir>)`,
+          ? answer.why(i)
+          : `past the rule judge's bound of ${RULE_JUDGE_SENT_MAX} pairs — no reviewed paths are given here, so judged first were the findings a rule can cover before High and Critical ones, then each finding's first rule before any finding's second; narrow the rule's scope or lens, or review a narrower path (path=<dir>)`,
       )
   })
   return { covers, against: ruleContradictions(pairs, answer), unjudged }
@@ -112,7 +112,7 @@ export async function applyProjectRules(tiers, records, noteField = 'why', judge
       notes: [...gone, ...(rules.length ? [`${rules.length} project rule(s) given, no finding in their scope`] : [])],
       rules: rules.length,
     }
-  const sent = Math.min(pairs.length, RULE_JUDGE_PAIRS_MAX)
+  const sent = Math.min(pairs.length, RULE_JUDGE_SENT_MAX)
   const { covers, against, unjudged } = ruleVerdicts(pairs, sent, await askRuleJudge(pairs.slice(0, sent), judge))
   /** @type {Array<Covered<F>>} */
   const covered = []

@@ -13,6 +13,8 @@
 mod apply;
 mod asked;
 mod bounds;
+#[cfg(test)]
+mod high_tests;
 mod id;
 mod judge;
 mod matching;

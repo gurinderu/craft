@@ -2,20 +2,23 @@
 // project's recorded rejections ("not a bug here, because …"), recalled from whatever memory the
 // project keeps (the `memory` skill) for the paths of the diff. The engine never drops a finding a
 // decision answers — it sets it aside under its own section, marked with who rejected it, when, why
-// and where. A finding is raised again normally when it is Critical or High, when the code in the
+// and where. A finding is raised again normally when it is Critical, when it is High and no human's
+// decision (`decidedBy: "human"`) answers it (realm @nick/craft, node #196), when the code in the
 // decision's scope changed since the commit the decision was recorded at, or when that cannot be
 // established. The engine recalls them itself on every launch and a passed list adds to that recall
 // (integrations/shared/memory-recall.mjs; realm @nick/craft, node #218); a malformed one applies nothing and is named.
 // This module reads the argument and matches; one decision is read by integrations/shared/prior-decision-record.mjs,
 // scopes are checked by integrations/shared/prior-decision-scope.mjs and findings split by integrations/shared/prior-decision-apply.mjs.
 // Imported by integrations/claude-code/src/rust-audit.js and integrations/claude-code/src/triage-findings.js.
-import { DECISION_FIELD_MAX, decisionScopeParts, hasControlChar, readPriorDecision, recordId } from './prior-decision-record.mjs'
+import { DECISION_FIELD_MAX, decisionScopeParts, hasControlChar, readPriorDecision, recordId, recordKind } from './prior-decision-record.mjs'
 import { keptRecords } from './memory-bounds.mjs'
 
 // The most decisions one run applies — across the recalled and the passed records together (realm
-// @nick/craft, node #218); it keeps the run's state and the judges' prompts bounded. Past it the records
-// closest to the reviewed paths are kept (keptRecords), the rest refused by name and their findings raised
-// normally.
+// @nick/craft, node #218); the rest are refused by name and their findings raised normally. Project
+// rules are counted apart, under a cap of the same size (node #273): a rule is a stance on a whole class
+// of findings and a project holds few, so the decisions a long-lived project piles up on its paths must
+// not push them off the end of the list. Past the cap the decisions closest to the reviewed paths are
+// kept (keptRecords), never simply the first in the list.
 export const PRIOR_DECISIONS_MAX = 100
 // What the refusal of the records past the cap says about how they were chosen and how to apply them.
 const CUT_HOW =
@@ -39,9 +42,8 @@ export function printableId(item) {
 }
 
 /**
- * The records past the cap (by their index in the list), each named (its label and id), the names
- * bounded by the cap itself.
- * @param {unknown[]} list @param {number[]} cut @param {(i: number) => string} labelOf @returns {string}
+ * The records past the cap, each named (its label and id), the names bounded by the cap itself.
+ * @param {unknown[]} list @param {number[]} cut the indices past the cap @param {(i: number) => string} labelOf @returns {string}
  */
 export function cutNames(list, cut, labelOf) {
   const named = cut.slice(0, PRIOR_DECISIONS_MAX).map(i => {
@@ -76,27 +78,45 @@ export function parsePriorDecisions(raw, labelOf = decisionLabel, paths = []) {
   const decisions = []
   /** @type {string[]} */
   const refused = []
-  const kept = keptRecords(list, paths, PRIOR_DECISIONS_MAX)
-  /** @type {number[]} */
-  const cut = []
-  list.forEach((item, i) => {
-    if (!kept[i]) {
-      cut.push(i)
-      return
-    }
-    const d = readPriorDecision(item, labelOf(i))
+  const { read, cut, cutRules } = underCaps(list, paths)
+  read.forEach(i => {
+    const d = readPriorDecision(list[i], labelOf(i))
     if (typeof d === 'string') refused.push(d)
     // The scope check answers by id: two decisions under one id could lend one's unchanged scope to
     // the other, so the second is refused.
     else if (decisions.some(x => x.id === d.id)) refused.push(`${labelOf(i)} (${d.id}) repeats an id already given — not applied`)
     else decisions.push(d)
   })
-  if (cut.length) {
+  if (cut.length)
     refused.push(
       `${cut.length} decision(s) past the cap of ${PRIOR_DECISIONS_MAX} were not applied — ${CUT_HOW}; findings they would answer are raised normally: ${cutNames(list, cut, labelOf)}`,
     )
-  }
+  if (cutRules.length)
+    refused.push(
+      `${cutRules.length} project rule(s) past the cap of ${PRIOR_DECISIONS_MAX} were not applied — findings they would cover are raised normally: ${cutNames(list, cutRules, labelOf)}`,
+    )
   return { decisions, refused }
+}
+
+/**
+ * The indices of `list` read, in its order, and those past the caps: the project rules counted apart
+ * from the other records, each under PRIOR_DECISIONS_MAX; past it the decisions closest to the reviewed
+ * `paths` are kept (keptRecords), the rules in the order given.
+ * @param {unknown[]} list @param {string[]} paths
+ * @returns {{ read: number[], cut: number[], cutRules: number[] }}
+ */
+export function underCaps(list, paths) {
+  /** @param {unknown} x */
+  const isRule = x => !!x && typeof x === 'object' && !Array.isArray(x) && recordKind(/** @type {Record<string, unknown>} */ (x)) === 'rule'
+  const rules = list.flatMap((x, i) => (isRule(x) ? [i] : []))
+  const others = list.flatMap((x, i) => (isRule(x) ? [] : [i]))
+  const kept = keptRecords(
+    others.map(i => list[i]),
+    paths,
+    PRIOR_DECISIONS_MAX,
+  )
+  const read = [...others.filter((_, k) => kept[k]), ...rules.slice(0, PRIOR_DECISIONS_MAX)].sort((a, b) => a - b)
+  return { read, cut: others.filter((_, k) => !kept[k]), cutRules: rules.slice(PRIOR_DECISIONS_MAX) }
 }
 
 /** Lower-cased alphanumeric words of a title. @param {unknown} t */
@@ -136,7 +156,26 @@ export function titleOverlap(x, y) {
   return shared / Math.max(a.size, b.size)
 }
 
-/** Critical/High are always raised again (realm @nick/craft, node #187). @param {unknown} sev */
+/** Critical/High, which no deferred question holds (realm @nick/craft, node #187). @param {unknown} sev */
 export function reraisedBySeverity(sev) {
   return /^(critical|high)$/i.test(String(sev ?? '').trim())
+}
+
+/**
+ * Whether `d` is a human's decision: a decision that says `decidedBy: "human"` and records no deferral. A
+ * record without the field is not one, so every record written before it is not.
+ * @param {{ kind: string, deferred?: boolean, decidedBy?: string }} d
+ */
+export function humanDecision(d) {
+  return d.kind === 'decision' && !d.deferred && d.decidedBy === 'human'
+}
+
+/**
+ * Whether a finding's severity alone raises it again whatever record `d` says (realm @nick/craft, node #196):
+ * a Critical always, a High unless `d` is a human's decision.
+ * @param {unknown} sev @param {{ kind: string, deferred?: boolean, decidedBy?: string }} d
+ */
+export function reraisedByRank(sev, d) {
+  const s = String(sev ?? '').trim()
+  return /^critical$/i.test(s) || (/^high$/i.test(s) && !humanDecision(d))
 }

@@ -30,6 +30,7 @@ fn task(dir: &Path, prompt: &str) -> Task {
         agent_type: None,
         consumer_agent: None,
         kind: None,
+        graph: false,
     }
 }
 

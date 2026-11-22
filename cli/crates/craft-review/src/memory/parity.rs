@@ -106,7 +106,7 @@ fn every_case_applies_as_the_engines_apply_it() {
         let prepared = apply::prepare(&findings, &m.decisions, &|ds| scope_seen(case, ds), &[]);
         let out = apply::apply(findings, &prepared, case.get("judge"));
         let pairs = rules::Pairs::new(&out.kept, &m.decisions, &[]);
-        let ruled = rules::apply(out.kept, &pairs, case.get("ruleJudge"));
+        let ruled = rules::apply(out.kept, &pairs, &[case.get("ruleJudge").cloned()]);
         let kept: Vec<Value> = ruled
             .kept
             .iter()

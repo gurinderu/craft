@@ -4,7 +4,7 @@ import { test } from 'vitest'
 import assert from 'node:assert/strict'
 import { keptRecords, pathEntries, spreadPairs } from './memory-bounds.mjs'
 import { parsePriorDecisions, PRIOR_DECISIONS_MAX } from './prior-decisions.mjs'
-import { rulePairs, RULE_JUDGE_PAIRS_MAX } from './project-rule-judge.mjs'
+import { rulePairs, RULE_JUDGE_SENT_MAX } from './project-rule-judge.mjs'
 
 test('changed paths past the bound are listed by directory, as deep as still fits, not cut', () => {
   const few = ['src/a.rs', 'src/b.rs']
@@ -79,12 +79,12 @@ test('the rule judge’s pairs past its bound spread over findings, each finding
       /** @type {unknown} */ ({ id, kind: 'rule', title: 'clones are fine', scope: '.', reason: 'r', lens: '', links: [] })
     )
   const one = finding('a.rs')
-  const others = Array.from({ length: RULE_JUDGE_PAIRS_MAX }, (_, i) => finding(`o${i}.rs`))
+  const others = Array.from({ length: RULE_JUDGE_SENT_MAX }, (_, i) => finding(`o${i}.rs`))
   const rules = [rule('rule-a'), rule('rule-b')]
   const pairs = rulePairs([one, ...others], rules)
-  assert.equal(pairs.length, 2 * (RULE_JUDGE_PAIRS_MAX + 1))
-  const sent = pairs.slice(0, RULE_JUDGE_PAIRS_MAX)
-  assert.equal(new Set(sent.map(p => p.f)).size, RULE_JUDGE_PAIRS_MAX, 'no finding takes two of the bound while another has none')
+  assert.equal(pairs.length, 2 * (RULE_JUDGE_SENT_MAX + 1))
+  const sent = pairs.slice(0, RULE_JUDGE_SENT_MAX)
+  assert.equal(new Set(sent.map(p => p.f)).size, RULE_JUDGE_SENT_MAX, 'no finding takes two of the bound while another has none')
 })
 
 test('a path spelled with ./ or doubled slashes is covered by its directory entry', () => {
