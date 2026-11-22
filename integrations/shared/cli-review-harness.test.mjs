@@ -42,11 +42,11 @@ test('a publication the harness refused posted nothing, says what to allow, and 
 })
 
 test('a fetch the harness refused names who refused it and offers no resume', async () => {
-  const run = await runEngine('review', { args: {}, script: { 'step:resolve': refused('node /p/integrations/shared/craft-bin.mjs ensure --version 1.0.0') } })
+  const run = await runEngine('review', { args: {}, script: { 'step:resolve': refused('sh /p/integrations/shared/craft-cli.sh --ensure --print-path') } })
   const line = verdictOf(run)
   assert.ok(
     line.includes(
-      "the harness's permission check refused the command, not craft — it was not run: `node /p/integrations/shared/craft-bin.mjs ensure --version 1.0.0`.",
+      "the harness's permission check refused the command, not craft — it was not run: `sh /p/integrations/shared/craft-cli.sh --ensure --print-path`.",
     ),
     line,
   )
