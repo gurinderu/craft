@@ -5,8 +5,8 @@
 //
 // Run: node integrations/shared/craft-bin.mjs ensure [--version <v>] [--repo <owner/name>]
 // Prints the binary's absolute path (~/.craft/bin/<version>/craft, craft.exe on Windows), exit 0: the copy already
-// there when it is an executable file, else, where sh runs, integrations/shared/craft-fetch.sh's download (one implementation, Node only on win32:
-// realm @nick/craft, node #550); on Windows, where it does not, the release asset downloaded here (redirects followed; through the REST API
+// there when it is an executable file, else, off win32, integrations/shared/craft-fetch.sh's download (one implementation, Node only on win32:
+// realm @nick/craft, node #550); on win32, even where Git Bash has sh, the release asset downloaded here (redirects followed; through the REST API
 // when the download URL fails transiently, integrations/shared/release-asset.mjs, with GITHUB_TOKEN or GH_TOKEN if set), its SHA-256 checked,
 // unpacked with `tar` (an argument array, no shell; on Windows the tar.exe Windows 10 and later ship in System32,
 // which reads .tar.gz — not whichever tar a Git Bash PATH puts first, whose GNU tar takes `C:` for a remote host)
@@ -143,9 +143,10 @@ export async function ensure({ version, repo, home = os.homedir(), baseUrl, apiB
   if (isExecutable(bin)) return bin
   const target = targetOf(platform, arch)
   const base = baseUrl ?? `https://github.com/${repo}/releases/download/v${version}`
-  // One implementation, Node only on win32 (realm @nick/craft, node #550): where sh runs, the download is
-  // integrations/shared/craft-fetch.sh's — the release URL, the API fallback, the verification, the lock and the cache layout; Windows
-  // has no sh, and there this file downloads itself.
+  // One implementation, Node only on win32 (realm @nick/craft, node #550): off win32 the download is
+  // integrations/shared/craft-fetch.sh's — the release URL, the API fallback, the verification, the lock and the cache layout; on win32
+  // this file downloads itself, even where Git Bash has sh. The sh callers under Git Bash, MSYS and Cygwin (craft-cli.sh)
+  // use craft-fetch.sh and cache craft.exe; the hooks do not cover Windows.
   if (platform !== 'win32') {
     await fetchWithSh({ version, repo, home, base, apiBase, token, target })
     return bin
