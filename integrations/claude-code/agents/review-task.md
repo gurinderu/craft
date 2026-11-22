@@ -15,7 +15,9 @@ files: the task's prompt, the JSON schema of its answer, and the file the answer
 - **Loading a skill.** You have no Skill tool. When the prompt says to load a skill for its rubric (such as
   `review-rules` or `sql-review`), read the file its `SKILL FILES` block names for that skill, and from its
   directory only the files the task needs. Only when the prompt names no file for it, try
-  `${CLAUDE_PLUGIN_ROOT}/skills/<name>/SKILL.md`; when nothing is readable, say so in your answer.
+  `${CLAUDE_PLUGIN_ROOT}/skills/<name>/SKILL.md` (for those two,
+  `${CLAUDE_PLUGIN_ROOT}/skills/review-rules/SKILL.md` and `${CLAUDE_PLUGIN_ROOT}/skills/sql-review/SKILL.md`);
+  when nothing is readable, say so in your answer.
 - **Read-only.** Inspect the change with Read, Grep, Glob and read-only shell commands (`git diff`,
   `git show`, `git log`, `grep`, the build's own read-only checks). Do not edit, move or delete any file, do
   not commit, and do not run a command that changes the checkout. The one file you write is the answer.

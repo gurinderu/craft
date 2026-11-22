@@ -1,0 +1,292 @@
+{
+  "note": "Frozen golden data: the run store's post-hoc writes (craft runs sorting-choice, develop-cycle) as the JavaScript writer made them before its verbs were removed, in store-cases.json's shape. Read by cli/crates/craft-store/tests/parity.rs; edited by hand.",
+  "cases": [
+    {
+      "name": "a reviewer's sorting choices land in the run's record, the newest of its branch found when none is named",
+      "repo": "git",
+      "now": 1772600767890,
+      "calls": [
+        {
+          "command": "finalize",
+          "request": {
+            "step": {
+              "run": "/tmp/run-p",
+              "done": true,
+              "report": "/tmp/run-p/report.md",
+              "verdict": "Warning",
+              "line": "Warning — 2 findings",
+              "head": "<head>",
+              "base": "origin/main",
+              "path": "crates/a",
+              "findings": [
+                {
+                  "severity": "Medium",
+                  "file": "src/lib.rs",
+                  "line": 12,
+                  "title": "unwrap on a checked value",
+                  "ruleId": "errors.unwrap",
+                  "tier": "confirmed"
+                },
+                {
+                  "severity": "Low",
+                  "file": "src/é.rs",
+                  "line": 3.5,
+                  "title": "ünïcode \"title\"\n😀",
+                  "ruleId": "",
+                  "tier": "suspected",
+                  "extra": 1
+                }
+              ],
+              "uncovered": [
+                "flake.nix",
+                7
+              ],
+              "notRun": [
+                "the tests lens"
+              ],
+              "round": 2,
+              "lensScope": "delta",
+              "ledger": [
+                {
+                  "file": "src/lib.rs",
+                  "line": 12,
+                  "symbol": "fn parse<T>",
+                  "severity": "Medium",
+                  "tier": "confirmed",
+                  "disposition": "",
+                  "source": "errors",
+                  "ruleId": "errors.unwrap",
+                  "title": "unwrap",
+                  "why": "w",
+                  "toolRule": "clippy::unwrap_used",
+                  "sources": [
+                    "errors",
+                    "tests"
+                  ],
+                  "deferral": {
+                    "until": "x"
+                  }
+                },
+                {
+                  "file": "src/old.rs",
+                  "line": "x",
+                  "disposition": "closed",
+                  "title": "gone"
+                }
+              ],
+              "reReview": {
+                "prior": 1,
+                "carried": 2
+              },
+              "memory": {
+                "2": "two",
+                "10": "ten",
+                "source": ".craft/memory"
+              },
+              "sorting": {
+                "defects": 1,
+                "findings": [
+                  {
+                    "n": 1,
+                    "title": "first",
+                    "file": "a.rs",
+                    "line": 1
+                  },
+                  {
+                    "n": 2,
+                    "title": "second",
+                    "file": "b.rs",
+                    "line": 2
+                  }
+                ],
+                "choices": {
+                  "1": {
+                    "choice": "question",
+                    "at": "then"
+                  },
+                  "2": {
+                    "choice": "defect",
+                    "at": "then"
+                  }
+                }
+              },
+              "memoryContradictions": {
+                "count": 1,
+                "findings": [
+                  {
+                    "key": {
+                      "file": "src/lib.rs",
+                      "ruleId": "errors.unwrap"
+                    },
+                    "title": "against memory"
+                  },
+                  "odd"
+                ]
+              },
+              "prComments": null,
+              "dimensions": [
+                {
+                  "dimension": "errors",
+                  "ran": true,
+                  "findingCount": 1
+                },
+                "not a row"
+              ],
+              "verification": {
+                "candidates": 2,
+                "refuted": 0.30000000000000004
+              },
+              "lensRounds": [
+                {
+                  "round": 1,
+                  "lenses": 3
+                }
+              ],
+              "at": 9000,
+              "took": 100
+            },
+            "steps": [],
+            "retry": false
+          }
+        },
+        {
+          "command": "sorting-choice",
+          "request": {
+            "n": 1,
+            "choice": "dropped",
+            "recordFile": "<recordFile>"
+          }
+        },
+        {
+          "command": "sorting-choice",
+          "request": {
+            "n": 2,
+            "choice": "question"
+          }
+        },
+        {
+          "command": "sorting-choice",
+          "request": {
+            "n": 9,
+            "choice": "defect",
+            "recordFile": "<recordFile>"
+          }
+        },
+        {
+          "command": "sorting-choice",
+          "request": {
+            "n": 1,
+            "choice": "maybe",
+            "recordFile": "<recordFile>"
+          }
+        }
+      ],
+      "expected": {
+        "answers": [
+          {
+            "ok": true,
+            "reason": "",
+            "file": "<store>/2026-03-04T05-06-07Z-workflow-review.json"
+          },
+          {
+            "ok": true,
+            "reason": "recorded dropped for doubtful finding 1 (first @ a.rs:1) in <store>/2026-03-04T05-06-07Z-workflow-review.json",
+            "file": "<store>/2026-03-04T05-06-07Z-workflow-review.json"
+          },
+          {
+            "ok": true,
+            "reason": "recorded question for doubtful finding 2 (second @ b.rs:2) in <store>/2026-03-04T05-06-07Z-workflow-review.json",
+            "file": "<store>/2026-03-04T05-06-07Z-workflow-review.json"
+          },
+          {
+            "ok": false,
+            "reason": "craft-log-run FAILED: <store>/2026-03-04T05-06-07Z-workflow-review.json: the record lists no doubtful finding numbered 9",
+            "file": ""
+          },
+          {
+            "ok": false,
+            "reason": "craft-log-run FAILED: <store>/2026-03-04T05-06-07Z-workflow-review.json: --choice must be one of question, defect, dropped, got \"maybe\"",
+            "file": ""
+          }
+        ],
+        "files": {
+          ".finalize-proofs/<proof>": "{\"file\":\"2026-03-04T05-06-07Z-workflow-review.json\",\"key\":\"<proof>\",\"warnings\":[]}",
+          "2026-03-04T05-06-07Z-workflow-review.json": "{\n  \"schemaVersion\": 1,\n  \"runtime\": \"claude-code\",\n  \"craftVersion\": \"0.55.0\",\n  \"kind\": \"workflow\",\n  \"name\": \"review\",\n  \"driver\": \"cli\",\n  \"cliRun\": \"/tmp/run-p\",\n  \"nested\": false,\n  \"via\": null,\n  \"depth\": \"full\",\n  \"base\": \"origin/main\",\n  \"path\": \"crates/a\",\n  \"verdict\": \"Warning\",\n  \"round\": 2,\n  \"lensScope\": \"delta\",\n  \"reReview\": {\n    \"prior\": 1,\n    \"carried\": 2\n  },\n  \"findings\": {\n    \"total\": 2,\n    \"bySeverity\": {\n      \"Critical\": 0,\n      \"High\": 0,\n      \"Medium\": 1,\n      \"Low\": 1,\n      \"Info\": 0\n    }\n  },\n  \"ledger\": [\n    {\n      \"fp\": \"c59c21e9\",\n      \"file\": \"src/lib.rs\",\n      \"line\": 12,\n      \"symbol\": \"fn parse<T>\",\n      \"severity\": \"Medium\",\n      \"tier\": \"confirmed\",\n      \"disposition\": \"open\",\n      \"source\": \"errors\",\n      \"ruleId\": \"errors.unwrap\",\n      \"title\": \"unwrap\",\n      \"why\": \"w\",\n      \"toolRule\": \"clippy::unwrap_used\",\n      \"sources\": [\n        \"errors\",\n        \"tests\"\n      ],\n      \"deferral\": {\n        \"until\": \"x\"\n      }\n    },\n    {\n      \"fp\": \"c86584f7\",\n      \"file\": \"src/old.rs\",\n      \"line\": 0,\n      \"symbol\": \"\",\n      \"severity\": \"\",\n      \"tier\": \"\",\n      \"disposition\": \"closed\",\n      \"source\": \"\",\n      \"ruleId\": \"\",\n      \"title\": \"gone\",\n      \"why\": \"\"\n    }\n  ],\n  \"uncoveredFiles\": [\n    \"flake.nix\"\n  ],\n  \"notRun\": [\n    \"the tests lens\"\n  ],\n  \"dimensions\": [\n    {\n      \"dimension\": \"errors\",\n      \"ran\": true,\n      \"findingCount\": 1\n    }\n  ],\n  \"verification\": {\n    \"candidates\": 2,\n    \"refuted\": 0.30000000000000004\n  },\n  \"lensRounds\": [\n    {\n      \"round\": 1,\n      \"lenses\": 3\n    }\n  ],\n  \"runtimeStats\": {\n    \"agents\": 0,\n    \"agentsOf\": \"tasks\"\n  },\n  \"memory\": {\n    \"2\": \"two\",\n    \"10\": \"ten\",\n    \"source\": \".craft/memory\"\n  },\n  \"strict\": false,\n  \"sorting\": {\n    \"defects\": 1,\n    \"findings\": [\n      {\n        \"n\": 1,\n        \"title\": \"first\",\n        \"file\": \"a.rs\",\n        \"line\": 1\n      },\n      {\n        \"n\": 2,\n        \"title\": \"second\",\n        \"file\": \"b.rs\",\n        \"line\": 2\n      }\n    ],\n    \"choices\": {\n      \"1\": {\n        \"choice\": \"dropped\",\n        \"at\": \"2026-03-04T05:06:07.890Z\"\n      },\n      \"2\": {\n        \"choice\": \"question\",\n        \"at\": \"2026-03-04T05:06:07.890Z\"\n      }\n    }\n  },\n  \"memoryContradictions\": {\n    \"count\": 1,\n    \"findings\": [\n      {\n        \"fp\": \"2b4e4d8e\",\n        \"title\": \"against memory\"\n      },\n      {\n        \"fp\": \"0b86b2e5\"\n      }\n    ]\n  },\n  \"prComments\": null,\n  \"outputTokens\": null,\n  \"branch\": \"feat/x\",\n  \"head\": \"<head>\",\n  \"engineRevision\": 4,\n  \"ts\": \"2026-03-04T05-06-07Z\",\n  \"project\": \"<repo>\",\n  \"commit\": \"<short>\",\n  \"dirty\": false,\n  \"craftCommit\": \"<craft>\",\n  \"session\": null\n}",
+          "README.md": "# craft run records\n\n- `index.jsonl` — one compact JSON line per run; load with `jq -s`.\n- `<ts>-<kind>-<name>.json` — full per-run detail.\n- `.partial/<run>/` — phase checkpoints of a run still in flight. `node integrations/shared/craft-log-run.mjs recover`\n  promotes any that never finalized into `partial: true` records; a directory written to within the last\n  6 h (`--stale-after <min>`) is kept, its run may be live (`--force` removes it anyway).\n- `.filing-intents/<detail>.json` — a write in flight; every write replays these first. One whose detail\n  was rewritten since (a crash, then another writer) is a `filing conflict`: the intent stays, the newer\n  detail is never overwritten, writes to other records go on, a write to that record refuses, and the\n  warning names both files. The intent's `record` may be the run's only copy: never just delete it.\n  To keep it, move the detail aside and `jq -j .record <intent> > <detail>`; the next write completes\n  the intent. To keep the detail, save that record elsewhere, then delete the intent.\n\nCommon fields: schemaVersion, engineRevision, ts, kind (workflow|agent), name, project, commit, dirty, verdict,\nfindings{total,bySeverity}, nested, via. Workflows add scout/dimensions/verification/notRun/outputTokens;\nagents add toolsRun. A record with `partial: true` did NOT finish — never average it in with complete runs.\nOn such a record `engineRevision` is the RECOVERING craft's; `runEngineRevision`, when present, is the\nrevision the stopped run's own checkpoints attest to (the highest of one fingerprint basis).\n`workflowEngineRevision` (on a review record and its checkpoints) is the revision of the ENGINE that\ncomputed the fingerprints — what a later round decides their basis by; `engineRevision` is the logger's.\n`workflowEngineRevisionDisputed` replaces it when the copy the logger agent carried disagreed with the\n`--engine-revision` the engine put on the command line: such a record or slice establishes no basis.\n\nAn optional `cost{output,input,cacheRead,cacheWrite,total,agents,source,rule}` (with a `skipped` count\nadded only when a transcript could not be read, and `slice{index,of,tail?}` when the record is one of\nseveral a run filed) is folded in AFTER the run by\n`craft runs enrich-cost --run-id <wf_id>` (or `--run-dir <d> --record <f>`) — the REAL per-agent spend summed\nfrom the run's agent-*.jsonl transcripts (cacheRead is ~99% of it). `outputTokens` above is only the\nharness pool, under 1% of real cost. Absent until a run is enriched. A cost without `rule: \"per-message\"`\nwas summed per transcript line and overstates the run ~1.8x: re-run enrich-cost on it while its transcripts exist.\n\n    jq -s 'group_by(.name)[]|{name:.[0].name,runs:length}' index.jsonl\n    jq 'select(.verdict|test(\"Block\"))' index.jsonl\n",
+          "index.jsonl": "{\"schemaVersion\":1,\"runtime\":\"claude-code\",\"ts\":\"2026-03-04T05-06-07Z\",\"kind\":\"workflow\",\"name\":\"review\",\"craftVersion\":\"0.55.0\",\"craftCommit\":\"<craft>\",\"project\":\"<repo>\",\"commit\":\"<short>\",\"dirty\":false,\"branch\":\"feat/x\",\"head\":\"<head>\",\"round\":2,\"verdict\":\"Warning\",\"findingsTotal\":2,\"nested\":false,\"via\":null,\"outputTokens\":null,\"driver\":\"cli\"}\n"
+        }
+      }
+    },
+    {
+      "name": "a develop cycle is filed as its own record, and one that does not fit is refused by name",
+      "repo": "dirty",
+      "now": 1772600767890,
+      "calls": [
+        {
+          "command": "develop-cycle",
+          "request": {
+            "session": "s-2",
+            "cycle": {
+              "outcome": "converged",
+              "rounds": [
+                {
+                  "engine": " review ",
+                  "scope": "full",
+                  "verdict": "Block",
+                  "mediumPlus": 2
+                },
+                {
+                  "engine": "review",
+                  "scope": "delta",
+                  "verdict": "Approve",
+                  "mediumPlus": 0
+                }
+              ],
+              "fullReviews": [
+                {
+                  "afterRound": 2,
+                  "engine": "review",
+                  "verdict": "Approve",
+                  "mediumPlus": 0
+                }
+              ]
+            }
+          }
+        },
+        {
+          "command": "develop-cycle",
+          "request": {
+            "cycle": {
+              "outcome": "capped",
+              "rounds": [
+                {
+                  "engine": "review",
+                  "scope": "all"
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "expected": {
+        "answers": [
+          {
+            "ok": true,
+            "reason": "wrote <store>/2026-03-04T05-06-07Z-develop-develop.json",
+            "file": "<store>/2026-03-04T05-06-07Z-develop-develop.json"
+          },
+          {
+            "ok": false,
+            "reason": "craft-log-run FAILED: rounds[0].scope must be \"full\" or \"delta\", got \"all\"",
+            "file": ""
+          }
+        ],
+        "files": {
+          "2026-03-04T05-06-07Z-develop-develop.json": "{\n  \"schemaVersion\": 1,\n  \"runtime\": \"claude-code\",\n  \"kind\": \"develop\",\n  \"name\": \"develop\",\n  \"verdict\": \"converged\",\n  \"round\": 2,\n  \"develop\": {\n    \"mode\": \"light\",\n    \"outcome\": \"converged\",\n    \"rounds\": [\n      {\n        \"n\": 1,\n        \"engine\": \"review\",\n        \"scope\": \"full\",\n        \"verdict\": \"Block\",\n        \"mediumPlus\": 2\n      },\n      {\n        \"n\": 2,\n        \"engine\": \"review\",\n        \"scope\": \"delta\",\n        \"verdict\": \"Approve\",\n        \"mediumPlus\": 0\n      }\n    ],\n    \"fullReviews\": [\n      {\n        \"afterRound\": 2,\n        \"engine\": \"review\",\n        \"verdict\": \"Approve\",\n        \"mediumPlus\": 0\n      }\n    ]\n  },\n  \"branch\": \"feat/x\",\n  \"head\": \"<head>\",\n  \"engineRevision\": 4,\n  \"ts\": \"2026-03-04T05-06-07Z\",\n  \"project\": \"<repo>\",\n  \"commit\": \"<short>\",\n  \"dirty\": true,\n  \"craftCommit\": \"<craft>\",\n  \"session\": \"s-2\"\n}",
+          "README.md": "# craft run records\n\n- `index.jsonl` — one compact JSON line per run; load with `jq -s`.\n- `<ts>-<kind>-<name>.json` — full per-run detail.\n- `.partial/<run>/` — phase checkpoints of a run still in flight. `node integrations/shared/craft-log-run.mjs recover`\n  promotes any that never finalized into `partial: true` records; a directory written to within the last\n  6 h (`--stale-after <min>`) is kept, its run may be live (`--force` removes it anyway).\n- `.filing-intents/<detail>.json` — a write in flight; every write replays these first. One whose detail\n  was rewritten since (a crash, then another writer) is a `filing conflict`: the intent stays, the newer\n  detail is never overwritten, writes to other records go on, a write to that record refuses, and the\n  warning names both files. The intent's `record` may be the run's only copy: never just delete it.\n  To keep it, move the detail aside and `jq -j .record <intent> > <detail>`; the next write completes\n  the intent. To keep the detail, save that record elsewhere, then delete the intent.\n\nCommon fields: schemaVersion, engineRevision, ts, kind (workflow|agent), name, project, commit, dirty, verdict,\nfindings{total,bySeverity}, nested, via. Workflows add scout/dimensions/verification/notRun/outputTokens;\nagents add toolsRun. A record with `partial: true` did NOT finish — never average it in with complete runs.\nOn such a record `engineRevision` is the RECOVERING craft's; `runEngineRevision`, when present, is the\nrevision the stopped run's own checkpoints attest to (the highest of one fingerprint basis).\n`workflowEngineRevision` (on a review record and its checkpoints) is the revision of the ENGINE that\ncomputed the fingerprints — what a later round decides their basis by; `engineRevision` is the logger's.\n`workflowEngineRevisionDisputed` replaces it when the copy the logger agent carried disagreed with the\n`--engine-revision` the engine put on the command line: such a record or slice establishes no basis.\n\nAn optional `cost{output,input,cacheRead,cacheWrite,total,agents,source,rule}` (with a `skipped` count\nadded only when a transcript could not be read, and `slice{index,of,tail?}` when the record is one of\nseveral a run filed) is folded in AFTER the run by\n`craft runs enrich-cost --run-id <wf_id>` (or `--run-dir <d> --record <f>`) — the REAL per-agent spend summed\nfrom the run's agent-*.jsonl transcripts (cacheRead is ~99% of it). `outputTokens` above is only the\nharness pool, under 1% of real cost. Absent until a run is enriched. A cost without `rule: \"per-message\"`\nwas summed per transcript line and overstates the run ~1.8x: re-run enrich-cost on it while its transcripts exist.\n\n    jq -s 'group_by(.name)[]|{name:.[0].name,runs:length}' index.jsonl\n    jq 'select(.verdict|test(\"Block\"))' index.jsonl\n",
+          "index.jsonl": "{\"schemaVersion\":1,\"runtime\":\"claude-code\",\"ts\":\"2026-03-04T05-06-07Z\",\"kind\":\"develop\",\"name\":\"develop\",\"craftVersion\":null,\"craftCommit\":\"<craft>\",\"project\":\"<repo>\",\"commit\":\"<short>\",\"dirty\":true,\"branch\":\"feat/x\",\"head\":\"<head>\",\"round\":2,\"verdict\":\"converged\",\"findingsTotal\":0,\"outputTokens\":null}\n"
+        }
+      }
+    }
+  ]
+}

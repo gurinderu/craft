@@ -1,0 +1,64 @@
+use super::*;
+
+fn record() -> Obj {
+    let f = |n: Js, title: &str| {
+        Js::Obj(
+            Obj::new()
+                .with("n", n)
+                .with("title", Js::str(title))
+                .with("file", Js::str("a.rs"))
+                .with("line", Js::Num(3.0)),
+        )
+    };
+    let sorting = Obj::new()
+        .with(
+            "findings",
+            Js::Arr(vec![f(Js::Num(1.0), "one"), f(Js::str("2"), "two")]),
+        )
+        .with("choices", Js::Obj(Obj::new().with("1", Js::str("old"))));
+    Obj::new()
+        .with("sorting", Js::Obj(sorting))
+        .with("after", Js::Bool(true))
+}
+
+#[test]
+fn a_choice_lands_beside_the_earlier_ones_and_a_later_one_replaces_it() {
+    let (r, named) = apply_choice(&record(), 2.0, "defect", "T").unwrap();
+    assert_eq!(named, "two @ a.rs:3");
+    let choices = r
+        .get("sorting")
+        .and_then(Js::as_obj)
+        .and_then(|s| s.get("choices"))
+        .unwrap();
+    assert_eq!(
+        choices.compact(),
+        r#"{"1":"old","2":{"choice":"defect","at":"T"}}"#
+    );
+    let (again, _) = apply_choice(&r, 1.0, "dropped", "U").unwrap();
+    let choices = again
+        .get("sorting")
+        .and_then(Js::as_obj)
+        .and_then(|s| s.get("choices"))
+        .unwrap();
+    assert_eq!(
+        choices.compact(),
+        r#"{"1":{"choice":"dropped","at":"U"},"2":{"choice":"defect","at":"T"}}"#
+    );
+}
+
+#[test]
+fn an_unknown_choice_a_missing_finding_or_no_sorting_is_refused_by_name() {
+    assert_eq!(
+        apply_choice(&record(), 1.0, "maybe", "T").unwrap_err(),
+        r#"--choice must be one of question, defect, dropped, got "maybe""#
+    );
+    assert_eq!(
+        apply_choice(&record(), 9.0, "defect", "T").unwrap_err(),
+        "the record lists no doubtful finding numbered 9"
+    );
+    assert!(
+        apply_choice(&Obj::new(), 1.0, "defect", "T")
+            .unwrap_err()
+            .starts_with("the record carries no sorting")
+    );
+}

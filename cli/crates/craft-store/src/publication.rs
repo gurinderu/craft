@@ -20,7 +20,7 @@ fn sorted_findings(sorting: Option<&Obj>) -> Vec<&Obj> {
 }
 
 /// `Number(v)` for what a stored finding's line can be.
-fn js_number(v: Option<&Js>) -> f64 {
+pub(crate) fn js_number(v: Option<&Js>) -> f64 {
     match v {
         Some(Js::Null) => 0.0,
         Some(Js::Bool(b)) => f64::from(u8::from(*b)),

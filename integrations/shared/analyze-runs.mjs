@@ -159,7 +159,7 @@ function tallyPool(w, r) {
 // Fold one run's REAL cost into the workflow bucket. `outputTokens` (tallyPool above) is
 // `budget.spent()` — the harness pool, under 1% of real spend; the record's `cost` object carries the
 // other ~99% (cache_read/cache_write), summed post-hoc from the per-agent transcripts by
-// `craft-log-run enrich-cost`. Which costs count, and what total each stands for, is the one rule in
+// `craft runs enrich-cost`. Which costs count, and what total each stands for, is the one rule in
 // integrations/shared/run-record.mjs (costProblem, costTotal), shared with --round-pairs: only a usable cost enters
 // the averages and `costRuns`; a malformed, partial or empty one is counted apart and named; a record
 // never enriched contributes nothing — not measured is not zero.
@@ -583,7 +583,7 @@ function newBucket() {
     poolReReviewN: 0,
     poolUnclassified: 0,
     poolUnclassifiedN: 0,
-    // REAL cost, from records enriched post-hoc by `craft-log-run enrich-cost` (see tallyCost).
+    // REAL cost, from records enriched post-hoc by `craft runs enrich-cost` (see tallyCost).
     // Counted apart from the pool above: the pool is the harness's <1%, this is the ~99% that lives
     // only in the per-agent transcripts. `costRuns` keeps un-enriched runs from reading as zero.
     costRuns: 0,
