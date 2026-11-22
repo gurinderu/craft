@@ -158,3 +158,9 @@ fn past_the_rule_judges_bound_the_findings_on_the_reviewed_paths_go_first() {
     assert_eq!(pairs.len(), 46);
     assert!(pairs.iter().take(40).any(|&(fi, _)| fi == 45), "{pairs:?}");
 }
+
+#[test]
+fn a_path_spelled_with_dot_or_doubled_slashes_is_covered_by_its_directory_entry() {
+    let paths = strings(&["./a/x.rs", "a//y.rs", "b/z.rs"]);
+    assert_eq!(path_entries(&paths, 2), (strings(&["a/", "b/"]), 3, 0));
+}

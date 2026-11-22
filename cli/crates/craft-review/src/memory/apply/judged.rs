@@ -15,7 +15,7 @@ use super::super::matching::{self, Match, Plan};
 
 const FALLBACK: &str = "not matched unless a near-verbatim title answers them (for a tool finding naming no rule only a tool record with the same title, near its line when lines compare), the rest raised normally";
 /// How the pairs the judge saw were chosen past its bound, and how to need it less.
-const CUT_HOW: &str = "judged first were the findings on the reviewed paths and the priors re-adjudicated, then each finding's closest record before any finding's second, the more severe finding first; to need the judge less, record decisions with the finding's file as scope, its line and its lens (they then match outright), or review a narrower path (path=<dir>)";
+const CUT_HOW: &str = "judged first were the findings on the reviewed paths and the priors re-adjudicated, then those a record can set aside before Critical and High ones, then each finding's closest record before any finding's second, severity ordering the findings within each of those; to need the judge less, record decisions with the finding's file as scope, its line and its lens (they then match outright), or review a narrower path (path=<dir>)";
 
 /// The pairs the judge is asked about, as (finding, record) indices: the candidates first, ranked
 /// and cut at the bound, then the re-raised outright matches in the room left.

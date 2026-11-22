@@ -31,18 +31,20 @@ pub(super) fn path_entries(paths: &[String], max: usize) -> (Vec<String>, usize,
         .find(|&d| at(d).len() <= max)
         .unwrap_or(1);
     let entries: Vec<String> = at(depth).into_iter().take(max).collect();
-    let covered = |p: &String| {
+    // Entries are built from normalised segments, so a path is compared in the same form.
+    let covered = |p: &str| {
         entries.iter().any(|e| {
             e == p
                 || e.strip_suffix('/')
                     .is_some_and(|d| p.starts_with(&format!("{d}/")))
         })
     };
-    let grouped = paths
+    let normal: Vec<String> = paths.iter().map(|p| scope_parts(p).join("/")).collect();
+    let grouped = normal
         .iter()
         .filter(|p| covered(p) && !entries.contains(p))
         .count();
-    let cut = paths.iter().filter(|p| !covered(p)).count();
+    let cut = normal.iter().filter(|p| !covered(p)).count();
     (entries, grouped, cut)
 }
 

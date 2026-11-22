@@ -86,3 +86,7 @@ test('the rule judge’s pairs past its bound spread over findings, each finding
   const sent = pairs.slice(0, RULE_JUDGE_PAIRS_MAX)
   assert.equal(new Set(sent.map(p => p.f)).size, RULE_JUDGE_PAIRS_MAX, 'no finding takes two of the bound while another has none')
 })
+
+test('a path spelled with ./ or doubled slashes is covered by its directory entry', () => {
+  assert.deepEqual(pathEntries(['./a/x.rs', 'a//y.rs', 'b/z.rs'], 2), { entries: ['a/', 'b/'], grouped: 3, cut: 0 })
+})

@@ -32,12 +32,14 @@ export function pathEntries(paths, max) {
     }
   }
   const entries = at(fits).slice(0, max)
+  // Entries are built from normalised segments, so a path is compared in the same form.
+  const normal = paths.map(p => decisionScopeParts(p).join('/'))
   /** @param {string} p */
   const covered = p => entries.some(e => e === p || (e.endsWith('/') && p.startsWith(e)))
   return {
     entries,
-    grouped: paths.filter(p => covered(p) && !entries.includes(p)).length,
-    cut: paths.filter(p => !covered(p)).length,
+    grouped: normal.filter(p => covered(p) && !entries.includes(p)).length,
+    cut: normal.filter(p => !covered(p)).length,
   }
 }
 
