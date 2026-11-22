@@ -59,26 +59,39 @@ fn a_file_the_index_left_out_or_past_the_file_limit_is_named_unread() {
 }
 
 #[test]
-fn a_cut_an_unreadable_or_an_empty_answer_names_the_file_unread() {
+fn a_cut_an_unreadable_or_an_empty_answer_names_the_file_unread_and_keeps_what_read() {
     let t = tempfile::tempdir().unwrap();
     let repo = fixture(t.path(), "");
     let one = row("k8s_rule_to_api", 1, 3);
-    for (rows, why) in [
+    for (rows, why, kept) in [
         (
             format!(r#"echo '{{{COLS},"rows":[{one}],"has_more":true}}'"#),
             "its functions cut at 500",
+            1,
         ),
         (
             format!(r#"echo '{{{COLS},"rows":[{one},["h","x","2"]]}}'"#),
             "1 of its rows did not read as a function",
+            1,
+        ),
+        (
+            format!(
+                r#"echo '{{{},"rows":[{one}]}}'"#,
+                COLS.replace(r#","f.unguarded_recursion""#, "")
+            ),
+            "the graph's answer names no column f.unguarded_recursion",
+            1,
         ),
         (
             format!(r#"echo '{{{COLS},"rows":[]}}'"#),
             "the graph gave no function of it numbers",
+            0,
         ),
     ] {
         let c = read(t.path(), &repo, "", &rows);
         let unread = unread_of(&c, "src/lib.rs");
+        // The file's readable functions are still measured beside its unread note.
+        assert_eq!(c.metrics.len(), kept, "{why}: {:?}", c.metrics);
         assert!(
             unread.len() == 1 && unread[0].contains(why),
             "{why}: {:?}",

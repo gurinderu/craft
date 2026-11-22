@@ -11,7 +11,7 @@ fn at(p: &str) -> Option<usize> {
 
 #[test]
 fn a_row_reads_its_counts_as_numbers_and_its_flags_in_either_spelling() {
-    // As codebase-memory-mcp 0.12.1 answered (realm @nick/craft, node #530).
+    // As codebase-memory-mcp 0.12.1 answered (realm @nick/craft, node #613).
     let row = json!([
         "sync", "964", "1014", "24", "11", "0", "2", "4", "0", "1", "false", "true"
     ]);

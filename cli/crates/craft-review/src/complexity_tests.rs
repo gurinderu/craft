@@ -51,3 +51,33 @@ fn the_lens_runs_only_on_numbers_the_binary_read_itself() {
     assert!(!ran);
     assert!(note.unwrap().contains("the graph said boom"));
 }
+
+#[test]
+fn a_read_that_failed_or_read_nothing_says_so_not_that_the_index_is_unavailable() {
+    let mut ctx = PromptContext {
+        graph_project: "craft-review-x".into(),
+        ..PromptContext::default()
+    };
+    ctx.consumers.graph_indexed = true;
+    ctx.consumers.metrics_failed =
+        "the graph's budget ran out before the numbers of the functions the change touches were read".into();
+    let (ran, note) = indexed(&ctx, true).unwrap();
+    let note = note.unwrap();
+    assert!(!ran);
+    assert!(
+        note.contains("the graph's budget ran out") && !note.contains("index is unavailable"),
+        "{note}"
+    );
+    // Every changed file's numbers unread: the lens could not look, each file named.
+    ctx.consumers.metrics_failed.clear();
+    ctx.consumers.metrics_unread =
+        vec!["src/a.rs (1 of its rows did not read as a function)".into()];
+    let (ran, note) = indexed(&ctx, true).unwrap();
+    let note = note.unwrap();
+    assert!(!ran);
+    assert!(
+        note.contains("could not look") && note.contains("src/a.rs (1 of its rows did not read"),
+        "{note}"
+    );
+    assert!(super::unread_gap(&ctx).is_some_and(|g| g.contains("src/a.rs")));
+}

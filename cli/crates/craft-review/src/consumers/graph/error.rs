@@ -44,6 +44,8 @@ pub enum GraphError {
     Stale(#[from] Box<Stale>),
     #[error("the graph could not index this checkout ({checkout}) in time for the list: {why}")]
     Reindex { checkout: String, why: CbmError },
+    #[error("the graph's budget ran out before {what}")]
+    Spent { what: &'static str },
     /// `during` the question asked, as "its callers were asked".
     #[error(
         "the index of {project} changed while {during} (another run indexed it): its answers are \

@@ -49,6 +49,12 @@ pub fn indexed(ctx: &PromptContext, wanted: bool) -> Option<(bool, Option<String
     if ready && !c.metrics.is_empty() {
         return Some((true, None));
     }
+    if let Some(gap) = unread_gap(ctx).filter(|_| ready) {
+        return Some((
+            false,
+            Some(format!("the complexity lens did not run: {gap}")),
+        ));
+    }
     if ready {
         return Some((
             false,
@@ -59,10 +65,18 @@ pub fn indexed(ctx: &PromptContext, wanted: bool) -> Option<(bool, Option<String
             ),
         ));
     }
+    if !ctx.graph_project.is_empty() && c.graph_indexed && !c.metrics_failed.is_empty() {
+        return Some((
+            false,
+            Some(format!(
+                "the complexity lens did not run: the graph's numbers could not be read ({}) -> \
+                 the metrics-or-nothing lenses dropped",
+                prompts::sanitize(&c.metrics_failed)
+            )),
+        ));
+    }
     let why = if ctx.graph_project.is_empty() {
         "craft's graph project for this repository could not be named"
-    } else if !c.metrics_failed.is_empty() {
-        c.metrics_failed.as_str()
     } else if !c.graph_skipped.is_empty() {
         c.graph_skipped.as_str()
     } else if !c.failed.is_empty() {
@@ -78,6 +92,20 @@ pub fn indexed(ctx: &PromptContext, wanted: bool) -> Option<(bool, Option<String
             prompts::sanitize(why)
         )),
     ))
+}
+
+/// The coverage gap of a ready index that measured no function because no changed file's numbers
+/// read: the lens could not look, though there may be functions to judge (each file named, with
+/// why); `None` when some were measured or no file went unread.
+#[must_use]
+pub fn unread_gap(ctx: &PromptContext) -> Option<String> {
+    let c = &ctx.consumers;
+    (c.metrics.is_empty() && !c.metrics_unread.is_empty()).then(|| {
+        format!(
+            "metrics-only lens complexity could not look — no changed file's numbers read: {}",
+            prompts::sanitize(&c.metrics_unread.join(" · "))
+        )
+    })
 }
 
 /// Whether `f` is a metrics lens's finding: it carries the numbers it rests on.

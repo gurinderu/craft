@@ -239,3 +239,27 @@ fn a_lens_shown_consumer_lines_must_mark_them() {
     let got = tasks(&ctx, (&rust, &plan), &[], &[], &rounds).unwrap();
     assert_eq!(got[0].consumers, ["src/api.rs:33", "src/api.rs:41"]);
 }
+
+#[test]
+fn a_sliced_metrics_lens_that_never_returned_is_held_as_a_coverage_gap() {
+    let r = Rounds {
+        expected: vec![
+            format!("general:complexity{SLICE_SEP}web"),
+            "general:errors".into(),
+        ],
+        ..Rounds::default()
+    };
+    let holes = r.holes_of("general");
+    assert_eq!(holes[0].0, "complexity", "the lens id, its slice cut off");
+    assert!(holes[0].1.starts_with("complexity :: web: "), "{holes:?}");
+    let general = crate::profile::Profile::load("general").unwrap();
+    let gaps: Vec<_> = holes
+        .iter()
+        .filter(|(l, _)| general.metrics_only(l))
+        .collect();
+    assert_eq!(
+        gaps.len(),
+        1,
+        "only the metrics-only lens is a gap: {holes:?}"
+    );
+}

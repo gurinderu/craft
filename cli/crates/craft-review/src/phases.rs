@@ -162,6 +162,12 @@ fn plan_tracks(run: &mut RunState, profiles: &[Profile]) {
     let wanted = profiles.iter().filter(taking_part).any(complexity::wanted);
     let index = complexity::indexed(&run.context, wanted);
     let metrics = index.as_ref().is_some_and(|(found, _)| *found);
+    // An index whose numbers did not read is a lens that could not look: a coverage gap.
+    let ready =
+        run.context.consumers.graph_indexed && run.context.consumers.metrics_failed.is_empty();
+    if let Some(gap) = complexity::unread_gap(&run.context).filter(|_| wanted && ready) {
+        run.capped.push(gap);
+    }
     run.notes.extend(index.and_then(|(_, note)| note));
     for (track, p) in run.tracks.iter_mut().zip(profiles) {
         let task = run

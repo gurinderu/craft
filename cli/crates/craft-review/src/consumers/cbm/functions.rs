@@ -1,7 +1,7 @@
 //! One `query_graph` question for the complexity numbers the graph holds for each function of one
 //! file, read as they are: the counts as numbers, the flags as true or false. The property names,
 //! the unlabelled `MATCH (f)` (a `Function` or a `Method` carries them) and the cells' spelling are
-//! codebase-memory-mcp 0.12.1's as observed (realm @nick/craft, node #530); a cell is read by the
+//! codebase-memory-mcp 0.12.1's as observed (realm @nick/craft, node #613); a cell is read by the
 //! column the answer names it, never by its place, so a wrong name reads as no cell, not another's.
 
 use std::time::Instant;
@@ -23,21 +23,23 @@ pub struct Function {
     pub metrics: Map<String, Value>,
 }
 
-/// What one file's question read: its functions, whether there were more than it read, and how
-/// many rows did not read as a function.
+/// What one file's question read: its functions, whether there were more than it read, how many
+/// rows did not read as a function, and the metric columns the answer did not name (each metric
+/// then missing from every function).
 #[derive(Debug, Default)]
 pub struct Functions {
     pub read: Vec<Function>,
     pub cut: bool,
     pub unreadable: usize,
+    pub missing: Vec<&'static str>,
 }
+
+/// The properties a row cannot be read without: the name and the span.
+const SPAN: [&str; 3] = ["name", "start_line", "end_line"];
 
 /// The properties the question returns, in order: the name, the span, the counts, the flags.
 fn properties() -> impl Iterator<Item = &'static str> {
-    ["name", "start_line", "end_line"]
-        .into_iter()
-        .chain(COUNTS)
-        .chain(FLAGS)
+    SPAN.into_iter().chain(COUNTS).chain(FLAGS)
 }
 
 /// The query for up to `limit` functions of the file `quoted` (a quoted path) that carry metrics.
@@ -82,10 +84,7 @@ impl Cbm {
             .map(|c| c.iter().filter_map(Value::as_str).collect())
             .unwrap_or_default();
         let at = |p: &str| names.iter().position(|n| n.strip_prefix("f.") == Some(p));
-        if let Some(p) = ["name", "start_line", "end_line"]
-            .into_iter()
-            .find(|p| at(p).is_none())
-        {
+        if let Some(p) = SPAN.into_iter().find(|p| at(p).is_none()) {
             return Err(CbmError::Graph(format!(
                 "query_graph: its answer names no column `f.{p}`"
             )));
@@ -97,6 +96,11 @@ impl Cbm {
             unreadable: raw.len() - read.len(),
             read: read.into_iter().take(ROWS_PER_FILE).collect(),
             cut,
+            missing: COUNTS
+                .into_iter()
+                .chain(FLAGS)
+                .filter(|p| at(p).is_none())
+                .collect(),
         })
     }
 }

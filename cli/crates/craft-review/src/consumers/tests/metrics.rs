@@ -9,7 +9,7 @@ use crate::consumers::build_for_metrics;
 use crate::gate::tests::exe;
 use crate::project::CodeGraph;
 
-/// The columns of the metrics question as codebase-memory-mcp 0.12.1 names them (node #530).
+/// The columns of the metrics question as codebase-memory-mcp 0.12.1 names them (node #613).
 pub(super) const COLS: &str = r#""columns":["f.name","f.start_line","f.end_line","f.cognitive","f.complexity","f.loop_depth","f.transitive_loop_depth","f.param_count","f.linear_scan_in_loop","f.alloc_in_loop","f.recursion_in_loop","f.unguarded_recursion"]"#;
 
 /// One row of `name` over `start..=end`, its numbers as the graph prints them.
