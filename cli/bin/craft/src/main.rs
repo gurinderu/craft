@@ -10,6 +10,7 @@ mod process_identity;
 mod review;
 mod run;
 mod runs;
+mod settle;
 mod steps;
 
 use std::num::NonZeroUsize;
@@ -172,14 +173,13 @@ async fn dispatch() -> anyhow::Result<ExitCode> {
 
 async fn finish(outcome: anyhow::Result<ExitCode>) -> ExitCode {
     // Every way out — a stop, an error, a finished run — waits out the grace of the agents'
-    // groups, so their SIGKILL is sent before craft is gone. With no group stopped there is nothing
-    // to wait out, and no blocking thread is started: a command that ran no agent cannot fail at
-    // exit on a thread it never needed.
-    if craft_agent::stops_pending()
-        && let Err(e) = tokio::task::spawn_blocking(craft_agent::settle_stops).await
-    {
-        std::panic::resume_unwind(e.into_panic());
-    }
+    // groups, so their SIGKILL is sent before craft is gone.
+    settle::at_exit(
+        craft_agent::stops_pending(),
+        craft_agent::settle_stops,
+        settle::on_thread,
+    )
+    .await;
     match outcome {
         Ok(code) => code,
         Err(e) => {
@@ -200,7 +200,3 @@ async fn finish(outcome: anyhow::Result<ExitCode>) -> ExitCode {
         }
     }
 }
-
-#[cfg(test)]
-#[path = "main_tests.rs"]
-mod tests;

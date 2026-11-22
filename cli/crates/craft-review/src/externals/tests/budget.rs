@@ -23,8 +23,11 @@ fn a_one_mib_manifest_is_discovered_under_the_engine_budgets() {
     let started = Instant::now();
     let got = discover(root.path(), Some(&["values.yaml"]), json!([]));
     // Nothing unread is the proof: past the engine's budget for 1 MiB (the 2 s floor plus a second
-    // per 64 KiB, about 18 s) the manifest would be unread. The wall clock only catches a runaway,
-    // well under that budget and far above a debug build under a parallel suite.
+    // per 64 KiB, about 18 s) the manifest would be unread. The wall clock only catches a call
+    // drifting toward that budget, before it starts failing as unread: 15 s leaves the engine its
+    // margin and sits far above any host's time (a debug build: about 1 s alone, 2 s under the
+    // parallel suite here), so it measures the patterns, not the machine. A tighter bound would
+    // need a measurement on CI's runners, which no one has taken.
     assert!(
         started.elapsed() < Duration::from_secs(15),
         "{:?}",

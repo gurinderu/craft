@@ -50,9 +50,10 @@ pub fn settle_stops() {
     unix::settle();
 }
 
-/// Whether a guard has stopped a group whose grace [`settle_stops`] would still wait out. False
-/// when no agent group was ever stopped, as in every command that runs no agent; always false off
-/// unix.
+/// Whether a group a guard stopped is still inside its grace: its thread has neither seen the group
+/// gone nor sent SIGKILL yet, so [`settle_stops`] would wait for it. A stop whose grace has ended
+/// is not counted, settled or not; nothing stopped, as in every command that runs no agent, is
+/// false. Always false off unix.
 #[must_use]
 pub fn stops_pending() -> bool {
     #[cfg(unix)]
@@ -122,10 +123,12 @@ mod unix {
     }
 
     pub(super) fn pending() -> bool {
-        !STOPPING
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .is_empty()
+        running(&STOPPING.lock().unwrap_or_else(PoisonError::into_inner))
+    }
+
+    /// Whether any grace thread is still running; a finished one left unjoined is not.
+    pub(super) fn running(threads: &[JoinHandle<()>]) -> bool {
+        threads.iter().any(|t| !t.is_finished())
     }
 
     pub(super) fn settle() {
@@ -162,7 +165,30 @@ mod tests {
         drop(GroupGuard::new(Some(child.id())));
         assert!(stops_pending());
         settle_stops();
-        // The grace has reaped it already (ECHILD); waiting leaves no zombie either way.
+        // The grace ended in SIGKILL, which its thread does not reap: the killed child is reaped
+        // here.
         let _reaped = child.wait();
+    }
+
+    /// Only a grace still running counts: a thread that finished but was never joined does not,
+    /// so a stop that is over leaves nothing for the exit path to wait on.
+    #[test]
+    fn a_finished_grace_left_unjoined_is_not_running() {
+        let finished = std::thread::spawn(|| {});
+        while !finished.is_finished() {
+            std::thread::yield_now();
+        }
+        let (release, held) = std::sync::mpsc::channel::<()>();
+        let holding = std::thread::spawn(move || {
+            let _released = held.recv();
+        });
+        let mut threads = vec![finished];
+        assert!(!super::unix::running(&threads));
+        threads.push(holding);
+        assert!(super::unix::running(&threads));
+        release.send(()).unwrap();
+        for thread in threads {
+            thread.join().unwrap();
+        }
     }
 }

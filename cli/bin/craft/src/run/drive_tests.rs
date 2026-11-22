@@ -374,6 +374,10 @@ async fn a_late_task_is_abandoned_and_an_agent_with_no_body_said_degraded() {
         Spec("n", "do n", Some("nix-reviewer")),
     ]);
     let answer = bench.drive(&fake).await;
+    // The abandoned task's group was stopped: its grace is waited out here, not left running.
+    tokio::task::spawn_blocking(craft_agent::settle_stops)
+        .await
+        .unwrap();
     assert!(answer.finished, "{}", answer.text);
     let submits = fake.submits.borrow();
     assert_eq!(submits[0].abandoned, ["slow"]);
