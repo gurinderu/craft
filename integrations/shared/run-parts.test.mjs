@@ -51,11 +51,12 @@ test("a stopped part folds into its run's finished record, which carries both pa
 
 test('a part whose cost was never measured leaves the run measured in part, not whole', () => {
   const { records } = foldResumedRuns([{ ...stopped, cost: null }, finished])
-  assert.equal(/** @type {any} */ (records[0])['cost'].skipped, 1)
+  const run = /** @type {Record<string, any>} */ (records[0])
+  assert.deepEqual([run['cost'].partsUnmeasured, run['cost'].skipped], [1, undefined], 'skipped counts transcripts, not parts')
 })
 
 test('a run whose every part stopped stands as its newest; a record naming no run directory folds on nothing', () => {
-  const later = { ...stopped, ts: '2026-11-22T10-00-00Z' }
+  const later = { ...stopped, ts: '2026-11-22T10-00-00Z', cost: cost(124261147, 'wf_c') }
   const { records, folded } = foldResumedRuns([stopped, later])
   assert.deepEqual([records.map(r => r['ts']), folded], [['2026-11-22T10-00-00Z'], 1])
   assert.equal(/** @type {any} */ (records[0])['cost'].total, 2 * 124261147)
@@ -64,4 +65,16 @@ test('a run whose every part stopped stands as its newest; a record naming no ru
     { ...finished, cliRun: undefined },
   ])
   assert.deepEqual([legacy.records.length, legacy.folded], [2, 0])
+})
+
+test('parts one Workflow run filed share its cost: summed once per workflow and slice, its token pool taken once', () => {
+  // A phantom INCOMPLETE of the same Workflow run as the finished record: the same cost slice, a cumulative pool.
+  const phantom = { ...stopped, cost: finished['cost'], outputTokens: 4000000 }
+  const run = /** @type {Record<string, any>} */ (foldResumedRuns([phantom, finished]).records[0])
+  assert.deepEqual([run['cost'].total, run['outputTokens']], [53805638, 4256220])
+  // Two slices of one Workflow run's cost are its two records' disjoint shares: both count.
+  const first = { ...stopped, cost: { ...cost(10, 'wf_c'), slice: { index: 1, of: 2 } }, outputTokens: 5 }
+  const second = { ...finished, cost: { ...cost(20, 'wf_c'), slice: { index: 2, of: 2 } }, outputTokens: 9 }
+  const sliced = /** @type {Record<string, any>} */ (foldResumedRuns([first, second]).records[0])
+  assert.deepEqual([sliced['cost'].total, sliced['outputTokens']], [30, 9])
 })

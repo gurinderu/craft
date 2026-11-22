@@ -1,11 +1,13 @@
 //! A CLI run stopped and resumed files a record per part: the part its host stopped driving files
 //! INCOMPLETE, the resume's part files the run's verdict, and each names the binary's run
-//! directory (`cliRun`). The store's readers count such a run once
-//! (`integrations/shared/run-duplicates.mjs`, `foldStoppedParts`): a stopped part of a run that also
+//! directory (`cliRun`). The store's readers count such a run once, as the JavaScript report does
+//! (`integrations/shared/run-parts.mjs`, `foldStoppedParts`): a stopped part of a run that also
 //! filed a finished record folds into it, the finished record standing for the run; a run whose
-//! every part stopped stands as its newest. These readers sum no cost, so nothing of a folded part
-//! is carried over; the JavaScript report, which sums cost, adds each part's onto the standing
-//! record. A record that names no run directory — one filed before records named it — folds on
+//! every part stopped stands as its newest. The fold comes before any version or filter: the run
+//! is counted under its standing record's version, and a retro of the stopped part's version counts
+//! that part folded. These readers sum no cost, so nothing of a folded part is carried over; the
+//! JavaScript report, which sums cost, adds each Workflow run's share onto the standing record
+//! once. A record that names no run directory — one filed before records named it — folds on
 //! nothing here.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -29,7 +31,8 @@ pub fn part_key(r: &Obj) -> Option<String> {
 }
 
 /// Whether the record is of a part its host stopped: its verdict INCOMPLETE.
-fn stopped(r: &Obj) -> bool {
+#[must_use]
+pub fn stopped(r: &Obj) -> bool {
     r.text_units("verdict").starts_with("INCOMPLETE")
 }
 
@@ -70,10 +73,10 @@ impl Parts {
         Ok(true)
     }
 
-    /// The held parts still to count — per run whose every part stopped, its newest, by time and
-    /// name — and how many held parts fold into another record.
+    /// The held parts still to count — per run whose every part stopped, its newest, by its run's
+    /// key, time and name — and how many held parts fold into another record.
     #[must_use]
-    pub fn standing(self) -> (Vec<(String, String)>, u64) {
+    pub fn standing(self) -> (Vec<(String, String, String)>, u64) {
         let mut out = Vec::new();
         let mut folded = 0;
         for (key, (ts, name, n)) in self.held {
@@ -81,7 +84,7 @@ impl Parts {
                 folded += n;
             } else {
                 folded += n - 1;
-                out.push((ts, name));
+                out.push((key, ts, name));
             }
         }
         (out, folded)
@@ -103,7 +106,7 @@ pub fn fold_parts(records: Vec<Obj>, mut parts: Parts) -> Result<(Vec<Obj>, u64)
         }
     }
     let (standing, folded) = parts.standing();
-    kept.extend(standing.iter().filter_map(|(_, name)| held.remove(name)));
+    kept.extend(standing.iter().filter_map(|(_, _, name)| held.remove(name)));
     Ok((kept, folded))
 }
 

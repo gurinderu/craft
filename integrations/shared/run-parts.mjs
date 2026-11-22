@@ -2,11 +2,13 @@
 // resume's part files the run's verdict, and each names the binary's run directory (`cliRun`). Counted once, as the
 // binary's `craft runs` readers count it (cli/crates/craft-store/src/parts.rs): a stopped part of a run that also
 // filed a finished record folds into it, the finished record standing for the run; a run whose every part stopped
-// stands as its newest. Each part is its own Workflow run with its own cost, so the standing record carries the sum
-// of every part's — a part whose cost is not usable counted as `skipped`, so the run's cost reads as measured in part
-// (run-record.mjs, costProblem). A record that names no run directory, filed before records named it, folds on
+// stands as its newest. A part is mostly its own Workflow run with its own cost, so the standing record carries the
+// sum of every Workflow run's share once (by the cost's `source` and slice; a repeated share is the latest part's), its
+// token pool once per Workflow run, and how many shares carry no usable cost as `partsUnmeasured`. The fold runs before
+// any version or engine slice: the run is counted under its standing record's version, and a slice of the stopped
+// part's version says it folded. A record that names no run directory, filed before records named it, folds on
 // nothing here.
-import { costProblem, costTotal } from './run-record.mjs'
+import { costProblem, costSlice, costTotal } from './run-record.mjs'
 
 /** @typedef {import('./run-record.mjs').RecordCost} RecordCost */
 
@@ -22,26 +24,54 @@ function partKey(r) {
 /** @param {Record<string, unknown>} r */
 const stopped = r => String(r['verdict'] ?? '').startsWith('INCOMPLETE')
 
+/** @param {unknown} c @returns {string} */
+const sourceOf = c =>
+  c && typeof c === 'object' && typeof (/** @type {{ source?: unknown }} */ (c).source) === 'string' ? /** @type {{ source: string }} */ (c).source : ''
+
 /**
- * Every part's usable cost summed onto the standing part's; the parts whose cost is not usable counted as skipped.
+ * One part per share of spend: parts whose `keyOf` repeats are the same Workflow run's spend filed twice (a phantom
+ * INCOMPLETE beside its finished record, a replay whose pool is cumulative), the latest part's kept; a part with no
+ * key is a share of its own.
+ * @param {Record<string, unknown>[]} parts @param {(p: Record<string, unknown>) => string} keyOf
+ */
+function perShare(parts, keyOf) {
+  const byTime = [...parts].sort((a, b) => (String(a['ts'] ?? '') < String(b['ts'] ?? '') ? -1 : 1))
+  /** @type {Map<string, Record<string, unknown>>} */
+  const shares = new Map()
+  byTime.forEach((p, i) => shares.set(keyOf(p) || `#${String(i)}`, p))
+  return [...shares.values()]
+}
+
+/** A cost's share of its Workflow run: the run, and the slice of it enrich-cost gave this record. @param {Record<string, unknown>} p */
+function costShare(p) {
+  const source = sourceOf(p['cost'])
+  const slice = source ? costSlice(/** @type {RecordCost} */ (p['cost']).slice) : null
+  return source ? `${source}#${slice ? String(slice.index) : ''}` : ''
+}
+
+/**
+ * Every share's usable cost summed onto the standing part's, once per Workflow run and slice; how many shares carry no
+ * usable cost is `partsUnmeasured`.
  * @param {Record<string, unknown>[]} parts  the standing part first @returns {unknown}
  */
 function summedCost(parts) {
-  const usable = parts.map(p => /** @type {RecordCost} */ (p['cost'])).filter(c => costProblem(c) === null)
-  if (!usable.length) return parts[0]?.['cost']
+  const shares = perShare(parts, costShare)
+  const usable = shares.map(p => /** @type {RecordCost} */ (p['cost'])).filter(c => costProblem(c) === null)
+  const own = /** @type {RecordCost} */ (parts[0]?.['cost'])
+  if (!usable.length) return own
   /** @type {Record<string, unknown>} */
-  const sum = { ...usable[0] }
+  const sum = { ...(costProblem(own) === null ? own : usable[0]) }
   for (const k of COUNTS) sum[k] = usable.reduce((n, c) => n + (Number(c[k]) || 0), 0)
   sum['total'] = usable.reduce((n, c) => n + costTotal(c), 0)
-  const skipped = usable.reduce((n, c) => n + (Number(c.skipped) || 0), 0) + parts.length - usable.length
-  return skipped ? { ...sum, skipped } : sum
+  const unmeasured = shares.length - usable.length
+  return unmeasured ? { ...sum, partsUnmeasured: unmeasured } : sum
 }
 
-/** @param {Record<string, unknown>[]} parts  the standing part first */
+/** Each Workflow run's token pool once — the pool is cumulative within a run — summed over the runs. @param {Record<string, unknown>[]} parts  the standing part first */
 function summedTokens(parts) {
   const head = parts[0]?.['outputTokens']
   if (typeof head !== 'number') return head
-  return parts.reduce((n, p) => n + (typeof p['outputTokens'] === 'number' ? p['outputTokens'] : 0), 0)
+  return perShare(parts, p => sourceOf(p['cost'])).reduce((n, p) => n + (typeof p['outputTokens'] === 'number' ? p['outputTokens'] : 0), 0)
 }
 
 /**
@@ -55,9 +85,9 @@ function standingOf(parts) {
 }
 
 /**
- * `records` with each run's parts folded into the one standing for it, and how many were folded; a run filed once is
- * kept as it stands.
- * @template {Record<string, unknown>} R @param {R[]} records @returns {{ records: R[], folded: number }}
+ * `records` with each run's parts folded into the one standing for it, how many were folded and which (`parts`, for a
+ * slice to count its own); a run filed once is kept as it stands.
+ * @template {Record<string, unknown>} R @param {R[]} records @returns {{ records: R[], folded: number, parts: R[] }}
  */
 export function foldStoppedParts(records) {
   /** @type {Map<string, R[]>} */
@@ -69,18 +99,19 @@ export function foldStoppedParts(records) {
     if (!key) kept.push(r)
     else runs.set(key, [...(runs.get(key) ?? []), r])
   }
-  let folded = 0
+  /** @type {R[]} */
+  const gone = []
   for (const parts of runs.values()) {
     const standing = standingOf(parts)
     // Only a stopped part folds: two finished records of one run are a re-filing, which foldResumedRuns judges.
     const folding = parts.filter(p => p !== standing && stopped(p))
     const rest = parts.filter(p => p !== standing && !stopped(p))
-    folded += folding.length
+    gone.push(...folding)
     if (!folding.length) kept.push(...parts)
     else {
       const all = [standing, ...folding]
       kept.push({ ...standing, cost: summedCost(all), outputTokens: summedTokens(all) }, ...rest)
     }
   }
-  return { records: kept, folded }
+  return { records: kept, folded: gone.length, parts: gone }
 }

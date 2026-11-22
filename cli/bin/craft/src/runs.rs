@@ -279,7 +279,8 @@ fn retro(store: &Path, version: &str, skipped: &mut Skipped) -> Result<craft_sto
     }
     let (standing, folded) = parts.standing();
     out.folded += folded;
-    for r in read_back(store, standing, skipped) {
+    let of_version = |r: &Obj| r.text_units("craftVersion") == version;
+    for r in read_back(store, standing, skipped, of_version) {
         craft_store::retro::add_record(&mut out, &r)?;
     }
     Ok(out)
@@ -299,13 +300,26 @@ fn held(
     })
 }
 
-/// The held records read again, each still the one filed at its time; one changed or gone is said
-/// passed over.
-fn read_back(store: &Path, held: Vec<(String, String)>, skipped: &mut Skipped) -> Vec<Obj> {
+/// The held records read again, each still the stopped part of its run filed at its time that did
+/// not die and that `keep` keeps; one changed or gone is said passed over.
+fn read_back(
+    store: &Path,
+    held: Vec<(String, String, String)>,
+    skipped: &mut Skipped,
+    keep: impl Fn(&Obj) -> bool,
+) -> Vec<Obj> {
+    let same = |r: &Obj, key: &str, ts: &str| {
+        r.text_units("ts") == ts
+            && r.get("schemaVersion").is_some_and(Js::truthy)
+            && !r.get("partial").is_some_and(Js::truthy)
+            && craft_store::parts::stopped(r)
+            && craft_store::parts::part_key(r).as_deref() == Some(key)
+            && keep(r)
+    };
     let mut out = Vec::new();
-    for (ts, name) in held {
+    for (key, ts, name) in held {
         match read::record(store, &name) {
-            Ok(r) if r.text_units("ts") == ts.as_str() => out.push(r),
+            Ok(r) if same(&r, &key, &ts) => out.push(r),
             Ok(_) => skipped
                 .records
                 .push((name, "record changed while reading".into())),
@@ -415,7 +429,7 @@ fn stats(
             Err(why) => skipped.records.push((name, why)),
         }
     }
-    for r in read_back(store, parts.standing().0, skipped) {
+    for r in read_back(store, parts.standing().0, skipped, |r| filter.keeps(r)) {
         tally_record(&mut groups, by, &r)?;
     }
     Ok(groups.into_iter().collect())

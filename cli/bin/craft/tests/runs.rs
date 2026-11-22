@@ -418,3 +418,32 @@ fn a_stopped_part_of_a_resumed_run_folds_into_its_finished_record() {
         "a stopped part is no phantom: its run did stop"
     );
 }
+
+#[test]
+fn a_run_stopped_under_one_version_and_finished_under_the_next_counts_under_the_finishing_one() {
+    let d = tempfile::tempdir().unwrap();
+    let mut stopped = review("0.9.0", "INCOMPLETE", 0);
+    stopped["cliRun"] = json!("/s/cli/1-1");
+    record(d.path(), "2026-11-22T09-42-49Z", &stopped);
+    let mut finished = review("0.10.0", "Block", 2);
+    finished["cliRun"] = json!("/s/cli/1-1");
+    record(d.path(), "2026-11-22T09-56-50Z", &finished);
+    let summary = |v: &str| {
+        ndjson(&craft(d.path(), &["retro", v, "--json"]))
+            .into_iter()
+            .find(|l| l["section"] == "summary")
+            .unwrap()
+    };
+    let (old, new) = (summary("0.9.0"), summary("0.10.0"));
+    assert_eq!((&old["runs"], &old["folded"]), (&json!(0), &json!(1)));
+    assert_eq!(
+        (&new["runs"], &new["folded"], &new["partialCoverage"]),
+        (&json!(1), &json!(0), &json!(0))
+    );
+    let rows = ndjson(&craft(d.path(), &["stats", "--by", "version", "--json"]));
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    assert_eq!(
+        (&rows[0]["group"], &rows[0]["tally"]["runs"]),
+        (&json!("0.10.0"), &json!(1))
+    );
+}

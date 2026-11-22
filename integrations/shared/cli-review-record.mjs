@@ -126,7 +126,7 @@ export function cliRecord(o, { craftVersion, depth, strict, via, outputTokens, r
     name: ENGINE,
     driver: DRIVER,
     // The binary's run directory: a run stopped and resumed files a record per part, each naming it, which the store's
-    // readers fold into the run's finished record (integrations/shared/run-duplicates.mjs; cli/crates/craft-store/src/segments.rs).
+    // readers fold into the run's finished record (integrations/shared/run-duplicates.mjs; cli/crates/craft-store/src/parts.rs).
     cliRun: o.run ?? '',
     nested: via !== null,
     via,
