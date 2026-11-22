@@ -1,0 +1,52 @@
+//! craft's own exit over a real stopped group: `finish`, as `main` calls it, waits out the grace of
+//! a group that ignores SIGTERM and kills it before it returns.
+
+use std::process::ExitCode;
+use std::time::{Duration, Instant};
+
+use super::{Bench, HostKind, SETTLING, Spec};
+
+/// Whether the group `pgid` leads still has a member.
+fn alive(pgid: &str) -> bool {
+    std::process::Command::new("kill")
+        .args(["-0", "--", &format!("-{pgid}")])
+        .stderr(std::process::Stdio::null())
+        .status()
+        .unwrap()
+        .success()
+}
+
+/// Run without its settle, or with a pending check that says no, `finish` would return at once,
+/// with the deaf group still inside its two-second grace.
+#[tokio::test]
+async fn craft_s_exit_kills_a_stopped_group_that_ignores_sigterm() {
+    let _turn = SETTLING.lock().await;
+    let mut bench = Bench::new(HostKind::Codex);
+    // The stop waits until the host has set its trap, so the SIGTERM is surely ignored.
+    std::fs::write(bench.path("log/deaf"), "").unwrap();
+    bench.stop_after = Some((Duration::from_millis(100), 143));
+    bench.stop_once = Some(bench.path("log/deaf-ready"));
+    let fake = bench.fake(vec![Spec("deaf", "HANG", None)]);
+    let _answer = bench.drive(&fake).await;
+    let pid: String = std::fs::read_dir(bench.path("log"))
+        .unwrap()
+        .find_map(|e| {
+            let name = e.unwrap().file_name().to_string_lossy().into_owned();
+            name.strip_prefix("call-").map(str::to_owned)
+        })
+        .unwrap();
+    // Stopped, it has had SIGTERM and ignored it: a SIGKILL ends it below, not the SIGTERM.
+    assert!(
+        alive(&pid),
+        "the deaf group {pid} died on SIGTERM: was its trap set?"
+    );
+    let code = crate::finish(Ok(ExitCode::from(7))).await;
+    assert_eq!(code, ExitCode::from(7));
+    // What SIGKILL left, such as the shell's own child, is gone within moments; a group still
+    // inside its grace is not.
+    let gone_by = Instant::now() + Duration::from_millis(500);
+    while alive(&pid) && Instant::now() < gone_by {
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(!alive(&pid), "the deaf group {pid} outlived craft's exit");
+}
