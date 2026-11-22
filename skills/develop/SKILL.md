@@ -1,7 +1,7 @@
 ---
 name: develop
 description: >-
-  Run a change end to end up to a pull request with craft's tools — read the project's declared roles and rules first and let them take any phase they cover but the final full review (theirs runs beside craft's), recall project memory for the touched paths, make the change, loop review → triage → fix — the first round over the branch diff, each next over the fixed delta — until a round brings no open Medium-or-higher finding (at most 4 rounds, then stop and tell the human), run one full craft:review, record the cycle, and open the PR only after that. Needs Claude Code's Workflow tool (not in Codex, OpenCode or a subagent): main session only. Use when asked to implement a feature or fix and open a PR, or take a change from request to PR. Triggers: implement this and open a PR, develop X end to end, take this to a PR, do the whole cycle. Not for working existing findings only (addressing-findings), a one-off review (the review workflows), or how to plan, test or debug (bring the project's own process).
+  Run a change end to end up to a pull request with craft's tools — read the project's declared roles and rules first and let them take any phase they cover but the final full review (theirs runs beside craft's), recall project memory for the touched paths, make the change, loop review → triage → fix — the first round over the branch diff, each next light, over the fixed delta — until a round brings no open Medium-or-higher finding (at most 4 rounds, then stop and tell the human), run one full craft:review, record the cycle, and open the PR only after that. Needs Claude Code's Workflow tool (not in Codex, OpenCode or a subagent): main session only. Use when asked to implement a feature or fix and open a PR, or take a change from request to PR. Triggers: implement this and open a PR, develop X end to end, take this to a PR, do the whole cycle. Not for working existing findings only (addressing-findings), a one-off review (the review workflows), or how to plan, test or debug (bring the project's own process).
 ---
 
 # Develop — the cycle up to a PR
@@ -104,7 +104,9 @@ run id the Workflow completion names. Best-effort: if it fails, say so in one li
 
 **The loop is light by default.** The first round reviews the whole branch diff; every later round
 reviews only the delta the fixes changed, together with the findings that delta touched — not the
-whole diff again. The whole diff is reviewed once more, in phase 5. Only on the human's word ("full
+whole diff again — and at `depth: 'light'`: the diff-scoped lenses once, Medium and above verified,
+with `extraLenses: []` so a light round does not run the repository's own reviewers over a delta.
+Full depth runs only in round 1 and in phase 5, where the whole diff is reviewed once more. Only on the human's word ("full
 rounds") does every round review the whole branch diff. Before each round, note `git rev-parse HEAD`
 — the commit that round reviews.
 
@@ -113,14 +115,14 @@ The engine's argument for each round, as an object (never a string):
 | Round | `craft:review` |
 |---|---|
 | 1 | `{ base: <trunk>, fresh: true, fullEvery: 0 }` |
-| 2 and later, light | `{ base: <trunk>, fullEvery: 0 }` |
+| 2 and later, light | `{ base: <trunk>, fullEvery: 0, depth: 'light', extraLenses: [] }` |
 | 2 and later, full rounds | `{ base: <trunk>, fresh: true }` |
 
 - `craft:review` keeps the loop's memory itself: `fresh` on round 1 starts a new chain (an older run
   on this branch is not this cycle's round), and each later round chains to the one before it,
   scans the fix commits only (`fullEvery: 0` turns off its periodic whole-diff rescan) and checks
   every finding the previous round left open again — whether it was fixed, is still there, or came
-  back. Its light row holds only when the findings are this loop's previous round: it chains to the
+  back; `depth: 'light'` does not skip that check. Its light row holds only when the findings are this loop's previous round: it chains to the
   newest earlier run on the branch, whatever made the findings. Findings from elsewhere (a human's
   PR review) take `craft:addressing-findings` step 7's arguments: the commit that review was made on
   as `base`, with `fresh: true`.
@@ -128,9 +130,11 @@ The engine's argument for each round, as an object (never a string):
   just read from PR threads, or a decision from this loop whose write failed — verbatim, each with
   its `kind`, `title` and `scope`. The engine recalls the project's active decisions, questions and
   project rules for the diff's paths itself on every launch.
-- `craft:review` also takes `depth` and `extraLenses` (not in the table: the loop leaves both at
-  their defaults unless the human asks). `depth: 'light'` is a cheaper pass, not the light loop
-  above: one round of the diff-scoped lenses only (no negative-space or invariants lens; `tests`
+- `craft:review` also takes `depth` and `extraLenses` (the loop's later light rounds set
+  `depth: 'light'` and `extraLenses: []`, as the table says: a light pass with `extraLenses` absent
+  would discover and run the repository's own reviewers over each delta; the human may name them).
+  Round 1 and full rounds leave `extraLenses` at its default.
+  `depth: 'light'` is a cheaper pass: one round of the diff-scoped lenses only (no negative-space or invariants lens; `tests`
   and `intent` still run whenever the diff changes production code, `reconciler` and
   `failure-windows` on controller code, `compat` on a public contract path),
   no completeness critic, and only Medium and above verified (plus a Low/Info finding two or more
@@ -199,7 +203,10 @@ record named first.
 - A round **without a verdict** — the engine returned `INCOMPLETE`, died, or is not available — is
   not convergence and does not count as a clean round. Say what did not run. Retry the review once
   if the cause is transient (the retry is the same round); still no verdict → stop as above and
-  tell the human. A craft engine that died with `at workflow.js:<line>:<column>`:
+  tell the human. An `INCOMPLETE` that says the harness's permission check refused a command is
+  no transient: show the human the refused command and the `Bash(<binary> review:*)` rule it names,
+  which should let the run go on (not yet observed under auto mode); once they have added it, continue with `run=<the run directory it names>` — the same
+  round, its steps so far kept; never add the rule yourself. A craft engine that died with `at workflow.js:<line>:<column>`:
   `node "<this skill's base directory>/../../integrations/shared/engine-source-map.mjs" <engine> workflow.js:<line>:<column>`
   gives the place in the plugin's source (or, for an engine without a map, the line of
   `workflows/<engine>.js`) — quote it when you report the failure.

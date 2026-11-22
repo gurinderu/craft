@@ -25,14 +25,14 @@ pub const FOR_FINDINGS: &str = "for findings work, right after loading the skill
 const LIGHT: &str = "a light re-review of the fix commits only (base: the commit the review was made on; a merge since it, as trunk merged in, means ask the human first)";
 const ROUTES: &str = "on any language (Rust, Nix and SQL under their profiles, other source under its general lenses, in one run)";
 const TRIAGE: &str = "triage the findings here in the main session, whatever their number: launch the craft:triage-findings workflow (Workflow tool) with report = the findings written to a file in the session's temporary directory whenever they live in a review report, and pr = the PR number whenever there is a PR (it reads the PR's threads itself), at least one of the two, and prBase = git merge-base origin/<trunk> <reviewed head> together with base = the reviewed head's SHA, only when the reviewed head is a branch diverging from trunk (that merge-base differs from the head; on trunk or with no branch leave prBase out, and the findings claimed not this PR's come to you), even when the recall above failed (it recalls for itself); never hand triage to a subagent, which has no Workflow tool; right after it returns, record each disposition and file its issues yourself";
-pub const CODEX_RE_REVIEW: &str = "craft:codex-review with --base <that commit> --fresh --delta --full-every 0 in this session (if it cannot run or fails, your own pass over git diff <that commit>..HEAD)";
+pub const CODEX_RE_REVIEW: &str = "craft:codex-review with --base <that commit> --fresh --delta --full-every 0 --depth light --extra-lenses off in this session (if it cannot run or fails, your own pass over git diff <that commit>..HEAD)";
 
 pub fn review_brief() -> String {
     format!("\"Review only: {REVIEWER}; return each finding with its severity and file:line.\"")
 }
 fn re_review() -> String {
     format!(
-        "here in the main session with the craft:review workflow {{ base: <that commit>, fresh: true, delta: true, fullEvery: 0 }} {ROUTES}"
+        "here in the main session with the craft:review workflow {{ base: <that commit>, fresh: true, delta: true, fullEvery: 0, depth: 'light', extraLenses: [] }} {ROUTES}"
     )
 }
 /// The main session holds the memory: `skill` names the memory skill, `record` how to record.
@@ -173,7 +173,7 @@ pub fn reminder() -> String {
     reminder_line(
         ADDRESS,
         "craft:develop or the review workflow",
-        "craft:review { base: <that commit>, fresh: true, delta: true, fullEvery: 0 } on any language",
+        "craft:review { base: <that commit>, fresh: true, delta: true, fullEvery: 0, depth: 'light', extraLenses: [] } on any language",
     )
 }
 

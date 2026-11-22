@@ -265,6 +265,11 @@ test('fresh, delta and fullEvery reach `craft review start`; the binary picks th
   // addressing-findings' re-review of the fix commits says it is a delta, so the binary never approves it.
   const delta = await cliRun({ args: { fresh: true, fullEvery: 0, delta: true } })
   assert.match(startOf(delta.engine), /review start --cwd '[^']+' --fresh --delta --full-every 0 --record-root/m)
+  // develop's later rounds and addressing-findings' re-review run light: the depth reaches the binary beside the round flags.
+  const lightRound = await cliRun({ args: { fullEvery: 0, depth: 'light' } })
+  assert.match(startOf(lightRound.engine), /review start --cwd '[^']+' --depth light --full-every 0 --record-root/m)
+  const lightDelta = await cliRun({ args: { fresh: true, fullEvery: 0, delta: true, depth: 'light', extraLenses: [] } })
+  assert.match(startOf(lightDelta.engine), /review start --cwd '[^']+' --depth light --fresh --delta --full-every 0 --extra-lenses 'off' --record-root/m)
   const plain = await cliRun()
   assert.doesNotMatch(startOf(plain.engine), /--fresh|--delta|--full-every/)
   const file = fs.readdirSync(plain.store).find(f => f.endsWith('.json'))
