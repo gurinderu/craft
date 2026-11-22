@@ -19,6 +19,12 @@ const REAL_FINDING_RULE: &str = "rejected, refuted, justified, covered, deferred
 /// Errors from listing the store or representing its paths.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("checking run store {}: {source}", path.display())]
+    Probe {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
     #[error("listing run store {}: {source}", path.display())]
     List {
         path: PathBuf,
@@ -31,11 +37,11 @@ pub enum Error {
 
 /// Read the newest 500 detail files, retaining only this repository's finished, branched runs.
 /// `project` is resolved to the main checkout's repository key; paths are segment prefixes.
-/// The result is always one JSON object, including when the store does not exist.
+/// The result is always one JSON object, including when the store does not exist; a store that
+/// cannot be reached (an ancestor the user cannot search) is an error, never an absent store.
 ///
 /// # Errors
-/// When the store cannot be listed, or an output path is not representable as Unicode.
-/// The initial existence probe can hide metadata errors as absence (realm @nick/craft, #568).
+/// When the store cannot be probed or listed, or an output path is not representable as Unicode.
 pub fn recurring(store: &Path, project: &Path, paths: &[String]) -> Result<Js, Error> {
     let project = craft_store::git::repo_key(project);
     let project = path_text(&project)?;
@@ -44,7 +50,11 @@ pub fn recurring(store: &Path, project: &Path, paths: &[String]) -> Result<Js, E
         .with("store", Js::str(store_text))
         .with("project", Js::str(project))
         .with("paths", Js::Arr(paths.iter().map(Js::str).collect()));
-    if !store.exists() {
+    let present = store.try_exists().map_err(|source| Error::Probe {
+        path: store.into(),
+        source,
+    })?;
+    if !present {
         counts(&mut out, 0, 0);
         out.set("groups", Js::Arr(vec![]));
         out.set("groupsCut", number(0));
