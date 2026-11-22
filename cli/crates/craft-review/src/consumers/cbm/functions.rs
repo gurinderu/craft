@@ -120,11 +120,13 @@ impl Cbm {
     /// property the graph no longer names, which answers no rows too (realm @nick/craft, node #613).
     ///
     /// # Errors
-    /// When the graph gives no answer that holds rows.
+    /// When `deadline` has passed, or the graph gives no answer that holds rows.
     pub fn holds_numbers(&self, project: &str, deadline: Instant) -> Result<bool, CbmError> {
         let left = super::left(deadline)?;
         let budget_bound = left <= self.timeout;
-        let query = format!("MATCH (f) WHERE {MEASURED} RETURN f.name LIMIT 1");
+        // The file property the per-file question matches on, too: a rename of it reads empty.
+        let query =
+            format!("MATCH (f) WHERE f.file_path IS NOT NULL AND {MEASURED} RETURN f.name LIMIT 1");
         let args = json!({"project": project, "query": query, "max_rows": 1});
         let answer = self
             .call("query_graph", args, left.min(self.timeout))

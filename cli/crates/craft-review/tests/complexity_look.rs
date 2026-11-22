@@ -157,6 +157,11 @@ fn a_read_with_no_file_read_whole_or_a_failed_read_is_a_coverage_gap() {
 fn a_read_that_failed_files_no_gap_when_no_plan_would_run_the_lens() {
     let failed = r#"echo '{"error":"boom"}'; exit 1"#;
     let s = finished_picking(Some(failed), None, &["correctness"]);
+    let saved = std::fs::read_to_string(craft_review::state::state_path(Path::new(
+        s["run"].as_str().unwrap(),
+    )))
+    .unwrap();
+    assert!(saved.contains("boom"), "the read did fail: {saved}");
     assert_eq!(s["capped"], json!([]), "{s}");
     assert_eq!(s["verdict"], json!("Approve"), "{s}");
 }

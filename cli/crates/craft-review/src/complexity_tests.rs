@@ -119,3 +119,38 @@ fn files_that_answered_no_function_leave_nothing_to_judge_and_no_gap() {
     let (ran, note) = indexed(&ctx, true).unwrap();
     assert!(!ran && note.unwrap().contains("nothing to judge"));
 }
+
+#[test]
+fn a_gap_from_many_files_or_a_long_failure_is_one_bounded_line_that_keeps_its_count() {
+    let mut ctx = ready();
+    ctx.consumers.metrics_unread = (0..8)
+        .map(|i| {
+            format!(
+                "src/m_{i}.rs (1 of its rows did not read as a function){}",
+                "z".repeat(150)
+            )
+        })
+        .collect();
+    let gap = look_gap(&look(&ctx).unwrap()).unwrap();
+    assert!(
+        gap.contains("src/m_0.rs") && !gap.contains("src/m_5.rs"),
+        "{gap}"
+    );
+    assert!(
+        gap.ends_with(" +3 more"),
+        "the count survives the cut: {gap}"
+    );
+    assert!(gap.chars().count() < 800, "{}", gap.chars().count());
+    let mut ctx = ready();
+    ctx.consumers.metrics_failed = format!("line one\nline two {}", "w".repeat(2000));
+    let gap = look_gap(&look(&ctx).unwrap()).unwrap();
+    assert!(
+        !gap.contains('\n') && gap.contains("line one line two"),
+        "{gap}"
+    );
+    assert!(
+        gap.chars().count() < 800 && gap.ends_with("…)"),
+        "{}",
+        gap.chars().count()
+    );
+}

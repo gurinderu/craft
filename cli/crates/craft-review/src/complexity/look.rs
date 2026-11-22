@@ -9,9 +9,10 @@ pub enum Look {
     /// Some function the change touches has its numbers: the lens runs. Files beside them not
     /// wholly read are named in its table; that is no coverage gap.
     Measured,
-    /// The read went through and no function the change touches came back: the files hold none
-    /// (types, re-exports, constants), or the graph holds no such name, which an empty answer
-    /// cannot tell apart (realm @nick/craft, node #613). A note, no gap: the verdict may approve.
+    /// The read went through and no function the change touches came back, and the graph's probe
+    /// found numbers elsewhere, so its properties are as asked: the files hold none (types,
+    /// re-exports, constants; realm @nick/craft, node #613). A note, no gap: the verdict may
+    /// approve.
     NothingToJudge(String),
     /// The read failed, or nothing was measured and files went unread: there may be functions it
     /// never saw. A coverage gap, capping the verdict at Warning; why, with each file.
@@ -71,22 +72,24 @@ fn bounded(s: &str) -> String {
     format!("{cut}…")
 }
 
-/// `items` joined by `sep`, at most [`FILES_SHOWN`] of them and how many more, [`bounded`].
+/// `items` joined by `sep`, at most [`FILES_SHOWN`] of them, [`bounded`], then how many more —
+/// outside the cut, so the count survives it.
 fn listed(items: &[String], sep: &str) -> String {
     let shown = items.iter().take(FILES_SHOWN).map(String::as_str);
-    let mut text = shown.collect::<Vec<_>>().join(sep);
+    let mut text = bounded(&shown.collect::<Vec<_>>().join(sep));
     if items.len() > FILES_SHOWN {
         text.push_str(&format!(" +{} more", items.len() - FILES_SHOWN));
     }
-    bounded(&text)
+    text
 }
 
 /// The coverage gap `look` files when the lens could not look, as "Not run" names it.
 #[must_use]
 pub fn gap(look: &Look) -> Option<String> {
     match look {
-        Look::CouldNotLook(why) => Some(format!(
-            "metrics-only lens complexity could not look — {why}"
+        Look::CouldNotLook(why) => Some(craft_store::gap::entry(
+            "metrics-only lens complexity could not look",
+            why,
         )),
         Look::Measured | Look::NothingToJudge(_) => None,
     }
@@ -105,6 +108,11 @@ mod tests {
             "{text}"
         );
         assert!(text.ends_with(" +3 more"), "{text}");
+        let wide: Vec<String> = (0..8).map(|i| format!("{i}{}", "y".repeat(400))).collect();
+        assert!(
+            listed(&wide, " · ").ends_with("… +3 more"),
+            "the count survives the cut"
+        );
         let long = bounded(&format!("a\nb{}", "x".repeat(2000)));
         assert!(
             !long.contains('\n') && long.chars().count() == TEXT_MAX + 1,

@@ -487,25 +487,47 @@ fn a_run_that_only_stopped_across_versions_counts_once_under_its_newest_parts_ve
 
 #[test]
 fn a_retro_ranks_coverage_gaps_beside_not_run_by_their_lens_and_kind() {
+    use craft_store::gap::entry;
     let d = tempfile::tempdir().unwrap();
-    for (ts, why) in [
-        ("2026-11-01T10-00-00Z", "src/a.rs (cut)"),
-        ("2026-11-01T11-00-00Z", "boom"),
-    ] {
+    let look = "metrics-only lens complexity could not look";
+    let never = "general metrics-only lenses that never returned";
+    let gaps = [
+        (
+            "2026-11-01T10-00-00Z",
+            entry(look, "src/a.rs (cut) — and again"),
+        ),
+        ("2026-11-01T11-00-00Z", entry(look, "boom")),
+        ("2026-11-01T12-00-00Z", entry(never, "complexity: died")),
+        (
+            "2026-11-01T13-00-00Z",
+            "a gap written with no separator".to_owned(),
+        ),
+    ];
+    for (ts, gap) in &gaps {
         let mut r = review("0.9.0", "Warning", 0);
-        r["capped"] = json!([format!(
-            "metrics-only lens complexity could not look — {why}"
-        )]);
+        r["capped"] = json!([gap]);
         record(d.path(), ts, &r);
     }
     let lines = ndjson(&craft(d.path(), &["retro", "0.9.0", "--json"]));
-    let rows: Vec<&Value> = lines.iter().filter(|l| l["section"] == "notRun").collect();
-    assert_eq!(rows.len(), 1, "{rows:?}");
-    assert_eq!(rows[0]["runs"], json!(2), "{rows:?}");
+    let rows: Vec<String> = lines
+        .iter()
+        .filter(|l| l["section"] == "notRun")
+        .map(Value::to_string)
+        .collect();
+    assert_eq!(
+        rows.len(),
+        3,
+        "one row per kind, the bare gap whole: {rows:?}"
+    );
+    let row = |k: &str| {
+        rows.iter()
+            .find(|r| r.contains(&format!("\"{k}\"")))
+            .unwrap()
+    };
+    assert!(row(look).contains("\"runs\":2"), "{rows:?}");
+    assert!(row(never).contains("\"runs\":1"), "{rows:?}");
     assert!(
-        rows[0]
-            .to_string()
-            .contains("metrics-only lens complexity could not look"),
+        row("a gap written with no separator").contains("\"runs\":1"),
         "{rows:?}"
     );
 }

@@ -103,7 +103,8 @@ fn budget_said(why: CbmError) -> GraphError {
 /// no function for as empty.
 ///
 /// # Errors
-/// When the first question gets no answer, or the index moved while they were asked (node #533).
+/// When the first question gets no answer, the index moved while they were asked (node #533), or
+/// every file asked answered no function and the graph's probe found no numbers at all, or failed.
 pub(in crate::consumers) fn graph_metrics(r: &Ready, changed: &Lines) -> Result<Read, GraphError> {
     let mut out = Read::default();
     let until = r.deadline.checked_sub(RECHECK).unwrap_or(r.deadline);
@@ -133,20 +134,19 @@ pub(in crate::consumers) fn graph_metrics(r: &Ready, changed: &Lines) -> Result<
     // Every file asked answered no function: the graph is asked whether it holds any numbers at
     // all, else a property it renamed would read as a change with nothing to judge (node #613).
     let all_empty = out.measured.is_empty() && out.unread.is_empty() && !out.empty.is_empty();
-    if all_empty
-        && !r
-            .cbm
-            .holds_numbers(&r.project, until)
-            .map_err(budget_said)?
-    {
-        return Err(GraphError::NoNumbers);
-    }
+    let holds = all_empty.then(|| r.cbm.holds_numbers(&r.project, until));
+    // A moved index first: its answers, the probe's too, are another checkout's.
     let after = r.cbm.index(&r.project, r.deadline).map_err(budget_said)?;
     if (&after.at, &after.root) != (&r.index.at, &r.index.root) {
         return Err(GraphError::Moved {
             project: r.project.clone(),
             during: ASKED,
         });
+    }
+    if let Some(holds) = holds
+        && !holds.map_err(budget_said)?
+    {
+        return Err(GraphError::NoNumbers);
     }
     Ok(out)
 }

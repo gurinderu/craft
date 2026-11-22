@@ -128,7 +128,9 @@ fn a_later_files_failed_question_names_it_and_keeps_the_others_numbers() {
 
 /// `rows` for the metrics question, `probe` for the graph's probe for any function's numbers.
 fn with_probe(probe: &str, rows: &str) -> String {
-    format!("case \"$4\" in *'RETURN f.name LIMIT 1'*) {probe};; *) {rows};; esac")
+    format!(
+        "case \"$4\" in *'WHERE f.file_path IS NOT NULL AND f.cognitive IS NOT NULL RETURN f.name LIMIT 1'*) {probe};; *) {rows};; esac"
+    )
 }
 
 #[test]

@@ -397,10 +397,9 @@ pub(crate) fn file_holes(run: &mut RunState, profiles: &[Profile]) {
             holes.into_iter().map(|(_, h)| h).collect(),
         );
         if !gaps.is_empty() {
-            run.capped.push(format!(
-                "{} metrics-only lenses that never returned — {}",
-                p.id,
-                gaps.join(" · ")
+            run.capped.push(craft_store::gap::entry(
+                &format!("{} metrics-only lenses that never returned", p.id),
+                &gaps.join(" · "),
             ));
         }
         if !holes.is_empty() {

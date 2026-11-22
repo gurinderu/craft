@@ -40,8 +40,9 @@ pub fn project(repo: &str) -> Option<String> {
 /// Whether the metrics-or-nothing lenses may run, from what the binary found when it indexed the
 /// graph beside the consumers list and read the numbers of the functions the change touches (no
 /// agent indexes, warms or asks it: node #529 — the lenses judge from the numbers in their prompt),
-/// and the note when they may not; `None` when no profile taking part has one (`wanted` false).
-/// A lens that could not look gets no note: it is named once, as a coverage gap ([`look`]).
+/// as [`look`] decides it, and the note when they may not: why the index was unavailable, or that
+/// there was nothing to judge; `None` when no profile taking part has one (`wanted` false). A lens
+/// that could not look gets no note: it is named once, as a coverage gap ([`look_gap`]).
 #[must_use]
 pub fn indexed(ctx: &PromptContext, wanted: bool) -> Option<(bool, Option<String>)> {
     if !wanted {

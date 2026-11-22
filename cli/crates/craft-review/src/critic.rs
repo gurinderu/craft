@@ -178,18 +178,18 @@ pub(crate) fn fresh(run: &mut RunState, profiles: &[Profile]) -> Vec<Value> {
             .and_then(Value::as_array);
         run.rounds.note_lines(t, found.is_some());
         let Some(found) = found else {
-            let hole = format!(
-                "{profile} critic follow-up lens {lens} — dispatched and returned no findings (died, or answered off-schema)"
+            let (what, why) = (
+                format!("{profile} critic follow-up lens {lens}"),
+                "dispatched and returned no findings (died, or answered off-schema)",
             );
             let gap = profiles
                 .iter()
                 .any(|p| &p.id == profile && p.metrics_only(lens));
             if gap {
-                &mut run.capped
+                run.capped.push(craft_store::gap::entry(&what, why));
             } else {
-                &mut run.not_run
+                run.not_run.push(format!("{what} — {why}"));
             }
-            .push(hole);
             continue;
         };
         for f in found {

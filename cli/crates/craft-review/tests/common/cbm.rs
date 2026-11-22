@@ -62,7 +62,7 @@ pub fn stand_in_answering(
     let answer = metrics.map_or(answer, str::to_owned);
     let probe = probe.unwrap_or(r#"echo '{"columns":["f.name"],"rows":[["f"]]}'"#);
     let script = format!(
-        "#!/bin/sh\ncase \"$3\" in\n index_repository) echo \"$4\" >> '{log}'; echo '{{\"status\":\"indexed\"}}';;\n index_status) echo '{{\"status\":\"ready\",\"indexed_at\":\"2099-01-01T00:00:00Z\",\"root_path\":\"{top}\"}}';;\n query_graph) case \"$4\" in *'RETURN f.name LIMIT 1'*) {probe};; *web/app.ts*'IS NOT NULL'*) {answer};; *) echo '{{\"rows\":[]}}';; esac;;\n *) echo '{{\"projects\":[]}}';;\nesac\n",
+        "#!/bin/sh\ncase \"$3\" in\n index_repository) echo \"$4\" >> '{log}'; echo '{{\"status\":\"indexed\"}}';;\n index_status) echo '{{\"status\":\"ready\",\"indexed_at\":\"2099-01-01T00:00:00Z\",\"root_path\":\"{top}\"}}';;\n query_graph) case \"$4\" in *'WHERE f.file_path IS NOT NULL AND f.cognitive IS NOT NULL RETURN f.name LIMIT 1'*) {probe};; *web/app.ts*'IS NOT NULL'*) {answer};; *) echo '{{\"rows\":[]}}';; esac;;\n *) echo '{{\"projects\":[]}}';;\nesac\n",
         log = log.display(),
         top = top.display(),
     );
