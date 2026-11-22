@@ -159,11 +159,6 @@ export function titleOverlap(x, y) {
   return shared / Math.max(a.size, b.size)
 }
 
-/** Critical/High, which no deferred question holds (realm @nick/craft, node #187). @param {unknown} sev */
-export function reraisedBySeverity(sev) {
-  return /^(critical|high)$/i.test(String(sev ?? '').trim())
-}
-
 /**
  * Whether `d` is a human's decision: a decision that says `decidedBy: "human"` and records no deferral. A
  * record without the field is not one, so every record written before it is not.
