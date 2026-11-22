@@ -78,23 +78,23 @@ fn a_stop_whose_grace_ended_is_no_longer_pending_unsettled() {
     let _reaped = child.wait();
 }
 
-/// Refused a thread for the grace, the stop neither panics nor kills at once: the group keeps
-/// its grace, pending until the settle waits it out and sends the SIGKILL.
+/// Refused a thread for the grace, the stop neither panics nor kills at once: it runs the grace
+/// itself, so the group keeps its two seconds and is gone, with nothing listed, when it returns.
 #[test]
-fn a_refused_grace_thread_defers_the_grace_to_the_settle() {
+fn a_refused_grace_thread_runs_the_grace_in_the_stop() {
     let _turn = turn();
     let mut child = deaf_group();
     let started = Instant::now();
     unix::stop_with(pid(&child), |_grace| {
         Err(io::Error::from(io::ErrorKind::WouldBlock))
     });
-    assert!(stops_pending());
-    std::thread::sleep(Duration::from_millis(200));
-    assert!(alive(pid(&child)), "killed before its grace");
-    settle_stops();
-    assert!(started.elapsed() >= Duration::from_millis(1900));
-    assert!(!alive(pid(&child)), "left alive after the settle");
+    assert!(
+        started.elapsed() >= Duration::from_millis(1900),
+        "killed before its grace"
+    );
+    assert!(!alive(pid(&child)), "left alive after its grace");
     assert!(!stops_pending());
+    assert_eq!(unix::listed(), 0);
     let _reaped = child.wait();
 }
 
@@ -129,10 +129,9 @@ fn a_second_stop_prunes_a_finished_grace() {
     let _reaped = (gone.wait(), deaf.wait());
 }
 
-/// Only a stop that still waits counts and survives a prune: a running thread and a deferred
-/// grace do, a thread that finished but was never joined does not.
+/// Only a grace still running counts: a thread that finished but was never joined does not.
 #[test]
-fn a_finished_grace_left_unjoined_no_longer_waits() {
+fn a_finished_grace_left_unjoined_is_not_running() {
     let finished = std::thread::spawn(|| {});
     while !finished.is_finished() {
         std::thread::yield_now();
@@ -141,22 +140,12 @@ fn a_finished_grace_left_unjoined_no_longer_waits() {
     let holding = std::thread::spawn(move || {
         let _released = held.recv();
     });
-    let mut stops = vec![
-        unix::Stop::Thread(finished),
-        unix::Stop::Thread(holding),
-        unix::Stop::Deferred {
-            pgid: Pid::from_raw(i32::MAX),
-            deadline: Instant::now(),
-        },
-    ];
-    let waits: Vec<bool> = stops.iter().map(unix::Stop::waits).collect();
-    assert_eq!(waits, [false, true, true]);
-    unix::prune(&mut stops);
-    assert_eq!(stops.len(), 2);
+    let mut threads = vec![finished];
+    assert!(!unix::running(&threads));
+    threads.push(holding);
+    assert!(unix::running(&threads));
     release.send(()).unwrap();
-    for stop in stops {
-        if let unix::Stop::Thread(thread) = stop {
-            thread.join().unwrap();
-        }
+    for thread in threads {
+        thread.join().unwrap();
     }
 }

@@ -22,8 +22,11 @@ fn alive(pgid: &str) -> bool {
 async fn craft_s_exit_kills_a_stopped_group_that_ignores_sigterm() {
     let _turn = SETTLING.lock().await;
     let mut bench = Bench::new(HostKind::Codex);
-    bench.stop_after = Some((Duration::from_millis(500), 143));
-    let fake = bench.fake(vec![Spec("deaf", "DEAF", None)]);
+    // The stop waits until the host has set its trap, so the SIGTERM is surely ignored.
+    std::fs::write(bench.path("log/deaf"), "").unwrap();
+    bench.stop_after = Some((Duration::from_millis(100), 143));
+    bench.stop_once = Some(bench.path("log/deaf-ready"));
+    let fake = bench.fake(vec![Spec("deaf", "HANG", None)]);
     let _answer = bench.drive(&fake).await;
     let pid: String = std::fs::read_dir(bench.path("log"))
         .unwrap()

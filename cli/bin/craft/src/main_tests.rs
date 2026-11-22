@@ -1,7 +1,7 @@
 use std::io;
 use std::process::ExitCode;
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use super::finish_with;
 use crate::settle::{EXIT, Exit};
@@ -43,4 +43,35 @@ async fn finish_settles_on_craft_s_own_settle_thread() {
     };
     let _code = finish_with(Ok(ExitCode::SUCCESS), &exit).await;
     assert_eq!(ON.lock().unwrap().as_deref(), Some("craft-settle"));
+}
+
+/// The outcome is reported before the settle, so a settle that panics cannot swallow its error:
+/// the error was printed by the time the panic comes.
+#[tokio::test]
+async fn finish_reports_the_outcome_before_a_settle_that_panics() {
+    static TOLD: AtomicBool = AtomicBool::new(false);
+    #[derive(Debug)]
+    struct Told;
+    impl std::fmt::Display for Told {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            TOLD.store(true, Ordering::SeqCst);
+            f.write_str("the run's own error")
+        }
+    }
+    impl std::error::Error for Told {}
+    let exit = Exit {
+        pending: || true,
+        settle: || {
+            assert!(
+                TOLD.load(Ordering::SeqCst),
+                "settled before the outcome was told"
+            );
+            panic!("settle broke");
+        },
+        spawn: EXIT.spawn,
+    };
+    let joined =
+        tokio::spawn(async move { finish_with(Err(anyhow::Error::new(Told)), &exit).await }).await;
+    let panic = joined.unwrap_err().into_panic();
+    assert_eq!(panic.downcast_ref::<&str>(), Some(&"settle broke"));
 }

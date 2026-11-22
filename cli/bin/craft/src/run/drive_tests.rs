@@ -1,8 +1,9 @@
 //! The loop end to end against a stand-in binary ([`Fake`], acting as the step protocol's binary
 //! does) and stand-in host CLIs: shell scripts that act on a word in their task's
-//! prompt — FAIL fails, FAIL-ONCE fails the first time, HANG outlives its deadline, DEAF does too
-//! and ignores SIGTERM, LIMIT says the usage limit, NOLOGIN says no account is logged in, BLOCKED
-//! (Codex) answers that it could not look — and otherwise answer.
+//! prompt — FAIL fails, FAIL-ONCE fails the first time, HANG outlives its deadline, LIMIT says the
+//! usage limit, NOLOGIN says no account is logged in, BLOCKED (Codex) answers that it could not
+//! look — and otherwise answer. With a `deaf` file in the log the script ignores SIGTERM from its
+//! first line and says so with `deaf-ready`.
 
 use std::cell::RefCell;
 use std::num::NonZeroUsize;
@@ -158,10 +159,11 @@ fn host_script(log: &Path, read: &str, answer: &str) -> String {
     let log = log.display();
     format!(
         r#"#!/bin/sh
+if [ -f '{log}/deaf' ]; then trap '' TERM; touch '{log}/deaf-ready'; fi
 {read}
 mkdir -p '{log}/live'; touch '{log}/live/'$$; ls '{log}/live' | wc -l >> '{log}/alive'
 printf '%s' "$input" > '{log}/call-'$$; echo "$@" > '{log}/argv-'$$; echo "$CLAUDE_PLUGIN_ROOT" > '{log}/root'; pwd -P > '{log}/cwd'
-case "$input" in *DEAF*) trap '' TERM; sleep 30;; *HANG*) sleep 30;; esac
+case "$input" in *HANG*) sleep 30;; esac
 sleep 0.3; rm -f '{log}/live/'$$
 case "$input" in
   *FAIL-ONCE*) if [ ! -f '{log}/failed-once' ]; then touch '{log}/failed-once'; echo boom >&2; exit 1; fi;;
@@ -192,6 +194,8 @@ struct Bench {
     events: RefCell<Vec<Event>>,
     /// A stopping signal's exit status, sent this long after the drive starts.
     stop_after: Option<(Duration, u8)>,
+    /// A file the stopping signal also waits for, sent once it exists.
+    stop_once: Option<PathBuf>,
 }
 
 impl Bench {
@@ -223,6 +227,7 @@ impl Bench {
             agents: None,
             events: RefCell::default(),
             stop_after: None,
+            stop_once: None,
         }
     }
 
@@ -261,7 +266,11 @@ impl Bench {
             stop: {
                 let (send, stop) = tokio::sync::watch::channel(None);
                 if let Some((after, code)) = self.stop_after {
+                    let once = self.stop_once.clone();
                     tokio::spawn(async move {
+                        while once.as_ref().is_some_and(|f| !f.exists()) {
+                            tokio::time::sleep(Duration::from_millis(10)).await;
+                        }
                         tokio::time::sleep(after).await;
                         let _gone = send.send(Some(code));
                         std::future::pending::<()>().await;
