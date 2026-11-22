@@ -3,38 +3,59 @@
 
 use super::{discover, put};
 use serde_json::json;
+use std::path::Path;
 use std::time::{Duration, Instant};
 
-/// About 1 MiB of a values file: many plain keys, one image the walk should find.
-fn large_values() -> String {
+/// About `bytes` of a values file: many plain keys, one image the walk should find.
+fn values_of(bytes: usize) -> String {
     let mut text = String::from("image: ghcr.io/acme/app:v1.2.3\n");
     let mut i = 0;
-    while text.len() < 1024 * 1024 - 64 {
+    while text.len() < bytes - 64 {
         text.push_str(&format!("key{i}: \"value {i} # not a comment\"\n"));
         i += 1;
     }
     text
 }
 
+/// How long `runs` discoveries of `root`'s `values.yaml` take back to back; each must find the
+/// image with nothing unread.
+fn timed(root: &Path, runs: u32) -> Duration {
+    let started = Instant::now();
+    for _ in 0..runs {
+        let got = discover(root, Some(&["values.yaml"]), json!([]));
+        // The absolute ceiling: every call stayed inside the engine's own per-call budget (the
+        // 2 s floor plus a second per whole 64 KiB, 17 s for the 1 MiB file) or the manifest would
+        // be unread. It is the only check that catches a constant-factor slowdown, and only once
+        // that slowdown crosses the budget: on a loaded host nothing independent of the load can
+        // catch one earlier.
+        assert_eq!(got["unread"], json!([]));
+        assert_eq!(got["candidates"][0]["system"], "app");
+    }
+    started.elapsed()
+}
+
 #[test]
 fn a_one_mib_manifest_is_discovered_under_the_engine_budgets() {
-    let root = tempfile::tempdir().unwrap();
-    put(root.path(), "values.yaml", large_values());
-    let started = Instant::now();
-    let got = discover(root.path(), Some(&["values.yaml"]), json!([]));
-    // Nothing unread is the proof: past the engine's budget for 1 MiB (the 2 s floor plus a second
-    // per 64 KiB, about 18 s) the manifest would be unread. The wall clock only catches a call
-    // drifting toward that budget, before it starts failing as unread: 15 s leaves the engine its
-    // margin and sits far above any host's time (a debug build: about 1 s alone, 2 s under the
-    // parallel suite here), so it measures the patterns, not the machine. A tighter bound would
-    // need a measurement on CI's runners, which no one has taken.
+    let (small, large) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    put(small.path(), "values.yaml", values_of(64 * 1024));
+    put(large.path(), "values.yaml", values_of(1024 * 1024));
+    // Super-linear growth, on the Rust side or in the patterns, is pinned by a ratio taken under
+    // whatever load the host has: one 1 MiB discovery against sixteen 64 KiB ones back to back,
+    // the same bytes in windows of the same length, interleaved, each the fastest of three. Linear
+    // work keeps the ratio near 1: measured 0.80 to 0.82 idle, 0.54 to 1.03 under 160 busy loops
+    // on 16 cores. The bound of 2 sits twice above those, and fails once a quadratic term costs at
+    // 1 MiB from about once (loaded) to one and a half times (idle) the linear work. A
+    // constant-factor slowdown moves both sides alike and leaves the ratio where it was: only the
+    // ceiling in `timed` catches it.
+    let (mut one, mut sixteen) = (Duration::MAX, Duration::MAX);
+    for _ in 0..3 {
+        one = one.min(timed(large.path(), 1));
+        sixteen = sixteen.min(timed(small.path(), 16));
+    }
     assert!(
-        started.elapsed() < Duration::from_secs(15),
-        "{:?}",
-        started.elapsed()
+        one < sixteen * 2,
+        "1 MiB took {one:?}, sixteen 64 KiB {sixteen:?}: past twice linear"
     );
-    assert_eq!(got["unread"], json!([]));
-    assert_eq!(got["candidates"][0]["system"], "app");
 }
 
 #[test]
