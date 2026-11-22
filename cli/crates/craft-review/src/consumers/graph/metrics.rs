@@ -15,7 +15,17 @@ use crate::gate::lines::Lines;
 const FILES_MAX: usize = 40;
 
 /// The share of the graph's budget the callers leave to the metrics read, however long they take.
-pub(in crate::consumers) const METRICS_FLOOR: Duration = Duration::from_secs(20);
+const METRICS_FLOOR: Duration = Duration::from_secs(20);
+
+/// What of the graph's budget the callers leave to the metrics read: [`METRICS_FLOOR`] when a
+/// metrics lens wants the numbers, nothing otherwise.
+pub(in crate::consumers) fn kept_for_metrics(metrics: bool) -> Duration {
+    if metrics {
+        METRICS_FLOOR
+    } else {
+        Duration::ZERO
+    }
+}
 
 /// One function the change touches and the graph's numbers for it, under the graph's own names.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -27,23 +37,28 @@ pub struct Measured {
     pub metrics: Map<String, Value>,
 }
 
-/// What reading the numbers came to: the functions measured, and the changed files whose
-/// functions were not read, each with why (`file (why)`).
+/// What reading the numbers came to: the functions measured, the changed files whose functions
+/// were not wholly read, each with why (`file (why)`), and the files the graph answered no function
+/// for — one without functions, or a name it does not hold: the two cannot be told apart (realm
+/// @nick/craft, node #613).
 #[derive(Debug, Default)]
 pub(in crate::consumers) struct Read {
     pub(in crate::consumers) measured: Vec<Measured>,
     pub(in crate::consumers) unread: Vec<String>,
+    pub(in crate::consumers) empty: Vec<String>,
 }
+
+/// The question the metrics read asks, as an error about it names it.
+const ASKED: &str = "the numbers of the functions the change touches were read";
 
 /// Whether the span `start..=end` holds a line of `ranges`.
 fn touches(start: u32, end: u32, ranges: &[(u32, u32)]) -> bool {
     ranges.iter().any(|&(a, b)| a <= end && start <= b)
 }
 
-/// Why a file the graph indexes reads as not wholly read, each reason: its functions cut, rows
-/// that did not read, metric columns the answer did not name, or no function at all — a name the
-/// graph does not hold answers no rows, as no function does, so an empty answer is not taken for a
-/// file without functions (realm @nick/craft, node #613).
+/// Why a file the graph answered reads as not wholly read, every reason joined: its functions
+/// cut, rows that did not read, metric cells that did not read, metric columns the answer did not
+/// name (realm @nick/craft, node #613); `None` when it was read whole.
 fn unread_why(fns: &Functions) -> Option<String> {
     let mut why = Vec::new();
     if fns.cut {
@@ -58,22 +73,34 @@ fn unread_why(fns: &Functions) -> Option<String> {
             fns.unreadable
         ));
     }
-    if !fns.missing.is_empty() {
-        let cols: Vec<String> = fns.missing.iter().map(|m| format!("f.{m}")).collect();
+    if fns.odd > 0 {
         why.push(format!(
-            "the graph's answer names no column {}",
-            cols.join(", ")
+            "{} of its rows hold a metric that did not read",
+            fns.odd
         ));
     }
-    if fns.read.is_empty() && fns.unreadable == 0 {
-        why.push("the graph gave no function of it numbers: none there, or none read".into());
+    if !fns.missing.is_empty() {
+        why.push(format!(
+            "the graph's answer names no column f.{}",
+            fns.missing.join(", f.")
+        ));
     }
     (!why.is_empty()).then(|| why.join("; "))
 }
 
+/// A question's error as the read names it: the budget spent, said as such.
+fn budget_said(why: CbmError) -> GraphError {
+    if matches!(why, CbmError::TimeBound) {
+        GraphError::Spent { what: ASKED }
+    } else {
+        why.into()
+    }
+}
+
 /// The numbers of every function whose span holds a changed line of `changed`, file by file within
 /// the graph's budget; a file the index left out, one past [`FILES_MAX`], one whose question
-/// failed after the first or one [`unread_why`] names is named as unread.
+/// failed after the first or one [`unread_why`] names is named as unread, one the graph answered
+/// no function for as empty.
 ///
 /// # Errors
 /// When the first question gets no answer, or the index moved while they were asked (node #533).
@@ -85,51 +112,53 @@ pub(in crate::consumers) fn graph_metrics(r: &Ready, changed: &Lines) -> Result<
         if crate::coverage::is_inert(file) || ranges.is_empty() {
             continue;
         }
-        if r.index.leaves_out(file) {
-            out.unread
-                .push(format!("{file} (not indexed by the graph)"));
-            continue;
-        }
-        if asked == FILES_MAX {
-            out.unread
-                .push(format!("{file} (past the {FILES_MAX}-file limit)"));
+        let skip = if r.index.leaves_out(file) {
+            Some("not indexed by the graph".to_owned())
+        } else if asked == FILES_MAX {
+            Some(format!("past the {FILES_MAX}-file limit"))
+        } else {
+            None
+        };
+        if let Some(why) = skip {
+            out.unread.push(format!("{file} ({why})"));
             continue;
         }
         asked += 1;
         match r.cbm.functions(&r.project, file, until) {
-            Ok(fns) => {
-                if let Some(why) = unread_why(&fns) {
-                    out.unread.push(format!("{file} ({why})"));
-                }
-                let hit = fns
-                    .read
-                    .into_iter()
-                    .filter(|f| touches(f.start, f.end, ranges));
-                out.measured.extend(hit.map(|f| Measured {
-                    function: f.name,
-                    file: file.to_owned(),
-                    start: f.start,
-                    end: f.end,
-                    metrics: f.metrics,
-                }));
-            }
-            Err(CbmError::TimeBound) if asked == 1 => {
-                return Err(GraphError::Spent {
-                    what: "the numbers of the functions the change touches were read",
-                });
-            }
-            Err(why) if asked == 1 => return Err(why.into()),
-            Err(why) => out.unread.push(format!("{file} ({why})")),
+            Ok(fns) => take(&mut out, file, ranges, fns),
+            Err(why) if asked == 1 => return Err(budget_said(why)),
+            Err(why) => out.unread.push(format!("{file} ({})", budget_said(why))),
         }
     }
-    let after = r.cbm.index(&r.project, r.deadline)?;
+    let after = r.cbm.index(&r.project, r.deadline).map_err(budget_said)?;
     if (&after.at, &after.root) != (&r.index.at, &r.index.root) {
         return Err(GraphError::Moved {
             project: r.project.clone(),
-            during: "the numbers of the functions the change touches were read",
+            during: ASKED,
         });
     }
     Ok(out)
+}
+
+/// `fns`, the answer for `file`, into `out`: its touched functions measured, the file named
+/// unread when it was not read whole, or empty when it answered none.
+fn take(out: &mut Read, file: &str, ranges: &[(u32, u32)], fns: Functions) {
+    if let Some(why) = unread_why(&fns) {
+        out.unread.push(format!("{file} ({why})"));
+    } else if fns.read.is_empty() {
+        out.empty.push(file.to_owned());
+    }
+    let hit = fns
+        .read
+        .into_iter()
+        .filter(|f| touches(f.start, f.end, ranges));
+    out.measured.extend(hit.map(|f| Measured {
+        function: f.name,
+        file: file.to_owned(),
+        start: f.start,
+        end: f.end,
+        metrics: f.metrics,
+    }));
 }
 
 #[cfg(test)]

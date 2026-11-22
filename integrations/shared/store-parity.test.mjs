@@ -130,8 +130,9 @@ const CASES = [
     name: 'a record sent again as a retry is answered already filed',
     repo: 'git',
     calls: [
-      ['finalize', { step: { ...STEP, ledger: undefined, sorting: null }, steps: STEPS.slice(3), retry: false }],
-      ['finalize', { step: { ...STEP, ledger: undefined, sorting: null }, steps: STEPS.slice(3), retry: true }],
+      // No coverage gap: the record leaves `capped` out.
+      ['finalize', { step: { ...STEP, ledger: undefined, sorting: null, capped: [] }, steps: STEPS.slice(3), retry: false }],
+      ['finalize', { step: { ...STEP, ledger: undefined, sorting: null, capped: [] }, steps: STEPS.slice(3), retry: true }],
     ],
   },
   {

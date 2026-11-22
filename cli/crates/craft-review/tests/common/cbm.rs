@@ -40,6 +40,12 @@ f.alloc_in_loop|f.recursion_in_loop|f.unguarded_recursion) x=false;;";
 /// column by column as the question's RETURN names them — a property it does not hold reads as an
 /// empty cell — so the question and the reading of its answer cannot drift apart unseen.
 pub fn stand_in(dir: &Path, top: &Path) -> (PathBuf, PathBuf) {
+    stand_in_answering(dir, top, None)
+}
+
+/// [`stand_in`], the metrics question over `web/app.ts` answered by `metrics` (shell: what it
+/// prints) when given.
+pub fn stand_in_answering(dir: &Path, top: &Path, metrics: Option<&str>) -> (PathBuf, PathBuf) {
     let tool = dir.join("cbm");
     let log = dir.join("index-calls");
     let top = top.canonicalize().unwrap();
@@ -48,6 +54,7 @@ pub fn stand_in(dir: &Path, top: &Path) -> (PathBuf, PathBuf) {
          c=; v=; for k in $cols; do case $k in {F} *) x=;; esac; c=\"$c,\\\"$k\\\"\"; v=\"$v,\\\"$x\\\"\"; done; \
          echo \"{{\\\"columns\\\":[${{c#,}}],\\\"rows\\\":[[${{v#,}}]]}}\""
     );
+    let answer = metrics.map_or(answer, str::to_owned);
     let script = format!(
         "#!/bin/sh\ncase \"$3\" in\n index_repository) echo \"$4\" >> '{log}'; echo '{{\"status\":\"indexed\"}}';;\n index_status) echo '{{\"status\":\"ready\",\"indexed_at\":\"2099-01-01T00:00:00Z\",\"root_path\":\"{top}\"}}';;\n query_graph) case \"$4\" in *web/app.ts*'IS NOT NULL'*) {answer};; *) echo '{{\"rows\":[]}}';; esac;;\n *) echo '{{\"projects\":[]}}';;\nesac\n",
         log = log.display(),

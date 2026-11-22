@@ -59,7 +59,8 @@ fn a_file_the_index_left_out_or_past_the_file_limit_is_named_unread() {
 }
 
 #[test]
-fn a_cut_an_unreadable_or_an_empty_answer_names_the_file_unread_and_keeps_what_read() {
+fn a_cut_an_unreadable_or_an_odd_answer_names_the_file_unread_with_every_reason_and_keeps_what_read()
+ {
     let t = tempfile::tempdir().unwrap();
     let repo = fixture(t.path(), "");
     let one = row("k8s_rule_to_api", 1, 3);
@@ -83,9 +84,11 @@ fn a_cut_an_unreadable_or_an_empty_answer_names_the_file_unread_and_keeps_what_r
             1,
         ),
         (
-            format!(r#"echo '{{{COLS},"rows":[]}}'"#),
-            "the graph gave no function of it numbers",
-            0,
+            format!(
+                r#"echo '{{{COLS},"rows":[["k8s_rule_to_api","1","3","many","1","0","0","1","0","false","false","1"]],"truncated":true}}'"#
+            ),
+            "its functions cut at 500; 1 of its rows hold a metric that did not read",
+            1,
         ),
     ] {
         let c = read(t.path(), &repo, "", &rows);
@@ -121,4 +124,18 @@ fn a_later_files_failed_question_names_it_and_keeps_the_others_numbers() {
         "{:?}",
         c.metrics_unread
     );
+}
+
+#[test]
+fn a_file_that_answered_no_function_is_empty_not_unread() {
+    let t = tempfile::tempdir().unwrap();
+    let repo = fixture(t.path(), "");
+    let c = read(
+        t.path(),
+        &repo,
+        "",
+        &format!(r#"echo '{{{COLS},"rows":[]}}'"#),
+    );
+    assert!(c.metrics.is_empty() && c.metrics_unread.is_empty(), "{c:?}");
+    assert_eq!(c.metrics_empty, ["src/lib.rs"]);
 }

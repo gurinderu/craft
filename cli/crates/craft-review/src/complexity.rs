@@ -14,9 +14,11 @@ use crate::content::{self, ContentError};
 use crate::profile::Profile;
 use crate::prompts::{self, PromptContext};
 
+mod look;
 mod metrics;
 mod table;
 
+pub use look::{Look, gap as look_gap, look};
 pub(crate) use metrics::{COUNTS, FLAGS};
 pub use metrics::{findings_schema, sift, values};
 pub use table::{lens_table, rows_of};
@@ -39,43 +41,32 @@ pub fn project(repo: &str) -> Option<String> {
 /// graph beside the consumers list and read the numbers of the functions the change touches (no
 /// agent indexes, warms or asks it: node #529 — the lenses judge from the numbers in their prompt),
 /// and the note when they may not; `None` when no profile taking part has one (`wanted` false).
+/// A lens that could not look gets no note: it is named once, as a coverage gap ([`look`]).
 #[must_use]
 pub fn indexed(ctx: &PromptContext, wanted: bool) -> Option<(bool, Option<String>)> {
     if !wanted {
         return None;
     }
+    let note = match look(ctx) {
+        Some(Look::Measured) => return Some((true, None)),
+        Some(Look::CouldNotLook(_)) => return Some((false, None)),
+        Some(Look::NothingToJudge(what)) => format!(
+            "the complexity lens did not run: {what} -> the metrics-or-nothing lenses had nothing \
+             to judge"
+        ),
+        None => format!(
+            "the complexity lens did not run: the codebase-memory index is unavailable ({}) -> the \
+             metrics-or-nothing lenses dropped",
+            prompts::sanitize(unavailable(ctx))
+        ),
+    };
+    Some((false, Some(note)))
+}
+
+/// Why the index was not ready to read the numbers from.
+fn unavailable(ctx: &PromptContext) -> &str {
     let c = &ctx.consumers;
-    let ready = !ctx.graph_project.is_empty() && c.graph_indexed && c.metrics_failed.is_empty();
-    if ready && !c.metrics.is_empty() {
-        return Some((true, None));
-    }
-    if let Some(gap) = unread_gap(ctx).filter(|_| ready) {
-        return Some((
-            false,
-            Some(format!("the complexity lens did not run: {gap}")),
-        ));
-    }
-    if ready {
-        return Some((
-            false,
-            Some(
-                "the complexity lens did not run: no function the change touches carries the code \
-                 graph's numbers -> the metrics-or-nothing lenses had nothing to judge"
-                    .into(),
-            ),
-        ));
-    }
-    if !ctx.graph_project.is_empty() && c.graph_indexed && !c.metrics_failed.is_empty() {
-        return Some((
-            false,
-            Some(format!(
-                "the complexity lens did not run: the graph's numbers could not be read ({}) -> \
-                 the metrics-or-nothing lenses dropped",
-                prompts::sanitize(&c.metrics_failed)
-            )),
-        ));
-    }
-    let why = if ctx.graph_project.is_empty() {
+    if ctx.graph_project.is_empty() {
         "craft's graph project for this repository could not be named"
     } else if !c.graph_skipped.is_empty() {
         c.graph_skipped.as_str()
@@ -83,29 +74,7 @@ pub fn indexed(ctx: &PromptContext, wanted: bool) -> Option<(bool, Option<String
         c.failed.as_str()
     } else {
         "it was not indexed"
-    };
-    Some((
-        false,
-        Some(format!(
-            "the complexity lens did not run: the codebase-memory index is unavailable ({}) -> the \
-             metrics-or-nothing lenses dropped",
-            prompts::sanitize(why)
-        )),
-    ))
-}
-
-/// The coverage gap of a ready index that measured no function because no changed file's numbers
-/// read: the lens could not look, though there may be functions to judge (each file named, with
-/// why); `None` when some were measured or no file went unread.
-#[must_use]
-pub fn unread_gap(ctx: &PromptContext) -> Option<String> {
-    let c = &ctx.consumers;
-    (c.metrics.is_empty() && !c.metrics_unread.is_empty()).then(|| {
-        format!(
-            "metrics-only lens complexity could not look — no changed file's numbers read: {}",
-            prompts::sanitize(&c.metrics_unread.join(" · "))
-        )
-    })
+    }
 }
 
 /// Whether `f` is a metrics lens's finding: it carries the numbers it rests on.

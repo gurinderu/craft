@@ -103,6 +103,10 @@ pub struct Consumers {
     /// The changed files whose functions' numbers were not read, each with why: `file (why)`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub metrics_unread: Vec<String>,
+    /// The changed files the graph answered no function for: none there, or a name it does not
+    /// hold, which the two cannot tell apart (realm @nick/craft, node #613).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub metrics_empty: Vec<String>,
     /// The changed symbols not searched by name: too common a name, or the search failed, each with
     /// why when it is not the name alone.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

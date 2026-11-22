@@ -92,21 +92,8 @@ fn build_until(
     });
     let ready = graph.and_then(|g| graph::ready(top, &diff.merge_base, (&g, locks), cancel));
     let mut indexed = ready.is_ok();
-    // The callers first: every lens's consumers list stands on them (node #529); the metrics read
-    // keeps a floor of the graph's budget the callers may not take, and takes what they left.
-    let reserve = if metrics {
-        graph::METRICS_FLOOR
-    } else {
-        std::time::Duration::ZERO
-    };
     let (asked, read) = match ready {
-        Ok(r) => {
-            // Indexed for the metrics lenses alone, the graph is asked nothing and is no source.
-            let asked = (!found.symbols.is_empty())
-                .then(|| graph::graph_callers(&r, &found.symbols, reserve))
-                .transpose();
-            (asked, metrics.then(|| graph::graph_metrics(&r, &changed)))
-        }
+        Ok(r) => graph::ask(&r, &found.symbols, &changed, metrics),
         Err(why) => (Err(why), None),
     };
     let (asked, graph_skipped) = match asked {
@@ -125,7 +112,9 @@ fn build_until(
     }
     out.graph_skipped = graph_skipped;
     match read {
-        Some(Ok(r)) => (out.metrics, out.metrics_unread) = (r.measured, r.unread),
+        Some(Ok(r)) => {
+            (out.metrics, out.metrics_unread, out.metrics_empty) = (r.measured, r.unread, r.empty);
+        }
         Some(Err(why)) => {
             indexed &= !matches!(why, GraphError::Moved { .. });
             out.metrics_failed = why.to_string();

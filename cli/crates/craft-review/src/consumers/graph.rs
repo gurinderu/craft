@@ -11,6 +11,7 @@ use super::symbols::Symbol;
 use crate::cancel::Cancel;
 use crate::project::CodeGraph;
 
+mod ask;
 #[cfg(test)]
 mod budget_tests;
 mod error;
@@ -25,10 +26,10 @@ pub use target::own as craft_project;
 /// The part of the graph's budget kept for reading its index again once its callers are asked.
 const RECHECK: Duration = Duration::from_secs(5);
 
+pub(super) use ask::ask;
 pub use error::GraphError;
 pub use found::{graph_found, graph_of};
 pub use metrics::Measured;
-pub(super) use metrics::{METRICS_FLOOR, graph_metrics};
 pub(super) use sites::graph_sites;
 
 /// The graph brought to `top` and found ready to ask: its program, craft's own project, that
@@ -73,8 +74,10 @@ pub(super) fn ready(
     })
 }
 
-/// The callers of `found` the ready graph names; why its answers are not used: no answer, or the
-/// index moved while they were asked (node #533).
+/// The callers of `found` the ready graph names, asked and the index read again within its budget
+/// less `reserve` (what is kept for the metrics read, [`metrics::kept_for_metrics`]); why its answers are
+/// not used: no answer, the budget above the reserve spent, or the index moved while they were
+/// asked (node #533).
 ///
 /// # Errors
 /// Why the graph's callers are not in the list.
@@ -94,10 +97,19 @@ pub(super) fn graph_callers(
     // can still be read once after them.
     let deadline = r.deadline.checked_sub(reserve).unwrap_or(r.deadline);
     let asked_until = deadline.checked_sub(RECHECK).unwrap_or(deadline);
-    let mut out = cbm.callers(project, &symbols, asked_until)?;
+    let spent = |e: super::cbm::CbmError| {
+        if matches!(e, super::cbm::CbmError::TimeBound) {
+            GraphError::Spent {
+                what: "its callers were asked",
+            }
+        } else {
+            e.into()
+        }
+    };
+    let mut out = cbm.callers(project, &symbols, asked_until).map_err(spent)?;
     // Another run may index the same project while this one asks it: the graph swaps its new
     // index in whole, so answers from before and after the swap would mix (node #533).
-    let after = cbm.index(project, deadline)?;
+    let after = cbm.index(project, deadline).map_err(spent)?;
     if (&after.at, &after.root) != (&index.at, &index.root) {
         return Err(GraphError::Moved {
             project: project.clone(),

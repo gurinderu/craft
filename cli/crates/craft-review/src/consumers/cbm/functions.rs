@@ -9,7 +9,11 @@ use std::time::Instant;
 use serde_json::{Map, Value, json};
 
 use super::{Cbm, CbmError, query};
+
+mod row;
+
 use crate::complexity::{COUNTS, FLAGS};
+use row::{function, odd};
 
 /// How many functions of one file are read.
 pub(crate) const ROWS_PER_FILE: usize = 500;
@@ -24,22 +28,28 @@ pub struct Function {
 }
 
 /// What one file's question read: its functions, whether there were more than it read, how many
-/// rows did not read as a function, and the metric columns the answer did not name (each metric
-/// then missing from every function).
+/// rows did not read as a function, how many hold a metric cell that did not read, and the metric
+/// columns the answer did not name (each metric then missing from every function).
 #[derive(Debug, Default)]
 pub struct Functions {
     pub read: Vec<Function>,
     pub cut: bool,
     pub unreadable: usize,
+    pub odd: usize,
     pub missing: Vec<&'static str>,
 }
 
 /// The properties a row cannot be read without: the name and the span.
 const SPAN: [&str; 3] = ["name", "start_line", "end_line"];
 
-/// The properties the question returns, in order: the name, the span, the counts, the flags.
+/// The metrics the question asks for: the counts, then the flags.
+fn metric_names() -> impl Iterator<Item = &'static str> {
+    COUNTS.into_iter().chain(FLAGS)
+}
+
+/// The properties the question returns, in order: the name, the span, then the metrics.
 fn properties() -> impl Iterator<Item = &'static str> {
-    SPAN.into_iter().chain(COUNTS).chain(FLAGS)
+    SPAN.into_iter().chain(metric_names())
 }
 
 /// The query for up to `limit` functions of the file `quoted` (a quoted path) that carry metrics.
@@ -94,59 +104,15 @@ impl Cbm {
         let read: Vec<Function> = raw.iter().filter_map(|r| function(r, &at)).collect();
         Ok(Functions {
             unreadable: raw.len() - read.len(),
+            odd: raw.iter().filter(|r| odd(r, &at)).count(),
             read: read.into_iter().take(ROWS_PER_FILE).collect(),
             cut,
-            missing: COUNTS
-                .into_iter()
-                .chain(FLAGS)
-                .filter(|p| at(p).is_none())
+            // An empty answer names no column it needs: its columns are no reason to doubt it.
+            missing: metric_names()
+                .filter(|p| !raw.is_empty() && at(p).is_none())
                 .collect(),
         })
     }
-}
-
-/// A cell as a number: the graph prints numbers as strings.
-fn number(v: &Value) -> Option<u64> {
-    v.as_u64().or_else(|| v.as_str()?.trim().parse().ok())
-}
-
-/// A cell as a flag: the graph prints one as `true`/`false` or as `1`/`0`.
-fn flag(v: &Value) -> Option<bool> {
-    if let Some(b) = v.as_bool() {
-        return Some(b);
-    }
-    if let Some(n) = v.as_u64() {
-        return Some(n != 0);
-    }
-    match v.as_str()?.trim() {
-        "true" | "1" => Some(true),
-        "false" | "0" => Some(false),
-        _ => None,
-    }
-}
-
-/// One row as a [`Function`], each cell found by the column `at` names for its property; a metric
-/// cell that does not read leaves its metric out, a name or a line that does not leaves the row.
-fn function(row: &Value, at: &dyn Fn(&str) -> Option<usize>) -> Option<Function> {
-    let cell = |p: &str| row.get(at(p)?);
-    let line = |p: &str| cell(p).and_then(number).and_then(|n| u32::try_from(n).ok());
-    let mut metrics = Map::new();
-    for m in COUNTS {
-        if let Some(n) = cell(m).and_then(number) {
-            metrics.insert(m.to_owned(), json!(n));
-        }
-    }
-    for m in FLAGS {
-        if let Some(b) = cell(m).and_then(flag) {
-            metrics.insert(m.to_owned(), json!(b));
-        }
-    }
-    Some(Function {
-        name: cell("name")?.as_str()?.to_owned(),
-        start: line("start_line")?,
-        end: line("end_line")?,
-        metrics,
-    })
 }
 
 #[cfg(test)]

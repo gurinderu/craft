@@ -162,12 +162,10 @@ fn plan_tracks(run: &mut RunState, profiles: &[Profile]) {
     let wanted = profiles.iter().filter(taking_part).any(complexity::wanted);
     let index = complexity::indexed(&run.context, wanted);
     let metrics = index.as_ref().is_some_and(|(found, _)| *found);
-    // An index whose numbers did not read is a lens that could not look: a coverage gap.
-    let ready =
-        run.context.consumers.graph_indexed && run.context.consumers.metrics_failed.is_empty();
-    if let Some(gap) = complexity::unread_gap(&run.context).filter(|_| wanted && ready) {
-        run.capped.push(gap);
-    }
+    // A lens that could not look is a coverage gap, named once, under Not run.
+    let look = complexity::look(&run.context).filter(|_| wanted);
+    run.capped
+        .extend(look.as_ref().and_then(complexity::look_gap));
     run.notes.extend(index.and_then(|(_, note)| note));
     for (track, p) in run.tracks.iter_mut().zip(profiles) {
         let task = run
@@ -240,32 +238,7 @@ fn next_round(dir: &Path, run: &mut RunState, profiles: &[Profile]) -> Result<()
 /// then the unit-mode coordinators when there are any, else the pool to the dedup.
 fn end_rounds(dir: &Path, run: &mut RunState, profiles: &[Profile]) -> Result<(), Error> {
     extra::join(run);
-    for p in profiles {
-        // A metrics-only lens that never returned is a coverage gap, not a review that did not run.
-        let (gaps, holes): (Vec<_>, Vec<_>) = run
-            .rounds
-            .holes_of(&p.id)
-            .into_iter()
-            .partition(|(lens, _)| p.metrics_only(lens));
-        let (gaps, holes): (Vec<String>, Vec<String>) = (
-            gaps.into_iter().map(|(_, h)| h).collect(),
-            holes.into_iter().map(|(_, h)| h).collect(),
-        );
-        if !gaps.is_empty() {
-            run.capped.push(format!(
-                "{} metrics-only lenses that never returned — {}",
-                p.id,
-                gaps.join(" · ")
-            ));
-        }
-        if !holes.is_empty() {
-            run.not_run.push(format!(
-                "{} lenses that never returned — {}",
-                p.id,
-                holes.join(" · ")
-            ));
-        }
-    }
+    file_holes(run, profiles);
     let coordinators = units::seam_tasks(run, profiles)?;
     if !coordinators.is_empty() {
         run.tasks = coordinators;
@@ -401,4 +374,35 @@ pub(crate) fn finish(dir: &Path, run: &mut RunState) -> Result<(), Error> {
     run.verdict = Some(verdict);
     run.phase = Phase::Done;
     Ok(())
+}
+
+/// The lenses of `profiles` that never returned in any round: a metrics-only one into `capped`, a
+/// coverage gap; any other into `not_run`.
+pub(crate) fn file_holes(run: &mut RunState, profiles: &[Profile]) {
+    for p in profiles {
+        // A metrics-only lens that never returned is a coverage gap, not a review that did not run.
+        let (gaps, holes): (Vec<_>, Vec<_>) = run
+            .rounds
+            .holes_of(&p.id)
+            .into_iter()
+            .partition(|(lens, _)| p.metrics_only(lens));
+        let (gaps, holes): (Vec<String>, Vec<String>) = (
+            gaps.into_iter().map(|(_, h)| h).collect(),
+            holes.into_iter().map(|(_, h)| h).collect(),
+        );
+        if !gaps.is_empty() {
+            run.capped.push(format!(
+                "{} metrics-only lenses that never returned — {}",
+                p.id,
+                gaps.join(" · ")
+            ));
+        }
+        if !holes.is_empty() {
+            run.not_run.push(format!(
+                "{} lenses that never returned — {}",
+                p.id,
+                holes.join(" · ")
+            ));
+        }
+    }
 }

@@ -1,6 +1,6 @@
 use serde_json::json;
 
-use super::indexed;
+use super::{Look, indexed, look, look_gap};
 use crate::consumers::Measured;
 use crate::prompts::PromptContext;
 
@@ -47,37 +47,75 @@ fn the_lens_runs_only_on_numbers_the_binary_read_itself() {
     assert!(note.unwrap().contains("no function the change touches"));
     ctx.consumers.metrics = vec![measured("src/a.rs", "f")];
     ctx.consumers.metrics_failed = "the graph said boom".into();
-    let (ran, note) = indexed(&ctx, true).unwrap();
-    assert!(!ran);
-    assert!(note.unwrap().contains("the graph said boom"));
+    assert_eq!(indexed(&ctx, true), Some((false, None)));
+    let gap = look_gap(&look(&ctx).unwrap()).unwrap();
+    assert!(gap.contains("the graph said boom"), "{gap}");
 }
 
-#[test]
-fn a_read_that_failed_or_read_nothing_says_so_not_that_the_index_is_unavailable() {
+/// A context whose index is ready under craft's project.
+fn ready() -> PromptContext {
     let mut ctx = PromptContext {
         graph_project: "craft-review-x".into(),
         ..PromptContext::default()
     };
     ctx.consumers.graph_indexed = true;
+    ctx
+}
+
+#[test]
+fn a_failed_read_is_a_lens_that_could_not_look_named_once_as_a_gap() {
+    let mut ctx = ready();
     ctx.consumers.metrics_failed =
         "the graph's budget ran out before the numbers of the functions the change touches were read".into();
-    let (ran, note) = indexed(&ctx, true).unwrap();
-    let note = note.unwrap();
-    assert!(!ran);
+    // A move during the read unsets the index; the read's own reason still stands.
+    ctx.consumers.graph_indexed = false;
+    let look = look(&ctx).unwrap();
+    let gap = look_gap(&look).unwrap();
     assert!(
-        note.contains("the graph's budget ran out") && !note.contains("index is unavailable"),
-        "{note}"
+        gap.contains("could not look") && gap.contains("budget ran out"),
+        "{gap}"
     );
-    // Every changed file's numbers unread: the lens could not look, each file named.
-    ctx.consumers.metrics_failed.clear();
+    assert_eq!(
+        indexed(&ctx, true),
+        Some((false, None)),
+        "no second note beside the gap"
+    );
+}
+
+#[test]
+fn every_file_unread_with_nothing_measured_could_not_look_and_names_the_files() {
+    let mut ctx = ready();
     ctx.consumers.metrics_unread =
         vec!["src/a.rs (1 of its rows did not read as a function)".into()];
-    let (ran, note) = indexed(&ctx, true).unwrap();
-    let note = note.unwrap();
-    assert!(!ran);
+    ctx.consumers.metrics_empty = vec!["src/types.rs".into()];
+    let gap = look_gap(&look(&ctx).unwrap()).unwrap();
     assert!(
-        note.contains("could not look") && note.contains("src/a.rs (1 of its rows did not read"),
-        "{note}"
+        gap.contains("src/a.rs (1 of its rows did not read") && !gap.contains("src/types.rs"),
+        "{gap}"
     );
-    assert!(super::unread_gap(&ctx).is_some_and(|g| g.contains("src/a.rs")));
+    assert!(!gap.contains("no changed file's numbers read"), "{gap}");
+}
+
+#[test]
+fn a_partly_unread_change_is_measured_and_no_gap() {
+    let mut ctx = ready();
+    ctx.consumers.metrics = vec![measured("src/a.rs", "f")];
+    ctx.consumers.metrics_unread = vec!["src/b.rs (its functions cut at 500)".into()];
+    assert_eq!(look(&ctx), Some(Look::Measured));
+    assert_eq!(look_gap(&Look::Measured), None);
+    assert_eq!(indexed(&ctx, true), Some((true, None)));
+}
+
+#[test]
+fn files_that_answered_no_function_leave_nothing_to_judge_and_no_gap() {
+    let mut ctx = ready();
+    ctx.consumers.metrics_empty = vec!["src/types.rs".into()];
+    let look = look(&ctx).unwrap();
+    assert!(
+        matches!(&look, Look::NothingToJudge(w) if w.contains("src/types.rs")),
+        "{look:?}"
+    );
+    assert_eq!(look_gap(&look), None);
+    let (ran, note) = indexed(&ctx, true).unwrap();
+    assert!(!ran && note.unwrap().contains("nothing to judge"));
 }

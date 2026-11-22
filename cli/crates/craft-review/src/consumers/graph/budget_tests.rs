@@ -3,7 +3,8 @@
 
 use std::time::{Duration, Instant};
 
-use super::{GraphError, Ready, graph_callers, graph_metrics};
+use super::metrics::graph_metrics;
+use super::{GraphError, Ready, ask};
 use crate::consumers::cbm::{Cbm, Index};
 use crate::consumers::symbols::Symbol;
 use crate::gate::lines::Lines;
@@ -14,7 +15,7 @@ fn ready(t: &std::path::Path, left: Duration) -> (Ready, std::path::PathBuf) {
     let tool = t.join("cbm");
     let log = t.join("calls");
     let script = format!(
-        "#!/bin/sh\necho \"$3\" >> '{}'\necho '{{\"columns\":[],\"rows\":[]}}'\n",
+        "#!/bin/sh\necho \"$3 $4\" >> '{}'\necho '{{\"columns\":[],\"rows\":[]}}'\n",
         log.display()
     );
     exe::write_executable(&tool, &script).unwrap();
@@ -27,29 +28,74 @@ fn ready(t: &std::path::Path, left: Duration) -> (Ready, std::path::PathBuf) {
     (r, log)
 }
 
-#[test]
-fn the_callers_leave_the_metrics_floor_untouched() {
-    let t = tempfile::tempdir().unwrap();
-    let (r, log) = ready(t.path(), Duration::from_secs(10));
-    let found = [Symbol {
+fn found() -> [Symbol; 1] {
+    [Symbol {
         name: "f".into(),
         file: "src/a.rs".into(),
         line: 1,
-    }];
-    // All that is left is the floor: the callers ask nothing of it.
-    let _asked = graph_callers(&r, &found, Duration::from_secs(10));
-    let calls = std::fs::read_to_string(&log).unwrap_or_default();
-    assert!(!calls.contains("query_graph"), "{calls}");
+    }]
+}
+
+fn changed() -> Lines {
+    Lines::parse(
+        "diff --git a/src/a.rs b/src/a.rs\n--- a/src/a.rs\n+++ b/src/a.rs\n@@ -0,0 +1,2 @@\n+a\n+b\n",
+    )
+}
+
+/// Which of the two questions the graph was asked: the callers', the metrics'.
+fn asked(log: &std::path::Path) -> (bool, bool) {
+    let calls = std::fs::read_to_string(log).unwrap_or_default();
+    let q: Vec<&str> = calls
+        .lines()
+        .filter(|l| l.starts_with("query_graph"))
+        .collect();
+    (
+        q.iter().any(|l| !l.contains("IS NOT NULL")),
+        q.iter().any(|l| l.contains("IS NOT NULL")),
+    )
+}
+
+#[test]
+fn with_a_metrics_lens_the_callers_leave_the_floor_and_say_the_budget_ran_out() {
+    let t = tempfile::tempdir().unwrap();
+    let (r, log) = ready(t.path(), Duration::from_secs(20));
+    let (callers, read) = ask(&r, &found(), &changed(), true);
+    let why = callers.unwrap_err();
+    assert!(
+        why.to_string()
+            .contains("the graph's budget ran out before its callers"),
+        "{why}"
+    );
+    assert!(read.is_some());
+    assert_eq!(
+        asked(&log),
+        (false, true),
+        "the floor went to the metrics alone"
+    );
+}
+
+#[test]
+fn without_one_the_callers_take_the_whole_budget() {
+    let t = tempfile::tempdir().unwrap();
+    let (r, log) = ready(t.path(), Duration::from_secs(20));
+    let (_, read) = ask(&r, &found(), &changed(), false);
+    assert!(read.is_none());
+    assert_eq!(asked(&log), (true, false));
+}
+
+#[test]
+fn with_one_the_callers_still_get_the_budget_above_the_floor() {
+    let t = tempfile::tempdir().unwrap();
+    let (r, log) = ready(t.path(), Duration::from_secs(40));
+    let _answers = ask(&r, &found(), &changed(), true);
+    assert_eq!(asked(&log), (true, true));
 }
 
 #[test]
 fn a_metrics_read_the_budget_cut_short_says_the_budget_ran_out() {
     let t = tempfile::tempdir().unwrap();
     let (r, _) = ready(t.path(), Duration::ZERO);
-    let changed = Lines::parse(
-        "diff --git a/src/a.rs b/src/a.rs\n--- a/src/a.rs\n+++ b/src/a.rs\n@@ -0,0 +1,2 @@\n+a\n+b\n",
-    );
-    let why = graph_metrics(&r, &changed).unwrap_err();
+    let why = graph_metrics(&r, &changed()).unwrap_err();
     assert!(matches!(why, GraphError::Spent { .. }), "{why}");
     assert!(
         why.to_string()

@@ -242,24 +242,27 @@ fn a_lens_shown_consumer_lines_must_mark_them() {
 
 #[test]
 fn a_sliced_metrics_lens_that_never_returned_is_held_as_a_coverage_gap() {
-    let r = Rounds {
-        expected: vec![
-            format!("general:complexity{SLICE_SEP}web"),
-            "general:errors".into(),
-        ],
-        ..Rounds::default()
-    };
-    let holes = r.holes_of("general");
-    assert_eq!(holes[0].0, "complexity", "the lens id, its slice cut off");
-    assert!(holes[0].1.starts_with("complexity :: web: "), "{holes:?}");
-    let general = crate::profile::Profile::load("general").unwrap();
-    let gaps: Vec<_> = holes
-        .iter()
-        .filter(|(l, _)| general.metrics_only(l))
-        .collect();
-    assert_eq!(
-        gaps.len(),
-        1,
-        "only the metrics-only lens is a gap: {holes:?}"
+    let mut run: crate::state::RunState = serde_json::from_value(json!({
+        "version": crate::state::STATE_VERSION,
+        "context": {"repo": "/r", "base": "origin/main", "spec": "", "craftRoot": null, "craftVersion": null},
+        "diff": {"base": "origin/main", "mergeBase": "abc", "head": "def", "dirty": false,
+                 "files": ["web/app.ts"], "stat": "", "log": ""},
+        "tracks": [], "uncovered": [], "light": false, "phase": "lenses", "tasks": [],
+        "rounds": {"round": 1, "pool": [], "yields": [], "returned": [], "failures": {},
+                   "expected": [format!("general:complexity{SLICE_SEP}web"), "general:errors"]},
+        "findings": [], "settled": [], "notes": [], "notRun": []
+    }))
+    .unwrap();
+    crate::phases::file_holes(
+        &mut run,
+        &[crate::profile::Profile::load("general").unwrap()],
     );
+    assert_eq!(run.capped.len(), 1, "{:?}", run.capped);
+    assert!(
+        run.capped[0].contains("complexity :: web: "),
+        "{:?}",
+        run.capped
+    );
+    assert_eq!(run.not_run.len(), 1, "{:?}", run.not_run);
+    assert!(run.not_run[0].contains("errors: ") && !run.not_run[0].contains("complexity"));
 }

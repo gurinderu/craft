@@ -69,7 +69,7 @@ pub fn lens_table(c: &Consumers, profile: &Profile, pathspec: &str) -> String {
         .collect();
     if !unread.is_empty() {
         out.push(format!(
-            "Files whose functions were not read (no numbers, so no finding there): {}",
+            "Files not wholly read (a function the table does not list has no numbers, so no finding there): {}",
             unread.join(" · ")
         ));
     }
