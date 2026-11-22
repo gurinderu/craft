@@ -45,7 +45,7 @@ test("a stopped part folds into its run's finished record, which carries both pa
   assert.equal(run['cost'].total, 124261147 + 53805638)
   assert.equal(run['cost'].output, 124261147 + 53805638)
   assert.equal(run['cost'].agents, 2)
-  assert.equal(run['outputTokens'], 3694226 + 4256220)
+  assert.equal(run['outputTokens'], 4256220, "the indicative pool is the standing record's own, never summed")
   assert.equal(/** @type {any} */ (finished['cost']).total, 53805638, 'the record read is left as filed')
   assert.equal(foldResumedRuns([finished, stopped]).records.length, 1, 'whatever order they are read in')
 })
@@ -72,8 +72,8 @@ test('a run whose every part stopped stands as its newest; a record naming no ru
   assert.deepEqual([legacy.records.length, legacy.folded], [2, 0])
 })
 
-test('parts one Workflow run filed share its cost: summed once per workflow and slice, its token pool taken once', () => {
-  // A phantom INCOMPLETE of the same Workflow run as the finished record: the same cost slice, a cumulative pool.
+test('parts one Workflow run filed share its cost: summed once per workflow and slice, its token pool never summed', () => {
+  // A phantom INCOMPLETE of the same Workflow run as the finished record: the same cost slice, its own pool reading.
   const phantom = { ...stopped, cost: finished['cost'], outputTokens: 4000000 }
   const run = /** @type {Record<string, any>} */ (foldResumedRuns([phantom, finished]).records[0])
   assert.deepEqual([run['cost'].total, run['outputTokens']], [53805638, 4256220])

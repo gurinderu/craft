@@ -239,6 +239,11 @@ pub fn index_projection(r: &Obj) -> Obj {
         as_is(&mut o, k);
     }
     or_null(&mut o, "outputTokens");
+    // As `scopeField`: neither null nor an empty string.
+    let named = |s: &&Js| **s != Js::Null && s.as_str() != Some("");
+    if let Some(s) = r.get("outputTokensScope").filter(named) {
+        o.set("outputTokensScope", s.clone());
+    }
     if let Some(d) = r.get("driver").filter(|d| **d != Js::Null) {
         o.set("driver", d.clone());
     }

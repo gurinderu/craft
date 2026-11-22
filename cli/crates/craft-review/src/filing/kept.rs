@@ -132,6 +132,8 @@ pub struct Filing {
     #[serde(default)]
     pub output_tokens: Option<u64>,
     #[serde(default)]
+    pub output_tokens_scope: Option<String>,
+    #[serde(default)]
     pub record: Record,
     /// The record's file in the store, once it landed: what the run's cost is enriched into; and
     /// whether it was last filed again — a resume's re-file of a finished run — rather than for the

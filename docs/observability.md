@@ -73,8 +73,13 @@ gives a version's per-workflow, per-engine and per-lens numbers as `node integra
 Records written before these fields carry `null` and are outside any filter.
 
 Workflows add: `scout`, `dimensions[]`, `verification {candidates, judged, confirmed, suspected, refuted, unverified, died, refuteRate}` (`refuteRate` is over what was *judged*. When nothing was, the engines differ: `rust-audit` records `null` — a run whose verifiers all died reports no rate rather than a rate of zero — while `review` records `0`, as the retired `adversarial-review` did (`refuteRate()` in `integrations/shared/run-record.mjs`, the binary's `refute_rate` alike), and `integrations/shared/analyze-runs.mjs` averages that `0` into the workflow's `avg refute` as it skips a `null`; `unverified` counts candidates no verifier ever judged — an unchecked Low/Info the engine spends no verifier on — and is reported **beside** `candidates`, not inside it, so it is outside the rate),
-`notRun[]`, `outputTokens` (the whole-run token **pool** — `budget.spent()`: input + output +
-parent-driver + cache, **not** output tokens. Its size tracks run TYPE: a re-review (`round > 1`)
+`notRun[]`, `outputTokens` (indicative only: the turn's output spend read off `budget.spent()` while
+the engine ran — a shared **pool** that includes the main loop and any workflow running at the same
+time, **not** the run's own cost, which is `cost` below; null on a nested run, whose parent's record
+covers it; never summed across records. A record holding that figure says so with
+`outputTokensScope: "turn-delta"`; a record without the marker holds the session's running total
+instead and enters no average. `integrations/shared/analyze-runs.mjs` averages only marked records
+with no usable `cost`. Its size tracks run TYPE: a re-review (`round > 1`)
 runs an extra Adjudicate phase (and periodically a whole-diff re-scan), so its pool is structurally larger than a
 first-pass's. It is therefore not a clean output-cost figure and must not be compared across run
 types — `integrations/shared/analyze-runs.mjs` splits it three ways on the PRESENCE and value of `round`: a
@@ -136,8 +141,8 @@ adds `findingsTotal`).
 
 ### Real cost (`cost`) — folded in post-hoc
 
-`outputTokens` is `budget.spent()`, the harness **pool** — and it describes under 1% of real spend.
-The other ~99% is cache reads and writes, and those are recorded **only** in the per-agent
+`outputTokens` is only the turn's indicative output spend (above); the run's real spend — most of it
+cache reads and writes — is recorded **only** in the per-agent
 transcripts (`<run-dir>/agent-*.jsonl`) the runtime writes outside the workflow sandbox. A workflow
 runs sandboxed with no filesystem, so no engine can ever record them from inside a run. They are
 summed **after** the run instead, by the party that holds the runId (the launcher):

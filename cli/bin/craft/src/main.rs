@@ -13,6 +13,7 @@ mod review;
 mod run;
 mod runs;
 mod scratch;
+mod settle;
 mod steps;
 
 use std::num::NonZeroUsize;
@@ -183,11 +184,19 @@ async fn dispatch() -> anyhow::Result<ExitCode> {
 }
 
 async fn finish(outcome: anyhow::Result<ExitCode>) -> ExitCode {
+    finish_with(outcome, &settle::EXIT).await
+}
+
+async fn finish_with(outcome: anyhow::Result<ExitCode>, exit: &settle::Exit) -> ExitCode {
+    // The outcome is reported first, so a settle that panicked cannot swallow its error.
+    let code = report(outcome);
     // Every way out — a stop, an error, a finished run — waits out the grace of the agents'
     // groups, so their SIGKILL is sent before craft is gone.
-    if let Err(e) = tokio::task::spawn_blocking(craft_agent::settle_stops).await {
-        std::panic::resume_unwind(e.into_panic());
-    }
+    exit.wait().await;
+    code
+}
+
+fn report(outcome: anyhow::Result<ExitCode>) -> ExitCode {
     match outcome {
         Ok(code) => code,
         Err(e) => {
@@ -208,3 +217,7 @@ async fn finish(outcome: anyhow::Result<ExitCode>) -> ExitCode {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "main_tests.rs"]
+mod tests;

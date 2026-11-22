@@ -46,7 +46,7 @@ const entryField = (v, key) => (v && typeof v === 'object' ? /** @type {Record<s
  *   cost?: RecordCost | null, reReview?: RecordReReview | null, findings?: RecordFindings | null,
  *   findingsTotal?: unknown, runtime?: unknown, craftVersion?: unknown, workflowEngineRevision?: unknown,
  *   engineRevision?: unknown, runEngineRevision?: unknown, workflowEngineRevisionDisputed?: unknown, runtimeStats?: RecordRuntimeStats | null,
- *   outputTokens?: unknown, surfaceGate?: RecordSurfaceGate | null, savedByFloor?: unknown,
+ *   outputTokens?: unknown, outputTokensScope?: unknown, surfaceGate?: RecordSurfaceGate | null, savedByFloor?: unknown,
  *   savedByFloorPremiseHeld?: unknown, harmCap?: { lowered?: unknown } | null, uncoveredFiles?: unknown, dimensions?: unknown,
  *   phases?: unknown, ledger?: unknown, ledgerSource?: unknown, memory?: unknown, [k: string]: unknown
  * }} RunRecord
@@ -77,11 +77,30 @@ export function summarizeFindings(findings) {
   return { total: SEVERITIES.reduce((n, s) => n + bySeverity[s], 0), bySeverity }
 }
 
+// What a record's `outputTokens` counts (integrations/shared/run-budget.mjs).
+/** The `outputTokensScope` of a record whose `outputTokens` is the turn's pool grown while its engine ran. */
+export const TURN_DELTA = 'turn-delta'
+
+/** A record's `outputTokensScope`, only when one is named. @param {unknown} scope @returns {{ outputTokensScope?: unknown }} */
+export const scopeField = scope => (scope != null && scope !== '' ? { outputTokensScope: scope } : {})
+
+/**
+ * The scope beside a record's figure: none without a number to say what it counts, as the binary's record writer.
+ * @param {unknown} tokens @param {unknown} scope @returns {{ outputTokensScope?: unknown }}
+ */
+export const tokensScope = (tokens, scope) => (typeof tokens === 'number' ? scopeField(scope) : {})
+
+/**
+ * A record's `outputTokens` and, when it is a number, the scope that says what it counts.
+ * @param {number | null} tokens @returns {{ outputTokens: number | null, outputTokensScope?: string }}
+ */
+export const scopedTokens = tokens => (tokens === null ? { outputTokens: null } : { outputTokens: tokens, outputTokensScope: TURN_DELTA })
+
 // The refusal of an argument the engine cannot honour (a `repo` no agent could `cd` to, an option it does not
 // take): an INCOMPLETE record carrying the refusal's class in `notRun`, and the report naming the argument —
 // filed and returned before any work agent, as every refusal is (realm @nick/craft, nodes #159, #411).
 /**
- * @param {{ engine: string, why: string, notRun: string[], craftVersion: string, outputTokens: number, via?: string }} o
+ * @param {{ engine: string, why: string, notRun: string[], craftVersion: string, outputTokens: number | null, via?: string }} o
  *   `why`: the sentences naming each refused argument; `notRun`: their classes, without the caller's values;
  *   `via`: the parent workflow that dispatched this run, '' when it was not nested
  */
@@ -100,7 +119,7 @@ export function argumentRefusal({ engine, why, notRun, craftVersion, outputToken
       dimensions: [],
       verification: null,
       notRun,
-      outputTokens,
+      ...scopedTokens(outputTokens),
     },
     report: [`## Verdict`, `⚠️ INCOMPLETE — ${why}`].join('\n'),
   }
@@ -112,7 +131,7 @@ export function argumentRefusal({ engine, why, notRun, craftVersion, outputToken
 // fragility ranking — and returns `report`, before anything has run. One helper for every engine that
 // refuses, so the record and the advice cannot drift between them.
 /**
- * @param {{ engine: string, repo: string, craftVersion: string, outputTokens: number, via?: string }} o
+ * @param {{ engine: string, repo: string, craftVersion: string, outputTokens: number | null, via?: string }} o
  *   `via`: the parent workflow that dispatched this run, '' when it was not nested
  */
 export function repoRefusal({ engine, repo, craftVersion, outputTokens, via = '' }) {
@@ -132,7 +151,7 @@ export function repoRefusal({ engine, repo, craftVersion, outputTokens, via = ''
       // The CLASS, not the caller's path: `notRun` is ranked by exact string, so a path here would
       // make every repetition of this same misuse its own count-1 row.
       notRun: ["`repo` argument refused — this engine reviews only the session's own checkout"],
-      outputTokens,
+      ...scopedTokens(outputTokens),
     },
     report: [
       `## Verdict`,
@@ -294,7 +313,7 @@ export function shingleOverlap(a, b) {
  * @param {{ schemaVersion?: unknown, runtime?: unknown, ts?: unknown, kind?: unknown, name?: unknown,
  *   craftVersion?: unknown, craftCommit?: unknown, project?: unknown, commit?: unknown, dirty?: unknown,
  *   branch?: unknown, head?: unknown, round?: unknown, verdict?: unknown, findings?: { total?: unknown } | null,
- *   nested?: unknown, via?: unknown, outputTokens?: unknown, driver?: unknown }} r
+ *   nested?: unknown, via?: unknown, outputTokens?: unknown, outputTokensScope?: unknown, driver?: unknown }} r
  */
 export function indexProjection(r) {
   return {
@@ -318,6 +337,8 @@ export function indexProjection(r) {
     nested: r.nested,
     via: r.via,
     outputTokens: r.outputTokens ?? null,
+    // What outputTokens counts, only when a writer named it (integrations/shared/run-budget.mjs).
+    ...scopeField(r.outputTokensScope),
     // Only when stamped, so the JS engine's index lines stay as they were: the chain selector skips a CLI run by it.
     ...(r.driver != null ? { driver: r.driver } : {}),
   }

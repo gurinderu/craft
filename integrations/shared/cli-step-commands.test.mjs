@@ -15,6 +15,6 @@ test('a submit says only what differs from the binary default', () => {
   const { submit } = stepCommands('review')
   assert.equal(
     submit('craft', '/r', { degraded: ['d'], abandoned: ['t'], limit: 'cap', resume: true, recordRoot: '/p' }, { agents: 3, tokens: 9 }),
-    "craft review submit --run '/r' --degraded 'd' --abandoned 't' --limit 'cap' --resume --record-root '/p' --agents 3 --output-tokens 9",
+    "craft review submit --run '/r' --degraded 'd' --abandoned 't' --limit 'cap' --resume --record-root '/p' --agents 3 --output-tokens 9 --output-tokens-scope turn-delta",
   )
 })

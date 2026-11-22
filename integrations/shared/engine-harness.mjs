@@ -313,12 +313,13 @@ export const CALL_SPEND = 1000
  * defect, and `calls` is where that becomes visible.
  */
 /**
- * `root` is the tree the engine is built from (`builtSource`), the checkout unless a test builds a copy.
- * @param {string} name @param {{ args?: any, script?: Record<string, any>, budgetTotal?: number, root?: string }} [opts]
+ * `root` is the tree the engine is built from (`builtSource`), the checkout unless a test builds a copy; `budgetSpent` what
+ * the session spent before the engine started, as the sandbox's session-wide `budget.spent()` reads it.
+ * @param {string} name @param {{ args?: any, script?: Record<string, any>, budgetTotal?: number, budgetSpent?: number, root?: string }} [opts]
  * @returns {Promise<{ report: string, reportValue: any, calls: Call[], phases: string[], logs: string[] }>} `reportValue`
  *   what the engine returned, read by tests field by field
  */
-export async function runEngine(name, { args = {}, script = {}, budgetTotal = 1e9, root = ROOT } = {}) {
+export async function runEngine(name, { args = {}, script = {}, budgetTotal = 1e9, budgetSpent = 0, root = ROOT } = {}) {
   const src = (await builtSource(name, root)).replace(/^export const meta/m, 'const meta')
   /** @type {Call[]} */
   const calls = []
@@ -326,7 +327,7 @@ export async function runEngine(name, { args = {}, script = {}, budgetTotal = 1e
   const phases = []
   /** @type {string[]} */
   const logs = []
-  let spent = 0
+  let spent = budgetSpent
 
   // `callIndex` counts calls answered by the SAME script key, not by the same label. The difference
   // is not pedantic: a script keyed on `checkpoint` answers `checkpoint:rust-plan` and
