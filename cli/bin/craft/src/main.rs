@@ -176,9 +176,15 @@ async fn finish(outcome: anyhow::Result<ExitCode>) -> ExitCode {
 }
 
 async fn finish_with(outcome: anyhow::Result<ExitCode>, exit: &settle::Exit) -> ExitCode {
+    // The outcome is reported first, so a settle that panicked cannot swallow its error.
+    let code = report(outcome);
     // Every way out — a stop, an error, a finished run — waits out the grace of the agents'
     // groups, so their SIGKILL is sent before craft is gone.
     exit.wait().await;
+    code
+}
+
+fn report(outcome: anyhow::Result<ExitCode>) -> ExitCode {
     match outcome {
         Ok(code) => code,
         Err(e) => {

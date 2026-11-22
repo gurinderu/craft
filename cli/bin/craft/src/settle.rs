@@ -28,7 +28,7 @@ impl Exit {
     /// turning meanwhile, or on this one when the OS refuses the thread — exit then neither panics
     /// nor leaves a group unkilled. Nothing pending starts no thread, so a command that ran no
     /// agent cannot fail at exit on a thread it never needed. A panic in `settle` on its thread is
-    /// raised here once it is over, as on this one.
+    /// raised here once it is over, as on this one; the caller has reported its outcome by then.
     pub(crate) async fn wait(&self) {
         if !(self.pending)() {
             return;
