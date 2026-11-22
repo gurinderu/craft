@@ -110,6 +110,25 @@ fn runs() -> (tempfile::TempDir, PathBuf) {
 }
 
 #[test]
+fn a_pending_step_of_the_second_round_names_its_round_scope_and_base() {
+    let repo = fixture(true);
+    let (_keep, runs) = runs();
+    round_one(repo.path(), &runs);
+    fix(repo.path());
+    let s = step::start(&at(repo.path(), &runs, "r2")).unwrap();
+    assert_eq!(
+        (&s["done"], &s["round"], &s["lensScope"], &s["base"]),
+        (
+            &json!(false),
+            &json!(2),
+            &json!("delta"),
+            &json!("origin/main")
+        ),
+        "the record of a run stopped here says round 2, not a first full review"
+    );
+}
+
+#[test]
 fn the_second_round_reviews_the_fixes_adjudicates_the_first_and_reports_nothing_twice() {
     let repo = fixture(true);
     let (_keep, runs) = runs();

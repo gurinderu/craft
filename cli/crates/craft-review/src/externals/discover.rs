@@ -43,7 +43,7 @@ pub(super) fn discover(root: &Path, paths: Option<&[JsString]>, known: &[Js]) ->
         .with("more", Js::Num(f64::from(more)))
         .with("unread", Js::Arr(unread));
     if cut {
-        out.set("walkCut", Js::str("the walk stopped at its bound of 100000 directory entries: files past it were not read — name them with --paths"));
+        out.set("walkCut", Js::str("the walk stopped at its bound of 100000 directory entries: files past it were not read — name them with `craft init --propose --path <file>`"));
     }
     Ok(Js::Obj(out))
 }

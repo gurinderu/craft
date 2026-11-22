@@ -234,6 +234,10 @@ fn a_retro_sums_one_versions_finished_runs_per_workflow_and_lens() {
     assert_eq!(section("workflow")[0]["name"], json!("review (cli)"));
     assert_eq!(section("workflow")[0]["avgRefute"], json!(0.25));
     assert_eq!(section("notRun")[0]["runs"], json!(1));
+    assert!(
+        section("lensRound").is_empty(),
+        "records with no round yield print none"
+    );
     let lenses = section("lens");
     assert_eq!(lenses[0]["lens"], json!("rust:errors (cli)"));
     assert_eq!(
@@ -345,4 +349,138 @@ fn check_does_not_call_independent_runs_phantom_twins() {
             .iter()
             .any(|r| r["kind"] == "phantom-incomplete")
     );
+}
+
+/// A run stopped and resumed, as the 2026-11-22 rauthy review filed it: the stopped part
+/// INCOMPLETE, the resume's part finished, both naming the binary's run directory; beside them a
+/// run of another directory stopped twice and never resumed.
+fn stopped_and_resumed() -> tempfile::TempDir {
+    let d = tempfile::tempdir().unwrap();
+    let mut stopped = review("0.9.0", "INCOMPLETE", 0);
+    stopped["cliRun"] = json!("/s/cli/1795339093-2927550");
+    stopped["notRun"] = json!(["the craft binary did not finish the run"]);
+    stopped["phases"] = json!([{"phase": "start", "at": "2026-11-22T09:19:05.981Z"}]);
+    record(d.path(), "2026-11-22T09-42-49Z", &stopped);
+    let mut finished = review("0.9.0", "Block", 2);
+    finished["cliRun"] = stopped["cliRun"].clone();
+    finished["round"] = json!(2);
+    finished["phases"] = json!([{"phase": "start", "at": "2026-11-22T09:43:11.118Z"}]);
+    record(d.path(), "2026-11-22T09-56-50Z", &finished);
+    let mut other = stopped.clone();
+    other["cliRun"] = json!("/s/cli/2-2");
+    record(d.path(), "2026-11-22T11-00-00Z", &other);
+    record(d.path(), "2026-11-22T12-00-00Z", &other);
+    d
+}
+
+#[test]
+fn a_stopped_part_of_a_resumed_run_folds_into_its_finished_record() {
+    let d = stopped_and_resumed();
+    let lines = ndjson(&craft(d.path(), &["retro", "0.9.0", "--json"]));
+    let summary = lines.iter().find(|l| l["section"] == "summary").unwrap();
+    assert_eq!(
+        (
+            &summary["runs"],
+            &summary["folded"],
+            &summary["partialCoverage"]
+        ),
+        (&json!(2), &json!(2), &json!(1)),
+        "the resumed run once, as its finished record; the never-resumed run once, INCOMPLETE"
+    );
+    let not_run = lines.iter().find(|l| l["section"] == "notRun").unwrap();
+    assert_eq!(not_run["runs"], json!(1));
+    let rows = ndjson(&craft(d.path(), &["stats", "--by", "version", "--json"]));
+    assert_eq!(
+        (
+            &rows[0]["tally"]["runs"],
+            &rows[0]["tally"]["verdicts"]["incomplete"],
+            &rows[0]["tally"]["verdicts"]["block"]
+        ),
+        (&json!(2), &json!(1), &json!(1))
+    );
+    let incomplete = ndjson(&craft(
+        d.path(),
+        &[
+            "stats",
+            "--by",
+            "version",
+            "--verdict",
+            "incomplete",
+            "--json",
+        ],
+    ));
+    assert_eq!(
+        incomplete[0]["tally"]["runs"],
+        json!(1),
+        "a filter that keeps only INCOMPLETE records still knows the resumed run finished"
+    );
+    let ls = ndjson(&craft(d.path(), &["ls", "--json"]));
+    assert_eq!(ls.len(), 4, "ls lists every record filed, as filed");
+    let check = ndjson(&craft(d.path(), &["check", "--json"]));
+    assert!(
+        !check.iter().any(|r| r["kind"] == "phantom-incomplete"),
+        "a stopped part is no phantom: its run did stop"
+    );
+}
+
+#[test]
+fn a_run_stopped_under_one_version_and_finished_under_the_next_counts_under_the_finishing_one() {
+    let d = tempfile::tempdir().unwrap();
+    let mut stopped = review("0.9.0", "INCOMPLETE", 0);
+    stopped["cliRun"] = json!("/s/cli/1-1");
+    record(d.path(), "2026-11-22T09-42-49Z", &stopped);
+    let mut finished = review("0.10.0", "Block", 2);
+    finished["cliRun"] = json!("/s/cli/1-1");
+    record(d.path(), "2026-11-22T09-56-50Z", &finished);
+    let summary = |v: &str| {
+        ndjson(&craft(d.path(), &["retro", v, "--json"]))
+            .into_iter()
+            .find(|l| l["section"] == "summary")
+            .unwrap()
+    };
+    let (old, new) = (summary("0.9.0"), summary("0.10.0"));
+    assert_eq!((&old["runs"], &old["folded"]), (&json!(0), &json!(1)));
+    assert_eq!(
+        (&new["runs"], &new["folded"], &new["partialCoverage"]),
+        (&json!(1), &json!(0), &json!(0))
+    );
+    let rows = ndjson(&craft(d.path(), &["stats", "--by", "version", "--json"]));
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    assert_eq!(
+        (&rows[0]["group"], &rows[0]["tally"]["runs"]),
+        (&json!("0.10.0"), &json!(1))
+    );
+}
+
+#[test]
+fn a_run_that_only_stopped_across_versions_counts_once_under_its_newest_parts_version() {
+    let d = tempfile::tempdir().unwrap();
+    for (v, ts) in [
+        ("0.9.0", "2026-11-22T09-42-49Z"),
+        ("0.10.0", "2026-11-22T09-56-50Z"),
+    ] {
+        let mut part = review(v, "INCOMPLETE", 0);
+        part["cliRun"] = json!("/s/cli/1-1");
+        record(d.path(), ts, &part);
+    }
+    let summary = |v: &str| {
+        ndjson(&craft(d.path(), &["retro", v, "--json"]))
+            .into_iter()
+            .find(|l| l["section"] == "summary")
+            .unwrap()
+    };
+    let (old, new) = (summary("0.9.0"), summary("0.10.0"));
+    assert_eq!((&old["runs"], &old["folded"]), (&json!(0), &json!(1)));
+    assert_eq!(
+        (&new["runs"], &new["folded"], &new["partialCoverage"]),
+        (&json!(1), &json!(0), &json!(1))
+    );
+    let rows = ndjson(&craft(d.path(), &["stats", "--by", "version", "--json"]));
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    assert_eq!(
+        (&rows[0]["group"], &rows[0]["tally"]["runs"]),
+        (&json!("0.10.0"), &json!(1))
+    );
+    let old_only = ndjson(&craft(d.path(), &["stats", "--version", "0.9.0", "--json"]));
+    assert!(old_only.is_empty(), "{old_only:?}");
 }

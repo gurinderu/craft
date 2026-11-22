@@ -27,6 +27,10 @@ pub struct RoundYield {
     pub agents: usize,
     pub returned: usize,
     pub new_findings: usize,
+    /// Every finding the round's answers held, exact copies of pooled ones included; `None` in a
+    /// state written before it was counted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raw: Option<usize>,
 }
 
 /// The pool the rounds fill and the ledger of their dispatches.
@@ -174,8 +178,11 @@ fn lens_task(
     Ok(task)
 }
 
-/// Records on `kept` that another lens filed the very same finding, as `noteExactCopy`.
+/// Records on `kept` that another lens filed the very same finding, as `noteExactCopy`, and the
+/// round the copy was raised in.
 fn note_exact_copy(kept: &mut Value, copy: &Value) {
+    let had = std::mem::take(kept);
+    *kept = crate::dedup::with_rounds(had.clone(), &[&had, copy]);
     let src = |v: &Value| v.get("source").and_then(Value::as_str).map(str::to_owned);
     let Some(theirs) = src(copy).filter(|s| !s.is_empty()) else {
         return;
@@ -207,7 +214,7 @@ fn pooled(found: &Value, profile: &str, lens: &str, round: u32) -> Value {
     f.insert("source".into(), Value::String(lens.to_owned()));
     f.insert("profile".into(), Value::String(profile.to_owned()));
     f.insert("foundInRound".into(), Value::from(round));
-    Value::Object(f)
+    crate::dedup::stamped(Value::Object(f), crate::dedup::LENS, Some(round))
 }
 
 impl Rounds {
@@ -216,7 +223,7 @@ impl Rounds {
     pub fn absorb(&mut self, tasks: &[Task]) -> BTreeMap<String, usize> {
         let mut fresh: Vec<Value> = Vec::new();
         let mut added: BTreeMap<String, usize> = BTreeMap::new();
-        let mut returned = 0;
+        let (mut returned, mut raw) = (0, 0);
         for t in tasks {
             let TaskKind::Lens {
                 profile,
@@ -240,6 +247,7 @@ impl Rounds {
             returned += 1;
             let found = answer.get("findings").and_then(Value::as_array);
             for f in found.into_iter().flatten() {
+                raw += 1;
                 let f = pooled(f, profile, lens, *round);
                 let at = key(&f);
                 if let Some(g) = self
@@ -264,6 +272,7 @@ impl Rounds {
                 .count(),
             returned,
             new_findings: fresh.len(),
+            raw: Some(raw),
         });
         self.pool.extend(fresh);
         added

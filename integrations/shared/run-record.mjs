@@ -24,7 +24,7 @@ const entryField = (v, key) => (v && typeof v === 'object' ? /** @type {Record<s
  * is optional and every leaf is `unknown` until a guard (`isCount`, `costProblem`, a `typeof`) says
  * otherwise; nested objects are typed so the guard has a shape to narrow.
  * @typedef {{ total?: unknown, cacheRead?: unknown, cacheWrite?: unknown, input?: unknown, output?: unknown,
- *   agents?: unknown, skipped?: unknown, source?: unknown, rule?: unknown, slice?: unknown }} RecordCost
+ *   agents?: unknown, skipped?: unknown, partsUnmeasured?: unknown, source?: unknown, rule?: unknown, slice?: unknown }} RecordCost
  * @typedef {{ chained?: unknown, ledgerDegraded?: unknown, journalSourced?: unknown, fpComparable?: unknown,
  *   basisMismatch?: unknown, tombstonesDropped?: unknown, priorRound?: unknown, priorHead?: unknown,
  *   [k: string]: unknown }} RecordReReview
@@ -613,7 +613,7 @@ export function costTotal(cost) {
 function costMalformed(c) {
   const measured = [c.total, c.cacheRead, c.cacheWrite, c.input, c.output, c.agents]
   if (measured.every(v => v == null)) return true
-  if ([...measured, c.skipped].some(v => v != null && !isCount(v))) return true
+  if ([...measured, c.skipped, c.partsUnmeasured].some(v => v != null && !isCount(v))) return true
   if (costLabelMalformed(c)) return true
   const partList = [c.cacheRead, c.cacheWrite, c.input, c.output]
   const parts = partList.reduce((/** @type {number} */ n, v) => n + (isCount(v) ? v : 0), 0)
@@ -654,7 +654,8 @@ function isWhole(v) {
 // when some transcripts were skipped, since a lower bound of 0 bounds nothing. `overcounted`: summed
 // with no `rule` (an enrich-cost before the rule existed) or COST_RULE_PER_LINE — per transcript line, a
 // message counted as many times as it has lines. `unknown-rule`: a rule this reader does not know, its
-// counting unknown. `partial`: `skipped` transcripts make the total a lower bound. `absorbed` (agents of
+// counting unknown. `partial`: `skipped` transcripts, or the parts of a resumed run whose cost was not measured
+// (`partsUnmeasured`, integrations/shared/run-parts.mjs), make the total a lower bound. `absorbed` (agents of
 // a nested engine that filed no record, counted into this cost — enrich-cost --run-id, #393) is not read
 // here: such a cost is usable, and larger than its own engine's share by those agents.
 /** @param {unknown} cost @returns {'missing' | 'malformed' | 'partial' | 'empty' | 'overcounted' | 'unknown-rule' | null} */
@@ -666,9 +667,12 @@ export function costProblem(cost) {
   if (costTotal(c) <= 0) return 'empty'
   const rule = ruleProblem(c.rule)
   if (rule) return rule
-  if (isCount(c.skipped) && c.skipped > 0) return 'partial'
-  return null
+  return lowerBound(c) ? 'partial' : null
 }
+
+// Whether a cost counts only some of its spend: transcripts it skipped, or parts of a resumed run never measured.
+/** @param {RecordCost} c @returns {boolean} */
+const lowerBound = c => [c.skipped, c.partsUnmeasured].some(v => isCount(v) && v > 0)
 
 // The counting-rule half of costProblem, on a rule already known to be absent or a string.
 /** @param {unknown} rule @returns {'overcounted' | 'unknown-rule' | null} */

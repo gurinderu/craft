@@ -301,7 +301,7 @@ export async function runCliReview(sb, craftVersion) {
   // The task agents counted for the binary's runtimeStats, and the binary's clock read off its steps for the record of
   // a run it never finished.
   const clock = runClock()
-  const recorder = cliRecorder(sb, { craftVersion, repo: o.repo, depth: o.depth || 'full', strict: o.strict, via: o.via, service })
+  const recorder = cliRecorder(sb, { craftVersion, repo: o.repo, run: o.run, depth: o.depth || 'full', strict: o.strict, via: o.via, service })
   const ending = await drive({ ...sb, limit, clock }, o, craftVersion, service, recorder)
   if (!('stopped' in ending)) return endedAnswer(sb, ending, recorder, { craftVersion, via: o.via })
   sb.phase('Record')

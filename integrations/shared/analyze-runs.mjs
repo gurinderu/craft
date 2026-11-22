@@ -26,6 +26,7 @@ import { roundPairs, renderRoundPairs, excludedRounds } from './round-pairs.mjs'
 import { outputLines, runIfMain } from './script-main.mjs'
 import { readAgentUnavailable } from './agent-fallback.mjs'
 import { foldResumedRuns } from './run-duplicates.mjs'
+import { foldStoppedParts } from './run-parts.mjs'
 import { splitSuperseded } from './partial-twins.mjs'
 import { slicePartials, inSlice, engineSlice } from './partial-slice.mjs'
 import { newMemoryTally, tallyMemory, renderMemorySection } from './memory-tally.mjs'
@@ -1306,6 +1307,16 @@ function partialNotes(slice, unattributed, twins) {
   return notes
 }
 
+/**
+ * How many stopped parts were folded into the runs this report counts: every one without a slice, else those in it.
+ * @param {ReturnType<typeof foldStoppedParts>} parted @param {Parameters<typeof inSlice>[1] | null | undefined} slice
+ * @returns {number}
+ */
+function foldedParts(parted, slice) {
+  if (!slice) return parted.folded
+  return parted.parts.filter(p => inSlice(p, slice) === true).length
+}
+
 /** @param {RunRec} p @returns {string} */
 function partialCost(p) {
   const s = p.runtimeStats
@@ -1352,13 +1363,19 @@ export function run(argv, _env, home = os.homedir()) {
   // reason these records exist is that a dead run used to leave no trace at all.
   const split = partitionByCompleteness(records.filter(r => r.schemaVersion))
   const partials = split.partial
-  const sliced = sliceRuns(split.complete, records, { wantEngine, wantVersion }, o)
+  // A run stopped and resumed is one run, folded before the slice: counted under the version and engine of the
+  // record standing for it, its stopped part's slice saying it folded (integrations/shared/run-parts.mjs).
+  const parted = foldStoppedParts(split.complete)
+  const sliced = sliceRuns(parted.records, records, { wantEngine, wantVersion }, o)
   if ('stop' in sliced) {
     o.stdout.push(sliced.stop)
     return { exitCode: 0, ...o }
   }
   // A resumed run files a second record of itself; it is one run (realm @nick/craft, node #249).
-  const { records: usable, folded } = foldResumedRuns(sliced.usable)
+  const resumed = foldResumedRuns(sliced.usable)
+  const usable = resumed.records
+  const slice = sliced.slice
+  const folded = resumed.folded + foldedParts(parted, slice)
   const versionNote = sliced.note
   // The old "this store mixes N craft versions" note is gone on purpose: the ENGINE BOUNDARY
   // section states the same thing more precisely (and states the case the version note could not

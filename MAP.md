@@ -232,19 +232,14 @@ that shaped this layer has been removed.
 `craft runs recurring` reads up to 500 newest detail files and emits one JSON object of findings
 confirmed on at least two branches of one repository. Selection and grouping are in
 `cli/crates/craft-review/src/recurring.rs` and `recurring/`, reached by `cli/bin/craft/src/runs.rs` and tested through the
-built binary in `cli/bin/craft/tests/recurring.rs` and `cli/bin/craft/tests/recurring/`. The old
-`integrations/shared/recurring-findings.mjs` entry is a thin adapter to the binary, using
-`integrations/shared/native-command.mjs` for package-version acquisition and stream/exit forwarding
-(shared with the `craft-externals.mjs` compatibility entry), with its own
-transport tests. The addressing-findings and develop skills resolve that binary by the package's
-existing downloader and call the native command. Equal groups use UTF-16 code-unit order,
+built binary in `cli/bin/craft/tests/recurring.rs` and `cli/bin/craft/tests/recurring/`. The addressing-findings and develop skills resolve
+that binary by the package's existing downloader and call the native command. Equal groups use UTF-16 code-unit order,
 independent of the host locale.
 
 Manifest discovery and legacy external-record import live in
-`cli/crates/craft-review/src/externals.rs` and `externals/`. Both `craft init`
-(`cli/bin/craft/src/init.rs`, `init/memory.rs`) and the compatibility command
-(`cli/bin/craft/src/externals.rs`) call that library. `integrations/shared/craft-externals.mjs`
-forwards to the binary through `native-command.mjs`. Library coverage is in
+`cli/crates/craft-review/src/externals.rs` and `externals/`. `craft init`
+(`cli/bin/craft/src/init.rs`, `init/memory.rs`, and `init/paths.rs` for its repeatable `--path`,
+the manifests read in place of the walk) calls that library. Library coverage is in
 `externals/tests/`; binary-boundary coverage is in `cli/bin/craft/tests/externals.rs`
 and `externals/`. The embedded regex engine is pinned through `cli/Cargo.lock`.
 

@@ -13,6 +13,7 @@ use anyhow::{Context, Result, bail};
 use clap::builder::TypedValueParser;
 use craft_store::filter::Filter;
 use craft_store::js::{Js, Obj};
+use craft_store::parts::Parts;
 use craft_store::read::{self, Skipped};
 use craft_store::tally::Tally;
 
@@ -281,13 +282,23 @@ fn printed(args: &RunsArgs) -> Result<ExitCode> {
 fn retro(store: &Path, version: &str, skipped: &mut Skipped) -> Result<craft_store::retro::Retro> {
     let mut out = craft_store::retro::Retro::default();
     let mut newest = std::collections::BTreeMap::<String, (String, String)>::new();
+    let mut parts = Parts::default();
     let mut failure = None;
     read::records(store, skipped, |name, r| {
-        if !r.get("schemaVersion").is_some_and(Js::truthy)
-            || r.text_units("craftVersion") != version
+        let died = r.get("partial").is_some_and(Js::truthy);
+        if r.get("schemaVersion").is_some_and(Js::truthy) && !died {
+            parts.note(&r);
+        }
+        let inside = r.text_units("craftVersion") == version;
+        if r.get("schemaVersion").is_some_and(Js::truthy)
+            && !died
+            && held(&mut parts, (name, &r, inside), &mut failure)
         {
+            // Counted, or folded, once every record is read, as the run's standing part is.
+            out.other += u64::from(!inside);
+        } else if !r.get("schemaVersion").is_some_and(Js::truthy) || !inside {
             out.other += 1;
-        } else if r.get("partial").is_some_and(Js::truthy) {
+        } else if died {
             out.unfinished += 1;
         } else if let Some(key) = craft_store::retro::run_key(&r) {
             let ts = match r.try_text("ts") {
@@ -333,7 +344,55 @@ fn retro(store: &Path, version: &str, skipped: &mut Skipped) -> Result<craft_sto
             Err(why) => skipped.records.push((name, why)),
         }
     }
+    let (standing, folded) = parts.standing();
+    out.folded += folded;
+    let of_version = |r: &Obj| r.text_units("craftVersion") == version;
+    for r in read_back(store, standing, skipped, of_version) {
+        craft_store::retro::add_record(&mut out, &r)?;
+    }
     Ok(out)
+}
+
+/// Whether `r` is a stopped part `parts` holds back until every record is read
+/// ([`craft_store::parts`]); a time that does not read is kept as the read's failure.
+fn held(
+    parts: &mut Parts,
+    (name, r, inside): (&str, &Obj, bool),
+    failure: &mut Option<craft_store::js::Utf16Error>,
+) -> bool {
+    parts.hold(name, r, inside).unwrap_or_else(|e| {
+        *failure = Some(e);
+        true
+    })
+}
+
+/// The held records read again, each still the stopped part of its run filed at its time that did
+/// not die and that `keep` keeps; one changed or gone is said passed over.
+fn read_back(
+    store: &Path,
+    held: Vec<(String, String, String)>,
+    skipped: &mut Skipped,
+    keep: impl Fn(&Obj) -> bool,
+) -> Vec<Obj> {
+    let same = |r: &Obj, key: &str, ts: &str| {
+        r.text_units("ts") == ts
+            && r.get("schemaVersion").is_some_and(Js::truthy)
+            && !r.get("partial").is_some_and(Js::truthy)
+            && craft_store::parts::stopped(r)
+            && craft_store::parts::part_key(r).as_deref() == Some(key)
+            && keep(r)
+    };
+    let mut out = Vec::new();
+    for (key, ts, name) in held {
+        match read::record(store, &name) {
+            Ok(r) if same(&r, &key, &ts) => out.push(r),
+            Ok(_) => skipped
+                .records
+                .push((name, "record changed while reading".into())),
+            Err(why) => skipped.records.push((name, why)),
+        }
+    }
+    out
 }
 
 fn listed(
@@ -388,11 +447,19 @@ fn stats(
     let mut groups: std::collections::BTreeMap<String, Tally> = std::collections::BTreeMap::new();
     let mut newest: std::collections::BTreeMap<String, (String, String)> =
         std::collections::BTreeMap::new();
+    let mut parts = Parts::default();
     let mut failure = None;
     read::records(store, skipped, |name, r| {
         let finished = r.get("schemaVersion").is_some_and(Js::truthy)
             && !r.get("partial").is_some_and(Js::truthy);
-        if !finished || !filter.keeps(&r) {
+        if finished {
+            parts.note(&r);
+        }
+        if !finished {
+            return;
+        }
+        let inside = filter.keeps(&r);
+        if held(&mut parts, (name, &r, inside), &mut failure) || !inside {
             return;
         }
         if let Some(key) = craft_store::retro::run_key(&r) {
@@ -431,6 +498,9 @@ fn stats(
                 .push((name, "record changed while reading".into())),
             Err(why) => skipped.records.push((name, why)),
         }
+    }
+    for r in read_back(store, parts.standing().0, skipped, |r| filter.keeps(r)) {
+        tally_record(&mut groups, by, &r)?;
     }
     Ok(groups.into_iter().collect())
 }

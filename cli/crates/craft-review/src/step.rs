@@ -368,7 +368,8 @@ fn next(dir: &Path, run: &RunState) -> Value {
                 .filter(|t| t.state == TaskState::Pending)
                 .map(|t| handoff::wire(dir, t))
                 .collect();
-            let mut step = json!({"run": dir.display().to_string(), "tasks": tasks, "done": false, "head": run.diff.head, "repo": run.context.repo, "phase": run.phase});
+            let mut step = json!({"run": dir.display().to_string(), "tasks": tasks, "done": false, "repo": run.context.repo, "phase": run.phase});
+            finished::name_chain(&mut step, run);
             finished::name_worktree(&mut step, run);
             step
         }

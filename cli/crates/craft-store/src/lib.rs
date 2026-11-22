@@ -17,6 +17,7 @@ pub mod finalize;
 pub mod git;
 pub mod js;
 pub mod lock;
+pub mod parts;
 pub mod posthoc;
 pub mod process_identity;
 pub mod proof;

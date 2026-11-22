@@ -21,26 +21,42 @@ pub(crate) fn step(dir: &Path, run: &RunState, verdict: &str) -> Value {
         "run": dir.display().to_string(), "done": true,
         "report": state::report_path(dir).display().to_string(),
         "verdict": verdict, "line": report::verdict_line(run, verdict),
-        "head": run.diff.head, "base": base(run), "path": run.context.scope, "repo": run.context.repo,
+        "repo": run.context.repo,
         "findings": findings(run), "uncovered": run.uncovered, "notRun": run.not_run,
-        "lensScope": if run.context.re_review == ReScope::Fixes || run.delta { "delta" } else { "full" },
-        "round": run.chain.round.max(1), "ledger": run.chain.ledger, "reReview": re_review(run),
+        "ledger": run.chain.ledger, "reReview": re_review(run),
         "memory": run.memory.source.record(), "strict": run.context.strict,
         "memorySections": report::memory_sections(run),
         "dimensions": telemetry::dimensions(run), "verification": telemetry::verification(run),
-        "lensRounds": run.rounds.yields,
+        "lensRounds": telemetry::lens_rounds(run),
     });
+    name_chain(&mut done, run);
     if let Some(obj) = done.as_object_mut() {
         let degraded = report::degraded_notes(run);
         if !degraded.is_empty() {
             obj.insert("degraded".into(), json!(degraded));
         }
+        obj.extend(telemetry::apart(run));
         for (k, v) in crate::publish::finished(run) {
             obj.insert(k.into(), v);
         }
     }
     name_worktree(&mut done, run);
     done
+}
+
+/// `step` naming where the run stands in its branch's chain — its round, whether its lenses review
+/// the fix commits alone (`lensScope`), the head it read, its base and path — which a pending step
+/// and a stopped run's record name too: a run stopped and resumed files a record per part, each
+/// saying the round it stood in, not a first review's.
+pub(crate) fn name_chain(step: &mut Value, run: &RunState) {
+    let delta = run.context.re_review == ReScope::Fixes || run.delta;
+    let chain = json!({
+        "round": run.chain.round.max(1), "lensScope": if delta { "delta" } else { "full" },
+        "head": run.diff.head, "base": base(run), "path": run.context.scope,
+    });
+    if let (Some(obj), Value::Object(chain)) = (step.as_object_mut(), chain) {
+        obj.extend(chain);
+    }
 }
 
 /// `step` naming craft's own worktree the run reviews in, when it does (`worktree`).
