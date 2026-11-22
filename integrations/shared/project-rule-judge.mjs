@@ -2,7 +2,7 @@
 // rule is a stance on a whole class of findings ("we do not support rollback"), so it is not matched like
 // a decision (the "same defect" judge, integrations/shared/prior-decision-match.mjs; node #230): its candidates are the
 // findings whose file sits inside the rule's scope — and, when the rule names a lens, only that lens's —
-// and ONE cheap judge per run is asked whether each finding's concern is exactly what the rule declares
+// and one cheap judge (one prompt per RULE_JUDGE_PAIRS_MAX pairs) is asked whether each finding's concern is exactly what the rule declares
 // acceptable. A pair the judge gave no verdict (dead, unreadable, past the bound) is not covered: silence
 // never removes a finding. What the judge sees is quoted data, never the rule's body, as for the
 // decision judge (node #231).
@@ -13,8 +13,13 @@ import ruleJudgeSchema from '../../content/schemas/rule-judge.schema.json' with 
 import { render } from './content.mjs'
 import ruleJudgeTpl from '../../content/prompts/rule-judge.md'
 
-// The most rule–finding pairs one judge sees; the rest are named and not covered.
+// The most rule–finding pairs one judge prompt holds, and the most prompts one run asks: the pairs are
+// judged in prompts of RULE_JUDGE_PAIRS_MAX, one after another, so a few project-wide rules over a large
+// batch (every finding a candidate of every rule) are all judged; past RULE_JUDGE_SENT_MAX they are named
+// and not covered.
 export const RULE_JUDGE_PAIRS_MAX = 40
+export const RULE_JUDGE_PROMPTS_MAX = 10
+export const RULE_JUDGE_SENT_MAX = RULE_JUDGE_PAIRS_MAX * RULE_JUDGE_PROMPTS_MAX
 
 /**
  * @typedef {import('./prior-decisions.mjs').PriorDecision} PriorDecision
@@ -79,19 +84,38 @@ export function ruleJudgePrompt(pairs) {
 }
 
 /**
- * Runs the judge over `sent` (never empty): the verdicts by pair index, `covered` read as `same`; a
- * missing judge, a throw or an unreadable answer yields none, and `why` says which.
+ * Runs the judge over `sent` (never empty), RULE_JUDGE_PAIRS_MAX pairs a prompt: the verdicts by pair
+ * index, `covered` read as `same`; a missing judge, a throw or an unreadable answer yields none for its
+ * prompt's pairs, and `why` says, for a pair given no verdict, which.
  * @param {RulePair[]} sent @param {((prompt: string) => Promise<unknown>) | undefined} judge
- * @returns {Promise<{ verdicts: Map<number, import('./prior-decision-match.mjs').JudgeVerdict>, why: string }>}
+ * @returns {Promise<{ verdicts: Map<number, import('./prior-decision-match.mjs').JudgeVerdict>, why: (i: number) => string }>}
  */
 export async function askRuleJudge(sent, judge) {
+  /** @type {Map<number, import('./prior-decision-match.mjs').JudgeVerdict>} */
+  const verdicts = new Map()
+  /** @type {string[]} */
+  const whys = []
+  for (let at = 0; at < sent.length; at += RULE_JUDGE_PAIRS_MAX) {
+    const one = await askOneRuleJudge(sent.slice(at, at + RULE_JUDGE_PAIRS_MAX), judge)
+    for (const [i, v] of one.verdicts) verdicts.set(at + i, v)
+    whys.push(one.why)
+  }
+  return { verdicts, why: i => whys[Math.floor(i / RULE_JUDGE_PAIRS_MAX)] ?? '' }
+}
+
+/**
+ * One judge prompt over `pairs`: its verdicts by the pair's index there, and why a pair got none.
+ * @param {RulePair[]} pairs @param {((prompt: string) => Promise<unknown>) | undefined} judge
+ * @returns {Promise<{ verdicts: Map<number, import('./prior-decision-match.mjs').JudgeVerdict>, why: string }>}
+ */
+export async function askOneRuleJudge(pairs, judge) {
   /** @type {unknown} */
   let raw = null
   try {
-    raw = judge ? await judge(ruleJudgePrompt(sent)) : null
+    raw = judge ? await judge(ruleJudgePrompt(pairs)) : null
   } catch {
     raw = null
   }
-  const v = readJudge(raw, sent.length, 'covered')
+  const v = readJudge(raw, pairs.length, 'covered')
   return v ? { verdicts: v, why: 'the rule judge returned no verdict for it' } : { verdicts: new Map(), why: 'the rule judge died or answered unreadably' }
 }

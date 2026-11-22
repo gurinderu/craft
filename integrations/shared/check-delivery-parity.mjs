@@ -468,10 +468,7 @@ function deadExemptionProblems({ exemptions, root, opencode, requirements }) {
 // The pairing walk skips an excused name; the staleness sweep runs where the real directories are read (the CLI
 // below, portOnlyProblems), so the tests' injected deliveries are not held to the real table.
 /** @type {Record<string, string>} */
-export const PORT_ONLY_BY_DESIGN = {
-  'review-task':
-    'the OpenCode review driver runs every craft-review task that names no rust-reviewer on it, to keep the task read-only; Claude Code runs those tasks on its own general-purpose agent, which has no file here',
-}
+export const PORT_ONLY_BY_DESIGN = {}
 
 /**
  * Each OpenCode-only excuse that no longer holds.

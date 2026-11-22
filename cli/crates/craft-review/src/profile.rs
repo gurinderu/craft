@@ -222,6 +222,18 @@ impl Profile {
         self.own_rubric(lens).unwrap_or(&self.rubric_skill)
     }
 
+    /// The agent `lens`'s tasks run on: the profile's lens agent, except for a metrics-or-nothing
+    /// lens, whose prompt asks for the code graph's MCP tools that agent does not have — it runs
+    /// on the host's default agent.
+    #[must_use]
+    pub fn agent_of(&self, lens: &str) -> Option<AgentKind> {
+        if self.lens(lens).is_some_and(|l| l.metrics) {
+            None
+        } else {
+            self.lens_agent
+        }
+    }
+
     /// Whether `lens`'s rubric ships a `rules.md` catalog its findings' `ruleId` cites.
     #[must_use]
     pub fn catalog_of(&self, lens: &str) -> bool {

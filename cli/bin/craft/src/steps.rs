@@ -60,7 +60,7 @@ pub struct StartArgs {
     #[arg(long)]
     pub no_recall: bool,
     /// Run no mechanical gate: clippy and `nix flake check` build the branch's code (build scripts,
-    /// proc macros, flake checks run as you), so skip them for a branch you do not trust; the report
+    /// proc macros, flake checks and a flake dev shell's `shellHook` run as you), so skip them for a branch you do not trust; the report
     /// names the gate as skipped.
     #[arg(long)]
     pub no_gate: bool,
