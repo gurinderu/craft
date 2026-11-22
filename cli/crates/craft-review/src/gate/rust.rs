@@ -4,7 +4,8 @@
 //! nursery pass whose new warnings there are `clippy-pedantic` seeds, then semgrep with the
 //! repository's own rules over the changed files, each result a `semgrep` seed. A run scoped to a
 //! package's directory (`path`) lints that package alone, by name: per-crate runs of one workspace
-//! (rust-audit's) then do not lint each other's packages.
+//! (rust-audit's) then do not lint each other's packages. cargo runs inside the checkout's flake
+//! dev shell when it has one (`gate/devshell.rs`).
 
 use std::path::Path;
 
@@ -12,6 +13,7 @@ use super::Status;
 use super::check::{Acc, Cx};
 use super::ci;
 use super::clippy::{Package, gate_check, pedantic};
+use super::devshell::{Shell, shell};
 use super::semgrep::semgrep;
 
 /// At most this many packages are linted; the rest are named.
@@ -38,14 +40,28 @@ pub(super) fn gate(cx: &Cx<'_>, acc: &mut Acc) {
         ));
     }
     let manifests: Vec<&Package> = manifests.iter().take(PACKAGES_MAX).collect();
-    for m in &manifests {
-        let s = gate_check(cx, acc, m);
-        acc.check(s);
+    let shell = if manifests.is_empty() {
+        Shell::Outside
+    } else {
+        shell(cx, acc)
+    };
+    if shell == Shell::Broken {
+        // No build ran: CI may stand for it, as for any build this machine could not make.
+        acc.unbuilt = true;
+        acc.check(Status::Unknown);
+    } else {
+        for m in &manifests {
+            let s = gate_check(cx, acc, m, shell);
+            acc.check(s);
+        }
     }
     // Seeds only, on what built: a pass the budget cuts short is named and skipped.
     if acc.status == Some(Status::Pass) {
         let before = acc.seeds.len();
-        let ran = manifests.iter().filter(|m| pedantic(cx, acc, m)).count();
+        let ran = manifests
+            .iter()
+            .filter(|m| pedantic(cx, acc, m, shell))
+            .count();
         acc.parts.push(format!(
             "the pedantic and nursery pass (`-- -W clippy::pedantic -W clippy::nursery`) on {ran} package(s): {} seed(s)",
             acc.seeds.len() - before
