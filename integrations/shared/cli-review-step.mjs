@@ -9,7 +9,7 @@ import { chainOf, findingsOf, isObject, publicationOf, roundOf, stepText, stopNo
 
 export { isObject }
 
-/** @typedef {{ id: string, label: string, model: string, promptFile: string, schemaFile: string, answerFile: string, agentType?: string, consumerAgent?: string, kind?: string }} Task  consumerAgent: the reviewed repository's own agent, by the name it gives it; kind: what the task is for, by which its deadline is set */
+/** @typedef {{ id: string, label: string, model: string, promptFile: string, schemaFile: string, answerFile: string, agentType?: string, consumerAgent?: string, kind?: string, graph?: boolean }} Task  consumerAgent: the reviewed repository's own agent, by the name it gives it; kind: what the task is for, by which its deadline is set; graph: its prompt asks for the code graph's MCP tools */
 /** @typedef {import('./cli-review-record.mjs').Finding} Finding */
 /** @typedef {{ runDir: string, rejoin: boolean, lost: string[], record: string }} Filing  what the binary's telemetry write after this step did (cli/crates/craft-review/src/filing.rs): the run directory its checkpoints went to ('' none yet), whether a later write re-enters it, each write that did not land as `<what> — <why>`, and on a finished step the record: `filed`, `failed`, '' when none was attempted */
 /** @typedef {import('./cli-review-record.mjs').LedgerRow} LedgerRow */

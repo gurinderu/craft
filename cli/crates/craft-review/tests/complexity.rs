@@ -123,6 +123,9 @@ fn with_an_index_a_finding_stands_on_the_metrics_it_carries_and_the_verifier_rer
             "lens-general-design-r1"
         ]
     );
+    // Only the metrics lens reaches for the graph's MCP tools, and the wire says so.
+    assert_eq!(s["tasks"][0]["graph"], json!(true));
+    assert!(s["tasks"][1].get("graph").is_none(), "{}", s["tasks"][1]);
     let p = prompt_of(&s["tasks"][0]);
     assert_contains_all(
         &p,
@@ -162,6 +165,11 @@ fn with_an_index_a_finding_stands_on_the_metrics_it_carries_and_the_verifier_rer
         .collect();
     let s = submit(&run, Value::Object(quiet));
     assert_eq!(ids(&s), ["verify-0-v0"], "one verifier, not a panel");
+    assert_eq!(
+        s["tasks"][0]["graph"],
+        json!(true),
+        "the metric verifier asks the graph too"
+    );
     let v = prompt_of(&s["tasks"][0]);
     assert_contains_all(
         &v,

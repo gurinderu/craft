@@ -145,7 +145,7 @@ fn vote(run: &RunState, i: usize, f: &Value, k: u32) -> Result<Task, ContentErro
     } else {
         (format!("c{}", k + 1), CULL_MODEL)
     };
-    Ok(Task::new(
+    let mut task = Task::new(
         format!("verify-{i}-v{k}"),
         format!("verify:{file}:{line}#{tag}"),
         prompts::verify_prompt(
@@ -161,7 +161,9 @@ fn vote(run: &RunState, i: usize, f: &Value, k: u32) -> Result<Task, ContentErro
             finding: i,
             voter: k,
         },
-    ))
+    );
+    task.graph = crate::complexity::is_metric(f);
+    Ok(task)
 }
 
 /// The votes on finding `i` so far, by voter: the valid answer, the refused one (an off-schema
