@@ -1,7 +1,8 @@
 // A plugin agent sees the skill listing and can load a skill only when its `tools` hold `Skill`;
 // `${CLAUDE_PLUGIN_ROOT}` in its body is substituted (Claude Code 2.1.319, observed in the binary). So
 // an agent without `Skill` that is told to "load the rust-review skill" never reads its rubric. Each
-// skill such a body names must be named by its file, and every plugin path the body names must exist.
+// skill such a body names must be named by its file, and every plugin path the body names must exist
+// (realm @nick/craft, node #599).
 import fs from 'node:fs'
 import path from 'node:path'
 
@@ -11,14 +12,15 @@ const ROOT_VAR = '${CLAUDE_PLUGIN_ROOT}/'
 export const hasSkillTool = tools => /(^|[^A-Za-z])Skill([^A-Za-z]|$)/.test(tools)
 
 /**
- * The skills of `skills` a body names: `craft:<s>`, or `<s>` (backticked or bare) followed by "skill".
+ * The skills of `skills` a body names: `craft:<s>`, `<s>` (backticked or bare) followed by "skill", or a
+ * backticked `<s>` alone — a list of skills ("the domain skills (`nix-flakes`, `nixos`)") names each.
  * @param {string} body @param {Iterable<string>} skills @returns {string[]}
  */
 export function namedSkills(body, skills) {
   return [...skills]
     .filter(s => {
       const esc = s.replace(/[-]/g, '\\-')
-      return new RegExp(`craft:${esc}(?![a-z0-9-])|(?<![a-z0-9-])\`?${esc}\`?(?:'s)? skill`).test(body)
+      return new RegExp(`craft:${esc}(?![a-z0-9-])|(?<![a-z0-9-])\`?${esc}\`?(?:'s)? skill|\`${esc}\``).test(body)
     })
     .sort()
 }

@@ -12,9 +12,14 @@ checklist, confidence tiers, and verdict criteria. Use the `rust-navigation` ski
 (`${CLAUDE_PLUGIN_ROOT}/skills/rust-navigation/SKILL.md`) for context expansion (callers, impls,
 call hierarchy).
 
-You have no Skill tool, so a skill is read as files: wherever this body or your brief says to load,
-apply or use a skill `<name>` (or `craft:<name>`), read `${CLAUDE_PLUGIN_ROOT}/skills/<name>/SKILL.md` and the files
-it links before you judge.
+You have no Skill tool, so a skill is read as files: wherever this body, your brief or a skill
+you have read names a skill `<name>` (or `craft:<name>`), read
+`${CLAUDE_PLUGIN_ROOT}/skills/<name>/SKILL.md` and the files it links before you judge. If a path
+still reads `${CLAUDE_PLUGIN_ROOT}` literally, find the plugin root as the review does: the root a
+path in your brief names (its REVIEW RULES directory is `<root>/skills/review-rules`), else
+`$CLAUDE_PLUGIN_ROOT` in your shell, else `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/cache/craft/craft/<version>/`
+(the version your brief names, else the newest there). If no rubric file can be read, start your
+answer with `rubric not read: <path>` and do not judge as if you had read it.
 
 You are usually dispatched by the `craft:review` workflow as **one lens** — review only the slice
 your brief names and ignore the rest; other lens instances cover the other slices. If your brief

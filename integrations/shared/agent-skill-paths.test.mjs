@@ -32,6 +32,18 @@ test('a skill is named by `craft:` or by "skill" after it, and a longer name doe
   assert.deepEqual(namedSkills('the rust-review workflow', skills), [])
 })
 
+test('a backticked skill name alone counts, as the bodies on origin/main listed them', () => {
+  const skills = ['nix-flakes', 'nix-packaging', 'nix-dev-env', 'nixos', 'rust-architecture', 'rust-architecture-review']
+  // nix-reviewer before this fix: its domain skills, listed with no "skill" after each.
+  const nix = 'Reach for the domain skills\n(`nix-flakes`, `nix-packaging`, `nix-dev-env`, `nixos`) when a finding needs their depth.'
+  assert.deepEqual(namedSkills(nix, skills), ['nix-dev-env', 'nix-flakes', 'nix-packaging', 'nixos'])
+  // rust-architecture-reviewer before this fix: the design vocabulary it cites.
+  const arch = 'For the design\n   vocabulary (ports, adapters, the domain rule, when NOT to abstract) cite\n   `rust-architecture`.'
+  assert.deepEqual(namedSkills(arch, skills), ['rust-architecture'])
+  assert.equal(skillAccessProblems(arch, 'Read', skills, [fakeRoot()]).length, 1)
+  assert.deepEqual(namedSkills('a `nix-flakes/anatomy.md` file', skills), [])
+})
+
 test('plugin paths are the literal ones, templates left out', () => {
   assert.deepEqual(pluginPaths('read `${CLAUDE_PLUGIN_ROOT}/skills/a/SKILL.md` or `${CLAUDE_PLUGIN_ROOT}/skills/<name>/SKILL.md`'), ['skills/a/SKILL.md'])
 })
