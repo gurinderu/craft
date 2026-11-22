@@ -6,11 +6,11 @@
 /// What parts a gap's key from its detail.
 pub const SEP: &str = " — ";
 
-/// The gap `key` (which holds no [`SEP`]) with its `detail`.
+/// The gap `key` with its `detail`; a [`SEP`] in the key is written as ` - `, so the key read back
+/// is the whole of it.
 #[must_use]
 pub fn entry(key: &str, detail: &str) -> String {
-    debug_assert!(!key.contains(SEP), "a gap's key holds no separator: {key}");
-    format!("{key}{SEP}{detail}")
+    format!("{}{SEP}{detail}", key.replace(SEP, " - "))
 }
 
 /// [`entry`]'s inverse for ranking: the key, the text before the first [`SEP`]; a gap written
@@ -32,5 +32,6 @@ mod tests {
         );
         assert_eq!(key(&g), "metrics-only lens complexity could not look");
         assert_eq!(key("a gap with no separator"), "a gap with no separator");
+        assert_eq!(key(&entry("a — b", "c")), "a - b", "a key never splits");
     }
 }

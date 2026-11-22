@@ -87,10 +87,7 @@ fn listed(items: &[String], sep: &str) -> String {
 #[must_use]
 pub fn gap(look: &Look) -> Option<String> {
     match look {
-        Look::CouldNotLook(why) => Some(craft_store::gap::entry(
-            "metrics-only lens complexity could not look",
-            why,
-        )),
+        Look::CouldNotLook(why) => Some(crate::gaps::could_not_look("complexity", why)),
         Look::Measured | Look::NothingToJudge(_) => None,
     }
 }

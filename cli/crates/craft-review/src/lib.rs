@@ -24,6 +24,7 @@ pub mod externals;
 pub mod extra;
 pub mod filing;
 mod finished;
+pub mod gaps;
 pub mod gate;
 mod gh;
 pub mod git;

@@ -178,17 +178,15 @@ pub(crate) fn fresh(run: &mut RunState, profiles: &[Profile]) -> Vec<Value> {
             .and_then(Value::as_array);
         run.rounds.note_lines(t, found.is_some());
         let Some(found) = found else {
-            let (what, why) = (
-                format!("{profile} critic follow-up lens {lens}"),
-                "dispatched and returned no findings (died, or answered off-schema)",
-            );
             let gap = profiles
                 .iter()
                 .any(|p| &p.id == profile && p.metrics_only(lens));
             if gap {
-                run.capped.push(craft_store::gap::entry(&what, why));
+                run.capped.push(crate::gaps::critic_dead(profile, lens));
             } else {
-                run.not_run.push(format!("{what} — {why}"));
+                let why = crate::gaps::CRITIC_DEAD;
+                run.not_run
+                    .push(format!("{profile} critic follow-up lens {lens} — {why}"));
             }
             continue;
         };
