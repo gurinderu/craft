@@ -4,6 +4,7 @@ mod comment;
 mod filing_worker;
 mod hook;
 mod init;
+mod memory;
 mod printed;
 mod process_identity;
 mod review;
@@ -39,6 +40,9 @@ enum Command {
     /// The run store (`~/.craft/runs`): list its runs, show one, sum them, check the store, a
     /// version's retro.
     Runs(runs::RunsArgs),
+    /// craft's records in the harness's project memory: its own index beside `MEMORY.md`.
+    #[command(subcommand)]
+    Memory(memory::MemoryCommand),
     #[command(name = "__craft-file-run", hide = true)]
     FileRun,
     #[command(name = "__craft-process-identity", hide = true)]
@@ -148,6 +152,7 @@ async fn dispatch() -> anyhow::Result<ExitCode> {
         Command::Init(args) => init::init(&args),
         Command::Hook(HookCommand::PrOpened(args)) => hook::pr_opened(&args),
         Command::Runs(args) => runs::runs(&args),
+        Command::Memory(cmd) => memory::memory(&cmd),
         Command::FileRun => filing_worker::worker(),
         Command::ProcessIdentity(args) => process_identity::run(&args),
         Command::Hook(HookCommand::SessionStart) => hook::role_hook(hook::RoleHook::SessionStart),

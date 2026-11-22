@@ -1,0 +1,144 @@
+use std::fs;
+use std::path::Path;
+
+use super::index::{self, POINTER};
+use super::{Outcome, reindex};
+
+fn record(dir: &Path, id: &str, title: &str, scope: &str, status: &str) {
+    let kind = id.split('-').next().unwrap();
+    let text = format!(
+        "---\nname: {id}\ndescription: \"{kind}: {title}\"\nmetadata:\n  type: project\n  craft_kind: {kind}    # the kind\n  craft_scope: {scope}\n  craft_status: {status}\n  modified: 2026-10-06\n---\n\nwhy\n"
+    );
+    fs::write(dir.join(format!("{id}.md")), text).unwrap();
+}
+
+const USER_LINES: &str = "# Memory\n\n- [my own note](note.md) — keep me\n";
+
+/// A directory laid out as an earlier release left it: craft's lines in `MEMORY.md` among the
+/// user's, one of them for a superseded record and one for a record file that is not craft's.
+fn old_layout() -> tempfile::TempDir {
+    let d = tempfile::tempdir().unwrap();
+    record(
+        d.path(),
+        "decision-0123456789",
+        "unwrap is fine #12",
+        "src/parse.rs",
+        "active",
+    );
+    record(d.path(), "rule-abcdef0123", "no rollback", ".", "active");
+    record(
+        d.path(),
+        "lesson-1111111111",
+        "old lesson",
+        "src",
+        "superseded",
+    );
+    fs::write(
+        d.path().join("question-2222222222.md"),
+        "---\nname: x\n---\nnot craft's\n",
+    )
+    .unwrap();
+    fs::write(d.path().join("note.md"), "mine").unwrap();
+    let harness = format!(
+        "{USER_LINES}- [decision: unwrap is fine #12](decision-0123456789.md) — src/parse.rs\n- [rule: no rollback](rule-abcdef0123.md) — .\n- [lesson: old lesson](lesson-1111111111.md) — src\n- [question: not craft's](question-2222222222.md) — src\n\nA closing paragraph of the user's.\n"
+    );
+    fs::write(d.path().join("MEMORY.md"), harness).unwrap();
+    d
+}
+
+#[test]
+fn the_migration_moves_only_crafts_lines_and_a_second_run_changes_nothing() {
+    let d = old_layout();
+    let first = reindex(d.path()).unwrap();
+    assert_eq!(
+        first,
+        Outcome {
+            indexed: 2,
+            moved: 3,
+            index_written: true,
+            harness_written: true
+        }
+    );
+    let harness = fs::read_to_string(d.path().join("MEMORY.md")).unwrap();
+    assert_eq!(
+        harness,
+        format!(
+            "{USER_LINES}- [question: not craft's](question-2222222222.md) — src\n\nA closing paragraph of the user's.\n{POINTER}\n"
+        )
+    );
+    let craft = fs::read_to_string(d.path().join("craft-memory.md")).unwrap();
+    assert!(
+        craft.contains(
+            "\n## src/parse.rs\n\n- [decision: unwrap is fine #12](decision-0123456789.md)\n"
+        ),
+        "{craft}"
+    );
+    assert!(
+        craft.ends_with("\n## .\n\n- [rule: no rollback](rule-abcdef0123.md)\n"),
+        "the whole-repo scope last: {craft}"
+    );
+    assert!(
+        !craft.contains("old lesson"),
+        "a superseded record leaves the index"
+    );
+    let second = reindex(d.path()).unwrap();
+    assert_eq!(
+        second,
+        Outcome {
+            indexed: 2,
+            moved: 0,
+            index_written: false,
+            harness_written: false
+        }
+    );
+    assert_eq!(
+        fs::read_to_string(d.path().join("MEMORY.md")).unwrap(),
+        harness
+    );
+    assert_eq!(
+        fs::read_to_string(d.path().join("craft-memory.md")).unwrap(),
+        craft
+    );
+}
+
+#[test]
+fn a_directory_without_memory_md_gets_the_pointer_and_a_missing_directory_is_refused() {
+    let d = tempfile::tempdir().unwrap();
+    record(d.path(), "decision-0123456789", "t", "src", "active");
+    reindex(d.path()).unwrap();
+    assert_eq!(
+        fs::read_to_string(d.path().join("MEMORY.md")).unwrap(),
+        format!("{POINTER}\n")
+    );
+    let err = reindex(&d.path().join("absent")).unwrap_err().to_string();
+    assert!(err.contains("not found"), "{err}");
+}
+
+#[test]
+fn a_long_title_is_shortened_on_its_index_line_only() {
+    let long = "x".repeat(300);
+    let e = index::entry(
+        "decision-0123456789.md",
+        &format!("---\ndescription: \"decision: {long}\"\ncraft_kind: decision\n---\n"),
+    )
+    .unwrap();
+    assert_eq!(e.title, long);
+    let rendered = index::render(&[e]);
+    let line = rendered.lines().find(|l| l.starts_with("- [")).unwrap();
+    assert_eq!(line.chars().count(), 150);
+    assert!(line.contains("…](decision-0123456789.md)"), "{line}");
+}
+
+#[test]
+fn only_a_record_files_name_is_crafts() {
+    assert!(index::is_record_name("question-0123456789.md"));
+    for name in [
+        "note.md",
+        "decision-0123.md",
+        "decision-0123456789.txt",
+        "Decision-0123456789.md",
+        "decision-012345678G.md",
+    ] {
+        assert!(!index::is_record_name(name), "{name}");
+    }
+}

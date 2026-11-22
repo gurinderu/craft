@@ -43,7 +43,8 @@ SKILL.md's ("Choosing the backend"); this file only says how to write and search
 ## Harness project memory (Claude Code)
 
 The directory is the one the harness names in the session's instructions (in Claude Code,
-`~/.claude/projects/<project-slug>/memory/`, with `MEMORY.md` as its index). An agent that does not
+`~/.claude/projects/<project-slug>/memory/`, with `MEMORY.md` as the harness's index and
+`craft-memory.md` as craft's, below). An agent that does not
 have the index in context — a workflow's agent, a subagent — derives the directory itself. The
 harness keys project memory by the repository's **main checkout**, never a worktree or a
 subdirectory (a worktree session gets its own `~/.claude/projects/` entry, but without
@@ -81,14 +82,39 @@ match. Use the harness's format, not a craft one:
   Links: <links, one per line>
   ```
 
-- **One index line per record** in `MEMORY.md`, which the harness loads every session — keep it
-  short — a Markdown link whose text is `<kind>: <title>` and whose target is the record file
-  `<id>.md`, then ` — <scope>`; at most 150 characters (shorten the title with
-  `…` past that; the file keeps the full one). Superseded/withdrawn records leave the index (their
-  files stay, `craft_status` updated) so the always-loaded index carries only live facts.
-- **Recall**: the index is in the main session's context (an agent without it reads `MEMORY.md`
-  at the derived path) — match scope and keywords there, then read only
-  the matching files; for history, `grep -l "craft_scope: <path>"` over the directory.
+- **craft's own index, `craft-memory.md`**, in the same directory: one line per active record,
+  grouped under a `## <scope>` heading per scope (headings sorted, `.` last), each line a Markdown
+  link whose text is `<kind>: <title>` and whose target is the record file `<id>.md`; at most 150
+  characters (the title shortened with `…` past that; the file keeps the full one). Superseded and
+  withdrawn records leave the index (their files stay, `craft_status` updated). The index is
+  rebuilt from the record files, never edited line by line: after every `record-*` write, and
+  before `recall` outside a review engine (whose recall is read-only), run
+
+  ```sh
+  CRAFT_BIN="$(sh "<this skill's base directory>/../../integrations/shared/craft-cli.sh" --ensure --print-path)" &&
+  "$CRAFT_BIN" memory reindex --dir "<the memory directory>"
+  ```
+
+  It rewrites `craft-memory.md` and the migration below in one move, writes only what changed,
+  and prints `{indexed, moved, indexWritten, harnessWritten}`. Without the binary (no network,
+  no release for the platform), do the same by hand as this list describes.
+- **One pointer line in `MEMORY.md`**, never one line per record: the harness loads `MEMORY.md`
+  into every session and truncates it past its load limit, so a line per record grows it until
+  the harness silently drops the tail — records the agent then never sees. The pointer is one
+  list item, added once, at the end: a Markdown link with the text `craft memory index` and the
+  target `craft-memory.md`, then ` — craft's decisions, rules, lessons and questions; read on recall`.
+- **Migration from the older layout** (earlier releases wrote one line per record into
+  `MEMORY.md`): a line of `MEMORY.md` is craft's only when it is a Markdown list link whose
+  target is `<kind>-<10 hex>.md` (`kind` one of the five) and that file exists with `craft_kind`
+  in its frontmatter; it leaves `MEMORY.md` (its record is in `craft-memory.md` when active).
+  Every other line — the user's own, another tool's, a heading, a blank, a link to a file that is
+  not craft's — stays exactly as it is, in its place. `craft-memory.md` is written before
+  `MEMORY.md`, so an interrupted run loses no line, and a second run changes nothing. A refused
+  write of `MEMORY.md` (rule below) leaves it as it is: recall still reads both files.
+- **Recall**: read `craft-memory.md` at the derived path — match the scope headings and keywords
+  there, then read only the matching files — and, while a migration has not run, also the craft
+  lines still in `MEMORY.md` (the main session has it in context; an agent without it reads it at
+  the derived path); for history, `grep -l "craft_scope: <path>"` over the directory.
   Handed on (a subagent's brief, a review's `priorDecisions`) as the SKILL.md shape: `name` → `id`,
   `craft_kind` → `kind`, the title from `description` without its `<kind>: ` prefix, `craft_scope`
   → `scope`, `craft_status` → `status`, `modified` → `date`, `craft_author` → `author`,

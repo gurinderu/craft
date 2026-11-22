@@ -1,7 +1,7 @@
 ---
 name: memory
 description: >-
-  Memory of the consumer project's own facts — decisions on review findings, project rules (a stance on a class of findings), lessons, open questions (deferred findings too) — kept across sessions in the project's own store (a setting, an MCP server, harness memory, .craft/memory). Verbs: recall(topic, scope), record-decision, record-rule, record-lesson, record-question; the `external` records earlier releases wrote are recalled only for `craft init` to import. Use when such a fact should outlive the session, before working on a path to learn what was decided there, or before a craft review (its engine recalls itself; priorDecisions only adds). Triggers: remember this decision, record why we rejected, make it a project rule, what did we decide about, note this lesson, open question for later. Not for memory leaks or usage (rust-performance, rust-ownership), nor craft's run records and ledger.
+  Memory of the consumer project's own facts — decisions on review findings, project rules (a stance on a class of findings), lessons, open questions (deferred findings too) — kept across sessions in the project's own store (a setting, an MCP server, harness memory with its own craft-memory.md index, .craft/memory). Verbs: recall(topic, scope), record-decision, record-rule, record-lesson, record-question; the `external` records earlier releases wrote are recalled only for `craft init` to import. Use when such a fact should outlive the session, before working on a path to learn what was decided there, or before a craft review (its engine recalls itself; priorDecisions only adds). Triggers: remember this decision, record why we rejected, make it a project rule, what did we decide about, note this lesson, open question for later, MEMORY.md too long. Not for memory leaks or usage (rust-performance, rust-ownership), nor craft's run records and ledger.
 ---
 
 # Memory — the project's decisions, rules, lessons and questions
@@ -117,6 +117,11 @@ sha256sum | cut -c1-10`). Re-recording the same kind + title + scope **updates**
   fit is reported to the caller as not written, with why.
 - Index line over 150 chars (harness project memory, below) → the index line shortens its title
   with `…`; the record file keeps the full title, so nothing is lost and the id is unchanged.
+- The harness's own `MEMORY.md` is loaded every session and truncated past its load limit, so
+  craft never puts a line per record there: its records are indexed in its own
+  `craft-memory.md` beside it, and `MEMORY.md` carries one pointer line to it; craft lines an
+  earlier release left in `MEMORY.md` are moved over by the migration in
+  [backends.md](backends.md), which never touches a line that is not craft's.
 - `recall` over 10 matches → return the 10 most specific (exact path before directory before
   component, newer before older) and say `N more — narrow the scope or the topic`; never drop the
   rest silently.
@@ -156,7 +161,9 @@ reason names the rule.
    agent, a subagent) derives it from the repository's main checkout root, never a worktree or
    subdirectory — path rule in
    [backends.md](backends.md). Written without asking (it is private to the
-   user and tied to this project). A refused write — a `PreToolUse` guard, a permission denial,
+   user and tied to this project); craft's records are indexed in its own `craft-memory.md`
+   there, with one pointer line in the harness's `MEMORY.md`, and the craft lines an earlier
+   release wrote into `MEMORY.md` are moved over first (migration in [backends.md](backends.md)). A refused write — a `PreToolUse` guard, a permission denial,
    the consumer's instructions forbidding that directory — means **unavailable**: go to 4. Format
    → [backends.md](backends.md).
 4. **Files in the consumer repo**, `.craft/memory/<kind>/<id>.md` — only when `.craft/memory/`
@@ -181,8 +188,8 @@ rule 3. Never put secrets, credentials or personal data in a record, whatever th
 2. **Keyword match.** `topic` keywords against `title` and `body`; with both scope and topic,
    a record must match the scope and at least one keyword.
 3. **Only matches come back.** Use the backend's search (the MCP search tool, `grep -l` over the
-   memory files, the harness index `MEMORY.md`) — never load the whole store into
-   context.
+   memory files, craft's harness index `craft-memory.md` and any craft lines not yet moved out of
+   `MEMORY.md`) — never load the whole store into context.
 4. **Active only by default.** `superseded` and `withdrawn` stay hidden unless the caller asks for
    history; a superseded record shown on request carries its successor's id. A review engine's
    recall also returns the matching `superseded` and `withdrawn` records apart, in an `inactive`

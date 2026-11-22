@@ -243,6 +243,12 @@ the manifests read in place of the walk) calls that library. Library coverage is
 `externals/tests/`; binary-boundary coverage is in `cli/bin/craft/tests/externals.rs`
 and `externals/`. The embedded regex engine is pinned through `cli/Cargo.lock`.
 
+`craft memory reindex --dir <memory dir>` (`cli/bin/craft/src/memory.rs`, its pure text work in
+`memory/index.rs`, tests in `memory/tests.rs`) rebuilds `craft-memory.md`, craft's own index of
+its records in the harness's project memory directory, and moves the per-record lines earlier
+releases wrote out of the harness's `MEMORY.md`, leaving one pointer line; the memory skill's
+`backends.md` calls it after each record write.
+
 `cli/` is a Cargo workspace for `craft review`, designed so the binary decides a review's work and
 a host (the `review` engine above) runs its agents. The step protocol was observed end to end
 in a live session (craft 0.41.0, a Rust diff, finished with Approve); the full-lens review it runs
