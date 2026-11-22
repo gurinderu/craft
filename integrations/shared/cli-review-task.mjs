@@ -123,7 +123,9 @@ export function taskRunner(sb, stopped = () => false) {
     // generic agent is not the consumer's reviewer; a dead one leaves no answer, which the binary names.
     if (t.consumerAgent !== undefined) return runConsumer(t, t.consumerAgent, cut)
     const opts = { label: t.label, phase: 'Agents', model: TASK_MODELS.get(t.model), cut }
-    if (t.agentType === undefined)
+    // A task asking for the code graph's MCP tools goes to the default type even when it names an agent: no agent
+    // this plugin ships has them.
+    if (t.agentType === undefined || t.graph === true)
       return onTaskAgent(t) ? fallbackOf(LEAN).run(taskPrompt(t), { ...opts, agentType: LEAN.agentType }) : settle(await dispatch(taskPrompt(t), opts))
     const mapped = TASK_AGENTS.get(t.agentType)
     if (!mapped) {

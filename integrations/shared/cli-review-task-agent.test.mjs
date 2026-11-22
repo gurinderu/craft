@@ -59,7 +59,9 @@ test('a task naming no agent runs on the lean task agent, with its own model; re
         task('r', { kind: 'recall' }),
         task('o', { kind: undefined }),
         task('t', { agentType: 'rust-reviewer' }),
+        task('c', { agentType: 'rust-reviewer', graph: true }),
       ]),
+      'lens:c': writes,
       'lens:g': writes,
       'lens:d': writes,
       'lens:m': writes,
@@ -76,6 +78,7 @@ test('a task naming no agent runs on the lean task agent, with its own model; re
   assert.deepEqual(typesOf(run, 'lens:r'), [undefined], "the memory's recall needs the Skill tool and MCP servers")
   assert.deepEqual(typesOf(run, 'lens:o'), [undefined], 'a task whose kind the binary did not say')
   assert.deepEqual(typesOf(run, 'lens:t'), ['craft:rust-reviewer'], 'a typed task keeps its agent')
+  assert.deepEqual(typesOf(run, 'lens:c'), [undefined], 'a Rust complexity lens: craft:rust-reviewer has no graph tools')
   assert.ok(
     run.calls.every(c => !/--degraded/.test(c.prompt)),
     'nothing fell back',
