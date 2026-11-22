@@ -46,6 +46,9 @@ mod clippy;
 mod devshell;
 #[cfg(test)]
 mod devshell_tests;
+mod devshell_toolchain;
+#[cfg(test)]
+mod devshell_toolchain_tests;
 pub(crate) mod lines;
 mod lock;
 #[cfg(test)]
