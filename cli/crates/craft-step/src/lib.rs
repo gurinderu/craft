@@ -14,8 +14,8 @@ mod task;
 pub mod validate;
 pub mod wire;
 
-pub use handoff::{Aside, HandoffError};
+pub use handoff::{Aside, HandoffError, Unmoved};
 pub use kind::Kind;
 pub use model::Model;
 pub use take::Hold;
-pub use task::{MAX_RETRIES, Task, TaskState};
+pub use task::{Counted, MAX_RETRIES, Task, TaskState};

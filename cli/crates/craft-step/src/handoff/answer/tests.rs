@@ -1,7 +1,12 @@
 use super::*;
 
 fn aside_of(dir: &Path, stem: &str) -> Aside {
-    Aside(vec![(dir.join("t.json"), dir.to_owned(), stem.into())])
+    Aside(vec![Marked {
+        id: "t".into(),
+        from: dir.join("t.json"),
+        dir: dir.to_owned(),
+        stem: stem.into(),
+    }])
 }
 
 #[test]
@@ -34,7 +39,7 @@ fn every_name_taken_leaves_the_file_and_says_so() {
     fs::write(dir.join("t.json"), "new").unwrap();
     let failed = aside_of(dir, "t.rejected-0").apply();
     assert!(
-        matches!(failed.as_slice(), [HandoffError::Unmovable { path, .. }] if *path == dir.join("t.json")),
+        matches!(failed.as_slice(), [Unmoved { id, error: HandoffError::Unmovable { path, .. } }] if id == "t" && *path == dir.join("t.json")),
         "{failed:?}"
     );
     assert_eq!(fs::read_to_string(dir.join("t.json")).unwrap(), "new");
@@ -49,4 +54,42 @@ fn a_file_gone_already_is_no_failure() {
     let d = tempfile::tempdir().unwrap();
     assert!(aside_of(d.path(), "t.rejected-0").apply().is_empty());
     assert!(!d.path().join("t.rejected-0.json").exists());
+}
+
+#[test]
+fn a_claimed_name_is_taken_at_once() {
+    let d = tempfile::tempdir().unwrap();
+    let dir = d.path();
+    fs::write(dir.join("s.json"), "earlier").unwrap();
+    let first = claim(dir, "s").unwrap();
+    let second = claim(dir, "s").unwrap();
+    assert_eq!(
+        (first, second.clone()),
+        (dir.join("s.1.json"), dir.join("s.2.json"))
+    );
+    assert_eq!(fs::read_to_string(&second).unwrap(), "");
+    assert_eq!(fs::read_to_string(dir.join("s.json")).unwrap(), "earlier");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_failed_rename_gives_the_claimed_name_back() {
+    let d = tempfile::tempdir().unwrap();
+    let dir = d.path();
+    // A directory with something in it cannot be renamed over the claimed file.
+    fs::create_dir(dir.join("t.json")).unwrap();
+    fs::write(dir.join("t.json").join("x"), "").unwrap();
+    let failed = aside_of(dir, "t.rejected-0").apply();
+    assert!(
+        matches!(
+            failed.as_slice(),
+            [Unmoved {
+                error: HandoffError::Unmovable { .. },
+                ..
+            }]
+        ),
+        "{failed:?}"
+    );
+    assert!(!dir.join("t.rejected-0.json").exists());
+    assert!(dir.join("t.json").join("x").is_file());
 }

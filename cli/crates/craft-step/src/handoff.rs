@@ -5,7 +5,7 @@
 
 mod answer;
 
-pub use answer::{Aside, Written, read_answer};
+pub use answer::{Aside, Unmoved, Written, read_answer};
 
 use std::path::{Path, PathBuf};
 

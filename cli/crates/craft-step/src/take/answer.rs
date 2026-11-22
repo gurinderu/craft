@@ -7,7 +7,7 @@ use serde_json::{Map, Value};
 use super::Hold;
 use crate::handoff::{self, Aside, HandoffError};
 use crate::kind::Kind;
-use crate::task::{MAX_RETRIES, Task, TaskState};
+use crate::task::{Counted, MAX_RETRIES, Task, TaskState};
 use crate::validate;
 
 /// Takes the answer of one pending task, from `given` or the file its agent wrote; one refused is
@@ -35,10 +35,23 @@ pub fn take_answer<K: Kind>(
         (written.answer, written.print)
     };
     // The very file whose refusal the state already counts, left in place by a set-aside cut off
-    // or failed after the save: moved aside now, its task as the state left it.
-    if print.is_some() && print == task.counted {
-        aside.mark(dir, task)?;
-        return Ok(true);
+    // or failed after the save: moved aside now, its task as the state left it, its agent not
+    // read as alive; found there yet again, no new answer came, and it counts as a missing one.
+    match recount(task, print.as_deref()) {
+        Recount::New => {}
+        Recount::Again(at) => {
+            aside.mark_at(dir, task, at)?;
+            return Ok(false);
+        }
+        Recount::Missing(at) => {
+            aside.mark_at(dir, task, at)?;
+            let path = handoff::answer_file(dir, &task.id)?;
+            task.error = Some(format!(
+                "no new answer was written: {} still holds the answer refused before, which could not be set aside",
+                path.display()
+            ));
+            return Ok(refused(task, hold, false));
+        }
     }
     // An answer file that cannot be read or parsed was still written: its agent was alive.
     let live = match given {
@@ -76,9 +89,39 @@ pub fn take_answer<K: Kind>(
     }
     if given.is_none() {
         aside.mark(dir, task)?;
+        task.counted = print.map(|print| Counted {
+            print,
+            at: task.retries,
+            again: false,
+        });
     }
-    task.counted = print;
     Ok(refused(task, hold, live))
+}
+
+/// What a file read with `print` is to `task`'s last counted refusal.
+enum Recount {
+    /// Another file, or none: an answer of its own.
+    New,
+    /// The counted file, read again for the first time: set aside as refused at its count.
+    Again(u32),
+    /// The counted file, read again once more: no new answer.
+    Missing(u32),
+}
+
+fn recount<K: Kind>(task: &mut Task<K>, print: Option<&str>) -> Recount {
+    let Some(c) = task
+        .counted
+        .as_mut()
+        .filter(|c| print == Some(c.print.as_str()))
+    else {
+        return Recount::New;
+    };
+    if c.again {
+        Recount::Missing(c.at)
+    } else {
+        c.again = true;
+        Recount::Again(c.at)
+    }
 }
 
 /// A refused answer's task held uncounted (`hold`), or asked for again until its retries are spent;
@@ -91,6 +134,7 @@ fn refused<K: Kind>(task: &mut Task<K>, hold: Hold, live: bool) -> bool {
             task.retries = 0;
             task.error = None;
             task.refused = None;
+            task.counted = None;
             return false;
         }
         Hold::Missing | Hold::Nothing => {}

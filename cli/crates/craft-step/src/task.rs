@@ -21,6 +21,20 @@ pub enum TaskState {
     Failed,
 }
 
+/// An answer file whose refusal a task's state counted.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Counted {
+    /// The file's print ([`crate::handoff::Written::print`]).
+    pub print: String,
+    /// The retries the task had when it was refused, which its set-aside name carries.
+    pub at: u32,
+    /// Already read again once, left in place: read again once more, it is no new answer and
+    /// counts as a missing one, so a file that never moves does not hold its task forever.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub again: bool,
+}
+
 /// One agent the host is to run; `K` says what its answer is for, as the kind of run reads it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", bound = "")]
@@ -53,11 +67,10 @@ pub struct Task<K: Kind> {
     /// retries counts as an off-schema vote rather than a dead one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub refused: Option<Value>,
-    /// The print of the answer file whose refusal was counted last ([`crate::handoff::Written`]):
-    /// the same file read again — its set-aside cut off or failed — is set aside then, not counted
-    /// twice.
+    /// The answer file whose refusal was counted last, until it is set aside: the same file read
+    /// again — its set-aside cut off or failed — is set aside then, not counted twice.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub counted: Option<String>,
+    pub counted: Option<Counted>,
     /// The host abandoned its agent at its deadline (`submit --abandoned`): failed for good, never
     /// held for a resume nor handed out again, and no death of its dispatch round.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]

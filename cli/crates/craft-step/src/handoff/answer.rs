@@ -3,6 +3,7 @@
 use std::fs::{self, OpenOptions};
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -37,8 +38,13 @@ pub fn read_answer<K: Kind>(dir: &Path, task: &Task<K>) -> Written {
             };
         }
     };
-    let bytes = match fs::read(&path) {
-        Ok(b) => b,
+    let read = fs::File::open(&path).and_then(|mut f| {
+        let mut bytes = Vec::new();
+        std::io::copy(&mut f, &mut bytes)?;
+        Ok((bytes, f.metadata().and_then(|m| m.modified()).ok()))
+    });
+    let (bytes, modified) = match read {
+        Ok(r) => r,
         Err(e) => {
             let why = if e.kind() == ErrorKind::NotFound {
                 format!("no answer file was written at {}", path.display())
@@ -51,23 +57,21 @@ pub fn read_answer<K: Kind>(dir: &Path, task: &Task<K>) -> Written {
             };
         }
     };
-    let print = Some(print(&path, &bytes));
+    let print = Some(print(&bytes, modified));
     let answer = serde_json::from_slice(&bytes)
         .map_err(|e| format!("the answer file {} is not JSON: {e}", path.display()));
     Written { answer, print }
 }
 
-/// The SHA-256 of `bytes` and the nanoseconds since the epoch of `path`'s last write (empty where
-/// the platform gives none).
-fn print(path: &Path, bytes: &[u8]) -> String {
+/// The SHA-256 of `bytes` and the nanoseconds since the epoch of their file's last write, as read
+/// from the same open file (empty where the platform gives none).
+fn print(bytes: &[u8], modified: Option<SystemTime>) -> String {
     let digest: String = Sha256::digest(bytes)
         .iter()
         .map(|b| format!("{b:02x}"))
         .collect();
-    let written = fs::metadata(path)
-        .and_then(|m| m.modified())
-        .ok()
-        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+    let written = modified
+        .and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok())
         .map(|d| d.as_nanos().to_string())
         .unwrap_or_default();
     format!("{digest}@{written}")
@@ -81,7 +85,23 @@ fn print(path: &Path, bytes: &[u8]) -> String {
 /// refused answer by a retry whose agent writes nothing.
 #[derive(Debug, Default)]
 #[must_use = "the refused files stay in place until applied"]
-pub struct Aside(Vec<(PathBuf, PathBuf, String)>);
+pub struct Aside(Vec<Marked>);
+
+/// One file to set aside: its task's id, where it is, and the name it is to take in `dir`.
+#[derive(Debug)]
+struct Marked {
+    id: String,
+    from: PathBuf,
+    dir: PathBuf,
+    stem: String,
+}
+
+/// A marked file [`Aside::apply`] could not move: its task's id, and why.
+#[derive(Debug)]
+pub struct Unmoved {
+    pub id: String,
+    pub error: HandoffError,
+}
 
 impl Aside {
     /// Marks `task`'s answer file to be set aside as `<id>.rejected-<retries>.json`.
@@ -89,20 +109,39 @@ impl Aside {
     /// # Errors
     /// When the task's id cannot be a file name.
     pub fn mark<K: Kind>(&mut self, dir: &Path, task: &Task<K>) -> Result<(), HandoffError> {
-        let from = answer_file(dir, &task.id)?;
-        let stem = format!("{}.rejected-{}", safe(&task.id)?, task.retries);
-        self.0.push((from, answers_dir(dir), stem));
+        self.mark_at(dir, task, task.retries)
+    }
+
+    /// Marks `task`'s answer file to be set aside as refused at `retries`.
+    ///
+    /// # Errors
+    /// When the task's id cannot be a file name.
+    pub fn mark_at<K: Kind>(
+        &mut self,
+        dir: &Path,
+        task: &Task<K>,
+        retries: u32,
+    ) -> Result<(), HandoffError> {
+        self.0.push(Marked {
+            id: task.id.clone(),
+            from: answer_file(dir, &task.id)?,
+            dir: answers_dir(dir),
+            stem: format!("{}.rejected-{retries}", safe(&task.id)?),
+        });
         Ok(())
     }
 
     /// Moves each marked file that is there aside, never over another file: a name taken (a
     /// ladder held or restarted asks again at the same count) gets `.<n>` before `.json`. Every
     /// move is tried; those that failed are returned, each file left where it was.
-    #[must_use = "a file not moved aside is read again on the next submit"]
-    pub fn apply(self) -> Vec<HandoffError> {
+    #[must_use = "a file not moved aside stays where its agent wrote it"]
+    pub fn apply(self) -> Vec<Unmoved> {
         self.0
             .into_iter()
-            .filter_map(|(from, dir, stem)| move_aside(&from, &dir, &stem).err())
+            .filter_map(|m| {
+                let error = move_aside(&m.from, &m.dir, &m.stem).err()?;
+                Some(Unmoved { id: m.id, error })
+            })
             .collect()
     }
 }
