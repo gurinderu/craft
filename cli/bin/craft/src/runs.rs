@@ -3,7 +3,7 @@
 //! jq; a line or record that does not read is passed over and counted on stderr.
 
 mod render;
-mod write;
+pub(crate) mod write;
 
 use std::io::Write;
 use std::path::{Path, PathBuf};

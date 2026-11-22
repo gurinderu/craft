@@ -2,10 +2,12 @@
 // (`gh api repos/<repo>/pulls/<n>/comments --paginate --slurp`, flattened) and the PR's reviews
 // (`gh pr view <n> --json reviews,headRefName,commits,author`). The measurement this serves — craft's recall
 // against an external reviewer on the same branch — is realm @nick/craft, node #378; matching is done by
-// integrations/shared/match-external-findings.mjs. A fork from integrations/shared/pr-reviewer-thread.mjs's GraphQL thread reader, on purpose: that
+// integrations/shared/match-external-findings.mjs. A fork from the craft binary's GraphQL thread reader (`craft pr rejections`), on purpose: that
 // one keeps only threads with a reply and reads a rejection, while a finding here is usually a lone root comment
 // keyed by its REST id, timed by the reviews (bodies, submittedAt, commit) that GraphQL threads do not carry.
-import { FINDING_COMMENT_MARKER } from './finding-comment.mjs'
+// The hidden line that marks a comment as craft's finding, as the craft binary posts it
+// (cli/crates/craft-review/src/publish/body.rs).
+export const FINDING_COMMENT_MARKER = '<!-- craft-finding -->'
 
 /** @typedef {{ id: number, user: { login: string }, body: string, path?: string | null, line?: number | null, original_line?: number | null, original_commit_id?: string, created_at: string, html_url?: string, in_reply_to_id?: number | null }} PrComment */
 /** @typedef {{ author: { login: string }, body: string, submittedAt: string, commit?: { oid: string } | null }} PrReview */
@@ -38,7 +40,7 @@ const ROUND_SLACK_MS = 120_000
 /** @type {Record<string, string>} */
 const BARE_SEVERITY = { must: 'must-fix', should: 'should-fix', optional: 'optional' }
 
-/** A comment craft's review engine posted (integrations/shared/finding-comment.mjs): never the external reviewer's. @param {{ body: string }} c */
+/** A comment craft's review engine posted (cli/crates/craft-review/src/publish/body.rs): never the external reviewer's. @param {{ body: string }} c */
 const isCraft = c => c.body.includes(FINDING_COMMENT_MARKER)
 /** A comment or review fluence-review posted, by its own marks — whichever account posted it. @param {{ body: string }} c */
 const isFluence = c => FLUENCE_MARK.test(c.body) && !isCraft(c)

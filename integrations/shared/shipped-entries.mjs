@@ -1,6 +1,5 @@
 // The Node entry points that run in a consumer's repo, where no devDependency is installed: the run-record
-// CLI the engines shell out to, the run-store reader run by hand, the PR-rejection reader addressing-findings
-// runs, the request builder the review skills run to post a doubtful finding the reviewer chose (integrations/shared/finding-post.mjs), the
+// CLI the engines shell out to, the run-store reader run by hand, the
 // reader a consumer's agent runs to take a failed bundled engine's position back to its source
 // (integrations/shared/engine-source-map.mjs),
 // the Node fetcher of the released craft CLI binary, the fallback where no sh is and the module OpenCode's hook and process identity import (integrations/shared/craft-bin.mjs), the pi extension pi loads from this package, whose tool runs the review (integrations/pi/pi-extension.mjs, #504),
@@ -11,8 +10,6 @@
 export const SHIPPED_NODE_ENTRIES = [
   'integrations/shared/craft-log-run.mjs',
   'integrations/shared/analyze-runs.mjs',
-  'integrations/shared/pr-rejections.mjs',
-  'integrations/shared/finding-post.mjs',
   'integrations/shared/engine-source-map.mjs',
   'integrations/shared/craft-bin.mjs',
   'integrations/pi/pi-extension.mjs',

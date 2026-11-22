@@ -164,6 +164,6 @@ test('every lib script a shipped Markdown file names is in the laid-out package'
   const out = layPackage(REPO, tmp())
   const shipped = packageFiles(REPO)
   const named = scriptsNamed(REPO, shipped)
-  assert.ok(named.includes('integrations/shared/craft-bin.mjs') && named.includes('integrations/shared/finding-post.mjs'), named.join(' '))
+  assert.ok(named.includes('integrations/shared/craft-bin.mjs') && named.includes('integrations/shared/engine-source-map.mjs'), named.join(' '))
   for (const f of named) assert.ok(fs.existsSync(path.join(out, f)), f)
 })

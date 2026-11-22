@@ -35,7 +35,7 @@ A thread yields a decision **only** when all of these hold:
    under your own `gh` account, so in a self-review loop the poster is the PR author and their own
    reply counts. In another reviewer's thread, only that association counts: the PR author's reply
    is recorded only when they are an owner, member or collaborator. Anyone else's rejection is not
-   recorded; the script names each and counts them.
+   recorded; the command names each and counts them.
 4. **It can be anchored**: a path and the commit the finding was posted on.
 
 Every craft-finding thread that does not qualify is listed with why, and every other reviewer's
@@ -43,38 +43,20 @@ thread whose rejection is not recorded; nothing is guessed.
 
 ## Steps
 
-No `gh`, `gh` unauthenticated, or no PR for the branch → skip, and say so in one line
-(`PR rejections: skipped — <why>`). Otherwise:
+Run it; no `gh`, `gh` unauthenticated, or no PR for the branch makes it exit 2 naming why → skip,
+and say so in one line (`PR rejections: skipped — <why>`):
 
 ```bash
-gh pr view --json number,url --jq '.number'        # the PR; none → skip
-gh repo view --json owner,name --jq '.owner.login + " " + .name'
-f=$(mktemp)                                        # the session's temp dir, never the repo
-gh api graphql --paginate --slurp -f query='
-  query($owner:String!, $name:String!, $pr:Int!, $endCursor:String) {
-    repository(owner:$owner, name:$name) {
-      pullRequest(number:$pr) {
-        author { login }
-        reviewThreads(first:100, after:$endCursor) {
-          pageInfo { hasNextPage endCursor }
-          totalCount
-          nodes {
-            path
-            line
-            originalLine
-            comments(first:50) {
-              totalCount
-              nodes { author { login } authorAssociation body url createdAt originalCommit { oid } }
-            }
-          }
-        }
-      }
-    }
-  }' -F owner=<owner> -F name=<name> -F pr=<PR> > "$f"
-node "<this skill's base directory>/../../integrations/shared/pr-rejections.mjs" "$f"
+sh "<this skill's base directory>/../../integrations/shared/craft-cli.sh" pr rejections
 ```
 
-The script prints `{ decisions, skipped }`. Each decision is already a `memory` record —
+`--pr <number>` and `--repo <owner>/<name>` name the PR and repository when the checked-out
+branch's are not the ones. The command asks `gh` for the PR, then for every page of its review
+threads (`gh api graphql --paginate --slurp`: the PR's author, each thread's path, lines and first
+50 comments with author, `authorAssociation`, body, URL, date and commit); `--threads <file | ->`
+reads a saved answer of that query instead.
+
+The command prints `{ decisions, skipped }`. Each decision is already a `memory` record —
 `id`, `kind: decision`, `title` (the finding's, or the remark's first line), `body` (the reason), `scope` (the path), `date`,
 `author` (who rejected), `commit` (the commit the thread was on), `line` (the thread's line on that
 commit, when it has one), `lens` (the lens that raised the finding, when its comment names it), `toolRule` (the gate tool's own rule the finding
@@ -84,10 +66,10 @@ review names such a decision under **Prior decisions not applied** and raises th
 — re-record it against a current commit if it still holds. (The PR's base commit is not recorded
 instead: the PR itself changed the file, so a scope check against it would always read "changed".) **`record-decision` each one as it is**, at once and without asking (→ SKILL.md, "Project
 memory": one line per write naming the backend); the id makes a second run update rather than
-duplicate. Report the count recorded and every `skipped` line. Exit 2 means the input
-was unreadable — say so and record nothing.
+duplicate. Report the count recorded and every `skipped` line. Exit 2 means the threads
+could not be read (no PR, `gh` failing, an answer of another shape) — say so and record nothing.
 
-**Bounds — the script refuses, never truncates:** more than 500 threads → the rest are named as
+**Bounds — the command refuses, never truncates:** more than 500 threads → the rest are named as
 unread; a thread with more than 50 comments → skipped (its last word is unknown); a title over 200
 or a reason over 1200 chars → skipped, to be recorded by hand (summarise the reason, link the
 thread).

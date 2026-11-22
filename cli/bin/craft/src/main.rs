@@ -5,6 +5,8 @@ mod filing_worker;
 mod hook;
 mod init;
 mod memory;
+mod post;
+mod pr;
 mod printed;
 mod process_identity;
 mod review;
@@ -43,6 +45,9 @@ enum Command {
     /// craft's records in the harness's project memory: its own index beside `MEMORY.md`.
     #[command(subcommand)]
     Memory(memory::MemoryCommand),
+    /// A pull request's review threads read with `gh`.
+    #[command(subcommand)]
+    Pr(pr::PrCommand),
     #[command(name = "__craft-file-run", hide = true)]
     FileRun,
     #[command(name = "__craft-process-identity", hide = true)]
@@ -84,6 +89,10 @@ enum ReviewCommand {
     /// Publish a finished run's findings on its branch's pull request, as `start --comment` does
     /// when the run finishes: the defects posted with `gh`, the doubtful ones listed in the report.
     Comment(comment::CommentArgs),
+    /// Post one doubtful finding the reviewer chose, read by its number from the review run's
+    /// record, on the pull request — as a question to the author or as a defect — with the
+    /// craft-finding marker, and record the choice in that record.
+    Post(post::PostArgs),
     /// Run only the mechanical gate over the change and print how it came out: no run, no lens,
     /// no record (rust-audit's one gate for a workspace whose crates it reviews with `--no-gate`).
     Gate(steps::GateArgs),
@@ -147,12 +156,14 @@ async fn dispatch() -> anyhow::Result<ExitCode> {
         Command::Review(ReviewCommand::Submit(args)) => steps::submit(&args),
         Command::Review(ReviewCommand::Status(args)) => steps::status(&args),
         Command::Review(ReviewCommand::Comment(args)) => comment::comment(&args),
+        Command::Review(ReviewCommand::Post(args)) => post::post(&args),
         Command::Review(ReviewCommand::Gate(args)) => steps::gate(&args),
         Command::Review(ReviewCommand::Run(args)) => run::run(*args).await,
         Command::Init(args) => init::init(&args),
         Command::Hook(HookCommand::PrOpened(args)) => hook::pr_opened(&args),
         Command::Runs(args) => runs::runs(&args),
         Command::Memory(cmd) => memory::memory(&cmd),
+        Command::Pr(cmd) => pr::pr(&cmd),
         Command::FileRun => filing_worker::worker(),
         Command::ProcessIdentity(args) => process_identity::run(&args),
         Command::Hook(HookCommand::SessionStart) => hook::role_hook(hook::RoleHook::SessionStart),

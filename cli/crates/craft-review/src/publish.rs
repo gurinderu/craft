@@ -3,7 +3,7 @@
 //! findings a comment could carry — confirmed, and suspected the reviewer may still ask about —
 //! are sorted into defects and doubtful ones ([`sort`]); the defects are posted on the branch's PR
 //! with the craft-finding marker ([`gh`]), the doubtful ones listed for the reviewer, numbered as
-//! the run record keeps them for `integrations/shared/finding-post.mjs`. Every run, asked or not, counts the
+//! the run record keeps them for `craft review post` ([`doubtful`]). Every run, asked or not, counts the
 //! findings going against a memory record. The binary reads the changed lines with git, where the
 //! engine asks an agent for them. A run already finished is published the same way after the fact
 //! ([`comment`]).
@@ -20,7 +20,8 @@ use crate::step::StepError;
 use gh::Moved;
 
 mod after;
-mod body;
+pub(crate) mod body;
+mod doubtful;
 mod gh;
 mod kept;
 #[cfg(test)]
@@ -34,6 +35,7 @@ mod tests;
 mod unread_tests;
 
 pub use after::{CommentError, comment};
+pub use doubtful::{Doubtful, PostError, Posting, post as post_doubtful};
 pub use gh::PostSetup;
 pub use kept::{Defect, Posted, Publish, Sorting};
 pub(crate) use section::section;

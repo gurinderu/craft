@@ -1,8 +1,15 @@
 // The external reviewer's findings read from GitHub's PR comments and reviews (lib/external-findings-parse.mjs).
 import { test } from 'vitest'
 import assert from 'node:assert/strict'
-import { defaultReviewers, detectReviewer, parseFindings, statusReplies, DEFAULT_SEVERITY, FLUENCE_SEVERITY } from './external-findings-parse.mjs'
-import { FINDING_COMMENT_MARKER } from './finding-comment.mjs'
+import {
+  defaultReviewers,
+  detectReviewer,
+  parseFindings,
+  statusReplies,
+  DEFAULT_SEVERITY,
+  FLUENCE_SEVERITY,
+  FINDING_COMMENT_MARKER,
+} from './external-findings-parse.mjs'
 
 const sha = (/** @type {number} */ i) => String(i).repeat(40).slice(0, 40)
 const ID = /FR-[A-Z]+-[0-9a-f]{6}/

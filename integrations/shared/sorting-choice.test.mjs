@@ -1,13 +1,10 @@
 // The outcome of the sorting before publication on the run store (integrations/shared/sorting-choice.mjs, the
-// choice the binary appends, `craft runs sorting-choice`; realm @nick/craft, node #281): the newest sorted
-// record of the project found, a publication's carried choices, and the tally analyze-runs prints.
+// choice the binary appends, `craft runs sorting-choice`; realm @nick/craft, node #281): a publication's carried
+// choices, and the tally analyze-runs prints.
 import { test } from 'vitest'
 import assert from 'node:assert/strict'
-import fs from 'node:fs'
-import os from 'node:os'
-import path from 'node:path'
 import { aggregate, renderReport } from './analyze-runs.mjs'
-import { applyPublication, latestSortedRecord, newSortingTally, renderSortingSection, tallySorting } from './sorting-choice.mjs'
+import { applyPublication, newSortingTally, renderSortingSection, tallySorting } from './sorting-choice.mjs'
 
 const SORTING = {
   defect: 2,
@@ -52,27 +49,6 @@ test('analyze-runs prints the section from the records', () => {
     report,
     /## SORTING — how the doubtful findings held back from the PR ended\n- 1 run\(s\) · 2 posted as defects at once · 3 held back as doubtful\n- of the doubtful: 0 posted as defect \(0%\) · 0 asked the author \(0%\) · 1 not posted \(33%\) · 2 still undecided/,
   )
-})
-
-test("latestSortedRecord: the newest sorted record of this project, refused when it is another branch's", () => {
-  const store = fs.mkdtempSync(path.join(os.tmpdir(), 'sorting-choice-'))
-  const project = fs.mkdtempSync(path.join(os.tmpdir(), 'sorting-project-'))
-  try {
-    const key = fs.realpathSync(project)
-    const older = path.join(store, '20261019-090000-workflow-review.json')
-    const newer = path.join(store, '20261020-090000-workflow-review.json')
-    fs.writeFileSync(older, JSON.stringify(rec({ project: key })))
-    fs.writeFileSync(newer, JSON.stringify(rec({ project: key })))
-    fs.writeFileSync(path.join(store, '20261021-090000-workflow-review.json'), JSON.stringify(rec({ project: '/other' })))
-    fs.writeFileSync(path.join(store, '20261022-090000-workflow-review.json'), JSON.stringify(rec({ project: key, sorting: null })))
-    assert.equal(latestSortedRecord(store, key, 'feat/x'), newer)
-    assert.equal(latestSortedRecord(store, key, ''), newer, 'a detached HEAD takes the newest')
-    assert.throws(() => latestSortedRecord(store, key, 'main'), /is of branch "feat\/x", not "main" — name the one meant with --record/)
-    assert.throws(() => latestSortedRecord(path.join(store, 'nope'), key, 'feat/x'), /carries doubtful findings/)
-  } finally {
-    fs.rmSync(store, { recursive: true, force: true })
-    fs.rmSync(project, { recursive: true, force: true })
-  }
 })
 
 test("a publication after the fact carries each recorded choice to its finding's new number, and names those whose finding is gone", () => {

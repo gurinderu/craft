@@ -161,7 +161,7 @@ pub(super) fn sort(
 }
 
 /// A doubtful finding as the run record keeps it, numbered from 1 (`postable`): what
-/// `integrations/shared/finding-post.mjs` builds its comment from.
+/// `craft review post` builds its comment from (`super::doubtful`).
 pub(super) fn postable(f: &Value, i: usize, reasons: &[String]) -> Value {
     json!({
         "n": i + 1, "severity": text(f, "severity"), "title": text(f, "title"), "file": text(f, "file"),

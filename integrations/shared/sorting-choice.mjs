@@ -4,9 +4,6 @@
 // as a defect, not posted — is appended to the SAME run's record by `craft runs sorting-choice` (cli/crates/craft-store/src/sorting.rs), the
 // one writer of the store (node #39); analyze-runs tallies how the doubtful ones ended (the precision of
 // the sorting, node #270).
-import fs from 'node:fs'
-import path from 'node:path'
-import { parseJsonObject } from './json-object.mjs'
 
 /** @typedef {import('./run-record.mjs').RunRecord} RunRecord */
 /**
@@ -72,42 +69,6 @@ function carriedChoices(record, next) {
     else dropped.push(droppedChoice(n, f, c))
   }
   return { choices: Object.keys(choices).length ? choices : null, dropped }
-}
-
-/**
- * The newest review record in `store` of `project` that carries a sorting with doubtful findings, when it
- * was filed on `branch` (the checkout's); it throws, naming why, when there is none or the newest is
- * another branch's (then `--record` names the one meant). Detail files are named `<ts>-<kind>-<name>.json`,
- * so the name orders them by time. An empty `branch` (a detached HEAD) takes the newest.
- * @param {string} store @param {string} project @param {string} branch @returns {string}
- */
-export function latestSortedRecord(store, project, branch) {
-  /** @type {string[]} */
-  let names = []
-  try {
-    names = fs.readdirSync(store)
-  } catch {
-    names = []
-  }
-  for (const name of names
-    .filter(x => /-review\.json$/.test(x))
-    .sort()
-    .reverse()) {
-    const file = path.join(store, name)
-    /** @type {RunRecord} */
-    let r
-    try {
-      r = parseJsonObject(fs.readFileSync(file, 'utf8'))
-    } catch {
-      continue
-    }
-    if (r.project !== project || !sortedFindings(r).length) continue
-    if (!branch || r.branch === branch) return file
-    throw new Error(
-      `the newest review record of ${project} with doubtful findings, ${file}, is of branch ${JSON.stringify(r.branch)}, not ${JSON.stringify(branch)} — name the one meant with --record`,
-    )
-  }
-  throw new Error(`no review record of ${project} in ${store} carries doubtful findings`)
 }
 
 /** @typedef {{ runs: number, doubtful: number, defect: number, question: number, dropped: number, posted: number }} SortingTally */

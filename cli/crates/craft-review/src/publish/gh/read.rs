@@ -11,15 +11,15 @@ use crate::gate::runner::Runner;
 use crate::publish::body::{self, MARKER};
 
 /// The pull request of the checked-out branch, as `gh pr view` names it.
-pub(super) struct Pr {
-    pub(super) number: u64,
-    pub(super) url: String,
-    pub(super) head: String,
+pub(in crate::publish) struct Pr {
+    pub(in crate::publish) number: u64,
+    pub(in crate::publish) url: String,
+    pub(in crate::publish) head: String,
 }
 
 /// The pull request `which` names — its number, or a branch whose pull request it is — the
 /// checked-out branch's when `None`.
-pub(super) fn pull_request(
+pub(in crate::publish) fn pull_request(
     runner: &Runner,
     repo: &Path,
     which: Option<&str>,
@@ -50,7 +50,7 @@ pub(super) fn pull_request(
 
 /// A posted comment's identity: its file, its line (0 for a comment on the file) and its first
 /// line, `[Severity] title` — two findings sharing a title on one file are told apart by line.
-pub(super) type Key = (String, u64, String);
+pub(in crate::publish) type Key = (String, u64, String);
 
 /// The craft finding comments already on the pull request, by file, line and first line: each
 /// under the line GitHub keeps for the comment now and under the one it was posted on
@@ -58,7 +58,7 @@ pub(super) type Key = (String, u64, String);
 /// earlier commit), 0 for a comment on its file. `--paginate`
 /// prints the pages as one array (gh 2.102, observed) or, in older releases, one array after
 /// another: read here as a stream of values, either way.
-pub(super) fn posted_already(
+pub(in crate::publish) fn posted_already(
     runner: &Runner,
     repo: &Path,
     pr: u64,
