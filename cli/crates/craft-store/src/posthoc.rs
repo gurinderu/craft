@@ -1,7 +1,7 @@
 //! The writes made after a run, from the binary (`craft runs sorting-choice | develop-cycle`), as
-//! requests answered `{ ok, reason, file }` — the shape `content/parity/store-cases.json` holds
-//! both writers to: the JavaScript one through `integrations/shared/binary-filing-replay.mjs` over
-//! `integrations/shared/craft-log-run.mjs`'s `sorting-choice` and `develop-cycle`.
+//! requests answered `{ ok, reason, file }` — the shape `content/parity/posthoc-store-cases.json`
+//! holds them to: what the JavaScript writer's `sorting-choice` and `develop-cycle` verbs filed,
+//! frozen when they were removed.
 
 use std::path::{Path, PathBuf};
 

@@ -1,7 +1,7 @@
 //! `craft runs sorting-choice`: the reviewer's later choice for one doubtful finding a review run
 //! held back from its PR — asked the author, posted as a defect, not posted — written into that
-//! run's own record (`sorting.choices`), as `applySortingChoice` in
-//! `integrations/shared/sorting-choice.mjs` writes it (realm @nick/craft, nodes #281, #270, #39).
+//! run's own record (`sorting.choices`), as the JavaScript writer's `applySortingChoice` wrote it
+//! (frozen in `content/parity/posthoc-store-cases.json`) (realm @nick/craft, nodes #281, #270, #39).
 
 use std::path::{Path, PathBuf};
 

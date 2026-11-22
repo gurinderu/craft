@@ -2,7 +2,7 @@
 //! #281, #278, #263, #39) — its rounds (each one's engine, whether it reviewed the whole branch diff
 //! or the fixed delta, its verdict and open Medium+ count), its outcome and every full review run
 //! after convergence — read strictly as `readDevelopCycle` in `integrations/shared/develop-cycle.mjs`
-//! reads it: a refusal names the first field that does not fit.
+//! reads it (the record frozen in `content/parity/posthoc-store-cases.json`): a refusal names the first field that does not fit.
 
 use crate::js::{Js, JsString, Obj};
 

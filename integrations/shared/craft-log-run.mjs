@@ -37,16 +37,8 @@
 //   prior-round --branch <b> [--project <p>]  newest prior review round for that branch (no stdin)
 //   repair-index [--apply]                index.jsonl: compact hand-written pretty-printed blocks,
 //                                         quarantine damaged and duplicate ones; dry by default
-//   sorting-choice --n <n> --choice <question|defect|dropped> [--record <f>]
-//                                         POST-HOC (no stdin): the reviewer's choice for doubtful finding
-//                                         <n> of a review run with comment, into that run's record (the
-//                                         newest of this project carrying a sorting, unless --record).
-//                                         Callers run `craft runs sorting-choice`; kept as its parity source
 //   publication --record <f>              a finished run's sorting, memoryContradictions and prComments
 //                                         from stdin, written into its record (craft review comment)
-//   develop-cycle                         one craft:develop cycle (its rounds, outcome and full reviews,
-//                                         integrations/shared/develop-cycle.mjs) → a `develop` record + index line.
-//                                         Callers run `craft runs develop-cycle`; kept as its parity source
 //
 // Run: node integrations/shared/craft-log-run.mjs <command> [flags]
 import { parseJsonObject } from './json-object.mjs'
@@ -78,8 +70,7 @@ import { RECOVERY_ONLY } from './record-parts-settle.mjs'
 import { recordFromRecoveredParts, recordWithParts } from './record-parts-recover.mjs'
 import { deferralOn } from './ledger-deferral.mjs'
 import { outputLines, runIfMain, stderrLines } from './script-main.mjs'
-import { applyPublication, applySortingChoice, latestSortedRecord } from './sorting-choice.mjs'
-import { developCycleRecord } from './develop-cycle.mjs'
+import { applyPublication } from './sorting-choice.mjs'
 import { repoKey } from './repo-key.mjs'
 import { withIndexLock } from './index-lock.mjs'
 import { readRecordFromTranscript, TRANSCRIPT_MISS, TRANSCRIPT_MISS_EXIT } from './transcript-record.mjs'
@@ -3352,21 +3343,9 @@ function claudeHomeOf(env) {
   return env['CLAUDE_CONFIG_DIR'] || path.join(os.homedir(), '.claude')
 }
 
-/** @param {Ctx} c */
-function cmdSortingChoice({ argv, cwd, store, project, gitId, o }) {
-  const n = Number(flag(argv, 'n'))
-  const choice = flag(argv, 'choice') || ''
-  if (!Number.isInteger(n) || n < 1 || !choice) throw new Error('usage: sorting-choice --n <n> --choice <question|defect|dropped> [--record <f>]')
-  const recordFile = pathFlag(argv, 'record', cwd) || latestSortedRecord(store, project, gitId.branch)
-  const r = applySortingChoice(readCostRecord(recordFile), n, choice, new Date())
-  if (typeof r === 'string') throw new Error(`${recordFile}: ${r}`)
-  writeFileAtomically(recordFile, JSON.stringify(r.record, null, 2))
-  o.stdout.push(`recorded ${choice} for doubtful finding ${n} (${r.finding.title} @ ${r.finding.file}:${r.finding.line}) in ${recordFile}`)
-}
-
 // A finished review run published on its PR after the fact (`craft review comment`, now written by the binary itself;
 // realm @nick/craft, node #270): its sorting, the findings going against memory and what was posted, written into the
-// SAME run's record by the one writer of the store, as `sorting-choice` appends the reviewer's choices.
+// SAME run's record by the one writer of the store.
 /** @param {Ctx} c */
 function cmdPublication({ argv, cwd, parseStdin, o }) {
   const recordFile = pathFlag(argv, 'record', cwd)
@@ -3375,14 +3354,6 @@ function cmdPublication({ argv, cwd, parseStdin, o }) {
   writeFileAtomically(recordFile, JSON.stringify(record, null, 2))
   o.stdout.push(`recorded the publication in ${recordFile}`)
   if (dropped.length) o.stdout.push(`dropped the choices of doubtful findings no longer listed: ${dropped.join('; ')}`)
-}
-
-// One craft:develop cycle, filed by the same writer as every run (realm @nick/craft, nodes #39, #281): the
-// payload is read strictly and refused by name, and the project, branch, head and time are this script's.
-/** @param {Ctx} c */
-function cmdDevelopCycle({ store, project, session, gitId, workdir, parseStdin, o }) {
-  const { file } = writeRecord(developCycleRecord(parseStdin()), { store, project, session, gitId, workdir })
-  o.stdout.push(`wrote ${file}`)
 }
 
 // The commands that take a record, and so may read it from the logger's transcript (realm @nick/craft, node #429).
@@ -3398,9 +3369,7 @@ const COMMANDS = new Map([
   ['prior-round', cmdPriorRound],
   ['backfill-engine', cmdBackfillEngine],
   ['repair-index', cmdRepairIndex],
-  ['sorting-choice', cmdSortingChoice],
   ['publication', cmdPublication],
-  ['develop-cycle', cmdDevelopCycle],
 ])
 
 const USAGE = `usage: craft-log-run.mjs <command> [flags]
@@ -3428,11 +3397,8 @@ const USAGE = `usage: craft-log-run.mjs <command> [flags]
   prior-round --branch <b>                newest prior review round for that branch
   backfill-engine --revision <n> --before <ts> [--apply]
   repair-index [--apply]
-  sorting-choice --n <n> --choice <question|defect|dropped> [--record <f>]
-                                          the reviewer's choice for a doubtful finding, into its run's record
   publication --record <f>                a finished run's sorting, memoryContradictions and prComments from
                                           stdin, written into its record (craft review comment)
-  develop-cycle                           one craft:develop cycle from stdin: {mode?, outcome, rounds, fullReviews?}
 
   common: --store <dir> --project <dir> [--identity-from-record]
           (--identity-from-record: checkpoint and finalize take the branch, head, commit and dirty the payload

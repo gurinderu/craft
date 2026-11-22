@@ -1,5 +1,5 @@
-// The run store's writes as the JavaScript writer makes them — the binary's requests (checkpoint, finalize,
-// publication, and the post-hoc sorting-choice and develop-cycle) answered by integrations/shared/binary-filing-replay.mjs over integrations/shared/craft-log-run.mjs — held to the Rust writer
+// The run store's writes as the JavaScript writer makes them — the binary's three requests (checkpoint, finalize,
+// publication) answered by integrations/shared/binary-filing-replay.mjs over integrations/shared/craft-log-run.mjs — held to the Rust writer
 // (cli/crates/craft-store/tests/parity.rs) by one shared file, content/parity/store-cases.json: each case's requests in
 // a fresh repository and store, the answers, and every file the store holds afterwards, byte for byte, with the paths,
 // the commits and the writer's own commit put back as placeholders. Regenerate it with
@@ -228,38 +228,6 @@ const CASES = [
       ['checkpoint', { start: true, steps: [] }],
       ['write', { path: '<runDir>/.recovered-live', text: '<store>/2026-03-04T05-00-00Z-workflow-review.json\n' }],
       ['finalize', { step: STEP, steps: STEPS, dir: '<runDir>', retry: false }],
-    ],
-  },
-  {
-    name: "a reviewer's sorting choices land in the run's record, the newest of its branch found when none is named",
-    repo: 'git',
-    calls: [
-      ['finalize', { step: STEP, steps: [], retry: false }],
-      ['sorting-choice', { n: 1, choice: 'dropped', recordFile: '<recordFile>' }],
-      ['sorting-choice', { n: 2, choice: 'question' }],
-      ['sorting-choice', { n: 9, choice: 'defect', recordFile: '<recordFile>' }],
-      ['sorting-choice', { n: 1, choice: 'maybe', recordFile: '<recordFile>' }],
-    ],
-  },
-  {
-    name: 'a develop cycle is filed as its own record, and one that does not fit is refused by name',
-    repo: 'dirty',
-    calls: [
-      [
-        'develop-cycle',
-        {
-          session: 's-2',
-          cycle: {
-            outcome: 'converged',
-            rounds: [
-              { engine: ' review ', scope: 'full', verdict: 'Block', mediumPlus: 2 },
-              { engine: 'review', scope: 'delta', verdict: 'Approve', mediumPlus: 0 },
-            ],
-            fullReviews: [{ afterRound: 2, engine: 'review', verdict: 'Approve', mediumPlus: 0 }],
-          },
-        },
-      ],
-      ['develop-cycle', { cycle: { outcome: 'capped', rounds: [{ engine: 'review', scope: 'all' }] } }],
     ],
   },
   {

@@ -9,11 +9,9 @@
 //   finalize --input <file> [--store <dir>]     the record, folding the checkpoints in `dir`
 //   publication --input <file>                  a finished run published on its PR after the fact: its sorting, memory
 //                                               contradictions and PR comments written into the record already filed
-//   develop-cycle --input <file> [--store <dir>]  one craft:develop cycle (`cycle`) filed as a record (craft runs develop-cycle)
-//   sorting-choice --input <file> [--store <dir>] the reviewer's choice for a doubtful finding (craft runs sorting-choice)
 //
 // Its answer is the LAST line on stdout, one JSON object: a checkpoint's { phase, runDir } or { phase, error }, or
-// { skipped: true } when no phase ended; the record's, a publication's and a post-hoc write's { ok, reason, file }.
+// { skipped: true } when no phase ended; the record's { ok, reason, file }; a publication's { ok, reason, file }.
 import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import { run as craftLogRun } from './craft-log-run.mjs'
@@ -199,40 +197,11 @@ async function publication(req) {
   return { ok: true, reason: r.stdout.find(l => l.startsWith('dropped the choices')) ?? '', file }
 }
 
-/**
- * The answer of a write made after a run: ok with the file and the line it said, or why it failed.
- * @param {import('./script-main.mjs').ScriptResult} r @param {string} file
- */
-const said = (r, file) => (r.exitCode === 0 ? { ok: true, reason: r.stdout.at(-1) ?? '', file } : { ok: false, reason: r.stderr.join('; '), file: '' })
-
-/**
- * One craft:develop cycle (`cycle`) filed as a record of `repo` — what `craft runs develop-cycle` writes from the binary.
- * @param {Record<string, unknown>} req @param {string} store
- */
-async function developCycle(req, store) {
-  const c = common(req)
-  const r = await craftLogRun(['develop-cycle', ...loggerFlags(c, store, null)], {}, c.repo, () => JSON.stringify(req['cycle'] ?? {}))
-  return said(r, (r.stdout.at(-1) ?? '').replace(/^wrote /, ''))
-}
-
-/**
- * The reviewer's choice for a doubtful finding (`n`, `choice`) into `recordFile`, or the newest review record of `repo`'s
- * branch with doubtful findings — what `craft runs sorting-choice` writes from the binary.
- * @param {Record<string, unknown>} req @param {string} store
- */
-async function sortingChoice(req, store) {
-  const c = common(req)
-  const record = text(req, 'recordFile')
-  const args = ['sorting-choice', '--n', String(req['n']), '--choice', text(req, 'choice'), ...(record ? ['--record', record] : [])]
-  const r = await craftLogRun([...args, ...loggerFlags(c, store, null)], {}, c.repo, () => '')
-  return said(r, / in (\/.+)$/.exec(r.stdout.at(-1) ?? '')?.[1] ?? '')
-}
-
 /** @type {Record<string, (req: Record<string, unknown>, store: string) => Promise<Record<string, unknown>>>} */
-const COMMANDS = { checkpoint, finalize, publication, 'develop-cycle': developCycle, 'sorting-choice': sortingChoice }
+const COMMANDS = { checkpoint, finalize, publication }
 
 /**
- * `<checkpoint|finalize|publication|develop-cycle|sorting-choice> --input <file> [--store <dir>]`: exit 0 with the answer as the last stdout line, 1 when the
+ * `<checkpoint|finalize|publication> --input <file> [--store <dir>]`: exit 0 with the answer as the last stdout line, 1 when the
  * input cannot be read, 2 on an unknown command.
  * @param {string[]} argv @returns {Promise<import('./script-main.mjs').ScriptResult>}
  */
@@ -240,7 +209,7 @@ export async function run(argv) {
   const o = outputLines()
   const write = Object.hasOwn(COMMANDS, String(argv[0])) ? COMMANDS[String(argv[0])] : undefined
   if (!write) {
-    o.stderr.push('usage: <checkpoint|finalize|publication|develop-cycle|sorting-choice> --input <file> [--store <dir>]')
+    o.stderr.push('usage: <checkpoint|finalize|publication> --input <file> [--store <dir>]')
     return { exitCode: 2, ...o }
   }
   /** @type {Record<string, unknown>} */

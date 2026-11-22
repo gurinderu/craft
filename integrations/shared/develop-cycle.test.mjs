@@ -1,14 +1,10 @@
 // One record per craft:develop cycle (integrations/shared/develop-cycle.mjs, integrations/shared/develop-tally.mjs; realm @nick/craft,
-// nodes #263, #278, #281): the payload read strictly, written by `craft-log-run develop-cycle`, tallied apart
+// nodes #263, #278, #281): the payload read strictly, written by `craft runs develop-cycle`, tallied apart
 // from the review runs and printed as the DEVELOP section.
 import { test } from 'vitest'
 import assert from 'node:assert/strict'
-import fs from 'node:fs'
-import os from 'node:os'
-import path from 'node:path'
-import { run } from './craft-log-run.mjs'
 import { aggregate, renderReport } from './analyze-runs.mjs'
-import { developCycleRecord, readDevelopCycle } from './develop-cycle.mjs'
+import { readDevelopCycle } from './develop-cycle.mjs'
 import { newDevelopTally, renderDevelopSection, tallyDevelop } from './develop-tally.mjs'
 
 /** @param {Record<string, unknown>} [over] */
@@ -22,6 +18,12 @@ const cycle = (over = {}) => ({
   ...over,
 })
 
+/** A cycle's record as `craft runs develop-cycle` files it (cli/crates/craft-store/src/develop.rs). @param {unknown} payload */
+const developCycleRecord = payload => {
+  const c = readDevelopCycle(payload)
+  return { schemaVersion: 1, runtime: 'claude-code', kind: 'develop', name: 'develop', verdict: c.outcome, round: c.rounds.length, develop: c }
+}
+
 test('readDevelopCycle: a light cycle by default, its rounds numbered', () => {
   const c = readDevelopCycle(cycle())
   assert.equal(c.mode, 'light')
@@ -32,15 +34,6 @@ test('readDevelopCycle: a light cycle by default, its rounds numbered', () => {
       [2, 'delta', 0],
     ],
   )
-  assert.deepEqual(developCycleRecord(cycle()), {
-    schemaVersion: 1,
-    runtime: 'claude-code',
-    kind: 'develop',
-    name: 'develop',
-    verdict: 'converged',
-    round: 2,
-    develop: c,
-  })
 })
 
 test('readDevelopCycle: refuses by name what does not fit', () => {
@@ -103,28 +96,6 @@ test('the tally: outcomes, rounds, Medium+ by round, the full review; an unreada
     '- ⚠️ 1 develop record(s) unreadable — not counted',
   ])
   assert.match(renderDevelopSection(newDevelopTally())[1] ?? '', /NOT MEASURED/)
-})
-
-test('craft-log-run develop-cycle files one develop record; a bad cycle fails with 1 and files nothing', async () => {
-  const store = fs.mkdtempSync(path.join(os.tmpdir(), 'craft-dev-store-'))
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'craft-dev-dir-'))
-  try {
-    const bad = await run(['develop-cycle', '--store', store, '--project', dir], process.env, dir, () => JSON.stringify(cycle({ outcome: 'done' })))
-    assert.equal(bad.exitCode, 1)
-    assert.match(bad.stderr.join('\n'), /craft-log-run FAILED: outcome must be one of/)
-    assert.equal(fs.existsSync(path.join(store, 'index.jsonl')), false)
-    const r = await run(['develop-cycle', '--store', store, '--project', dir], process.env, dir, () => JSON.stringify(cycle()))
-    assert.equal(r.exitCode, 0, r.stderr.join('\n'))
-    const files = fs.readdirSync(store).filter(f => f.endsWith('.json'))
-    assert.equal(files.length, 1)
-    assert.match(String(files[0]), /-develop-develop\.json$/)
-    const rec = JSON.parse(fs.readFileSync(path.join(store, String(files[0])), 'utf8'))
-    assert.deepEqual([rec.kind, rec.verdict, rec.round, rec.develop.outcome], ['develop', 'converged', 2, 'converged'])
-    const row = JSON.parse(fs.readFileSync(path.join(store, 'index.jsonl'), 'utf8'))
-    assert.deepEqual([row.kind, row.verdict], ['develop', 'converged'])
-  } finally {
-    for (const d of [store, dir]) fs.rmSync(d, { recursive: true, force: true })
-  }
 })
 
 test('analyze-runs: a develop record stays out of the review rates and prints under DEVELOP', () => {

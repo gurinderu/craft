@@ -1,7 +1,7 @@
 // The outcome of the sorting before publication, on the run store (realm @nick/craft, node #281): a review
 // run with `comment` records how many findings it posted as defects and which it held back as doubtful
 // (`sorting`, integrations/claude-code/src/review.js); the reviewer's later choice for each doubtful one — asked the author, posted
-// as a defect, not posted — is appended to the SAME run's record by `craft runs sorting-choice` (cli/crates/craft-store/src/sorting.rs; craft-log-run's verb is kept as the parity source), the
+// as a defect, not posted — is appended to the SAME run's record by `craft runs sorting-choice` (cli/crates/craft-store/src/sorting.rs), the
 // one writer of the store (node #39); analyze-runs tallies how the doubtful ones ended (the precision of
 // the sorting, node #270).
 import fs from 'node:fs'
@@ -14,8 +14,6 @@ import { parseJsonObject } from './json-object.mjs'
  * @typedef {{ n: number, severity?: string, title: string, file: string, line: number, why?: string, fix?: string, source?: string, toolRule?: string, outsideDiff?: boolean }} SortedFinding
  */
 
-export const SORTING_CHOICES = ['question', 'defect', 'dropped']
-
 /** The record's `sorting` object, or null. @param {RunRecord} r @returns {Record<string, unknown> | null} */
 export function sortingOf(r) {
   const s = r['sorting']
@@ -26,24 +24,6 @@ export function sortingOf(r) {
 export function sortedFindings(r) {
   const list = sortingOf(r)?.['findings']
   return Array.isArray(list) ? /** @type {SortedFinding[]} */ (list.filter(x => x && typeof x === 'object')) : []
-}
-
-/**
- * The record with the reviewer's `choice` for doubtful finding `n` set (a later choice for the same finding
- * replaces the earlier one), and that finding; a string: why it cannot be recorded.
- * @param {RunRecord} record @param {number} n @param {string} choice @param {Date} now
- * @returns {{ record: RunRecord, finding: SortedFinding } | string}
- */
-export function applySortingChoice(record, n, choice, now) {
-  if (!SORTING_CHOICES.includes(choice)) return `--choice must be one of ${SORTING_CHOICES.join(', ')}, got ${JSON.stringify(choice)}`
-  const sorting = sortingOf(record)
-  if (!sorting) return 'the record carries no sorting (a review run without comment, or an older engine)'
-  // A stored finding is read JSON: its `n` may be a string of digits.
-  const finding = sortedFindings(record).find((/** @type {{ n?: unknown }} */ f) => Number(f.n) === n)
-  if (!finding) return `the record lists no doubtful finding numbered ${n}`
-  const prior = sorting['choices'] && typeof sorting['choices'] === 'object' ? /** @type {Record<string, unknown>} */ (sorting['choices']) : {}
-  const choices = { ...prior, [String(n)]: { choice, at: now.toISOString() } }
-  return { record: { ...record, sorting: { ...sorting, choices } }, finding }
 }
 
 /**
