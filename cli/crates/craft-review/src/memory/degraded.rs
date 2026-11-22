@@ -17,7 +17,13 @@ pub(super) fn bounded(note: &str) -> Option<String> {
         .chars()
         .map(|c| if c.is_control() { ' ' } else { c })
         .collect();
-    Some(clip(&plain, RECALL_NOTE_MAX - 1)).filter(|n| !n.is_empty())
+    let whole = clip(&plain, RECALL_NOTE_MAX);
+    let kept = if whole.ends_with('…') && whole.encode_utf16().count() > RECALL_NOTE_MAX {
+        clip(&plain, RECALL_NOTE_MAX - 1)
+    } else {
+        whole
+    };
+    Some(kept).filter(|n| !n.is_empty())
 }
 
 /// The `why` of a recall whose backend query `q` may have failed; `found` when it still returned
@@ -32,17 +38,26 @@ pub(super) fn failed_why(why: &str, q: &str, found: bool) -> String {
 }
 
 impl MemorySource {
+    /// Whether the run read none of the store it meant to: its query failed with nothing found,
+    /// its answer was truncated, its agent gave none, or its launcher's recall was degraded.
+    pub(super) fn not_read(&self) -> bool {
+        self.query_error.is_some()
+            || self.truncated.is_some()
+            || self.recall_died.is_some()
+            || self.recall_degraded.is_some()
+    }
+
     /// The degraded notes of a recall that may not have read the store: whose backend query may
-    /// have failed (all of it, or part, the records it returned applied), that read only part of
-    /// what the backend held, or whose launcher's recall was so.
+    /// have failed (all of it, or part, what it returned applied), whose agent gave no answer,
+    /// that read only part of what the backend held, or whose launcher's recall was so.
     #[must_use]
     pub fn degraded_notes(&self) -> Vec<String> {
         let recalled = self.source == "recalled";
         let failed = self.query_error.as_ref().map(|q| {
             if recalled {
                 format!(
-                    "memory: recall partly failed — backend query may have failed: {q}; the {} record(s) it returned were applied, others may be missing",
-                    self.count
+                    "memory: recall partly failed — backend query may have failed: {q}; {}, others may be missing",
+                    self.returned()
                 )
             } else {
                 format!(
@@ -51,6 +66,10 @@ impl MemorySource {
                 )
             }
         });
+        let died = self
+            .recall_died
+            .as_ref()
+            .map(|d| format!("memory: not read — {d}; {}", self.applied()));
         let truncated = self.truncated.as_ref().map(|t| {
             format!("memory: recall read only part of the backend's answer ({t}): the records past it were not applied")
         });
@@ -59,9 +78,18 @@ impl MemorySource {
         });
         failed
             .into_iter()
+            .chain(died)
             .chain(truncated)
             .chain(upstream)
             .collect()
+    }
+
+    /// What a partly failed recall returned and applied.
+    fn returned(&self) -> String {
+        match (self.count, self.externals.unwrap_or(0)) {
+            (0, e) if e > 0 => format!("the {e} external system(s) it returned were read"),
+            (n, _) => format!("the {n} record(s) it returned were applied"),
+        }
     }
 
     /// What applied in place of a recall that read nothing.

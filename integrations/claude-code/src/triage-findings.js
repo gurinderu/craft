@@ -511,7 +511,7 @@ function memoryBanner(planIn) {
   const notes = memoryDegradedNotes(memory)
   if (!notes.length) return
   planIn.memoryDegraded = notes
-  planIn.plan_markdown = `${["> **MEMORY DEGRADED** — the sift may have run without the project's records:", ...notes.map(l => `> - ${l}`), ''].join('\n')}\n${planIn.plan_markdown ?? ''}`
+  planIn.plan_markdown = `${["> **MEMORY DEGRADED** — the sift may have run without some or all of the project's records:", ...notes.map(l => `> - ${l}`), ''].join('\n')}\n${planIn.plan_markdown ?? ''}`
 }
 
 /** The plan as its reader gets it: led by what did not run and by a write that did not land. @param {TriagePlan} planIn @returns {TriagePlan} */

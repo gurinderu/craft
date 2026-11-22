@@ -44,7 +44,7 @@ import { render } from './content.mjs'
 import { pathEntries } from './memory-bounds.mjs'
 import memoryRecallTpl from '../../content/prompts/memory-recall.md'
 import memoryRecallSchema from '../../content/schemas/memory-recall.schema.json' with { type: 'json' }
-import { failedWhy, memoryDegradedNotes, recallNote } from './recall-degraded.mjs'
+import { failedWhy, memoryDegradedNotes, notRead, recallNote } from './recall-degraded.mjs'
 
 // The most changed paths one recall prompt lists; past it they are listed by directory (pathEntries), and
 // the report says so. It keeps the read-only recall agent's prompt and its searches bounded.
@@ -82,10 +82,10 @@ export function memoryRecallPrompt(paths, base) {
  * first DERIVED_NAMED_MAX of them as `<id> (<title, cut>)`; `backend` the store the recall agent named, when it answered;
  * `rules` the project rules among the records, `covered` the findings a rule covered (set by the engine once applied);
  * `externals` the external-system records recalled beside them, never among `count`.
- * `queryError` the backend call the recall named as possibly failed (or why its agent gave no answer), `truncated` what
+ * `queryError` the backend call the recall named as possibly failed, `recallDied` why its agent gave no answer, `truncated` what
  * the backend held past what was read, `recallDegraded` why a launcher's recall may not have read the whole store: each
  * makes the memory degraded (integrations/shared/recall-degraded.mjs).
- * @typedef {{ source: 'recalled' | 'launcher' | 'none', count: number, why: string, questions?: number, rules?: number, externals?: number, covered?: number, passed?: number, added?: number, derived?: number, derivedNamed?: string[], backend?: string, queryError?: string, truncated?: string, recallDegraded?: string }} MemorySource
+ * @typedef {{ source: 'recalled' | 'launcher' | 'none', count: number, why: string, questions?: number, rules?: number, externals?: number, covered?: number, passed?: number, added?: number, derived?: number, derivedNamed?: string[], backend?: string, queryError?: string, truncated?: string, recallDied?: string, recallDegraded?: string }} MemorySource
  */
 /** @param {unknown} v @returns {string} */
 export const recallText = v => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim() : '')
@@ -204,7 +204,7 @@ export function readMemoryRecall(raw, cut, grouped = 0) {
         source: 'none',
         count: 0,
         why: `the recall agent died or returned no decision list, so nothing recalled was applied — findings are raised normally${tail}`,
-        queryError: 'the recall agent died or returned no decision list',
+        recallDied: 'the recall agent died or returned no decision list',
       },
     }
   const backend = recallText(r['backend']) || 'an unnamed backend'
@@ -653,12 +653,23 @@ export function countedRecords(m) {
  * none (and what the audit's own launcher passed). @param {MemorySource} m @returns {string}
  */
 export function launcherLine(m) {
+  return `${launcherHead(m)}${launcherDegradedTail(m)}`
+}
+
+/** launcherLine without the launcher's degraded recall. @param {MemorySource} m @returns {string} */
+function launcherHead(m) {
   const parts = m.passed ? ` — ${m.count - (m.added ?? 0)} recalled, ${m.added ?? 0} of the ${m.passed} passed by its launcher` : ''
   if (!m.why) return `memory: recalled by the launching audit — ${m.count ? `applied ${countedRecords(m)}${parts}` : `none${parts}`}`
   // Of the audit's K when it said K, so its line and this one count the same records (realm @nick/craft, node #244).
   const applied = m.passed ? `; applied ${m.added ?? m.count} of the ${m.passed} passed by its launcher` : `; applied ${m.count} passed by its launcher`
-  return `memory: recalled by the launching audit — none (${m.why})${m.count || m.passed ? applied : ''}`
+  return `memory: recalled by the launching audit — ${launcherNone(m)} (${m.why})${m.count || m.passed ? applied : ''}`
 }
+
+/** What a launcher's recall that applied nothing here reads as. @param {MemorySource} m @returns {string} */
+const launcherNone = m => (m.recallDegraded ? 'not read whole' : 'none')
+
+/** The tail naming why the launcher's recall may not have read the whole store, '' when it did. @param {MemorySource} m @returns {string} */
+const launcherDegradedTail = m => (m.recallDegraded ? `; the launcher's recall may not have read the whole store: ${m.recallDegraded}` : '')
 
 /**
  * One line, both parts: what the recall gave, then what the launcher added.
@@ -673,7 +684,7 @@ export function memoryLine(m, forwarded = false) {
 export function sourceLine(m, forwarded) {
   if (m.source === 'launcher') return launcherLine(m)
   const plus = m.passed ? `; plus ${m.passed} passed by the launcher${m.source === 'recalled' ? ` (${m.added ?? m.passed} new)` : ''}` : ''
-  if (m.source !== 'recalled') return `memory: ${m.queryError || m.truncated ? 'not read' : 'none'} — ${m.why}${plus}`
+  if (m.source !== 'recalled') return `memory: ${notRead(m) ? 'not read' : 'none'} — ${m.why}${plus}`
   return forwarded
     ? `memory: returned ${countedRecords(m)} from ${m.why}${plus}; each nested review reports how many it applied`
     : `memory: recalled ${countedRecords(m)} from ${m.why}${plus}`
@@ -707,7 +718,7 @@ export async function recallDecisions(ask, paths, base) {
         source: 'none',
         count: 0,
         why: `the recall agent did not run (${msg}) — nothing recalled applied; findings are raised normally`,
-        queryError: recallNote(`the recall agent did not run (${msg})`),
+        recallDied: recallNote(`the recall agent did not run (${msg})`),
       },
     }
   }

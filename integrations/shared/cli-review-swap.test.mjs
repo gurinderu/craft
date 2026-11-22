@@ -141,7 +141,7 @@ test("_recallDegraded beside _recalled reaches the binary's start as one --recal
   )
   assert.doesNotMatch(await start({ _recalled: true }), /--recall-degraded/)
   assert.match((await runWith({ _recallDegraded: 'x' })).report, /_recallDegraded is taken only beside _recalled=true/)
-  for (const bad of ['a\nb', '   ', 7])
+  for (const bad of ['a\nb', '   ', '', 7])
     assert.match((await runWith({ _recalled: true, _recallDegraded: bad })).report, /_recallDegraded=.* is not one non-blank line of text/)
 })
 

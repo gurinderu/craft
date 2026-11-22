@@ -66,8 +66,9 @@ test('memory tally: recalled by backend, none by reason, runs before the field a
     rules: 0,
     externals: 0,
     covered: 0,
-    failed: 1,
-    truncated: 0,
+    notRead: 1,
+    partlyRead: 0,
+    launcherDegraded: 0,
     byBackend: { harness: 1 },
     noneWhy: {
       'not recalled — nothing to review': 2,
@@ -79,7 +80,7 @@ test('memory tally: recalled by backend, none by reason, runs before the field a
   assert.deepEqual(renderMemorySection(t), [
     '## MEMORY — what the review recalled before judging',
     "- 9 run(s) carry the field (2 without it, excluded) · 1 recalled · 6 none (1 of them applied the launcher's records) · 2 nested under an audit, its one recall counted at the audit · 1 record(s) recalled, 0 of them open questions",
-    '- DEGRADED — 1 recall(s) whose backend query may have failed, all or part (not read, not "no memory") · 0 read only part of the backend\'s answer',
+    '- DEGRADED — 1 recall(s) not read (a failed backend query, a dead agent or a truncated answer — not "no memory") · 0 partly read (a failed call or a truncated answer beside records) · 0 handed a launcher\'s degraded recall',
     '- 1× from harness',
     '- 2× none — not recalled — nothing to review',
     '- 2× none — recall found nothing in repo',
@@ -88,15 +89,20 @@ test('memory tally: recalled by backend, none by reason, runs before the field a
   ])
 })
 
-test('memory tally: an empty recall whose backend query may have failed is its own class, apart from a clean none, and a truncated one is counted', () => {
+test('memory tally: not read, partly read and a launcher-degraded run are each DEGRADED, apart from a clean none', () => {
   const t = newMemoryTally()
   tallyMemory(t, { memory: readMemoryRecall({ backend: 'mcp iskron', why: 'w', decisions: [], queryError: 'q refused' }, 0).memory })
   tallyMemory(t, { memory: readMemoryRecall({ backend: 'mcp iskron', why: 'no craft record', decisions: [] }, 0).memory })
   tallyMemory(t, { memory: readMemoryRecall({ backend: 'mcp iskron', why: 'w', decisions: [REC], truncated: '12 found, 10 shown' }, 0).memory })
-  assert.deepEqual([t.failed, t.truncated, t.none, t.recalled], [1, 1, 2, 1])
-  assert.deepEqual(t.noneWhy, { 'backend query may have failed in mcp iskron': 1, 'recall found nothing in mcp iskron': 1 })
-  assert.match(
-    renderMemorySection(t).join('\n'),
-    /- DEGRADED — 1 recall\(s\) whose backend query may have failed, all or part .* · 1 read only part of the backend's answer/,
-  )
+  tallyMemory(t, { memory: readMemoryRecall({ backend: 'mcp iskron', why: 'w', decisions: [REC], queryError: 'rule listing refused' }, 0).memory })
+  tallyMemory(t, {
+    memory: { source: 'none', count: 0, why: 'not recalled — the launcher asked for none (--no-recall)', passed: 1, recallDegraded: 'kg refused' },
+  })
+  assert.deepEqual([t.notRead, t.partlyRead, t.launcherDegraded, t.none, t.recalled], [1, 2, 1, 3, 2])
+  assert.deepEqual(t.noneWhy, {
+    'backend query may have failed in mcp iskron': 1,
+    'recall found nothing in mcp iskron': 1,
+    'not recalled — the launcher asked for none (--no-recall)': 1,
+  })
+  assert.match(renderMemorySection(t).join('\n'), /- DEGRADED — 1 recall\(s\) not read .* · 2 partly read .* · 1 handed a launcher's degraded recall/)
 })

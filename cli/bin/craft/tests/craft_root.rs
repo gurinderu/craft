@@ -187,6 +187,37 @@ fn a_launchers_degraded_recall_handed_on_is_kept_even_when_it_starts_with_a_dash
     );
 }
 
+#[test]
+fn recall_degraded_is_taken_only_with_an_equals_sign_a_text_and_no_recall() {
+    // Space-separated, it would take the next flag as its text: refused, as a missing value is.
+    for extra in [
+        &["--no-recall", "--recall-degraded", "--no-gate"][..],
+        &["--no-recall", "--recall-degraded", "-q refused"][..],
+        &["--no-recall", "--recall-degraded="][..],
+        &["--no-recall", "--recall-degraded= \u{1b} "][..],
+        &["--recall-degraded=q refused"][..],
+    ] {
+        let tmp = tempfile::tempdir().unwrap();
+        let code = tmp.path().join("repo");
+        std::fs::create_dir_all(&code).unwrap();
+        repo(&code);
+        let out = Command::new(env!("CARGO_BIN_EXE_craft"))
+            .env("CRAFT_CODE_GRAPH", "")
+            .args(["review", "start", "--cwd"])
+            .arg(&code)
+            .arg("--run-dir")
+            .arg(tmp.path().join("run"))
+            .args(extra)
+            .output()
+            .unwrap();
+        assert!(!out.status.success(), "{extra:?} was taken");
+        assert!(
+            !tmp.path().join("run").join("state.json").exists(),
+            "{extra:?}"
+        );
+    }
+}
+
 /// The state `review start` wrote over the fixture, with `extra` arguments.
 fn state_of(extra: &[&str]) -> Value {
     let tmp = tempfile::tempdir().unwrap();

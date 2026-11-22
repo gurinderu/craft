@@ -177,7 +177,7 @@ pub(super) fn read(raw: Option<&Value>, cut: usize, grouped: usize) -> Recalled 
         let mut source = MemorySource::none(format!(
             "the recall agent died or returned no decision list, so nothing recalled was applied — findings are raised normally{tail}"
         ));
-        source.query_error = Some("the recall agent died or returned no decision list".into());
+        source.recall_died = Some("the recall agent died or returned no decision list".into());
         return Recalled {
             inactive,
             records: Vec::new(),
@@ -211,25 +211,18 @@ pub(super) fn read(raw: Option<&Value>, cut: usize, grouped: usize) -> Recalled 
     let why = failed
         .as_ref()
         .map_or_else(|| why.clone(), |q| failed_why(&why, q, found));
-    if !found {
-        let mut source =
-            MemorySource::none(format!("{why} (backend {backend}){cut_tail}{stale}{tail}"));
-        source.backend = Some(backend);
-        source.query_error = failed;
-        source.truncated = truncated;
-        return Recalled {
-            records,
-            source,
-            inactive,
-        };
-    }
-    let mut source = MemorySource::none(format!("{backend} ({why}){cut_tail}{stale}{tail}"))
-        .with_kinds(nq, nr, externals);
-    source.source = "recalled".into();
-    source.truncated = truncated;
-    source.query_error = failed;
-    source.count = records.len();
+    let mut source = if found {
+        let mut s = MemorySource::none(format!("{backend} ({why}){cut_tail}{stale}{tail}"))
+            .with_kinds(nq, nr, externals);
+        s.source = "recalled".into();
+        s.count = records.len();
+        s
+    } else {
+        MemorySource::none(format!("{why} (backend {backend}){cut_tail}{stale}{tail}"))
+    };
     source.backend = Some(backend);
+    source.query_error = failed;
+    source.truncated = truncated;
     Recalled {
         records,
         source,

@@ -76,7 +76,8 @@ let memory = withDerived(initialMemory(passedAccepted, recalledByLauncher, A['_m
 // audit's own memory line names why. The nested CLI review takes a launcher's recall only as records
 // (`priorDecisions` with `_recalled`, the binary's `--prior-decisions` and `--no-recall`): the recall's note, its split
 // into parts (#218) and its external-system records (#431, #435) have no carrier there, and review refuses them, so
-// they stay in this audit's own report and are not forwarded (realm @nick/craft, nodes #150, #196).
+// they stay in this audit's own report and are not forwarded (realm @nick/craft, nodes #150, #196) — only why the
+// recall may not have read the whole store is, below.
 let nestedMemoryNote = recalledByLauncher ? recallText(A['_memory']) : ''
 // Why this audit's recall — its own, or its launcher's (`_recallDegraded`) — may not have read the whole store: its
 // backend query failed, its answer was truncated or its agent gave none. Each nested review is told it
@@ -451,7 +452,7 @@ async function recallOnce() {
   // have read the whole store, when the launcher said, is kept and handed on.
   if (recalledByLauncher) {
     memory = withDerived(initialMemory(passedAccepted, true, A['_memory']), parseNear(passedList).decisions)
-    const upstream = recallNote(A['_recallDegraded'])
+    const upstream = launcherDegraded(A['_recallDegraded'])
     if (upstream) memory = { ...memory, recallDegraded: upstream }
     noteDegraded()
     return
@@ -471,6 +472,15 @@ async function recallOnce() {
     log('⚠️ priorDecisions is not a list — not forwarded to the nested reviews')
     memory = { ...memory, why: `${memory.why}; the launcher's priorDecisions was not a list — not applied` }
   }
+}
+/**
+ * The launcher's `_recallDegraded` as a note: '' when not given, and one that cannot be read is itself a degradation,
+ * never read as clean.
+ * @param {unknown} v @returns {string}
+ */
+function launcherDegraded(v) {
+  if (v == null) return ''
+  return recallNote(v) || `the launcher passed an unreadable _recallDegraded (${JSON.stringify(v).slice(0, 60)})`
 }
 /** Why this audit's memory may not have read the whole store, logged and kept for the nested reviews. */
 function noteDegraded() {

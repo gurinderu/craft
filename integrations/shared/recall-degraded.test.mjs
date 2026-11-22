@@ -67,10 +67,14 @@ test('a recall that partly failed applies its records and still reads as degrade
   ])
 })
 
-test('a dead or thrown recall agent is named as a failed query', async () => {
-  assert.equal(readMemoryRecall(null, 0).memory.queryError, 'the recall agent died or returned no decision list')
+test('a dead or thrown recall agent is named apart from a failed query, and degraded', async () => {
+  const dead = readMemoryRecall(null, 0).memory
+  assert.deepEqual([dead.queryError, dead.recallDied], [undefined, 'the recall agent died or returned no decision list'])
+  assert.deepEqual(memoryDegradedNotes(dead), [
+    "memory: not read — the recall agent died or returned no decision list; none of the project's decisions or rules were applied",
+  ])
   const threw = await recallDecisions(() => Promise.reject(new Error('wall')), [], '')
-  assert.equal(threw.memory.queryError, 'the recall agent did not run (wall)')
+  assert.equal(threw.memory.recallDied, 'the recall agent did not run (wall)')
   assert.match(memoryLine(threw.memory), /^memory: not read — the recall agent did not run/)
 })
 
@@ -110,6 +114,11 @@ test('a recall note is one line, kept to its bound', () => {
   const kept = recallNote('é'.repeat(RECALL_NOTE_MAX + 20))
   assert.equal(kept.length, RECALL_NOTE_MAX)
   assert.ok(kept.endsWith('…'))
+  assert.equal(recallNote('e'.repeat(RECALL_NOTE_MAX)), 'e'.repeat(RECALL_NOTE_MAX), 'a note of exactly the bound is kept whole')
+  // A surrogate pair at the cut is kept whole or left out, never split.
+  const astral = recallNote(`${'e'.repeat(RECALL_NOTE_MAX - 2)}😀😀`)
+  assert.equal(astral, `${'e'.repeat(RECALL_NOTE_MAX - 2)}…`)
+  assert.ok(!/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(astral))
   const r = readMemoryRecall({ backend: 'b', why: 'w', decisions: [], queryError: 'x'.repeat(RECALL_NOTE_MAX * 2) }, 0)
   assert.equal((r.memory.queryError ?? '').length, RECALL_NOTE_MAX)
   assert.equal(recallNote('a\u001b[31m\n b\u0085c'), 'a [31m b c')

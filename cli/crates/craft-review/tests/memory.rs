@@ -347,14 +347,26 @@ fn drive(run: &Path, s: Value, first: &[Value]) -> Value {
 }
 
 /// [`drive`], each adjudicator answering `status`.
-fn drive_as(run: &Path, mut s: Value, first: &[Value], status: &str) -> Value {
+fn drive_as(run: &Path, s: Value, first: &[Value], status: &str) -> Value {
+    drive_with(run, s, first, status, Some(&nothing_recalled()))
+}
+
+/// [`drive_as`], the recall answering `recall`, or never when `None`.
+fn drive_with(
+    run: &Path,
+    mut s: Value,
+    first: &[Value],
+    status: &str,
+    recall: Option<&Value>,
+) -> Value {
     while s["done"] == json!(false) {
         let mut answers = serde_json::Map::new();
         for id in ids(&s) {
             let a = if id.starts_with("scout-") {
                 scout("small", &["errors"])
             } else if id == "memory-recall" {
-                nothing_recalled()
+                let Some(recall) = recall else { continue };
+                recall.clone()
             } else if let Some(rest) = id.strip_prefix("lens-rust-") {
                 let name = rest.split('-').next().unwrap();
                 lens(name, if name == "errors" { first } else { &[] })
@@ -725,5 +737,28 @@ fn a_run_whose_launcher_recall_was_degraded_finishes_degraded_saying_so() {
             ),
             "the launcher's recall may not have read the whole store: kg_search refused: q required",
         ],
+    );
+}
+
+#[test]
+fn a_recall_task_that_never_answered_finishes_the_run_degraded() {
+    let repo = fixture(true);
+    let out = tempfile::tempdir().unwrap();
+    let start = StartOptions {
+        recall: true,
+        ..opts(repo.path(), out.path())
+    };
+    let s = step::start(&start).unwrap();
+    assert_eq!(ids(&s), ["scout-rust", "memory-recall"]);
+    let s = drive_with(&out.path().join("run"), s, &[], "still-open", None);
+    assert_eq!(
+        degraded_of(&s),
+        [
+            "memory: not read — the recall agent died or returned no decision list; none of the project's decisions or rules were applied"
+        ]
+    );
+    assert_eq!(
+        s["memory"]["recallDied"],
+        json!("the recall agent died or returned no decision list")
     );
 }

@@ -13,7 +13,7 @@
 // too: neither is "the project has no memory".
 /**
  * @typedef {{ runs: number, carrying: number, recalled: number, passedOnly: number, nested: number, none: number,
- *   records: number, questions: number, rules: number, externals: number, covered: number, failed: number, truncated: number, byBackend: Record<string, number>, noneWhy: Record<string, number> }} MemoryTally
+ *   records: number, questions: number, rules: number, externals: number, covered: number, notRead: number, partlyRead: number, launcherDegraded: number, byBackend: Record<string, number>, noneWhy: Record<string, number> }} MemoryTally
  */
 
 /** @returns {MemoryTally} */
@@ -30,8 +30,9 @@ export function newMemoryTally() {
     rules: 0,
     externals: 0,
     covered: 0,
-    failed: 0,
-    truncated: 0,
+    notRead: 0,
+    partlyRead: 0,
+    launcherDegraded: 0,
     byBackend: {},
     noneWhy: {},
   }
@@ -78,9 +79,8 @@ export function tallyMemory(t, r) {
   const o = /** @type {Record<string, unknown>} */ (m)
   t.carrying++
   t.covered += count(o['covered'])
-  if (text(o['truncated'], '')) t.truncated++
-  if (text(o['queryError'], '')) t.failed++
   const source = o['source']
+  tallyDegraded(t, o, source === 'recalled')
   if (source === 'launcher') {
     t.nested++
     return
@@ -100,14 +100,26 @@ export function tallyMemory(t, r) {
   bump(t.noneWhy, noneClass(text(o['why'], 'no reason recorded'), text(o['backend'], 'an unnamed backend'), text(o['queryError'], '')))
 }
 
+/**
+ * A run whose memory may not have read the store: handed a launcher's degraded recall, partly read (a failed call or a
+ * truncated answer beside records), or not read (a failed query, a dead agent or a truncated answer, nothing found).
+ * @param {MemoryTally} t @param {Record<string, unknown>} o @param {boolean} recalled @returns {void}
+ */
+function tallyDegraded(t, o, recalled) {
+  const has = (/** @type {string} */ k) => text(o[k], '') !== ''
+  if (has('recallDegraded')) t.launcherDegraded++
+  else if (recalled && (has('queryError') || has('truncated'))) t.partlyRead++
+  else if (!recalled && (has('queryError') || has('recallDied') || has('truncated'))) t.notRead++
+}
+
 /** @param {Record<string, number>} counts @returns {Array<[string, number]>} */
 const ranked = counts => Object.entries(counts).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
 
 /** The recalls that may not have read the store, as one line; none when every run read it. @param {MemoryTally} t @returns {string[]} */
 const degradedLines = t =>
-  t.failed || t.truncated
+  t.notRead || t.partlyRead || t.launcherDegraded
     ? [
-        `- DEGRADED — ${t.failed} recall(s) whose backend query may have failed, all or part (not read, not "no memory") · ${t.truncated} read only part of the backend's answer`,
+        `- DEGRADED — ${t.notRead} recall(s) not read (a failed backend query, a dead agent or a truncated answer — not "no memory") · ${t.partlyRead} partly read (a failed call or a truncated answer beside records) · ${t.launcherDegraded} handed a launcher's degraded recall`,
       ]
     : []
 

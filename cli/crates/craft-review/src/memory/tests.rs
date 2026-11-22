@@ -210,7 +210,7 @@ fn a_launchers_degraded_recall_handed_on_is_named_and_degraded_with_what_applied
     );
     assert_eq!(
         m.source.line(),
-        "memory: none — not recalled — the launcher asked for none (--no-recall): only its own records apply; the launcher's recall may not have read the whole store: iskron_search(q: \"\") refused: q required"
+        "memory: not read — not recalled — the launcher asked for none (--no-recall): only its own records apply; the launcher's recall may not have read the whole store: iskron_search(q: \"\") refused: q required"
     );
     assert_eq!(
         m.source.degraded_notes(),
@@ -271,15 +271,48 @@ fn a_recall_that_partly_failed_applies_its_records_and_is_degraded_naming_the_ca
 }
 
 #[test]
-fn a_dead_recall_agent_is_named_as_a_failed_query() {
+fn a_dead_recall_agent_is_named_apart_from_a_failed_query() {
     let r = super::recall::read(None, 0, 0);
+    assert!(r.source.query_error.is_none());
     assert_eq!(
-        r.source.query_error.as_deref(),
+        r.source.recall_died.as_deref(),
         Some("the recall agent died or returned no decision list")
     );
     assert!(
         r.source
             .line()
             .starts_with("memory: not read — the recall agent died")
+    );
+}
+
+#[test]
+fn a_note_of_exactly_the_bound_is_kept_whole_and_one_past_it_is_cut_to_it() {
+    let max = super::degraded::RECALL_NOTE_MAX;
+    let exact = "e".repeat(max);
+    assert_eq!(
+        super::degraded::bounded(&exact).as_deref(),
+        Some(exact.as_str())
+    );
+    let past = super::degraded::bounded(&"e".repeat(max + 1)).unwrap();
+    assert_eq!(
+        (past.encode_utf16().count(), past.ends_with('…')),
+        (max, true)
+    );
+}
+
+#[test]
+fn a_partly_failed_recall_of_externals_alone_says_it_read_them() {
+    let answer = json!({
+        "backend": "kg", "why": "w", "decisions": [], "questions": [], "rules": [],
+        "externals": [{"kind": "external", "title": "kube-ovn", "system": "kube-ovn", "scope": "src"}],
+        "queryError": "kg_search(rule) refused", "truncated": "3 of 5 shown"
+    });
+    let m = super::merge::merge(super::recall::read(Some(&answer), 0, 0), None, &[]);
+    assert_eq!(
+        m.source.degraded_notes(),
+        [
+            "memory: recall partly failed — backend query may have failed: kg_search(rule) refused; the 1 external system(s) it returned were read, others may be missing",
+            "memory: recall read only part of the backend's answer (3 of 5 shown): the records past it were not applied",
+        ]
     );
 }

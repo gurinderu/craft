@@ -8,7 +8,8 @@
 export const RECALL_NOTE_MAX = 300
 
 /**
- * A recall's note as one line: control characters dropped, whitespace collapsed, cut to RECALL_NOTE_MAX; '' when blank.
+ * A recall's note as one line: control characters dropped, whitespace collapsed, cut by code points to RECALL_NOTE_MAX
+ * UTF-16 units, its `…` included, as the binary's `clip` cuts it (no lone surrogate); '' when blank.
  * @param {unknown} v @returns {string}
  */
 export function recallNote(v) {
@@ -17,7 +18,21 @@ export function recallNote(v) {
     .join('')
     .replace(/\s+/g, ' ')
     .trim()
-  return s.length > RECALL_NOTE_MAX - 1 ? `${s.slice(0, RECALL_NOTE_MAX - 1)}…` : s
+  return cutUnits(s, RECALL_NOTE_MAX)
+}
+
+/**
+ * `s` when it is at most `max` UTF-16 units, else cut by code points to `max`, its `…` included.
+ * @param {string} s @param {number} max @returns {string}
+ */
+function cutUnits(s, max) {
+  if (s.length <= max) return s
+  let kept = ''
+  for (const c of s) {
+    if (kept.length + c.length > max - 1) break
+    kept += c
+  }
+  return `${kept}…`
 }
 
 /** A C0 or C1 control character, or DEL. @param {number} code @returns {boolean} */
@@ -37,33 +52,50 @@ const appliedInstead = m =>
     ? `only the launcher's own records were applied (${String(m.passed)} accepted, less any the store's inactive records held back)`
     : "none of the project's decisions or rules were applied"
 
+/** What a partly failed recall returned and applied. @param {{ count?: number, externals?: number }} m @returns {string} */
+const returned = m =>
+  !m.count && m.externals
+    ? `the ${String(m.externals)} external system(s) it returned were read`
+    : `the ${String(m.count ?? 0)} record(s) it returned were applied`
+
+/** @typedef {{ source?: string, count?: number, externals?: number, queryError?: string, recallDied?: string, truncated?: string, recallDegraded?: string, passed?: number }} DegradedSource */
+
 /**
- * The degraded notes of a memory source: a failed query (all of it, or part, the records it returned applied), a
- * truncated answer, a launcher's degraded recall; [] when it read the store whole.
- * @param {{ source?: string, count?: number, queryError?: string, truncated?: string, recallDegraded?: string, passed?: number }} m @returns {string[]}
+ * A failed query's note: partly, beside the records it returned, or not read at all. @param {DegradedSource} m @param {string} q
+ * @returns {string}
  */
-export function memoryDegradedNotes(m) {
-  const failed =
-    m.source === 'recalled'
-      ? `memory: recall partly failed — backend query may have failed: ${m.queryError ?? ''}; the ${String(m.count ?? 0)} record(s) it returned were applied, others may be missing`
-      : `memory: not read — recall found nothing, backend query may have failed: ${m.queryError ?? ''}; ${appliedInstead(m)}`
+const failedNote = (m, q) =>
+  m.source === 'recalled'
+    ? `recall partly failed — backend query may have failed: ${q}; ${returned(m)}, others may be missing`
+    : `not read — recall found nothing, backend query may have failed: ${q}; ${appliedInstead(m)}`
+
+/**
+ * The degraded notes of a memory source without their `memory: ` lead: a failed query (all of it, or part), a recall
+ * agent that gave no answer, a truncated answer, a launcher's degraded recall; [] when it read the store whole.
+ * @param {DegradedSource} m @returns {string[]}
+ */
+function degradedCauses(m) {
   return [
-    ...(m.queryError ? [failed] : []),
-    ...(m.truncated ? [`memory: recall read only part of the backend's answer (${m.truncated}): the records past it were not applied`] : []),
-    ...(m.recallDegraded
-      ? [`memory: the launcher's recall may not have read the whole store (${m.recallDegraded}): only the records it handed on were applied`]
-      : []),
+    ...(m.queryError ? [failedNote(m, m.queryError)] : []),
+    ...(m.recallDied ? [`not read — ${m.recallDied}; ${appliedInstead(m)}`] : []),
+    ...(m.truncated ? [`recall read only part of the backend's answer (${m.truncated}): the records past it were not applied`] : []),
+    ...(m.recallDegraded ? [`the launcher's recall may not have read the whole store (${m.recallDegraded}): only the records it handed on were applied`] : []),
   ]
 }
 
+/** The degraded notes of a memory source, as the binary words them. @param {DegradedSource} m @returns {string[]} */
+export const memoryDegradedNotes = m => degradedCauses(m).map(n => `memory: ${n}`)
+
+/** Whether a source read none of the store it meant to. @param {DegradedSource} m @returns {boolean} */
+export const notRead = m => Boolean(m.queryError || m.truncated || m.recallDied || m.recallDegraded)
+
 /**
- * What a launching engine tells the reviews it starts of its own recall's degradation (`_recallDegraded`): its notes as
- * one bounded line, '' when it read the store whole.
- * @param {Parameters<typeof memoryDegradedNotes>[0]} m @returns {string}
+ * What a launching engine tells the reviews it starts of its own recall's degradation (`_recallDegraded`): each cause
+ * bounded on its own, so a long one does not push out the others, joined in one line; '' when it read the store whole.
+ * @param {DegradedSource} m @returns {string}
  */
-export const forwardedDegraded = m =>
-  recallNote(
-    memoryDegradedNotes(m)
-      .map(n => n.replace(/^memory: /, ''))
-      .join('; '),
-  )
+export const forwardedDegraded = m => {
+  const causes = degradedCauses(m)
+  const each = Math.floor((RECALL_NOTE_MAX - 2 * Math.max(causes.length - 1, 0)) / Math.max(causes.length, 1))
+  return causes.map(c => cutUnits(c, each)).join('; ')
+}

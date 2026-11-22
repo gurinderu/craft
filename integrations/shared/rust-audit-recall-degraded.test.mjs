@@ -74,11 +74,11 @@ test('rust-audit: a truncated recall and a partly failed one are forwarded with 
 })
 
 test('rust-audit: a recall agent that died or threw is forwarded as failed, not clean', async () => {
-  forwarded(await audit(null), /^not read — recall found nothing, backend query may have failed: the recall agent died/)
+  forwarded(await audit(null), /^not read — the recall agent died or returned no decision list/)
   const threw = await audit(() => {
     throw new Error('budget wall')
   })
-  forwarded(threw, /^not read — recall found nothing, backend query may have failed: the recall agent (did not run|died)/)
+  forwarded(threw, /^not read — the recall agent (did not run|died)/)
 })
 
 test("rust-audit: a launcher's degraded recall is kept, named and handed on", async () => {
@@ -92,4 +92,13 @@ test('rust-audit: a clean empty recall forwards no _recallDegraded and reads as 
   for (const a of nestedArgs(r.calls)) assert.ok(!('_recallDegraded' in a))
   assert.match(r.report, /## Memory\n- memory: none — /)
   assert.doesNotMatch(r.report, /degraded: memory/)
+})
+
+test("rust-audit: a launcher's unreadable _recallDegraded is itself a degradation; a clean launcher recall forwards none", async () => {
+  for (const bad of ['   ', 7, '\u001b']) {
+    const r = await audit(null, { _recalled: true, priorDecisions: [REC], _recallDegraded: bad })
+    forwarded(r, /^the launcher's recall may not have read the whole store \(the launcher passed an unreadable _recallDegraded/)
+  }
+  const clean = await audit(null, { _recalled: true, priorDecisions: [REC] })
+  for (const a of nestedArgs(clean.calls)) assert.ok(!('_recallDegraded' in a))
 })
