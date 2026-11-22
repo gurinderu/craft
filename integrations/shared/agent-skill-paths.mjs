@@ -17,12 +17,36 @@ export const hasSkillTool = tools => /(^|[^A-Za-z])Skill([^A-Za-z]|$)/.test(tool
  * @param {string} body @param {Iterable<string>} skills @returns {string[]}
  */
 export function namedSkills(body, skills) {
-  return [...skills]
-    .filter(s => {
-      const esc = s.replace(/[-]/g, '\\-')
-      return new RegExp(`craft:${esc}(?![a-z0-9-])|(?<![a-z0-9-])\`?${esc}\`?(?:'s)? skill|\`${esc}\``).test(body)
-    })
-    .sort()
+  return [...skills].filter(s => namesSkill(body, s)).sort()
+}
+
+/** @param {string | undefined} c */
+const isNameChar = c => c != null && /[a-z0-9-]/.test(c)
+
+/** Every index `needle` starts at in `body`. @param {string} body @param {string} needle */
+function* indexesOf(body, needle) {
+  for (let i = body.indexOf(needle); i !== -1; i = body.indexOf(needle, i + 1)) yield i
+}
+
+/** Whether `body` names skill `s` in one of the forms `namedSkills` reads. @param {string} body @param {string} s */
+function namesSkill(body, s) {
+  if (body.includes(`\`${s}\``)) return true
+  const prefixed = `craft:${s}`
+  if ([...indexesOf(body, prefixed)].some(i => !isNameChar(body[i + prefixed.length]))) return true
+  return [...indexesOf(body, s)].some(i => skillWordAt(body, s, i))
+}
+
+/**
+ * Whether the name at `i` reads as "<s> skill": no name character right before it (a backtick is none),
+ * an optional backtick and `'s` after it, then " skill".
+ * @param {string} body @param {string} s @param {number} i
+ */
+function skillWordAt(body, s, i) {
+  if (isNameChar(body[i - 1])) return false
+  let end = i + s.length
+  if (body[end] === '`') end += 1
+  if (body.startsWith("'s", end)) end += 2
+  return body.startsWith(' skill', end)
 }
 
 /**
