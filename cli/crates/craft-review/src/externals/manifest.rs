@@ -4,6 +4,7 @@ pub(super) mod lines;
 mod paths;
 pub(super) mod patterns;
 mod pins;
+mod scalar;
 
 use super::{Error, candidate::Candidate, pattern::Engine};
 pub(super) use paths::kind;
@@ -48,9 +49,11 @@ pub(super) fn candidates(engine: &Engine, file: &str, text: &str) -> Result<Vec<
     };
     let mut out: Vec<Candidate> = Vec::new();
     for raw in raw {
-        if let Some(c) = Candidate::checked(engine, raw, file, text)?
-            && !out.iter().any(|o| o.system == c.system)
-        {
+        // A system already found keeps its first candidate: a later one is not read at all.
+        if out.iter().any(|o| o.system == raw.system) {
+            continue;
+        }
+        if let Some(c) = Candidate::checked(engine, raw, file, text)? {
             out.push(c);
         }
     }

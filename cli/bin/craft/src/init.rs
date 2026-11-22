@@ -2,7 +2,7 @@
 //! agent session, where the binary cannot prompt. `--propose` prints what the profile holds, the
 //! project memory's `external` records the session pipes in, each with the revision its version
 //! file names now (node #470, option (a); [`memory`]), and the candidates the repository's
-//! deployment manifests name (the discovery of `integrations/shared/craft-externals.mjs`, node #435) as JSON; the
+//! deployment manifests name (the native discovery of `craft_review::externals`, node #435) as JSON; the
 //! host session asks the reviewer which systems the code talks to and at which deployed tag or
 //! commit, then `--write` stores exactly those. Beside them, the CI map (node #482): the checks
 //! of the repository's workflows that carry clippy, test, fmt or build, which the gate reads when
@@ -170,8 +170,8 @@ fn discover(cwd: &Path, known: &[IntegrationPoint], recalled: &memory::Recalled)
     ))
 }
 
-/// What `integrations/shared/craft-externals.mjs <verb> --repo-root <top> <rest…>` prints, `stdin` handed to it as
-/// JSON; its `{"error"}` is an error.
+/// What `craft_review::externals` answers for `<verb>` over the repository's top, `stdin` its
+/// records as JSON; a refusal is an error.
 fn externals(cwd: &Path, args: &[&str], stdin: &Value) -> Result<Value> {
     let top = git::toplevel(cwd)?;
     let input = craft_store::js::Js::from(stdin);
@@ -187,7 +187,7 @@ fn externals(cwd: &Path, args: &[&str], stdin: &Value) -> Result<Value> {
     }
     .map_err(|e| {
         anyhow::anyhow!(
-            "integrations/shared/craft-externals.mjs {verb} refused: {}",
+            "craft's native external {verb} (craft_review::externals) refused: {}",
             craft_store::js::Js::str(e.message()).compact()
         )
     })?;

@@ -4,10 +4,9 @@ use craft_store::js::{self, Js, Obj};
 use std::io::{Read, Write};
 use std::process::ExitCode;
 
-#[derive(Debug, clap::Args)]
-#[command(disable_help_flag = true, disable_version_flag = true)]
+/// The raw arguments after `__craft-externals`, taken before clap sees them.
+#[derive(Debug)]
 pub struct Args {
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true, num_args = 0..)]
     pub argv: Vec<String>,
 }
 

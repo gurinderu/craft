@@ -44,8 +44,6 @@ enum Command {
     FileRun,
     #[command(name = "__craft-process-identity", hide = true)]
     ProcessIdentity(process_identity::Args),
-    #[command(name = "__craft-externals", hide = true, disable_help_flag = true)]
-    Externals(externals::Args),
 }
 
 #[derive(Subcommand)]
@@ -165,7 +163,6 @@ async fn dispatch() -> anyhow::Result<ExitCode> {
         Command::Runs(args) => runs::runs(&args),
         Command::FileRun => filing_worker::worker(),
         Command::ProcessIdentity(args) => process_identity::run(&args),
-        Command::Externals(args) => externals::run(&args),
         Command::Hook(HookCommand::SessionStart) => hook::role_hook(hook::RoleHook::SessionStart),
         Command::Hook(HookCommand::UserPrompt) => hook::role_hook(hook::RoleHook::UserPrompt),
         Command::Hook(HookCommand::SubagentStart) => hook::role_hook(hook::RoleHook::SubagentStart),

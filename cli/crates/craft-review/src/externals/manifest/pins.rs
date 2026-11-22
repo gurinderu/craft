@@ -12,14 +12,12 @@ fn base(url: &str) -> &str {
 
 pub(super) fn candidates(engine: &Engine, doc: &Document<'_>) -> Result<Vec<Raw>, Error> {
     let mut out = Vec::new();
-    for line in &doc.lines {
-        let Some(m) = engine.captures(
-            r#"^[ \t]*source[ \t]*=[ \t]*"git::([^"?\s]+)\?((?:[^"\s]*&)?ref=)([^"&\s]+)[^"\s]*""#,
-            line.raw,
-        )?
-        else {
-            continue;
-        };
+    let raws: Vec<&str> = doc.lines.iter().map(|l| l.raw).collect();
+    let found = engine.captures_all(
+        r#"^[ \t]*source[ \t]*=[ \t]*"git::([^"?\s]+)\?((?:[^"\s]*&)?ref=)([^"&\s]+)[^"\s]*""#,
+        &raws,
+    )?;
+    for m in found.into_iter().flatten() {
         let get = |i| m.get(i).map_or("", String::as_str);
         let (url, query, version) = (get(1), get(2), get(3));
         let base = base(url);

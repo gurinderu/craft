@@ -1,4 +1,5 @@
-use super::super::{Error, pattern::Engine, text};
+use super::super::{Error, pattern::Engine};
+use super::scalar::scalars;
 
 pub(in super::super) struct Key {
     pub col: usize,
@@ -19,61 +20,51 @@ pub(in super::super) struct Document<'a> {
     pub lines: Vec<Line<'a>>,
 }
 
-fn scalar(engine: &Engine, raw: &str) -> Result<String, Error> {
-    let comment = raw.char_indices().find(|(i, c)| {
-        *c == '#' && (*i == 0 || raw.get(..*i).is_some_and(|s| s.ends_with([' ', '\t'])))
-    });
-    let v = raw
-        .get(..comment.map_or(raw.len(), |(i, _)| i))
-        .unwrap_or("")
-        .trim_matches(text::whitespace);
-    let unquoted = engine.captures(r#"^(["'])(.*)\1$"#, v)?;
-    let s = unquoted
-        .as_ref()
-        .and_then(|m| m.get(2))
-        .map_or(v, String::as_str);
-    if s.is_empty() || engine.matches(r#"^[{}[\]|>&*!`$\s"']|\{\{|\$\{|\s"#, s)? {
-        return Ok(String::new());
-    }
-    Ok(s.to_owned())
-}
-
-fn key_line(engine: &Engine, line: &str) -> Result<Option<Key>, Error> {
-    let Some(m) = engine.captures(
-        r"^([ \t]*)(-[ \t]+)?([A-Za-z_][A-Za-z0-9_.-]*):(?:[ \t]+(.*?))?[ \t\r]*$",
-        line,
-    )?
-    else {
-        return Ok(None);
-    };
-    let get = |i| m.get(i).map_or("", String::as_str);
-    let col = get(1).len() + get(2).len();
-    Ok(Some(Key {
-        col,
-        dash: !get(2).is_empty(),
-        key: get(3).into(),
-        value: scalar(engine, get(4))?,
-        rest: line
-            .get(col..)
-            .unwrap_or("")
-            .trim_end_matches([' ', '\t', '\r'])
-            .into(),
-    }))
+const KEY: &str = r"^([ \t]*)(-[ \t]+)?([A-Za-z_][A-Za-z0-9_.-]*):(?:[ \t]+(.*?))?[ \t\r]*$";
+const BLANK: &str = r"^[ \t]*(?:#.*)?\r?$";
+fn key_lines(engine: &Engine, lines: &[&str]) -> Result<Vec<Option<Key>>, Error> {
+    let found = engine.captures_all(KEY, lines)?;
+    let get = |m: &[String], i: usize| m.get(i).map_or("", String::as_str).to_owned();
+    let raws: Vec<String> = found.iter().flatten().map(|m| get(m, 4)).collect();
+    let refs: Vec<&str> = raws.iter().map(String::as_str).collect();
+    let mut values = scalars(engine, &refs)?.into_iter();
+    Ok(lines
+        .iter()
+        .zip(found)
+        .map(|(line, m)| {
+            let m = m?;
+            let col = get(&m, 1).len() + get(&m, 2).len();
+            Some(Key {
+                col,
+                dash: !get(&m, 2).is_empty(),
+                key: get(&m, 3),
+                value: values.next().unwrap_or_default(),
+                rest: line
+                    .get(col..)
+                    .unwrap_or("")
+                    .trim_end_matches([' ', '\t', '\r'])
+                    .into(),
+            })
+        })
+        .collect())
 }
 
 impl<'a> Document<'a> {
     pub(in super::super) fn new(engine: &Engine, text: &'a str) -> Result<Self, Error> {
-        let lines = text
-            .split('\n')
-            .map(|raw| {
-                Ok(Line {
-                    raw,
-                    key: key_line(engine, raw)?,
-                    blank: engine.matches(r"^[ \t]*(?:#.*)?\r?$", raw)?,
-                    lead: raw.len() - raw.trim_start_matches([' ', '\t']).len(),
-                })
+        let raws: Vec<&str> = text.split('\n').collect();
+        let keys = key_lines(engine, &raws)?;
+        let blanks = engine.captures_all(BLANK, &raws)?;
+        let lines = raws
+            .into_iter()
+            .zip(keys)
+            .zip(blanks)
+            .map(|((raw, key), blank)| Line {
+                raw,
+                key,
+                blank: blank.is_some(),
+                lead: raw.len() - raw.trim_start_matches([' ', '\t']).len(),
             })
-            .collect::<Result<_, Error>>()?;
+            .collect();
         Ok(Self { lines })
     }
 

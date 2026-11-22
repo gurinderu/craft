@@ -1,3 +1,4 @@
+mod cost;
 mod files;
 mod manifests;
 mod memory;
