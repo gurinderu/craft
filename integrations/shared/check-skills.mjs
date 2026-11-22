@@ -76,6 +76,7 @@ export function lintSkill(dirName, keys) {
 /** @type {Readonly<Record<string, string>>} */
 export const MODEL_PER_CALL = {
   'engine-service': 'the engines launch it for steps on different models, and each launch passes its own (integrations/shared/service-agent.mjs)',
+  'review-task': 'the review driver launches it for tasks on different models, each with the model the binary names (integrations/shared/cli-review-task.mjs)',
 }
 
 // Lint one agent's frontmatter. `fileBase` is the agent file's basename without .md (its id).

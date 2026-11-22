@@ -16,6 +16,18 @@ const TASK_AGENTS = new Map([
   ['rust-reviewer', { agentType: 'craft:rust-reviewer' }],
   ['nix-reviewer', { agentType: 'craft:nix-reviewer' }],
 ])
+// A task naming no agent runs on craft's lean task agent (integrations/claude-code/agents/review-task.md: tools Read, Grep,
+// Glob and Bash, `omitClaudeMd: true`, no model — each task passes its own): with no Skill tool it gets no skill
+// listing, with no MCP tool no deferred-tool list, and it starts without the consumer's CLAUDE.md, which the
+// default `workflow-subagent` type loads into every agent (Claude Code 2.1.319, read in its installed package).
+// Not for a task whose prompt needs more: the memory's recall (the Skill tool, MCP servers, the harness's memory)
+// and a task that asks for the code graph's MCP tools (`graph`, the binary's wire) keep the default type.
+const REVIEW_TASK_AGENT = 'craft:review-task'
+const DEFAULT_TYPE_KINDS = new Set(['recall', 'warmup'])
+/** Whether an untyped task runs on the lean task agent. @param {Task} t @returns {boolean} */
+const onTaskAgent = t => t.graph !== true && t.kind !== undefined && !DEFAULT_TYPE_KINDS.has(t.kind)
+const LEAN = { agentType: REVIEW_TASK_AGENT }
+
 const TASK_MODELS = new Map([
   ['opus', 'opus'],
   ['sonnet', 'sonnet'],
@@ -43,17 +55,21 @@ const taskPrompt = t =>
   `Read the file ${t.promptFile} and do exactly what it says: it is your whole task — run no gate, give no verdict and write no run record of your own beyond what it asks. When done, write your final answer as JSON matching the schema in ${t.schemaFile} to ${t.answerFile} (create the directory if needed) and nothing else — without a Write tool, through Bash with a quoted heredoc: \`cat > ${shq(t.answerFile)} <<'JSON'\` — then reply with the single word done.`
 
 /** @typedef {{ agent: string, count: number, shipped: boolean, why?: string }} Fallen  tasks of one agent that ran on the default type, and what its first failure said */
+/** Why the default type ran a task in its agent's place, as a note says it. @param {Fallen} x @returns {string} */
+const whyFallen = x => (x.why ? `the first ${x.why}` : 'the agent is not registered in this session, or it failed')
 
 /**
  * The task runner of one run: a task naming an agent this plugin ships runs on it (realm @nick/craft, node #465);
- * one naming no agent, or an agent the plugin does not ship (logged once), on the default type. A typed task that
+ * one naming no agent on the lean task agent (REVIEW_TASK_AGENT), unless its prompt needs a tool that agent lacks; one
+ * naming an agent the plugin does not ship (logged once), on the default type. A task on a plugin agent that
  * throws or returns nothing is re-run once on the default type without memory, and the type retired only on the
  * recognised missing-type wording: tasks run in a parallel batch, so concurrent failures say nothing about the type —
  * the lens soft path (integrations/shared/agent-type-fallback.mjs, `retireOnRepeat: false`; realm @nick/craft #113, #152); the prompt
- * is self-contained, so the default type can run it. A null from an
- * untyped task leaves no answer file, which the binary asks for again.
+ * is self-contained, so the default type can run it. A null from a task on the default type leaves no answer file,
+ * which the binary asks for again.
  * `degraded(round)`: what ran on the default type in place of the agent its task named since the last call, as the
- * notes `craft review submit --degraded` takes, so the report says the run was weaker (realm #113, #116).
+ * notes `craft review submit --degraded` takes, so the report says the run was weaker (realm #113, #116); the lean task
+ * agent's fallback, which costs more but judges the same, is logged instead.
  * `stopped`: the run dispatches no more work (the usage limit), so a typed task's null is not re-run on the default type.
  * Every task races its kind's deadline, one budget shared by its re-run on the default type
  * (integrations/shared/cli-review-deadline.mjs): one past it is abandoned as dead and never re-run; `abandoned()` names those since
@@ -103,7 +119,10 @@ export function taskRunner(sb, stopped = () => false) {
     // generic agent is not the consumer's reviewer; a dead one leaves no answer, which the binary names.
     if (t.consumerAgent !== undefined) return runConsumer(t, t.consumerAgent, cut)
     const opts = { label: t.label, phase: 'Agents', model: TASK_MODELS.get(t.model), cut }
-    if (t.agentType === undefined) return settle(await dispatch(taskPrompt(t), opts))
+    // A task asking for the code graph's MCP tools goes to the default type even when it names an agent: no agent
+    // this plugin ships has them.
+    if (t.agentType === undefined || t.graph === true)
+      return onTaskAgent(t) ? fallbackOf(LEAN).run(taskPrompt(t), { ...opts, agentType: LEAN.agentType }) : settle(await dispatch(taskPrompt(t), opts))
     const mapped = TASK_AGENTS.get(t.agentType)
     if (!mapped) {
       if (!unknown.has(t.agentType)) sb.log(`⚠️ task agent '${t.agentType}' is not one this plugin ships — its tasks run on the default agent type`)
@@ -140,7 +159,15 @@ export function taskRunner(sb, stopped = () => false) {
     return out
   }
   /** @param {number} round */
-  const degraded = round => fallen().map(x => degradedNote(round, x))
+  // The lean task agent's fallback costs more and judges the same: a log line, never a degraded note.
+  const degraded = round =>
+    fallen().flatMap(x => {
+      if (x.agent !== REVIEW_TASK_AGENT) return [degradedNote(round, x)]
+      sb.log(
+        `round ${round}: ${x.count} task(s) on \`${x.agent}\` ran on the default agent type instead (${whyFallen(x)}) — the same prompt, so no weaker, only costlier: each such agent also loaded the session's skill listing and project instructions.`,
+      )
+      return []
+    })
   const abandoned = () => {
     const out = cutOff
     cutOff = []
@@ -155,5 +182,5 @@ export function taskRunner(sb, stopped = () => false) {
  */
 const degradedNote = (round, x) =>
   x.shipped
-    ? `round ${round}: ${x.count} task(s) on \`${x.agent}\` ran on the default agent type instead, without its rubric (${x.why ? `the first ${x.why}` : 'the agent is not registered in this session, or it failed'}) — this run is weaker than a normal one, not broken.`
+    ? `round ${round}: ${x.count} task(s) on \`${x.agent}\` ran on the default agent type instead, without its rubric (${whyFallen(x)}) — this run is weaker than a normal one, not broken.`
     : `round ${round}: ${x.count} task(s) named \`${x.agent}\`, which this plugin does not ship, and ran on the default agent type — this run is weaker than a normal one, not broken.`

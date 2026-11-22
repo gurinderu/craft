@@ -97,7 +97,12 @@ pub(crate) fn write_pending(dir: &Path, run: &RunState) -> Result<(), HandoffErr
             return Err(HandoffError::UnsafeId(task.id.clone()));
         }
         let schema = format!("{}\n", serde_json::to_string_pretty(&task.schema)?);
-        let prompt = format!("{}{}", task.prompt_text(), blocked::note(&task.schema)?);
+        let prompt = format!(
+            "{}{}{}",
+            task.prompt_text(),
+            crate::prompts::skills::block(&run.context, &task.prompt),
+            blocked::note(&task.schema)?
+        );
         for (path, text) in [
             (prompt_file(dir, &task.id), prompt),
             (schema_file(dir, &task.id), schema),
@@ -131,6 +136,10 @@ pub fn wire(dir: &Path, task: &Task) -> Value {
     }
     if let (Some(a), Some(obj)) = (&task.consumer_agent, t.as_object_mut()) {
         obj.insert("consumerAgent".into(), json!(a));
+    }
+    // A task whose prompt reaches for the code graph's MCP tools, which a lean agent type lacks.
+    if let (true, Some(obj)) = (task.graph, t.as_object_mut()) {
+        obj.insert("graph".into(), json!(true));
     }
     t
 }

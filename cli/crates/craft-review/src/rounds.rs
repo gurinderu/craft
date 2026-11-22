@@ -171,9 +171,10 @@ fn lens_task(
             slice: slice.map(|(_, s)| s.key.clone()),
         },
     );
-    // Only the lenses run on the profile's agent, as the engine dispatches them
-    // (integrations/shared/review-lens-dispatch.mjs); the scout, the dedup and the verifiers keep the default.
-    task.agent_type = profile.lens_agent;
+    // Only the lenses name the profile's agent, and not a metrics lens, which needs the code graph's
+    // tools; the scout, the dedup and the verifiers name none, and each host picks the agent for those.
+    task.agent_type = profile.agent_of(lens);
+    task.graph = spec.is_some_and(|l| l.metrics);
     task.consumers = crate::validate::listed(&task.prompt, &ctx.consumers);
     Ok(task)
 }
