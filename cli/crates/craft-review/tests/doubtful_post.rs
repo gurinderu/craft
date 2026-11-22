@@ -48,6 +48,7 @@ fn post_to(
         lines_judged: true,
         reviewed,
         branch,
+        record_pr: None,
     };
     publish::post_doubtful(repo, &d, pr, setup, scratch)
 }
@@ -270,4 +271,80 @@ fn a_record_naming_no_reviewed_commit_posts_nothing() {
         );
     }
     assert!(posted(&gh).is_empty());
+}
+
+/// Posts finding 1 of a detached-HEAD record (no branch) reviewed at `reviewed`, which published
+/// on `record_pr`, on `pr` when named.
+fn post_detached(
+    (repo, scratch): (&Path, &Path),
+    reviewed: &str,
+    (record_pr, pr): (Option<u64>, Option<u64>),
+    setup: &PostSetup,
+) -> Result<Posting, PostError> {
+    let fs = findings();
+    let d = Doubtful {
+        findings: &fs,
+        n: 1,
+        question: true,
+        lines_judged: true,
+        reviewed: Some(reviewed),
+        branch: Some("HEAD"),
+        record_pr,
+    };
+    publish::post_doubtful(repo, &d, pr, setup, scratch)
+}
+
+#[test]
+fn a_detached_runs_finding_goes_on_the_pr_it_published_on() {
+    let (repo, out) = (fixture(true), tempfile::tempdir().unwrap());
+    let (gh, h) = (out.path().join("gh"), head(repo.path()));
+    let setup = stand_in(&gh, &h);
+    std::fs::write(gh.join("branch"), "feat/elsewhere").unwrap();
+    let at = (repo.path(), out.path());
+    let e = post_detached(at, &h, (Some(7), Some(8)), &setup).unwrap_err();
+    assert!(
+        matches!(&e, PostError::Pr(w) if w.contains("PR #8 is not PR #7")),
+        "{e}"
+    );
+    let p = post_detached(at, &h, (Some(7), None), &setup).unwrap();
+    assert_eq!((p.pr, p.posted), (7, true));
+    let calls = std::fs::read_to_string(gh.join("calls")).unwrap();
+    assert!(calls.contains("pr view 7 --json"), "{calls}");
+    assert!(
+        !calls.contains("pr list"),
+        "the record's PR, no lookup by branch: {calls}"
+    );
+}
+
+#[test]
+fn a_detached_run_that_published_nothing_takes_a_named_same_repo_pr_holding_its_commit() {
+    let (repo, out) = (fixture(true), tempfile::tempdir().unwrap());
+    let (gh, h) = (out.path().join("gh"), head(repo.path()));
+    let setup = stand_in(&gh, &h);
+    let at = (repo.path(), out.path());
+    let e = post_detached(at, &h, (None, None), &setup).unwrap_err();
+    assert!(
+        matches!(&e, PostError::Pr(w) if w.contains("names no branch and no PR")),
+        "{e}"
+    );
+    let p = post_detached(at, &h, (None, Some(7)), &setup).unwrap();
+    assert!(p.posted);
+    std::fs::write(gh.join("fork"), "").unwrap();
+    let e = post_detached(at, &h, (None, Some(7)), &setup).unwrap_err();
+    assert!(
+        matches!(&e, PostError::Pr(w) if w.contains("comes from a fork")),
+        "{e}"
+    );
+    let e = post_detached(at, &h, (Some(7), None), &setup).unwrap_err();
+    assert!(
+        matches!(&e, PostError::Pr(w) if w.contains("comes from a fork")),
+        "{e}"
+    );
+    std::fs::remove_file(gh.join("fork")).unwrap();
+    std::fs::write(gh.join("head"), "e".repeat(40)).unwrap();
+    let e = post_detached(at, &h, (None, Some(7)), &setup).unwrap_err();
+    assert!(
+        matches!(&e, PostError::Pr(w) if w.contains("does not hold the reviewed commit")),
+        "{e}"
+    );
 }

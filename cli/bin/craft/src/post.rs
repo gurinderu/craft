@@ -63,6 +63,8 @@ struct Record {
     judged: bool,
     head: Option<String>,
     branch: Option<String>,
+    /// The PR the run published on (`prComments.pr`), when it names one.
+    pr: Option<u64>,
 }
 
 fn read_record(file: &Path) -> Result<Record, String> {
@@ -81,6 +83,11 @@ fn read_record(file: &Path) -> Result<Record, String> {
         judged: sorting.and_then(|s| s.get("inDiffJudged")) != Some(&Value::Bool(false)),
         head: text_of("head"),
         branch: text_of("branch"),
+        pr: r
+            .get("prComments")
+            .and_then(|p| p.get("pr"))
+            .and_then(Value::as_u64)
+            .filter(|&n| n > 0),
     })
 }
 
@@ -122,6 +129,7 @@ fn posted(args: &PostArgs) -> Result<Value, Stop> {
         lines_judged: rec.judged,
         reviewed: rec.head.as_deref(),
         branch: rec.branch.as_deref(),
+        record_pr: rec.pr,
     };
     let scratch = crate::scratch::dir("craft-post")?;
     let posting = publish::post_doubtful(&repo, &d, args.pr, &PostSetup::default(), &scratch);

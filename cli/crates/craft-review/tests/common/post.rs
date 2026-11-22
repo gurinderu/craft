@@ -17,7 +17,8 @@ use serde_json::{Map, Value, json};
 use super::{lens, opts, scout, titled, verdict};
 
 /// A stand-in `gh` in `dir`: it logs each call, answers `pr view` and `pr list` with PR 7 at the
-/// head in `dir/head` on the branch in `dir/branch` (`pr list` with `dir/prs` when it exists),
+/// head in `dir/head` on the branch in `dir/branch` (`pr view` a fork's while `dir/fork` exists,
+/// `pr list` with `dir/prs` when it exists),
 /// lists the comments it was asked to post (the request files it kept), keeps each
 /// posted request, fails every call while `dir/fail` exists, and refuses a comment on a line with
 /// GitHub's 422 while `dir/no-lines` exists — on a later line of its stderr while
@@ -33,7 +34,8 @@ S='{s}'
 echo "$*" >> "$S/calls"
 if [ -f "$S/fail" ]; then echo "HTTP 401: Bad credentials (https://api.github.com)" >&2; exit 1; fi
 case "$1 $2" in
-  "pr view") printf '{{"number":7,"url":"https://github.com/o/r/pull/7","headRefOid":"%s","headRefName":"%s"}}\n' "$(cat "$S/head")" "$(cat "$S/branch")" ;;
+  "pr view") fork=false; [ -f "$S/fork" ] && fork=true
+    printf '{{"number":7,"url":"https://github.com/o/r/pull/7","headRefOid":"%s","headRefName":"%s","isCrossRepository":%s}}\n' "$(cat "$S/head")" "$(cat "$S/branch")" "$fork" ;;
   "pr list") if [ -f "$S/prs" ]; then cat "$S/prs"; else printf '[{{"number":7,"url":"https://github.com/o/r/pull/7","headRefOid":"%s","headRefName":"%s"}}]\n' "$(cat "$S/head")" "$(cat "$S/branch")"; fi ;;
   "api --paginate") printf '['; first=1
     for f in "$S"/posted/*.json; do [ -e "$f" ] || continue; [ $first = 1 ] || printf ','; first=0; cat "$f"; done

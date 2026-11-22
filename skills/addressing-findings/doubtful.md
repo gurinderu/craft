@@ -23,11 +23,14 @@ The sorting changes nothing in the verdict.
    `--as question` for "ask the author", `--as defect` for "post as a defect"; `<n>` is the number
    in the list. The command reads the finding from the review run's own record (the newest of
    this repository and branch; `--record <file>` names another — a newer review on another branch
-   is refused, not guessed past) and posts it, through `gh`, on the PR of that record's own branch:
-   the one open PR of this repository (never a fork's PR of a branch of the same name) whose head
-   is that branch, or `--pr <number>` when that PR's head branch is the record's — never the PR of
-   whatever is checked out now — and only when that PR's head holds the reviewed commit (its head
-   fetched from `origin` when missing).
+   is refused, not guessed past) and posts it, through `gh`, on the PR that review read — never
+   the PR of whatever is checked out now: the PR the run published on when its record names one
+   (a `pr=<n>` review in a detached worktree; a different `--pr` is refused); else, for a review
+   of a branch, the one open PR of this repository (never a fork's PR of a branch of the same
+   name) whose head is that branch, or `--pr <number>` when that PR's head branch is the record's;
+   else, for a detached-HEAD review that published nothing, `--pr <number>` of this repository.
+   Always only when that PR's head holds the reviewed commit (its head fetched from `origin` when
+   missing).
    The comment is the one the engine would have posted — first line `[Severity] title`, the hidden
    lens and rule lines, for a question its ask and a hidden `<!-- craft-kind: question -->` line,
    the `<!-- craft-finding -->` marker last — so a later reply in that thread is tied to the
@@ -41,8 +44,8 @@ The sorting changes nothing in the verdict.
    done for it; `null` with a warning on stderr when that write failed). Exit 2 refuses what it
    cannot read or tell — no record, a number the record does not list, a finding without a file,
    no single open same-repository PR of the record's branch, a `--pr` of another branch, a PR
-   whose head does not hold the reviewed commit, a record naming no branch, no `gh` answer about
-   the PR; exit 1 is the post failing (`gh` refusing it, a moved head over its line, no reviewed
+   whose head does not hold the reviewed commit, a fork's PR, a detached-HEAD record with neither
+   a PR of its own nor `--pr`, no `gh` answer about the PR; exit 1 is the post failing (`gh` refusing it, a moved head over its line, no reviewed
    commit), named in one line — nothing posted. A file the PR does not touch takes no review
    comment at all: GitHub refuses it; say so to the human and leave that finding to a word with the
    author. **Never post a finding by hand**: a comment without the marker ties nothing.

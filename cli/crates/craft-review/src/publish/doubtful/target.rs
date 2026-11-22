@@ -18,33 +18,20 @@ pub(super) fn full<'a>(d: &Doubtful<'a>) -> Option<&'a str> {
         .filter(|h| matches!(h.len(), 40 | 64) && request::is_sha(h))
 }
 
-/// The pull request of the record's own branch (realm @nick/craft, node #270: the PR is never
-/// guessed by the branch checked out now) whose head holds the reviewed commit `reviewed`: `pr`
-/// when its head branch is the record's; without `pr`, the one open same-repository PR whose head
-/// is the record's branch — a fork's PR of a branch of the same name is not this record's.
+/// The pull request the record's review read (realm @nick/craft, node #270: the PR is never
+/// guessed by the branch checked out now), its head holding the reviewed commit `reviewed`: the PR
+/// the run published on (`prComments.pr`, the PR a detached `pr=<n>` review was started with),
+/// same-repository; else, for a record of a branch, `pr` when its head branch is the record's, or
+/// without `pr` the one open same-repository PR whose head is that branch — a fork's PR of a
+/// branch of the same name is not this record's; else, for a record of a detached HEAD, `pr` when
+/// it is same-repository.
 pub(super) fn which_pr(
     runner: &Runner,
     repo: &Path,
     (d, reviewed): (&Doubtful<'_>, &str),
     pr: Option<u64>,
 ) -> Result<Pr, PostError> {
-    let branch = d.branch.filter(|b| !b.is_empty()).ok_or_else(|| {
-        PostError::Pr("the record names no branch (a review on a detached HEAD), so no PR can be told to be its own: nothing posted".into())
-    })?;
-    let p = match pr {
-        None => only_pr(runner, repo, branch)?,
-        Some(n) => {
-            let p =
-                read::pull_request(runner, repo, Some(&n.to_string())).map_err(PostError::Pr)?;
-            if p.head_ref != branch {
-                return Err(PostError::Pr(format!(
-                    "PR #{n} has head branch {}, not the record's {branch}: name the PR of the reviewed branch",
-                    p.head_ref
-                )));
-            }
-            p
-        }
-    };
+    let p = chosen(runner, repo, d, pr)?;
     if !holds(repo, &p, reviewed) {
         return Err(PostError::Pr(format!(
             "PR #{}'s head {} does not hold the reviewed commit {} (fetched from origin when missing): it is not the PR the review read",
@@ -89,4 +76,50 @@ fn holds(repo: &Path, p: &Pr, reviewed: &str) -> bool {
         ));
     }
     crate::git::holds(repo, &p.head, reviewed)
+}
+
+/// The PR [`which_pr`] takes, before its head is checked.
+fn chosen(
+    runner: &Runner,
+    repo: &Path,
+    d: &Doubtful<'_>,
+    pr: Option<u64>,
+) -> Result<Pr, PostError> {
+    let branch = d.branch.filter(|b| !b.is_empty() && *b != "HEAD");
+    match (d.record_pr, pr, branch) {
+        (Some(rp), Some(n), _) if rp != n => Err(PostError::Pr(format!(
+            "PR #{n} is not PR #{rp}, the one the review published on: drop --pr or name #{rp}"
+        ))),
+        (None, None, Some(b)) => only_pr(runner, repo, b),
+        (None, Some(n), Some(b)) => {
+            let p = view(runner, repo, n)?;
+            if p.head_ref == b {
+                Ok(p)
+            } else {
+                Err(PostError::Pr(format!(
+                    "PR #{n} has head branch {}, not the record's {b}: name the PR of the reviewed branch",
+                    p.head_ref
+                )))
+            }
+        }
+        (Some(n), _, _) | (None, Some(n), None) => same_repo(view(runner, repo, n)?),
+        (None, None, None) => Err(PostError::Pr(
+            "the record names no branch and no PR (a review on a detached HEAD that published nothing): name the PR it reviewed with --pr".into(),
+        )),
+    }
+}
+
+fn view(runner: &Runner, repo: &Path, n: u64) -> Result<Pr, PostError> {
+    read::pull_request(runner, repo, Some(&n.to_string())).map_err(PostError::Pr)
+}
+
+/// `p`, refused when its head is a fork's.
+fn same_repo(p: Pr) -> Result<Pr, PostError> {
+    if p.cross_repository {
+        return Err(PostError::Pr(format!(
+            "PR #{} comes from a fork: a doubtful finding is posted only on a PR of this repository",
+            p.number
+        )));
+    }
+    Ok(p)
 }

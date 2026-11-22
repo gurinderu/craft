@@ -37,6 +37,8 @@ pub struct Doubtful<'a> {
     pub reviewed: Option<&'a str>,
     /// The branch the review ran on, when the record names it.
     pub branch: Option<&'a str>,
+    /// The PR the run published on (`prComments.pr`), when it names one.
+    pub record_pr: Option<u64>,
 }
 
 /// What came of posting it.
