@@ -207,6 +207,9 @@ fn the_no_write_marker_is_a_line_of_its_own_never_part_of_a_sentence_or_a_craft_
         "Do not write here: state lives in the repo.",
         "- do NOT write here",
         "## Do not write here",
+        "# Memory — do not write here",
+        "> **Note:** do not write here",
+        "1. Do not write here",
     ] {
         assert!(
             index::forbids_writes(&format!("# Memory\n{marked}\n")),
@@ -215,6 +218,8 @@ fn the_no_write_marker_is_a_line_of_its_own_never_part_of_a_sentence_or_a_craft_
     }
     for plain in [
         "- [note](note.md) — we said do not write here once",
+        "Note: we do not write here on Fridays",
+        "The rule that we do not write here is gone.",
         "- [decision: do not write here without a lock](decision-0123456789.md) — src",
     ] {
         assert!(!index::forbids_writes(plain), "{plain}");

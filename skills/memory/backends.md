@@ -99,8 +99,12 @@ match. Use the harness's format, not a craft one:
   It rewrites `craft-memory.md` and the migration below in one move, writes only what changed,
   and prints `{indexed, moved, indexWritten, harnessWritten, skipped}` (`skipped`: record files it
   could not read as text, each named). It writes nothing where the directory holds no craft record,
-  and refuses, exiting non-zero and naming why, when `MEMORY.md` says "do not write here" — the
-  refused write below, which the binary honours as an agent's own write does. Without the binary
+  and refuses, exiting non-zero and naming why, when a line of `MEMORY.md` is the no-write marker:
+  after any Markdown prefix (heading `#`s, a quote `>`, a list marker `-` `*` `+` or `N.`,
+  emphasis) and at most one short label ending in `:`, `—` or ` - ` (`Note:`, `Memory —`), the line
+  starts with "do not write here", in any case — never a craft index line, nor the phrase in the
+  middle of a sentence. That is the refused write below, which the binary honours as an agent's
+  own write does. Without the binary
   (no network, no release for the platform), do the same by hand as this list describes, or leave
   the index stale: recall still finds the record.
 - **One pointer line in `MEMORY.md`**, never one line per record: the harness loads `MEMORY.md`

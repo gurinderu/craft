@@ -138,17 +138,55 @@ fn link_target(line: &str) -> Option<&str> {
     Some(target.trim())
 }
 
-/// Whether `MEMORY.md` forbids writes into its directory: a line that is, or starts with, "do not
-/// write here" (trimmed, its Markdown list, heading or quote marker aside, any case) — the marker
-/// the craft:memory skill honours as a refused write. craft's own old-layout index lines never
-/// count, whatever their title says.
+/// The no-write marker the craft:memory skill honours as a refused write.
+const NO_WRITE: &str = "do not write here";
+/// The longest label (`Note:`, `Memory —`) a marker may follow.
+const LABEL_MAX: usize = 40;
+
+/// `text` without its leading Markdown prefix run: whitespace, heading `#`s, quote `>`, list
+/// markers (`-`, `*`, `+`, `N.`, `N)`) and emphasis (`*`, `_`).
+fn strip_prefix_run(mut text: &str) -> &str {
+    loop {
+        let before = text.len();
+        text = text.trim_start_matches([' ', '\t', '#', '>', '-', '*', '+', '_']);
+        let rest = text.trim_start_matches(|c: char| c.is_ascii_digit());
+        if rest.len() < text.len()
+            && let Some(after) = rest.strip_prefix(['.', ')'])
+        {
+            text = after;
+        }
+        if text.len() == before {
+            return text;
+        }
+    }
+}
+
+/// `text` after a short label ending in `:`, `—` or ` - `, when it starts with one.
+fn after_label(text: &str) -> Option<&str> {
+    [":", "—", " - "]
+        .iter()
+        .filter_map(|sep| text.split_once(sep))
+        .filter(|(label, _)| label.chars().count() <= LABEL_MAX)
+        .min_by_key(|(label, _)| label.len())
+        .map(|(_, rest)| rest)
+}
+
+/// Whether one line is the no-write marker: after its Markdown prefix run, and at most one short
+/// label after it, the line starts with "do not write here", in any case.
+fn is_no_write_line(line: &str) -> bool {
+    let marks = |t: &str| t.to_lowercase().starts_with(NO_WRITE);
+    let text = strip_prefix_run(line.trim());
+    marks(text) || after_label(text).is_some_and(|rest| marks(strip_prefix_run(rest)))
+}
+
+/// Whether `MEMORY.md` forbids writes into its directory: one of its lines is the no-write
+/// marker ([`is_no_write_line`]). craft's own old-layout index lines never count, whatever their
+/// title says.
 #[must_use]
 pub fn forbids_writes(harness: &str) -> bool {
-    harness.lines().any(|l| {
-        let own = link_target(l).is_some_and(is_record_name);
-        let text = l.trim().trim_start_matches(['#', '-', '*', '>', ' ', '\t']);
-        !own && text.to_lowercase().starts_with("do not write here")
-    })
+    harness
+        .lines()
+        .any(|l| !link_target(l).is_some_and(is_record_name) && is_no_write_line(l))
 }
 
 /// `MEMORY.md` with every line that indexes one of craft's records (`craft`, the record file
