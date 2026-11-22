@@ -35,8 +35,26 @@ SKILL.md's ("Choosing the backend"); this file only says how to write and search
   `title` and `scope` are always handed on as stored, so the id can be derived again — a review
   engine sets `id` from them itself whenever a record carries a `store:` link or an id not of the
   form `<kind>-<10 hex>`, and `answers:` / `supersedes:` links name skill-rule ids.
-- **Search, don't list**: `recall` calls the server's search with the topic keywords and the scope,
-  then filters the hits by `scope` and `status` — never a full listing.
+- **Recall by the attribute, then narrow** — the same calls every run, each kept with what it
+  answered:
+  1. List the craft records of the kind through the search's **attribute filter** on `craft_kind`
+     (the kind's value, or any value when the filter takes a wildcard, such as `craft_kind:*`),
+     then the same on the bare `kind`. Never a text query on the word `craft_kind` or on a kind
+     name: a text query matches names and bodies, not attributes, and answers "nothing found".
+  2. A search that refuses a call without a text query (it asks for `q`, `query` or the like)
+     gets an empty one (`""`) beside the filter; one that refuses that too, the broadest it takes
+     (`*`) beside the filter — never the filter's words as the query.
+  3. Narrow what was listed by `scope` (to the paths, as "recall" in SKILL.md matches them), then
+     by `status` and the topic keywords — yourself, or through the search's own scope or status
+     filter beside the attribute one; never by a text query per path alone, and never a listing of
+     the whole store with no attribute filter.
+- **An empty recall that may have failed is named, never read as no memory.** When the recall
+  comes back with no record and either a call errored, was refused, or answered not-found for its
+  text query rather than for a filter, or the attribute listing (step 1) came back empty while the
+  store shows craft records exist (an index, a count the server reports, a craft record seen in any
+  other answer) — never for records the scope narrowing (step 3) left out, a clean answer — say `recall found nothing — backend query may have failed: <the call,
+  its tool and arguments, and its error or answer>`. A review engine's recall agent puts that call
+  and error in its answer's `queryError`; the review then names its memory as degraded.
 - **Supersede** by the server's own means (a status field, a supersede relation, a mode); if it has
   none, write the new item and append `superseded by <id>` to the old one.
 

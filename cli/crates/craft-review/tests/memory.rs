@@ -583,3 +583,41 @@ fn a_priors_deferral_released_by_a_record_that_answers_its_question_counts_again
         "{report}"
     );
 }
+
+#[test]
+fn an_empty_recall_whose_backend_query_failed_reads_as_degraded_not_as_no_memory() {
+    let repo = fixture(true);
+    let out = tempfile::tempdir().unwrap();
+    let error = "iskron_search(q: \"craft_kind\") answered: nodes for query «craft_kind» not found";
+    let failed = json!({
+        "backend": "mcp iskron", "why": "found by capability", "decisions": [],
+        "questions": [], "rules": [], "queryError": error
+    });
+    let (run, s) = recalled_run(repo.path(), out.path(), None, &failed);
+    let s = drive(&run, s, &[]);
+    let line = format!("memory: recall found nothing — backend query may have failed: {error}");
+    let degraded = s["degraded"].as_array().unwrap();
+    assert!(
+        degraded
+            .iter()
+            .any(|d| d.as_str().unwrap().starts_with(&line)),
+        "{degraded:?}"
+    );
+    assert_eq!(s["memory"]["queryError"], json!(error));
+    let report = std::fs::read_to_string(s["report"].as_str().unwrap()).unwrap();
+    assert_contains_all(
+        &report,
+        &[
+            "## Degraded\n",
+            &format!("- {line}"),
+            &format!(
+                "## Memory\n- memory: none — recall found nothing — backend query may have failed: {error} (backend mcp iskron)"
+            ),
+        ],
+    );
+    // A store that answered cleanly with no record is no memory, not a degraded run.
+    let clean = tempfile::tempdir().unwrap();
+    let (run, s) = recalled_run(repo.path(), clean.path(), None, &nothing_recalled());
+    let s = drive(&run, s, &[]);
+    assert!(s.get("degraded").is_none(), "{:?}", s["degraded"]);
+}

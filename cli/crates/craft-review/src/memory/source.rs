@@ -36,6 +36,10 @@ pub struct MemorySource {
     pub derived_named: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backend: Option<String>,
+    /// The backend call an empty recall named as possibly failed (its answer's `queryError`):
+    /// the run's memory is then degraded, not clean.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub query_error: Option<String>,
 }
 
 impl Default for MemorySource {
@@ -59,6 +63,7 @@ impl MemorySource {
             derived: None,
             derived_named: Vec::new(),
             backend: None,
+            query_error: None,
         }
     }
 
@@ -177,6 +182,15 @@ impl MemorySource {
             .map(|d| format!("{} ({})", d.id, cut(&d.title)))
             .collect();
         self
+    }
+
+    /// The degraded note of an empty recall whose backend query may have failed: no record was
+    /// applied, and that is not read as the project having none.
+    #[must_use]
+    pub fn degraded_note(&self) -> Option<String> {
+        self.query_error.as_ref().map(|q| {
+            format!("memory: recall found nothing — backend query may have failed: {q}; the project's decisions and rules were not applied")
+        })
     }
 
     /// As the run record keeps it (`memoryRecord`): the derived ids' titles left out.

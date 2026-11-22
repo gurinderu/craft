@@ -81,7 +81,8 @@ export function memoryRecallPrompt(paths, base) {
  * first DERIVED_NAMED_MAX of them as `<id> (<title, cut>)`; `backend` the store the recall agent named, when it answered;
  * `rules` the project rules among the records, `covered` the findings a rule covered (set by the engine once applied);
  * `externals` the external-system records recalled beside them, never among `count`.
- * @typedef {{ source: 'recalled' | 'launcher' | 'none', count: number, why: string, questions?: number, rules?: number, externals?: number, covered?: number, passed?: number, added?: number, derived?: number, derivedNamed?: string[], backend?: string }} MemorySource
+ * `queryError` the backend call an empty recall named as possibly failed: the memory is degraded, not none.
+ * @typedef {{ source: 'recalled' | 'launcher' | 'none', count: number, why: string, questions?: number, rules?: number, externals?: number, covered?: number, passed?: number, added?: number, derived?: number, derivedNamed?: string[], backend?: string, queryError?: string }} MemorySource
  */
 /** @param {unknown} v @returns {string} */
 export const recallText = v => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim() : '')
@@ -214,7 +215,7 @@ export function readMemoryRecall(raw, cut, grouped = 0) {
       inactive,
       externals,
       knownExternals,
-      memory: { source: 'none', count: 0, why: `${why} (backend ${backend})${stale}${tail}`, backend },
+      memory: emptyRecall(why, recallText(r['queryError']), `(backend ${backend})${stale}${tail}`, backend),
     }
   return {
     decisions: all,
@@ -229,6 +230,17 @@ export function readMemoryRecall(raw, cut, grouped = 0) {
       ...kindCounts(questions.length, rules.length, externals.length),
     },
   }
+}
+
+/**
+ * The source of a recall that found nothing: named as a possibly failed backend query when the agent
+ * gave one (`queryError`), so it never reads as the project having no memory.
+ * @param {string} why @param {string} queryError @param {string} tail @param {string} backend
+ * @returns {MemorySource}
+ */
+function emptyRecall(why, queryError, tail, backend) {
+  if (!queryError) return { source: 'none', count: 0, why: `${why} ${tail}`, backend }
+  return { source: 'none', count: 0, why: `recall found nothing — backend query may have failed: ${queryError} ${tail}`, backend, queryError }
 }
 
 /**

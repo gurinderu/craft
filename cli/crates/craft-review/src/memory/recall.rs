@@ -200,8 +200,13 @@ pub(super) fn read(raw: Option<&Value>, cut: usize, grouped: usize) -> Recalled 
         .map(with_skill_id)
         .collect();
     if records.is_empty() && externals == 0 {
+        let failed = Some(one_line(r.get("queryError"))).filter(|q| !q.is_empty());
+        let why = failed.as_ref().map_or(why, |q| {
+            format!("recall found nothing — backend query may have failed: {q}")
+        });
         let mut source = MemorySource::none(format!("{why} (backend {backend}){stale}{tail}"));
         source.backend = Some(backend);
+        source.query_error = failed;
         return Recalled {
             records,
             source,

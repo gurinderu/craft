@@ -399,6 +399,7 @@ fn listed(heading: Option<&str>, files: &[String], out: &mut String) {
 pub fn degraded_notes(state: &RunState) -> Vec<String> {
     let mut notes = state.degraded.clone();
     notes.extend(skills_note(state));
+    notes.extend(state.memory.source.degraded_note());
     notes.extend(state.gate.unread_note());
     notes.extend(
         consumer_lines::all(state)
@@ -424,11 +425,17 @@ fn skills_note(state: &RunState) -> Option<String> {
 /// How the run was weaker than asked, as its host said: before the findings, so they are read with it.
 fn degraded(state: &RunState, out: &mut String) {
     let skills = skills_note(state);
-    if state.degraded.is_empty() && skills.is_none() {
+    let memory = state.memory.source.degraded_note();
+    if state.degraded.is_empty() && skills.is_none() && memory.is_none() {
         return;
     }
     out.push_str("## Degraded\n\nThe host ran part of this review weaker than it asked:\n\n");
-    for d in state.degraded.iter().chain(skills.iter()) {
+    for d in state
+        .degraded
+        .iter()
+        .chain(skills.iter())
+        .chain(memory.iter())
+    {
         out.push_str(&format!("- {}\n", one_line(d)));
     }
     out.push('\n');

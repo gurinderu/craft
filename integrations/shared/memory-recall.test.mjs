@@ -78,6 +78,17 @@ test('memory recall prompt: past the bound the paths are listed by directory, on
   assert.match(memoryRecallPrompt([], ''), /git merge-base/)
 })
 
+test('an empty recall naming a failed backend query says so and keeps the query; a clean empty one does not', () => {
+  const q = 'iskron_search(q: "craft_kind") answered: nodes for query «craft_kind» not found'
+  const failed = readMemoryRecall({ backend: 'mcp iskron', why: 'found by capability', decisions: [], queryError: q }, 0)
+  assert.equal(failed.memory.queryError, q)
+  assert.equal(memoryLine(failed.memory), `memory: none — recall found nothing — backend query may have failed: ${q} (backend mcp iskron)`)
+  const clean = readMemoryRecall({ backend: 'mcp iskron', why: 'no craft record in the store', decisions: [] }, 0)
+  assert.equal(clean.memory.queryError, undefined)
+  const recalled = readMemoryRecall({ backend: 'mcp iskron', why: 'w', decisions: [REC], queryError: q }, 0)
+  assert.equal(recalled.memory.queryError, undefined, 'a recall that found records is not degraded by one failed call')
+})
+
 test('memory recall result: decisions → recalled with backend and why; [] → none with why; dead or off-shape → none, named', () => {
   const r = readMemoryRecall({ backend: 'mcp kg', why: 'a connected server with search and create', decisions: [REC] }, 0)
   assert.deepEqual(r.decisions, [REC])
