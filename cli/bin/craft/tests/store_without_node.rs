@@ -39,14 +39,17 @@ fn path_with_git_alone(dir: &Path) -> String {
     dir.display().to_string()
 }
 
-#[test]
-fn a_run_started_with_no_node_and_no_plugin_root_files_its_start_checkpoint() {
-    let tmp = tempfile::tempdir().unwrap();
-    let (code, run, home) = (
-        tmp.path().join("repo"),
-        tmp.path().join("run"),
-        tmp.path().join("home"),
-    );
+/// A run started in a fresh repository under `tmp`, with no node on the PATH and no plugin root:
+/// its run directory, HOME, PATH and the start's output.
+fn started(
+    tmp: &Path,
+) -> (
+    std::path::PathBuf,
+    std::path::PathBuf,
+    String,
+    std::process::Output,
+) {
+    let (code, run, home) = (tmp.join("repo"), tmp.join("run"), tmp.join("home"));
     std::fs::create_dir_all(&code).unwrap();
     git(&code, &["init", "-q", "-b", "main"]);
     std::fs::write(code.join("README.md"), "x\n").unwrap();
@@ -56,7 +59,7 @@ fn a_run_started_with_no_node_and_no_plugin_root_files_its_start_checkpoint() {
     std::fs::write(code.join("lib.rs"), "pub fn f() {}\n").unwrap();
     git(&code, &["add", "."]);
     git(&code, &["commit", "-qm", "f"]);
-    let path = path_with_git_alone(&tmp.path().join("bin"));
+    let path = path_with_git_alone(&tmp.join("bin"));
     let out = Command::new(env!("CARGO_BIN_EXE_craft"))
         .args([
             "review",
@@ -70,13 +73,36 @@ fn a_run_started_with_no_node_and_no_plugin_root_files_its_start_checkpoint() {
         .arg(&code)
         .arg("--run-dir")
         .arg(&run)
-        .env("PATH", path)
+        .env("PATH", &path)
         .env("HOME", &home)
         .env_remove("CRAFT_ROOT")
         .env_remove("CLAUDE_PLUGIN_ROOT")
         .env_remove("CLAUDE_CONFIG_DIR")
         .output()
         .unwrap();
+    (run, home, path, out)
+}
+
+/// `craft review submit` on `run` with `extra` flags, as the engine sends it.
+fn submit(run: &Path, home: &Path, path: &str, extra: &[&str]) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_craft"))
+        .args(["review", "submit", "--run"])
+        .arg(run)
+        .args(["--agents", "1"])
+        .args(extra)
+        .env("PATH", path)
+        .env("HOME", home)
+        .env_remove("CRAFT_ROOT")
+        .env_remove("CLAUDE_PLUGIN_ROOT")
+        .env_remove("CLAUDE_CONFIG_DIR")
+        .output()
+        .unwrap()
+}
+
+#[test]
+fn a_run_started_with_no_node_and_no_plugin_root_files_its_start_checkpoint() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (_, home, _, out) = started(tmp.path());
     assert!(
         out.status.success(),
         "{}",
@@ -92,4 +118,44 @@ fn a_run_started_with_no_node_and_no_plugin_root_files_its_start_checkpoint() {
     let slice = std::fs::read_to_string(Path::new(dir).join("00-start.json")).unwrap();
     assert!(slice.contains("\"phase\": \"start\""), "{slice}");
     assert!(slice.contains("\"driver\": \"cli\""), "{slice}");
+}
+
+#[test]
+fn a_submits_tokens_and_their_scope_are_kept_for_the_runs_record() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (run, home, path, out) = started(tmp.path());
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let flags = [
+        "--output-tokens",
+        "1234",
+        "--output-tokens-scope",
+        "turn-delta",
+    ];
+    let said = submit(&run, &home, &path, &flags);
+    assert!(
+        said.status.success(),
+        "{}",
+        String::from_utf8_lossy(&said.stderr)
+    );
+    let kept: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(run.join("filing.json")).unwrap()).unwrap();
+    assert_eq!(
+        (&kept["outputTokens"], &kept["outputTokensScope"]),
+        (&serde_json::json!(1234), &serde_json::json!("turn-delta")),
+        "{kept}"
+    );
+}
+
+#[test]
+fn a_scope_without_its_tokens_is_refused() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (run, home, path, _) = started(tmp.path());
+    let said = submit(&run, &home, &path, &["--output-tokens-scope", "turn-delta"]);
+    assert!(!said.status.success());
+    let err = String::from_utf8_lossy(&said.stderr);
+    assert!(err.contains("--output-tokens"), "{err}");
 }

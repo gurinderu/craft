@@ -17,7 +17,7 @@
         "ok": true,
         "stdout": [
           "run wf_abc123-def (<home>/projects/-repo/s1/subagents/workflows/wf_abc123-def): 1 record(s)",
-          "enriched <home>/r1.json — slice 1/1: 2 agent(s): cacheRead 200, cacheWrite 0, input 2, output 30, total 232 tok (real cost; outputTokens is the harness pool, ~<1%)"
+          "enriched <home>/r1.json — slice 1/1: 2 agent(s): cacheRead 200, cacheWrite 0, input 2, output 30, total 232 tok (real cost; outputTokens is only the turn's indicative spend)"
         ],
         "warnings": [],
         "error": "",
@@ -51,8 +51,8 @@
         "ok": true,
         "stdout": [
           "run wf_abc123-def (<home>/projects/-repo/s1/subagents/workflows/wf_abc123-def): 2 record(s)",
-          "enriched <home>/r1.json — slice 1/2: 2 agent(s): cacheRead 200, cacheWrite 0, input 2, output 3, total 205 tok (real cost; outputTokens is the harness pool, ~<1%)",
-          "enriched <home>/r2.json — slice 2/2: 2 agent(s): cacheRead 200, cacheWrite 0, input 2, output 12, total 214 tok (real cost; outputTokens is the harness pool, ~<1%)"
+          "enriched <home>/r1.json — slice 1/2: 2 agent(s): cacheRead 200, cacheWrite 0, input 2, output 3, total 205 tok (real cost; outputTokens is only the turn's indicative spend)",
+          "enriched <home>/r2.json — slice 2/2: 2 agent(s): cacheRead 200, cacheWrite 0, input 2, output 12, total 214 tok (real cost; outputTokens is only the turn's indicative spend)"
         ],
         "warnings": [],
         "error": "",
@@ -88,7 +88,7 @@
         "ok": true,
         "stdout": [
           "run wf_abc123-def (<home>/projects/-repo/s1/subagents/workflows/wf_abc123-def): 1 record(s)",
-          "enriched <home>/r1.json — slice 1/1, 2 after the last record's logger: 3 agent(s): cacheRead 300, cacheWrite 0, input 3, output 7, total 310 tok (real cost; outputTokens is the harness pool, ~<1%)"
+          "enriched <home>/r1.json — slice 1/1, 2 after the last record's logger: 3 agent(s): cacheRead 300, cacheWrite 0, input 3, output 7, total 310 tok (real cost; outputTokens is only the turn's indicative spend)"
         ],
         "warnings": [],
         "error": "",
@@ -208,8 +208,8 @@
         "ok": true,
         "stdout": [
           "run wf_abc123-def (<home>/projects/-repo/s1/subagents/workflows/wf_abc123-def): 2 record(s)",
-          "enriched <home>/review.json — slice 1/2: 3 agent(s): cacheRead 300, cacheWrite 0, input 3, output 70, total 373 tok (real cost; outputTokens is the harness pool, ~<1%)",
-          "enriched <home>/audit.json — slice 2/2: 4 agent(s): cacheRead 400, cacheWrite 0, input 4, output 15, total 419 tok (real cost; outputTokens is the harness pool, ~<1%)"
+          "enriched <home>/review.json — slice 1/2: 3 agent(s): cacheRead 300, cacheWrite 0, input 3, output 70, total 373 tok (real cost; outputTokens is only the turn's indicative spend)",
+          "enriched <home>/audit.json — slice 2/2: 4 agent(s): cacheRead 400, cacheWrite 0, input 4, output 15, total 419 tok (real cost; outputTokens is only the turn's indicative spend)"
         ],
         "warnings": [],
         "error": "",
@@ -259,9 +259,9 @@
         "ok": true,
         "stdout": [
           "run wf_abc123-def (<home>/projects/-repo/s1/subagents/workflows/wf_abc123-def): 3 record(s)",
-          "enriched <home>/review-1.json — slice 1/3: 2 agent(s): cacheRead 200, cacheWrite 0, input 2, output 3, total 205 tok (real cost; outputTokens is the harness pool, ~<1%)",
-          "enriched <home>/review-2.json — slice 2/3: 2 agent(s): cacheRead 200, cacheWrite 0, input 2, output 12, total 214 tok (real cost; outputTokens is the harness pool, ~<1%)",
-          "enriched <home>/audit.json — slice 3/3: 2 agent(s): cacheRead 200, cacheWrite 0, input 2, output 300, total 502 tok (real cost; outputTokens is the harness pool, ~<1%)"
+          "enriched <home>/review-1.json — slice 1/3: 2 agent(s): cacheRead 200, cacheWrite 0, input 2, output 3, total 205 tok (real cost; outputTokens is only the turn's indicative spend)",
+          "enriched <home>/review-2.json — slice 2/3: 2 agent(s): cacheRead 200, cacheWrite 0, input 2, output 12, total 214 tok (real cost; outputTokens is only the turn's indicative spend)",
+          "enriched <home>/audit.json — slice 3/3: 2 agent(s): cacheRead 200, cacheWrite 0, input 2, output 300, total 502 tok (real cost; outputTokens is only the turn's indicative spend)"
         ],
         "warnings": [],
         "error": "",
@@ -328,7 +328,7 @@
         "ok": true,
         "stdout": [
           "run wf_abc123-def (<home>/projects/-repo/s1/subagents/workflows/wf_abc123-def): 1 record(s)",
-          "enriched <home>/audit.json — slice 1/1, 1 of nested engines that filed no record: 2 agent(s): cacheRead 200, cacheWrite 0, input 2, output 3, total 205 tok (real cost; outputTokens is the harness pool, ~<1%)"
+          "enriched <home>/audit.json — slice 1/1, 1 of nested engines that filed no record: 2 agent(s): cacheRead 200, cacheWrite 0, input 2, output 3, total 205 tok (real cost; outputTokens is only the turn's indicative spend)"
         ],
         "warnings": [
           "1 agent(s) of \"▸ craft:review #3\" filed no record — counted under the top-level engine"
@@ -390,7 +390,7 @@
         "ok": true,
         "stdout": [
           "run wf_abc123-def (<home>/projects/-repo/s1/subagents/workflows/wf_abc123-def): 1 record(s)",
-          "enriched <home>/cli.json — slice 1/1: 3 agent(s): cacheRead 300, cacheWrite 0, input 3, output 35, total 338 tok (real cost; outputTokens is the harness pool, ~<1%)"
+          "enriched <home>/cli.json — slice 1/1: 3 agent(s): cacheRead 300, cacheWrite 0, input 3, output 35, total 338 tok (real cost; outputTokens is only the turn's indicative spend)"
         ],
         "warnings": [],
         "error": "",
@@ -425,7 +425,7 @@
         "ok": true,
         "stdout": [
           "run wf_abc123-def (<home>/projects/-repo/s1/subagents/workflows/wf_abc123-def): 1 record(s)",
-          "enriched <home>/cli.json — slice 1/1: 4 agent(s): cacheRead 400, cacheWrite 0, input 4, output 33, total 437 tok (real cost; outputTokens is the harness pool, ~<1%)"
+          "enriched <home>/cli.json — slice 1/1: 4 agent(s): cacheRead 400, cacheWrite 0, input 4, output 33, total 437 tok (real cost; outputTokens is only the turn's indicative spend)"
         ],
         "warnings": [],
         "error": "",
@@ -462,7 +462,7 @@
         "ok": true,
         "stdout": [
           "run wf_abc123-def (<home>/projects/-repo/s1/subagents/workflows/wf_abc123-def): 1 record(s)",
-          "enriched <home>/cli.json — slice 1/1: 4 agent(s): cacheRead 400, cacheWrite 0, input 4, output 33, total 437 tok (real cost; outputTokens is the harness pool, ~<1%)"
+          "enriched <home>/cli.json — slice 1/1: 4 agent(s): cacheRead 400, cacheWrite 0, input 4, output 33, total 437 tok (real cost; outputTokens is only the turn's indicative spend)"
         ],
         "warnings": [],
         "error": "",
@@ -493,7 +493,7 @@
         "ok": true,
         "stdout": [
           "run wf_abc123-def (<home>/projects/-repo/s1/subagents/workflows/wf_abc123-def): 1 record(s)",
-          "enriched <home>/cli.json — slice 1/1: 1 agent(s): cacheRead 100, cacheWrite 0, input 1, output 7, total 108 tok (real cost; outputTokens is the harness pool, ~<1%)"
+          "enriched <home>/cli.json — slice 1/1: 1 agent(s): cacheRead 100, cacheWrite 0, input 1, output 7, total 108 tok (real cost; outputTokens is only the turn's indicative spend)"
         ],
         "warnings": [],
         "error": "",
@@ -542,7 +542,7 @@
         "ok": true,
         "stdout": [
           "run wf_abc123-def (<home>/projects/-repo/s1/subagents/workflows/wf_abc123-def): 1 record(s)",
-          "enriched <home>/r1.json — slice 1/1: 2 agent(s): cacheRead 400, cacheWrite 4, input 6, output 14.5, total 424.5 tok (real cost; outputTokens is the harness pool, ~<1%)"
+          "enriched <home>/r1.json — slice 1/1: 2 agent(s): cacheRead 400, cacheWrite 4, input 6, output 14.5, total 424.5 tok (real cost; outputTokens is only the turn's indicative spend)"
         ],
         "warnings": [
           "1 usage line(s) without a message id, each counted alone — the cost may be overstated; marked rule \"per-line\" (realm @nick/craft, node #98)"
@@ -572,7 +572,7 @@
         "ok": true,
         "stdout": [
           "run wf_abc123-def (<home>/projects/-repo/s1/subagents/workflows/wf_abc123-def): 1 record(s)",
-          "enriched <home>/r1.json — slice 1/1, 1 after the last record's logger: 1 agent(s) (1 unreadable, skipped): cacheRead 0, cacheWrite 0, input 0, output 0, total 0 tok (real cost; outputTokens is the harness pool, ~<1%)"
+          "enriched <home>/r1.json — slice 1/1, 1 after the last record's logger: 1 agent(s) (1 unreadable, skipped): cacheRead 0, cacheWrite 0, input 0, output 0, total 0 tok (real cost; outputTokens is only the turn's indicative spend)"
         ],
         "warnings": [
           "skipped unreadable transcript agent-z.jsonl: ",
@@ -608,8 +608,8 @@
         "ok": true,
         "stdout": [
           "run wf_abc123-def (<home>/projects/-repo/s1/subagents/workflows/wf_abc123-def): 2 record(s)",
-          "enriched <home>/r1.json — slice 1/2: 2 agent(s): cacheRead 200, cacheWrite 0, input 2, output 3, total 205 tok (real cost; outputTokens is the harness pool, ~<1%)",
-          "enriched <home>/r2.json — slice 2/2: 2 agent(s): cacheRead 200, cacheWrite 0, input 2, output 12, total 214 tok (real cost; outputTokens is the harness pool, ~<1%)"
+          "enriched <home>/r1.json — slice 1/2: 2 agent(s): cacheRead 200, cacheWrite 0, input 2, output 3, total 205 tok (real cost; outputTokens is only the turn's indicative spend)",
+          "enriched <home>/r2.json — slice 2/2: 2 agent(s): cacheRead 200, cacheWrite 0, input 2, output 12, total 214 tok (real cost; outputTokens is only the turn's indicative spend)"
         ],
         "warnings": [],
         "error": "",
@@ -643,7 +643,7 @@
         "ok": true,
         "stdout": [
           "run wf_abc123-def (<home>/projects/-repo/s1/subagents/workflows/wf_abc123-def): 1 record(s)",
-          "enriched <home>/r1.json — slice 1/1: 1 agent(s): cacheRead 100, cacheWrite 0, input 1, output 1, total 102 tok (real cost; outputTokens is the harness pool, ~<1%)"
+          "enriched <home>/r1.json — slice 1/1: 1 agent(s): cacheRead 100, cacheWrite 0, input 1, output 1, total 102 tok (real cost; outputTokens is only the turn's indicative spend)"
         ],
         "warnings": [],
         "error": "",
@@ -699,7 +699,7 @@
         "ok": true,
         "stdout": [
           "run wf_abc123-def (<home>/projects/-repo/s2/subagents/workflows/wf_abc123-def): 1 record(s)",
-          "enriched <home>/r1.json — slice 1/1, 1 after the last record's logger: 2 agent(s): cacheRead 200, cacheWrite 0, input 2, output 6, total 208 tok (real cost; outputTokens is the harness pool, ~<1%)"
+          "enriched <home>/r1.json — slice 1/1, 1 after the last record's logger: 2 agent(s): cacheRead 200, cacheWrite 0, input 2, output 6, total 208 tok (real cost; outputTokens is only the turn's indicative spend)"
         ],
         "warnings": [],
         "error": "",
@@ -730,7 +730,7 @@
       "expected": {
         "ok": true,
         "stdout": [
-          "enriched <home>/rec.json — 2 agent(s): cacheRead 3000, cacheWrite 30, input 6, output 12, total 3048 tok (real cost; outputTokens is the harness pool, ~<1%)"
+          "enriched <home>/rec.json — 2 agent(s): cacheRead 3000, cacheWrite 30, input 6, output 12, total 3048 tok (real cost; outputTokens is only the turn's indicative spend)"
         ],
         "warnings": [],
         "error": "",
@@ -753,7 +753,7 @@
       "expected": {
         "ok": true,
         "stdout": [
-          "enriched <home>/rec.json — 1 agent(s): cacheRead 2000, cacheWrite 20, input 4, output 10, total 2034 tok (real cost; outputTokens is the harness pool, ~<1%)"
+          "enriched <home>/rec.json — 1 agent(s): cacheRead 2000, cacheWrite 20, input 4, output 10, total 2034 tok (real cost; outputTokens is only the turn's indicative spend)"
         ],
         "warnings": [
           "1 usage line(s) without a message id, each counted alone — the cost may be overstated; marked rule \"per-line\" (realm @nick/craft, node #98)"
@@ -777,7 +777,7 @@
       "expected": {
         "ok": true,
         "stdout": [
-          "enriched <home>/rec.json — 1 agent(s) (1 unreadable, skipped): cacheRead 0, cacheWrite 0, input 0, output 0, total 0 tok (real cost; outputTokens is the harness pool, ~<1%)"
+          "enriched <home>/rec.json — 1 agent(s) (1 unreadable, skipped): cacheRead 0, cacheWrite 0, input 0, output 0, total 0 tok (real cost; outputTokens is only the turn's indicative spend)"
         ],
         "warnings": [
           "skipped unreadable transcript agent-b.jsonl: ",

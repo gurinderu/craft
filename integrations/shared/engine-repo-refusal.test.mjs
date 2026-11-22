@@ -59,6 +59,7 @@ const refusedRecord = (engine, nested, via) => ({
   verification: null,
   notRun: ["`repo` argument refused — this engine reviews only the session's own checkout"],
   outputTokens: 0,
+  outputTokensScope: 'turn-delta',
 })
 /** @param {string} engine */
 const refusedReport = engine =>

@@ -171,6 +171,7 @@ async function finalize(req, store) {
     strict: req['strict'] === true,
     via: text(req, 'via') || null,
     outputTokens,
+    outputTokensScope: text(req, 'outputTokensScope'),
     runtime: text(req, 'runtime'),
   }
   const kept = keptIdentity(req, c.repo, req['retry'] === true)
