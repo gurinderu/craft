@@ -80,10 +80,12 @@ not one of them: it is the main session's (→ "Who triages").
                commits named, or a base after the merge. Run the `craft:review` workflow, on a
                diff in any language — Rust, Nix and SQL under their profiles, other source under
                its general lenses — with
-               `{ base: <that commit>, fresh: true, delta: true, fullEvery: 0 }` when the findings did not
+               `{ base: <that commit>, fresh: true, delta: true, fullEvery: 0, depth: 'light' }` when the findings did not
                come from its last round on this branch (a human's PR review, any other review):
                `fresh` keeps it from chaining to an older run on the branch, which would widen
-               the scan and carry that run's settled findings, and `delta` tells it the run
+               the scan and carry that run's settled findings, `depth: 'light'` runs the
+               diff-scoped lenses once and verifies Medium and above (a chained run still
+               adjudicates every finding its previous round left open), and `delta` tells it the run
                covers only the fix commits, so a clean one reads Warning, never Approve (Approve
                comes only from a full review; the whole-PR base above drops `delta`, and the
                binary refuses `delta` before anything runs when its base reaches back to or past
