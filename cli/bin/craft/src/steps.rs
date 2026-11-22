@@ -59,10 +59,11 @@ pub struct StartArgs {
     /// apply (a launcher that recalled them itself).
     #[arg(long)]
     pub no_recall: bool,
-    /// The launcher's recall found nothing because its backend query may have failed: the query
-    /// and its error, which the run names and reads as degraded rather than as no memory.
-    #[arg(long, requires = "no_recall")]
-    pub recall_failed: Option<String>,
+    /// Why the launcher's recall may not have read the whole store (its backend query failed, its
+    /// answer was truncated, its agent gave none): the run names it and reads as degraded. Pass it
+    /// as `--recall-degraded=<text>`, so a text that starts with `-` is not read as a flag.
+    #[arg(long, requires = "no_recall", allow_hyphen_values = true)]
+    pub recall_degraded: Option<String>,
     /// Run no mechanical gate: clippy and `nix flake check` build the branch's code (build scripts,
     /// proc macros, flake checks and a flake dev shell's `shellHook` run as you), so skip them for a branch you do not trust; the report
     /// names the gate as skipped.
@@ -282,7 +283,7 @@ pub(crate) fn start_step(args: &StartArgs, cancel: &craft_review::cancel::Cancel
         runs: args.runs.clone(),
         strict: args.strict,
         recall: !args.no_recall,
-        recall_failed: args.recall_failed.clone(),
+        recall_degraded: args.recall_degraded.clone(),
         // An unreadable list is refused and named in the report; the review still runs.
         prior_decisions: args
             .prior_decisions

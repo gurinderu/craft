@@ -66,7 +66,7 @@ test('memory tally: recalled by backend, none by reason, runs before the field a
     rules: 0,
     externals: 0,
     covered: 0,
-    failed: 0,
+    failed: 1,
     truncated: 0,
     byBackend: { harness: 1 },
     noneWhy: {
@@ -79,6 +79,7 @@ test('memory tally: recalled by backend, none by reason, runs before the field a
   assert.deepEqual(renderMemorySection(t), [
     '## MEMORY — what the review recalled before judging',
     "- 9 run(s) carry the field (2 without it, excluded) · 1 recalled · 6 none (1 of them applied the launcher's records) · 2 nested under an audit, its one recall counted at the audit · 1 record(s) recalled, 0 of them open questions",
+    '- DEGRADED — 1 recall(s) whose backend query may have failed, all or part (not read, not "no memory") · 0 read only part of the backend\'s answer',
     '- 1× from harness',
     '- 2× none — not recalled — nothing to review',
     '- 2× none — recall found nothing in repo',
@@ -96,6 +97,6 @@ test('memory tally: an empty recall whose backend query may have failed is its o
   assert.deepEqual(t.noneWhy, { 'backend query may have failed in mcp iskron': 1, 'recall found nothing in mcp iskron': 1 })
   assert.match(
     renderMemorySection(t).join('\n'),
-    /- DEGRADED — 1 empty recall\(s\) whose backend query may have failed .* · 1 read only part of the backend's answer/,
+    /- DEGRADED — 1 recall\(s\) whose backend query may have failed, all or part .* · 1 read only part of the backend's answer/,
   )
 })

@@ -11,25 +11,6 @@ const DERIVED_NAMED_MAX: usize = 3;
 
 const DERIVED_TITLE_MAX: usize = 40;
 
-/// The most characters of a recall's query error or truncation note the run keeps.
-pub(super) const RECALL_NOTE_MAX: usize = 300;
-
-/// A recall's one-line note, `None` when blank, cut to [`RECALL_NOTE_MAX`] characters.
-pub(super) fn bounded(note: &str) -> Option<String> {
-    let note = note.trim();
-    if note.is_empty() {
-        return None;
-    }
-    Some(if note.chars().count() > RECALL_NOTE_MAX {
-        format!(
-            "{}…",
-            note.chars().take(RECALL_NOTE_MAX).collect::<String>()
-        )
-    } else {
-        note.to_owned()
-    })
-}
-
 /// Where the records came from (`MemorySource`): `recalled`, or `none` and why; `passed` counts
 /// the launcher's records accepted alone and `added` those the recall did not already hold;
 /// `derived` the applied records whose id was derived, the first few named.
@@ -55,15 +36,18 @@ pub struct MemorySource {
     pub derived_named: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backend: Option<String>,
-    /// The backend call an empty recall named as possibly failed (its answer's `queryError`, or a
-    /// launcher's failed recall handed on with `--recall-failed`): the memory was not read, and the
-    /// run is degraded, not clean.
+    /// The backend call the recall named as possibly failed (its answer's `queryError`), or why
+    /// its agent gave no answer: the memory was not read, or only partly, and the run is degraded.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub query_error: Option<String>,
     /// What the backend said it held past what the recall read (its answer's `truncated`): the
     /// records past it were not applied, and the run is degraded.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub truncated: Option<String>,
+    /// Why the launcher's own recall may not have read the whole store (`--recall-degraded`):
+    /// only the records it handed on apply, and the run is degraded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recall_degraded: Option<String>,
 }
 
 impl Default for MemorySource {
@@ -89,6 +73,7 @@ impl MemorySource {
             backend: None,
             query_error: None,
             truncated: None,
+            recall_degraded: None,
         }
     }
 
@@ -161,7 +146,7 @@ impl MemorySource {
                 self.why
             )
         } else {
-            let lead = if self.query_error.is_some() {
+            let lead = if self.query_error.is_some() || self.truncated.is_some() {
                 "not read"
             } else {
                 "none"
@@ -212,28 +197,6 @@ impl MemorySource {
             .map(|d| format!("{} ({})", d.id, cut(&d.title)))
             .collect();
         self
-    }
-
-    /// The degraded notes of a recall that may not have read the store: an empty one whose
-    /// backend query may have failed — never read as the project having no memory — and one that
-    /// read only part of what the backend held.
-    #[must_use]
-    pub fn degraded_notes(&self) -> Vec<String> {
-        let applied = match self.passed {
-            Some(p) if p > 0 => {
-                format!("only the {p} record(s) the launcher passed were applied")
-            }
-            _ => "none of the project's decisions or rules were applied".into(),
-        };
-        let failed = self.query_error.as_ref().map(|q| {
-            format!(
-                "memory: not read — recall found nothing, backend query may have failed: {q}; {applied}"
-            )
-        });
-        let truncated = self.truncated.as_ref().map(|t| {
-            format!("memory: recall read only part of the backend's answer ({t}): the records past it were not applied")
-        });
-        failed.into_iter().chain(truncated).collect()
     }
 
     /// As the run record keeps it (`memoryRecord`): the derived ids' titles left out.

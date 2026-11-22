@@ -203,7 +203,8 @@ rule 3. Never put secrets, credentials or personal data in a record, whatever th
    memory files, craft's harness index `craft-memory.md` and any craft lines not yet moved out of
    `MEMORY.md`, then the record files neither lists, found by their `craft_kind` frontmatter; only an active one
    among them makes the index stale) —
-   never load the whole store into context. A recall writes nothing. An empty recall whose query
+   never load the whole store into context. A recall writes nothing. A recall a call of which
+   errored says so beside what it found (`recall partly failed — …`); an empty one whose query
    errored, or whose listing by `craft_kind` came back empty where the store shows craft records, says `recall found nothing —
    backend query may have failed: <the query and its error>`, never "no memory".
 4. **Active only by default.** `superseded` and `withdrawn` stay hidden unless the caller asks for

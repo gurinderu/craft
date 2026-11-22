@@ -44,7 +44,7 @@ import { render } from './content.mjs'
 import { pathEntries } from './memory-bounds.mjs'
 import memoryRecallTpl from '../../content/prompts/memory-recall.md'
 import memoryRecallSchema from '../../content/schemas/memory-recall.schema.json' with { type: 'json' }
-import { memoryDegradedNotes, recallNote } from './recall-degraded.mjs'
+import { failedWhy, memoryDegradedNotes, recallNote } from './recall-degraded.mjs'
 
 // The most changed paths one recall prompt lists; past it they are listed by directory (pathEntries), and
 // the report says so. It keeps the read-only recall agent's prompt and its searches bounded.
@@ -82,9 +82,10 @@ export function memoryRecallPrompt(paths, base) {
  * first DERIVED_NAMED_MAX of them as `<id> (<title, cut>)`; `backend` the store the recall agent named, when it answered;
  * `rules` the project rules among the records, `covered` the findings a rule covered (set by the engine once applied);
  * `externals` the external-system records recalled beside them, never among `count`.
- * `queryError` the backend call an empty recall named as possibly failed, `truncated` what the backend held past what
- * was read: either makes the memory degraded (integrations/shared/recall-degraded.mjs).
- * @typedef {{ source: 'recalled' | 'launcher' | 'none', count: number, why: string, questions?: number, rules?: number, externals?: number, covered?: number, passed?: number, added?: number, derived?: number, derivedNamed?: string[], backend?: string, queryError?: string, truncated?: string }} MemorySource
+ * `queryError` the backend call the recall named as possibly failed (or why its agent gave no answer), `truncated` what
+ * the backend held past what was read, `recallDegraded` why a launcher's recall may not have read the whole store: each
+ * makes the memory degraded (integrations/shared/recall-degraded.mjs).
+ * @typedef {{ source: 'recalled' | 'launcher' | 'none', count: number, why: string, questions?: number, rules?: number, externals?: number, covered?: number, passed?: number, added?: number, derived?: number, derivedNamed?: string[], backend?: string, queryError?: string, truncated?: string, recallDegraded?: string }} MemorySource
  */
 /** @param {unknown} v @returns {string} */
 export const recallText = v => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim() : '')
@@ -203,59 +204,39 @@ export function readMemoryRecall(raw, cut, grouped = 0) {
         source: 'none',
         count: 0,
         why: `the recall agent died or returned no decision list, so nothing recalled was applied — findings are raised normally${tail}`,
+        queryError: 'the recall agent died or returned no decision list',
       },
     }
   const backend = recallText(r['backend']) || 'an unnamed backend'
-  const why = recallText(r['why']) || 'no reason given'
-  const stale = `${truncatedTail(r['truncated'])}${staleTail(r['stale'])}`
-  const withTruncated = truncatedOf(r['truncated'])
   const questions = recalledQuestions(r['questions'])
   const rules = recalledOfKind(r['rules'], 'rule')
   const all = [...recalledList(list), ...questions, ...rules].map(withSkillId)
-  if (!all.length && !externals.length)
-    return {
-      decisions: [],
-      inactive,
-      externals,
-      knownExternals,
-      memory: withTruncated(emptyRecall(why, recallNote(r['queryError']), `(backend ${backend})${stale}${tail}`, backend)),
-    }
+  const found = all.length > 0 || externals.length > 0
+  const { why, notes } = recallNotes(r, found)
+  const rest = `${truncatedTail(notes.truncated)}${staleTail(r['stale'])}${tail}`
+  /** @type {MemorySource} */
+  const memory = found
+    ? { source: 'recalled', count: all.length, why: `${backend} (${why})${rest}`, backend, ...kindCounts(questions.length, rules.length, externals.length) }
+    : { source: 'none', count: 0, why: `${why} (backend ${backend})${rest}`, backend }
+  return { decisions: found ? all : [], inactive, externals, knownExternals, memory: { ...memory, ...notes } }
+}
+
+/** The memory line's tail on a truncated answer, '' when whole. @param {string | undefined} t @returns {string} */
+const truncatedTail = t => (t ? `; truncated — the backend held more than was read: ${t}` : '')
+
+/**
+ * The agent's `why`, its failed query appended, and the answer's degraded notes as the source keeps them.
+ * @param {Record<string, unknown>} r @param {boolean} found
+ * @returns {{ why: string, notes: { queryError?: string, truncated?: string } }}
+ */
+function recallNotes(r, found) {
+  const why = recallText(r['why']) || 'no reason given'
+  const queryError = recallNote(r['queryError'])
+  const truncated = recallNote(r['truncated'])
   return {
-    decisions: all,
-    inactive,
-    externals,
-    knownExternals,
-    memory: withTruncated({
-      source: 'recalled',
-      count: all.length,
-      why: `${backend} (${why})${stale}${tail}`,
-      backend,
-      ...kindCounts(questions.length, rules.length, externals.length),
-    }),
+    why: queryError ? failedWhy(why, queryError, found) : why,
+    notes: { ...(queryError ? { queryError } : {}), ...(truncated ? { truncated } : {}) },
   }
-}
-
-/**
- * The source with the backend's truncation note when it gave one.
- * @param {unknown} v @returns {(m: MemorySource) => MemorySource}
- */
-function truncatedOf(v) {
-  const truncated = recallNote(v)
-  return m => (truncated ? { ...m, truncated } : m)
-}
-
-/** The memory line's tail on a truncated answer, '' when whole. @param {unknown} v @returns {string} */
-const truncatedTail = v => (recallNote(v) ? `; truncated — the backend held more than was read: ${recallNote(v)}` : '')
-
-/**
- * The source of a recall that found nothing: named as a possibly failed backend query when the agent
- * gave one (`queryError`), so it never reads as the project having no memory.
- * @param {string} why @param {string} queryError @param {string} tail @param {string} backend
- * @returns {MemorySource}
- */
-function emptyRecall(why, queryError, tail, backend) {
-  if (!queryError) return { source: 'none', count: 0, why: `${why} ${tail}`, backend }
-  return { source: 'none', count: 0, why: `${why}; recall found nothing — backend query may have failed: ${queryError} ${tail}`, backend, queryError }
 }
 
 /**
@@ -649,14 +630,9 @@ export function readLaunch(raw, recalled, note, partsArg, parse) {
 export function acceptedMemory(m, accepted) {
   if (m.source === 'none') return m
   /** @type {MemorySource} */
-  const out = {
-    source: m.source,
-    count: accepted.length,
-    why: m.why,
-    ...(m.backend ? { backend: m.backend } : {}),
-    ...(m.externals ? { externals: m.externals } : {}),
-    ...(m.truncated ? { truncated: m.truncated } : {}),
-  }
+  const out = { ...m, count: accepted.length }
+  delete out.questions
+  delete out.rules
   return { ...out, ...kindCounts(accepted.filter(d => d.kind === 'question').length, accepted.filter(d => d.kind === 'rule').length) }
 }
 
@@ -697,7 +673,7 @@ export function memoryLine(m, forwarded = false) {
 export function sourceLine(m, forwarded) {
   if (m.source === 'launcher') return launcherLine(m)
   const plus = m.passed ? `; plus ${m.passed} passed by the launcher${m.source === 'recalled' ? ` (${m.added ?? m.passed} new)` : ''}` : ''
-  if (m.source !== 'recalled') return `memory: ${m.queryError ? 'not read' : 'none'} — ${m.why}${plus}`
+  if (m.source !== 'recalled') return `memory: ${m.queryError || m.truncated ? 'not read' : 'none'} — ${m.why}${plus}`
   return forwarded
     ? `memory: returned ${countedRecords(m)} from ${m.why}${plus}; each nested review reports how many it applied`
     : `memory: recalled ${countedRecords(m)} from ${m.why}${plus}`
@@ -727,7 +703,12 @@ export async function recallDecisions(ask, paths, base) {
       inactive: [],
       externals: [],
       knownExternals: [],
-      memory: { source: 'none', count: 0, why: `the recall agent did not run (${msg}) — nothing recalled applied; findings are raised normally` },
+      memory: {
+        source: 'none',
+        count: 0,
+        why: `the recall agent did not run (${msg}) — nothing recalled applied; findings are raised normally`,
+        queryError: recallNote(`the recall agent did not run (${msg})`),
+      },
     }
   }
   const { cut, grouped } = recallEntries(paths)

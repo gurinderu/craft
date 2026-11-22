@@ -54,11 +54,12 @@ const NONE_CLASSES = [
   ['pinned backend unavailable', 'pinned backend unavailable'],
 ]
 
-/** @param {string} why @param {string} backend @returns {string} */
-function noneClass(why, backend) {
+/** @param {string} why @param {string} backend @param {string} queryError the recall's failed query, '' when none @returns {string} */
+function noneClass(why, backend, queryError) {
   if (why.startsWith('not recalled — ')) return why.split(';')[0] ?? why
   const known = NONE_CLASSES.find(([lead]) => why.startsWith(lead))
-  return known ? known[1] : `recall found nothing in ${backend}`
+  if (known) return known[1]
+  return queryError ? `backend query may have failed in ${backend}` : `recall found nothing in ${backend}`
 }
 
 /** @param {Record<string, number>} counts @param {string} key @returns {void} */
@@ -78,6 +79,7 @@ export function tallyMemory(t, r) {
   t.carrying++
   t.covered += count(o['covered'])
   if (text(o['truncated'], '')) t.truncated++
+  if (text(o['queryError'], '')) t.failed++
   const source = o['source']
   if (source === 'launcher') {
     t.nested++
@@ -95,13 +97,7 @@ export function tallyMemory(t, r) {
   t.none++
   // Recall did not run or found nothing, yet the launcher's own records were applied.
   if (count(o['passed'])) t.passedOnly++
-  const backend = text(o['backend'], 'an unnamed backend')
-  if (text(o['queryError'], '')) {
-    t.failed++
-    bump(t.noneWhy, `backend query may have failed in ${backend}`)
-    return
-  }
-  bump(t.noneWhy, noneClass(text(o['why'], 'no reason recorded'), backend))
+  bump(t.noneWhy, noneClass(text(o['why'], 'no reason recorded'), text(o['backend'], 'an unnamed backend'), text(o['queryError'], '')))
 }
 
 /** @param {Record<string, number>} counts @returns {Array<[string, number]>} */
@@ -111,7 +107,7 @@ const ranked = counts => Object.entries(counts).sort((a, b) => b[1] - a[1] || a[
 const degradedLines = t =>
   t.failed || t.truncated
     ? [
-        `- DEGRADED — ${t.failed} empty recall(s) whose backend query may have failed (not read, not "no memory") · ${t.truncated} read only part of the backend's answer`,
+        `- DEGRADED — ${t.failed} recall(s) whose backend query may have failed, all or part (not read, not "no memory") · ${t.truncated} read only part of the backend's answer`,
       ]
     : []
 

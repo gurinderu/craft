@@ -652,7 +652,7 @@ fn a_failed_recall_stays_degraded_beside_the_launchers_records_and_says_they_app
     assert_eq!(
         degraded_of(&s),
         [format!(
-            "memory: not read — recall found nothing, backend query may have failed: {QUERY_ERROR}; only the 1 record(s) the launcher passed were applied"
+            "memory: not read — recall found nothing, backend query may have failed: {QUERY_ERROR}; only the launcher's own records were applied (1 accepted, less any the store's inactive records held back)"
         )]
     );
 }
@@ -674,5 +674,56 @@ fn a_recall_that_read_only_part_of_the_backends_answer_is_degraded_with_its_reco
         [
             "memory: recall read only part of the backend's answer (iskron_search said 12 found, 10 shown, and took no offset): the records past it were not applied"
         ]
+    );
+}
+
+#[test]
+fn an_empty_recall_whose_answer_was_truncated_reads_as_not_read_and_degraded() {
+    let repo = fixture(true);
+    let out = tempfile::tempdir().unwrap();
+    let recall = json!({
+        "backend": "mcp iskron", "why": "found by capability", "decisions": [], "questions": [], "rules": [],
+        "truncated": "0 of 12 shown"
+    });
+    let (run, s) = recalled_run(repo.path(), out.path(), None, &recall);
+    let s = drive(&run, s, &[]);
+    assert_eq!(s["memory"]["truncated"], json!("0 of 12 shown"));
+    assert_eq!(
+        degraded_of(&s),
+        [
+            "memory: recall read only part of the backend's answer (0 of 12 shown): the records past it were not applied"
+        ]
+    );
+    let report = std::fs::read_to_string(s["report"].as_str().unwrap()).unwrap();
+    assert_contains_all(
+        &report,
+        &[
+            "## Memory\n- memory: not read — found by capability (backend mcp iskron); truncated — the backend held more than was read: 0 of 12 shown",
+            "## Degraded\n",
+        ],
+    );
+}
+
+#[test]
+fn a_run_whose_launcher_recall_was_degraded_finishes_degraded_saying_so() {
+    let repo = fixture(true);
+    let out = tempfile::tempdir().unwrap();
+    let start = StartOptions {
+        recall_degraded: Some("kg_search refused: q required".into()),
+        ..opts(repo.path(), out.path())
+    };
+    let s = step::start(&start).unwrap();
+    let s = drive(&out.path().join("run"), s, &[]);
+    let note = "memory: the launcher's recall may not have read the whole store (kg_search refused: q required): only the records it handed on were applied";
+    assert_eq!(degraded_of(&s), [note]);
+    let report = std::fs::read_to_string(s["report"].as_str().unwrap()).unwrap();
+    assert_contains_all(
+        &report,
+        &[
+            &format!(
+                "## Degraded\n\nThe host ran part of this review weaker than it asked:\n\n- {note}"
+            ),
+            "the launcher's recall may not have read the whole store: kg_search refused: q required",
+        ],
     );
 }

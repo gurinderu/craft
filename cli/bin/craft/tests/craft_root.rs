@@ -178,14 +178,10 @@ fn gate_of(extra: &[&str]) -> Value {
 }
 
 #[test]
-fn a_launchers_failed_recall_handed_on_is_kept_as_the_runs_memory_query_error() {
-    let state = state_of(&[
-        "--no-gate",
-        "--recall-failed",
-        "iskron_search refused: q required",
-    ]);
+fn a_launchers_degraded_recall_handed_on_is_kept_even_when_it_starts_with_a_dash() {
+    let state = state_of(&["--no-gate", "--recall-degraded=-q refused: q required"]);
     assert_eq!(
-        state["memory"]["source"]["queryError"], "iskron_search refused: q required",
+        state["memory"]["source"]["recallDegraded"], "-q refused: q required",
         "{}",
         state["memory"]
     );

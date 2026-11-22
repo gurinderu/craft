@@ -1,6 +1,6 @@
 import { normalizeArgs } from '../../shared/workflow-args.mjs'
 import { parsePriorDecisions } from '../../shared/prior-decisions.mjs'
-import { memoryDegradedNotes } from '../../shared/recall-degraded.mjs'
+import { forwardedDegraded, memoryDegradedNotes, recallNote } from '../../shared/recall-degraded.mjs'
 import { MEMORY_RECALL_SCHEMA, recallText, memoryRecord, initialMemory, withPassed, withDerived, withDerivedIds, mergeAndRead, memorySection, recallDecisions } from '../../shared/memory-recall.mjs'
 import { summarizeFindings, worstVerdict, repoRefusal } from '../../shared/run-record.mjs'
 import { wrapVerdict, tallyVerification, unusedCratesResult, unusedEvidence } from '../../shared/audit-verification.mjs'
@@ -78,9 +78,10 @@ let memory = withDerived(initialMemory(passedAccepted, recalledByLauncher, A['_m
 // into parts (#218) and its external-system records (#431, #435) have no carrier there, and review refuses them, so
 // they stay in this audit's own report and are not forwarded (realm @nick/craft, nodes #150, #196).
 let nestedMemoryNote = recalledByLauncher ? recallText(A['_memory']) : ''
-// This audit's recall found nothing because its backend query may have failed: each nested review is told the query and
-// its error (`_recallFailed`, the binary's `--recall-failed`), so its memory reads as degraded, not as none.
-let nestedRecallFailed = ''
+// Why this audit's recall — its own, or its launcher's (`_recallDegraded`) — may not have read the whole store: its
+// backend query failed, its answer was truncated or its agent gave none. Each nested review is told it
+// (`_recallDegraded`, the binary's `--recall-degraded`), so its memory reads as degraded, not as clean.
+let nestedRecallDegraded = ''
 // What every nested CLI launch inherits from this run, the gate's included: the parent's name and craftRoot (where its
 // driver finds the craft binary's fetcher).
 function nestedLaunchArgs() {
@@ -100,7 +101,7 @@ function nestedReviewArgs() {
     ...nestedLaunchArgs(),
     ...(nestedPriorDecisions != null ? { priorDecisions: nestedPriorDecisions } : {}),
     ...(memory.source !== 'none' || nestedMemoryNote ? { _recalled: true } : {}),
-    ...(nestedRecallFailed ? { _recallFailed: nestedRecallFailed } : {}),
+    ...(nestedRecallDegraded ? { _recallDegraded: nestedRecallDegraded } : {}),
   }
 }
 
@@ -445,16 +446,14 @@ const parseNear = (list, labelOf) => parsePriorDecisions(list, labelOf, changedF
 // The one recall of this audit (realm @nick/craft, node #203): the agent lists the diff's paths from
 // the base itself. Whatever it yields — an empty list included — goes to the nested reviews, the
 // launcher's records merged in (the recalled one kept on an id clash).
-/** What the nested reviews are told of this audit's recall: why it found none, and its failed query. @param {import('../../shared/memory-recall.mjs').MemorySource} m */
-function noteRecallOutcome(m) {
-  if (m.source === 'none') nestedMemoryNote = m.why || 'the recall found none'
-  nestedRecallFailed = m.queryError ?? ''
-  for (const n of memoryDegradedNotes(memory)) log(`⚠️ ${n}`)
-}
 async function recallOnce() {
-  // A launcher's recall: its records are read again by the diff's paths, now that the scout named them.
+  // A launcher's recall: its records are read again by the diff's paths, now that the scout named them; why it may not
+  // have read the whole store, when the launcher said, is kept and handed on.
   if (recalledByLauncher) {
     memory = withDerived(initialMemory(passedAccepted, true, A['_memory']), parseNear(passedList).decisions)
+    const upstream = recallNote(A['_recallDegraded'])
+    if (upstream) memory = { ...memory, recallDegraded: upstream }
+    noteDegraded()
     return
   }
   const r = await recallDecisions(p => auditAgent(p, { label: 'memory-recall', phase: 'Scout', schema: MEMORY_RECALL_SCHEMA, model: 'sonnet', effort: 'low' }), [], baseRef || baseArg)
@@ -466,11 +465,17 @@ async function recallOnce() {
   // A passed copy dated later than the inactive record is forwarded, and named (realm @nick/craft, node #229).
   memory = { ...memory, why: [memory.why, ...blocked, ...overrides].join('; ') }
   nestedPriorDecisions = withDerivedIds(merged)
-  noteRecallOutcome(r.memory)
+  if (r.memory.source === 'none') nestedMemoryNote = r.memory.why || 'the recall found none'
+  noteDegraded()
   if (passedDecisions != null && passedDecisions !== '' && !Array.isArray(passedDecisions)) {
     log('⚠️ priorDecisions is not a list — not forwarded to the nested reviews')
     memory = { ...memory, why: `${memory.why}; the launcher's priorDecisions was not a list — not applied` }
   }
+}
+/** Why this audit's memory may not have read the whole store, logged and kept for the nested reviews. */
+function noteDegraded() {
+  for (const n of memoryDegradedNotes(memory)) log(`⚠️ ${n}`)
+  nestedRecallDegraded = forwardedDegraded(memory)
 }
 await recallOnce()
 log(scoutNotes)

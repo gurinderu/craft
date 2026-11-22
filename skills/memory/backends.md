@@ -58,9 +58,11 @@ SKILL.md's ("Choosing the backend"); this file only says how to write and search
      by `status` and the topic keywords — yourself, or through the search's own scope or status
      filter beside the attribute one; never by a text query per path alone, and never a listing of
      the whole store with no attribute filter.
-- **An empty recall that may have failed is named, never read as no memory.** When the recall
-  comes back with no record and either a call errored or was refused (past the step 2 retry), or
-  every call was a text query and none an attribute listing, or the attribute listing came back
+- **A recall that may have failed is named, never read as no memory.** A call that errored or was
+  refused (past the step 2 retry, a page included) is named whatever the other calls returned: the
+  records they found apply, and the recall says `recall partly failed — backend query may have
+  failed: <the call and its error>`. When the recall comes back with no record and either a call
+  failed so, or every call was a text query and none an attribute listing, or the attribute listing came back
   empty while the store shows craft records exist (an index, a count the server reports, a craft
   record seen in any other answer) — never for records the scope narrowing (step 5) left out, nor
   for the fallback's not-found after a clean empty listing, both clean answers — say `recall found

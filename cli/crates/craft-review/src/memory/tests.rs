@@ -202,37 +202,84 @@ fn a_list_past_the_cap_names_what_it_did_not_apply() {
 }
 
 #[test]
-fn a_launchers_failed_recall_handed_on_makes_the_memory_not_read_and_degraded() {
+fn a_launchers_degraded_recall_handed_on_is_named_and_degraded_with_what_applied() {
     let m = Memory::default().recalling(false, Some("iskron_search(q: \"\") refused: q required"));
     assert_eq!(
-        m.source.query_error.as_deref(),
+        m.source.recall_degraded.as_deref(),
         Some("iskron_search(q: \"\") refused: q required")
     );
-    assert!(
-        m.source.line().starts_with(
-            "memory: not read — not recalled — the launcher asked for none (--no-recall): only its own records apply; the launcher's recall found nothing — backend query may have failed: iskron_search"
-        ),
-        "{}",
-        m.source.line()
+    assert_eq!(
+        m.source.line(),
+        "memory: none — not recalled — the launcher asked for none (--no-recall): only its own records apply; the launcher's recall may not have read the whole store: iskron_search(q: \"\") refused: q required"
     );
-    assert_eq!(m.source.degraded_notes().len(), 1);
-    // A blank note, or a run that recalls itself: no failure is kept.
+    assert_eq!(
+        m.source.degraded_notes(),
+        [
+            "memory: the launcher's recall may not have read the whole store (iskron_search(q: \"\") refused: q required): only the records it handed on were applied"
+        ]
+    );
+    // A run that recalls itself takes none, and a blank note is no note.
     assert!(
         Memory::default()
             .recalling(true, Some("q"))
             .source
-            .query_error
+            .recall_degraded
             .is_none()
     );
-    let clean = Memory::default().recalling(false, Some("  "));
-    assert!(clean.source.query_error.is_none() && clean.source.degraded_notes().is_empty());
+    let clean = Memory::default().recalling(false, Some(" \u{1b} "));
+    assert!(clean.source.recall_degraded.is_none() && clean.source.degraded_notes().is_empty());
 }
 
 #[test]
-fn a_recalls_query_error_is_kept_to_its_bound() {
-    let long = "e".repeat(super::source::RECALL_NOTE_MAX + 50);
-    let m = Memory::default().recalling(false, Some(&long));
-    let kept = m.source.query_error.unwrap();
-    assert_eq!(kept.chars().count(), super::source::RECALL_NOTE_MAX + 1);
+fn a_recalls_note_is_one_line_without_controls_and_kept_to_its_bound() {
+    let long = "e".repeat(super::degraded::RECALL_NOTE_MAX + 50);
+    let kept = super::degraded::bounded(&long).unwrap();
+    assert_eq!(
+        kept.encode_utf16().count(),
+        super::degraded::RECALL_NOTE_MAX
+    );
     assert!(kept.ends_with('…'));
+    assert_eq!(
+        super::degraded::bounded("a\u{1b}[31m\n b\u{85}c").as_deref(),
+        Some("a [31m b c")
+    );
+}
+
+#[test]
+fn a_recall_that_partly_failed_applies_its_records_and_is_degraded_naming_the_call() {
+    let answer = json!({
+        "backend": "mcp kg", "why": "w", "questions": [], "rules": [],
+        "decisions": [{"kind": "decision", "title": "t", "body": "b", "scope": "src", "status": "active", "date": "2026-05-01"}],
+        "queryError": "kg_search(craft_kind=rule) refused"
+    });
+    let r = super::recall::read(Some(&answer), 0, 0);
+    assert_eq!((r.source.source.as_str(), r.records.len()), ("recalled", 1));
+    assert!(
+        r.source
+            .why
+            .contains("w; recall partly failed — backend query may have failed: kg_search"),
+        "{}",
+        r.source.why
+    );
+    let m = super::merge::merge(r, None, &[]);
+    assert_eq!(
+        m.source.degraded_notes(),
+        [
+            "memory: recall partly failed — backend query may have failed: kg_search(craft_kind=rule) refused; the 1 record(s) it returned were applied, others may be missing"
+        ]
+    );
+}
+
+#[test]
+fn a_dead_recall_agent_is_named_as_a_failed_query() {
+    let r = super::recall::read(None, 0, 0);
+    assert_eq!(
+        r.source.query_error.as_deref(),
+        Some("the recall agent died or returned no decision list")
+    );
+    assert!(
+        r.source
+            .line()
+            .starts_with("memory: not read — the recall agent died")
+    );
 }

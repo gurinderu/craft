@@ -516,6 +516,8 @@ function memoryBanner(planIn) {
 
 /** The plan as its reader gets it: led by what did not run and by a write that did not land. @param {TriagePlan} planIn @returns {TriagePlan} */
 function bannered(planIn) {
+  // Prepended first, so the INCOMPLETE and lost-record banners below stay above it.
+  memoryBanner(planIn)
   // What did not run has to reach the READER of the plan, not just the run record. A dead `gather:pr`
   // agent means the plan covers fewer sources than were asked for, and a plan that says nothing about
   // it is indistinguishable from one that covered everything.
@@ -536,7 +538,6 @@ function bannered(planIn) {
   }
   // Where the sift's records came from, what of them did not apply, and the issues to file.
   planIn.memory = memoryLine(memory, false)
-  memoryBanner(planIn)
   if (priorRefused.length) planIn.priorDecisionsNotApplied = priorRefused
   if (sift.notices.length) planIn.ruleNotices = sift.notices
   if (issues.length) planIn.issues = issues

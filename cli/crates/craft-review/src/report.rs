@@ -393,9 +393,11 @@ fn listed(heading: Option<&str>, files: &[String], out: &mut String) {
     out.push('\n');
 }
 
-/// How the run was weaker than asked: the host's notes, the rubric skills no path was found for, a
-/// recall that may not have read the store (its backend query failed, or it read only part of the
-/// answer), the gate's unread changed lines, then the CONSUMERS lines no lens marked per line and no seam pass read (realm @nick/craft, node #531).
+/// How the run was weaker than asked.
+///
+/// The host's notes, the rubric skills no path was found for, a recall that may not have read the
+/// store (its query failed, its answer was truncated, or the launcher's recall was so), the gate's
+/// unread changed lines, then the CONSUMERS lines no lens marked per line and no seam pass read (realm @nick/craft, node #531).
 #[must_use]
 pub fn degraded_notes(state: &RunState) -> Vec<String> {
     let mut notes = state.degraded.clone();
