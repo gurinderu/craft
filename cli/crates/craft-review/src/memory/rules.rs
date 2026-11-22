@@ -23,6 +23,13 @@ use crate::tool::{finding_lenses, lens_words};
 mod section;
 mod verdicts;
 
+/// The most prompts of [`PAIRS_MAX`] pairs one run asks the rule judge (`RULE_JUDGE_PROMPTS_MAX`):
+/// a few project-wide rules over a large batch make every finding a candidate of each, and those
+/// pairs are all judged up to [`SENT_MAX`]; the rest are named and not covered.
+const PROMPTS_MAX: usize = 10;
+/// The most pairs one run's rule judges see (`RULE_JUDGE_SENT_MAX`).
+const SENT_MAX: usize = PAIRS_MAX * PROMPTS_MAX;
+
 pub(super) use section::section;
 use verdicts::read;
 
@@ -50,7 +57,7 @@ fn candidate(f: &Value, r: &PriorDecision) -> bool {
 pub(super) struct Pairs {
     rules: Vec<PriorDecision>,
     superseded: Vec<String>,
-    /// Every candidate pair as (finding, rule) indices, ranked: those past [`PAIRS_MAX`] are cut.
+    /// Every candidate pair as (finding, rule) indices, ranked: those past [`SENT_MAX`] are cut.
     pairs: Vec<(usize, usize)>,
 }
 
@@ -108,24 +115,30 @@ impl Pairs {
     }
 
     pub(super) fn sent(&self) -> usize {
-        self.pairs.len().min(PAIRS_MAX)
+        self.pairs.len().min(SENT_MAX)
     }
 
-    /// The rule judge's task over the pairs in its bound, `None` when there is none.
+    /// The rule judge's tasks over the pairs in its bound, [`PAIRS_MAX`] pairs each — `rule-judge`,
+    /// then `rule-judge-2` and on — none when there is no pair.
     ///
     /// # Errors
     /// When its template or schema is missing.
-    pub(super) fn task(&self, findings: &[Value]) -> Result<Option<Task>, ContentError> {
-        if self.pairs.is_empty() {
-            return Ok(None);
-        }
-        let pairs: Vec<(&PriorDecision, &Value)> = self
-            .pairs
-            .iter()
-            .take(self.sent())
-            .filter_map(|&(fi, ri)| Some((self.rules.get(ri)?, findings.get(fi)?)))
-            .collect();
-        Judge::Rule.task(&judge::rule_pairs_json(&pairs)).map(Some)
+    pub(super) fn tasks(&self, findings: &[Value]) -> Result<Vec<Task>, ContentError> {
+        let sent = self.pairs.get(..self.sent()).unwrap_or_default();
+        sent.chunks(PAIRS_MAX)
+            .enumerate()
+            .map(|(k, chunk)| {
+                let pairs: Vec<(&PriorDecision, &Value)> = chunk
+                    .iter()
+                    .filter_map(|&(fi, ri)| Some((self.rules.get(ri)?, findings.get(fi)?)))
+                    .collect();
+                let mut task = Judge::Rule.task(&judge::rule_pairs_json(&pairs))?;
+                if k > 0 {
+                    task.id = format!("{}-{}", task.id, k + 1);
+                }
+                Ok(task)
+            })
+            .collect()
     }
 }
 
@@ -139,9 +152,9 @@ pub(super) struct Covered {
     pub notes: Vec<String>,
 }
 
-/// Applies the rules of `p` to `findings`, `answer` the rule judge's when it was asked (`None`:
-/// it gave none).
-pub(super) fn apply(findings: Vec<Value>, p: &Pairs, answer: Option<&Value>) -> Covered {
+/// Applies the rules of `p` to `findings`, `answers` the rule judges' in their tasks' order (one
+/// missing or `None`: that judge gave none).
+pub(super) fn apply(findings: Vec<Value>, p: &Pairs, answers: &[Option<Value>]) -> Covered {
     let mut out = Covered::default();
     if !p.superseded.is_empty() {
         out.notes.push(format!(
@@ -160,7 +173,7 @@ pub(super) fn apply(findings: Vec<Value>, p: &Pairs, answer: Option<&Value>) -> 
         out.kept = findings;
         return out;
     }
-    let r = read(p, findings.len(), answer);
+    let r = read(p, findings.len(), answers);
     let against = r.against.iter().filter(|a| a.is_some()).count();
     let mut names: Vec<(String, Vec<String>)> = Vec::new();
     for (fi, why) in &r.unjudged {

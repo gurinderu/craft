@@ -221,9 +221,10 @@ store's current state; a passed record the store withdrew or superseded is held 
 holds some the store may not — rejections just read from PR threads, say — and never relies on
 passing to stand in for the engine's recall.
 
-1. `recall(<no topic>, <each path of the diff>)` — `git diff --name-only <base>...HEAD`. Decisions,
-   questions and project rules (`kind: decision`, `kind: question`, `kind: rule`), **active** only;
-   never lessons.
+1. `recall(<no topic>, <each path of the diff>)` — `git diff --name-only <base>...HEAD`. Decisions
+   and questions (`kind: decision`, `kind: question`) for those paths, and every project rule
+   (`kind: rule`) whatever its scope — a project holds few, and the engine matches a rule's scope to
+   each finding itself; **active** only; never lessons.
 2. To add records, pass them to the workflow as the argument `priorDecisions` — **only in an object argument**,
    `{ …, priorDecisions: [<records>] }`: a list of the records in the shape above, as recalled —
    `id`, `kind`, `title`, `scope`, `body`, `date`, `author`, `commit`, `deferred`, `lens`, `links` — nothing rewritten,
@@ -242,7 +243,7 @@ passing to stand in for the engine's recall.
    again as a normal finding when it is Critical/High, when the code in the decision's scope changed
    since its `commit`, when the decision has no `commit`, or when the repository does not know that
    `commit` (a squash-merged branch, another clone — named under **Prior decisions not applied**).
-   More than 100 decisions, or a record that does not fit (a missing title or reason, no `id` and
+   More than 100 decisions (project rules are counted apart, up to 100 of their own, so the decisions never push a rule out), or a record that does not fit (a missing title or reason, no `id` and
    no `kind` or `scope` to derive one from, a field past
    its bound, a control character in `id`, `scope` or `commit`, a scope outside the repo or holding
    characters other than letters, digits and `._@+/ -` — a scope `path:N` or `path:N-M` is read as

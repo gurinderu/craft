@@ -182,3 +182,40 @@ fn a_project_rule_the_judge_puts_a_finding_under_covers_it() {
         ],
     );
 }
+
+#[test]
+fn project_rules_past_a_hundred_decisions_are_all_judged_however_many_pairs() {
+    let repo = fixture(true);
+    let out = tempfile::tempdir().unwrap();
+    let decisions: Vec<Value> = (0..120)
+        .map(|i| json!({"kind": "decision", "title": format!("doc wording {i}"), "body": "kept", "scope": format!("docs/d{i}.md"), "status": "active"}))
+        .collect();
+    let rules: Vec<Value> = (0..7)
+        .map(|i| json!({"kind": "rule", "title": format!("no guards for theoretical races {i}"), "body": "a race in a tiny window is accepted", "scope": ".", "status": "active"}))
+        .collect();
+    let recall = json!({"backend": "repo", "why": "the .craft/memory directory", "decisions": decisions, "rules": rules});
+    let found: Vec<Value> = (1..=6)
+        .map(|l| titled("Medium", l, &format!("race {l} between concurrent calls")))
+        .collect();
+    let s = verified(repo.path(), out.path(), None, &recall, &found);
+    assert_eq!(
+        ids(&s),
+        ["rule-judge", "rule-judge-2"],
+        "42 pairs: two prompts"
+    );
+    let covered = |n: usize| {
+        let v: Vec<Value> = (0..n)
+            .map(|p| json!({"pair": p, "covered": true, "violates": false, "why": "a theoretical race"}))
+            .collect();
+        json!({"verdicts": v})
+    };
+    let done = submit(
+        &out.path().join("run"),
+        json!({"rule-judge": covered(40), "rule-judge-2": covered(2)}),
+    );
+    assert_eq!(done["findings"], json!([]), "every race finding is covered");
+    assert_contains_all(
+        &report(&done),
+        &["project rules: 7 project rule(s) given, 42 rule–finding pair(s), 6 finding(s) covered"],
+    );
+}

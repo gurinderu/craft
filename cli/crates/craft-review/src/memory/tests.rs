@@ -71,13 +71,13 @@ fn the_rule_judges_answer_is_read_against_the_pairs_kept_when_it_was_asked() {
         ..Memory::default()
     };
     let settled = vec![tool_finding()];
-    assert!(m.rule_task(&settled, &chain).unwrap().is_some());
+    assert_eq!(m.rule_tasks(&settled, &chain).unwrap().len(), 1);
     assert_eq!(m.asked.ruled.as_deref(), Some([(0, 0), (0, 1)].as_slice()));
     // Asked about the second rule only, its verdict on pair 0 is that rule's.
     m.asked.ruled = Some(vec![(0, 1)]);
     let answer = json!({"verdicts": [{"pair": 0, "covered": true, "violates": false, "why": "y"}]});
     let (mut kept, mut notes) = (settled, Vec::new());
-    m.cover(&mut kept, &mut chain, &mut notes, Some(&answer));
+    m.cover(&mut kept, &mut chain, &mut notes, &[Some(answer)]);
     assert!(kept.is_empty() && m.asked.ruled.is_none());
     let aside = m.set_aside[0].to_string();
     assert!(
@@ -153,6 +153,35 @@ fn the_launchers_records_apply_before_any_recall_and_the_memory_line_says_so() {
         "memory: none — not recalled — the run ended before its recall step; plus 1 passed by the launcher"
     );
     assert!(Memory::open(None).decisions.is_empty());
+}
+
+#[test]
+fn project_rules_are_counted_apart_so_decisions_past_the_cap_never_push_one_out() {
+    let mut list: Vec<_> = (0..120)
+        .map(
+            |i| json!({"id": format!("decision-{i}"), "title": "t", "reason": "r", "scope": "src"}),
+        )
+        .collect();
+    list.push(json!({"kind": "rule", "title": "no guards for theoretical races", "body": "b", "scope": "."}));
+    let p = parse(Some(&json!(list)), &plain_label);
+    assert_eq!(p.decisions.len(), 101);
+    assert_eq!(p.decisions.last().map(|d| d.kind), Some(RecordKind::Rule));
+    assert_eq!(p.refused.len(), 1);
+    assert!(
+        p.refused[0].starts_with("20 decision(s) past the cap of 100"),
+        "{:?}",
+        p.refused
+    );
+    let rules: Vec<_> = (0..101)
+        .map(|i| json!({"kind": "rule", "title": format!("rule {i}"), "body": "b", "scope": "."}))
+        .collect();
+    let p = parse(Some(&json!(rules)), &plain_label);
+    assert_eq!(p.decisions.len(), 100);
+    assert!(
+        p.refused[0].starts_with("1 project rule(s) past the cap of 100 were not applied — findings they would cover are raised normally: decision #100 (rule-"),
+        "{:?}",
+        p.refused
+    );
 }
 
 #[test]
