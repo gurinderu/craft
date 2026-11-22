@@ -1,7 +1,7 @@
 ---
 name: memory
 description: >-
-  Memory of the consumer project's own facts — decisions on review findings, project rules (a stance on a class of findings), lessons, open questions (deferred findings too) — kept across sessions in the project's own store (a setting, an MCP server, harness memory, .craft/memory). Verbs: recall(topic, scope), record-decision, record-rule, record-lesson, record-question; the `external` records earlier releases wrote are recalled only for `craft init` to import. Use when such a fact should outlive the session, before working on a path to learn what was decided there, or before a craft review (its engine recalls itself; priorDecisions only adds). Triggers: remember this decision, record why we rejected, make it a project rule, what did we decide about, note this lesson, open question for later. Not for memory leaks or usage (rust-performance, rust-ownership), nor craft's run records and ledger.
+  Memory of the consumer project's own facts — decisions on review findings, project rules (a stance on a class of findings), lessons, open questions (deferred findings too) — kept across sessions in the project's own store (a setting, an MCP server, harness memory, .craft/memory). Verbs: recall(topic, scope), record-decision, record-rule, record-lesson, record-question (a scope is a path or component, never a line); the `external` records earlier releases wrote are recalled only for `craft init` to import. Use when such a fact should outlive the session, before working on a path to learn what was decided there, or before a craft review (its engine recalls itself; priorDecisions only adds). Triggers: remember this decision, record why we rejected, make it a project rule, what did we decide about, note this lesson, open question for later. Not for memory leaks or usage (rust-performance, rust-ownership), nor craft's run records and ledger.
 ---
 
 # Memory — the project's decisions, rules, lessons and questions
@@ -33,7 +33,7 @@ answered question becomes a `decision` that supersedes it.
   kind    decision | rule | lesson | question | external
   title   one line, ≤ 200 chars — the finding title verbatim, the rule's statement, the lesson, the question
   body    the reason / why the rule holds / the lesson / what would answer it — ≤ 1200 chars
-  scope   a repo-relative path (file or directory) or a component name; `.` for the whole repo (required on a rule)
+  scope   a repo-relative path (file or directory) or a component name; `.` for the whole repo (required on a rule); never a line — the line goes in `line`
   status  active | superseded | withdrawn
   date    YYYY-MM-DD of the last write
   author  who decided — a login or a name, ≤ 120 chars (decisions; optional on the others)
@@ -108,6 +108,16 @@ trailing `/` (e.g. `printf '%s\n%s\n%s' decision 'unwrap in parser is fine' src/
 sha256sum | cut -c1-10`). Re-recording the same kind + title + scope **updates** that record
 (body, date, links) instead of adding a duplicate.
 
+**The scope never carries a line.** A record verb given a scope of the form `path:N` or
+`path:N-M` does not write it: it refuses and names the corrected form — scope = `path`,
+line = `N` (the start line). Earlier runs wrote such scopes; a reader takes them as that path and
+line `N` for matching (a `line` the record carries itself wins), while their id stays the hash of
+the scope as written, so two old records of one title at two ranges stay two records.
+Re-recording such an old record writes scope = `path` and its `line` under the id of the path,
+sets the old record `superseded` and links `supersedes: <old id>` — unless an active record of the
+same kind and title already holds that path: then the id rule above would make them one record,
+so the old one is left as it is written, and the reader keeps applying it at its own line.
+
 **Bounds — what happens when one is reached.** These are refusals, never silent truncation:
 
 - `title` over 200 chars → shorten it to the claim yourself before writing; a title cut mid-word
@@ -177,7 +187,7 @@ rule 3. Never put secrets, credentials or personal data in a record, whatever th
 
 1. **Scope match.** A record matches a touched path when its `scope` equals the path, is a
    directory containing it, or names the component the path belongs to; `.` matches everything
-   and ranks last.
+   and ranks last. An old scope `path:N` or `path:N-M` matches as `path`.
 2. **Keyword match.** `topic` keywords against `title` and `body`; with both scope and topic,
    a record must match the scope and at least one keyword.
 3. **Only matches come back.** Use the backend's search (the MCP search tool, `grep -l` over the
@@ -235,7 +245,8 @@ passing to stand in for the engine's recall.
    More than 100 decisions, or a record that does not fit (a missing title or reason, no `id` and
    no `kind` or `scope` to derive one from, a field past
    its bound, a control character in `id`, `scope` or `commit`, a scope outside the repo or holding
-   characters other than letters, digits and `._@+/ -`),
+   characters other than letters, digits and `._@+/ -` — a scope `path:N` or `path:N-M` is read as
+   `path` and line `N` instead),
    is refused and named — the report's **Prior decisions not applied** section — narrow the recall.
 
 ## Subagents
