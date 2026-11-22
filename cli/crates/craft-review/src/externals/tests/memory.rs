@@ -114,3 +114,27 @@ fn text_caps_are_utf16_not_bytes_and_capture_refusals_keep_utf16_prefix() {
         "external record c: version: revision outside [A-Za-z0-9._+/-] or starting with a non-alphanumeric"
     );
 }
+
+#[test]
+fn a_catastrophically_backtracking_version_match_is_refused_for_its_record_not_a_hang() {
+    let root = tempfile::tempdir().unwrap();
+    put(root.path(), "v", &format!("{}!\n", "a".repeat(40)));
+    put(root.path(), "w", "tag: v1\n");
+    let started = std::time::Instant::now();
+    let result = import(
+        root.path(),
+        json!([
+            {"system":"slow","repo":"r","versionFrom":"v","versionMatch":"^(a+)+$"},
+            {"system":"fine","repo":"r","versionFrom":"w","versionMatch":"tag: (v1)"}
+        ]),
+    );
+    assert!(started.elapsed() < super::super::pattern::CALL_BUDGET * 3);
+    assert_eq!(
+        result["refused"],
+        json!(["external record slow: versionMatch ran past its budget of 2 s — refused"])
+    );
+    assert_eq!(
+        result["candidates"][0]["system"], "fine",
+        "the engine still serves the next record"
+    );
+}
