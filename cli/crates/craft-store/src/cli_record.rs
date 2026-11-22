@@ -203,6 +203,7 @@ pub fn cli_record(step: &Obj, stats: Obj, at: &At<'_>) -> Obj {
         .with("kind", Js::str("workflow"))
         .with("name", Js::str(ENGINE))
         .with("driver", Js::str(DRIVER))
+        .with("cliRun", text(step.get("run")))
         .with("nested", Js::Bool(at.via.is_some()))
         .with("via", at.via.map_or(Js::Null, Js::str))
         .with("depth", Js::str(at.depth))

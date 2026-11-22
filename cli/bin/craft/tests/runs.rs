@@ -346,3 +346,75 @@ fn check_does_not_call_independent_runs_phantom_twins() {
             .any(|r| r["kind"] == "phantom-incomplete")
     );
 }
+
+/// A run stopped and resumed, as the 2026-11-22 rauthy review filed it: the stopped part
+/// INCOMPLETE, the resume's part finished, both naming the binary's run directory; beside them a
+/// run of another directory stopped twice and never resumed.
+fn stopped_and_resumed() -> tempfile::TempDir {
+    let d = tempfile::tempdir().unwrap();
+    let mut stopped = review("0.9.0", "INCOMPLETE", 0);
+    stopped["cliRun"] = json!("/s/cli/1795339093-2927550");
+    stopped["notRun"] = json!(["the craft binary did not finish the run"]);
+    stopped["phases"] = json!([{"phase": "start", "at": "2026-11-22T09:19:05.981Z"}]);
+    record(d.path(), "2026-11-22T09-42-49Z", &stopped);
+    let mut finished = review("0.9.0", "Block", 2);
+    finished["cliRun"] = stopped["cliRun"].clone();
+    finished["round"] = json!(2);
+    finished["phases"] = json!([{"phase": "start", "at": "2026-11-22T09:43:11.118Z"}]);
+    record(d.path(), "2026-11-22T09-56-50Z", &finished);
+    let mut other = stopped.clone();
+    other["cliRun"] = json!("/s/cli/2-2");
+    record(d.path(), "2026-11-22T11-00-00Z", &other);
+    record(d.path(), "2026-11-22T12-00-00Z", &other);
+    d
+}
+
+#[test]
+fn a_stopped_part_of_a_resumed_run_folds_into_its_finished_record() {
+    let d = stopped_and_resumed();
+    let lines = ndjson(&craft(d.path(), &["retro", "0.9.0", "--json"]));
+    let summary = lines.iter().find(|l| l["section"] == "summary").unwrap();
+    assert_eq!(
+        (
+            &summary["runs"],
+            &summary["folded"],
+            &summary["partialCoverage"]
+        ),
+        (&json!(2), &json!(2), &json!(1)),
+        "the resumed run once, as its finished record; the never-resumed run once, INCOMPLETE"
+    );
+    let not_run = lines.iter().find(|l| l["section"] == "notRun").unwrap();
+    assert_eq!(not_run["runs"], json!(1));
+    let rows = ndjson(&craft(d.path(), &["stats", "--by", "version", "--json"]));
+    assert_eq!(
+        (
+            &rows[0]["tally"]["runs"],
+            &rows[0]["tally"]["verdicts"]["incomplete"],
+            &rows[0]["tally"]["verdicts"]["block"]
+        ),
+        (&json!(2), &json!(1), &json!(1))
+    );
+    let incomplete = ndjson(&craft(
+        d.path(),
+        &[
+            "stats",
+            "--by",
+            "version",
+            "--verdict",
+            "incomplete",
+            "--json",
+        ],
+    ));
+    assert_eq!(
+        incomplete[0]["tally"]["runs"],
+        json!(1),
+        "a filter that keeps only INCOMPLETE records still knows the resumed run finished"
+    );
+    let ls = ndjson(&craft(d.path(), &["ls", "--json"]));
+    assert_eq!(ls.len(), 4, "ls lists every record filed, as filed");
+    let check = ndjson(&craft(d.path(), &["check", "--json"]));
+    assert!(
+        !check.iter().any(|r| r["kind"] == "phantom-incomplete"),
+        "a stopped part is no phantom: its run did stop"
+    );
+}

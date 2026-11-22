@@ -80,3 +80,17 @@ test('a resume hands the binary the plugin root located now to file through, for
   )
   assert.match(run.report, /^## Verdict\n\n✅ Approve/)
 })
+
+test("a resumed run stopped short files its record with the binary's round, scope, base and run directory", async () => {
+  const pending = { run: RUN, tasks: [lens()], done: false, head: 'b264e96a', round: 2, lensScope: 'delta', base: 'ba2804eb', path: 'crates/a' }
+  const run = await runEngine('review', {
+    args: { craftBin: '/opt/craft', run: RUN, repo: '/work/repo' },
+    script: { step: ran(pending), lens: 'done', 'log-run': { ok: true, output: ['wrote /store/r.json'] } },
+  })
+  const rec = JSON.parse(String(run.calls.find(c => c.label === 'log-run')?.prompt).split(/\nRECORD:\n/)[1] ?? 'null')
+  assert.deepEqual(
+    [rec.verdict, rec.round, rec.lensScope, rec.base, rec.path, rec.cliRun],
+    ['INCOMPLETE', 2, 'delta', 'ba2804eb', 'crates/a', RUN],
+    'the fallback names the run it stands for, so a reader folds it with the record its resume files',
+  )
+})

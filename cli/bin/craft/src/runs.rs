@@ -12,6 +12,7 @@ use anyhow::{Context, Result, bail};
 use clap::builder::TypedValueParser;
 use craft_store::filter::Filter;
 use craft_store::js::{Js, Obj};
+use craft_store::parts::Parts;
 use craft_store::read::{self, Skipped};
 use craft_store::tally::Tally;
 
@@ -218,14 +219,21 @@ fn printed(args: &RunsArgs) -> Result<ExitCode> {
 fn retro(store: &Path, version: &str, skipped: &mut Skipped) -> Result<craft_store::retro::Retro> {
     let mut out = craft_store::retro::Retro::default();
     let mut newest = std::collections::BTreeMap::<String, (String, String)>::new();
+    let mut parts = Parts::default();
     let mut failure = None;
     read::records(store, skipped, |name, r| {
+        let died = r.get("partial").is_some_and(Js::truthy);
+        if r.get("schemaVersion").is_some_and(Js::truthy) && !died {
+            parts.note(&r);
+        }
         if !r.get("schemaVersion").is_some_and(Js::truthy)
             || r.text_units("craftVersion") != version
         {
             out.other += 1;
-        } else if r.get("partial").is_some_and(Js::truthy) {
+        } else if died {
             out.unfinished += 1;
+        } else if held(&mut parts, name, &r, &mut failure) {
+            // Counted, or folded, once every record is read.
         } else if let Some(key) = craft_store::retro::run_key(&r) {
             let ts = match r.try_text("ts") {
                 Ok(ts) => ts.to_owned(),
@@ -269,7 +277,42 @@ fn retro(store: &Path, version: &str, skipped: &mut Skipped) -> Result<craft_sto
             Err(why) => skipped.records.push((name, why)),
         }
     }
+    let (standing, folded) = parts.standing();
+    out.folded += folded;
+    for r in read_back(store, standing, skipped) {
+        craft_store::retro::add_record(&mut out, &r)?;
+    }
     Ok(out)
+}
+
+/// Whether `r` is a stopped part `parts` holds back until every record is read
+/// ([`craft_store::parts`]); a time that does not read is kept as the read's failure.
+fn held(
+    parts: &mut Parts,
+    name: &str,
+    r: &Obj,
+    failure: &mut Option<craft_store::js::Utf16Error>,
+) -> bool {
+    parts.hold(name, r).unwrap_or_else(|e| {
+        *failure = Some(e);
+        true
+    })
+}
+
+/// The held records read again, each still the one filed at its time; one changed or gone is said
+/// passed over.
+fn read_back(store: &Path, held: Vec<(String, String)>, skipped: &mut Skipped) -> Vec<Obj> {
+    let mut out = Vec::new();
+    for (ts, name) in held {
+        match read::record(store, &name) {
+            Ok(r) if r.text_units("ts") == ts.as_str() => out.push(r),
+            Ok(_) => skipped
+                .records
+                .push((name, "record changed while reading".into())),
+            Err(why) => skipped.records.push((name, why)),
+        }
+    }
+    out
 }
 
 fn listed(
@@ -324,11 +367,15 @@ fn stats(
     let mut groups: std::collections::BTreeMap<String, Tally> = std::collections::BTreeMap::new();
     let mut newest: std::collections::BTreeMap<String, (String, String)> =
         std::collections::BTreeMap::new();
+    let mut parts = Parts::default();
     let mut failure = None;
     read::records(store, skipped, |name, r| {
         let finished = r.get("schemaVersion").is_some_and(Js::truthy)
             && !r.get("partial").is_some_and(Js::truthy);
-        if !finished || !filter.keeps(&r) {
+        if finished {
+            parts.note(&r);
+        }
+        if !finished || !filter.keeps(&r) || held(&mut parts, name, &r, &mut failure) {
             return;
         }
         if let Some(key) = craft_store::retro::run_key(&r) {
@@ -367,6 +414,9 @@ fn stats(
                 .push((name, "record changed while reading".into())),
             Err(why) => skipped.records.push((name, why)),
         }
+    }
+    for r in read_back(store, parts.standing().0, skipped) {
+        tally_record(&mut groups, by, &r)?;
     }
     Ok(groups.into_iter().collect())
 }

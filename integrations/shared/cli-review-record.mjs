@@ -19,7 +19,7 @@ import { resumeHint } from './cli-review-verdict.mjs'
 
 /** @typedef {{ severity: string, file: string, line: number, title: string, ruleId: string, tier: string }} Finding  as the finished step names it */
 /** @typedef {{ file: string, line: number, symbol: string, severity: string, tier: string, disposition: string, source: string, ruleId: string, title: string, why: string, toolRule?: string, sources?: unknown[], deferral?: Record<string, unknown> }} LedgerRow  as the finished step names it */
-/** @typedef {{ verdict: string, base?: string, path?: string, findings?: Finding[], uncovered?: string[], notRun?: string[], round?: number, lensScope?: 'delta' | 'full', ledger?: LedgerRow[] | null, reReview?: Record<string, unknown> | null, memory?: Record<string, unknown> | null, sorting?: Record<string, unknown> | null, memoryContradictions?: Record<string, unknown> | null, prComments?: Record<string, unknown> | null, dimensions?: Record<string, unknown>[], verification?: Record<string, unknown> | null, lensRounds?: Record<string, unknown>[] | null, runtimeStats?: import('./cli-review-clock.mjs').RuntimeStats | null }} Outcome */
+/** @typedef {{ verdict: string, run?: string, base?: string, path?: string, findings?: Finding[], uncovered?: string[], notRun?: string[], round?: number, lensScope?: 'delta' | 'full', ledger?: LedgerRow[] | null, reReview?: Record<string, unknown> | null, memory?: Record<string, unknown> | null, sorting?: Record<string, unknown> | null, memoryContradictions?: Record<string, unknown> | null, prComments?: Record<string, unknown> | null, dimensions?: Record<string, unknown>[], verification?: Record<string, unknown> | null, lensRounds?: Record<string, unknown>[] | null, runtimeStats?: import('./cli-review-clock.mjs').RuntimeStats | null }} Outcome */
 /** @typedef {(prompt: string, opts: Record<string, unknown>) => Promise<unknown>} Call */
 /** @typedef {{ run: Call, route: (opts: Record<string, unknown>) => Record<string, unknown> }} Service  integrations/shared/service-agent.mjs */
 
@@ -125,6 +125,9 @@ export function cliRecord(o, { craftVersion, depth, strict, via, outputTokens, r
     kind: 'workflow',
     name: ENGINE,
     driver: DRIVER,
+    // The binary's run directory: a run stopped and resumed files a record per part, each naming it, which the store's
+    // readers fold into the run's finished record (integrations/shared/run-duplicates.mjs; cli/crates/craft-store/src/segments.rs).
+    cliRun: o.run ?? '',
     nested: via !== null,
     via,
     depth,
@@ -195,9 +198,9 @@ export function settledNotes(finished, lost, noteLoss, driver) {
  * went to, `refusal(record)` a refused argument's record as it stands, and `notes()` the telemetry section the answer
  * carries when a write did not land. A lost write never fails the run.
  * @param {{ agent: Call, log: (line: string) => void, budget?: { spent: () => number } }} sb
- * @param {{ craftVersion: string, repo: string, depth: string, strict: boolean, via?: string, service: Service }} o
+ * @param {{ craftVersion: string, repo: string, run?: string, depth: string, strict: boolean, via?: string, service: Service }} o  run: the run directory a resume names
  */
-export function cliRecorder(sb, { craftVersion, repo: given, depth, strict, via = '', service }) {
+export function cliRecorder(sb, { craftVersion, repo: given, run = '', depth, strict, via = '', service }) {
   let repo = given
   let keyed = !!given
   /** @type {string[]} */
@@ -206,6 +209,10 @@ export function cliRecorder(sb, { craftVersion, repo: given, depth, strict, via 
   let craftRoot = ''
   // Where the binary's checkpoints went and whether a write re-enters that directory, as its last step said.
   let filing = { runDir: '', rejoin: false }
+  // What the binary last said of the run — its directory, its round of the chain, what its lenses review, its base and
+  // path — for the record of a run it never finished; a resume's directory before any step is read.
+  /** @type {Partial<Outcome>} */
+  let seen = run ? { run } : {}
   const logRun = makeRunLogger({
     // service.route: once the service agent failed to launch, the record's first ask goes to the default type too.
     call: quietly((/** @type {string} */ prompt, /** @type {Record<string, unknown>} */ opts) => sb.agent(prompt, service.route(opts))),
@@ -217,6 +224,7 @@ export function cliRecorder(sb, { craftVersion, repo: given, depth, strict, via 
   /** @param {Step} step */
   function heard(step) {
     if (step.filing) filing = step.filing
+    seen = { run: step.run, round: step.round, lensScope: step.lensScope, base: step.base, path: step.path }
     heardLosses(step, lost, sb.log)
   }
   /** @param {Step & { done: true }} finished @returns {string} */
@@ -227,7 +235,8 @@ export function cliRecorder(sb, { craftVersion, repo: given, depth, strict, via 
     return telemetryLostSection(lost)
   }
   /** @param {Outcome} outcome */
-  const file = outcome => logRun(cliRecord(outcome, { craftVersion, depth, strict, via: via || null, outputTokens: sb.budget?.spent() ?? null }))
+  const file = outcome =>
+    logRun(cliRecord({ ...seen, ...outcome }, { craftVersion, depth, strict, via: via || null, outputTokens: sb.budget?.spent() ?? null }))
   // keyTo: the repository the run reviews, when the binary names it (a resumed run, `run=`), over the one given;
   // keyed: whether the record has a repository of its own, given or named.
   return {

@@ -5,7 +5,7 @@ import { isTaskModel } from './cli-review-task.mjs'
 import { millis } from './cli-review-clock.mjs'
 import { hasControl } from './cli-review-keys.mjs'
 import { harnessRefusal } from './cli-review-refusal.mjs'
-import { findingsOf, isObject, publicationOf, roundOf, stepText, stopNoteOf, strings, telemetryOf } from './cli-review-step-fields.mjs'
+import { chainOf, findingsOf, isObject, publicationOf, roundOf, stepText, stopNoteOf, strings, telemetryOf } from './cli-review-step-fields.mjs'
 
 export { isObject }
 
@@ -14,7 +14,7 @@ export { isObject }
 /** @typedef {{ runDir: string, rejoin: boolean, lost: string[], record: string }} Filing  what the binary's telemetry write after this step did (cli/crates/craft-review/src/filing.rs): the run directory its checkpoints went to ('' none yet), whether a later write re-enters it, each write that did not land as `<what> — <why>`, and on a finished step the record: `filed`, `failed`, '' when none was attempted */
 /** @typedef {import('./cli-review-record.mjs').LedgerRow} LedgerRow */
 /** @typedef {{ run: string, done: true, report: string, verdict: string, line: string, degraded: boolean, degradedNotes: string[], memorySections: string, head: string, base: string, path: string, findings: Finding[], uncovered: string[], notRun: string[], round: number, lensScope: 'delta' | 'full', ledger: LedgerRow[] | null, reReview: Record<string, unknown> | null, memory: Record<string, unknown> | null, strict: boolean, stopped: boolean, stopNote: string, repo: string, worktree: string, sorting: Record<string, unknown> | null, memoryContradictions: Record<string, unknown> | null, prComments: Record<string, unknown> | null, dimensions: Record<string, unknown>[], verification: Record<string, unknown> | null, lensRounds: Record<string, unknown>[] | null, at: number | null, took: number | null, filing: Filing | null }} Finished  ledger, memory, sorting, memoryContradictions and prComments null when the binary sent none (sorting and prComments: a run without comment; ledger: always null on a step the binary prints for the host — it goes only to its own filing, cli/crates/craft-store; realm @nick/craft, node #522); stopped when the binary held the run on the usage limit, to be resumed, stopNote that stop as a parent reads it ('' when none); memorySections the report's memory part verbatim — what memory set aside, the `## Memory` line, what was refused, the tools' finding titles — '' when the binary sent none; path the directory the run was confined to ('' for the whole change); degradedNotes the binary's notes of how the run ran weaker than asked, as the host handed them in; repo the repository the run reviews, '' when the binary named none; worktree the line naming craft's own worktree of the PR given the run reviews in, '' when it reviews the checkout it started in; dimensions, verification and lensRounds what its lenses yielded and verification judged ([] and null when the binary sent none); at and took the binary's clock (integrations/shared/cli-review-clock.mjs), null when it sent none; filing what the binary's own telemetry write did, null when it wrote none */
-/** @typedef {{ run: string, done: false, tasks: Task[], head: string, repo: string, phase: string, at: number | null, took: number | null, filing: Filing | null } | Finished} Step  phase: the binary's phase the tasks run in, '' when it names none */
+/** @typedef {{ run: string, done: false, tasks: Task[], head: string, repo: string, phase: string, round: number, lensScope: 'delta' | 'full', base: string, path: string, at: number | null, took: number | null, filing: Filing | null } | Finished} Step  phase: the binary's phase the tasks run in, '' when it names none; round, lensScope, base and path as a finished step's, round 1, full and '' from a binary that sends none on a pending one */
 
 /**
  * An absolute path an agent can quote into a command, else null: POSIX, or a Windows drive path (`C:\…\craft.exe`,
@@ -156,6 +156,9 @@ function pendingStep(v) {
       head: stepText(v['head']),
       repo: stepText(v['repo']),
       phase: stepText(v['phase']),
+      ...chainOf(v),
+      base: stepText(v['base']),
+      path: stepText(v['path']),
       ...clockOf(v),
     },
   }
