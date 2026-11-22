@@ -12,7 +12,7 @@
 // the judge says goes against a record is marked with it (integrations/shared/memory-contradiction.mjs, node #282).
 // Imported by integrations/claude-code/src/triage-findings.js; a set-aside question's structured deferral, which a
 // carried row is read by, is integrations/shared/ledger-deferral.mjs.
-import { reraisedBySeverity } from './prior-decisions.mjs'
+import { reraisedByRank } from './prior-decisions.mjs'
 import { matchFindings, sureMatchOf } from './prior-decision-match.mjs'
 import { candidatesToCheck, decisionsToCheck, runScopeCheck } from './prior-decision-scope.mjs'
 import { deferralOf } from './ledger-deferral.mjs'
@@ -80,12 +80,23 @@ export function commitMissingReason(d) {
 }
 
 /**
+ * Why a finding's severity raises it again whatever `d` says (realm @nick/craft, node #196): a Critical
+ * always, a High unless `d` is a human's decision. @param {DecidableFinding} f @param {PriorDecision} d @returns {string}
+ */
+export function severityReason(f, d) {
+  if (/^critical$/i.test(String(f.severity ?? '').trim()))
+    return `a Critical finding is never set aside by a prior ${d.kind === 'question' ? 'deferred question' : 'decision'}`
+  if (d.kind === 'question') return 'a High finding is never set aside by a prior deferred question'
+  return "a High finding is set aside only by a human's decision, and this one records no author"
+}
+
+/**
  * Why decision `d` cannot set finding `f` aside; '' when it can. `missing`: ids whose commit the repo
  * does not know (a squash-merged branch, another clone) — named apart from a changed scope.
  * @param {DecidableFinding} f @param {PriorDecision} d @param {Set<string>} unchanged @param {Set<string>} [missing] @returns {string}
  */
 export function reraiseReason(f, d, unchanged, missing = new Set()) {
-  if (reraisedBySeverity(f.severity)) return `a Critical/High finding is never set aside by a prior ${d.kind === 'question' ? 'deferred question' : 'decision'}`
+  if (reraisedByRank(f.severity, d)) return severityReason(f, d)
   if (!d.commit) return `the ${priorKindLabel(d)} records no commit, so an unchanged scope cannot be established`
   if (missing.has(d.id)) return commitMissingReason(d)
   if (!unchanged.has(d.id)) return `the code in ${d.scope} changed since ${d.commit} (or that could not be checked)`

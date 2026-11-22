@@ -2,7 +2,8 @@
 // project's recorded rejections ("not a bug here, because …"), recalled from whatever memory the
 // project keeps (the `memory` skill) for the paths of the diff. The engine never drops a finding a
 // decision answers — it sets it aside under its own section, marked with who rejected it, when, why
-// and where. A finding is raised again normally when it is Critical or High, when the code in the
+// and where. A finding is raised again normally when it is Critical, when it is High and no human's
+// decision (one recording its author) answers it (realm @nick/craft, node #196), when the code in the
 // decision's scope changed since the commit the decision was recorded at, or when that cannot be
 // established. The engine recalls them itself on every launch and a passed list adds to that recall
 // (integrations/shared/memory-recall.mjs; realm @nick/craft, node #218); a malformed one applies nothing and is named.
@@ -121,7 +122,22 @@ export function titleOverlap(x, y) {
   return shared / Math.max(a.size, b.size)
 }
 
-/** Critical/High are always raised again (realm @nick/craft, node #187). @param {unknown} sev */
+/** Critical/High, which no deferred question holds (realm @nick/craft, node #187). @param {unknown} sev */
 export function reraisedBySeverity(sev) {
   return /^(critical|high)$/i.test(String(sev ?? '').trim())
+}
+
+/** Whether `d` is a human's decision: a decision that records its author. @param {{ kind: string, who: string }} d */
+export function humanDecision(d) {
+  return d.kind === 'decision' && !!d.who
+}
+
+/**
+ * Whether a finding's severity alone raises it again whatever record `d` says (realm @nick/craft, node #196):
+ * a Critical always, a High unless `d` is a human's decision.
+ * @param {unknown} sev @param {{ kind: string, who: string }} d
+ */
+export function reraisedByRank(sev, d) {
+  const s = String(sev ?? '').trim()
+  return /^critical$/i.test(s) || (/^high$/i.test(s) && !humanDecision(d))
 }

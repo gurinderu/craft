@@ -2,7 +2,7 @@
 // one shell line per decision the scope-check agent runs — whether the decision's commit is known to
 // this repo, and if so whether the code in its scope changed since — and the agent's answer read.
 // Imported by integrations/claude-code/src/triage-findings.js.
-import { reraisedBySeverity } from './prior-decisions.mjs'
+import { reraisedByRank } from './prior-decisions.mjs'
 import { findingPlan, sureMatchOf, triedOrder } from './prior-decision-match.mjs'
 
 /**
@@ -13,7 +13,7 @@ import { findingPlan, sureMatchOf, triedOrder } from './prior-decision-match.mjs
 
 /**
  * The decisions whose scope must be checked for change: those that answer some finding a decision
- * could set aside (not Critical/High) and that recorded a commit to compare against. `matchOf` is the
+ * could set aside (not one its severity raises again: a Critical, a High no human's decision answers) and that recorded a commit to compare against. `matchOf` is the
  * match the split runs on (integrations/shared/prior-decision-match.mjs); by default, the sure matches alone.
  * @param {DecidableFinding[]} findings @param {PriorDecision[]} decisions
  * @param {(f: DecidableFinding) => PriorMatch | undefined} [matchOf] @returns {PriorDecision[]}
@@ -21,9 +21,8 @@ import { findingPlan, sureMatchOf, triedOrder } from './prior-decision-match.mjs
 export function decisionsToCheck(findings, decisions, matchOf = sureMatchOf(decisions)) {
   const out = new Set(/** @type {PriorDecision[]} */ ([]))
   for (const f of findings) {
-    if (reraisedBySeverity(f.severity)) continue
     const d = matchOf(f)?.d
-    if (d && d.commit) out.add(d)
+    if (d && d.commit && !reraisedByRank(f.severity, d)) out.add(d)
   }
   return [...out]
 }
@@ -39,9 +38,8 @@ export function candidatesToCheck(findings, decisions) {
   const ordered = triedOrder(decisions)
   const out = new Set(/** @type {PriorDecision[]} */ ([]))
   for (const f of findings) {
-    if (reraisedBySeverity(f.severity)) continue
     const plan = findingPlan(f, ordered)
-    for (const d of plan.sure ? [...plan.disputed, plan.sure.d] : plan.disputed) if (d.commit) out.add(d)
+    for (const d of plan.sure ? [...plan.disputed, plan.sure.d] : plan.disputed) if (d.commit && !reraisedByRank(f.severity, d)) out.add(d)
   }
   return [...out]
 }

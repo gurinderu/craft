@@ -3,8 +3,8 @@
 // answers what it already settled — a finding an active decision, deferred question or project rule
 // answers leaves for the ledger without a validator, marked with who decided, when and where (node #196).
 // What may leave that way is bounded (node #309): only a match the matcher and its judge make (node #230;
-// tool rules, node #236); a Critical/High finding and a record whose scope changed since its commit are
-// raised again, by the review engine's own split (integrations/shared/prior-decision-apply.mjs). A finding the judge shows
+// tool rules, node #236); a Critical finding, a High no human's decision answers (node #196) and a record
+// whose scope changed since its commit are raised again, by the review engine's own split (integrations/shared/prior-decision-apply.mjs). A finding the judge shows
 // going against a record is a `conflict` for a human.
 // Imported by integrations/claude-code/src/triage-findings.js.
 import { SEVERITIES, shingleOverlap } from './run-record.mjs'

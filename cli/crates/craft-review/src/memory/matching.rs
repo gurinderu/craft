@@ -12,8 +12,8 @@ use serde_json::Value;
 
 use super::judge::Verdict;
 
-use super::PriorDecision;
 use super::record::scope_parts;
+use super::{PriorDecision, RecordKind};
 use crate::ledger::overlap;
 use crate::tool::{self, finding_lenses, is_tool_finding, is_tool_lens, lens_words};
 
@@ -62,10 +62,22 @@ pub(super) fn in_scope(file: &str, scope: &str) -> bool {
         && within.iter().zip(&parts).all(|(a, b)| a == b)
 }
 
-/// Whether a severity is Critical or High, which no record sets aside.
+/// Whether a severity is Critical or High, which no deferred question holds.
 pub(super) fn reraised_by_severity(f: &Value) -> bool {
     let s = text(f, "severity").trim().to_lowercase();
     s == "critical" || s == "high"
+}
+
+/// Whether `d` is a human's decision: a decision that records its author.
+pub(super) fn human_decision(d: &PriorDecision) -> bool {
+    d.kind == RecordKind::Decision && !d.who.is_empty()
+}
+
+/// Whether `f`'s severity alone raises it again whatever record `d` says (`reraisedByRank`; realm
+/// @nick/craft, node #196): a Critical always, a High unless `d` is a human's decision.
+pub(super) fn reraised_by_rank(f: &Value, d: &PriorDecision) -> bool {
+    let s = text(f, "severity").trim().to_lowercase();
+    s == "critical" || (s == "high" && !human_decision(d))
 }
 
 /// A finding's line when it is a positive whole number, else 0.
@@ -281,7 +293,7 @@ pub(super) fn resolve(
 }
 
 /// A candidate pair's rank under the judge's bound, lowest first (`pairRank`): findings a record
-/// may set aside before Critical and High ones, and within each a near line before a shared lens
+/// may set aside before those its severity raises again, and within each a near line before a shared lens
 /// before title words alone.
 pub(super) fn pair_rank(f: &Value, d: &PriorDecision) -> u8 {
     let a = anchor_of(f, d);
@@ -292,7 +304,7 @@ pub(super) fn pair_rank(f: &Value, d: &PriorDecision) -> u8 {
     } else {
         2
     };
-    if reraised_by_severity(f) {
+    if reraised_by_rank(f, d) {
         3 + place
     } else {
         place

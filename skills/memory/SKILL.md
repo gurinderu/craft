@@ -88,8 +88,10 @@ decisions' or the rules') says goes against an active record is not set aside: i
 with the record (`memoryContradicts`), listed under **Contradicts project memory**, and — in `review` with `comment`, the one that posts — goes to the PR as a defect
 even when a doubt sign holds; a line there marked `not confirmed` is a doubt to check (verify it before
 fixing), not a certain defect, and in `review` with `comment` it is also listed under Doubtful, the record
-named first. A Critical finding is raised even under a rule, named there as raised; a finding the
-judge gave no verdict on stays in the verdict, named there too. A rule is retired like any record:
+named first. A Critical finding is raised even under a rule, named there as raised; a High one a
+rule covers stays in the verdict, listed under **High covered by a project rule — confirm** — a rule
+is a stance, not a decision on that finding, so a human confirms it (a decision with its author sets
+it aside); a finding the judge gave no verdict on stays in the verdict, named there too. A rule is retired like any record:
 `superseded` or `withdrawn`. A stance recorded as a decision on one finding does not cover the next
 finding of its class.
 
@@ -229,9 +231,13 @@ passing to stand in for the engine's recall.
    link, also outside the verdict (the review ledger keeps it `deferred`, and a re-review carries it
    like a rejection); one a project rule covers, under **Covered by project rules** (above). A question without `deferred: true` records no deferral: it sets nothing aside
    and labels nothing; a deferral without a `commit` is raised again and named. Either is raised
-   again as a normal finding when it is Critical/High, when the code in the decision's scope changed
-   since its `commit`, when the decision has no `commit`, or when the repository does not know that
-   `commit` (a squash-merged branch, another clone — named under **Prior decisions not applied**).
+   again as a normal finding when it is Critical, when it is High and its record is not a human's
+   decision (a decision recording its `author`; a deferral never sets a High aside), when the code in
+   the decision's scope changed since its `commit`, when the decision has no `commit`, or when the
+   repository does not know that `commit` (a squash-merged branch, another clone — named under
+   **Prior decisions not applied**). A High a human's decision sets aside, its code unchanged since
+   that `commit`, is listed under its own **High rejected by a human** section with who, when, why
+   and the link, outside the verdict.
    More than 100 decisions, or a record that does not fit (a missing title or reason, no `id` and
    no `kind` or `scope` to derive one from, a field past
    its bound, a control character in `id`, `scope` or `commit`, a scope outside the repo or holding

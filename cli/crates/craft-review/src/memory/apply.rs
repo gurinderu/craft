@@ -2,8 +2,10 @@
 //! `integrations/shared/prior-decision-apply.mjs` applies them (realm @nick/craft, nodes #184, #187, #204, #218,
 //! #230, #282): a finding a decision answers leaves the verdict and is listed under Rejected before
 //! with who, when, why and a link, never dropped; one a deferred question answers under Known and
-//! deferred. It is raised again when it is Critical or High, when its record names no commit, when
-//! the repository lacks that commit, or when the code in the record's scope changed since it. Which
+//! deferred. It is raised again when it is Critical, when it is High and its record is not a human's
+//! decision (one recording its author; node #196), when its record names no commit, when the
+//! repository lacks that commit, or when the code in the record's scope changed since it; a High a
+//! human's decision sets aside is listed under its own section. Which
 //! record answers a finding a near miss leaves open, the match judge decides ([`judged`]): the run
 //! is [`prepare`]d, the judge asked about its pairs, then [`apply`] reads its answer. A kept
 //! finding the judge says goes against a record is marked with it. A project rule covers a class of
@@ -70,7 +72,10 @@ fn refusals(
         .collect();
     let mut seen: Vec<usize> = Vec::new();
     for (f, m) in findings.iter().zip(matched) {
-        let Some(m) = m.as_ref().filter(|_| !matching::reraised_by_severity(f)) else {
+        let Some(m) = m.as_ref().filter(|m| {
+            ds.get(m.at)
+                .is_some_and(|d| !matching::reraised_by_rank(f, d))
+        }) else {
             continue;
         };
         if ds.get(m.at).is_some_and(|d| !d.commit.is_empty()) && !seen.contains(&m.at) {

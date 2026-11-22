@@ -105,6 +105,19 @@ test("apply: a covered finding leaves its tier with the rule and the judge's why
   assert.match(String(r.notices[0]), /^Critical "migration has no down step" @ crates\/node\/src\/db\.rs:40 RAISED/)
 })
 
+test('apply: a High a rule alone covers stays in the verdict, listed to confirm (node #196)', async () => {
+  const r = await applyProjectRules({ confirmed: [finding({ severity: 'High', line: 7 })] }, rules(), 'why', judgeSays(true))
+  assert.equal(r.covered.length, 0)
+  assert.equal(r.confirm.length, 1)
+  assert.deepEqual(
+    r.tiers['confirmed']?.map(f => f.severity),
+    ['High'],
+  )
+  assert.match(String(r.tiers['confirmed'][0]?.why), /a rule alone never sets a High aside — confirm/)
+  assert.match(String(r.notices[0]), /^High "migration has no down step" @ crates\/node\/src\/db\.rs:7 CONFIRM/)
+  assert.match(String(r.notes.at(-1)), /1 High\(s\) left in the verdict to confirm/)
+})
+
 test('apply: the judge saying not covered, a dead judge, a missing verdict and a pair past the bound all leave the finding in the verdict', async () => {
   const no = await applyProjectRules({ confirmed: [finding()] }, rules(), 'why', judgeSays(false))
   assert.equal(no.covered.length, 0)

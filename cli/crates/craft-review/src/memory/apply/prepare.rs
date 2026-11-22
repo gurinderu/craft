@@ -66,18 +66,16 @@ fn to_check<'a>(
     plans: &[Plan],
 ) -> Vec<&'a PriorDecision> {
     let mut at: Vec<usize> = Vec::new();
-    for (_, p) in findings
-        .iter()
-        .zip(plans)
-        .filter(|(f, _)| !matching::reraised_by_severity(f))
-    {
+    for (f, p) in findings.iter().zip(plans) {
         for i in p
             .disputed
             .iter()
             .copied()
             .chain(p.sure.as_ref().map(|m| m.at))
         {
-            if ds.get(i).is_some_and(|d| !d.commit.is_empty()) && !at.contains(&i) {
+            let settable =
+                |d: &PriorDecision| !d.commit.is_empty() && !matching::reraised_by_rank(f, d);
+            if ds.get(i).is_some_and(settable) && !at.contains(&i) {
                 at.push(i);
             }
         }

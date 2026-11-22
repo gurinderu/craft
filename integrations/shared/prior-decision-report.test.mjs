@@ -4,13 +4,27 @@ import { test } from 'vitest'
 import assert from 'node:assert/strict'
 import { liftPriorDecisionSections, nestedPriorDecisionsSection, PRIOR_DECISION_HEADINGS } from './prior-decision-report.mjs'
 
-const [REJECTED, DEFERRED, , TITLES] = PRIOR_DECISION_HEADINGS
+/** The heading that starts with `start`. @param {string} start @returns {string} */
+const heading = start => PRIOR_DECISION_HEADINGS.find(h => h.startsWith(start)) ?? ''
+const REJECTED = heading('## Rejected before')
+const DEFERRED = heading('## Known and deferred')
+const TITLES = heading('## Tool finding titles')
 
 test('lift: each prior-decision section leaves the report whole, from its heading to the next heading', () => {
   const report = ['Intro line', '## Verdict', 'Approve', `${REJECTED}  `, '- a', '- b', '## Findings', '- c', TITLES, '- t1'].join('\n')
   assert.deepEqual(liftPriorDecisionSections(report), {
     rest: ['Intro line', '## Verdict', 'Approve', '## Findings', '- c'].join('\n'),
     lifted: [`${REJECTED}  `, '- a', '- b', TITLES, '- t1'].join('\n').trim(),
+  })
+})
+
+test("lift: a High a human's decision set aside and a High a rule covers ride with the rest (node #196)", () => {
+  const human = '## High rejected by a human (set aside — not in the verdict)'
+  const confirm = '## High covered by a project rule — confirm (still in the verdict)'
+  const report = ['## Verdict', 'Warning', human, '- h', confirm, '- c', '## Findings', '- f'].join('\n')
+  assert.deepEqual(liftPriorDecisionSections(report), {
+    rest: ['## Verdict', 'Warning', '## Findings', '- f'].join('\n'),
+    lifted: [human, '- h', confirm, '- c'].join('\n'),
   })
 })
 
