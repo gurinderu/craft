@@ -27,7 +27,9 @@ added only when a transcript could not be read, and `slice{index,of,tail?}` when
 several a run filed) is folded in AFTER the run by
 `craft runs enrich-cost --run-id <wf_id>` (or `--run-dir <d> --record <f>`) — the REAL per-agent spend summed
 from the run's agent-*.jsonl transcripts (cacheRead is ~99% of it). `outputTokens` above is only the
-harness pool, under 1% of real cost. Absent until a run is enriched. A cost without `rule: "per-message"`
+harness pool, under 1% of real cost: the Workflow budget's `spent()` from the engine's start to the write —
+the run's own share, since `spent()` counts the whole session (an older record may hold that session
+total). Absent until a run is enriched. A cost without `rule: "per-message"`
 was summed per transcript line and overstates the run ~1.8x: re-run enrich-cost on it while its transcripts exist.
 
     jq -s 'group_by(.name)[]|{name:.[0].name,runs:length}' index.jsonl

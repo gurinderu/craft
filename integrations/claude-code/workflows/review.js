@@ -188,6 +188,6 @@ ${notes}`:stoppedAnswer(why)}async function drive(sb,o,craftVersion,service,reco
 
 ${brief}`),brief),said=await ask(),first=briefOf(said);if(!first)return{standing:standingOf(said)};if(!("unread"in first))return first;let ended=first.unread;if(first.refile){let again=readStep(await submitStep(serve,"step:refile","Submit",bin,run,{resume:!0},spentSoFar(sb)));if("step"in again&&again.step.done)return recorder.heard(again.step),{finished:again.step};let asked=briefOf(await ask());asked&&"unread"in asked&&(ended=asked.unread)}return sb.log(`the run's last step and status could not be read whole; the binary's brief status says it ended: ${ended.verdict}`),recorder.told([...ended.lost,...ended.pending?[`the records of ${ended.pending} stopped part(s) of the run — not landed yet; a resume sends them again`]:[]]),{unread:ended}}var statusPrompt=(bin,run)=>servicePrompt(`Run exactly this one command:
 
-${statusCommand(bin,run)}`);async function __run(){return await runCliReview({args,agent,parallel,phase,log,budget},CRAFT_VERSION)}
+${statusCommand(bin,run)}`);function runBudget(sandbox){let start=sandbox.spent();return{total:sandbox.total,spent:()=>Math.max(0,sandbox.spent()-start),remaining:()=>sandbox.remaining()}}async function __run(){return await runCliReview({args,agent,parallel,phase,log,budget:runBudget(budget)},CRAFT_VERSION)}
 return await __run();
 //# sourceMappingURL=review.js.map

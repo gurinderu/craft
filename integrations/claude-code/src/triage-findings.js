@@ -1,4 +1,5 @@
 import { normalizeArgs, unknownOptionsRefusal, UNKNOWN_OPTION_CLASS } from '../../shared/workflow-args.mjs'
+import { runBudget } from '../../shared/run-budget.mjs'
 import { readRepoArg, repoDirective, REPO_REFUSED_CLASS } from '../../shared/repo-arg.mjs'
 import { summarizeFindings, tallyVerdicts, argumentRefusal } from '../../shared/run-record.mjs'
 import { quietly, makeRunLogger, telemetryLossNoter } from '../../shared/run-logging.mjs'
@@ -25,6 +26,8 @@ export const meta = {
 }
 
 export async function __run() {
+// This run's own share of the session-wide budget, read before anything is dispatched (integrations/shared/run-budget.mjs).
+const own = runBudget(budget)
 // Locator args (not payload): pr (GitHub PR number), report (path to a report file from any review engine
 // or a saved verdict), base (ref to pin validation against), prBase (the commit the PR forks from — the merge-base
 // of trunk and the reviewed head — where "not this PR's" must be shown, realm @nick/craft, node #309), priorLedger (array of prior {stable_id, verdict,
@@ -185,7 +188,7 @@ async function refuseArgument() {
   // Every refusal at once, so a caller fixing one does not meet the next on the re-launch.
   const both = [[unknownRefused, UNKNOWN_OPTION_CLASS], [repoRefused, REPO_REFUSED_CLASS]].filter(([why]) => why)
   if (!both.length) return ''
-  const refused = argumentRefusal({ engine: 'triage-findings', why: both.map(([why]) => why).join(' '), notRun: both.map(([, cls]) => String(cls)), craftVersion: CRAFT_VERSION, outputTokens: budget.spent() })
+  const refused = argumentRefusal({ engine: 'triage-findings', why: both.map(([why]) => why).join(' '), notRun: both.map(([, cls]) => String(cls)), craftVersion: CRAFT_VERSION, outputTokens: own.spent() })
   await logRun(refused.record)
   return refused.report
 }
