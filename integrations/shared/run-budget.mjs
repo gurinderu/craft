@@ -1,13 +1,27 @@
-// The Workflow sandbox's `budget.spent()` counts the whole session, not one run: records filed one after another in a
-// session carried a rising figure (9.73M, then 9.81M) while each run's own transcripts summed 108k and 60k output
-// tokens. An engine reads its own share as the difference from what was spent when it started.
+// The Workflow sandbox's `budget.spent()` is one pool for the whole turn — the main loop and every workflow running
+// at the same time draw from it — so records filed one after another in a session carried a rising figure (9.73M,
+// then 9.81M) while each run's own transcripts summed 108k and 60k output tokens. No reading of it is one run's own:
+// an engine records only the pool's growth while it ran, an indicative figure; a run's real cost is the `cost` that
+// `craft runs enrich-cost` folds in from its transcripts.
 
 /**
- * The run's own view of the sandbox budget: `spent()` counts from this call on, never below zero.
- * @param {{ total: number | null, spent: () => number, remaining: () => number }} sandbox
- * @returns {{ total: number | null, spent: () => number, remaining: () => number }}
+ * The pool's growth since this call: `spent()` is null with no sandbox budget, and null — said once through `say` — should
+ * the pool ever read below its value here. Only `spent()` is exposed: the pool's total and what remains of it are the
+ * turn's, not the run's.
+ * @param {{ spent: () => number } | undefined} sandbox @param {(line: string) => void} [say]
+ * @returns {{ spent: () => number | null }}
  */
-export function runBudget(sandbox) {
+export function runBudget(sandbox, say = () => {}) {
+  if (!sandbox) return { spent: () => null }
   const start = sandbox.spent()
-  return { total: sandbox.total, spent: () => Math.max(0, sandbox.spent() - start), remaining: () => sandbox.remaining() }
+  let told = false
+  return {
+    spent: () => {
+      const now = sandbox.spent()
+      if (now >= start) return now - start
+      if (!told) say(`⚠️ budget.spent() read ${String(now)}, below ${String(start)} at the run's start: outputTokens is recorded as null`)
+      told = true
+      return null
+    },
+  }
 }

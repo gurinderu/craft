@@ -30,8 +30,8 @@ export const meta = {
 }
 
 export async function __run() {
-// This run's own share of the session-wide budget, read before anything is dispatched (integrations/shared/run-budget.mjs).
-const own = runBudget(budget)
+// The turn's shared pool as it grows while this engine runs, read before anything is dispatched (integrations/shared/run-budget.mjs).
+const own = runBudget(budget, log)
 // Optional args: {base: "origin/main"} fixes the diff base; {mutants: true} opts into the slow
 // mutation-testing pass in the tests-cov dimension.
 // ---- args ----

@@ -31,7 +31,7 @@ import { normalizeArgs } from './workflow-args.mjs'
 /** @typedef {import('./cli-review-step.mjs').Step} Step */
 /** @typedef {import('./cli-review-step.mjs').Finished} Finished */
 /** @typedef {(prompt: string, opts?: Record<string, unknown>) => Promise<unknown>} Agent */
-/** @typedef {{ args: unknown, agent: Agent, parallel: <T>(thunks: Array<() => Promise<T>>) => Promise<Array<T | null>>, phase: (title: string) => void, log: (message: string) => void, budget?: { spent: () => number } }} Sandbox */
+/** @typedef {{ args: unknown, agent: Agent, parallel: <T>(thunks: Array<() => Promise<T>>) => Promise<Array<T | null>>, phase: (title: string) => void, log: (message: string) => void, budget?: { spent: () => number | null } }} Sandbox */
 
 // The fetcher of the released binary, inside the plugin: the POSIX entry, so a consumer needs no Node to get it. The
 // service step runs in the harness's Bash; under Git Bash, MSYS or Cygwin the script names the binary craft.exe (not
@@ -310,10 +310,13 @@ function stoppedAt(standing, read, run, bin) {
  * run the binary finished was filed by the binary itself (`filing` on its steps); only one the binary never finished
  * — its step unreadable, the round backstop, a resume refused — is filed here, INCOMPLETE, into the run directory the
  * binary's checkpoints went to. An argument refused before anything ran files only its refusal.
- * @param {Sandbox} sb @param {string} craftVersion @returns {Promise<string>}
+ * A nested run (`_via`) tells the binary and its records no output tokens: the pool is the turn's, shared with its
+ * siblings and its parent, whose own record covers it.
+ * @param {Sandbox} given @param {string} craftVersion @returns {Promise<string>}
  */
-export async function runCliReview(sb, craftVersion) {
-  const a = normalizeArgs(sb.args, sb.log)
+export async function runCliReview(given, craftVersion) {
+  const a = normalizeArgs(given.args, given.log)
+  const sb = viaName(a['_via']) ? { ...given, budget: { spent: () => null } } : given
   const problem = argumentProblem(a, readOptions)
   if (problem) return refuse(sb, craftVersion, a, problem)
   const o = /** @type {{ options: Options }} */ (readOptions(a)).options
@@ -498,7 +501,7 @@ async function refuse(sb, craftVersion, a, { why, cls }) {
  * @param {{ why: string, cls: string }} problem @returns {Promise<string>}
  */
 async function refusedAnswer(sb, recorder, { craftVersion, via }, { why, cls }) {
-  const refused = argumentRefusal({ engine: 'review', why, notRun: [cls], craftVersion, outputTokens: sb.budget?.spent() ?? 0, via })
+  const refused = argumentRefusal({ engine: 'review', why, notRun: [cls], craftVersion, outputTokens: sb.budget?.spent() ?? null, via })
   sb.phase('Record')
   await recorder.refusal(refused.record)
   const notes = recorder.notes()

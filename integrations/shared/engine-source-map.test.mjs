@@ -69,7 +69,7 @@ test("review: a position in the bundle reads back to the engine's own line, and 
   assert.equal(at.file, 'integrations/claude-code/src/review.js')
   assert.match(
     /** @type {string} */ (at.text),
-    /return await runCliReview\(\{ args, agent, parallel, phase, log, budget: runBudget\(budget\) \}, CRAFT_VERSION\)/,
+    /return await runCliReview\(\{ args, agent, parallel, phase, log, budget: runBudget\(budget, log\) \}, CRAFT_VERSION\)/,
   )
   const src = fs.readFileSync(path.join(AUTHORED, at.file), 'utf8').split('\n')[at.line - 1]
   assert.equal(src?.slice(at.column - 1).startsWith('runCliReview('), true, 'the very token')

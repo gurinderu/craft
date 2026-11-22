@@ -139,10 +139,11 @@ function basisOf(tracked, legacy) {
 // a number > 1 → re-review; a number <= 1 (0 or 1) → first-pass; NOT a number (absent) →
 // Unclassified, never silently first-pass. The discriminator is `typeof r.round === 'number'`, not
 // `r.round > 1`: `undefined > 1` is false and would sweep every round-less run into first-pass. A run
-// with no numeric `outputTokens` contributes to no pool. Extracted from the record loop so the
-// three-way tally reads apart from the rest of aggregate.
+// with no numeric `outputTokens` contributes to no pool, and neither does one `poolReading` sets aside. Extracted from
+// the record loop so the three-way tally reads apart from the rest of aggregate.
 /** @param {Bucket} w @param {RunRec} r @returns {void} */
 function tallyPool(w, r) {
+  if (!poolReading(r)) return
   if (typeof r.outputTokens !== 'number') return
   if (typeof r.round === 'number' && r.round > 1) {
     w.poolReReview += r.outputTokens
@@ -156,9 +157,24 @@ function tallyPool(w, r) {
   }
 }
 
-// Fold one run's REAL cost into the workflow bucket. `outputTokens` (tallyPool above) is
-// `budget.spent()` — the harness pool, under 1% of real spend; the record's `cost` object carries the
-// other ~99% (cache_read/cache_write), summed post-hoc from the per-agent transcripts by
+// The craft release from which `outputTokens` is the turn's shared pool while the engine ran; before it, the session's
+// running total, which no average may take.
+const POOL_PER_RUN_SINCE = 59 // 0.59.0, a minor of the 0.x line
+
+// Whether a record's `outputTokens` may enter the indicative pool average: it is the turn's shared pool (the main loop
+// and every concurrent workflow draw from it), so only a fallback — a run whose `cost` is usable is measured by that,
+// never by the pool — and never a pre-0.59.0 record's session total. A record with no parseable version is kept.
+/** @param {RunRec} r @returns {boolean} */
+function poolReading(r) {
+  if (!costProblem(r.cost)) return false
+  const v = /^(\d+)\.(\d+)\./.exec(String(r.craftVersion ?? ''))
+  if (!v) return true
+  return Number(v[1]) > 0 || Number(v[2]) >= POOL_PER_RUN_SINCE
+}
+
+// Fold one run's REAL cost into the workflow bucket. `outputTokens` (tallyPool above) is the
+// Workflow budget's shared pool — indicative only; the record's `cost` object carries the run's own spend
+// (cache_read/cache_write ~99% of it), summed post-hoc from the per-agent transcripts by
 // `craft runs enrich-cost`. Which costs count, and what total each stands for, is the one rule in
 // integrations/shared/run-record.mjs (costProblem, costTotal), shared with --round-pairs: only a usable cost enters
 // the averages and `costRuns`; a malformed, partial or empty one is counted apart and named; a record
@@ -562,8 +578,8 @@ function newBucket() {
     refuteRateN: 0,
     candidates: 0,
     confirmed: 0,
-    // `outputTokens` is budget.spent() — the whole-run token POOL (input + output + parent-driver
-    // + cache), NOT output tokens — and its size is set by run TYPE: a re-review (round > 1) runs
+    // `outputTokens` is the turn's shared token POOL while the engine ran (the main loop and any
+    // concurrent workflow included), NOT this run's output tokens — indicative, and its size is set by run TYPE: a re-review (round > 1) runs
     // an extra Adjudicate phase (and periodically a whole-diff re-scan), so its pool is structurally MUCH larger
     // than a first-pass's (round <= 1). Averaging the two under one name is the same anti-pattern
     // the file already guards (refuteTracked/Legacy, thinned/thinnedMeasured): what cannot be told
@@ -901,7 +917,7 @@ export function renderEngineSection(a) {
 // no `round`, and engines other than `review` never stamp it at all, so the analyzer cannot know why
 // a run is round-less and claims nothing. The round-less pool prints on its own N, independent of the
 // other two — so an all-round-less bucket still surfaces its pool with a label rather than as a bare
-// figure. Named a POOL, never "output": `outputTokens` is budget.spent(), not output tokens.
+// figure. Named a POOL, never "output": `outputTokens` is the turn's shared budget pool, not this run's output tokens.
 /** @param {Aggregate['workflows'][number]} w @returns {string} */
 function poolClause(w) {
   let s = ''

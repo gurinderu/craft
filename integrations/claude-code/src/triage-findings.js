@@ -26,8 +26,8 @@ export const meta = {
 }
 
 export async function __run() {
-// This run's own share of the session-wide budget, read before anything is dispatched (integrations/shared/run-budget.mjs).
-const own = runBudget(budget)
+// The turn's shared pool as it grows while this engine runs, read before anything is dispatched (integrations/shared/run-budget.mjs).
+const own = runBudget(budget, log)
 // Locator args (not payload): pr (GitHub PR number), report (path to a report file from any review engine
 // or a saved verdict), base (ref to pin validation against), prBase (the commit the PR forks from — the merge-base
 // of trunk and the reviewed head — where "not this PR's" must be shown, realm @nick/craft, node #309), priorLedger (array of prior {stable_id, verdict,

@@ -201,7 +201,7 @@ export function settledNotes(finished, lost, noteLoss, driver) {
  * not file; `missing(why)` those of a run whose record no one can file; `file(outcome)` files the record of a run the binary never finished into the directory its checkpoints
  * went to, `refusal(record)` a refused argument's record as it stands, and `notes()` the telemetry section the answer
  * carries when a write did not land. A lost write never fails the run.
- * @param {{ agent: Call, log: (line: string) => void, budget?: { spent: () => number } }} sb
+ * @param {{ agent: Call, log: (line: string) => void, budget?: { spent: () => number | null } }} sb
  * @param {{ craftVersion: string, repo: string, run?: string, depth: string, strict: boolean, via?: string, service: Service }} o  run: the run directory a resume names
  */
 export function cliRecorder(sb, { craftVersion, repo: given, run = '', depth, strict, via = '', service }) {

@@ -138,8 +138,8 @@ test('aggregate tallies runs, verdicts and INCOMPLETE', () => {
   assert.equal(audit.avgRefuteRate, 0.67)
 })
 
-// `outputTokens` is NOT output tokens — it is budget.spent(), the whole-run token POOL (input +
-// output + parent-driver + cache). Its size is set by run TYPE: a re-review (round > 1) runs an
+// `outputTokens` is NOT this run's output tokens — it is the turn's shared budget pool while the engine ran
+// (the main loop and any concurrent workflow included), indicative only. Its size is set by run TYPE: a re-review (round > 1) runs an
 // extra Adjudicate phase and a whole-diff re-scan, so its pool is structurally MUCH larger than a
 // first-pass's (round 1). Blending them into one average is the same anti-pattern the file already
 // guards for refuteTracked/legacy and thinned/thinnedMeasured — what cannot be told apart is not
@@ -1519,7 +1519,6 @@ test('workflow line: a mixed refute basis, thinning measured on part of the runs
     /refute basis MIXED/,
     /\b2 verdict\(s\) on a THINNED panel across 1 run\(s\)/,
     /thinning measured on 1\/2 run\(s\)/,
-    /~100 tok-pool\/run \(first-pass\)/,
     /~300 tok-pool\/run \(re-review\)/,
     /~100 cache-read tok\/run/,
     /~200 tok\/run total/,
@@ -1529,6 +1528,30 @@ test('workflow line: a mixed refute basis, thinning measured on part of the runs
     /\b1 usable enriched run\(s\)/,
   )
   assert.doesNotMatch(line, /LEGACY|none thinned|NOT MEASURED/)
+  assert.doesNotMatch(line, /first-pass/, 'the enriched run is measured by its cost, not the shared pool')
+})
+
+test('the indicative pool takes neither an enriched run nor a pre-0.59.0 session total', () => {
+  const cost = { cacheRead: 100, cacheWrite: 20, input: 30, output: 50, total: 200, agents: 1, source: 'a', rule: 'per-message' }
+  /** @param {number} outputTokens @param {Record<string, unknown>} [over] */
+  const mk = (outputTokens, over = {}) => ({
+    schemaVersion: 1,
+    name: 'review',
+    verdict: 'Warning',
+    notRun: [],
+    dimensions: [],
+    round: 1,
+    outputTokens,
+    ...over,
+  })
+  const a = aggregate([
+    mk(9_728_497, { craftVersion: '0.58.0' }),
+    mk(5_000_000, { craftVersion: '0.59.0', cost }),
+    mk(100, { craftVersion: '0.59.0' }),
+    mk(300, { craftVersion: '1.0.0' }),
+  ])
+  const review = defined(a.workflows.find(w => w.name === 'review'))
+  assert.equal(review.avgRunTokenPoolFirstPass, 200, 'only the unenriched runs from 0.59.0 on')
 })
 
 test('workflow line: a legacy refute basis, and thinning measured on part of the runs with none thinned', () => {

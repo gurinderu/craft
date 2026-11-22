@@ -3,9 +3,11 @@
 // binary's `craft runs` readers count it (cli/crates/craft-store/src/parts.rs): a stopped part of a run that also
 // filed a finished record folds into it, the finished record standing for the run; a run whose every part stopped
 // stands as its newest. A part is mostly its own Workflow run with its own cost, so the standing record carries the
-// sum of every Workflow run's share once (by the cost's `source` and slice; a repeated share is the latest part's), its
-// token pool once per Workflow run, and how many shares carry no usable cost as `partsUnmeasured`, which with a
-// share's own `skipped` makes the run's cost partial (run-record.mjs, costProblem), never averaged in as whole. The fold runs before
+// sum of every Workflow run's share once (by the cost's `source` and slice; a repeated share is the latest part's) and
+// how many shares carry no usable cost as `partsUnmeasured`, which with a share's own `skipped` makes the run's cost
+// partial (run-record.mjs, costProblem), never averaged in as whole. `outputTokens` is never summed: it is the turn's
+// shared pool while a part ran, indicative only (on a record before craft 0.59.0, the session's running total), so the
+// standing record keeps its own. The fold runs before
 // any version or engine slice: the run is counted under its standing record's version, and a slice of the stopped
 // part's version says it folded. A record that names no run directory, filed before records named it, folds on
 // nothing here.
@@ -73,13 +75,6 @@ function summedCost(parts) {
   return unmeasured ? { ...sum, partsUnmeasured: unmeasured } : sum
 }
 
-/** Each Workflow run's token pool once — the pool is cumulative within a run — summed over the runs. @param {Record<string, unknown>[]} parts  the standing part first */
-function summedTokens(parts) {
-  const head = parts[0]?.['outputTokens']
-  if (typeof head !== 'number') return head
-  return perShare(parts, p => sourceOf(p['cost'])).reduce((n, p) => n + (typeof p['outputTokens'] === 'number' ? p['outputTokens'] : 0), 0)
-}
-
 /**
  * The part that stands for a run: its newest finished record, else its newest.
  * @template {Record<string, unknown>} R @param {R[]} parts @returns {R}
@@ -116,7 +111,7 @@ export function foldStoppedParts(records) {
     if (!folding.length) kept.push(...parts)
     else {
       const all = [standing, ...folding]
-      kept.push({ ...standing, cost: summedCost(all), outputTokens: summedTokens(all) }, ...rest)
+      kept.push({ ...standing, cost: summedCost(all) }, ...rest)
     }
   }
   return { records: kept, folded: gone.length, parts: gone }

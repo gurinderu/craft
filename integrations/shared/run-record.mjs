@@ -81,7 +81,7 @@ export function summarizeFindings(findings) {
 // take): an INCOMPLETE record carrying the refusal's class in `notRun`, and the report naming the argument —
 // filed and returned before any work agent, as every refusal is (realm @nick/craft, nodes #159, #411).
 /**
- * @param {{ engine: string, why: string, notRun: string[], craftVersion: string, outputTokens: number, via?: string }} o
+ * @param {{ engine: string, why: string, notRun: string[], craftVersion: string, outputTokens: number | null, via?: string }} o
  *   `why`: the sentences naming each refused argument; `notRun`: their classes, without the caller's values;
  *   `via`: the parent workflow that dispatched this run, '' when it was not nested
  */
@@ -112,7 +112,7 @@ export function argumentRefusal({ engine, why, notRun, craftVersion, outputToken
 // fragility ranking — and returns `report`, before anything has run. One helper for every engine that
 // refuses, so the record and the advice cannot drift between them.
 /**
- * @param {{ engine: string, repo: string, craftVersion: string, outputTokens: number, via?: string }} o
+ * @param {{ engine: string, repo: string, craftVersion: string, outputTokens: number | null, via?: string }} o
  *   `via`: the parent workflow that dispatched this run, '' when it was not nested
  */
 export function repoRefusal({ engine, repo, craftVersion, outputTokens, via = '' }) {
