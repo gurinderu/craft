@@ -97,7 +97,12 @@ pub(crate) fn write_pending(dir: &Path, run: &RunState) -> Result<(), HandoffErr
             return Err(HandoffError::UnsafeId(task.id.clone()));
         }
         let schema = format!("{}\n", serde_json::to_string_pretty(&task.schema)?);
-        let prompt = format!("{}{}", task.prompt_text(), blocked::note(&task.schema)?);
+        let prompt = format!(
+            "{}{}{}",
+            task.prompt_text(),
+            crate::prompts::skills::block(&run.context, &task.prompt),
+            blocked::note(&task.schema)?
+        );
         for (path, text) in [
             (prompt_file(dir, &task.id), prompt),
             (schema_file(dir, &task.id), schema),

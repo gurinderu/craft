@@ -126,6 +126,17 @@ fn with_an_index_a_finding_stands_on_the_metrics_it_carries_and_the_verifier_rer
     // Only the metrics lens reaches for the graph's MCP tools, and the wire says so.
     assert_eq!(s["tasks"][0]["graph"], json!(true));
     assert!(s["tasks"][1].get("graph").is_none(), "{}", s["tasks"][1]);
+    // A judging lens names its rubric's file by an absolute path any agent can read.
+    let rules = prompt_of(&s["tasks"][1]);
+    let line = rules
+        .lines()
+        .find(|l| l.starts_with("- `review-rules`: `"))
+        .unwrap_or_else(|| panic!("{rules}"));
+    let path = line.split('`').nth(3).unwrap();
+    assert!(
+        Path::new(path).is_absolute() && Path::new(path).is_file(),
+        "{path}"
+    );
     let p = prompt_of(&s["tasks"][0]);
     assert_contains_all(
         &p,

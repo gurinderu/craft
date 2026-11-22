@@ -67,7 +67,14 @@ pub fn opts(repo: &Path, run: &Path) -> StartOptions {
         cwd: repo.to_path_buf(),
         base: None,
         run_dir: run.join("run"),
-        craft_root: Some("/craft".into()),
+        // The checkout's own delivery: the skills a task prompt names resolve to real files.
+        craft_root: Some(
+            concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../../integrations/claude-code"
+            )
+            .into(),
+        ),
         craft_version: Some("9.9.9".into()),
         light: false,
         fresh: false,

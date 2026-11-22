@@ -24,6 +24,7 @@ mod parity;
 mod red_team;
 mod scout;
 mod seam;
+pub mod skills;
 mod units;
 #[cfg(test)]
 mod units_parity;
