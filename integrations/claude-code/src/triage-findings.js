@@ -6,6 +6,7 @@ import { quietly, makeRunLogger, telemetryLossNoter } from '../../shared/run-log
 import { DEPENDENCY_SOURCE_HOW } from '../../shared/dependency-source.mjs'
 import { telemetryLostSection } from '../../shared/review-coverage.mjs'
 import { parsePriorDecisions } from '../../shared/prior-decisions.mjs'
+import { memoryDegradedNotes } from '../../shared/recall-degraded.mjs'
 import { MEMORY_RECALL_SCHEMA, memoryRecord, mergeRecall, readLaunch, memoryLine, recallDecisions } from '../../shared/memory-recall.mjs'
 import { MATCH_JUDGE_SCHEMA } from '../../shared/prior-decision-match.mjs'
 import { SCOPE_CHECK_SCHEMA, scopeCheckPrompt } from '../../shared/prior-decision-scope.mjs'
@@ -156,7 +157,7 @@ const PLAN_SCHEMA = {
 /** @typedef {{ stable_id: string, verdict: string, reason: string, sifted?: boolean, action?: string, repeat_of?: string }} LedgerEntry */
 /** @typedef {{ plan_markdown: string, ledger: LedgerEntry[], summary: string }} PlanResult */
 // What this script adds to the plan before returning it — not part of PLAN_SCHEMA.
-/** @typedef {PlanResult & { notRun?: string[], telemetryLost?: string[], issues?: Array<{ stable_id: string, title: string, body: string }>, memory?: string, priorDecisionsNotApplied?: string[], ruleNotices?: string[] }} TriagePlan */
+/** @typedef {PlanResult & { notRun?: string[], telemetryLost?: string[], issues?: Array<{ stable_id: string, title: string, body: string }>, memory?: string, memoryDegraded?: string[], priorDecisionsNotApplied?: string[], ruleNotices?: string[] }} TriagePlan */
 
 // The craft release that produced a run. Recorded on the run record and index line so an
 // aggregate can be filtered to ONE engine version: without it, runs from every rubric the store
@@ -508,8 +509,18 @@ await logRun({
 
 if (!plan) return `${telemetryLostSection(telemetryLost)}Triage failed: the Plan-phase agent returned no result. Re-run, or triage the findings manually.`
 
+/** A recall that may not have read the store leads the plan: its sift ran without the project's records. @param {TriagePlan} planIn */
+function memoryBanner(planIn) {
+  const notes = memoryDegradedNotes(memory)
+  if (!notes.length) return
+  planIn.memoryDegraded = notes
+  planIn.plan_markdown = `${["> **MEMORY DEGRADED** — the sift may have run without some or all of the project's records:", ...notes.map(l => `> - ${l}`), ''].join('\n')}\n${planIn.plan_markdown ?? ''}`
+}
+
 /** The plan as its reader gets it: led by what did not run and by a write that did not land. @param {TriagePlan} planIn @returns {TriagePlan} */
 function bannered(planIn) {
+  // Prepended first, so the INCOMPLETE and lost-record banners below stay above it.
+  memoryBanner(planIn)
   // What did not run has to reach the READER of the plan, not just the run record. A dead `gather:pr`
   // agent means the plan covers fewer sources than were asked for, and a plan that says nothing about
   // it is indistinguishable from one that covered everything.

@@ -4,6 +4,7 @@
 //! each record given the skill's id where the store keeps its own, and the source it came from is
 //! named in one line of the report.
 
+use super::degraded::{bounded, failed_why};
 use super::{MemorySource, oppose};
 use serde_json::{Map, Value};
 
@@ -173,12 +174,14 @@ pub(super) fn read(raw: Option<&Value>, cut: usize, grouped: usize) -> Recalled 
     let tail = bound_tail(cut, grouped);
     let inactive = oppose::inactive(r.get("inactive"));
     let Some(list) = r.get("decisions").and_then(Value::as_array) else {
+        let mut source = MemorySource::none(format!(
+            "the recall agent died or returned no decision list, so nothing recalled was applied — findings are raised normally{tail}"
+        ));
+        source.recall_died = Some("the recall agent died or returned no decision list".into());
         return Recalled {
             inactive,
             records: Vec::new(),
-            source: MemorySource::none(format!(
-                "the recall agent died or returned no decision list, so nothing recalled was applied — findings are raised normally{tail}"
-            )),
+            source,
         };
     };
     let backend = Some(one_line(r.get("backend")))
@@ -188,6 +191,11 @@ pub(super) fn read(raw: Option<&Value>, cut: usize, grouped: usize) -> Recalled 
         .filter(|w| !w.is_empty())
         .unwrap_or_else(|| "no reason given".into());
     let stale = stale_tail(r.get("stale"));
+    let failed = bounded(&one_line(r.get("queryError")));
+    let truncated = bounded(&one_line(r.get("truncated")));
+    let cut_tail = truncated.as_ref().map_or_else(String::new, |t| {
+        format!("; truncated — the backend held more than was read: {t}")
+    });
     let questions = of_kind(r.get("questions"), "question");
     let rules = of_kind(r.get("rules"), "rule");
     let externals = of_kind(r.get("externals"), "external").len();
@@ -199,20 +207,22 @@ pub(super) fn read(raw: Option<&Value>, cut: usize, grouped: usize) -> Recalled 
         .chain(rules)
         .map(with_skill_id)
         .collect();
-    if records.is_empty() && externals == 0 {
-        let mut source = MemorySource::none(format!("{why} (backend {backend}){stale}{tail}"));
-        source.backend = Some(backend);
-        return Recalled {
-            records,
-            source,
-            inactive,
-        };
-    }
-    let mut source =
-        MemorySource::none(format!("{backend} ({why}){stale}{tail}")).with_kinds(nq, nr, externals);
-    source.source = "recalled".into();
-    source.count = records.len();
+    let found = !records.is_empty() || externals > 0;
+    let why = failed
+        .as_ref()
+        .map_or_else(|| why.clone(), |q| failed_why(&why, q, found));
+    let mut source = if found {
+        let mut s = MemorySource::none(format!("{backend} ({why}){cut_tail}{stale}{tail}"))
+            .with_kinds(nq, nr, externals);
+        s.source = "recalled".into();
+        s.count = records.len();
+        s
+    } else {
+        MemorySource::none(format!("{why} (backend {backend}){cut_tail}{stale}{tail}"))
+    };
     source.backend = Some(backend);
+    source.query_error = failed;
+    source.truncated = truncated;
     Recalled {
         records,
         source,

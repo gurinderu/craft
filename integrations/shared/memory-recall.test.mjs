@@ -89,7 +89,7 @@ test('memory recall result: decisions → recalled with backend and why; [] → 
     const d = readMemoryRecall(dead, 0)
     assert.deepEqual(d.decisions, [])
     assert.equal(d.memory.source, 'none')
-    assert.match(memoryLine(d.memory), /^memory: none — the recall agent died or returned no decision list.*findings are raised normally/)
+    assert.match(memoryLine(d.memory), /^memory: not read — the recall agent died or returned no decision list.*findings are raised normally/)
   }
   assert.match(
     memoryLine(readMemoryRecall({ backend: 'repo', why: 'w', decisions: [REC] }, 3).memory),
@@ -410,7 +410,7 @@ test('recallDecisions: a refused dispatch (the budget wall) is named, applies no
   )
   assert.deepEqual(r.decisions, [])
   assert.equal(r.memory.source, 'none')
-  assert.match(memoryLine(r.memory), /^memory: none — the recall agent did not run \(agent budget exhausted \(spent 1 of 1\)\)/)
+  assert.match(memoryLine(r.memory), /^memory: not read — the recall agent did not run \(agent budget exhausted \(spent 1 of 1\)\)/)
 })
 
 test('external-system records come back in their own list, tagged, counted apart and never among the decisions (realm @nick/craft, node #431)', () => {

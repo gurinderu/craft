@@ -174,6 +174,54 @@ fn the_given_root_wins_over_the_checkout_above_the_binary() {
 
 /// The gate `review start` ran over the fixture, with `extra` arguments, as its state keeps it.
 fn gate_of(extra: &[&str]) -> Value {
+    state_of(extra)["gate"].clone()
+}
+
+#[test]
+fn a_launchers_degraded_recall_handed_on_is_kept_even_when_it_starts_with_a_dash() {
+    let state = state_of(&["--no-gate", "--recall-degraded=-q refused: q required"]);
+    assert_eq!(
+        state["memory"]["source"]["recallDegraded"], "-q refused: q required",
+        "{}",
+        state["memory"]
+    );
+}
+
+#[test]
+fn recall_degraded_is_taken_only_with_an_equals_sign_a_text_and_no_recall() {
+    // Space-separated, it would take the next flag as its text: refused, as a missing value is.
+    for extra in [
+        &["--no-recall", "--recall-degraded", "--no-gate"][..],
+        &["--no-recall", "--recall-degraded", "-q refused"][..],
+        // A plain text, space-separated: only `require_equals` refuses it.
+        &["--no-recall", "--recall-degraded", "kg refused"][..],
+        &["--no-recall", "--recall-degraded="][..],
+        &["--no-recall", "--recall-degraded= \u{1b} "][..],
+        &["--recall-degraded=q refused"][..],
+    ] {
+        let tmp = tempfile::tempdir().unwrap();
+        let code = tmp.path().join("repo");
+        std::fs::create_dir_all(&code).unwrap();
+        repo(&code);
+        let out = Command::new(env!("CARGO_BIN_EXE_craft"))
+            .env("CRAFT_CODE_GRAPH", "")
+            .args(["review", "start", "--cwd"])
+            .arg(&code)
+            .arg("--run-dir")
+            .arg(tmp.path().join("run"))
+            .args(extra)
+            .output()
+            .unwrap();
+        assert!(!out.status.success(), "{extra:?} was taken");
+        assert!(
+            !tmp.path().join("run").join("state.json").exists(),
+            "{extra:?}"
+        );
+    }
+}
+
+/// The state `review start` wrote over the fixture, with `extra` arguments.
+fn state_of(extra: &[&str]) -> Value {
     let tmp = tempfile::tempdir().unwrap();
     let code = tmp.path().join("repo");
     std::fs::create_dir_all(&code).unwrap();
@@ -193,9 +241,7 @@ fn gate_of(extra: &[&str]) -> Value {
         "{}",
         String::from_utf8_lossy(&out.stderr)
     );
-    let state: Value =
-        serde_json::from_str(&std::fs::read_to_string(run.join("state.json")).unwrap()).unwrap();
-    state["gate"].clone()
+    serde_json::from_str(&std::fs::read_to_string(run.join("state.json")).unwrap()).unwrap()
 }
 
 #[test]

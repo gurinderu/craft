@@ -260,3 +260,41 @@ test('the report gatherer is told the verbatim tool titles are titles, not findi
     'a lens finding beside the tool finding never takes its listed title',
   )
 })
+
+test('a recall that may not have read the store leads the plan as memory degraded, the body kept; a clean one adds nothing', async () => {
+  // A fresh plan per run: the engine extends the answer it is handed.
+  const plan = () => ({ plan_markdown: 'BODY', summary: 'SUM', ledger: [] })
+  const validate = { stable_id: ID1, verdict: 'accept', reason: 'r', fix_pointer: '', premise_checked: '' }
+  const q = 'iskron_search(q: "craft_kind") answered: not found'
+  /** @param {unknown} recall @param {Record<string, unknown>} [args] */
+  const triage = (recall, args) => run({ 'gather:report': gathered, validate, plan: plan(), 'memory-recall': recall }, args)
+  const failed = await triage({ backend: 'mcp iskron', why: 'w', decisions: [], queryError: q })
+  assert.match(
+    failed.reportValue.plan_markdown,
+    /^> \*\*MEMORY DEGRADED\*\*[\s\S]*> - memory: not read — recall found nothing, backend query may have failed: [\s\S]*\nBODY$/,
+  )
+  assert.equal(failed.reportValue.memoryDegraded.length, 1)
+  assert.match(failed.reportValue.memory, /^memory: not read — w; recall found nothing/)
+  const truncated = await triage({ backend: 'kg', why: 'w', decisions: [], truncated: '12 found, 10 shown' })
+  assert.match(
+    truncated.reportValue.plan_markdown,
+    /^> \*\*MEMORY DEGRADED\*\*.*\n> - memory: recall read only part of the backend's answer \(12 found, 10 shown\)[\s\S]*\nBODY$/,
+  )
+  const passed = {
+    kind: 'decision',
+    title: 'leak is fine',
+    body: 'b',
+    scope: 'src/a.rs',
+    status: 'active',
+    date: '2026-10-01',
+    author: 'a',
+    commit: 'abc1234',
+    links: [],
+  }
+  const fed = await triage({ backend: 'mcp iskron', why: 'w', decisions: [], queryError: q }, { report: '/r.md', priorDecisions: [passed] })
+  assert.match(fed.reportValue.plan_markdown, /> - memory: not read — recall found nothing, .*; only the launcher's own records were applied \(1 accepted/)
+  assert.match(fed.reportValue.plan_markdown, /\nBODY$/)
+  const clean = await triage({ backend: 'mcp iskron', why: 'w', decisions: [] })
+  assert.equal(clean.reportValue.memoryDegraded, undefined)
+  assert.equal(clean.reportValue.plan_markdown, 'BODY')
+})

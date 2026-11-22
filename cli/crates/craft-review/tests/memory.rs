@@ -347,14 +347,26 @@ fn drive(run: &Path, s: Value, first: &[Value]) -> Value {
 }
 
 /// [`drive`], each adjudicator answering `status`.
-fn drive_as(run: &Path, mut s: Value, first: &[Value], status: &str) -> Value {
+fn drive_as(run: &Path, s: Value, first: &[Value], status: &str) -> Value {
+    drive_with(run, s, first, status, Some(&nothing_recalled()))
+}
+
+/// [`drive_as`], the recall answering `recall`, or never when `None`.
+fn drive_with(
+    run: &Path,
+    mut s: Value,
+    first: &[Value],
+    status: &str,
+    recall: Option<&Value>,
+) -> Value {
     while s["done"] == json!(false) {
         let mut answers = serde_json::Map::new();
         for id in ids(&s) {
             let a = if id.starts_with("scout-") {
                 scout("small", &["errors"])
             } else if id == "memory-recall" {
-                nothing_recalled()
+                let Some(recall) = recall else { continue };
+                recall.clone()
             } else if let Some(rest) = id.strip_prefix("lens-rust-") {
                 let name = rest.split('-').next().unwrap();
                 lens(name, if name == "errors" { first } else { &[] })
@@ -581,5 +593,172 @@ fn a_priors_deferral_released_by_a_record_that_answers_its_question_counts_again
     assert!(
         report.contains("the deferral on src/lib.rs:1 no longer holds"),
         "{report}"
+    );
+}
+
+/// A recall answer from `mcp iskron` that found nothing because its query `error`ed.
+fn failed_recall(error: &str) -> Value {
+    json!({
+        "backend": "mcp iskron", "why": "found by capability", "decisions": [],
+        "questions": [], "rules": [], "queryError": error
+    })
+}
+
+const QUERY_ERROR: &str =
+    "iskron_search(q: \"craft_kind\") answered: nodes for query «craft_kind» not found";
+
+/// The degraded notes of a finished step.
+fn degraded_of(s: &Value) -> Vec<String> {
+    s["degraded"]
+        .as_array()
+        .map(|l| l.iter().map(|d| d.as_str().unwrap().to_owned()).collect())
+        .unwrap_or_default()
+}
+
+#[test]
+fn an_empty_recall_whose_backend_query_failed_reads_as_degraded_not_as_no_memory() {
+    let repo = fixture(true);
+    let out = tempfile::tempdir().unwrap();
+    let (run, s) = recalled_run(repo.path(), out.path(), None, &failed_recall(QUERY_ERROR));
+    let s = drive(&run, s, &[]);
+    let note = format!(
+        "memory: not read — recall found nothing, backend query may have failed: {QUERY_ERROR}; none of the project's decisions or rules were applied"
+    );
+    assert_eq!(degraded_of(&s), [note.as_str()]);
+    assert_eq!(s["memory"]["queryError"], json!(QUERY_ERROR));
+    let report = std::fs::read_to_string(s["report"].as_str().unwrap()).unwrap();
+    assert_contains_all(
+        &report,
+        &[
+            "## Degraded\n",
+            &format!("- {note}"),
+            &format!(
+                "## Memory\n- memory: not read — found by capability; recall found nothing — backend query may have failed: {QUERY_ERROR} (backend mcp iskron)"
+            ),
+        ],
+    );
+    // A store that answered cleanly with no record is no memory, not a degraded run.
+    let clean = tempfile::tempdir().unwrap();
+    let (run, s) = recalled_run(repo.path(), clean.path(), None, &nothing_recalled());
+    let s = drive(&run, s, &[]);
+    assert!(s.get("degraded").is_none(), "{:?}", s["degraded"]);
+}
+
+#[test]
+fn a_failed_recall_stays_degraded_beside_the_launchers_records_and_says_they_applied() {
+    let repo = fixture(true);
+    let out = tempfile::tempdir().unwrap();
+    let passed = json!([{
+        "kind": "decision", "title": "f returns 1 instead of 0", "body": "intended",
+        "scope": "src/lib.rs", "author": "rev", "date": "2026-05-01"
+    }]);
+    let (run, s) = recalled_run(
+        repo.path(),
+        out.path(),
+        Some(passed),
+        &failed_recall(QUERY_ERROR),
+    );
+    let s = drive(&run, s, &[]);
+    assert_eq!(s["memory"]["queryError"], json!(QUERY_ERROR));
+    assert_eq!(s["memory"]["passed"], json!(1));
+    assert_eq!(
+        degraded_of(&s),
+        [format!(
+            "memory: not read — recall found nothing, backend query may have failed: {QUERY_ERROR}; only the launcher's own records were applied (1 accepted, less any the store's inactive records held back)"
+        )]
+    );
+}
+
+#[test]
+fn a_recall_that_read_only_part_of_the_backends_answer_is_degraded_with_its_records_applied() {
+    let repo = fixture(true);
+    let out = tempfile::tempdir().unwrap();
+    let recall = json!({
+        "backend": "mcp iskron", "why": "found by capability", "questions": [], "rules": [],
+        "decisions": [{"kind": "decision", "title": "t", "body": "b", "scope": "src/lib.rs", "status": "active", "date": "2026-05-01"}],
+        "truncated": "iskron_search said 12 found, 10 shown, and took no offset"
+    });
+    let (run, s) = recalled_run(repo.path(), out.path(), None, &recall);
+    let s = drive(&run, s, &[]);
+    assert_eq!(s["memory"]["source"], json!("recalled"), "{}", s["memory"]);
+    assert_eq!(
+        degraded_of(&s),
+        [
+            "memory: recall read only part of the backend's answer (iskron_search said 12 found, 10 shown, and took no offset): the records past it were not applied"
+        ]
+    );
+}
+
+#[test]
+fn an_empty_recall_whose_answer_was_truncated_reads_as_not_read_and_degraded() {
+    let repo = fixture(true);
+    let out = tempfile::tempdir().unwrap();
+    let recall = json!({
+        "backend": "mcp iskron", "why": "found by capability", "decisions": [], "questions": [], "rules": [],
+        "truncated": "0 of 12 shown"
+    });
+    let (run, s) = recalled_run(repo.path(), out.path(), None, &recall);
+    let s = drive(&run, s, &[]);
+    assert_eq!(s["memory"]["truncated"], json!("0 of 12 shown"));
+    assert_eq!(
+        degraded_of(&s),
+        [
+            "memory: recall read only part of the backend's answer (0 of 12 shown): the records past it were not applied"
+        ]
+    );
+    let report = std::fs::read_to_string(s["report"].as_str().unwrap()).unwrap();
+    assert_contains_all(
+        &report,
+        &[
+            "## Memory\n- memory: not read — found by capability (backend mcp iskron); truncated — the backend held more than was read: 0 of 12 shown",
+            "## Degraded\n",
+        ],
+    );
+}
+
+#[test]
+fn a_run_whose_launcher_recall_was_degraded_finishes_degraded_saying_so() {
+    let repo = fixture(true);
+    let out = tempfile::tempdir().unwrap();
+    let start = StartOptions {
+        recall_degraded: Some("kg_search refused: q required".into()),
+        ..opts(repo.path(), out.path())
+    };
+    let s = step::start(&start).unwrap();
+    let s = drive(&out.path().join("run"), s, &[]);
+    let note = "memory: the launcher's recall may not have read the whole store (kg_search refused: q required): only the records it handed on were applied";
+    assert_eq!(degraded_of(&s), [note]);
+    let report = std::fs::read_to_string(s["report"].as_str().unwrap()).unwrap();
+    assert_contains_all(
+        &report,
+        &[
+            &format!(
+                "## Degraded\n\nThe host ran part of this review weaker than it asked:\n\n- {note}"
+            ),
+            "the launcher's recall may not have read the whole store: kg_search refused: q required",
+        ],
+    );
+}
+
+#[test]
+fn a_recall_task_that_never_answered_finishes_the_run_degraded() {
+    let repo = fixture(true);
+    let out = tempfile::tempdir().unwrap();
+    let start = StartOptions {
+        recall: true,
+        ..opts(repo.path(), out.path())
+    };
+    let s = step::start(&start).unwrap();
+    assert_eq!(ids(&s), ["scout-rust", "memory-recall"]);
+    let s = drive_with(&out.path().join("run"), s, &[], "still-open", None);
+    assert_eq!(
+        degraded_of(&s),
+        [
+            "memory: not read — the recall agent died or returned no decision list; none of the project's decisions or rules were applied"
+        ]
+    );
+    assert_eq!(
+        s["memory"]["recallDied"],
+        json!("the recall agent died or returned no decision list")
     );
 }

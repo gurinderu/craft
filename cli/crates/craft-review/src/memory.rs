@@ -13,6 +13,7 @@
 mod apply;
 mod asked;
 mod bounds;
+mod degraded;
 #[cfg(test)]
 mod high_tests;
 mod id;
@@ -107,15 +108,23 @@ impl Memory {
     }
 
     /// The memory of a run that recalls, or that recalls nothing itself: its launcher's records
-    /// alone, said so.
+    /// alone, said so, with why the launcher's recall may not have read the whole store when it
+    /// said (`degraded`, `--recall-degraded`, taken only without a recall of the run's own).
     #[must_use]
-    pub fn recalling(mut self, recall: bool) -> Self {
+    pub fn recalling(mut self, recall: bool, degraded: Option<&str>) -> Self {
         if recall {
             return self;
         }
         self.source.why =
             "not recalled — the launcher asked for none (--no-recall): only its own records apply"
                 .into();
+        if let Some(d) = degraded.and_then(degraded::bounded) {
+            self.source.why = format!(
+                "{}; the launcher's recall may not have read the whole store: {d}",
+                self.source.why
+            );
+            self.source.recall_degraded = Some(d);
+        }
         self
     }
 
