@@ -71,6 +71,16 @@ fn a_failed_read_is_a_lens_that_could_not_look_named_once_as_a_gap() {
     ctx.consumers.graph_indexed = false;
     let look = look(&ctx).unwrap();
     let gap = look_gap(&look).unwrap();
+    // The gap reads back as its key, the same every run, and its run's detail.
+    assert_eq!(
+        craft_store::gap::key(&gap),
+        "metrics-only lens complexity could not look"
+    );
+    let (_, detail) = gap.split_once(craft_store::gap::SEP).unwrap();
+    assert!(
+        detail.starts_with("the graph's numbers could not be read (the graph's budget"),
+        "{detail}"
+    );
     assert!(
         gap.contains("could not look") && gap.contains("budget ran out"),
         "{gap}"

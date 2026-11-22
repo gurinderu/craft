@@ -487,47 +487,43 @@ fn a_run_that_only_stopped_across_versions_counts_once_under_its_newest_parts_ve
 
 #[test]
 fn a_retro_ranks_coverage_gaps_beside_not_run_by_their_lens_and_kind() {
-    use craft_store::gap::entry;
+    use craft_review::gaps;
     let d = tempfile::tempdir().unwrap();
-    let look = "metrics-only lens complexity could not look";
-    let never = "general metrics-only lenses that never returned";
+    // The gaps as the review's own writers file them, their details differing run to run.
     let gaps = [
-        (
-            "2026-11-01T10-00-00Z",
-            entry(look, "src/a.rs (cut) — and again"),
-        ),
-        ("2026-11-01T11-00-00Z", entry(look, "boom")),
-        ("2026-11-01T12-00-00Z", entry(never, "complexity: died")),
-        (
-            "2026-11-01T13-00-00Z",
-            "a gap written with no separator".to_owned(),
-        ),
+        gaps::could_not_look("complexity", "web/a.ts (cut) — and again"),
+        gaps::could_not_look("complexity", "the graph said boom"),
+        gaps::never_returned("general", &["complexity: died".to_owned()]),
+        "a gap written with no separator".to_owned(),
     ];
-    for (ts, gap) in &gaps {
+    for (i, gap) in gaps.iter().enumerate() {
         let mut r = review("0.9.0", "Warning", 0);
         r["capped"] = json!([gap]);
-        record(d.path(), ts, &r);
+        record(d.path(), &format!("2026-11-01T1{i}-00-00Z"), &r);
     }
     let lines = ndjson(&craft(d.path(), &["retro", "0.9.0", "--json"]));
-    let rows: Vec<String> = lines
+    let rows: Vec<(&str, &Value)> = lines
         .iter()
         .filter(|l| l["section"] == "notRun")
-        .map(Value::to_string)
+        .map(|l| (l["what"].as_str().unwrap(), &l["runs"]))
         .collect();
     assert_eq!(
         rows.len(),
         3,
         "one row per kind, the bare gap whole: {rows:?}"
     );
-    let row = |k: &str| {
+    let runs = |what: &str| {
         rows.iter()
-            .find(|r| r.contains(&format!("\"{k}\"")))
-            .unwrap()
+            .find(|(w, _)| *w == what)
+            .map(|(_, r)| (*r).clone())
     };
-    assert!(row(look).contains("\"runs\":2"), "{rows:?}");
-    assert!(row(never).contains("\"runs\":1"), "{rows:?}");
-    assert!(
-        row("a gap written with no separator").contains("\"runs\":1"),
-        "{rows:?}"
+    assert_eq!(
+        runs("metrics-only lens complexity could not look"),
+        Some(json!(2))
     );
+    assert_eq!(
+        runs("general metrics-only lenses that never returned"),
+        Some(json!(1))
+    );
+    assert_eq!(runs("a gap written with no separator"), Some(json!(1)));
 }

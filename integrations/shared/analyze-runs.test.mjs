@@ -1737,3 +1737,11 @@ test('coverage gaps rank beside notRun by their key: the text before the first s
   ])
   assert.equal(a.incompleteRuns, 0, 'a coverage gap is no INCOMPLETE run')
 })
+
+test("gapKeys splits on the Rust writer's separator", () => {
+  const rust = fs.readFileSync(new URL('../../cli/crates/craft-store/src/gap.rs', import.meta.url), 'utf8')
+  const sep = /pub const SEP: &str = "([^"]+)";/.exec(rust)?.[1]
+  assert.ok(sep, 'craft_store::gap::SEP is found')
+  const js = fs.readFileSync(new URL('./analyze-runs.mjs', import.meta.url), 'utf8')
+  assert.ok(js.includes(`String(g).split('${sep}')[0]`), 'gapKeys splits on the same separator')
+})

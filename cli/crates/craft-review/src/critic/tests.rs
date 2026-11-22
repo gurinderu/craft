@@ -143,7 +143,15 @@ fn a_follow_up_finding_the_pool_holds_is_not_new_and_a_dead_lens_is_a_gap() {
     assert!(run.not_run[0].starts_with("rust critic follow-up lens concurrency"));
     // A dead metrics-only lens is a coverage gap, as on the rounds' path: it caps, never INCOMPLETE.
     assert_eq!(run.capped.len(), 1, "{:?}", run.capped);
-    assert!(run.capped[0].starts_with("rust critic follow-up lens complexity"));
+    assert_eq!(
+        craft_store::gap::key(&run.capped[0]),
+        "rust critic follow-up lens complexity"
+    );
+    let (_, detail) = run.capped[0].split_once(craft_store::gap::SEP).unwrap();
+    assert!(
+        detail.starts_with("dispatched and returned no findings"),
+        "{detail}"
+    );
     // The line only the dead lens was shown is named as such.
     assert_eq!(run.rounds.unanswered(), ["src/x.rs:9"]);
 }

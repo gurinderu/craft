@@ -258,11 +258,12 @@ fn a_sliced_metrics_lens_that_never_returned_is_held_as_a_coverage_gap() {
         &[crate::profile::Profile::load("general").unwrap()],
     );
     assert_eq!(run.capped.len(), 1, "{:?}", run.capped);
-    assert!(
-        run.capped[0].contains("complexity :: web: "),
-        "{:?}",
-        run.capped
+    assert_eq!(
+        craft_store::gap::key(&run.capped[0]),
+        "general metrics-only lenses that never returned"
     );
+    let (_, detail) = run.capped[0].split_once(craft_store::gap::SEP).unwrap();
+    assert!(detail.starts_with("complexity :: web: "), "{detail}");
     assert_eq!(run.not_run.len(), 1, "{:?}", run.not_run);
     assert!(run.not_run[0].contains("errors: ") && !run.not_run[0].contains("complexity"));
 }

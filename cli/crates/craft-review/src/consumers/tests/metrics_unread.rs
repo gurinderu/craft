@@ -158,3 +158,23 @@ fn a_file_that_answered_no_function_is_empty_not_unread_when_the_graph_holds_num
         );
     }
 }
+
+#[test]
+fn an_empty_read_from_an_index_that_moved_fails_as_moved_not_as_no_numbers() {
+    let t = tempfile::tempdir().unwrap();
+    let repo = fixture(t.path(), "");
+    let empty = format!(r#"echo '{{{COLS},"rows":[]}}'"#);
+    let none = r#"echo '{"columns":["f.name"],"rows":[]}'"#;
+    let g = stand_in(t.path(), ("", &with_probe(none, &empty), true));
+    let c = build_for_metrics(&repo, &diff_of(&repo), Ok(g));
+    assert!(
+        c.metrics_failed.contains("changed while"),
+        "{}",
+        c.metrics_failed
+    );
+    assert!(
+        !c.metrics_failed.contains("holds no function numbers"),
+        "{}",
+        c.metrics_failed
+    );
+}
