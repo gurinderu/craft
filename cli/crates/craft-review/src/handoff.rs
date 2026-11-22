@@ -5,8 +5,7 @@
 
 use std::path::Path;
 
-pub use craft_step::handoff::{answer_file, answers_dir, read_answer, set_aside, tasks_dir};
-pub use craft_step::wire::wire;
+pub use craft_step::handoff::{answers_dir, tasks_dir};
 
 use crate::Error;
 use crate::blocked;

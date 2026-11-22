@@ -29,8 +29,8 @@ mod options;
 mod prepare;
 
 use answers::move_on;
-use craft_step::Hold;
 use craft_step::take;
+use craft_step::{Aside, Hold};
 use open::{open_dir, pr_worktree, read_change, refuse_delta_over_branch};
 pub use options::StartOptions;
 use prepare::{choose_extra, choose_units, prepare, scouts};
@@ -224,7 +224,7 @@ fn first_step(dir: &Path, run: &mut RunState) -> Result<Value, Error> {
     if run.tasks.is_empty() {
         settle_memory(dir, run)?;
     }
-    save_and_next(dir, run, &Said::default())
+    save_and_next(dir, run, &Said::default(), Aside::default())
 }
 
 /// Takes the answers to the pending tasks of the run in `dir` and hands out what comes next. The
@@ -304,49 +304,58 @@ pub fn submit_with(
         }
         run.stopped = None;
         if given.is_none() {
-            return save_and_next(dir, &mut run, said);
+            return save_and_next(dir, &mut run, said, Aside::default());
         }
     }
     take::note(&mut run.degraded, said.degraded);
     if let Some(id) = take::unknown(&run.tasks, given) {
         return Err(StepError::UnknownTask(id.clone()).into());
     }
-    take::abandon(dir, &mut run.tasks, said.abandoned)?;
+    // The refused answer files are moved aside only once the state saying why is saved.
+    let mut aside = Aside::default();
+    take::abandon(dir, &mut run.tasks, said.abandoned, &mut aside)?;
     stop::open(&mut run);
     let hold = Hold::of(said.limit.is_some(), said.resume);
-    run.watch.live |= take::take_pending(dir, &mut run.tasks, given, hold)?;
+    run.watch.live |= take::take_pending(dir, &mut run.tasks, given, hold, &mut aside)?;
     move_on(dir, &mut run, said)?;
-    save_and_next(dir, &mut run, said)
+    save_and_next(dir, &mut run, said, aside)
 }
 
 /// Posts a run that finished on its PR when it was asked to, writes the pending tasks and the
-/// state, and says what comes next: the stop, when the run stopped.
-fn save_and_next(dir: &Path, run: &mut RunState, said: &Said<'_>) -> Result<Value, Error> {
+/// state, then moves the answers this submit refused aside (`aside`), and says what comes next:
+/// the stop, when the run stopped.
+fn save_and_next(
+    dir: &Path,
+    run: &mut RunState,
+    said: &Said<'_>,
+    aside: Aside,
+) -> Result<Value, Error> {
     let setup = said.post.cloned().unwrap_or_default();
     publish::deliver(dir, run, &setup)?;
     handoff::write_pending(dir, run)?;
     state::save(dir, run)?;
+    aside.apply()?;
     if run.stopped.is_some() {
         return stop::step(dir, run);
     }
-    Ok(next(dir, run))
+    next(dir, run)
 }
 
 /// What the host is to do next: the pending tasks, or the finished run's report, verdict and what
 /// its run record carries (`finished`). Each names the head the run read, for the host's start
 /// checkpoint.
-fn next(dir: &Path, run: &RunState) -> Value {
+fn next(dir: &Path, run: &RunState) -> Result<Value, Error> {
     match &run.verdict {
-        Some(v) if run.phase == Phase::Done => finished::step(dir, run, v),
+        Some(v) if run.phase == Phase::Done => Ok(finished::step(dir, run, v)),
         Some(_) | None => {
-            let mut step = craft_step::wire::pending_step(dir, &run.tasks);
+            let mut step = craft_step::wire::pending_step(dir, &run.tasks)?;
             if let Some(obj) = step.as_object_mut() {
                 obj.insert("repo".into(), json!(run.context.repo));
                 obj.insert("phase".into(), json!(run.phase));
             }
             finished::name_chain(&mut step, run);
             finished::name_worktree(&mut step, run);
-            step
+            Ok(step)
         }
     }
 }

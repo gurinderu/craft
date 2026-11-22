@@ -1,10 +1,12 @@
-//! One agent the host is to run, whatever kind of run hands it out: the kind's own part of it
-//! (`K`) travels flattened beside the fields every kind shares, so a state file keeps one shape.
+//! One agent the host is to run, whatever kind of run hands it out: the kind's own parts (`K` and
+//! its [`Kind::Marks`] and [`Kind::Flags`]) travel flattened beside the fields every kind shares,
+//! so a state file keeps one shape.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::agent::{AgentKind, Model};
+use crate::kind::Kind;
+use crate::model::Model;
 
 /// How many times an invalid or missing answer is asked for again before its task fails.
 pub const MAX_RETRIES: u32 = 2;
@@ -21,8 +23,8 @@ pub enum TaskState {
 
 /// One agent the host is to run; `K` says what its answer is for, as the kind of run reads it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Task<K> {
+#[serde(rename_all = "camelCase", bound = "")]
+pub struct Task<K: Kind> {
     pub id: String,
     pub label: String,
     pub prompt: String,
@@ -30,20 +32,15 @@ pub struct Task<K> {
     pub schema: Value,
     /// The agent it runs on; `None`, the host's default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub agent_type: Option<AgentKind>,
+    pub agent_type: Option<K::Agent>,
     /// The consumer repository's own agent it runs on, by the name that repository gives it: an
     /// extra lens (realm @nick/craft, node #295). The host runs it on that agent and no other.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub consumer_agent: Option<String>,
     #[serde(flatten)]
     pub kind: K,
-    /// The CONSUMERS lines (`file:line`) its prompt lists, each of which its answer is to mark.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub consumers: Vec<String>,
-    /// The CONSUMERS lines its taken answer left unmarked, reported as unchecked (realm
-    /// @nick/craft, node #531).
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub unmarked: Vec<String>,
+    #[serde(flatten)]
+    pub marks: K::Marks,
     pub state: TaskState,
     /// Answers asked for again so far.
     pub retries: u32,
@@ -60,13 +57,11 @@ pub struct Task<K> {
     /// held for a resume nor handed out again, and no death of its dispatch round.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub abandoned: bool,
-    /// Its prompt asks for the code graph's MCP tools (a metrics lens, the verifier of a metric
-    /// finding): a host runs it on an agent that can reach them.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub graph: bool,
+    #[serde(flatten)]
+    pub flags: K::Flags,
 }
 
-impl<K> Task<K> {
+impl<K: Kind> Task<K> {
     #[must_use]
     pub fn new(
         id: String,
@@ -85,15 +80,14 @@ impl<K> Task<K> {
             agent_type: None,
             consumer_agent: None,
             kind,
-            consumers: Vec::new(),
-            unmarked: Vec::new(),
+            marks: K::Marks::default(),
             state: TaskState::Pending,
             retries: 0,
             error: None,
             answer: None,
             refused: None,
             abandoned: false,
-            graph: false,
+            flags: K::Flags::default(),
         }
     }
 

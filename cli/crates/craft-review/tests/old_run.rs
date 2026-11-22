@@ -1,7 +1,15 @@
 //! A run an earlier binary started and stopped mid-step goes on under this one: its state file
 //! reads and writes back byte for byte, and a submit over it hands out the same step and the same
-//! task files that binary wrote. The fixture (`fixtures/old-run`) is a lens round's retry as the
-//! binary before the step protocol moved into `craft-step` left it, its paths as placeholders.
+//! task files that binary wrote.
+//!
+//! The fixture (`fixtures/old-run`) is a lens round's retry as the binary before the step protocol
+//! moved into `craft-step` left it: written by the craft-review of commit 153b1a69 (the trunk this
+//! change started from), through a throwaway test beside these that ran `common::small_run`, wrote
+//! `{}` for `lens-rust-errors-r1` and the other lenses' clean answers, submitted once, and copied
+//! `state.json`, the printed step and that task's prompt and schema here, the run directory, the
+//! repository and the plugin root replaced by `@RUN@`, `@REPO@` and `@ROOT@`. These tests pass
+//! against that commit's craft-review unchanged. `EVERY_FIELD` is one task with each optional field
+//! set, in the field order that commit's `Task` serialized.
 #![expect(
     clippy::unwrap_used,
     reason = "the fixture's files are the test's own: a missing one fails it loudly"
@@ -20,6 +28,45 @@ const ROOT: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../../integrations/claude-code"
 );
+
+const EVERY_FIELD: &str = r#"{
+  "id": "lens-rust-complexity-r1",
+  "label": "lens:rust:complexity r1",
+  "prompt": "p",
+  "model": "opus",
+  "schema": {
+    "type": "object"
+  },
+  "agentType": "rust-reviewer",
+  "consumerAgent": "house-reviewer",
+  "kind": "lens",
+  "profile": "rust",
+  "lens": "complexity",
+  "round": 1,
+  "slice": "crate-a",
+  "consumers": [
+    "src/a.rs:3",
+    "src/b.rs:5"
+  ],
+  "unmarked": [
+    "src/b.rs:5"
+  ],
+  "state": "failed",
+  "retries": 2,
+  "error": "e",
+  "answer": {
+    "findings": []
+  },
+  "refused": "r",
+  "abandoned": true,
+  "graph": true
+}"#;
+
+#[test]
+fn a_task_with_every_field_set_reads_and_writes_back_byte_for_byte() {
+    let task: state::Task = serde_json::from_str(EVERY_FIELD).unwrap();
+    assert_eq!(serde_json::to_string_pretty(&task).unwrap(), EVERY_FIELD);
+}
 
 /// A fixture file with its placeholders filled for this run.
 fn filled(name: &str, run: &Path, repo: &Path) -> String {

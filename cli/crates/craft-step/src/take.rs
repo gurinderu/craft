@@ -1,35 +1,15 @@
 //! Taking a submit's answers, whatever the kind: the abandoned tasks failed, each pending answer
 //! read (from `given` or its file) and checked, a refused one asked for again until its retries are
-//! spent, or held uncounted.
+//! spent, or held uncounted. The answer files refused are only marked ([`Aside`]): the kind moves
+//! them aside once it has saved the state that says why.
 
 use std::path::Path;
 
 use serde_json::{Map, Value};
 
-use crate::handoff::{self, HandoffError};
+use crate::handoff::{Aside, HandoffError};
+use crate::kind::Kind;
 use crate::task::{Task, TaskState};
-use crate::validate;
-
-/// What a kind of run adds to taking an answer; each hook's default adds nothing.
-pub trait Kind: Sized {
-    /// The failure of a task whose raw `answer` says its agent could not do the work, read before
-    /// the answer is held to its schema; `None`, it did not say so.
-    fn blocked(_task: &Task<Self>, _answer: &Value) -> Option<String> {
-        None
-    }
-
-    /// The answer `task` can use, as JSON, or why not in one line: by default, the answer as it
-    /// matches the task's schema; a kind adds its own checks after the schema's.
-    ///
-    /// # Errors
-    /// Why the answer is refused, in one line.
-    fn check(task: &Task<Self>, answer: &Value) -> Result<Value, String> {
-        validate::check(&task.schema, Some(answer))
-    }
-
-    /// What the kind keeps of an accepted `answer` beside it.
-    fn taken(_task: &mut Task<Self>, _answer: &Value) {}
-}
 
 /// Which failed answers wait uncounted rather than use up a retry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -55,7 +35,7 @@ impl Hold {
 
 /// The first id of `given` that names no pending task.
 #[must_use]
-pub fn unknown<'a, K>(
+pub fn unknown<'a, K: Kind>(
     tasks: &[Task<K>],
     given: Option<&'a Map<String, Value>>,
 ) -> Option<&'a String> {
@@ -74,16 +54,21 @@ pub fn note(kept: &mut Vec<String>, notes: &[String]) {
 
 /// Fails each pending task of `ids`, abandoned by the host at its deadline: a dead agent not
 /// dispatched again, whose wait already spent the budget. Its answer file, should one be there, is
-/// set aside unread.
+/// marked to be set aside unread.
 ///
 /// # Errors
-/// When an answer file cannot be moved aside.
-pub fn abandon<K>(dir: &Path, tasks: &mut [Task<K>], ids: &[String]) -> Result<(), HandoffError> {
+/// When a task's id cannot be a file name.
+pub fn abandon<K: Kind>(
+    dir: &Path,
+    tasks: &mut [Task<K>],
+    ids: &[String],
+    aside: &mut Aside,
+) -> Result<(), HandoffError> {
     for task in tasks
         .iter_mut()
         .filter(|t| t.pending() && ids.contains(&t.id))
     {
-        handoff::set_aside(dir, task)?;
+        aside.mark(dir, task)?;
         task.state = TaskState::Failed;
         task.abandoned = true;
         task.error = Some(
@@ -102,10 +87,11 @@ pub fn take_pending<K: Kind>(
     tasks: &mut [Task<K>],
     given: Option<&Map<String, Value>>,
     hold: Hold,
+    aside: &mut Aside,
 ) -> Result<bool, HandoffError> {
     let mut live = false;
     for task in tasks.iter_mut().filter(|t| t.pending()) {
-        live |= take_answer(dir, task, given, hold)?;
+        live |= take_answer(dir, task, given, hold, aside)?;
     }
     Ok(live)
 }
@@ -113,3 +99,6 @@ pub fn take_pending<K: Kind>(
 mod answer;
 
 pub use answer::take_answer;
+
+#[cfg(test)]
+mod tests;

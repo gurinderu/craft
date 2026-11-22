@@ -12,23 +12,6 @@ pub use consumers::{listed, unmarked};
 
 pub use craft_step::validate::normalize;
 
-/// What the review adds to taking an answer: an agent that could not look fails at once, a batch
-/// verdict is checked beside the schema, and the CONSUMERS lines an answer left unmarked are kept.
-impl craft_step::Kind for TaskKind {
-    fn blocked(task: &Task, answer: &Value) -> Option<String> {
-        crate::blocked::said(&task.schema, answer).map(|why| crate::blocked::failure(&why))
-    }
-
-    fn check(task: &Task, answer: &Value) -> Result<Value, String> {
-        check(task, Some(answer))
-    }
-
-    fn taken(task: &mut Task, answer: &Value) {
-        // Reported as unchecked, never asked for again (realm @nick/craft, node #531).
-        task.unmarked = unmarked(answer, &task.consumers);
-    }
-}
-
 /// The answer `task` can use, or why not, in one line.
 ///
 /// # Errors

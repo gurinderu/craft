@@ -22,7 +22,7 @@ fn shown(lens: &str, consumers: &[&str], answered: bool) -> Task {
             slice: Some("crates/a".into()),
         },
     );
-    t.consumers = consumers.iter().map(|s| (*s).to_owned()).collect();
+    t.marks.consumers = consumers.iter().map(|s| (*s).to_owned()).collect();
     if answered {
         t.state = TaskState::Answered;
         t.answer = Some(json!({"findings": []}));
@@ -51,7 +51,7 @@ fn a_line_shown_to_no_lens_is_named_and_one_a_dead_lens_was_shown_is_not() {
 fn a_line_an_answered_lens_marked_or_left_is_not_named_as_shown_only_to_dead_lenses() {
     let mut r = Rounds::default();
     let mut left = shown("errors", &["a.rs:1", "b.rs:2"], true);
-    left.unmarked = vec!["b.rs:2".into()];
+    left.marks.unmarked = vec!["b.rs:2".into()];
     r.absorb(&[
         shown("intent", &["a.rs:1", "b.rs:2", "c.rs:3"], false),
         left,
@@ -66,7 +66,7 @@ fn the_lines_a_cut_short_copy_absorbed_are_taken_shown_marked_and_left() {
     let mut run = Rounds::default();
     let mut copy = run.clone();
     let mut left = shown("errors", &["a.rs:1", "b.rs:2"], true);
-    left.unmarked = vec!["b.rs:2".into()];
+    left.marks.unmarked = vec!["b.rs:2".into()];
     copy.absorb(&[left, shown("intent", &["c.rs:3"], false)]);
     copy.pool = vec![json!({"title": "kept"})];
     let pool = run.take_consumers(copy);

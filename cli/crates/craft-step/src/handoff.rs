@@ -5,10 +5,11 @@
 
 mod answer;
 
-pub use answer::{read_answer, set_aside};
+pub use answer::{Aside, read_answer};
 
 use std::path::{Path, PathBuf};
 
+use crate::kind::Kind;
 use crate::task::Task;
 
 /// Why a task's files could not be laid out or moved.
@@ -51,18 +52,32 @@ pub fn answers_dir(dir: &Path) -> PathBuf {
     dir.join("answers")
 }
 
-pub(crate) fn prompt_file(dir: &Path, id: &str) -> PathBuf {
-    tasks_dir(dir).join(format!("{id}.md"))
+/// `id` when it can stand as a file name, so every path built from it stays in its directory.
+///
+/// # Errors
+/// [`HandoffError::UnsafeId`] when it cannot.
+pub(crate) fn safe(id: &str) -> Result<&str, HandoffError> {
+    if file_safe(id) {
+        Ok(id)
+    } else {
+        Err(HandoffError::UnsafeId(id.to_owned()))
+    }
 }
 
-pub(crate) fn schema_file(dir: &Path, id: &str) -> PathBuf {
-    tasks_dir(dir).join(format!("{id}.schema.json"))
+pub(crate) fn prompt_file(dir: &Path, id: &str) -> Result<PathBuf, HandoffError> {
+    Ok(tasks_dir(dir).join(format!("{}.md", safe(id)?)))
+}
+
+pub(crate) fn schema_file(dir: &Path, id: &str) -> Result<PathBuf, HandoffError> {
+    Ok(tasks_dir(dir).join(format!("{}.schema.json", safe(id)?)))
 }
 
 /// Where the agent of task `id` writes its answer.
-#[must_use]
-pub fn answer_file(dir: &Path, id: &str) -> PathBuf {
-    answers_dir(dir).join(format!("{id}.json"))
+///
+/// # Errors
+/// [`HandoffError::UnsafeId`] when `id` cannot be a file name.
+pub fn answer_file(dir: &Path, id: &str) -> Result<PathBuf, HandoffError> {
+    Ok(answers_dir(dir).join(format!("{}.json", safe(id)?)))
 }
 
 /// Whether `id` can stand as a file name: ASCII letters, digits, `.`, `_` and `-`, not starting with `.`.
@@ -79,7 +94,7 @@ fn file_safe(id: &str) -> bool {
 ///
 /// # Errors
 /// When a task id is not file-safe, the kind cannot render a prompt, or a file cannot be written.
-pub fn write_pending<K, E>(
+pub fn write_pending<K: Kind, E>(
     dir: &Path,
     tasks: &[Task<K>],
     prompt: impl Fn(&Task<K>) -> Result<String, E>,
@@ -95,18 +110,13 @@ where
         std::fs::create_dir_all(&d).map_err(|source| HandoffError::NoDir { path: d, source })?;
     }
     for task in pending {
-        if !file_safe(&task.id) {
-            return Err(HandoffError::UnsafeId(task.id.clone()).into());
-        }
+        let (prompt_path, schema_path) = (prompt_file(dir, &task.id)?, schema_file(dir, &task.id)?);
         let schema = format!(
             "{}\n",
             serde_json::to_string_pretty(&task.schema).map_err(HandoffError::from)?
         );
         let prompt = prompt(task)?;
-        for (path, text) in [
-            (prompt_file(dir, &task.id), prompt),
-            (schema_file(dir, &task.id), schema),
-        ] {
+        for (path, text) in [(prompt_path, prompt), (schema_path, schema)] {
             std::fs::write(&path, text)
                 .map_err(|source| HandoffError::Unwritable { path, source })?;
         }
@@ -116,7 +126,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::file_safe;
+    use super::{HandoffError, answer_file, file_safe};
 
     #[test]
     fn ids_are_held_to_file_names() {
@@ -124,5 +134,11 @@ mod tests {
         for bad in ["", ".", "..", "a/b", "verify:3", "a b", ".hidden"] {
             assert!(!file_safe(bad), "{bad:?}");
         }
+    }
+
+    #[test]
+    fn no_path_is_built_from_an_unsafe_id() {
+        let got = answer_file(std::path::Path::new("/run"), "../escape");
+        assert!(matches!(got, Err(HandoffError::UnsafeId(id)) if id == "../escape"));
     }
 }

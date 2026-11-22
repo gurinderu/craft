@@ -4,23 +4,25 @@ use std::path::Path;
 
 use serde_json::{Map, Value};
 
-use super::{Hold, Kind};
-use crate::handoff::{self, HandoffError};
+use super::Hold;
+use crate::handoff::{self, Aside, HandoffError};
+use crate::kind::Kind;
 use crate::task::{MAX_RETRIES, Task, TaskState};
 use crate::validate;
 
 /// Takes the answer of one pending task, from `given` or the file its agent wrote; one refused is
 /// asked for again until its retries are spent — unless `hold` keeps it waiting uncounted: every
 /// one on the host's limit, a missing one on a resume (handed out again as first written). Says
-/// whether its agent answered at all, valid or not.
+/// whether its agent answered at all, valid or not. A refused answer file is marked in `aside`.
 ///
 /// # Errors
-/// When a refused answer file cannot be moved aside.
+/// When the task's id cannot be a file name.
 pub fn take_answer<K: Kind>(
     dir: &Path,
     task: &mut Task<K>,
     given: Option<&Map<String, Value>>,
     hold: Hold,
+    aside: &mut Aside,
 ) -> Result<bool, HandoffError> {
     let submitted = match given {
         Some(g) => g
@@ -32,7 +34,7 @@ pub fn take_answer<K: Kind>(
     // An answer file that cannot be read or parsed was still written: its agent was alive.
     let live = match given {
         Some(g) => g.contains_key(&task.id),
-        None => handoff::answer_file(dir, &task.id).exists(),
+        None => handoff::answer_file(dir, &task.id)?.exists(),
     };
     // An agent that could not do its work fails with its reason at once, before its schema is
     // checked (realm @nick/craft, node #511).
@@ -62,14 +64,14 @@ pub fn take_answer<K: Kind>(
         }
     }
     if given.is_none() {
-        handoff::set_aside(dir, task)?;
+        aside.mark(dir, task)?;
     }
     Ok(refused(task, hold, live))
 }
 
 /// A refused answer's task held uncounted (`hold`), or asked for again until its retries are spent;
 /// says whether its agent answered at all.
-fn refused<K>(task: &mut Task<K>, hold: Hold, live: bool) -> bool {
+fn refused<K: Kind>(task: &mut Task<K>, hold: Hold, live: bool) -> bool {
     match hold {
         Hold::Every => return live,
         Hold::Missing if !live => {

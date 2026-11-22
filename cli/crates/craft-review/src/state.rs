@@ -148,6 +148,8 @@ pub enum TaskKind {
 /// One agent the host is to run, its answer for what [`TaskKind`] says ([`craft_step::Task`]).
 pub type Task = craft_step::Task<TaskKind>;
 
+pub use crate::task_kind::{Flags, Marks};
+
 /// One profile's part of a run: the changed files it takes, what its scout planned, and how far
 /// its lens rounds went.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

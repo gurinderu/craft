@@ -3,56 +3,55 @@
 
 use std::path::{Path, PathBuf};
 
-use serde::Serialize;
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 
-use crate::handoff::{answer_file, prompt_file, schema_file};
+use crate::handoff::{HandoffError, answer_file, prompt_file, schema_file};
+use crate::kind::Kind;
 use crate::task::Task;
 
-/// The task as the host receives it: where its prompt and schema are, and where its answer goes.
-#[must_use]
-pub fn wire<K: Serialize>(dir: &Path, task: &Task<K>) -> Value {
-    let path = |p: PathBuf| p.display().to_string();
-    let mut t = json!({
-        "id": task.id, "label": task.label, "model": task.model,
-        "promptFile": path(prompt_file(dir, &task.id)),
-        "schemaFile": path(schema_file(dir, &task.id)),
-        "answerFile": path(answer_file(dir, &task.id)),
-    });
-    if let (Some(a), Some(obj)) = (&task.agent_type, t.as_object_mut()) {
-        obj.insert("agentType".into(), json!(a));
+/// The task as the host receives it: where its prompt and schema are, where its answer goes, what
+/// it is for (`kind`, by which the host sets its deadline) and what it runs on.
+///
+/// # Errors
+/// When its id cannot be a file name, or its agent cannot be encoded.
+pub fn wire<K: Kind>(dir: &Path, task: &Task<K>) -> Result<Value, HandoffError> {
+    let path = |p: PathBuf| Value::String(p.display().to_string());
+    let mut t = Map::new();
+    t.insert("id".into(), json!(task.id));
+    t.insert("label".into(), json!(task.label));
+    t.insert("model".into(), json!(task.model));
+    t.insert("promptFile".into(), path(prompt_file(dir, &task.id)?));
+    t.insert("schemaFile".into(), path(schema_file(dir, &task.id)?));
+    t.insert("answerFile".into(), path(answer_file(dir, &task.id)?));
+    if let Some(a) = &task.agent_type {
+        t.insert("agentType".into(), serde_json::to_value(a)?);
     }
-    // What the task is for (a scout, a lens, a verifier…), by which the host sets its deadline.
-    let kind = serde_json::to_value(&task.kind)
-        .ok()
-        .and_then(|k| k.get("kind").cloned());
-    if let (Some(k), Some(obj)) = (kind, t.as_object_mut()) {
-        obj.insert("kind".into(), k);
+    t.insert("kind".into(), json!(task.kind.tag()));
+    if let Some(a) = &task.consumer_agent {
+        t.insert("consumerAgent".into(), json!(a));
     }
-    if let (Some(a), Some(obj)) = (&task.consumer_agent, t.as_object_mut()) {
-        obj.insert("consumerAgent".into(), json!(a));
+    for (key, value) in K::wire(task) {
+        t.insert(key.into(), value);
     }
-    // A task whose prompt reaches for the code graph's MCP tools, which a lean agent type lacks.
-    if let (true, Some(obj)) = (task.graph, t.as_object_mut()) {
-        obj.insert("graph".into(), json!(true));
-    }
-    t
+    Ok(Value::Object(t))
 }
 
 /// The step that hands out the pending `tasks` of the run in `dir`: `run`, `tasks` and `done`
 /// false, which the kind extends with what its host is to know beside them.
-#[must_use]
-pub fn pending_step<K: Serialize>(dir: &Path, tasks: &[Task<K>]) -> Value {
-    let tasks: Vec<Value> = tasks
+///
+/// # Errors
+/// As [`wire`].
+pub fn pending_step<K: Kind>(dir: &Path, tasks: &[Task<K>]) -> Result<Value, HandoffError> {
+    let tasks = tasks
         .iter()
         .filter(|t| t.pending())
         .map(|t| wire(dir, t))
-        .collect();
-    json!({"run": dir.display().to_string(), "tasks": tasks, "done": false})
+        .collect::<Result<Vec<Value>, _>>()?;
+    Ok(json!({"run": dir.display().to_string(), "tasks": tasks, "done": false}))
 }
 
 /// A task's line in a run's status: its id, label, state, retries and last refusal.
 #[must_use]
-pub fn status_line<K>(t: &Task<K>) -> Value {
+pub fn status_line<K: Kind>(t: &Task<K>) -> Value {
     json!({"id": t.id, "label": t.label, "state": t.state, "retries": t.retries, "error": t.error})
 }

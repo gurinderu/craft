@@ -237,5 +237,5 @@ fn a_lens_shown_consumer_lines_must_mark_them() {
         ..Rounds::default()
     };
     let got = tasks(&ctx, (&rust, &plan), &[], &[], &rounds).unwrap();
-    assert_eq!(got[0].consumers, ["src/api.rs:33", "src/api.rs:41"]);
+    assert_eq!(got[0].marks.consumers, ["src/api.rs:33", "src/api.rs:41"]);
 }

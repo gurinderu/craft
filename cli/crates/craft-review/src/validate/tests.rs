@@ -22,7 +22,7 @@ fn lens(consumers: &[&str]) -> Task {
             slice: None,
         },
     );
-    t.consumers = consumers.iter().map(|s| (*s).to_owned()).collect();
+    t.marks.consumers = consumers.iter().map(|s| (*s).to_owned()).collect();
     t
 }
 
@@ -40,7 +40,10 @@ fn a_lens_answer_leaving_consumer_lines_unmarked_is_taken_and_the_lines_read_bes
     let a = answer(&["src/a.rs:3", "src/z.rs:1"]);
     let taken = check(&t, Some(&a)).unwrap();
     assert_eq!(taken["lens"], json!("correctness"));
-    assert_eq!(unmarked(&taken, &t.consumers), ["src/b.rs:5", "src/c.rs:9"]);
+    assert_eq!(
+        unmarked(&taken, &t.marks.consumers),
+        ["src/b.rs:5", "src/c.rs:9"]
+    );
     // Only the schema refuses: an answer off it is still refused.
     check(&t, Some(&json!({"lens": "correctness"}))).unwrap_err();
 }
@@ -49,7 +52,7 @@ fn a_lens_answer_leaving_consumer_lines_unmarked_is_taken_and_the_lines_read_bes
 fn a_lens_answer_marking_every_listed_line_leaves_none_unmarked() {
     let t = lens(&["src/a.rs:3", "src/b.rs:5"]);
     let a = check(&t, Some(&answer(&["src/b.rs:5", "src/a.rs:3"]))).unwrap();
-    assert!(unmarked(&a, &t.consumers).is_empty());
+    assert!(unmarked(&a, &t.marks.consumers).is_empty());
     let none = check(
         &lens(&[]),
         Some(&json!({"lens": "correctness", "findings": []})),
