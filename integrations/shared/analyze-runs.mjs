@@ -370,8 +370,9 @@ export function aggregate(records) {
     tallyHarmCap(harmCap, r)
     countEach(notRun, r.notRun)
     // A coverage gap is fragility a re-run fixes too: ranked beside notRun, though the record keeps it apart from
-    // notRun, which marks a run INCOMPLETE (cli/crates/craft-review/src/report/gap_cap.rs).
-    countEach(notRun, r['capped'])
+    // notRun, which marks a run INCOMPLETE (cli/crates/craft-review/src/report/gap_cap.rs) — by its lens and kind alone,
+    // the text before its first ' — ', as `craft runs retro` ranks it: its files and errors differ run to run.
+    countEach(notRun, gapKeys(r['capped']))
     // Files no language profile covered are NOT a `notRun` entry and must never be folded into one:
     // `notRun` is ranked by exact string to surface REPEATED fragility, and a note embedding a count
     // and file names is unique per run — it filled the ranking with count-1 rows and sank the real
@@ -712,6 +713,11 @@ function tallyThinned(w, thinned) {
     w.thinned += thinned
     w.thinnedRuns++
   }
+}
+
+/** A coverage gap's stable part, each: the text before its first ' — '. @param {unknown} gaps @returns {string[]} */
+function gapKeys(gaps) {
+  return (Array.isArray(gaps) ? gaps : []).map(g => String(g).split(' — ')[0] ?? '')
 }
 
 // One count per item, keyed by its string form; a non-array counts nothing.

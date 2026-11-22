@@ -223,6 +223,12 @@ pub fn retro(version: &str, records: impl IntoIterator<Item = Obj>) -> Result<Re
     Ok(out)
 }
 
+/// A coverage gap's stable part: what before its first ` — `, which names the lens and the kind
+/// of gap; the files and errors after it differ run to run.
+fn gap_key(gap: &str) -> String {
+    gap.split_once(" — ").map_or(gap, |(k, _)| k).to_owned()
+}
+
 /// Add one finished, deduplicated record to a retro.
 /// # Errors
 /// When a report field cannot be represented as Unicode.
@@ -246,12 +252,16 @@ pub fn add_record(out: &mut Retro, r: &Obj) -> Result<(), Utf16Error> {
     let verdict = r.get("verdict").filter(|v| v.truthy()).map(Js::to_js_text);
     out.partial_coverage +=
         u64::from(verdict.is_some_and(|v| crate::tally::is_incomplete_units(&v)));
+    for item in r.get("notRun").and_then(Js::as_arr).unwrap_or(&[]) {
+        *out.not_run.entry(item.to_js_string()?).or_default() += 1;
+    }
     // A coverage gap (`capped`) is fragility a re-run fixes too, ranked beside what did not run
-    // though the record keeps it apart from `notRun`, which marks a run INCOMPLETE.
-    for key in ["notRun", "capped"] {
-        for item in r.get(key).and_then(Js::as_arr).unwrap_or(&[]) {
-            *out.not_run.entry(item.to_js_string()?).or_default() += 1;
-        }
+    // though the record keeps it apart from `notRun`, which marks a run INCOMPLETE; by its lens and
+    // kind alone, as its files and errors differ run to run.
+    for item in r.get("capped").and_then(Js::as_arr).unwrap_or(&[]) {
+        *out.not_run
+            .entry(gap_key(&item.to_js_string()?))
+            .or_default() += 1;
     }
     rounds::add(r, &mut out.rounds);
     rounds::add_apart(r, &mut out.apart);

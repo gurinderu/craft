@@ -1717,3 +1717,20 @@ test('an unavailable agent is counted per agent type across both engines and bot
   assert.match(out, /## AGENT UNAVAILABLE[^\n]*\n- 3 run\(s\) · craft:rust-reviewer/)
   assert.match(out, /- 3 dispatch\(es\) in 2 run\(s\) · craft:nix-reviewer/)
 })
+
+test('coverage gaps rank beside notRun by their lens and kind, whatever files and errors they name', () => {
+  const gap = (/** @type {string} */ why) => ({
+    schemaVersion: 1,
+    name: 'review',
+    verdict: 'Warning',
+    notRun: [],
+    capped: [`metrics-only lens complexity could not look — ${why}`],
+    dimensions: [],
+  })
+  const a = aggregate([gap('src/a.rs (cut)'), gap('the graph said boom'), { ...REVIEW_1 }])
+  assert.deepEqual(a.notRun, [
+    { item: 'metrics-only lens complexity could not look', count: 2 },
+    { item: 'rust lens safety', count: 1 },
+  ])
+  assert.equal(a.incompleteRuns, 0, 'a coverage gap is no INCOMPLETE run')
+})

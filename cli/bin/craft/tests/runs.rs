@@ -484,3 +484,28 @@ fn a_run_that_only_stopped_across_versions_counts_once_under_its_newest_parts_ve
     let old_only = ndjson(&craft(d.path(), &["stats", "--version", "0.9.0", "--json"]));
     assert!(old_only.is_empty(), "{old_only:?}");
 }
+
+#[test]
+fn a_retro_ranks_coverage_gaps_beside_not_run_by_their_lens_and_kind() {
+    let d = tempfile::tempdir().unwrap();
+    for (ts, why) in [
+        ("2026-11-01T10-00-00Z", "src/a.rs (cut)"),
+        ("2026-11-01T11-00-00Z", "boom"),
+    ] {
+        let mut r = review("0.9.0", "Warning", 0);
+        r["capped"] = json!([format!(
+            "metrics-only lens complexity could not look — {why}"
+        )]);
+        record(d.path(), ts, &r);
+    }
+    let lines = ndjson(&craft(d.path(), &["retro", "0.9.0", "--json"]));
+    let rows: Vec<&Value> = lines.iter().filter(|l| l["section"] == "notRun").collect();
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    assert_eq!(rows[0]["runs"], json!(2), "{rows:?}");
+    assert!(
+        rows[0]
+            .to_string()
+            .contains("metrics-only lens complexity could not look"),
+        "{rows:?}"
+    );
+}
