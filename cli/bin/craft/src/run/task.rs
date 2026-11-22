@@ -23,8 +23,6 @@ pub(crate) struct Task {
     pub(crate) consumer_agent: Option<String>,
     /// What it is for, by which its deadline is set.
     pub(crate) kind: Option<String>,
-    /// Its prompt asks for the code graph's MCP tools.
-    pub(crate) graph: bool,
 }
 
 impl Task {
@@ -42,7 +40,6 @@ impl Task {
             agent_type: s("agentType"),
             consumer_agent: s("consumerAgent"),
             kind: s("kind"),
-            graph: v.get("graph").and_then(Value::as_bool).unwrap_or(false),
         })
     }
 }

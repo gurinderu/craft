@@ -137,10 +137,6 @@ pub fn wire(dir: &Path, task: &Task) -> Value {
     if let (Some(a), Some(obj)) = (&task.consumer_agent, t.as_object_mut()) {
         obj.insert("consumerAgent".into(), json!(a));
     }
-    // A task whose prompt reaches for the code graph's MCP tools, which a lean agent type lacks.
-    if let (true, Some(obj)) = (task.graph, t.as_object_mut()) {
-        obj.insert("graph".into(), json!(true));
-    }
     t
 }
 

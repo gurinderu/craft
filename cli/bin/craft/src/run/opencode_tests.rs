@@ -14,7 +14,6 @@ fn task(agent: Option<&str>, consumer: Option<&str>) -> Task {
         agent_type: agent.map(str::to_owned),
         consumer_agent: consumer.map(str::to_owned),
         kind: None,
-        graph: false,
     }
 }
 

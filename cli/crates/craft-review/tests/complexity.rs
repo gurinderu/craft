@@ -123,8 +123,6 @@ fn with_an_index_a_finding_stands_on_the_metrics_it_carries_and_the_verifier_rer
             "lens-general-design-r1"
         ]
     );
-    // No lens reaches for the graph's MCP tools: the metrics lens reads the binary's numbers.
-    assert!(s["tasks"][0].get("graph").is_none(), "{}", s["tasks"][0]);
     // A judging lens names its rubric's file by an absolute path any agent can read.
     let rules = prompt_of(&s["tasks"][1]);
     let line = rules
@@ -176,15 +174,12 @@ fn with_an_index_a_finding_stands_on_the_metrics_it_carries_and_the_verifier_rer
         .collect();
     let s = submit(&run, Value::Object(quiet));
     assert_eq!(ids(&s), ["verify-0-v0"], "one verifier, not a panel");
-    assert!(
-        s["tasks"][0].get("graph").is_none(),
-        "the metric verifier reads the review's rows, not the graph"
-    );
     let v = prompt_of(&s["tasks"][0]);
     assert_contains_all(
         &v,
         &[
             "You are an adversarial verifier for a METRIC-BACKED complexity finding.",
+            "you need no MCP tool. Its rows for this finding's function:",
             "f is hard to follow",
             "[metrics: cognitive 3, loop_depth 1]",
             "Its rows for this finding's function:\n- `web/app.ts:1-1` `f`:",

@@ -197,10 +197,6 @@ pub struct Task {
     /// held for a resume nor handed out again, and no death of its dispatch round.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub abandoned: bool,
-    /// Its prompt asks for the code graph's MCP tools (a metrics lens, the verifier of a metric
-    /// finding): a host runs it on an agent that can reach them.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub graph: bool,
 }
 
 impl Task {
@@ -230,7 +226,6 @@ impl Task {
             answer: None,
             refused: None,
             abandoned: false,
-            graph: false,
         }
     }
 
