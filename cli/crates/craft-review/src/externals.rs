@@ -1,7 +1,6 @@
 //! Native manifest discovery and legacy external import (realm @nick/craft, #435, #573).
-//! Both the compatibility command and `init` use this library; neither operation writes files.
+//! `craft init` uses this library; neither operation writes files.
 
-mod argv;
 mod candidate;
 mod discover;
 mod error;
@@ -16,7 +15,6 @@ mod text;
 use craft_store::js::{Js, JsString};
 use std::path::Path;
 
-pub use argv::Invocation;
 pub use error::Error;
 
 /// Discover integrations under a canonical root, preserving explicit path order and duplicates.
