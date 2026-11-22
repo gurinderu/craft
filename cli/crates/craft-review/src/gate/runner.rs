@@ -76,10 +76,21 @@ impl Runner {
 
     /// Runs `program args` in `cwd` within what is left of the budget.
     pub(crate) fn run(&self, cwd: &Path, program: &str, args: &[&str]) -> Ran {
+        self.run_within(cwd, program, args, Duration::MAX)
+    }
+
+    /// Runs `program args` in `cwd` within `cap` or what is left of the budget, whichever is less.
+    pub(crate) fn run_within(
+        &self,
+        cwd: &Path,
+        program: &str,
+        args: &[&str],
+        cap: Duration,
+    ) -> Ran {
         if self.cancel.is_cancelled() {
             return Ran::Broken(STOPPED.into());
         }
-        let limit = self.left();
+        let limit = self.left().min(cap);
         if limit.is_zero() {
             return Ran::TimedOut(Duration::ZERO);
         }

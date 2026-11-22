@@ -42,7 +42,7 @@ function roundOptions(a) {
 
 /**
  * What the binary is told beyond the diff: `strict` (the maintainability bar a presumption of block), `gate` (false: no
- * mechanical gate, which builds and runs the branch's code — clippy's build scripts and proc macros, nix flake check — for a
+ * mechanical gate, which builds and runs the branch's code — clippy's build scripts and proc macros (and a flake dev shell's shellHook), nix flake check — for a
  * branch not trusted) and the launcher's
  * own records, `priorDecisions`, as JSON text — the binary reads and refuses them as the engine does (a string, or any
  * value that is no list, is named and nothing of it applied), and adds them to what it recalls from the project's memory.

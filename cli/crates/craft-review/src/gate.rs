@@ -12,7 +12,8 @@
 //! in a changed file, is a seed finding every lens and verifier sees, carrying its `toolRule`; a
 //! tool that is not installed is named, and the review goes on.
 //! clippy and `nix flake check` build and run the branch's code (build scripts, proc macros,
-//! flake checks): a run started with `--no-gate` runs none of them, and says so.
+//! flake checks, and the flake dev shell's `shellHook` when clippy runs inside it): a run started
+//! with `--no-gate` runs none of them, and says so.
 
 use std::ffi::OsString;
 use std::path::Path;
@@ -42,6 +43,9 @@ mod ci_verdict;
 #[cfg(test)]
 mod ci_world;
 mod clippy;
+mod devshell;
+#[cfg(test)]
+mod devshell_tests;
 pub(crate) mod lines;
 mod lock;
 #[cfg(test)]

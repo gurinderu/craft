@@ -10,6 +10,7 @@ use serde_json::Value;
 use super::Status;
 use super::cause::cargo_why;
 use super::check::{Acc, Cx, Seed};
+use super::devshell::Shell;
 use super::lock::Lockfiles;
 
 /// A package clippy lints: its manifest, repository-relative, and its name when it is linted alone
@@ -96,9 +97,10 @@ fn place<'a>(cx: &'a Cx<'_>, d: &Diag) -> Option<&'a str> {
 const PEDANTIC: [&str; 5] = ["--", "-W", "clippy::pedantic", "-W", "clippy::nursery"];
 
 /// How a clippy run on `package` is named: what a verifier re-runs it by.
-fn label(package: &Package, pedantic: bool, locked: bool) -> String {
+fn label(package: &Package, pedantic: bool, locked: bool, shell: Shell) -> String {
     format!(
-        "`cargo clippy {} --all-targets{}{}`",
+        "`{}cargo clippy {} --all-targets{}{}`",
+        shell.prefix(),
         package.args().join(" "),
         if locked { " --locked" } else { "" },
         if pedantic {
@@ -109,18 +111,18 @@ fn label(package: &Package, pedantic: bool, locked: bool) -> String {
     )
 }
 
-/// One clippy run on `manifest`, the pedantic pass when `pedantic`, each warning on a line the
-/// change added a seed: whether it exited clean, its diagnostics, its stderr and its label; `None`
-/// when it gave none to read.
+/// One clippy run on `manifest`, in `shell`, the pedantic pass when `pedantic`, each warning on a
+/// line the change added a seed: whether it exited clean, its diagnostics, its stderr and its
+/// label; `None` when it gave none to read.
 fn clippy(
     cx: &Cx<'_>,
     acc: &mut Acc,
-    package: &Package,
+    (package, shell): (&Package, Shell),
     pedantic: bool,
 ) -> Option<(bool, Vec<Diag>, String, String)> {
     let kept = Lockfiles::keep(cx.top, &package.manifest);
     let locked = cx.locked && kept.held();
-    let label = label(package, pedantic, locked);
+    let label = label(package, pedantic, locked, shell);
     let mut args = vec!["clippy"];
     args.extend(package.args());
     args.extend(["--all-targets", "--message-format=json"]);
@@ -130,9 +132,10 @@ fn clippy(
     if pedantic {
         args.extend(PEDANTIC);
     }
-    let ran = cx.runner.run(cx.top, "cargo", &args);
+    let (program, args) = shell.command(&args);
+    let ran = cx.runner.run(cx.top, program, &args);
     drop(kept);
-    let (ok, out, err) = acc.exited(&label, "cargo", ran)?;
+    let (ok, out, err) = acc.exited(&label, program, ran)?;
     if !ok
         && (err.contains("no such command: `clippy`")
             || err.contains("cargo-clippy` is not installed"))
@@ -165,16 +168,16 @@ fn clippy(
     Some((ok, all, err, label))
 }
 
-/// The pedantic and nursery pass on `package`, its warnings seeds: whether it ran.
-pub(super) fn pedantic(cx: &Cx<'_>, acc: &mut Acc, package: &Package) -> bool {
-    clippy(cx, acc, package, true).is_some()
+/// The pedantic and nursery pass on `package` in `shell`, its warnings seeds: whether it ran.
+pub(super) fn pedantic(cx: &Cx<'_>, acc: &mut Acc, package: &Package, shell: Shell) -> bool {
+    clippy(cx, acc, (package, shell), true).is_some()
 }
 
-/// The gate's clippy run on `package`: red on a compile error or a lint the project denies, its
-/// warnings seeds.
-pub(super) fn gate_check(cx: &Cx<'_>, acc: &mut Acc, package: &Package) -> Status {
+/// The gate's clippy run on `package` in `shell`: red on a compile error or a lint the project
+/// denies, its warnings seeds.
+pub(super) fn gate_check(cx: &Cx<'_>, acc: &mut Acc, package: &Package, shell: Shell) -> Status {
     let manifest = &package.manifest;
-    let Some((ok, all, err, label)) = clippy(cx, acc, package, false) else {
+    let Some((ok, all, err, label)) = clippy(cx, acc, (package, shell), false) else {
         return Status::Unknown;
     };
     let red: Vec<&Diag> = all.iter().filter(|d| d.level == "error").collect();

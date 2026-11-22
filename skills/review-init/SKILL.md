@@ -15,8 +15,8 @@ the lockfile pins on its own.
 
 The profile is read, never built. The review itself is another matter: unless it is started
 with `gate=false` (`craft review start --no-gate`), its mechanical gate **builds and runs the
-branch's code** on your machine — clippy runs its build scripts and proc macros, `nix flake
-check` its checks. Review a branch you do not trust with `gate=false`.
+branch's code** on your machine — clippy runs its build scripts and proc macros (inside the repository's
+flake dev shell when it defines one, whose `shellHook` runs too), `nix flake check` its checks. Review a branch you do not trust with `gate=false`.
 
 The binary cannot ask you anything inside an agent session. So: **propose, ask, write.**
 
