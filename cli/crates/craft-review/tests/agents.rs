@@ -19,7 +19,7 @@ fn agent_types(s: &Value) -> Vec<Option<&str>> {
 }
 
 #[test]
-fn only_the_lens_tasks_name_the_profile_agent() {
+fn no_task_names_an_agent_so_every_one_runs_on_the_hosts_task_agent() {
     let repo = fixture(true);
     let scouted = tempfile::tempdir().unwrap();
     let scout = step::start(&opts(repo.path(), scouted.path())).unwrap();
@@ -33,8 +33,14 @@ fn only_the_lens_tasks_name_the_profile_agent() {
     let (run, s) = small_run(repo.path(), out.path());
     assert_eq!(
         agent_types(&s),
-        [Some("rust-reviewer"); 4],
-        "every lens runs on the profile's lens agent, named without a host prefix"
+        [None; 4],
+        "a Rust lens names no agent: the host's lean task agent runs it, the rubric read from \
+         the SKILL FILES its prompt names, and craft:rust-reviewer stays for a review by hand"
+    );
+    let p = common::prompt_of(&s["tasks"][0]);
+    assert!(
+        p.contains("SKILL FILES") && p.contains("- `rust-review`: `"),
+        "{p}"
     );
     let mut medium = finding("Medium", 2);
     medium["title"] = json!("another");

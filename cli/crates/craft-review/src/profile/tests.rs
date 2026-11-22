@@ -6,7 +6,10 @@ fn the_rust_profile_reads_and_every_brief_is_carried() {
     assert_eq!(p.id, "rust");
     assert!(p.offers("intent") && !p.offers("negative-space"));
     assert!(p.lens("negative-space").is_some());
-    assert_eq!(p.lens_agent, Some(AgentKind::RustReviewer));
+    assert_eq!(
+        p.lens_agent, None,
+        "its lenses run on the host's task agent"
+    );
     for l in p.lenses.iter().chain(&p.floor_lenses) {
         content::text(&l.brief).unwrap();
     }
@@ -41,9 +44,12 @@ fn every_profile_reads_and_carries_its_briefs_and_scout_rules() {
 }
 
 #[test]
-fn the_nix_profile_runs_its_lenses_on_the_nix_reviewer_over_its_globs() {
+fn the_nix_profile_runs_its_lenses_on_the_hosts_task_agent_over_its_globs() {
     let p = Profile::load("nix").unwrap();
-    assert_eq!(p.lens_agent, Some(AgentKind::NixReviewer));
+    assert_eq!(
+        p.lens_agent, None,
+        "its lenses run on the host's task agent"
+    );
     assert!(p.rule_catalog, "nix-review ships rules.md");
     assert_eq!(
         (
@@ -295,21 +301,21 @@ fn every_profile_extending_the_general_one_holds_the_design_lens_optional_and_co
 }
 
 #[test]
-fn a_metrics_lens_runs_on_the_hosts_default_agent_not_the_profiles_lens_agent() {
-    let rust = Profile::rust().unwrap();
-    assert!(
-        rust.lens("complexity").is_some_and(|l| l.metrics),
-        "Rust inherits the complexity lens"
-    );
-    assert_eq!(
-        rust.agent_of("complexity"),
-        None,
-        "it asks for the code graph's MCP tools"
-    );
-    assert_eq!(rust.agent_of("correctness"), Some(AgentKind::RustReviewer));
+fn no_shipped_profile_runs_a_lens_on_a_reviewer_agent() {
+    // A reviewer agent carries the CLAUDE.md a lens never needs; the lean task agent reads the
+    // rubric the prompt's SKILL FILES name instead, and the reviewer agents stay for a review by hand.
     for p in Profile::all().unwrap() {
-        for lens in p.lenses.iter().chain(&p.floor_lenses).filter(|l| l.metrics) {
+        assert_eq!(p.lens_agent, None, "{}", p.id);
+        for lens in p.lenses.iter().chain(&p.floor_lenses) {
             assert_eq!(p.agent_of(&lens.id), None, "{}:{}", p.id, lens.id);
         }
     }
+    let mut rust = Profile::rust().unwrap();
+    rust.lens_agent = Some(AgentKind::RustReviewer);
+    assert_eq!(
+        rust.agent_of("complexity"),
+        None,
+        "a metrics lens never names one"
+    );
+    assert_eq!(rust.agent_of("correctness"), Some(AgentKind::RustReviewer));
 }

@@ -167,7 +167,10 @@ fn a_nix_only_diff_runs_the_nix_lenses_on_the_nix_reviewer() {
         ]
     );
     for id in ids(&s) {
-        assert_eq!(task(&s, &id)["agentType"], json!("nix-reviewer"), "{id}");
+        assert!(
+            task(&s, &id).get("agentType").is_none(),
+            "{id}: on the host's task agent"
+        );
     }
     let p = prompt_of(task(&s, "lens-nix-purity-r1"));
     for want in [

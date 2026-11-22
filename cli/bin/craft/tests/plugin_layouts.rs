@@ -159,7 +159,8 @@ fn named(prompts: &str, root: &Path) -> Vec<PathBuf> {
         .collect()
 }
 
-/// A finished review over `root`: a verdict, skills that exist, the agents' bodies, a filed record.
+/// A finished review over `root`: a verdict, skills that exist, the Rust rubric named by its file
+/// (a lens runs on the host's task agent, no reviewer agent's body), a filed record.
 fn assert_reviewed(tmp: &Path, root: &Path) {
     let (answer, prompts, home) = review(tmp, root);
     // A light round never approves: a clean one is a Warning naming that cap.
@@ -175,7 +176,13 @@ fn assert_reviewed(tmp: &Path, root: &Path) {
     {
         assert!(path.exists(), "{} is named but missing", path.display());
     }
-    assert!(prompts.contains("You are a senior Rust reviewer."));
+    assert!(
+        skills
+            .iter()
+            .any(|p| p.ends_with("skills/rust-review/SKILL.md")),
+        "{skills:?}"
+    );
+    assert!(!prompts.contains("You are a senior Rust reviewer."));
     let records = std::fs::read_dir(home.join(".craft/runs")).unwrap();
     let filed = records
         .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())

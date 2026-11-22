@@ -87,8 +87,8 @@ with a skill for the rubric and degrades gracefully when a tool is absent.
 
 | Agent | Runs | Rubric skill |
 |---|---|---|
-| `rust-reviewer` | per-lens diff review for the `review` workflow's rust profile; run directly = ad-hoc whole-diff review that runs the gate itself (a CI check only informs) and returns a verdict, at most Warning when the gate could not be established | `rust-review` |
-| `nix-reviewer` | per-lens diff review for the `review` workflow's nix profile; run directly = ad-hoc whole-diff Nix review (nix flake check / statix / deadnix gate + verdict) | `nix-review` |
+| `rust-reviewer` | a Rust review by hand (the `review` workflow runs its Rust lenses on `review-task`) = ad-hoc whole-diff review that runs the gate itself (a CI check only informs) and returns a verdict, at most Warning when the gate could not be established | `rust-review` |
+| `nix-reviewer` | a Nix review by hand (the `review` workflow runs its Nix lenses on `review-task`) = ad-hoc whole-diff Nix review (nix flake check / statix / deadnix gate + verdict) | `nix-review` |
 | `rust-architecture-reviewer` | whole crate/module dependency graph audit | `rust-architecture-review` |
 | `rust-security-scanner` | cargo-audit/deny/geiger + semgrep | `rust-security` |
 | `rust-miri` | `cargo +nightly miri test` (UB) | `rust-unsafe` |

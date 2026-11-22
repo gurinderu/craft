@@ -10,8 +10,9 @@ import { shq } from './plugin-script.mjs'
 // A task names its agent and model in host-neutral tokens (the binary's `AgentKind` and `Model`,
 // cli/crates/craft-review/src/agent.rs); this driver maps each to Claude Code's name. The plugin registers its agents
 // only under its prefix (integrations/shared/launch-names.mjs), so `rust-reviewer` is `craft:rust-reviewer` and `nix-reviewer` is
-// `craft:nix-reviewer`, the agents the engine's Rust and Nix lenses run on (integrations/shared/review-profiles.mjs; realm @nick/craft,
-// node #465); the model tokens are Claude Code's own names.
+// `craft:nix-reviewer`, for a profile that names a lens agent (realm @nick/craft, node #465); no shipped profile names
+// one now: their lenses run on the lean task agent below, so they start without the consumer's CLAUDE.md; the model
+// tokens are Claude Code's own names.
 const TASK_AGENTS = new Map([
   ['rust-reviewer', { agentType: 'craft:rust-reviewer' }],
   ['nix-reviewer', { agentType: 'craft:nix-reviewer' }],

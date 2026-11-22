@@ -16,7 +16,6 @@
   "scoutRules": "scout-rules-nix",
   "scoutModel": "haiku",
   "dedupModel": "haiku",
-  "lensAgent": "nix-reviewer",
   "rollupRuleIds": [],
   "negativeSpace": { "newSurface": "flake output / module option / package attr / overlay / renamed binding", "shapeUses": "imports, or overrides" },
   "lenses": [

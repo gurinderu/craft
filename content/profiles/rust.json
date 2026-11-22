@@ -15,7 +15,6 @@
   "scoutRules": "scout-rules-rust",
   "scoutModel": "haiku",
   "dedupModel": "haiku",
-  "lensAgent": "rust-reviewer",
   "rollupRuleIds": ["API-001", "API-003", "API-004", "API-005"],
   "units": {
     "noun": "crate",
