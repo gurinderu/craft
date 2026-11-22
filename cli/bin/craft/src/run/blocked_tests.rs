@@ -41,7 +41,7 @@ fn a_healthy_codex_answer_through_the_strict_copy_validates_and_stays_clean() {
         json!({"couldNotLook": false, "what": "none"}),
         json!({"couldNotLook": false, "what": "N/A — nothing blocked"}),
     ] {
-        let written = json!({"lens": "errors", "findings": [], "consumers": null, "blocked": said});
+        let written = json!({"lens": "errors", "findings": [], "rubricRead": null, "consumers": null, "blocked": said});
         assert!(valid(&copy, &written), "the strict copy takes {written}");
         let answer = drop_optional_nulls(written, &schema);
         assert!(valid(&schema, &answer), "the original takes {answer}");
@@ -60,7 +60,7 @@ fn a_codex_agent_that_could_not_look_still_fails() {
         ),
         (json!(null), "the agent said it could not look"),
     ] {
-        let written = json!({"lens": "errors", "findings": [], "consumers": null, "blocked": {"couldNotLook": true, "what": what}});
+        let written = json!({"lens": "errors", "findings": [], "rubricRead": null, "consumers": null, "blocked": {"couldNotLook": true, "what": what}});
         assert!(valid(&copy, &written), "{written}");
         let answer = drop_optional_nulls(written, &schema);
         assert_eq!(blocked::reason(&answer).as_deref(), Some(want), "{answer}");

@@ -50,6 +50,7 @@ pub mod report;
 pub mod rereview;
 mod resume;
 pub mod rounds;
+pub mod rubric_read;
 pub mod scope;
 pub mod settle;
 pub mod sources;

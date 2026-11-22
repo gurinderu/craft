@@ -116,3 +116,32 @@ fn a_run_with_no_degraded_note_says_nothing_of_it() {
         "the state keeps its old shape: {saved}"
     );
 }
+
+#[test]
+fn a_lens_that_read_no_rubric_file_whole_is_named_as_degraded() {
+    let repo = fixture(true);
+    let out = tempfile::tempdir().unwrap();
+    let (run, s) = small_run(repo.path(), out.path());
+    let p = common::prompt_of(&s["tasks"][0]);
+    assert!(
+        p.contains("RUBRIC (required)") && p.contains("`rubricRead`"),
+        "{p}"
+    );
+    let mut skimmed = lens("errors", &[]);
+    skimmed["rubricRead"] = json!(["/plugin/skills/rust-review/rules.md"]);
+    let mut silent = lens("intent", &[]);
+    silent.as_object_mut().unwrap().remove("rubricRead");
+    let round = json!({
+        "lens-rust-errors-r1": skimmed, "lens-rust-intent-r1": silent, "lens-rust-performance-r1": lens("performance", &[]), "lens-rust-tests-r1": lens("tests", &[]),
+    });
+    let s = step::submit(&run, Some(&answers(round))).unwrap();
+    assert_eq!(s["verdict"], json!("Approve"), "the verdict stands: {s}");
+    let degraded = s["degraded"].to_string();
+    assert!(
+        degraded.contains("2 lens task(s) named no rubric file they read whole")
+            && degraded.contains("lens:rust:errors r1")
+            && degraded.contains("lens:rust:intent r1")
+            && !degraded.contains("performance"),
+        "{degraded}"
+    );
+}

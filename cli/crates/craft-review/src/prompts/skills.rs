@@ -31,6 +31,12 @@ fn mentioned(prompt: &str) -> Vec<String> {
     out
 }
 
+/// Whether `prompt` names any skill to load.
+#[must_use]
+pub fn names_skill(prompt: &str) -> bool {
+    !mentioned(prompt).is_empty()
+}
+
 /// The plugin root the run knows, `None` when it knows none.
 fn root(ctx: &PromptContext) -> Option<&Path> {
     ctx.craft_root
@@ -74,7 +80,7 @@ pub fn block(ctx: &PromptContext, prompt: &str) -> String {
         return String::new();
     }
     let mut out = String::from(
-        "\n\nSKILL FILES: each skill this task names is a file. Read it with your file tool or `cat` (no Skill tool is needed):",
+        "\n\nSKILL FILES: each skill this task names is a file. Before judging, read each one WHOLE with the Read tool (no Skill tool is needed; never `head`, `sed -n` or a partial range), and list each file you read whole in `rubricRead` when your answer has that field:",
     );
     for (name, f) in &found {
         let dir = f.parent().unwrap_or(f);

@@ -101,6 +101,8 @@ pub(crate) fn advance(dir: &Path, run: &mut RunState) -> Result<(), Error> {
             run.telemetry.dispatched(&run.tasks);
             let sifted = complexity::sift(&mut run.tasks, &profiles);
             run.notes.extend(sifted);
+            run.degraded
+                .extend(crate::rubric_read::unread(&run.tasks, &profiles));
             let first = run.tracks.first().map(|t| t.profile.clone());
             extra::take(&mut run.extra, &run.tasks, first.as_deref().unwrap_or(""));
             units::keep_questions(run);
@@ -133,6 +135,8 @@ pub(crate) fn advance(dir: &Path, run: &mut RunState) -> Result<(), Error> {
         Phase::Critic => critic::answered(dir, run, &profiles),
         Phase::CriticLenses => {
             run.telemetry.dispatched(&run.tasks);
+            run.degraded
+                .extend(crate::rubric_read::unread(&run.tasks, &profiles));
             critic::lenses_back(dir, run, &profiles)
         }
         Phase::Match => memory::matched(dir, run),

@@ -344,7 +344,8 @@ pub struct RunState {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub capped: Vec<String>,
     /// How the run was weaker than asked, as its host said when submitting (`submit_noting`): a task
-    /// run without the agent it named, say. The report names each; the verdict stands. Optional, so
+    /// run without the agent it named, say; or as the lenses' answers show it: a lens that read no
+    /// rubric file whole ([`crate::rubric_read`]). The report names each; the verdict stands. Optional, so
     /// a state written before it reads as before and the format keeps its version.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub degraded: Vec<String>,
