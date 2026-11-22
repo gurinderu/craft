@@ -71,7 +71,7 @@ fn utf16_order_controls_the_real_64_candidate_boundary() {
     let values: String = (0..63).map(|i| format!("image: x/s{i}:v1\n")).collect();
     put(root.path(), "A/values.yaml", values);
     put(root.path(), "Z/values.yaml", "image: x/upper:v1\n");
-    put(root.path(), "a/values.yaml", "image: x/lower:v1\n");
+    put(root.path(), "b/values.yaml", "image: x/lower:v1\n");
     let got = discover(root.path(), None, json!([]));
     assert_eq!(got["candidates"][63]["system"], "upper");
     assert_eq!(got["more"], 1);

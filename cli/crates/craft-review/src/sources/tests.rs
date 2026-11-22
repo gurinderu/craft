@@ -364,6 +364,7 @@ fn a_hooks_repository_variables_do_not_reach_the_preparation() {
     assert!(!elsewhere.exists());
 }
 
+#[cfg(unix)]
 #[test]
 fn a_local_git_failure_carries_no_authentication_hint_and_a_remote_one_does() {
     use std::os::unix::fs::PermissionsExt;

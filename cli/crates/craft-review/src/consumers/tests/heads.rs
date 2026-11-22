@@ -115,6 +115,7 @@ fn a_caller_outside_the_repository_or_in_a_file_that_cannot_be_read_is_named_not
     );
 }
 
+#[cfg(unix)]
 #[test]
 fn a_caller_file_reached_through_a_link_is_named_not_read() {
     let t = tempfile::tempdir().unwrap();

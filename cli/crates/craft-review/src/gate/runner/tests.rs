@@ -7,6 +7,7 @@ fn runner(dir: &Path) -> Runner {
 }
 
 /// The pid a tool left in `file`.
+#[cfg(unix)]
 fn pid_in(file: &Path) -> i32 {
     std::fs::read_to_string(file)
         .unwrap()
@@ -16,6 +17,7 @@ fn pid_in(file: &Path) -> i32 {
 }
 
 /// Whether `pid` is gone: reparented and reaped by init once killed, looked for a little while.
+#[cfg(unix)]
 fn gone(pid: i32) -> bool {
     (0..100).any(|_| {
         let gone = nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None).is_err();
@@ -45,6 +47,7 @@ fn a_working_directory_that_is_gone_is_no_missing_program() {
     assert!(why.contains("removed-worktree"), "{why}");
 }
 
+#[cfg(unix)]
 #[test]
 fn a_stop_kills_the_running_tool_with_its_group_and_starts_no_other() {
     let d = tempfile::tempdir().unwrap();
@@ -74,6 +77,7 @@ fn a_stop_kills_the_running_tool_with_its_group_and_starts_no_other() {
     );
 }
 
+#[cfg(unix)]
 #[test]
 fn a_tool_that_exits_leaving_a_child_leaves_the_child_running() {
     // A server a tool starts for later (an sccache server through RUSTC_WRAPPER) is not the
@@ -101,6 +105,7 @@ fn a_tool_that_exits_leaving_a_child_leaves_the_child_running() {
     );
 }
 
+#[cfg(unix)]
 #[test]
 fn the_budget_kills_the_running_tool_with_its_group() {
     let d = tempfile::tempdir().unwrap();

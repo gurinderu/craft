@@ -1,4 +1,5 @@
 use std::io::Write;
+#[cfg(unix)]
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 
 use super::{KEEP, Spool};
@@ -19,6 +20,7 @@ fn left_in(dir: &std::path::Path) -> Vec<String> {
     left
 }
 
+#[cfg(unix)]
 #[test]
 fn a_spool_is_this_users_only_and_its_name_is_gone_at_once() {
     let d = tempfile::tempdir().unwrap();
@@ -58,6 +60,7 @@ fn a_large_output_keeps_its_tail() {
     );
 }
 
+#[cfg(unix)]
 #[test]
 fn the_reader_and_the_writer_are_one_file() {
     let d = tempfile::tempdir().unwrap();

@@ -30,6 +30,7 @@ mod sort;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
+#[cfg(unix)]
 mod unread_tests;
 
 pub use after::{CommentError, comment};
