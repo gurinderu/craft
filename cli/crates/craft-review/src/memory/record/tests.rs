@@ -4,7 +4,7 @@ use serde_json::{Value, json};
 
 use super::super::id::memory_record_id;
 use super::super::matching::{plan, resolve, tried_order};
-use super::{read, skill_record_id};
+use super::{parse, plain_label, read};
 
 /// An old record: its id the store kept, hashed when its scope still held the range.
 fn old() -> Value {
@@ -31,17 +31,34 @@ fn the_records_own_line_wins_over_the_one_its_scope_carries() {
 }
 
 #[test]
-fn the_same_fact_written_with_and_without_a_range_has_one_skill_id() {
-    let mut new = old();
-    new["scope"] = json!("src/api/src/users.rs");
-    let ids = |v: &Value| skill_record_id(v.as_object().unwrap());
-    assert_eq!(ids(&old()), ids(&new));
-    new.as_object_mut().unwrap().remove("id");
-    assert_eq!(
-        read(&new, "d").unwrap().id,
-        ids(&old()),
-        "derived from the path"
+fn two_legacy_records_of_one_title_at_two_ranges_both_apply_each_at_its_own_line() {
+    let at = |scope: &str| {
+        json!({"kind": "decision", "title": "unwrap may panic", "scope": scope,
+        "body": "ok here", "date": "2026-01-01", "author": "a", "status": "active", "lens": "correctness"})
+    };
+    let p = parse(
+        Some(&json!([at("src/a.rs:10-12"), at("src/a.rs:500-505")])),
+        &plain_label,
     );
+    assert!(p.refused.is_empty(), "{:?}", p.refused);
+    let lines: Vec<_> = p
+        .decisions
+        .iter()
+        .map(|d| (d.scope.as_str(), d.line))
+        .collect();
+    assert_eq!(lines, [("src/a.rs", 10), ("src/a.rs", 500)]);
+    // Each id is the hash of its scope as written, as before.
+    let ids: Vec<_> = p.decisions.iter().map(|d| d.id.clone()).collect();
+    let legacy = |s| memory_record_id("decision", "unwrap may panic", s);
+    assert_eq!(ids, [legacy("src/a.rs:10-12"), legacy("src/a.rs:500-505")]);
+    let order = tried_order(&p.decisions);
+    for (line, at) in [(11, 0), (501, 1)] {
+        let f = json!({"file": "src/a.rs", "line": line, "title": "unwrap may panic", "lens": "correctness"});
+        // The record at the finding's own line is the sure match; the other range is at most a
+        // candidate the judge is asked about, never the anchor.
+        let sure = plan(&f, &p.decisions, &order).sure.unwrap();
+        assert_eq!(sure.at, at, "finding at {line}");
+    }
 }
 
 #[test]

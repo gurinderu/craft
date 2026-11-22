@@ -111,11 +111,12 @@ sha256sum | cut -c1-10`). Re-recording the same kind + title + scope **updates**
 **The scope never carries a line.** A record verb given a scope of the form `path:N` or
 `path:N-M` does not write it: it refuses and names the corrected form — scope = `path`,
 line = `N` (the start line). Earlier runs wrote such scopes; a reader takes them as that path and
-line `N` (a `line` the record carries itself wins), and the id rule above drops the `:N`/`:N-M`
-part, so the same fact has the same id either way. Re-recording such an old record writes it in
-the corrected form under the id of its path, and when the store still holds it under the id it got
-with the range, that old record is set `superseded` and the new one links `supersedes: <old id>` —
-never two records of one fact.
+line `N` for matching (a `line` the record carries itself wins), while their id stays the hash of
+the scope as written, so two old records of one title at two ranges stay two records.
+Re-recording such an old record writes scope = `path` and its `line` under the id of the path,
+sets the old record `superseded` and links `supersedes: <old id>` — unless an active record of the
+same kind and title already holds that path: then the id rule above would make them one record,
+so the old one is left as it is written, and the reader keeps applying it at its own line.
 
 **Bounds — what happens when one is reached.** These are refusals, never silent truncation:
 

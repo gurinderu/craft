@@ -1,12 +1,16 @@
 // A memory record whose scope carries a line, as earlier runs wrote it (realm @nick/craft, node #598):
-// read as the path and its start line, one id with the path alone, refused by a writer.
+// read as the path and its start line for matching, its id the hash of the scope as written, refused by a writer.
 import { test } from 'vitest'
 import assert from 'node:assert/strict'
 import { memoryRecordId, scopeLine, scopeLineProblem } from './memory-record-id.mjs'
-import { readPriorDecision, skillRecordId } from './prior-decision-record.mjs'
-import { sureMatchOf } from './prior-decision-match.mjs'
+import { readFileSync } from 'node:fs'
+import { readPriorDecision } from './prior-decision-record.mjs'
+import { parsePriorDecisions } from './prior-decisions.mjs'
+import { findingPlan, sureMatchOf, triedOrder } from './prior-decision-match.mjs'
 import { recordProblem } from './pr-thread-rule.mjs'
 
+// The cases the CLI's split_scope_line is held to as well (cli/crates/craft-review/src/memory/id.rs).
+const CASES = new URL('../../content/parity/scope-line-cases.json', import.meta.url)
 const SCOPE = 'src/api/src/users.rs:1230-1245'
 /** An old record: its id the store kept, hashed when its scope still held the range. */
 const old = () => ({
@@ -18,11 +22,9 @@ const old = () => ({
   lens: 'correctness',
 })
 
-test('a scope that carries a line or a range splits into the path and its start line, any other as it is', () => {
-  assert.deepEqual(scopeLine(` ${SCOPE} `), { scope: 'src/api/src/users.rs', line: 1230 })
-  assert.deepEqual(scopeLine('src/users.rs:42'), { scope: 'src/users.rs', line: 42 })
-  for (const kept of ['src/users.rs', '.', 'src:', ':12', 'src/a.rs:x', 'src/a.rs:1-x', 'src/a.rs::3', 'a:1234567890'])
-    assert.deepEqual(scopeLine(kept), { scope: kept, line: 0 }, kept)
+test('a scope that carries a line or a range splits as the CLI splits it', () => {
+  const cases = /** @type {[string, string, number][]} */ (JSON.parse(readFileSync(CASES, 'utf8')))
+  for (const [given, scope, line] of cases) assert.deepEqual(scopeLine(given), { scope, line }, JSON.stringify(given))
 })
 
 test('an old range record is recalled as its path and start line and matches a finding there', () => {
@@ -38,12 +40,38 @@ test("the record's own line wins over the one its scope carries", () => {
   assert.ok(typeof d !== 'string' && d.line === 1240)
 })
 
-test('the same fact written with and without a range has one id', () => {
-  assert.equal(memoryRecordId('decision', 't', SCOPE), memoryRecordId('decision', 't', 'src/api/src/users.rs'))
-  assert.equal(skillRecordId(old()), skillRecordId({ ...old(), scope: 'src/api/src/users.rs' }))
-  const { id: _, ...bare } = old()
-  const d = readPriorDecision(bare, 0)
-  assert.ok(typeof d !== 'string' && d.id === memoryRecordId('decision', 'unchecked index', 'src/api/src/users.rs'))
+test('two legacy records of one title at two ranges both apply, each at its own line and its id as written', () => {
+  /** @param {string} scope */
+  const at = scope => ({
+    kind: 'decision',
+    title: 'unwrap may panic',
+    scope,
+    body: 'ok here',
+    date: '2026-01-01',
+    author: 'a',
+    status: 'active',
+    lens: 'correctness',
+  })
+  const { decisions, refused } = parsePriorDecisions([at('src/a.rs:10-12'), at('src/a.rs:500-505')])
+  assert.deepEqual(refused, [])
+  assert.deepEqual(
+    decisions.map(d => [d.scope, d.line, d.id]),
+    [
+      ['src/a.rs', 10, memoryRecordId('decision', 'unwrap may panic', 'src/a.rs:10-12')],
+      ['src/a.rs', 500, memoryRecordId('decision', 'unwrap may panic', 'src/a.rs:500-505')],
+    ],
+  )
+  // The record at the finding's own line is the sure match; the other range is at most a candidate the judge is asked about.
+  const ordered = triedOrder(decisions)
+  for (const [line, d] of /** @type {const} */ ([
+    [11, 0],
+    [501, 1],
+  ]))
+    assert.equal(
+      findingPlan({ file: 'src/a.rs', line, title: 'unwrap may panic', lens: 'correctness', severity: 'Medium' }, ordered).sure?.d,
+      decisions[d],
+      `finding at ${line}`,
+    )
 })
 
 test('a scope with any other colon is still refused', () => {

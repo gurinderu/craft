@@ -1,6 +1,6 @@
 // The memory skill's record id (skills/memory, "Record shape"): `<kind>-` + the first 10 hex chars of
 // sha256("<kind>\n<title>\n<scope>"), the title trimmed, inner whitespace collapsed and lower-cased,
-// the scope without a leading `./` or trailing `/` (and without a line it carries, below). A review engine derives it for a record that comes
+// the scope without a leading `./` or trailing `/`. A review engine derives it for a record that comes
 // without one (realm @nick/craft, node #222), so sha256 is computed here in plain JS: the Workflow
 // sandbox has no crypto, no TextEncoder and no Node API. Tested against node:crypto.
 // Imported by integrations/claude-code/src/rust-audit.js and integrations/claude-code/src/triage-findings.js;
@@ -72,14 +72,19 @@ export function sha256Hex(s) {
 
 // A scope that carries a line or a line range, `path:N` or `path:N-M`: earlier runs wrote such scopes,
 // the skill's grammar keeps the line in `line` (realm @nick/craft, node #598). No valid scope holds a `:`.
-export const SCOPE_LINE = /^(.*[^\s:]):(\d{1,9})(?:-(\d{1,9}))?$/
+// Read for matching only: the id stays the hash of the scope as written (memoryRecordId), so two legacy
+// records of one title at two ranges stay two records. The cases both readers hold to:
+// content/parity/scope-line-cases.json.
+export const SCOPE_LINE = /^([\s\S]*[^ :]):(\d{1,9})(?:-(\d{1,9}))?$/
 
 /**
  * A scope split from the line it carries: `path:N` and `path:N-M` read as `path` and N (the start
- * line); any other scope as it is (trimmed) with line 0. @param {string} scope @returns {{ scope: string, line: number }}
+ * line); any other scope — one with a control character among them — as it is (trimmed) with line 0.
+ * @param {string} scope @returns {{ scope: string, line: number }}
  */
 export function scopeLine(scope) {
-  const m = SCOPE_LINE.exec(scope.trim())
+  const control = Array.from(scope).some(c => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127)
+  const m = control ? null : SCOPE_LINE.exec(scope.trim())
   return m ? { scope: String(m[1]), line: Number(m[2]) } : { scope: scope.trim(), line: 0 }
 }
 
@@ -93,12 +98,12 @@ export function scopeLineProblem(scope) {
 }
 
 /**
- * The memory skill's id of a record of `kind` with `title` and `scope`, a line the scope carries left
- * out (scopeLine): the same fact has the same id however its scope was written.
+ * The memory skill's id of a record of `kind` with `title` and `scope`, the scope as written — a line
+ * a legacy scope carries included (scopeLine).
  * @param {string} kind @param {string} title @param {string} scope @returns {string}
  */
 export function memoryRecordId(kind, title, scope) {
   const t = title.trim().replace(/\s+/g, ' ').toLowerCase()
-  const s = scopeLine(scope).scope.replace(/^\.\//, '').replace(/\/+$/, '')
+  const s = scope.trim().replace(/^\.\//, '').replace(/\/+$/, '')
   return `${kind}-${sha256Hex(`${kind}\n${t}\n${s}`).slice(0, 10)}`
 }
