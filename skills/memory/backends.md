@@ -86,9 +86,10 @@ match. Use the harness's format, not a craft one:
   grouped under a `## <scope>` heading per scope (headings sorted, `.` last), each line a Markdown
   link whose text is `<kind>: <title>` and whose target is the record file `<id>.md`; at most 150
   characters (the title shortened with `…` past that; the file keeps the full one). Superseded and
-  withdrawn records leave the index (their files stay, `craft_status` updated). The index is
-  rebuilt from the record files, never edited line by line: after every `record-*` write, and
-  before `recall` outside a review engine (whose recall is read-only), run
+  withdrawn records leave the index (their files stay, `craft_status` updated). The index is a
+  speed aid, not the source of truth — the record files are (recall below finds those it misses).
+  It is rebuilt from the record files, never edited line by line, and only after a `record-*`
+  write — **a recall never writes**, here or in `MEMORY.md`:
 
   ```sh
   CRAFT_BIN="$(sh "<this skill's base directory>/../../integrations/shared/craft-cli.sh" --ensure --print-path)" &&
@@ -96,8 +97,12 @@ match. Use the harness's format, not a craft one:
   ```
 
   It rewrites `craft-memory.md` and the migration below in one move, writes only what changed,
-  and prints `{indexed, moved, indexWritten, harnessWritten}`. Without the binary (no network,
-  no release for the platform), do the same by hand as this list describes.
+  and prints `{indexed, moved, indexWritten, harnessWritten, skipped}` (`skipped`: record files it
+  could not read as text, each named). It writes nothing where the directory holds no craft record,
+  and refuses, exiting non-zero and naming why, when `MEMORY.md` says "do not write here" — the
+  refused write below, which the binary honours as an agent's own write does. Without the binary
+  (no network, no release for the platform), do the same by hand as this list describes, or leave
+  the index stale: recall still finds the record.
 - **One pointer line in `MEMORY.md`**, never one line per record: the harness loads `MEMORY.md`
   into every session and truncates it past its load limit, so a line per record grows it until
   the harness silently drops the tail — records the agent then never sees. The pointer is one
@@ -111,10 +116,14 @@ match. Use the harness's format, not a craft one:
   not craft's — stays exactly as it is, in its place. `craft-memory.md` is written before
   `MEMORY.md`, so an interrupted run loses no line, and a second run changes nothing. A refused
   write of `MEMORY.md` (rule below) leaves it as it is: recall still reads both files.
-- **Recall**: read `craft-memory.md` at the derived path — match the scope headings and keywords
-  there, then read only the matching files — and, while a migration has not run, also the craft
-  lines still in `MEMORY.md` (the main session has it in context; an agent without it reads it at
-  the derived path); for history, `grep -l "craft_scope: <path>"` over the directory.
+- **Recall** (read only): read `craft-memory.md` at the derived path — match the scope headings
+  and keywords there — and, while a migration has not run, also the craft lines still in
+  `MEMORY.md` (the main session has it in context; an agent without it reads it at the derived
+  path). Then find the records neither lists: `grep -l "craft_kind:"` over the directory's
+  `<kind>-<10 hex>.md` files, those whose file name no index line links to; match them by their
+  `craft_scope` and title like the indexed ones, and say how many there were — `index stale: N
+  record(s) outside the index — run craft memory reindex after recording`. Read only the matching
+  files; for history, `grep -l "craft_scope: <path>"` over the directory.
   Handed on (a subagent's brief, a review's `priorDecisions`) as the SKILL.md shape: `name` → `id`,
   `craft_kind` → `kind`, the title from `description` without its `<kind>: ` prefix, `craft_scope`
   → `scope`, `craft_status` → `status`, `modified` → `date`, `craft_author` → `author`,

@@ -162,8 +162,9 @@ reason names the rule.
    subdirectory — path rule in
    [backends.md](backends.md). Written without asking (it is private to the
    user and tied to this project); craft's records are indexed in its own `craft-memory.md`
-   there, with one pointer line in the harness's `MEMORY.md`, and the craft lines an earlier
-   release wrote into `MEMORY.md` are moved over first (migration in [backends.md](backends.md)). A refused write — a `PreToolUse` guard, a permission denial,
+   there, with one pointer line in the harness's `MEMORY.md`, rebuilt after each `record-*`, when
+   the craft lines an earlier release wrote into `MEMORY.md` are moved over too (migration in
+   [backends.md](backends.md)); a recall writes nothing and also finds the records the index missed. A refused write — a `PreToolUse` guard, a permission denial,
    the consumer's instructions forbidding that directory — means **unavailable**: go to 4. Format
    → [backends.md](backends.md).
 4. **Files in the consumer repo**, `.craft/memory/<kind>/<id>.md` — only when `.craft/memory/`
@@ -189,7 +190,8 @@ rule 3. Never put secrets, credentials or personal data in a record, whatever th
    a record must match the scope and at least one keyword.
 3. **Only matches come back.** Use the backend's search (the MCP search tool, `grep -l` over the
    memory files, craft's harness index `craft-memory.md` and any craft lines not yet moved out of
-   `MEMORY.md`) — never load the whole store into context.
+   `MEMORY.md`, then the record files neither lists, found by their `craft_kind` frontmatter) —
+   never load the whole store into context. A recall writes nothing.
 4. **Active only by default.** `superseded` and `withdrawn` stay hidden unless the caller asks for
    history; a superseded record shown on request carries its successor's id. A review engine's
    recall also returns the matching `superseded` and `withdrawn` records apart, in an `inactive`

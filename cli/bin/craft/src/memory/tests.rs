@@ -56,7 +56,8 @@ fn the_migration_moves_only_crafts_lines_and_a_second_run_changes_nothing() {
             indexed: 2,
             moved: 3,
             index_written: true,
-            harness_written: true
+            harness_written: true,
+            skipped: Vec::new()
         }
     );
     let harness = fs::read_to_string(d.path().join("MEMORY.md")).unwrap();
@@ -88,7 +89,8 @@ fn the_migration_moves_only_crafts_lines_and_a_second_run_changes_nothing() {
             indexed: 2,
             moved: 0,
             index_written: false,
-            harness_written: false
+            harness_written: false,
+            skipped: Vec::new()
         }
     );
     assert_eq!(
@@ -141,4 +143,60 @@ fn only_a_record_files_name_is_crafts() {
     ] {
         assert!(!index::is_record_name(name), "{name}");
     }
+}
+
+#[test]
+fn a_directory_with_no_craft_record_is_left_untouched() {
+    let d = tempfile::tempdir().unwrap();
+    fs::write(d.path().join("MEMORY.md"), USER_LINES).unwrap();
+    fs::write(d.path().join("note.md"), "mine").unwrap();
+    let o = reindex(d.path()).unwrap();
+    assert_eq!((o.index_written, o.harness_written), (false, false));
+    assert_eq!(
+        fs::read_to_string(d.path().join("MEMORY.md")).unwrap(),
+        USER_LINES
+    );
+    assert!(
+        !d.path().join("craft-memory.md").exists(),
+        "no index, no pointer"
+    );
+}
+
+#[test]
+fn a_memory_md_saying_do_not_write_here_refuses_and_writes_nothing() {
+    let d = old_layout();
+    let path = d.path().join("MEMORY.md");
+    let before = format!(
+        "Do not write here: state lives in the repo.\n{}",
+        fs::read_to_string(&path).unwrap()
+    );
+    fs::write(&path, &before).unwrap();
+    let err = reindex(d.path()).unwrap_err().to_string();
+    assert!(err.contains("says not to write here"), "{err}");
+    assert_eq!(fs::read_to_string(&path).unwrap(), before);
+    assert!(!d.path().join("craft-memory.md").exists());
+}
+
+#[test]
+fn a_crlf_memory_md_keeps_its_line_endings() {
+    let d = tempfile::tempdir().unwrap();
+    record(d.path(), "decision-0123456789", "t", "src", "active");
+    let before =
+        "# Memory\r\n- [my note](note.md)\r\n- [decision: t](decision-0123456789.md) — src\r\n";
+    fs::write(d.path().join("MEMORY.md"), before).unwrap();
+    reindex(d.path()).unwrap();
+    assert_eq!(
+        fs::read_to_string(d.path().join("MEMORY.md")).unwrap(),
+        format!("# Memory\r\n- [my note](note.md)\r\n{POINTER}\r\n")
+    );
+}
+
+#[test]
+fn a_record_file_that_is_not_utf8_is_skipped_and_named() {
+    let d = tempfile::tempdir().unwrap();
+    record(d.path(), "decision-0123456789", "t", "src", "active");
+    fs::write(d.path().join("lesson-abcdefabcd.md"), [0xff, 0xfe, 0x00]).unwrap();
+    let o = reindex(d.path()).unwrap();
+    assert_eq!(o.indexed, 1);
+    assert_eq!(o.skipped, ["lesson-abcdefabcd.md: not UTF-8 text"]);
 }

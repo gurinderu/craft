@@ -138,27 +138,46 @@ fn link_target(line: &str) -> Option<&str> {
     Some(target.trim())
 }
 
+/// Whether `MEMORY.md` forbids writes into its directory: a line saying "do not write here", the
+/// marker the craft:memory skill honours as a refused write.
+#[must_use]
+pub fn forbids_writes(harness: &str) -> bool {
+    harness
+        .lines()
+        .any(|l| l.to_lowercase().contains("do not write here"))
+}
+
 /// `MEMORY.md` with every line that indexes one of craft's records (`craft`, the record file
 /// names known to be craft's) moved out and the pointer present once; every other line kept as
-/// it is, in its place. Returns the text and how many lines left it.
+/// it is, in its place, its line ending too (a CRLF file gets a CRLF pointer). Returns the text
+/// and how many lines left it.
 #[must_use]
 pub fn migrate(harness: &str, craft: &dyn Fn(&str) -> bool) -> (String, usize) {
+    let eol = if harness.contains("\r\n") {
+        "\r\n"
+    } else {
+        "\n"
+    };
     let mut moved = 0;
     let mut kept: Vec<&str> = Vec::new();
-    for line in harness.lines() {
-        if link_target(line).is_some_and(|t| is_record_name(t) && craft(t)) {
+    for line in harness.split_inclusive('\n') {
+        if link_target(line.trim_end()).is_some_and(|t| is_record_name(t) && craft(t)) {
             moved += 1;
         } else {
             kept.push(line);
         }
     }
-    if !kept.iter().any(|l| l.trim_end() == POINTER) {
-        while kept.last().is_some_and(|l| l.trim().is_empty()) {
-            kept.pop();
-        }
-        kept.push(POINTER);
+    if kept.iter().any(|l| l.trim_end() == POINTER) {
+        return (kept.concat(), moved);
     }
-    let mut out = kept.join("\n");
-    out.push('\n');
+    while kept.last().is_some_and(|l| l.trim().is_empty()) {
+        kept.pop();
+    }
+    let mut out = kept.concat();
+    if !out.is_empty() && !out.ends_with('\n') {
+        out.push_str(eol);
+    }
+    out.push_str(POINTER);
+    out.push_str(eol);
     (out, moved)
 }

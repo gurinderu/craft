@@ -30,13 +30,14 @@ pub struct ReindexArgs {
     pub dir: PathBuf,
 }
 
-/// What one reindex did.
+/// What one reindex did; `skipped` the record files it could not read as text, each named.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct Outcome {
     pub indexed: usize,
     pub moved: usize,
     pub index_written: bool,
     pub harness_written: bool,
+    pub skipped: Vec<String>,
 }
 
 pub fn memory(cmd: &MemoryCommand) -> Result<ExitCode> {
@@ -46,27 +47,32 @@ pub fn memory(cmd: &MemoryCommand) -> Result<ExitCode> {
     {
         println!(
             "{}",
-            json!({"indexed": o.indexed, "moved": o.moved, "indexWritten": o.index_written, "harnessWritten": o.harness_written})
+            json!({"indexed": o.indexed, "moved": o.moved, "indexWritten": o.index_written, "harnessWritten": o.harness_written, "skipped": o.skipped})
         );
     }
     Ok(ExitCode::SUCCESS)
 }
 
-/// craft's records among the directory's files.
-fn entries(dir: &Path) -> Result<Vec<Entry>> {
-    let mut out = Vec::new();
+/// craft's records among the directory's files, and the names of record files that are not
+/// UTF-8 text (skipped, never a failure of the whole run).
+fn entries(dir: &Path) -> Result<(Vec<Entry>, Vec<String>)> {
+    let (mut out, mut skipped) = (Vec::new(), Vec::new());
     for item in fs::read_dir(dir).with_context(|| format!("reading {}", dir.display()))? {
         let item = item?;
         let name = item.file_name().to_string_lossy().into_owned();
         if !index::is_record_name(&name) || !item.file_type()?.is_file() {
             continue;
         }
-        let text = fs::read_to_string(item.path())
-            .with_context(|| format!("reading {}", item.path().display()))?;
-        out.extend(index::entry(&name, &text));
+        let bytes =
+            fs::read(item.path()).with_context(|| format!("reading {}", item.path().display()))?;
+        match String::from_utf8(bytes) {
+            Ok(text) => out.extend(index::entry(&name, &text)),
+            Err(_) => skipped.push(format!("{name}: not UTF-8 text")),
+        }
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
-    Ok(out)
+    skipped.sort();
+    Ok((out, skipped))
 }
 
 /// Writes `text` to `path` through a sibling temporary file, unless it already holds it.
@@ -81,22 +87,38 @@ fn write_if_changed(path: &Path, text: &str) -> Result<bool> {
 }
 
 /// Rebuilds the index of `dir`, then moves craft's lines out of its `MEMORY.md` — the index
-/// first, so an interrupted run loses no line.
+/// first, so an interrupted run loses no line. A directory with no craft record is left as it is.
 ///
 /// # Errors
-/// When `dir` is not a directory, or a file cannot be read or written.
+/// When `dir` is not a directory, its `MEMORY.md` says not to write there, or a file cannot be
+/// read or written.
 pub(crate) fn reindex(dir: &Path) -> Result<Outcome> {
     if !dir.is_dir() {
         bail!("harness memory directory {} not found", dir.display());
     }
-    let all = entries(dir)?;
-    let index_written = write_if_changed(&dir.join(INDEX_FILE), &index::render(&all))?;
     let harness_path = dir.join(HARNESS_FILE);
     let harness = match fs::read_to_string(&harness_path) {
         Ok(t) => t,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
         Err(e) => return Err(e).with_context(|| format!("reading {}", harness_path.display())),
     };
+    if index::forbids_writes(&harness) {
+        bail!(
+            "{} says not to write here — the harness memory backend is unavailable; nothing written",
+            harness_path.display()
+        );
+    }
+    let (all, skipped) = entries(dir)?;
+    if all.is_empty() {
+        return Ok(Outcome {
+            indexed: 0,
+            moved: 0,
+            index_written: false,
+            harness_written: false,
+            skipped,
+        });
+    }
+    let index_written = write_if_changed(&dir.join(INDEX_FILE), &index::render(&all))?;
     let is_craft = |name: &str| all.iter().any(|e| format!("{}.md", e.id) == name);
     let (text, moved) = index::migrate(&harness, &is_craft);
     let harness_written = write_if_changed(&harness_path, &text)?;
@@ -105,5 +127,6 @@ pub(crate) fn reindex(dir: &Path) -> Result<Outcome> {
         moved,
         index_written,
         harness_written,
+        skipped,
     })
 }
