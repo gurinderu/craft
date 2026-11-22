@@ -7,7 +7,7 @@
 // or COLLABORATOR. No reply is no rejection: a thread resolved silently may have been fixed outside
 // the hunk (realm @nick/craft, node #185). Read across a whole PR by integrations/shared/pr-rejections.mjs.
 import { readFindingComment } from './finding-comment.mjs'
-import { memoryRecordId } from './memory-record-id.mjs'
+import { memoryRecordId, scopeLineProblem } from './memory-record-id.mjs'
 
 // One page of comments per thread (`comments(first: 50)`): past it, the last word is unknown and the
 // thread is named, never guessed at.
@@ -68,6 +68,8 @@ export function threadRejection(cs, prAuthor) {
  */
 export function recordProblem(title, scope, commit, reason) {
   if (!scope || !/^[0-9a-f]{7,40}$/i.test(commit)) return 'no path or commit to anchor the decision to'
+  const ranged = scopeLineProblem(scope)
+  if (ranged) return ranged
   if (title.length > REJECTION_TITLE_MAX) return `title over ${REJECTION_TITLE_MAX} chars: record it by hand`
   if (reason.length > REJECTION_REASON_MAX) return `reason is ${reason.length} chars, over ${REJECTION_REASON_MAX}: summarise it and record by hand`
   return ''

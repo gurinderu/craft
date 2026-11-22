@@ -17,7 +17,9 @@
 // @nick/craft, node #273): read here the same way, but its scope is never defaulted — a rule without one
 // is refused by name; integrations/shared/project-rule-apply.mjs applies it after the review, apart from the decisions.
 // Imported by integrations/claude-code/src/rust-audit.js and integrations/claude-code/src/triage-findings.js.
-import { memoryRecordId } from './memory-record-id.mjs'
+// A scope that carries a line (`path:N`, `path:N-M`), as earlier runs wrote it, reads as the path and the
+// start line; a `line` the record gives itself wins (realm @nick/craft, node #598).
+import { memoryRecordId, scopeLine } from './memory-record-id.mjs'
 
 // Per-field ceilings. A field over its ceiling refuses the whole decision (said so) — a reason cut
 // mid-sentence would mark a finding with a rationale nobody wrote.
@@ -140,10 +142,11 @@ export function decisionFields(o) {
   const url = decisionText(links.find(l => /^https?:\/\//.test(decisionText(l))))
   const derived = derivedRecordId(o)
   const stores = linkedIds(links, /^store:\s*(\S+)$/i)
+  const split = scopeLine(f('scope'))
   return {
     id: f('id') || derived,
     title: f('title'),
-    scope: f('scope') || '.',
+    scope: split.scope || '.',
     reason: f('reason', 'body'),
     who: f('who', 'author'),
     when: f('when', 'date'),
@@ -154,7 +157,7 @@ export function decisionFields(o) {
     supersedes: supersededIds(links),
     ...(stores.length ? { stores } : {}),
     ...(derived ? { derived: /** @type {const} */ (true) } : {}),
-    ...recordAnchor(o),
+    ...recordAnchor(o, split.line),
     ...(decisionText(o['decidedBy']) ? { decidedBy: decisionText(o['decidedBy']) } : {}),
   }
 }
@@ -165,12 +168,14 @@ export function priorKind(k) {
 }
 
 /**
- * The record's anchor and overrides, each present only when given: `line` above 0, `lens` and `toolRule`
- * non-empty (realm @nick/craft, node #236), `overrides` the ids of a list of strings. @param {Record<string, unknown>} o
+ * The record's anchor and overrides, each present only when given: `line` above 0 — its own, else
+ * `scopeAt`, the line its scope carried —, `lens` and `toolRule` non-empty (realm @nick/craft, node #236),
+ * `overrides` the ids of a list of strings. @param {Record<string, unknown>} o @param {number} [scopeAt]
  * @returns {{ line?: number, lens?: string, toolRule?: string, overrides?: string[] }}
  */
-export function recordAnchor(o) {
-  const line = recordLine(o['line'])
+export function recordAnchor(o, scopeAt = 0) {
+  const own = recordLine(o['line'])
+  const line = own > 0 ? own : scopeAt
   const lens = decisionText(o['lens'])
   const toolRule = decisionText(o['toolRule'])
   const overrides = Array.isArray(o['overrides']) ? o['overrides'].map(decisionText).filter(Boolean) : []

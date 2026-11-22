@@ -13,7 +13,7 @@ mod list;
 use check::problem;
 pub(super) use list::{Parsed, parse, plain_label};
 
-use super::id::memory_record_id;
+use super::id::{memory_record_id, split_scope_line};
 
 /// What a record is to a review.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -208,7 +208,12 @@ fn fields(o: &Map<String, Value>) -> PriorDecision {
         .find(|l| l.starts_with("http://") || l.starts_with("https://"))
         .unwrap_or_default();
     let derived = derived_record_id(o);
-    let line = record_line(o.get("line"));
+    // A scope carrying a line reads as its path and start line; the record's own `line` wins (#598).
+    let scope = f("scope", "");
+    let (scope, scope_at) = split_scope_line(&scope);
+    let line = Some(record_line(o.get("line")))
+        .filter(|l| *l > 0)
+        .unwrap_or_else(|| i64::try_from(scope_at).unwrap_or(0));
     let overrides = o.get("overrides").and_then(Value::as_array);
     PriorDecision {
         id: if f("id", "").is_empty() {
@@ -217,9 +222,10 @@ fn fields(o: &Map<String, Value>) -> PriorDecision {
             f("id", "")
         },
         title: f("title", ""),
-        scope: Some(f("scope", ""))
+        scope: Some(scope)
             .filter(|s| !s.is_empty())
-            .unwrap_or_else(|| ".".into()),
+            .unwrap_or(".")
+            .to_owned(),
         reason: f("reason", "body"),
         who: f("who", "author"),
         when: f("when", "date"),
@@ -263,3 +269,6 @@ pub(super) fn read(raw: &Value, label: &str) -> Result<PriorDecision, String> {
     };
     Err(format!("{label}{id}{why}"))
 }
+
+#[cfg(test)]
+mod tests;
