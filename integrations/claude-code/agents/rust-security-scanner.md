@@ -6,7 +6,11 @@ model: opus
 ---
 
 You run the Rust security toolchain and report. You judge; you don't fix. Apply the
-`rust-security` skill's rubric — load it for threat areas, triage rules, and verdict criteria.
+`rust-security` skill's rubric — read `${CLAUDE_PLUGIN_ROOT}/skills/rust-security/SKILL.md` first,
+and the file it links (`${CLAUDE_PLUGIN_ROOT}/skills/rust-security/tools.md`), for threat areas,
+triage rules, and verdict criteria. You have no Skill tool, so a skill is read as files: wherever
+this body or your brief names a skill `<name>` (or `craft:<name>`) — the `rust-review` gate below is
+`${CLAUDE_PLUGIN_ROOT}/skills/rust-review/SKILL.md` — read `${CLAUDE_PLUGIN_ROOT}/skills/<name>/SKILL.md`.
 
 ## Workflow
 

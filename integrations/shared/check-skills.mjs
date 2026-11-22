@@ -11,6 +11,7 @@ import { outputLines, runIfMain } from './script-main.mjs'
 import { parseJson } from './json-object.mjs'
 import { launchKnown } from './launch-names.mjs'
 import { proseLaunchSites } from './prose-launch-names.mjs'
+import { skillAccessProblems } from './agent-skill-paths.mjs'
 
 // Parse a Markdown YAML frontmatter block into a Map of top-level key -> collapsed string value.
 // Handles both inline scalars (`name: foo`, `tools: ["Read"]`) and folded/literal block scalars
@@ -249,11 +250,15 @@ function checkSkill(skillDir, s, known, launch, fail) {
   }
 }
 
-/** @param {string} root @param {string[]} agents @param {Set<string>} known @param {Known} launch @param {Fail} fail */
-function checkAgentsAndWorkflows(root, agents, known, launch, fail) {
+/** @param {string} root @param {string[]} agents @param {Set<string>} known @param {Known} launch @param {Fail} fail @param {string[]} skills */
+function checkAgentsAndWorkflows(root, agents, known, launch, fail, skills) {
+  const delivery = path.join(root, 'integrations', 'claude-code')
   for (const a of agents) {
-    const src = read(path.join(root, 'integrations', 'claude-code', 'agents', `${a}.md`))
-    fail(`integrations/claude-code/agents/${a}`, lintAgent(a, parseFrontmatter(src)))
+    const src = read(path.join(delivery, 'agents', `${a}.md`))
+    const keys = parseFrontmatter(src)
+    fail(`integrations/claude-code/agents/${a}`, lintAgent(a, keys))
+    const body = src.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, '')
+    fail(`integrations/claude-code/agents/${a}`, skillAccessProblems(body, keys?.get('tools') ?? '', skills, [delivery, root]))
     fail(
       `integrations/claude-code/agents/${a}`,
       unresolvedRefs(extractCraftRefs(src), known).map(r => `dangling craft:${r}`),
@@ -331,7 +336,7 @@ export function run(_argv, _env, root = ROOT) {
       'no plugin name — launch names in bodies cannot be checked (this is a misconfiguration, not a pass)',
     ])
   for (const s of skills) checkSkill(path.join(root, 'skills', s), s, known, launch, fail)
-  checkAgentsAndWorkflows(root, agents, known, launch, fail)
+  checkAgentsAndWorkflows(root, agents, known, launch, fail, skills)
   checkDocsAndManifests(root, fail)
 
   o.stdout.push(`checked ${skills.length} skills, ${agents.length} agents, ${wfNames.length} workflows`)

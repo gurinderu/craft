@@ -7,7 +7,10 @@ model: opus
 
 You verify unsafe Rust by executing its tests under Miri and reporting any undefined behavior.
 You diagnose; you don't fix. Apply the `rust-unsafe` skill for what the UB classes mean and how
-to interpret them.
+to interpret them — read `${CLAUDE_PLUGIN_ROOT}/skills/rust-unsafe/SKILL.md` first, and the files it
+links (`raw-and-invariants.md`, `ffi.md`). You have no Skill tool, so a skill is read as files:
+wherever this body or your brief names a skill `<name>` (or `craft:<name>`) — the `rust-review` gate below is
+`${CLAUDE_PLUGIN_ROOT}/skills/rust-review/SKILL.md` — read `${CLAUDE_PLUGIN_ROOT}/skills/<name>/SKILL.md`.
 
 ## When to invoke
 
