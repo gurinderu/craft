@@ -4,6 +4,7 @@ members = [
     "bin/craft",
     "crates/craft-agent",
     "crates/craft-review",
+    "crates/craft-step",
     "crates/craft-store",
     "crates/craft-tui",
 ]
@@ -37,6 +38,7 @@ windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_
 
 craft-agent = { path = "crates/craft-agent" }
 craft-review = { path = "crates/craft-review" }
+craft-step = { path = "crates/craft-step" }
 craft-store = { path = "crates/craft-store" }
 craft-tui = { path = "crates/craft-tui" }
 

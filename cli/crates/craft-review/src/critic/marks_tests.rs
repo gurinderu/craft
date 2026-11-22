@@ -54,7 +54,7 @@ fn an_admitted_lens_is_held_to_the_consumers_lines_its_prompt_shows() {
         "{}",
         lenses[0].prompt
     );
-    assert_eq!(lenses[0].consumers, ["src/b.rs:3"]);
+    assert_eq!(lenses[0].marks.consumers, ["src/b.rs:3"]);
 }
 
 #[test]
@@ -74,8 +74,8 @@ fn the_lines_an_admitted_lens_left_unmarked_are_the_run_s() {
         );
         t.state = TaskState::Answered;
         t.answer = Some(json!({"findings": []}));
-        t.consumers = vec!["src/b.rs:3".into(), "src/c.rs:4".into()];
-        t.unmarked = unmarked.iter().map(|s| (*s).to_owned()).collect();
+        t.marks.consumers = vec!["src/b.rs:3".into(), "src/c.rs:4".into()];
+        t.marks.unmarked = unmarked.iter().map(|s| (*s).to_owned()).collect();
         t
     };
     run.tasks = vec![

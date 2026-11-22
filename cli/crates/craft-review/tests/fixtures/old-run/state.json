@@ -1,0 +1,1011 @@
+{
+  "version": 6,
+  "context": {
+    "repo": "@REPO@",
+    "base": "origin/main",
+    "spec": "feat: add f, which never fails",
+    "craftRoot": "@ROOT@",
+    "craftVersion": "9.9.9",
+    "consumers": {
+      "sources": [
+        "name search",
+        "structural search"
+      ],
+      "graphSkipped": "no review profile directory",
+      "symbols": [
+        {
+          "name": "f",
+          "file": "src/lib.rs",
+          "line": 1,
+          "sites": []
+        }
+      ],
+      "unsearched": [
+        "f (searched by path only: a call through a value, `x.f()`, not found)"
+      ],
+      "file": "@RUN@/consumers.json"
+    },
+    "graphProject": "craft-review--tmphH6lXI-87e289bf5343"
+  },
+  "diff": {
+    "base": "origin/main",
+    "mergeBase": "03d36e3c52d31c25db5cc73a70c2a1428fefeccc",
+    "head": "8ece2039eb4a241af3903b9db391767b30d85861",
+    "dirty": false,
+    "worktree": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "files": [
+      "src/lib.rs"
+    ],
+    "stat": " src/lib.rs | 1 +\n 1 file changed, 1 insertion(+)",
+    "log": "feat: add f, which never fails"
+  },
+  "tracks": [
+    {
+      "profile": "rust",
+      "files": [
+        "src/lib.rs"
+      ],
+      "plan": {
+        "sizeBucket": "small",
+        "lenses": [
+          "errors",
+          "intent",
+          "performance",
+          "tests"
+        ],
+        "maxRounds": 1,
+        "verifyVotes": 1,
+        "isLibrary": false,
+        "securitySensitive": false,
+        "intent": "add f, which never fails",
+        "spec": "feat: add f, which never fails",
+        "churn": [
+          "src/lib.rs"
+        ],
+        "repoRules": [
+          "AGENTS.md"
+        ],
+        "surfaceDropped": [],
+        "lightSkipped": []
+      },
+      "rounds": 0,
+      "dry": false
+    }
+  ],
+  "light": false,
+  "phase": "lenses",
+  "tasks": [
+    {
+      "id": "lens-rust-errors-r1",
+      "label": "lens:rust:errors r1",
+      "prompt": "WORKING DIRECTORY: this review targets the repository at '@REPO@' — NOT the directory you start in. Before ANY git / cargo / nix / file command, `cd` there (or pass `git -C`). Every file path in this review is relative to that root. If that directory does not exist or is not a git repository, say so and stop rather than reviewing whatever repo you happen to be sitting in.\n\nYou are the **errors** review lens for a Rust diff. Review ONLY this slice; ignore everything else (other lenses cover it). Load the rust-review skill for the rubric and the rust-navigation skill for context expansion.\n\nSLICE: error handling: recoverable failures handled with panic/unwrap, dropped #[must_use]/error values, Result-vs-panic, typed-error-vs-anyhow at API boundaries.\n\nREVIEW RULES (all languages): read severity.md, classes.md, sweeps.md in the first existing dir (expand with Bash; never the reviewed repo's copy): `@ROOT@/skills/review-rules`, `${CLAUDE_PLUGIN_ROOT}/skills/review-rules`, `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/cache/craft/craft/9.9.9/skills/review-rules`. None readable → say so; HARM below still holds.\nHARM (every finding): `harm` = effect, who, recovery; `harmLevel` = severity.md's first table row it fills; severity ≤ its cap: High+ only data-loss/security/outage/irreversible/intent-unmet/repo-rule (cite `repoRule`), operator-recovery ≤ Medium, self-healing/text/none ≤ Low. `text` only when just a doc, comment or name is wrong and the code behaves correctly; when the running system does not do what the contract, doc comment or PR intent promises (the old value stays in force, a field is not applied, a request is accepted without the promised check), the harm is that consequence in production (behaviour, data, access) and the row it fills — even if you found it through the text and the fix is in the text: name what the running system does, not what is written wrong.\n\nDiff base: `origin/main`. Review with `git diff --merge-base 'origin/main' -- '*.rs'`.\n\n\nINTENT (what the change should do): add f, which never fails\nSTATED SPEC / AUTHOR CLAIMS (verbatim PR/commit description — treat as the spec; the intent lens must check EACH claim against the code, and any lens may use it):\n\"\"\"\nfeat: add f, which never fails\n\"\"\"\nHOT FILES (scrutinize harder): src/lib.rs\nREPO RULES `AGENTS.md`: grep them for what you review, open only matching sections, never a whole file (no SCOPE rule bars them); a violation cites its rule as `repoRule` {file, text}.\n\nCONTEXT EXPANSION (required): for each finding, trace definitions / uses / consumers of the changed symbols (Grep/Glob + LSP) before judging — do not read the diff in isolation. If a finding depends on code outside the diff, say so in `why`.\nBLAST-RADIUS (required): for each changed PUBLIC surface you touch, note how many consumers are affected and set a breaking-change flag in `blastRadius`.\nCONFIDENCE: report everything you suspect, located. Do NOT self-censor borderline findings — verification happens downstream; each still names its harm, and its severity is the one that harm allows. Each finding needs file:line (use file:\"\" line:0 only when truly not locatable).\nWHERE-CHECKED (required field): a finding usually rests on a premise that is NOT visible at the line you cite — \"the dependency rejects this\", \"this is reachable from untrusted input\", \"no caller guards it\", \"the sibling path does X\". Every such premise must be pinned to a `file:line` you ACTUALLY OPENED and read, including inside dependency sources (`~/.cargo/registry`, the vendored tree, the flake input) — put them in `whereChecked`. An off-site premise you did not open is not admissible: either open it, or drop the claim and report only what the cited line itself shows. Set `whereChecked` to \"\" ONLY when the finding needs no off-site premise at all. Do not restate the cited defect line there — it adds nothing. Finding a dependency's source: open the version the project pins, never the newest or a remembered one, and never let a tool rewrite the lockfile to find it. For a Rust crate, take the package's `manifest_path` from `cargo metadata --locked --format-version 1` — its directory is the source of the version Cargo.lock pins (under `~/.cargo/registry`, a git checkout, or the vendored tree); if that directory is missing, run `cargo fetch --locked` first. A build or test command run before you may already have written Cargo.lock: take the lockfile cargo uses, `Cargo.lock` under the `workspace_root` from `cargo metadata --no-deps --format-version 1`, and unless `git ls-files --error-unmatch <that path>` succeeds and `git status --porcelain <that path>` is empty, the version it names is resolved today, not pinned — say so. If the reviewed checkout has no Cargo.lock (a library that does not commit one), nothing is pinned: resolve in a throwaway copy (`git worktree add --detach <tmp>` of the reviewed commit, or, when a Cargo.toml has uncommitted changes, a copy of the working tree without `target/` and `.git`), run `cargo metadata --format-version 1` there, open the sources it names, and always remove the copy (`git worktree remove <tmp>` when you added one); say the version is the one resolved today, not a pinned one, and never write Cargo.lock in the reviewed checkout. If Cargo.lock exists but `--locked` refuses (it is stale), the pinned version cannot be determined — do not run cargo without the flag: treat the premise as one you could not open. For a Nix flake input, open the input at the revision flake.lock pins, not a channel or its current head. For another ecosystem, the same way: the version from the project's lockfile, the code from the package manager's cache or the vendor directory.\nCONSUMERS: the 0 line(s) below name a symbol this diff changes or adds, outside the changed lines — callers, implementors, places passing it as a value — found by name search and structural search. Go through EVERY line: open it and judge it against the change, then list it in your answer's `consumers` as {\"site\": \"<file>:<line>\", \"status\": \"checked\"} once judged, or \"not-relevant\" when the name there is another item or the change cannot affect that use. Mark every line: a line you leave unmarked is reported as one this review did not check. A defect at one of these lines is a finding at that line. The sibling sweep (review-rules sweeps.md §1) builds its table of places from these lines first.\nNot searched by name (find their uses yourself): f (searched by path only: a call through a value, `x.f()`, not found).\nRULE ID (required field): set `ruleId` to the matching catalog ID from the rust-review skill's rules.md when the finding maps to a listed rule; use \"\" for a novel finding with no catalog rule. Do not force a bad fit.\n\nALREADY-FOUND (do not re-report these PLACES; the same class at a DIFFERENT place — error arm, record, hook, path, legacy cohort — is NOT a repeat: sibling sweep, sweeps.md §1):\nnone yet\n\nReturn {lens, findings[]}.\n\nObservability: the review workflow records this run — do NOT write your own record.",
+      "model": "opus",
+      "schema": {
+        "additionalProperties": false,
+        "properties": {
+          "blocked": {
+            "description": "whether you could look at all: couldNotLook true ONLY when you could not read the code or run the commands your task needs (a sandbox refusal, a missing checkout, a permission error), else false; never true because you found nothing or used a simpler method",
+            "properties": {
+              "couldNotLook": {
+                "type": "boolean"
+              },
+              "what": {
+                "description": "when couldNotLook is true: what failed, in one line",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "consumers": {
+            "description": "each line of the CONSUMERS list, marked once judged; a line left unmarked is reported as unchecked",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "site": {
+                  "description": "<file>:<line> as the list names it",
+                  "type": "string"
+                },
+                "status": {
+                  "enum": [
+                    "checked",
+                    "not-relevant"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "site",
+                "status"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "findings": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "blastRadius": {
+                  "description": "callers affected / breaking-change note; empty if n/a",
+                  "type": "string"
+                },
+                "deletionOrRecoveryPath": {
+                  "description": "reconciler and failure-windows lenses only: true when the defect sits on a deletion or recovery path (finalizer removal, teardown, a delete handler, crash or partial-failure recovery); omit otherwise",
+                  "type": "boolean"
+                },
+                "disposition": {
+                  "description": "open|closed|rejected|justified|deferred|covered; empty if n/a",
+                  "type": "string"
+                },
+                "externalSystem": {
+                  "description": "the external system (another project's controller, API server or service, not a library dependency) whose behaviour the finding's premise rests on, by its name; omit when none",
+                  "type": "string"
+                },
+                "file": {
+                  "description": "path; empty string if not applicable",
+                  "type": "string"
+                },
+                "fix": {
+                  "description": "direction of the fix",
+                  "type": "string"
+                },
+                "fp": {
+                  "description": "line-tolerant fingerprint; empty if not from a ledger",
+                  "type": "string"
+                },
+                "harm": {
+                  "description": "the harm this finding names: its effect, who is affected, and how they recover (by itself, by retry, by an operator's hand, not at all)",
+                  "type": "string"
+                },
+                "harmLevel": {
+                  "description": "the `harmLevel` column of the first row of the review-rules severity.md table (read top down, worst first) the harm honestly fills; the engine caps severity at that row's ceiling",
+                  "enum": [
+                    "data-loss",
+                    "security",
+                    "outage",
+                    "irreversible",
+                    "intent-unmet",
+                    "repo-rule",
+                    "operator-recovery",
+                    "self-healing",
+                    "text",
+                    "none"
+                  ],
+                  "type": "string"
+                },
+                "line": {
+                  "description": "1-based line; 0 if not applicable",
+                  "type": "integer"
+                },
+                "regression": {
+                  "description": "tests lens only, with testGap: the regression of the changed behaviour the suite lets through green, named concretely (what the running system would then do); empty when none is named — the finding then stays Low",
+                  "type": "string"
+                },
+                "regressionAt": {
+                  "description": "tests lens only, with regression: file:line of the production code the regression breaks — its reachability is judged there, not at the cited test line",
+                  "type": "string"
+                },
+                "repoRule": {
+                  "additionalProperties": false,
+                  "description": "harmLevel repo-rule only: the reviewed repository's written rule this finding breaks — omit otherwise",
+                  "properties": {
+                    "file": {
+                      "description": "the repository file that states the rule (AGENTS.md, CLAUDE.md, CONTRIBUTING.md, a documented convention), as a path from the repo root",
+                      "type": "string"
+                    },
+                    "text": {
+                      "description": "the rule, quoted from that file",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "file",
+                    "text"
+                  ],
+                  "type": "object"
+                },
+                "ruleId": {
+                  "description": "catalog rule ID from the active profile's rules.md (e.g. \"CON-003\" for rust, \"PUR-001\" for nix) if the finding maps to one; empty string otherwise",
+                  "type": "string"
+                },
+                "severity": {
+                  "enum": [
+                    "Critical",
+                    "High",
+                    "Medium",
+                    "Low",
+                    "Info"
+                  ],
+                  "type": "string"
+                },
+                "source": {
+                  "description": "lens name or tool name that produced this",
+                  "type": "string"
+                },
+                "symbol": {
+                  "description": "enclosing fn/type name; empty if unknown",
+                  "type": "string"
+                },
+                "testGap": {
+                  "description": "tests lens only: `missing` — no test pins the behaviour; `weak-assertion` — a test exists and still passes under the named regression (it asserts only a status or an annotation, a mock ignores the request body or fabricates the response, only one of two sides is covered); omit otherwise",
+                  "enum": [
+                    "missing",
+                    "weak-assertion"
+                  ],
+                  "type": "string"
+                },
+                "tier": {
+                  "description": "confirmed|suspected|unverified|refuted; empty if n/a",
+                  "type": "string"
+                },
+                "title": {
+                  "description": "one-line what is wrong",
+                  "type": "string"
+                },
+                "toolRule": {
+                  "description": "gate seeds only: the tool's own rule name copied from the tool output line that names it (clippy lint \"clippy::needless_pass_by_value\", semgrep rule id, statix code, semver-checks check name) — never from memory; omit when the output names none or the finding is not a tool's",
+                  "type": "string"
+                },
+                "whereChecked": {
+                  "description": "OFF-SITE EVIDENCE: the file:line you actually opened to establish a load-bearing premise that lives OUTSIDE the cited defect site — a dependency's behaviour, reachability from an entry point, the absence of a guard in a caller, what a sibling path does. Several may be comma-separated, each with a few words on what it shows. Empty string ONLY when the finding is fully self-contained at the cited file:line and rests on no off-site claim",
+                  "type": "string"
+                },
+                "why": {
+                  "description": "why it matters",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "severity",
+                "title",
+                "file",
+                "line",
+                "why",
+                "fix",
+                "blastRadius",
+                "source",
+                "ruleId",
+                "whereChecked"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "lens": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "lens",
+          "findings"
+        ],
+        "type": "object"
+      },
+      "agentType": "rust-reviewer",
+      "kind": "lens",
+      "profile": "rust",
+      "lens": "errors",
+      "round": 1,
+      "state": "pending",
+      "retries": 1,
+      "error": "it does not match the schema (at /: \"lens\" is a required property; at /: \"findings\" is a required property)",
+      "refused": {}
+    },
+    {
+      "id": "lens-rust-intent-r1",
+      "label": "lens:rust:intent r1",
+      "prompt": "WORKING DIRECTORY: this review targets the repository at '@REPO@' — NOT the directory you start in. Before ANY git / cargo / nix / file command, `cd` there (or pass `git -C`). Every file path in this review is relative to that root. If that directory does not exist or is not a git repository, say so and stop rather than reviewing whatever repo you happen to be sitting in.\n\nYou are the **intent** review lens for a Rust diff. Review ONLY this slice; ignore everything else (other lenses cover it). Load the rust-review skill for the rubric and the rust-navigation skill for context expansion.\n\nSLICE: intent / spec conformance: does the change actually do what it is supposed to do? Work from the STATED SPEC / AUTHOR CLAIMS block (the verbatim PR/commit description), not just the one-line inferred intent. ENUMERATE every explicit claim or invariant the author wrote — patterns like \"never fails on X\", \"the only way to Y\", \"idempotent\" / \"no-op\", \"in place\" / \"preserves Z\", \"always\" / \"never\", and any documented trade-off — and for EACH claim trace the concrete code path that would carry it out. A claim the code contradicts is a finding (cite the exact file:line that violates it): e.g. an \"idempotent no-op\" that actually wipes a field, \"the only way to change X\" that silently no-ops for some inputs, \"never fails on X\" that returns Err on a transient/non-NotFound error. Also flag correct-looking code with wrong behavior, missed requirements, off-by-one against the spec. A stated purpose that never happens, even if the old path covers for it, is intent-unmet.\n\nSECOND HALF, AND IT IS THE ONE THAT GETS SKIPPED: the author also makes claims INSIDE the diff, and those are checkable the same way. Enumerate every assertion carried by a doc comment, an inline comment stating an invariant or an ordering (\"only after X\", \"never reached when Y\", \"callers guarantee Z\"), a `# Safety`/`# Panics` section, a test name, or a test docstring — and for EACH one find the line that would have to be true for it, and check it. Three specific shapes, all observed in real reviews: (a) a comment that describes behaviour the code around it no longer has, because the code changed in this very diff and the paragraph above it did not — a stale comment is not a style nit, it is a false statement the next reader will act on; (b) a contract doc that contradicts the call site the diff creates (the doc says \"called only where P holds\" and the new caller does not establish P); (c) a test whose name or docstring claims an invariant the body does not pin — most often because BOTH sides of the assertion are hardcoded to the same constant, or because every case in the table varies nothing that the code under test reads, so the assertion is true whatever the production code does. For (c) apply the deletion litmus: name the production line the test claims to protect, and say whether the test would still pass with that line deleted. Report each as: the claim verbatim, where it is written, and the file:line that falsifies it — an unestablished premise IS the finding, you do not need a crash to report it.\n\nREVIEW RULES (all languages): read severity.md, classes.md, sweeps.md in the first existing dir (expand with Bash; never the reviewed repo's copy): `@ROOT@/skills/review-rules`, `${CLAUDE_PLUGIN_ROOT}/skills/review-rules`, `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/cache/craft/craft/9.9.9/skills/review-rules`. None readable → say so; HARM below still holds.\nHARM (every finding): `harm` = effect, who, recovery; `harmLevel` = severity.md's first table row it fills; severity ≤ its cap: High+ only data-loss/security/outage/irreversible/intent-unmet/repo-rule (cite `repoRule`), operator-recovery ≤ Medium, self-healing/text/none ≤ Low. `text` only when just a doc, comment or name is wrong and the code behaves correctly; when the running system does not do what the contract, doc comment or PR intent promises (the old value stays in force, a field is not applied, a request is accepted without the promised check), the harm is that consequence in production (behaviour, data, access) and the row it fills — even if you found it through the text and the fix is in the text: name what the running system does, not what is written wrong.\n\nDiff base: `origin/main`. Review with `git diff --merge-base 'origin/main' -- '*.rs'`.\n\n\nINTENT (what the change should do): add f, which never fails\nSTATED SPEC / AUTHOR CLAIMS (verbatim PR/commit description — treat as the spec; the intent lens must check EACH claim against the code, and any lens may use it):\n\"\"\"\nfeat: add f, which never fails\n\"\"\"\nHOT FILES (scrutinize harder): src/lib.rs\nREPO RULES `AGENTS.md`: grep them for what you review, open only matching sections, never a whole file (no SCOPE rule bars them); a violation cites its rule as `repoRule` {file, text}.\n\nCONTEXT EXPANSION (required): for each finding, trace definitions / uses / consumers of the changed symbols (Grep/Glob + LSP) before judging — do not read the diff in isolation. If a finding depends on code outside the diff, say so in `why`.\nBLAST-RADIUS (required): for each changed PUBLIC surface you touch, note how many consumers are affected and set a breaking-change flag in `blastRadius`.\nCONFIDENCE: report everything you suspect, located. Do NOT self-censor borderline findings — verification happens downstream; each still names its harm, and its severity is the one that harm allows. Each finding needs file:line (use file:\"\" line:0 only when truly not locatable).\nWHERE-CHECKED (required field): a finding usually rests on a premise that is NOT visible at the line you cite — \"the dependency rejects this\", \"this is reachable from untrusted input\", \"no caller guards it\", \"the sibling path does X\". Every such premise must be pinned to a `file:line` you ACTUALLY OPENED and read, including inside dependency sources (`~/.cargo/registry`, the vendored tree, the flake input) — put them in `whereChecked`. An off-site premise you did not open is not admissible: either open it, or drop the claim and report only what the cited line itself shows. Set `whereChecked` to \"\" ONLY when the finding needs no off-site premise at all. Do not restate the cited defect line there — it adds nothing. Finding a dependency's source: open the version the project pins, never the newest or a remembered one, and never let a tool rewrite the lockfile to find it. For a Rust crate, take the package's `manifest_path` from `cargo metadata --locked --format-version 1` — its directory is the source of the version Cargo.lock pins (under `~/.cargo/registry`, a git checkout, or the vendored tree); if that directory is missing, run `cargo fetch --locked` first. A build or test command run before you may already have written Cargo.lock: take the lockfile cargo uses, `Cargo.lock` under the `workspace_root` from `cargo metadata --no-deps --format-version 1`, and unless `git ls-files --error-unmatch <that path>` succeeds and `git status --porcelain <that path>` is empty, the version it names is resolved today, not pinned — say so. If the reviewed checkout has no Cargo.lock (a library that does not commit one), nothing is pinned: resolve in a throwaway copy (`git worktree add --detach <tmp>` of the reviewed commit, or, when a Cargo.toml has uncommitted changes, a copy of the working tree without `target/` and `.git`), run `cargo metadata --format-version 1` there, open the sources it names, and always remove the copy (`git worktree remove <tmp>` when you added one); say the version is the one resolved today, not a pinned one, and never write Cargo.lock in the reviewed checkout. If Cargo.lock exists but `--locked` refuses (it is stale), the pinned version cannot be determined — do not run cargo without the flag: treat the premise as one you could not open. For a Nix flake input, open the input at the revision flake.lock pins, not a channel or its current head. For another ecosystem, the same way: the version from the project's lockfile, the code from the package manager's cache or the vendor directory.\nCONSUMERS: the 0 line(s) below name a symbol this diff changes or adds, outside the changed lines — callers, implementors, places passing it as a value — found by name search and structural search. Go through EVERY line: open it and judge it against the change, then list it in your answer's `consumers` as {\"site\": \"<file>:<line>\", \"status\": \"checked\"} once judged, or \"not-relevant\" when the name there is another item or the change cannot affect that use. Mark every line: a line you leave unmarked is reported as one this review did not check. A defect at one of these lines is a finding at that line. The sibling sweep (review-rules sweeps.md §1) builds its table of places from these lines first.\nNot searched by name (find their uses yourself): f (searched by path only: a call through a value, `x.f()`, not found).\nRULE ID (required field): set `ruleId` to the matching catalog ID from the rust-review skill's rules.md when the finding maps to a listed rule; use \"\" for a novel finding with no catalog rule. Do not force a bad fit.\n\nALREADY-FOUND (do not re-report these PLACES; the same class at a DIFFERENT place — error arm, record, hook, path, legacy cohort — is NOT a repeat: sibling sweep, sweeps.md §1):\nnone yet\n\nReturn {lens, findings[]}.\n\nObservability: the review workflow records this run — do NOT write your own record.",
+      "model": "opus",
+      "schema": {
+        "additionalProperties": false,
+        "properties": {
+          "blocked": {
+            "description": "whether you could look at all: couldNotLook true ONLY when you could not read the code or run the commands your task needs (a sandbox refusal, a missing checkout, a permission error), else false; never true because you found nothing or used a simpler method",
+            "properties": {
+              "couldNotLook": {
+                "type": "boolean"
+              },
+              "what": {
+                "description": "when couldNotLook is true: what failed, in one line",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "consumers": {
+            "description": "each line of the CONSUMERS list, marked once judged; a line left unmarked is reported as unchecked",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "site": {
+                  "description": "<file>:<line> as the list names it",
+                  "type": "string"
+                },
+                "status": {
+                  "enum": [
+                    "checked",
+                    "not-relevant"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "site",
+                "status"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "findings": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "blastRadius": {
+                  "description": "callers affected / breaking-change note; empty if n/a",
+                  "type": "string"
+                },
+                "deletionOrRecoveryPath": {
+                  "description": "reconciler and failure-windows lenses only: true when the defect sits on a deletion or recovery path (finalizer removal, teardown, a delete handler, crash or partial-failure recovery); omit otherwise",
+                  "type": "boolean"
+                },
+                "disposition": {
+                  "description": "open|closed|rejected|justified|deferred|covered; empty if n/a",
+                  "type": "string"
+                },
+                "externalSystem": {
+                  "description": "the external system (another project's controller, API server or service, not a library dependency) whose behaviour the finding's premise rests on, by its name; omit when none",
+                  "type": "string"
+                },
+                "file": {
+                  "description": "path; empty string if not applicable",
+                  "type": "string"
+                },
+                "fix": {
+                  "description": "direction of the fix",
+                  "type": "string"
+                },
+                "fp": {
+                  "description": "line-tolerant fingerprint; empty if not from a ledger",
+                  "type": "string"
+                },
+                "harm": {
+                  "description": "the harm this finding names: its effect, who is affected, and how they recover (by itself, by retry, by an operator's hand, not at all)",
+                  "type": "string"
+                },
+                "harmLevel": {
+                  "description": "the `harmLevel` column of the first row of the review-rules severity.md table (read top down, worst first) the harm honestly fills; the engine caps severity at that row's ceiling",
+                  "enum": [
+                    "data-loss",
+                    "security",
+                    "outage",
+                    "irreversible",
+                    "intent-unmet",
+                    "repo-rule",
+                    "operator-recovery",
+                    "self-healing",
+                    "text",
+                    "none"
+                  ],
+                  "type": "string"
+                },
+                "line": {
+                  "description": "1-based line; 0 if not applicable",
+                  "type": "integer"
+                },
+                "regression": {
+                  "description": "tests lens only, with testGap: the regression of the changed behaviour the suite lets through green, named concretely (what the running system would then do); empty when none is named — the finding then stays Low",
+                  "type": "string"
+                },
+                "regressionAt": {
+                  "description": "tests lens only, with regression: file:line of the production code the regression breaks — its reachability is judged there, not at the cited test line",
+                  "type": "string"
+                },
+                "repoRule": {
+                  "additionalProperties": false,
+                  "description": "harmLevel repo-rule only: the reviewed repository's written rule this finding breaks — omit otherwise",
+                  "properties": {
+                    "file": {
+                      "description": "the repository file that states the rule (AGENTS.md, CLAUDE.md, CONTRIBUTING.md, a documented convention), as a path from the repo root",
+                      "type": "string"
+                    },
+                    "text": {
+                      "description": "the rule, quoted from that file",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "file",
+                    "text"
+                  ],
+                  "type": "object"
+                },
+                "ruleId": {
+                  "description": "catalog rule ID from the active profile's rules.md (e.g. \"CON-003\" for rust, \"PUR-001\" for nix) if the finding maps to one; empty string otherwise",
+                  "type": "string"
+                },
+                "severity": {
+                  "enum": [
+                    "Critical",
+                    "High",
+                    "Medium",
+                    "Low",
+                    "Info"
+                  ],
+                  "type": "string"
+                },
+                "source": {
+                  "description": "lens name or tool name that produced this",
+                  "type": "string"
+                },
+                "symbol": {
+                  "description": "enclosing fn/type name; empty if unknown",
+                  "type": "string"
+                },
+                "testGap": {
+                  "description": "tests lens only: `missing` — no test pins the behaviour; `weak-assertion` — a test exists and still passes under the named regression (it asserts only a status or an annotation, a mock ignores the request body or fabricates the response, only one of two sides is covered); omit otherwise",
+                  "enum": [
+                    "missing",
+                    "weak-assertion"
+                  ],
+                  "type": "string"
+                },
+                "tier": {
+                  "description": "confirmed|suspected|unverified|refuted; empty if n/a",
+                  "type": "string"
+                },
+                "title": {
+                  "description": "one-line what is wrong",
+                  "type": "string"
+                },
+                "toolRule": {
+                  "description": "gate seeds only: the tool's own rule name copied from the tool output line that names it (clippy lint \"clippy::needless_pass_by_value\", semgrep rule id, statix code, semver-checks check name) — never from memory; omit when the output names none or the finding is not a tool's",
+                  "type": "string"
+                },
+                "whereChecked": {
+                  "description": "OFF-SITE EVIDENCE: the file:line you actually opened to establish a load-bearing premise that lives OUTSIDE the cited defect site — a dependency's behaviour, reachability from an entry point, the absence of a guard in a caller, what a sibling path does. Several may be comma-separated, each with a few words on what it shows. Empty string ONLY when the finding is fully self-contained at the cited file:line and rests on no off-site claim",
+                  "type": "string"
+                },
+                "why": {
+                  "description": "why it matters",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "severity",
+                "title",
+                "file",
+                "line",
+                "why",
+                "fix",
+                "blastRadius",
+                "source",
+                "ruleId",
+                "whereChecked"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "lens": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "lens",
+          "findings"
+        ],
+        "type": "object"
+      },
+      "agentType": "rust-reviewer",
+      "kind": "lens",
+      "profile": "rust",
+      "lens": "intent",
+      "round": 1,
+      "state": "answered",
+      "retries": 0,
+      "answer": {
+        "findings": [],
+        "lens": "intent"
+      }
+    },
+    {
+      "id": "lens-rust-performance-r1",
+      "label": "lens:rust:performance r1",
+      "prompt": "WORKING DIRECTORY: this review targets the repository at '@REPO@' — NOT the directory you start in. Before ANY git / cargo / nix / file command, `cd` there (or pass `git -C`). Every file path in this review is relative to that root. If that directory does not exist or is not a git repository, say so and stop rather than reviewing whatever repo you happen to be sitting in.\n\nYou are the **performance** review lens for a Rust diff. Review ONLY this slice; ignore everything else (other lenses cover it). Load the rust-review skill for the rubric and the rust-navigation skill for context expansion.\n\nSLICE: performance & needless allocation (load the rust-performance skill): allocation in a hot loop (PER-001); `Vec::new()` + push where the size is known — `with_capacity` or collect from a sized iterator (PER-002); N+1 queries / repeated work in a loop (PER-003). And the NEEDLESS-ALLOCATION list — an owned value built where the code only reads it: (a) `collect()` into a Vec only to iterate it once, take its `len()` or call `contains` — iterate the iterator, `.count()`, `.any()` (PER-004); not when the collect ends a borrow before a mutation, the Vec is read twice, or its `len` is taken and then it is iterated; (b) a fn returning `Vec`/`String` that its callers only iterate or read, where `impl Iterator<Item = …>` or a borrow (`&str`, `&[T]`) would do — e.g. a `scopes_vec()` that allocates a Vec of Strings for a caller that walks it once (PER-005); weigh what `impl Iterator` costs: it cannot be returned from a dyn-compatible trait method, before edition 2024 it needs `+ '_` to borrow `self`, and callers lose `len`, indexing and reuse; (c) a parameter typed `&[String]` (or another borrowed collection of owned strings, such as `&[Vec<String>]`) that forces callers holding `&str`s to allocate, where `&[&str]` or `impl IntoIterator<Item = impl AsRef<str>>` serves them (PER-006) — a `&String`/`&Vec<T>` parameter is clippy's `ptr_arg` (the gate seeds it) and an owned `String` parameter is OWN-002: leave those to them; (d) `to_string()`/`to_owned()`/`format!`/`clone()` inside a loop where the value could be borrowed or built once (PER-001) — a clone added only to satisfy the borrow checker is OWN-001, not this; (e) a lookup key built into a `String` (`format!`, `to_string`, concatenation) only to call `get`/`contains_key` (PER-007) — a `String` key is looked up by `&str` directly; a composite `(String, String)` key cannot be looked up by `(&str, &str)` through `Borrow`, so build the key once outside the loop, split into nested maps keyed by `String` and look each level up by `&str`, or look up through `hashbrown`'s `Equivalent` with a borrowed key type that hashes as the owned one does. PUBLIC LIBRARY ITEMS: PER-005 and PER-006 are no finding on a `pub` item of a library crate that already exists on the base — changing a released item's return or parameter type is a semver break, which the compat lens weighs; a `pub` item the diff itself adds is unreleased and in scope. SEVERITY, held to the harm caps: PER-001, PER-002 and PER-004–PER-007 are Low — a performance cost names no harm row above `none`; say in `why` whether the site is on a hot path (a loop, a request handler, a fn called per item or per request) as information, not as a raise. PER-003 is Low unless it names a harm: N+1 queries or repeated calls against a database or the network that, at the load the code meets, stall a request path or a controller until an operator steps in fill `operator-recovery` and are Medium — name that load and who recovers. Not a finding: a one-off allocation at start-up, in a test, in a CLI's argument handling or on an error path; a clone the borrow checker genuinely needs (shared ownership across threads/tasks, a value moved into a closure) — say why it is needless before you file it. ROLL UP (needless-allocation Lows only): instances of one PER pattern go into ONE finding, cited at its first site, whose `why` lists EVERY site as `file:line`, so a re-review can check each; this does not override the sibling sweep (review-rules sweeps.md §1) for defects — a finding that names a harm above `none` is reported at each place.\n\nREVIEW RULES (all languages): read severity.md, classes.md, sweeps.md in the first existing dir (expand with Bash; never the reviewed repo's copy): `@ROOT@/skills/review-rules`, `${CLAUDE_PLUGIN_ROOT}/skills/review-rules`, `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/cache/craft/craft/9.9.9/skills/review-rules`. None readable → say so; HARM below still holds.\nHARM (every finding): `harm` = effect, who, recovery; `harmLevel` = severity.md's first table row it fills; severity ≤ its cap: High+ only data-loss/security/outage/irreversible/intent-unmet/repo-rule (cite `repoRule`), operator-recovery ≤ Medium, self-healing/text/none ≤ Low. `text` only when just a doc, comment or name is wrong and the code behaves correctly; when the running system does not do what the contract, doc comment or PR intent promises (the old value stays in force, a field is not applied, a request is accepted without the promised check), the harm is that consequence in production (behaviour, data, access) and the row it fills — even if you found it through the text and the fix is in the text: name what the running system does, not what is written wrong.\n\nDiff base: `origin/main`. Review with `git diff --merge-base 'origin/main' -- '*.rs'`.\n\n\nINTENT (what the change should do): add f, which never fails\nSTATED SPEC / AUTHOR CLAIMS (verbatim PR/commit description — treat as the spec; the intent lens must check EACH claim against the code, and any lens may use it):\n\"\"\"\nfeat: add f, which never fails\n\"\"\"\nHOT FILES (scrutinize harder): src/lib.rs\nREPO RULES `AGENTS.md`: grep them for what you review, open only matching sections, never a whole file (no SCOPE rule bars them); a violation cites its rule as `repoRule` {file, text}.\n\nCONTEXT EXPANSION (required): for each finding, trace definitions / uses / consumers of the changed symbols (Grep/Glob + LSP) before judging — do not read the diff in isolation. If a finding depends on code outside the diff, say so in `why`.\nBLAST-RADIUS (required): for each changed PUBLIC surface you touch, note how many consumers are affected and set a breaking-change flag in `blastRadius`.\nCONFIDENCE: report everything you suspect, located. Do NOT self-censor borderline findings — verification happens downstream; each still names its harm, and its severity is the one that harm allows. Each finding needs file:line (use file:\"\" line:0 only when truly not locatable).\nWHERE-CHECKED (required field): a finding usually rests on a premise that is NOT visible at the line you cite — \"the dependency rejects this\", \"this is reachable from untrusted input\", \"no caller guards it\", \"the sibling path does X\". Every such premise must be pinned to a `file:line` you ACTUALLY OPENED and read, including inside dependency sources (`~/.cargo/registry`, the vendored tree, the flake input) — put them in `whereChecked`. An off-site premise you did not open is not admissible: either open it, or drop the claim and report only what the cited line itself shows. Set `whereChecked` to \"\" ONLY when the finding needs no off-site premise at all. Do not restate the cited defect line there — it adds nothing. Finding a dependency's source: open the version the project pins, never the newest or a remembered one, and never let a tool rewrite the lockfile to find it. For a Rust crate, take the package's `manifest_path` from `cargo metadata --locked --format-version 1` — its directory is the source of the version Cargo.lock pins (under `~/.cargo/registry`, a git checkout, or the vendored tree); if that directory is missing, run `cargo fetch --locked` first. A build or test command run before you may already have written Cargo.lock: take the lockfile cargo uses, `Cargo.lock` under the `workspace_root` from `cargo metadata --no-deps --format-version 1`, and unless `git ls-files --error-unmatch <that path>` succeeds and `git status --porcelain <that path>` is empty, the version it names is resolved today, not pinned — say so. If the reviewed checkout has no Cargo.lock (a library that does not commit one), nothing is pinned: resolve in a throwaway copy (`git worktree add --detach <tmp>` of the reviewed commit, or, when a Cargo.toml has uncommitted changes, a copy of the working tree without `target/` and `.git`), run `cargo metadata --format-version 1` there, open the sources it names, and always remove the copy (`git worktree remove <tmp>` when you added one); say the version is the one resolved today, not a pinned one, and never write Cargo.lock in the reviewed checkout. If Cargo.lock exists but `--locked` refuses (it is stale), the pinned version cannot be determined — do not run cargo without the flag: treat the premise as one you could not open. For a Nix flake input, open the input at the revision flake.lock pins, not a channel or its current head. For another ecosystem, the same way: the version from the project's lockfile, the code from the package manager's cache or the vendor directory.\nCONSUMERS: the 0 line(s) below name a symbol this diff changes or adds, outside the changed lines — callers, implementors, places passing it as a value — found by name search and structural search. Go through EVERY line: open it and judge it against the change, then list it in your answer's `consumers` as {\"site\": \"<file>:<line>\", \"status\": \"checked\"} once judged, or \"not-relevant\" when the name there is another item or the change cannot affect that use. Mark every line: a line you leave unmarked is reported as one this review did not check. A defect at one of these lines is a finding at that line. The sibling sweep (review-rules sweeps.md §1) builds its table of places from these lines first.\nNot searched by name (find their uses yourself): f (searched by path only: a call through a value, `x.f()`, not found).\nRULE ID (required field): set `ruleId` to the matching catalog ID from the rust-review skill's rules.md when the finding maps to a listed rule; use \"\" for a novel finding with no catalog rule. Do not force a bad fit.\n\nALREADY-FOUND (do not re-report these PLACES; the same class at a DIFFERENT place — error arm, record, hook, path, legacy cohort — is NOT a repeat: sibling sweep, sweeps.md §1):\nnone yet\n\nReturn {lens, findings[]}.\n\nObservability: the review workflow records this run — do NOT write your own record.",
+      "model": "opus",
+      "schema": {
+        "additionalProperties": false,
+        "properties": {
+          "blocked": {
+            "description": "whether you could look at all: couldNotLook true ONLY when you could not read the code or run the commands your task needs (a sandbox refusal, a missing checkout, a permission error), else false; never true because you found nothing or used a simpler method",
+            "properties": {
+              "couldNotLook": {
+                "type": "boolean"
+              },
+              "what": {
+                "description": "when couldNotLook is true: what failed, in one line",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "consumers": {
+            "description": "each line of the CONSUMERS list, marked once judged; a line left unmarked is reported as unchecked",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "site": {
+                  "description": "<file>:<line> as the list names it",
+                  "type": "string"
+                },
+                "status": {
+                  "enum": [
+                    "checked",
+                    "not-relevant"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "site",
+                "status"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "findings": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "blastRadius": {
+                  "description": "callers affected / breaking-change note; empty if n/a",
+                  "type": "string"
+                },
+                "deletionOrRecoveryPath": {
+                  "description": "reconciler and failure-windows lenses only: true when the defect sits on a deletion or recovery path (finalizer removal, teardown, a delete handler, crash or partial-failure recovery); omit otherwise",
+                  "type": "boolean"
+                },
+                "disposition": {
+                  "description": "open|closed|rejected|justified|deferred|covered; empty if n/a",
+                  "type": "string"
+                },
+                "externalSystem": {
+                  "description": "the external system (another project's controller, API server or service, not a library dependency) whose behaviour the finding's premise rests on, by its name; omit when none",
+                  "type": "string"
+                },
+                "file": {
+                  "description": "path; empty string if not applicable",
+                  "type": "string"
+                },
+                "fix": {
+                  "description": "direction of the fix",
+                  "type": "string"
+                },
+                "fp": {
+                  "description": "line-tolerant fingerprint; empty if not from a ledger",
+                  "type": "string"
+                },
+                "harm": {
+                  "description": "the harm this finding names: its effect, who is affected, and how they recover (by itself, by retry, by an operator's hand, not at all)",
+                  "type": "string"
+                },
+                "harmLevel": {
+                  "description": "the `harmLevel` column of the first row of the review-rules severity.md table (read top down, worst first) the harm honestly fills; the engine caps severity at that row's ceiling",
+                  "enum": [
+                    "data-loss",
+                    "security",
+                    "outage",
+                    "irreversible",
+                    "intent-unmet",
+                    "repo-rule",
+                    "operator-recovery",
+                    "self-healing",
+                    "text",
+                    "none"
+                  ],
+                  "type": "string"
+                },
+                "line": {
+                  "description": "1-based line; 0 if not applicable",
+                  "type": "integer"
+                },
+                "regression": {
+                  "description": "tests lens only, with testGap: the regression of the changed behaviour the suite lets through green, named concretely (what the running system would then do); empty when none is named — the finding then stays Low",
+                  "type": "string"
+                },
+                "regressionAt": {
+                  "description": "tests lens only, with regression: file:line of the production code the regression breaks — its reachability is judged there, not at the cited test line",
+                  "type": "string"
+                },
+                "repoRule": {
+                  "additionalProperties": false,
+                  "description": "harmLevel repo-rule only: the reviewed repository's written rule this finding breaks — omit otherwise",
+                  "properties": {
+                    "file": {
+                      "description": "the repository file that states the rule (AGENTS.md, CLAUDE.md, CONTRIBUTING.md, a documented convention), as a path from the repo root",
+                      "type": "string"
+                    },
+                    "text": {
+                      "description": "the rule, quoted from that file",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "file",
+                    "text"
+                  ],
+                  "type": "object"
+                },
+                "ruleId": {
+                  "description": "catalog rule ID from the active profile's rules.md (e.g. \"CON-003\" for rust, \"PUR-001\" for nix) if the finding maps to one; empty string otherwise",
+                  "type": "string"
+                },
+                "severity": {
+                  "enum": [
+                    "Critical",
+                    "High",
+                    "Medium",
+                    "Low",
+                    "Info"
+                  ],
+                  "type": "string"
+                },
+                "source": {
+                  "description": "lens name or tool name that produced this",
+                  "type": "string"
+                },
+                "symbol": {
+                  "description": "enclosing fn/type name; empty if unknown",
+                  "type": "string"
+                },
+                "testGap": {
+                  "description": "tests lens only: `missing` — no test pins the behaviour; `weak-assertion` — a test exists and still passes under the named regression (it asserts only a status or an annotation, a mock ignores the request body or fabricates the response, only one of two sides is covered); omit otherwise",
+                  "enum": [
+                    "missing",
+                    "weak-assertion"
+                  ],
+                  "type": "string"
+                },
+                "tier": {
+                  "description": "confirmed|suspected|unverified|refuted; empty if n/a",
+                  "type": "string"
+                },
+                "title": {
+                  "description": "one-line what is wrong",
+                  "type": "string"
+                },
+                "toolRule": {
+                  "description": "gate seeds only: the tool's own rule name copied from the tool output line that names it (clippy lint \"clippy::needless_pass_by_value\", semgrep rule id, statix code, semver-checks check name) — never from memory; omit when the output names none or the finding is not a tool's",
+                  "type": "string"
+                },
+                "whereChecked": {
+                  "description": "OFF-SITE EVIDENCE: the file:line you actually opened to establish a load-bearing premise that lives OUTSIDE the cited defect site — a dependency's behaviour, reachability from an entry point, the absence of a guard in a caller, what a sibling path does. Several may be comma-separated, each with a few words on what it shows. Empty string ONLY when the finding is fully self-contained at the cited file:line and rests on no off-site claim",
+                  "type": "string"
+                },
+                "why": {
+                  "description": "why it matters",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "severity",
+                "title",
+                "file",
+                "line",
+                "why",
+                "fix",
+                "blastRadius",
+                "source",
+                "ruleId",
+                "whereChecked"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "lens": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "lens",
+          "findings"
+        ],
+        "type": "object"
+      },
+      "agentType": "rust-reviewer",
+      "kind": "lens",
+      "profile": "rust",
+      "lens": "performance",
+      "round": 1,
+      "state": "answered",
+      "retries": 0,
+      "answer": {
+        "findings": [],
+        "lens": "performance"
+      }
+    },
+    {
+      "id": "lens-rust-tests-r1",
+      "label": "lens:rust:tests r1",
+      "prompt": "WORKING DIRECTORY: this review targets the repository at '@REPO@' — NOT the directory you start in. Before ANY git / cargo / nix / file command, `cd` there (or pass `git -C`). Every file path in this review is relative to that root. If that directory does not exist or is not a git repository, say so and stop rather than reviewing whatever repo you happen to be sitting in.\n\nYou are the **tests** review lens for a Rust diff. Review ONLY this slice; ignore everything else (other lenses cover it). Load the rust-review skill for the rubric and the rust-navigation skill for context expansion.\n\nSLICE: tests as a COVERAGE ADVERSARY (not a presence check): enumerate what a regression could SILENTLY break, then check each has a test that would FAIL on that regression. The litmus test: if you deleted the production line/branch that carries a contract, would the suite still pass green? If yes, that contract is UNTESTED → finding (cite the missing test). Cover, at minimum: (a) every NEW branch and every distinct ERROR CONTRACT the code / handler / OpenAPI (or other documented interface) promises — not-found→404, forbidden / wrong-owner, bad-request→400, conflict→409, a typed 4xx that must not collapse into a 500 — each needs a test asserting THAT status/error, not just the happy path; (b) every SECURITY / AUTHORIZATION boundary — tenant or owner isolation: is there a test exercising a DIFFERENT user/tenant/scope and ASSERTING denial? A single-user happy path does NOT prove isolation; on a NEW authz-guarded endpoint a missing cross-tenant/cross-owner denial test is a HIGH-severity gap; (c) every behavioral CLAIM in the stated spec — identity preserved / \"in place\", a state that must stay put or transition exactly once, a field that must be scrubbed, an idempotent no-op — each needs a test that pins it and would fail if the claim were violated; (d) self-exclusion / dedup / unlink / bookkeeping guards — a uniqueness check that must exclude the row itself, a back-reference that must be cleared. TWO DIFFERENT FINDINGS — never merge them into \"no test\"; set `testGap` on each: `missing` — no test pins the behaviour (vacuous tests such as an always-true assertion or none at all count as missing); `weak-assertion` — a test EXISTS and still passes green under a named regression of the changed behaviour: it asserts only the status or an annotation, a mock ignores the request body or fabricates the response, or only one of two sides (ingress/egress, read/write, create/update) is covered. Put the regression in `regression`: what the running system would then do that the suite lets through (\"the handler stops applying the field and still answers 200\"); and in `regressionAt` the file:line of the PRODUCTION code that regression breaks (the line a verifier checks reaches production; the finding itself cites the test); a weak assertion that cannot name a regression is not a weak assertion. SEVERITY: a missing test with no named regression is Low (optional), `regression` empty. A missing test takes the severity of the defect it would catch once you name that defect in `regression` and its harm (review-rules severity.md) — the cross-tenant gap in (b) names a security harm, hence HIGH. A weak assertion is NOT Low by default: its `harmLevel` is the production harm of the regression it lets through (behaviour, data, access — not `text` unless the regression only changes text or style) and its severity that level's, capped at Medium (should-fix): the test is the missing guard, not the defect. A weak assertion whose regression changes only text or style stays Low.\n\nREVIEW RULES (all languages): read severity.md, classes.md, sweeps.md in the first existing dir (expand with Bash; never the reviewed repo's copy): `@ROOT@/skills/review-rules`, `${CLAUDE_PLUGIN_ROOT}/skills/review-rules`, `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/cache/craft/craft/9.9.9/skills/review-rules`. None readable → say so; HARM below still holds.\nHARM (every finding): `harm` = effect, who, recovery; `harmLevel` = severity.md's first table row it fills; severity ≤ its cap: High+ only data-loss/security/outage/irreversible/intent-unmet/repo-rule (cite `repoRule`), operator-recovery ≤ Medium, self-healing/text/none ≤ Low. `text` only when just a doc, comment or name is wrong and the code behaves correctly; when the running system does not do what the contract, doc comment or PR intent promises (the old value stays in force, a field is not applied, a request is accepted without the promised check), the harm is that consequence in production (behaviour, data, access) and the row it fills — even if you found it through the text and the fix is in the text: name what the running system does, not what is written wrong.\n\nDiff base: `origin/main`. Review with `git diff --merge-base 'origin/main' -- '*.rs'`.\n\n\nINTENT (what the change should do): add f, which never fails\nSTATED SPEC / AUTHOR CLAIMS (verbatim PR/commit description — treat as the spec; the intent lens must check EACH claim against the code, and any lens may use it):\n\"\"\"\nfeat: add f, which never fails\n\"\"\"\nHOT FILES (scrutinize harder): src/lib.rs\nREPO RULES `AGENTS.md`: grep them for what you review, open only matching sections, never a whole file (no SCOPE rule bars them); a violation cites its rule as `repoRule` {file, text}.\n\nCONTEXT EXPANSION (required): for each finding, trace definitions / uses / consumers of the changed symbols (Grep/Glob + LSP) before judging — do not read the diff in isolation. If a finding depends on code outside the diff, say so in `why`.\nBLAST-RADIUS (required): for each changed PUBLIC surface you touch, note how many consumers are affected and set a breaking-change flag in `blastRadius`.\nCONFIDENCE: report everything you suspect, located. Do NOT self-censor borderline findings — verification happens downstream; each still names its harm, and its severity is the one that harm allows. Each finding needs file:line (use file:\"\" line:0 only when truly not locatable).\nWHERE-CHECKED (required field): a finding usually rests on a premise that is NOT visible at the line you cite — \"the dependency rejects this\", \"this is reachable from untrusted input\", \"no caller guards it\", \"the sibling path does X\". Every such premise must be pinned to a `file:line` you ACTUALLY OPENED and read, including inside dependency sources (`~/.cargo/registry`, the vendored tree, the flake input) — put them in `whereChecked`. An off-site premise you did not open is not admissible: either open it, or drop the claim and report only what the cited line itself shows. Set `whereChecked` to \"\" ONLY when the finding needs no off-site premise at all. Do not restate the cited defect line there — it adds nothing. Finding a dependency's source: open the version the project pins, never the newest or a remembered one, and never let a tool rewrite the lockfile to find it. For a Rust crate, take the package's `manifest_path` from `cargo metadata --locked --format-version 1` — its directory is the source of the version Cargo.lock pins (under `~/.cargo/registry`, a git checkout, or the vendored tree); if that directory is missing, run `cargo fetch --locked` first. A build or test command run before you may already have written Cargo.lock: take the lockfile cargo uses, `Cargo.lock` under the `workspace_root` from `cargo metadata --no-deps --format-version 1`, and unless `git ls-files --error-unmatch <that path>` succeeds and `git status --porcelain <that path>` is empty, the version it names is resolved today, not pinned — say so. If the reviewed checkout has no Cargo.lock (a library that does not commit one), nothing is pinned: resolve in a throwaway copy (`git worktree add --detach <tmp>` of the reviewed commit, or, when a Cargo.toml has uncommitted changes, a copy of the working tree without `target/` and `.git`), run `cargo metadata --format-version 1` there, open the sources it names, and always remove the copy (`git worktree remove <tmp>` when you added one); say the version is the one resolved today, not a pinned one, and never write Cargo.lock in the reviewed checkout. If Cargo.lock exists but `--locked` refuses (it is stale), the pinned version cannot be determined — do not run cargo without the flag: treat the premise as one you could not open. For a Nix flake input, open the input at the revision flake.lock pins, not a channel or its current head. For another ecosystem, the same way: the version from the project's lockfile, the code from the package manager's cache or the vendor directory.\nCONSUMERS: the 0 line(s) below name a symbol this diff changes or adds, outside the changed lines — callers, implementors, places passing it as a value — found by name search and structural search. Go through EVERY line: open it and judge it against the change, then list it in your answer's `consumers` as {\"site\": \"<file>:<line>\", \"status\": \"checked\"} once judged, or \"not-relevant\" when the name there is another item or the change cannot affect that use. Mark every line: a line you leave unmarked is reported as one this review did not check. A defect at one of these lines is a finding at that line. The sibling sweep (review-rules sweeps.md §1) builds its table of places from these lines first.\nNot searched by name (find their uses yourself): f (searched by path only: a call through a value, `x.f()`, not found).\nRULE ID (required field): set `ruleId` to the matching catalog ID from the rust-review skill's rules.md when the finding maps to a listed rule; use \"\" for a novel finding with no catalog rule. Do not force a bad fit.\n\nALREADY-FOUND (do not re-report these PLACES; the same class at a DIFFERENT place — error arm, record, hook, path, legacy cohort — is NOT a repeat: sibling sweep, sweeps.md §1):\nnone yet\n\nReturn {lens, findings[]}.\n\nObservability: the review workflow records this run — do NOT write your own record.",
+      "model": "opus",
+      "schema": {
+        "additionalProperties": false,
+        "properties": {
+          "blocked": {
+            "description": "whether you could look at all: couldNotLook true ONLY when you could not read the code or run the commands your task needs (a sandbox refusal, a missing checkout, a permission error), else false; never true because you found nothing or used a simpler method",
+            "properties": {
+              "couldNotLook": {
+                "type": "boolean"
+              },
+              "what": {
+                "description": "when couldNotLook is true: what failed, in one line",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "consumers": {
+            "description": "each line of the CONSUMERS list, marked once judged; a line left unmarked is reported as unchecked",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "site": {
+                  "description": "<file>:<line> as the list names it",
+                  "type": "string"
+                },
+                "status": {
+                  "enum": [
+                    "checked",
+                    "not-relevant"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "site",
+                "status"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "findings": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "blastRadius": {
+                  "description": "callers affected / breaking-change note; empty if n/a",
+                  "type": "string"
+                },
+                "deletionOrRecoveryPath": {
+                  "description": "reconciler and failure-windows lenses only: true when the defect sits on a deletion or recovery path (finalizer removal, teardown, a delete handler, crash or partial-failure recovery); omit otherwise",
+                  "type": "boolean"
+                },
+                "disposition": {
+                  "description": "open|closed|rejected|justified|deferred|covered; empty if n/a",
+                  "type": "string"
+                },
+                "externalSystem": {
+                  "description": "the external system (another project's controller, API server or service, not a library dependency) whose behaviour the finding's premise rests on, by its name; omit when none",
+                  "type": "string"
+                },
+                "file": {
+                  "description": "path; empty string if not applicable",
+                  "type": "string"
+                },
+                "fix": {
+                  "description": "direction of the fix",
+                  "type": "string"
+                },
+                "fp": {
+                  "description": "line-tolerant fingerprint; empty if not from a ledger",
+                  "type": "string"
+                },
+                "harm": {
+                  "description": "the harm this finding names: its effect, who is affected, and how they recover (by itself, by retry, by an operator's hand, not at all)",
+                  "type": "string"
+                },
+                "harmLevel": {
+                  "description": "the `harmLevel` column of the first row of the review-rules severity.md table (read top down, worst first) the harm honestly fills; the engine caps severity at that row's ceiling",
+                  "enum": [
+                    "data-loss",
+                    "security",
+                    "outage",
+                    "irreversible",
+                    "intent-unmet",
+                    "repo-rule",
+                    "operator-recovery",
+                    "self-healing",
+                    "text",
+                    "none"
+                  ],
+                  "type": "string"
+                },
+                "line": {
+                  "description": "1-based line; 0 if not applicable",
+                  "type": "integer"
+                },
+                "regression": {
+                  "description": "tests lens only, with testGap: the regression of the changed behaviour the suite lets through green, named concretely (what the running system would then do); empty when none is named — the finding then stays Low",
+                  "type": "string"
+                },
+                "regressionAt": {
+                  "description": "tests lens only, with regression: file:line of the production code the regression breaks — its reachability is judged there, not at the cited test line",
+                  "type": "string"
+                },
+                "repoRule": {
+                  "additionalProperties": false,
+                  "description": "harmLevel repo-rule only: the reviewed repository's written rule this finding breaks — omit otherwise",
+                  "properties": {
+                    "file": {
+                      "description": "the repository file that states the rule (AGENTS.md, CLAUDE.md, CONTRIBUTING.md, a documented convention), as a path from the repo root",
+                      "type": "string"
+                    },
+                    "text": {
+                      "description": "the rule, quoted from that file",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "file",
+                    "text"
+                  ],
+                  "type": "object"
+                },
+                "ruleId": {
+                  "description": "catalog rule ID from the active profile's rules.md (e.g. \"CON-003\" for rust, \"PUR-001\" for nix) if the finding maps to one; empty string otherwise",
+                  "type": "string"
+                },
+                "severity": {
+                  "enum": [
+                    "Critical",
+                    "High",
+                    "Medium",
+                    "Low",
+                    "Info"
+                  ],
+                  "type": "string"
+                },
+                "source": {
+                  "description": "lens name or tool name that produced this",
+                  "type": "string"
+                },
+                "symbol": {
+                  "description": "enclosing fn/type name; empty if unknown",
+                  "type": "string"
+                },
+                "testGap": {
+                  "description": "tests lens only: `missing` — no test pins the behaviour; `weak-assertion` — a test exists and still passes under the named regression (it asserts only a status or an annotation, a mock ignores the request body or fabricates the response, only one of two sides is covered); omit otherwise",
+                  "enum": [
+                    "missing",
+                    "weak-assertion"
+                  ],
+                  "type": "string"
+                },
+                "tier": {
+                  "description": "confirmed|suspected|unverified|refuted; empty if n/a",
+                  "type": "string"
+                },
+                "title": {
+                  "description": "one-line what is wrong",
+                  "type": "string"
+                },
+                "toolRule": {
+                  "description": "gate seeds only: the tool's own rule name copied from the tool output line that names it (clippy lint \"clippy::needless_pass_by_value\", semgrep rule id, statix code, semver-checks check name) — never from memory; omit when the output names none or the finding is not a tool's",
+                  "type": "string"
+                },
+                "whereChecked": {
+                  "description": "OFF-SITE EVIDENCE: the file:line you actually opened to establish a load-bearing premise that lives OUTSIDE the cited defect site — a dependency's behaviour, reachability from an entry point, the absence of a guard in a caller, what a sibling path does. Several may be comma-separated, each with a few words on what it shows. Empty string ONLY when the finding is fully self-contained at the cited file:line and rests on no off-site claim",
+                  "type": "string"
+                },
+                "why": {
+                  "description": "why it matters",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "severity",
+                "title",
+                "file",
+                "line",
+                "why",
+                "fix",
+                "blastRadius",
+                "source",
+                "ruleId",
+                "whereChecked"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "lens": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "lens",
+          "findings"
+        ],
+        "type": "object"
+      },
+      "agentType": "rust-reviewer",
+      "kind": "lens",
+      "profile": "rust",
+      "lens": "tests",
+      "round": 1,
+      "state": "answered",
+      "retries": 0,
+      "answer": {
+        "findings": [],
+        "lens": "tests"
+      }
+    }
+  ],
+  "rounds": {
+    "round": 1,
+    "pool": [],
+    "yields": [],
+    "expected": [],
+    "returned": [],
+    "failures": {}
+  },
+  "findings": [],
+  "settled": [],
+  "notes": [
+    "the complexity lens did not run: the codebase-memory index is unavailable (no review profile directory) -> the metrics-or-nothing lenses dropped"
+  ],
+  "notRun": [],
+  "chain": {
+    "repo": "@REPO@/.git",
+    "branch": "main",
+    "round": 1,
+    "base": "origin/main",
+    "prior": null,
+    "unchained": "no earlier round of this branch is on HEAD's history",
+    "rescan": null,
+    "priors": [],
+    "tombstones": [],
+    "absorbed": 0,
+    "regressions": 0,
+    "ledger": [],
+    "startedAtMs": 1795375523029
+  },
+  "memory": {
+    "decisions": [],
+    "refused": [],
+    "source": {
+      "source": "none",
+      "count": 0,
+      "why": "not recalled — the launcher asked for none (--no-recall): only its own records apply"
+    },
+    "setAside": []
+  },
+  "gate": {
+    "skipped": "skipped on request (`--no-gate`): no tool built, linted or ran the branch's code"
+  },
+  "critic": {
+    "stage": "before"
+  },
+  "extra": {
+    "how": "off",
+    "reached": false
+  },
+  "units": {
+    "asked": false
+  },
+  "watch": {
+    "round": "lens round 1",
+    "live": true
+  },
+  "publish": {},
+  "telemetry": {
+    "rounds": {},
+    "answered": [],
+    "lenses": {}
+  }
+}

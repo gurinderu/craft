@@ -162,7 +162,7 @@ fn vote(run: &RunState, i: usize, f: &Value, k: u32) -> Result<Task, ContentErro
             voter: k,
         },
     );
-    task.graph = crate::complexity::is_metric(f);
+    task.flags.graph = crate::complexity::is_metric(f);
     Ok(task)
 }
 

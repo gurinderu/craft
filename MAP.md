@@ -315,7 +315,10 @@ schema in its `tasks/` and each answer in its `answers/`, so no model copies the
 into the run store through `crates/craft-store`, which writes the checkpoints, the record and its index line byte for byte as
 `integrations/shared/craft-log-run.mjs` does, with no node, keeping what it needs between steps in `filing.json`, including the stopped parts whose
 record has not landed, which every `--resume` files again first; `craft review status` carries that `filing` — the
-record, its file and the step the run ended with — for a host that lost the step that said it), `crates/craft-store` (the run store's writer and its streaming reader, its output held to
+record, its file and the step the run ended with — for a host that lost the step that said it), `crates/craft-step` (the step protocol
+every kind of run shares, review now: the task and its kind, its prompt, schema and answer files, the answer checked against
+its schema and asked for again, the pending step and a task's status line; the review is its first kind, its phases, lenses,
+memory and verification its own), `crates/craft-store` (the run store's writer and its streaming reader, its output held to
 the JavaScript writer's by `content/parity/store-cases.json`) and `crates/craft-tui` (progress as a phases → agents tree
 on a terminal, one line per event otherwise); `test-support/` holds the one copy of a helper every crate's tests
 include by path (an executable a test writes and runs). In `craft-store`, `js/string.rs` holds lossless JavaScript

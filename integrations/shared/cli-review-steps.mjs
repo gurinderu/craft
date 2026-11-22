@@ -23,6 +23,7 @@ import { absolutePath, argumentRefused, commandOutput, isObject, readStep } from
 import { briefOf, endedOf, standingOf, statusUnreadable } from './cli-review-ended.mjs'
 import { harnessRefused, harnessStop } from './cli-review-refusal.mjs'
 import { gateAnswer, gateCommand, gateShell } from './cli-review-gate.mjs'
+import { stepRounds } from './cli-step-loop.mjs'
 import { telemetryLostSection } from './review-coverage.mjs'
 import { argumentRefusal } from './run-record.mjs'
 import { normalizeArgs } from './workflow-args.mjs'
@@ -305,6 +306,7 @@ function stoppedAt(standing, read, run, bin) {
 /** @typedef {import('./cli-review-ended.mjs').Brief} Brief */
 /** @typedef {{ finished: Finished } | { stopped: string } | { unrecorded: string } | { unread: Brief } | { refused: string }} Ending  refused: the binary's start refused an argument, before any work; unrecorded: the binary finished the run but left nothing to file its record from; unread: the binary ended it, but only its brief status could be read */
 /** @typedef {ReturnType<typeof cliRecorder>} Recorder */
+/** @typedef {import('./cli-step-loop.mjs').Rounds<Exclude<Step, Finished>, Finished, Ending>} Rounds  the review's part of the step rounds */
 
 /**
  * The run of one review, then its answer — the verdict block, and the telemetry section when a write did not land. A
@@ -583,39 +585,34 @@ async function rounds(sb, bin, first, serve, recorder) {
   // engine's agents are its review agents; the service steps that run the binary are not.
   // Counted inside the limit's watch, so a call it answers without dispatching once the limit is seen is not.
   const tasks = taskRunner({ ...sb, agent: sb.limit.tasks(sb.clock.counted(sb.agent)) }, () => !!sb.limit.seen())
-  /** @type {{ step: Step } | { error: string, harness?: string }} */
-  let read = { step: first }
-  for (let round = 1; ; round++) {
-    if ('error' in read) {
+  /** @type {Rounds} */
+  const review = {
+    maxRounds: MAX_ROUNDS,
+    dispatch: async (step, round) => {
+      sb.phase('Agents')
+      sb.log(`round ${round}: ${step.tasks.length} task(s) — ${step.tasks.map(t => t.label).join(', ')}`)
+      // No schema: the binary checks each answer file. A dead agent leaves no file, which the binary asks for again.
+      await sb.parallel(step.tasks.map(t => () => tasks.run(t)))
+    },
+    submit: async (step, round) => {
+      sb.phase('Submit')
+      if (sb.limit.seen())
+        sb.log(`\u26d4 usage limit reached (${sb.limit.seen()}) — no further review agents are dispatched; the run reports what it has as INCOMPLETE`)
+      const said = { degraded: tasks.degraded(round), abandoned: tasks.abandoned(), limit: sb.limit.seen() }
+      return readStep(await submitStep(serve, `step:submit:${round}`, 'Submit', bin, step.run, said, spentSoFar(sb)))
+    },
+    heard: step => {
+      sb.clock.observe(step)
+      recorder.heard(step)
+    },
+    lost: async read => {
       const truth = await recovered(sb, bin, first.run, serve, recorder)
       return 'standing' in truth ? { stopped: stoppedAt(truth.standing, read, first.run, bin) } : truth
-    }
-    const step = read.step
-    if (step.done) return { finished: step }
-    if (round > MAX_ROUNDS) return { stopped: `review gave up after ${MAX_ROUNDS} rounds; the run is in ${step.run}. ${resumeHint(step.run)}` }
-    sb.phase('Agents')
-    sb.log(`round ${round}: ${step.tasks.length} task(s) — ${step.tasks.map(t => t.label).join(', ')}`)
-    // No schema: the binary checks each answer file. A dead agent leaves no file, which the binary asks for again.
-    await sb.parallel(step.tasks.map(t => () => tasks.run(t)))
-    sb.phase('Submit')
-    if (sb.limit.seen())
-      sb.log(`\u26d4 usage limit reached (${sb.limit.seen()}) — no further review agents are dispatched; the run reports what it has as INCOMPLETE`)
-    read = readStep(
-      await submitStep(
-        serve,
-        `step:submit:${round}`,
-        'Submit',
-        bin,
-        step.run,
-        { degraded: tasks.degraded(round), abandoned: tasks.abandoned(), limit: sb.limit.seen() },
-        spentSoFar(sb),
-      ),
-    )
-    if ('step' in read) {
-      sb.clock.observe(read.step)
-      recorder.heard(read.step)
-    }
+    },
+    gaveUp: step => ({ stopped: `review gave up after ${MAX_ROUNDS} rounds; the run is in ${step.run}. ${resumeHint(step.run)}` }),
+    finished: step => ({ finished: step }),
   }
+  return stepRounds(first, review)
 }
 
 /**
