@@ -113,7 +113,9 @@ the Rust and Nix profiles `extends`, each lens of their own replacing the genera
 added, `exclude` leaving out those that do not fit, `securityFloor` naming what the security floor adds —
 resolved once at load by
 `cli/crates/craft-review/src/profile/inherit.rs`) — is data under `content/`, compiled into the Rust CLI; the
-templates an engine still renders itself (memory recall among them) are inlined into it by the build.
+templates an engine still renders itself (memory recall among them, and `triage-findings`' gather, validate and plan
+prompts and answer schemas, `content/prompts/triage-*.md` and `content/schemas/triage-*.schema.json`, read through
+`integrations/shared/triage-content.mjs`) are inlined into it by the build.
 
 | Workflow | Composes | Output |
 |---|---|---|
@@ -321,7 +323,11 @@ record, its file and the step the run ended with — for a host that lost the st
 every kind of run shares, review now: the task and its kind, its prompt, schema and answer files, the answer checked against
 its schema and asked for again, the pending step and a task's status line; the review is its first kind, its phases, lenses,
 memory and verification its own), `crates/craft-store` (the run store's writer and its streaming reader, its output held to
-the JavaScript writer's by `content/parity/store-cases.json`) and `crates/craft-tui` (progress as a phases → agents tree
+the JavaScript writer's by `content/parity/store-cases.json`), `crates/craft-triage` (the triage of findings as the binary
+will run it, for now its pure logic only — ids and sites, repeats collapsed, a prior ledger's settled verdicts carried,
+the noise classes and the issue class 1 files, the plan's ledger pinned, the plan's banners and the run record — held
+to `triage-findings` by `content/parity/triage-cases.json`, which `integrations/shared/triage-parity.test.mjs` writes)
+and `crates/craft-tui` (progress as a phases → agents tree
 on a terminal, one line per event otherwise); `test-support/` holds the one copy of a helper every crate's tests
 include by path (an executable a test writes and runs). In `craft-store`, `js/string.rs` holds lossless JavaScript
 strings, `filing.rs` replays pending writes through `filing_io.rs`'s publication primitives, and `lock/turn.rs` coordinates local writers

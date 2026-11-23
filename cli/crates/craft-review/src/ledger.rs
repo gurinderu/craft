@@ -124,7 +124,8 @@ fn shingle(title: &str) -> Vec<String> {
 }
 
 /// How much two titles share, as `shingleOverlap`: common words over the larger set.
-pub(crate) fn overlap(a: &str, b: &str) -> f64 {
+#[must_use]
+pub fn overlap(a: &str, b: &str) -> f64 {
     let (mut sa, mut sb) = (shingle(a), shingle(b));
     sa.dedup();
     sb.dedup();

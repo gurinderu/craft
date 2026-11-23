@@ -6,6 +6,7 @@ members = [
     "crates/craft-review",
     "crates/craft-step",
     "crates/craft-store",
+    "crates/craft-triage",
     "crates/craft-tui",
 ]
 
@@ -40,6 +41,7 @@ craft-agent = { path = "crates/craft-agent" }
 craft-review = { path = "crates/craft-review" }
 craft-step = { path = "crates/craft-step" }
 craft-store = { path = "crates/craft-store" }
+craft-triage = { path = "crates/craft-triage" }
 craft-tui = { path = "crates/craft-tui" }
 
 # Lints every member opts into with `[lints] workspace = true`. All are `warn`:

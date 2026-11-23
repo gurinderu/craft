@@ -399,6 +399,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "craft-triage"
+version = "0.58.0"
+dependencies = [
+ "craft-review",
+ "regex",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "craft-tui"
 version = "0.58.0"
 dependencies = [
