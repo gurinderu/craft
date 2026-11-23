@@ -10,6 +10,8 @@
 //! and the step names any still pending.
 
 mod kept;
+#[cfg(test)]
+mod old_format_tests;
 mod resume;
 mod root;
 #[cfg(test)]
@@ -121,7 +123,8 @@ pub(super) fn unfiled(filing: &Filing) -> Option<Value> {
 /// write did; `None` when the run files no telemetry, is not finished — a stopped run is resumed,
 /// not re-filed — or its record is filed.
 pub fn refile(run: &Path, earlier: Vec<String>, w: &dyn Writer) -> Option<Value> {
-    let done = crate::state::load(run).is_ok_and(|s| s.phase == crate::state::Phase::Done);
+    // Read whatever the state's format: an earlier binary's run is filed before it is refused.
+    let done = crate::state::phase_of(run) == Some(crate::state::Phase::Done);
     if done {
         file_again(run, earlier, w)
     } else {

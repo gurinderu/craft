@@ -19,8 +19,19 @@ use crate::units::Units;
 
 pub use craft_step::{MAX_RETRIES, TaskState};
 
-/// The state file's format; a run written by another format is refused, not misread.
-pub const STATE_VERSION: u32 = 6;
+/// The state file's format; a run written by another format is refused, not misread. Format 7
+/// came with 0.59.0, whose metrics lenses and their verifier judge from the graph's numbers the
+/// binary read at the start, which no run of format 6 holds (realm @nick/craft, node #618).
+pub const STATE_VERSION: u32 = 7;
+
+/// Who wrote a run state of format `found`, for the refusal's words.
+fn written_by(found: u32) -> String {
+    if found < STATE_VERSION {
+        format!("a craft before 0.59.0 (format {found})")
+    } else {
+        format!("a newer craft (format {found})")
+    }
+}
 
 /// Why a run's state could not be read or written.
 #[derive(Debug, thiserror::Error)]
@@ -37,7 +48,13 @@ pub enum StateError {
         #[source]
         source: serde_json::Error,
     },
-    #[error("the run state {} is format {found}, this craft reads {STATE_VERSION}", path.display())]
+    #[error(
+        "the run state {} was written by {}; this craft reads format {STATE_VERSION} only and cannot go \
+         on with it: start a new review — `craft review start`, or a new launch of the review \
+         workflow",
+        path.display(),
+        written_by(*found)
+    )]
     Version { path: PathBuf, found: u32 },
     #[error(transparent)]
     Encode(#[from] serde_json::Error),
@@ -353,6 +370,18 @@ pub fn load(dir: &Path) -> Result<RunState, StateError> {
         });
     }
     Ok(state)
+}
+
+/// The phase the state in `dir` records, whatever its format: what the run's telemetry needs to
+/// file an earlier binary's run before [`load`] refuses it; `None` when it cannot be read.
+#[must_use]
+pub fn phase_of(dir: &Path) -> Option<Phase> {
+    #[derive(Deserialize)]
+    struct Only {
+        phase: Phase,
+    }
+    let text = std::fs::read_to_string(state_path(dir)).ok()?;
+    serde_json::from_str::<Only>(&text).ok().map(|o| o.phase)
 }
 
 /// Writes the run's state into `dir`, whole or not at all.

@@ -478,11 +478,20 @@ pub(crate) fn submit_step(args: &SubmitArgs) -> Result<Value> {
         abandoned: &args.abandoned,
     };
     let stepped = step::submit_with(&run, given.as_ref(), &said).map_err(|e| {
-        // A refused resume still says what its re-filing of the stopped parts lost.
-        let told = if earlier.is_empty() {
+        // A refused resume still says what its re-filing of the stopped parts lost; a run another
+        // format wrote, which goes on no further, files its open segment as INCOMPLETE first.
+        let mut lost = earlier.clone();
+        if let craft_review::Error::State(craft_review::state::StateError::Version { .. }) = &e {
+            let why = e.to_string();
+            lost.extend(
+                filing::unfinished(&run, &why, &crate::filing_worker::BoundedWriter)
+                    .unwrap_or_default(),
+            );
+        }
+        let told = if lost.is_empty() {
             String::new()
         } else {
-            format!(" (the run's telemetry: {})", earlier.join("; "))
+            format!(" (the run's telemetry: {})", lost.join("; "))
         };
         anyhow::anyhow!("{e:#}{told}")
     });

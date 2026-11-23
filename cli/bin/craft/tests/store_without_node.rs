@@ -159,3 +159,43 @@ fn a_scope_without_its_tokens_is_refused() {
     let err = String::from_utf8_lossy(&said.stderr);
     assert!(err.contains("--output-tokens"), "{err}");
 }
+
+/// The records filed under `home`'s run store, as text.
+fn records(home: &Path) -> Vec<String> {
+    let Ok(dir) = std::fs::read_dir(home.join(".craft/runs")) else {
+        return Vec::new();
+    };
+    dir.filter_map(Result::ok)
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|x| x == "json"))
+        .filter_map(|p| std::fs::read_to_string(p).ok())
+        .collect()
+}
+
+#[test]
+fn a_run_an_earlier_format_wrote_files_its_open_segment_incomplete_then_is_refused() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (run, home, path, out) = started(tmp.path());
+    assert!(out.status.success());
+    // The state as a craft before 0.59.0 left it: format 6.
+    let file = run.join("state.json");
+    let mut state: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+    state["version"] = serde_json::json!(6);
+    std::fs::write(&file, state.to_string()).unwrap();
+    assert!(records(&home).is_empty());
+    let said = submit(&run, &home, &path, &[]);
+    assert!(!said.status.success());
+    let err = String::from_utf8_lossy(&said.stderr);
+    assert!(
+        err.contains("a craft before 0.59.0 (format 6)") && err.contains("`craft review start`"),
+        "{err}"
+    );
+    let filed = records(&home);
+    assert!(
+        filed
+            .iter()
+            .any(|r| r.contains("\"verdict\": \"INCOMPLETE\"") && r.contains("format 6") && false),
+        "{filed:?}"
+    );
+}

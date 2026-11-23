@@ -10,13 +10,13 @@ use super::*;
 /// order; one with no answer left lands (a checkpoint into `/store/.partial/a`, the record filed
 /// into `/store/r.json`).
 #[derive(Default)]
-struct Fake {
+pub(super) struct Fake {
     calls: RefCell<Vec<(String, Value)>>,
     answers: RefCell<VecDeque<(&'static str, Result<Value, WriteError>)>>,
 }
 
 impl Fake {
-    fn answering(script: Vec<(&'static str, Result<Value, WriteError>)>) -> Self {
+    pub(super) fn answering(script: Vec<(&'static str, Result<Value, WriteError>)>) -> Self {
         Self {
             answers: RefCell::new(script.into()),
             ..Self::default()
@@ -27,7 +27,7 @@ impl Fake {
         self.calls.borrow().iter().map(|(c, _)| c.clone()).collect()
     }
 
-    fn request(&self, i: usize) -> Value {
+    pub(super) fn request(&self, i: usize) -> Value {
         self.calls.borrow()[i].1.clone()
     }
 }
@@ -70,7 +70,7 @@ impl Writer for Fake {
     }
 }
 
-fn ctx() -> Ctx {
+pub(super) fn ctx() -> Ctx {
     Ctx {
         repo: "/r".into(),
         head: "abc".into(),
@@ -84,11 +84,11 @@ fn ctx() -> Ctx {
     }
 }
 
-fn pending(phase: &str, at: u64) -> Value {
+pub(super) fn pending(phase: &str, at: u64) -> Value {
     json!({"run": "/run", "done": false, "tasks": [], "phase": phase, "at": at, "took": 5})
 }
 
-fn finished(at: u64) -> Value {
+pub(super) fn finished(at: u64) -> Value {
     json!({"run": "/run", "done": true, "report": "/run/report.md", "verdict": "Approve", "at": at, "took": 5})
 }
 

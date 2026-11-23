@@ -66,16 +66,6 @@ pub enum StepError {
     Changed(String),
     #[error("the run has no plan")]
     NoPlan,
-    /// A run an earlier binary started whose plan runs a metrics lens
-    /// ([`crate::complexity::predates_table`]).
-    #[error(
-        "the run in {} was started by a craft before 0.59.0, whose complexity lens read the code \
-         graph's numbers itself; this craft hands them to the lens in its prompt and holds none \
-         for this run, so it cannot go on with it: start a new review — `craft review start`, \
-         or a new launch of the review workflow",
-        .0.display()
-    )]
-    BeforeMetricsTable(PathBuf),
     #[error("writing {}", path.display())]
     NoReport {
         path: PathBuf,
@@ -304,9 +294,6 @@ pub fn submit_with(
     let mut run = state::load(dir)?;
     if run.phase == Phase::Done {
         return Err(StepError::Done(dir.to_owned()).into());
-    }
-    if crate::complexity::predates_table(&run, &crate::phases::profiles_of(&run)?) {
-        return Err(StepError::BeforeMetricsTable(dir.to_owned()).into());
     }
     if said.resume || (run.stopped.is_some() && said.limit.is_none()) {
         crate::resume::unmoved(&run)?;
