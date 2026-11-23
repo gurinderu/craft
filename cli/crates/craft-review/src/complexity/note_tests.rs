@@ -51,14 +51,28 @@ fn two_parts() -> RunState {
 fn the_plans_lens_and_one_the_critic_admits_share_one_note() {
     let profiles = [Profile::rust().unwrap(), Profile::load("general").unwrap()];
     let mut run = two_parts();
+    let host = "round 1: 3 task(s) ran on the default agent type instead".to_owned();
+    run.degraded.push(host.clone());
     note_unmeasured(&mut run, &profiles, |_| false);
-    assert_eq!(run.degraded.len(), 1, "{:?}", run.degraded);
-    assert!(!run.degraded[0].contains("web/c.ts"), "{:?}", run.degraded);
+    assert_eq!(run.degraded.len(), 2, "{:?}", run.degraded);
+    assert!(!run.degraded[1].contains("web/c.ts"), "{:?}", run.degraded);
+    let other = "1 lens task(s) named no rubric file they read whole".to_owned();
+    run.degraded.push(other.clone());
     note_unmeasured(&mut run, &profiles, |p| p.id == "general");
-    assert_eq!(run.degraded.len(), 1, "one note: {:?}", run.degraded);
+    let unmeasured: Vec<&String> = run
+        .degraded
+        .iter()
+        .filter(|d| d.starts_with(super::look::UNMEASURED))
+        .collect();
+    assert_eq!(unmeasured.len(), 1, "one note: {:?}", run.degraded);
     assert!(
-        run.degraded[0].contains("src/b.rs") && run.degraded[0].contains("web/c.ts"),
+        unmeasured[0].contains("src/b.rs") && unmeasured[0].contains("web/c.ts"),
         "{:?}",
+        run.degraded
+    );
+    assert!(
+        run.degraded.starts_with(&[host, other]),
+        "the other notes kept, in order: {:?}",
         run.degraded
     );
 }
