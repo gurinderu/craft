@@ -24,12 +24,22 @@ pub use craft_step::{MAX_RETRIES, TaskState};
 /// binary read at the start, which no run of format 6 holds (realm @nick/craft, node #618).
 pub const STATE_VERSION: u32 = 7;
 
-/// Who wrote a run state of format `found`, for the refusal's words.
-fn written_by(found: u32) -> String {
+/// Why the run state at `path`, of format `found`, is refused, and what to do: a run an earlier
+/// craft wrote cannot go on, so a new review is started; one a newer craft wrote goes on under it.
+fn refusal(path: &Path, found: u32) -> String {
+    let path = path.display();
     if found < STATE_VERSION {
-        format!("a craft before 0.59.0 (format {found})")
+        format!(
+            "the run state {path} was written by a craft before 0.59.0 (format {found}); this \
+             craft reads format {STATE_VERSION} only and cannot go on with it: start a new review \
+             — `craft review start`, or a new launch of the review workflow"
+        )
     } else {
-        format!("a newer craft (format {found})")
+        format!(
+            "the run state {path} was written by a newer craft (format {found}); this craft reads \
+             format {STATE_VERSION} only: go on with the run under the craft that started it, or \
+             update this one"
+        )
     }
 }
 
@@ -48,13 +58,7 @@ pub enum StateError {
         #[source]
         source: serde_json::Error,
     },
-    #[error(
-        "the run state {} was written by {}; this craft reads format {STATE_VERSION} only and cannot go \
-         on with it: start a new review — `craft review start`, or a new launch of the review \
-         workflow",
-        path.display(),
-        written_by(*found)
-    )]
+    #[error("{}", refusal(path, *found))]
     Version { path: PathBuf, found: u32 },
     #[error(transparent)]
     Encode(#[from] serde_json::Error),

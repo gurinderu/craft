@@ -23,7 +23,7 @@ impl Fake {
         }
     }
 
-    fn commands(&self) -> Vec<String> {
+    pub(super) fn commands(&self) -> Vec<String> {
         self.calls.borrow().iter().map(|(c, _)| c.clone()).collect()
     }
 
@@ -84,7 +84,7 @@ pub(super) fn ctx() -> Ctx {
     }
 }
 
-pub(super) fn pending(phase: &str, at: u64) -> Value {
+fn pending(phase: &str, at: u64) -> Value {
     json!({"run": "/run", "done": false, "tasks": [], "phase": phase, "at": at, "took": 5})
 }
 

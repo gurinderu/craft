@@ -172,30 +172,73 @@ fn records(home: &Path) -> Vec<String> {
         .collect()
 }
 
-#[test]
-fn a_run_an_earlier_format_wrote_files_its_open_segment_incomplete_then_is_refused() {
-    let tmp = tempfile::tempdir().unwrap();
-    let (run, home, path, out) = started(tmp.path());
-    assert!(out.status.success());
-    // The state as a craft before 0.59.0 left it: format 6.
+/// `run`'s state rewritten as format `version` wrote it.
+fn as_format(run: &Path, version: u32) {
     let file = run.join("state.json");
     let mut state: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
-    state["version"] = serde_json::json!(6);
+    state
+        .as_object_mut()
+        .unwrap()
+        .insert("version".into(), serde_json::json!(version));
     std::fs::write(&file, state.to_string()).unwrap();
-    assert!(records(&home).is_empty());
+}
+
+#[test]
+fn a_refused_earlier_format_run_files_again_only_the_record_it_lost_whatever_the_submit() {
+    for flags in [&[][..], &["--limit", "usage limit"][..], &["--resume"][..]] {
+        let tmp = tempfile::tempdir().unwrap();
+        let (run, home, path, out) = started(tmp.path());
+        assert!(out.status.success());
+        // Stopped, its record filed, then lost as a failed write would leave it.
+        let stopped = submit(&run, &home, &path, &["--limit", "usage limit"]);
+        assert!(
+            stopped.status.success(),
+            "{}",
+            String::from_utf8_lossy(&stopped.stderr)
+        );
+        assert_eq!(records(&home).len(), 1);
+        let kept = run.join("filing.json");
+        let mut filing: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&kept).unwrap()).unwrap();
+        filing["record"] = serde_json::json!("failed");
+        std::fs::write(&kept, filing.to_string()).unwrap();
+        as_format(&run, 6);
+        let said = submit(&run, &home, &path, flags);
+        assert!(!said.status.success(), "{flags:?}");
+        let err = String::from_utf8_lossy(&said.stderr);
+        assert!(
+            err.contains("a craft before 0.59.0 (format 6)")
+                && err.contains("`craft review start`"),
+            "{flags:?}: {err}"
+        );
+        let filed = records(&home);
+        assert_eq!(
+            filed.len(),
+            2,
+            "{flags:?}: the lost record filed again, nothing new"
+        );
+        assert!(
+            !filed.iter().any(|r| r.contains("format 6")),
+            "{flags:?}: no record of the refusal"
+        );
+    }
+}
+
+#[test]
+fn a_run_a_newer_craft_wrote_is_sent_back_to_it_and_files_nothing() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (run, home, path, out) = started(tmp.path());
+    assert!(out.status.success());
+    as_format(&run, 99);
     let said = submit(&run, &home, &path, &[]);
     assert!(!said.status.success());
     let err = String::from_utf8_lossy(&said.stderr);
     assert!(
-        err.contains("a craft before 0.59.0 (format 6)") && err.contains("`craft review start`"),
+        err.contains("a newer craft (format 99)")
+            && err.contains("go on with the run under the craft that started it")
+            && !err.contains("craft review start"),
         "{err}"
     );
-    let filed = records(&home);
-    assert!(
-        filed
-            .iter()
-            .any(|r| r.contains("\"verdict\": \"INCOMPLETE\"") && r.contains("format 6")),
-        "{filed:?}"
-    );
+    assert!(records(&home).is_empty());
 }

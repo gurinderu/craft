@@ -478,15 +478,13 @@ pub(crate) fn submit_step(args: &SubmitArgs) -> Result<Value> {
         abandoned: &args.abandoned,
     };
     let stepped = step::submit_with(&run, given.as_ref(), &said).map_err(|e| {
-        // A refused resume still says what its re-filing of the stopped parts lost; a run another
-        // format wrote, which goes on no further, files its open segment as INCOMPLETE first.
+        // A refused resume still says what its re-filing of the stopped parts lost. A run another
+        // format wrote goes on no further, so the records it kept or lost are re-filed whatever
+        // the submit asked, and nothing new is filed: the engine's own record of a run the binary
+        // did not finish covers its open segment (realm @nick/craft, node #618).
         let mut lost = earlier.clone();
-        if let craft_review::Error::State(craft_review::state::StateError::Version { .. }) = &e {
-            let why = e.to_string();
-            lost.extend(
-                filing::unfinished(&run, &why, &crate::filing_worker::BoundedWriter)
-                    .unwrap_or_default(),
-            );
+        if !args.resume && is_format(&e) {
+            lost.extend(refile_kept(&run));
         }
         let told = if lost.is_empty() {
             String::new()
@@ -515,6 +513,25 @@ pub(crate) fn submit_step(args: &SubmitArgs) -> Result<Value> {
             None => step,
         },
     )
+}
+
+/// Whether `e` refuses a run whose state another format wrote.
+fn is_format(e: &craft_review::Error) -> bool {
+    matches!(
+        e,
+        craft_review::Error::State(craft_review::state::StateError::Version { .. })
+    )
+}
+
+/// The records of `run` it kept or lost, filed again as a resume files them; what did not land.
+fn refile_kept(run: &Path) -> Vec<String> {
+    let w = crate::filing_worker::BoundedWriter;
+    let mut lost = filing::resuming(run, &w);
+    let refiled = filing::refile(run, Vec::new(), &w);
+    let said = refiled.as_ref().and_then(|s| s.pointer("/filing/lost"));
+    let said = said.and_then(Value::as_array).into_iter().flatten();
+    lost.extend(said.filter_map(Value::as_str).map(str::to_owned));
+    lost
 }
 
 /// A stopped run that files its telemetry goes on only by `--resume`, which keeps the stopped
