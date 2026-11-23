@@ -103,3 +103,30 @@ fn a_post_mark_keeps_a_choice_made_before() {
         r#"{"1":"old","2":{"choice":"dropped","at":"U","pr":7,"posting":true}}"#
     );
 }
+
+#[test]
+fn a_post_mark_replaces_the_pr_a_choice_named_and_keeps_an_array_of_choices() {
+    let (asked, _) = apply_choice(&record(), 2.0, "question", "T").unwrap();
+    let on7 = posting::apply(&asked, 2.0, 7, "U").unwrap();
+    let on9 = posting::apply(&on7, 2.0, 9, "V").unwrap();
+    let choices = |r: &Obj| {
+        r.get("sorting")
+            .and_then(Js::as_obj)
+            .and_then(|s| s.get("choices"))
+            .unwrap()
+            .compact()
+    };
+    assert_eq!(
+        choices(&on9),
+        r#"{"1":"old","2":{"choice":"question","at":"V","pr":9,"posting":true}}"#
+    );
+    let mut arrayed = record();
+    let sorting = arrayed.get("sorting").and_then(Js::as_obj).unwrap().clone();
+    let sorting = sorting.with("choices", Js::Arr(vec![Js::str("zero"), Js::str("one")]));
+    arrayed.set("sorting", Js::Obj(sorting));
+    let marked = posting::apply(&arrayed, 2.0, 7, "T").unwrap();
+    assert_eq!(
+        choices(&marked),
+        r#"{"0":"zero","1":"one","2":{"pr":7,"posting":true,"at":"T"}}"#
+    );
+}

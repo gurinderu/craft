@@ -93,6 +93,10 @@ pub fn post(
     if head::already(&runner, repo, &p, &c)? {
         return Ok(Posting::already(&p, reviewed));
     }
+    // With no --pr, the way out of a PR that closed before the comment landed is naming another.
+    if let (Err(PostError::Pr(why)), None) = (head::open(&p), pr) {
+        return Err(PostError::Pr(format!("{why} — {}", target::NAME_IT)));
+    }
     head::open(&p)?;
     head::holding(repo, &p, reviewed)?;
     let mut out = Posting {

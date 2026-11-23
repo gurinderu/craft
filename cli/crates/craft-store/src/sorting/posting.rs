@@ -25,10 +25,7 @@ pub fn apply(record: &Obj, n: f64, pr: u64, at: &str) -> Result<Obj, String> {
             crate::js::number_text(n)
         ));
     }
-    let mut choices = match sorting.get("choices") {
-        Some(Js::Obj(o)) => o.clone(),
-        _ => Obj::new(),
-    };
+    let mut choices = super::choices_of(sorting);
     // Merged into the finding's entry: a choice made before (a drop, an earlier question)
     // survives a post that then fails.
     let key = JsString::from(crate::js::number_text(n));

@@ -70,6 +70,22 @@ fn templated(v: Option<&Js>) -> String {
     )
 }
 
+/// The choices a record's sorting holds, keyed by finding number: an object as stored, or an
+/// array read index by index; none for anything else.
+fn choices_of(sorting: &Obj) -> Obj {
+    match sorting.get("choices") {
+        Some(Js::Obj(o)) => o.clone(),
+        Some(Js::Arr(a)) => {
+            let mut o = Obj::new();
+            for (i, v) in a.iter().enumerate() {
+                o.set(JsString::from(i.to_string()), v.clone());
+            }
+            o
+        }
+        _ => Obj::new(),
+    }
+}
+
 /// The record with `choice` set for doubtful finding `n` at `at` (a later choice for the same
 /// finding replaces the earlier one), and how the finding is named: `<title> @ <file>:<line>`.
 ///
@@ -105,17 +121,7 @@ pub fn apply_choice(record: &Obj, n: f64, choice: &str, at: &str) -> Result<(Obj
         templated(finding.get("file")),
         templated(finding.get("line"))
     );
-    let mut choices = match sorting.get("choices") {
-        Some(Js::Obj(o)) => o.clone(),
-        Some(Js::Arr(a)) => {
-            let mut o = Obj::new();
-            for (i, v) in a.iter().enumerate() {
-                o.set(JsString::from(i.to_string()), v.clone());
-            }
-            o
-        }
-        _ => Obj::new(),
-    };
+    let mut choices = choices_of(sorting);
     let mut mine = Obj::new()
         .with("choice", Js::str(choice))
         .with("at", Js::str(at));

@@ -43,7 +43,8 @@ fn a_failed_post_names_its_pr_and_its_retry_takes_that_pr_not_a_newer_one() {
     let retry = f.post(&["--n", "1", "--as", "question"]);
     assert_eq!(retry.status.code(), Some(2), "{}", text(&retry.stderr));
     assert!(
-        text(&retry.stderr).contains("PR #5 is MERGED, not open"),
+        text(&retry.stderr).contains("PR #5 is MERGED, not open")
+            && text(&retry.stderr).contains("name it with --pr <n>"),
         "{}",
         text(&retry.stderr)
     );

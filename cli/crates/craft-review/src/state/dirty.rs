@@ -27,3 +27,19 @@ pub fn dirty_of(dir: &Path) -> Result<bool, StateError> {
         .and_then(Value::as_bool)
         .ok_or(StateError::NoDirty { path })
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn a_state_of_another_shape_still_tells_its_dirty_flag() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = r#"{"version": 1, "tracks": "not a list", "phase": 7, "diff": {"dirty": true, "files": 3}}"#;
+        std::fs::write(dir.path().join("state.json"), state).unwrap();
+        assert!(super::dirty_of(dir.path()).unwrap());
+        std::fs::write(dir.path().join("state.json"), r#"{"diff": {"files": []}}"#).unwrap();
+        assert!(matches!(
+            super::dirty_of(dir.path()),
+            Err(super::StateError::NoDirty { .. })
+        ));
+    }
+}
