@@ -1,0 +1,23 @@
+--- bin/craft/src/run/delegate.rs
++++ replace <impl Drop for Waiting<'_>>::drop with ()
+@@ -121,19 +121,17 @@
+ /// A dispatch still waiting when its future is dropped: the delegating process is told to stop it.
+ struct Waiting<'a> {
+     delegate: &'a Delegate,
+     key: u64,
+ }
+ 
+ impl Drop for Waiting<'_> {
+     fn drop(&mut self) {
+-        if self.delegate.pending().remove(&self.key).is_some() {
+-            (self.delegate.0.emit)(Event::TaskCancelled { key: self.key });
+-        }
++        () /* ~ changed by cargo-mutants ~ */
+     }
+ }
+ 
+ /// The reply as the round reads an agent's: an answer, no answer, or a failure's words.
+ fn reply_of(said: Result<String, String>) -> Result<AgentReply, AgentError> {
+     let text = said.map_err(|subtype| AgentError::Failed { subtype })?;
+     let Some(answer) = answer_of(&text) else {
+         return Err(AgentError::NoAnswer {

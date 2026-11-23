@@ -1,0 +1,4052 @@
+{
+  "outcomes": [
+    {
+      "scenario": "Baseline",
+      "summary": "Success",
+      "log_path": "log/baseline.log",
+      "diff_path": null,
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 22.201760559,
+          "process_status": "Success",
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 6.888309137,
+          "process_status": "Success",
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=craft@0.58.0",
+            "--bin",
+            "craft"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/mod.rs:131:5: replace ready -> Result<(NonZeroUsize, Host, PathBuf), String> with Ok((1.try_into().unwrap(), Default::default(), Default::default()))",
+          "package": "craft",
+          "file": "bin/craft/src/run/mod.rs",
+          "function": {
+            "function_name": "ready",
+            "return_type": "-> Result<(NonZeroUsize, Host, PathBuf), String>",
+            "span": {
+              "start": {
+                "line": 128,
+                "column": 1
+              },
+              "end": {
+                "line": 145,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 131,
+              "column": 5
+            },
+            "end": {
+              "line": 144,
+              "column": 34
+            }
+          },
+          "replacement": "Ok((1.try_into().unwrap(), Default::default(), Default::default()))",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__mod.rs_line_131_col_5.log",
+      "diff_path": "diff/bin__craft__src__run__mod.rs_line_131_col_5.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 3.17911109,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/mod.rs:134:44: replace || with && in ready",
+          "package": "craft",
+          "file": "bin/craft/src/run/mod.rs",
+          "function": {
+            "function_name": "ready",
+            "return_type": "-> Result<(NonZeroUsize, Host, PathBuf), String>",
+            "span": {
+              "start": {
+                "line": 128,
+                "column": 1
+              },
+              "end": {
+                "line": 145,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 134,
+              "column": 44
+            },
+            "end": {
+              "line": 134,
+              "column": 46
+            }
+          },
+          "replacement": "&&",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/bin__craft__src__run__mod.rs_line_134_col_44.log",
+      "diff_path": "diff/bin__craft__src__run__mod.rs_line_134_col_44.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 6.190082487,
+          "process_status": "Success",
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 6.844107188,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=craft@0.58.0",
+            "--bin",
+            "craft"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/mod.rs:134:22: replace != with == in ready",
+          "package": "craft",
+          "file": "bin/craft/src/run/mod.rs",
+          "function": {
+            "function_name": "ready",
+            "return_type": "-> Result<(NonZeroUsize, Host, PathBuf), String>",
+            "span": {
+              "start": {
+                "line": 128,
+                "column": 1
+              },
+              "end": {
+                "line": 145,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 134,
+              "column": 22
+            },
+            "end": {
+              "line": 134,
+              "column": 24
+            }
+          },
+          "replacement": "==",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/bin__craft__src__run__mod.rs_line_134_col_22.log",
+      "diff_path": "diff/bin__craft__src__run__mod.rs_line_134_col_22.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 2.917247948,
+          "process_status": "Success",
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 6.425984663,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=craft@0.58.0",
+            "--bin",
+            "craft"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/mod.rs:134:47: delete ! in ready",
+          "package": "craft",
+          "file": "bin/craft/src/run/mod.rs",
+          "function": {
+            "function_name": "ready",
+            "return_type": "-> Result<(NonZeroUsize, Host, PathBuf), String>",
+            "span": {
+              "start": {
+                "line": 128,
+                "column": 1
+              },
+              "end": {
+                "line": 145,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 134,
+              "column": 47
+            },
+            "end": {
+              "line": 134,
+              "column": 48
+            }
+          },
+          "replacement": "",
+          "genre": "UnaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/bin__craft__src__run__mod.rs_line_134_col_47.log",
+      "diff_path": "diff/bin__craft__src__run__mod.rs_line_134_col_47.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 3.767313552,
+          "process_status": "Success",
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 8.153902992,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=craft@0.58.0",
+            "--bin",
+            "craft"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/args.rs:67:5: replace host_with -> Result<Host, String> with Ok(Default::default())",
+          "package": "craft",
+          "file": "bin/craft/src/run/args.rs",
+          "function": {
+            "function_name": "host_with",
+            "return_type": "-> Result<Host, String>",
+            "span": {
+              "start": {
+                "line": 64,
+                "column": 1
+              },
+              "end": {
+                "line": 93,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 67,
+              "column": 5
+            },
+            "end": {
+              "line": 92,
+              "column": 7
+            }
+          },
+          "replacement": "Ok(Default::default())",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__args.rs_line_67_col_5.log",
+      "diff_path": "diff/bin__craft__src__run__args.rs_line_67_col_5.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 1.705792706,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/delegate.rs:50:9: replace <impl std::fmt::Debug for Delegate>::fmt -> std::fmt::Result with Ok(Default::default())",
+          "package": "craft",
+          "file": "bin/craft/src/run/delegate.rs",
+          "function": {
+            "function_name": "<impl std::fmt::Debug for Delegate>::fmt",
+            "return_type": "-> std::fmt::Result",
+            "span": {
+              "start": {
+                "line": 49,
+                "column": 5
+              },
+              "end": {
+                "line": 51,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 50,
+              "column": 9
+            },
+            "end": {
+              "line": 50,
+              "column": 32
+            }
+          },
+          "replacement": "Ok(Default::default())",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "MissedMutant",
+      "log_path": "log/bin__craft__src__run__delegate.rs_line_50_col_9.log",
+      "diff_path": "diff/bin__craft__src__run__delegate.rs_line_50_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 4.061267629,
+          "process_status": "Success",
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 8.202293171,
+          "process_status": "Success",
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=craft@0.58.0",
+            "--bin",
+            "craft"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/delegate.rs:71:9: replace Delegate::on_stdin -> Self with Default::default()",
+          "package": "craft",
+          "file": "bin/craft/src/run/delegate.rs",
+          "function": {
+            "function_name": "Delegate::on_stdin",
+            "return_type": "-> Self",
+            "span": {
+              "start": {
+                "line": 68,
+                "column": 5
+              },
+              "end": {
+                "line": 81,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 71,
+              "column": 9
+            },
+            "end": {
+              "line": 80,
+              "column": 17
+            }
+          },
+          "replacement": "Default::default()",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__delegate.rs_line_71_col_9.log",
+      "diff_path": "diff/bin__craft__src__run__delegate.rs_line_71_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 2.718975678,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/delegate.rs:85:9: replace Delegate::name with ()",
+          "package": "craft",
+          "file": "bin/craft/src/run/delegate.rs",
+          "function": {
+            "function_name": "Delegate::name",
+            "return_type": "",
+            "span": {
+              "start": {
+                "line": 83,
+                "column": 5
+              },
+              "end": {
+                "line": 89,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 85,
+              "column": 9
+            },
+            "end": {
+              "line": 88,
+              "column": 10
+            }
+          },
+          "replacement": "()",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/bin__craft__src__run__delegate.rs_line_85_col_9.log",
+      "diff_path": "diff/bin__craft__src__run__delegate.rs_line_85_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 8.162289019,
+          "process_status": "Success",
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 10.917067538,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=craft@0.58.0",
+            "--bin",
+            "craft"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/delegate.rs:94:9: replace Delegate::deliver -> bool with true",
+          "package": "craft",
+          "file": "bin/craft/src/run/delegate.rs",
+          "function": {
+            "function_name": "Delegate::deliver",
+            "return_type": "-> bool",
+            "span": {
+              "start": {
+                "line": 91,
+                "column": 5
+              },
+              "end": {
+                "line": 104,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 94,
+              "column": 9
+            },
+            "end": {
+              "line": 103,
+              "column": 56
+            }
+          },
+          "replacement": "true",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Timeout",
+      "log_path": "log/bin__craft__src__run__delegate.rs_line_94_col_9.log",
+      "diff_path": "diff/bin__craft__src__run__delegate.rs_line_94_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 14.611100825,
+          "process_status": "Success",
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 35.052262076,
+          "process_status": "Timeout",
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=craft@0.58.0",
+            "--bin",
+            "craft"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/delegate.rs:94:9: replace Delegate::deliver -> bool with false",
+          "package": "craft",
+          "file": "bin/craft/src/run/delegate.rs",
+          "function": {
+            "function_name": "Delegate::deliver",
+            "return_type": "-> bool",
+            "span": {
+              "start": {
+                "line": 91,
+                "column": 5
+              },
+              "end": {
+                "line": 104,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 94,
+              "column": 9
+            },
+            "end": {
+              "line": 103,
+              "column": 56
+            }
+          },
+          "replacement": "false",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Timeout",
+      "log_path": "log/bin__craft__src__run__delegate.rs_line_94_col_9_001.log",
+      "diff_path": "diff/bin__craft__src__run__delegate.rs_line_94_col_9_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 4.373305306,
+          "process_status": "Success",
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 35.034172452,
+          "process_status": "Timeout",
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=craft@0.58.0",
+            "--bin",
+            "craft"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/delegate.rs:108:9: replace Delegate::close with ()",
+          "package": "craft",
+          "file": "bin/craft/src/run/delegate.rs",
+          "function": {
+            "function_name": "Delegate::close",
+            "return_type": "",
+            "span": {
+              "start": {
+                "line": 106,
+                "column": 5
+              },
+              "end": {
+                "line": 109,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 108,
+              "column": 9
+            },
+            "end": {
+              "line": 108,
+              "column": 32
+            }
+          },
+          "replacement": "()",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Timeout",
+      "log_path": "log/bin__craft__src__run__delegate.rs_line_108_col_9.log",
+      "diff_path": "diff/bin__craft__src__run__delegate.rs_line_108_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 18.677338902,
+          "process_status": "Success",
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 35.049458527,
+          "process_status": "Timeout",
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=craft@0.58.0",
+            "--bin",
+            "craft"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::new()",
+          "package": "craft",
+          "file": "bin/craft/src/run/delegate.rs",
+          "function": {
+            "function_name": "Delegate::pending",
+            "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+            "span": {
+              "start": {
+                "line": 111,
+                "column": 5
+              },
+              "end": {
+                "line": 118,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 114,
+              "column": 9
+            },
+            "end": {
+              "line": 117,
+              "column": 53
+            }
+          },
+          "replacement": "MutexGuard::new()",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__delegate.rs_line_114_col_9.log",
+      "diff_path": "diff/bin__craft__src__run__delegate.rs_line_114_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 4.479117608,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from_iter([HashMap::new()])",
+          "package": "craft",
+          "file": "bin/craft/src/run/delegate.rs",
+          "function": {
+            "function_name": "Delegate::pending",
+            "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+            "span": {
+              "start": {
+                "line": 111,
+                "column": 5
+              },
+              "end": {
+                "line": 118,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 114,
+              "column": 9
+            },
+            "end": {
+              "line": 117,
+              "column": 53
+            }
+          },
+          "replacement": "MutexGuard::from_iter([HashMap::new()])",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__delegate.rs_line_114_col_9_001.log",
+      "diff_path": "diff/bin__craft__src__run__delegate.rs_line_114_col_9_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 2.659574913,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::new(HashMap::new())",
+          "package": "craft",
+          "file": "bin/craft/src/run/delegate.rs",
+          "function": {
+            "function_name": "Delegate::pending",
+            "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+            "span": {
+              "start": {
+                "line": 111,
+                "column": 5
+              },
+              "end": {
+                "line": 118,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 114,
+              "column": 9
+            },
+            "end": {
+              "line": 117,
+              "column": 53
+            }
+          },
+          "replacement": "MutexGuard::new(HashMap::new())",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__delegate.rs_line_114_col_9_002.log",
+      "diff_path": "diff/bin__craft__src__run__delegate.rs_line_114_col_9_002.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 2.004801776,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from(HashMap::new())",
+          "package": "craft",
+          "file": "bin/craft/src/run/delegate.rs",
+          "function": {
+            "function_name": "Delegate::pending",
+            "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+            "span": {
+              "start": {
+                "line": 111,
+                "column": 5
+              },
+              "end": {
+                "line": 118,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 114,
+              "column": 9
+            },
+            "end": {
+              "line": 117,
+              "column": 53
+            }
+          },
+          "replacement": "MutexGuard::from(HashMap::new())",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__delegate.rs_line_114_col_9_003.log",
+      "diff_path": "diff/bin__craft__src__run__delegate.rs_line_114_col_9_003.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 1.978751347,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from_iter([HashMap::from_iter([(0, Sender::new())])])",
+          "package": "craft",
+          "file": "bin/craft/src/run/delegate.rs",
+          "function": {
+            "function_name": "Delegate::pending",
+            "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+            "span": {
+              "start": {
+                "line": 111,
+                "column": 5
+              },
+              "end": {
+                "line": 118,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 114,
+              "column": 9
+            },
+            "end": {
+              "line": 117,
+              "column": 53
+            }
+          },
+          "replacement": "MutexGuard::from_iter([HashMap::from_iter([(0, Sender::new())])])",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__delegate.rs_line_114_col_9_004.log",
+      "diff_path": "diff/bin__craft__src__run__delegate.rs_line_114_col_9_004.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 1.30717564,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::new(HashMap::from_iter([(0, Sender::new())]))",
+          "package": "craft",
+          "file": "bin/craft/src/run/delegate.rs",
+          "function": {
+            "function_name": "Delegate::pending",
+            "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+            "span": {
+              "start": {
+                "line": 111,
+                "column": 5
+              },
+              "end": {
+                "line": 118,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 114,
+              "column": 9
+            },
+            "end": {
+              "line": 117,
+              "column": 53
+            }
+          },
+          "replacement": "MutexGuard::new(HashMap::from_iter([(0, Sender::new())]))",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__delegate.rs_line_114_col_9_005.log",
+      "diff_path": "diff/bin__craft__src__run__delegate.rs_line_114_col_9_005.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 1.7653802729999999,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from(HashMap::from_iter([(0, Sender::new())]))",
+          "package": "craft",
+          "file": "bin/craft/src/run/delegate.rs",
+          "function": {
+            "function_name": "Delegate::pending",
+            "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+            "span": {
+              "start": {
+                "line": 111,
+                "column": 5
+              },
+              "end": {
+                "line": 118,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 114,
+              "column": 9
+            },
+            "end": {
+              "line": 117,
+              "column": 53
+            }
+          },
+          "replacement": "MutexGuard::from(HashMap::from_iter([(0, Sender::new())]))",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__delegate.rs_line_114_col_9_006.log",
+      "diff_path": "diff/bin__craft__src__run__delegate.rs_line_114_col_9_006.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 1.911949308,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from_iter([HashMap::from_iter([(0, Sender::from_iter([Ok(String::new())]))])])",
+          "package": "craft",
+          "file": "bin/craft/src/run/delegate.rs",
+          "function": {
+            "function_name": "Delegate::pending",
+            "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+            "span": {
+              "start": {
+                "line": 111,
+                "column": 5
+              },
+              "end": {
+                "line": 118,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 114,
+              "column": 9
+            },
+            "end": {
+              "line": 117,
+              "column": 53
+            }
+          },
+          "replacement": "MutexGuard::from_iter([HashMap::from_iter([(0, Sender::from_iter([Ok(String::new())]))])])",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__delegate.rs_line_114_col_9_007.log",
+      "diff_path": "diff/bin__craft__src__run__delegate.rs_line_114_col_9_007.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 1.616848241,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::new(HashMap::from_iter([(0, Sender::from_iter([Ok(String::new())]))]))",
+          "package": "craft",
+          "file": "bin/craft/src/run/delegate.rs",
+          "function": {
+            "function_name": "Delegate::pending",
+            "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+            "span": {
+              "start": {
+                "line": 111,
+                "column": 5
+              },
+              "end": {
+                "line": 118,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 114,
+              "column": 9
+            },
+            "end": {
+              "line": 117,
+              "column": 53
+            }
+          },
+          "replacement": "MutexGuard::new(HashMap::from_iter([(0, Sender::from_iter([Ok(String::new())]))]))",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__delegate.rs_line_114_col_9_008.log",
+      "diff_path": "diff/bin__craft__src__run__delegate.rs_line_114_col_9_008.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 1.8094012350000002,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from(HashMap::from_iter([(0, Sender::from_iter([Ok(String::new())]))]))",
+          "package": "craft",
+          "file": "bin/craft/src/run/delegate.rs",
+          "function": {
+            "function_name": "Delegate::pending",
+            "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+            "span": {
+              "start": {
+                "line": 111,
+                "column": 5
+              },
+              "end": {
+                "line": 118,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 114,
+              "column": 9
+            },
+            "end": {
+              "line": 117,
+              "column": 53
+            }
+          },
+          "replacement": "MutexGuard::from(HashMap::from_iter([(0, Sender::from_iter([Ok(String::new())]))]))",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__delegate.rs_line_114_col_9_009.log",
+      "diff_path": "diff/bin__craft__src__run__delegate.rs_line_114_col_9_009.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 2.265996037,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from_iter([HashMap::from_iter([(0, Sender::new(Ok(String::new())))])])",
+          "package": "craft",
+          "file": "bin/craft/src/run/delegate.rs",
+          "function": {
+            "function_name": "Delegate::pending",
+            "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+            "span": {
+              "start": {
+                "line": 111,
+                "column": 5
+              },
+              "end": {
+                "line": 118,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 114,
+              "column": 9
+            },
+            "end": {
+              "line": 117,
+              "column": 53
+            }
+          },
+          "replacement": "MutexGuard::from_iter([HashMap::from_iter([(0, Sender::new(Ok(String::new())))])])",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__delegate.rs_line_114_col_9_010.log",
+      "diff_path": "diff/bin__craft__src__run__delegate.rs_line_114_col_9_010.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 2.724924474,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::new(HashMap::from_iter([(0, Sender::new(Ok(String::new())))]))",
+          "package": "craft",
+          "file": "bin/craft/src/run/delegate.rs",
+          "function": {
+            "function_name": "Delegate::pending",
+            "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+            "span": {
+              "start": {
+                "line": 111,
+                "column": 5
+              },
+              "end": {
+                "line": 118,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 114,
+              "column": 9
+            },
+            "end": {
+              "line": 117,
+              "column": 53
+            }
+          },
+          "replacement": "MutexGuard::new(HashMap::from_iter([(0, Sender::new(Ok(String::new())))]))",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__delegate.rs_line_114_col_9_011.log",
+      "diff_path": "diff/bin__craft__src__run__delegate.rs_line_114_col_9_011.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 3.190448891,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from(HashMap::from_iter([(0, Sender::new(Ok(String::new())))]))",
+          "package": "craft",
+          "file": "bin/craft/src/run/delegate.rs",
+          "function": {
+            "function_name": "Delegate::pending",
+            "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+            "span": {
+              "start": {
+                "line": 111,
+                "column": 5
+              },
+              "end": {
+                "line": 118,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 114,
+              "column": 9
+            },
+            "end": {
+              "line": 117,
+              "column": 53
+            }
+          },
+          "replacement": "MutexGuard::from(HashMap::from_iter([(0, Sender::new(Ok(String::new())))]))",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__delegate.rs_line_114_col_9_012.log",
+      "diff_path": "diff/bin__craft__src__run__delegate.rs_line_114_col_9_012.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 1.503185431,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from_iter([HashMap::from_iter([(0, Sender::from(Ok(String::new())))])])",
+          "package": "craft",
+          "file": "bin/craft/src/run/delegate.rs",
+          "function": {
+            "function_name": "Delegate::pending",
+            "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+            "span": {
+              "start": {
+                "line": 111,
+                "column": 5
+              },
+              "end": {
+                "line": 118,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 114,
+              "column": 9
+            },
+            "end": {
+              "line": 117,
+              "column": 53
+            }
+          },
+          "replacement": "MutexGuard::from_iter([HashMap::from_iter([(0, Sender::from(Ok(String::new())))])])",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__delegate.rs_line_114_col_9_013.log",
+      "diff_path": "diff/bin__craft__src__run__delegate.rs_line_114_col_9_013.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 1.304456177,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::new(HashMap::from_iter([(0, Sender::from(Ok(String::new())))]))",
+          "package": "craft",
+          "file": "bin/craft/src/run/delegate.rs",
+          "function": {
+            "function_name": "Delegate::pending",
+            "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+            "span": {
+              "start": {
+                "line": 111,
+                "column": 5
+              },
+              "end": {
+                "line": 118,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 114,
+              "column": 9
+            },
+            "end": {
+              "line": 117,
+              "column": 53
+            }
+          },
+          "replacement": "MutexGuard::new(HashMap::from_iter([(0, Sender::from(Ok(String::new())))]))",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__delegate.rs_line_114_col_9_014.log",
+      "diff_path": "diff/bin__craft__src__run__delegate.rs_line_114_col_9_014.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 1.3634339739999999,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from(HashMap::from_iter([(0, Sender::from(Ok(String::new())))]))",
+          "package": "craft",
+          "file": "bin/craft/src/run/delegate.rs",
+          "function": {
+            "function_name": "Delegate::pending",
+            "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+            "span": {
+              "start": {
+                "line": 111,
+                "column": 5
+              },
+              "end": {
+                "line": 118,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 114,
+              "column": 9
+            },
+            "end": {
+              "line": 117,
+              "column": 53
+            }
+          },
+          "replacement": "MutexGuard::from(HashMap::from_iter([(0, Sender::from(Ok(String::new())))]))",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__delegate.rs_line_114_col_9_015.log",
+      "diff_path": "diff/bin__craft__src__run__delegate.rs_line_114_col_9_015.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 2.561596211,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from_iter([HashMap::from_iter([(0, Sender::from_iter([Ok(\"xyzzy\".into())]))])])",
+          "package": "craft",
+          "file": "bin/craft/src/run/delegate.rs",
+          "function": {
+            "function_name": "Delegate::pending",
+            "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+            "span": {
+              "start": {
+                "line": 111,
+                "column": 5
+              },
+              "end": {
+                "line": 118,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 114,
+              "column": 9
+            },
+            "end": {
+              "line": 117,
+              "column": 53
+            }
+          },
+          "replacement": "MutexGuard::from_iter([HashMap::from_iter([(0, Sender::from_iter([Ok(\"xyzzy\".into())]))])])",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__delegate.rs_line_114_col_9_016.log",
+      "diff_path": "diff/bin__craft__src__run__delegate.rs_line_114_col_9_016.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 1.509776992,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::new(HashMap::from_iter([(0, Sender::from_iter([Ok(\"xyzzy\".into())]))]))",
+          "package": "craft",
+          "file": "bin/craft/src/run/delegate.rs",
+          "function": {
+            "function_name": "Delegate::pending",
+            "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+            "span": {
+              "start": {
+                "line": 111,
+                "column": 5
+              },
+              "end": {
+                "line": 118,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 114,
+              "column": 9
+            },
+            "end": {
+              "line": 117,
+              "column": 53
+            }
+          },
+          "replacement": "MutexGuard::new(HashMap::from_iter([(0, Sender::from_iter([Ok(\"xyzzy\".into())]))]))",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__delegate.rs_line_114_col_9_017.log",
+      "diff_path": "diff/bin__craft__src__run__delegate.rs_line_114_col_9_017.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 1.203893177,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from(HashMap::from_iter([(0, Sender::from_iter([Ok(\"xyzzy\".into())]))]))",
+          "package": "craft",
+          "file": "bin/craft/src/run/delegate.rs",
+          "function": {
+            "function_name": "Delegate::pending",
+            "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+            "span": {
+              "start": {
+                "line": 111,
+                "column": 5
+              },
+              "end": {
+                "line": 118,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 114,
+              "column": 9
+            },
+            "end": {
+              "line": 117,
+              "column": 53
+            }
+          },
+          "replacement": "MutexGuard::from(HashMap::from_iter([(0, Sender::from_iter([Ok(\"xyzzy\".into())]))]))",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__delegate.rs_line_114_col_9_018.log",
+      "diff_path": "diff/bin__craft__src__run__delegate.rs_line_114_col_9_018.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 1.406166741,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from_iter([HashMap::from_iter([(0, Sender::new(Ok(\"xyzzy\".into())))])])",
+          "package": "craft",
+          "file": "bin/craft/src/run/delegate.rs",
+          "function": {
+            "function_name": "Delegate::pending",
+            "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+            "span": {
+              "start": {
+                "line": 111,
+                "column": 5
+              },
+              "end": {
+                "line": 118,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 114,
+              "column": 9
+            },
+            "end": {
+              "line": 117,
+              "column": 53
+            }
+          },
+          "replacement": "MutexGuard::from_iter([HashMap::from_iter([(0, Sender::new(Ok(\"xyzzy\".into())))])])",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__delegate.rs_line_114_col_9_019.log",
+      "diff_path": "diff/bin__craft__src__run__delegate.rs_line_114_col_9_019.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 1.256275615,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::new(HashMap::from_iter([(0, Sender::new(Ok(\"xyzzy\".into())))]))",
+          "package": "craft",
+          "file": "bin/craft/src/run/delegate.rs",
+          "function": {
+            "function_name": "Delegate::pending",
+            "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+            "span": {
+              "start": {
+                "line": 111,
+                "column": 5
+              },
+              "end": {
+                "line": 118,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 114,
+              "column": 9
+            },
+            "end": {
+              "line": 117,
+              "column": 53
+            }
+          },
+          "replacement": "MutexGuard::new(HashMap::from_iter([(0, Sender::new(Ok(\"xyzzy\".into())))]))",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__delegate.rs_line_114_col_9_020.log",
+      "diff_path": "diff/bin__craft__src__run__delegate.rs_line_114_col_9_020.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 1.411062729,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from(HashMap::from_iter([(0, Sender::new(Ok(\"xyzzy\".into())))]))",
+          "package": "craft",
+          "file": "bin/craft/src/run/delegate.rs",
+          "function": {
+            "function_name": "Delegate::pending",
+            "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+            "span": {
+              "start": {
+                "line": 111,
+                "column": 5
+              },
+              "end": {
+                "line": 118,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 114,
+              "column": 9
+            },
+            "end": {
+              "line": 117,
+              "column": 53
+            }
+          },
+          "replacement": "MutexGuard::from(HashMap::from_iter([(0, Sender::new(Ok(\"xyzzy\".into())))]))",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__delegate.rs_line_114_col_9_021.log",
+      "diff_path": "diff/bin__craft__src__run__delegate.rs_line_114_col_9_021.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 1.3592802179999999,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from_iter([HashMap::from_iter([(0, Sender::from(Ok(\"xyzzy\".into())))])])",
+          "package": "craft",
+          "file": "bin/craft/src/run/delegate.rs",
+          "function": {
+            "function_name": "Delegate::pending",
+            "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+            "span": {
+              "start": {
+                "line": 111,
+                "column": 5
+              },
+              "end": {
+                "line": 118,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 114,
+              "column": 9
+            },
+            "end": {
+              "line": 117,
+              "column": 53
+            }
+          },
+          "replacement": "MutexGuard::from_iter([HashMap::from_iter([(0, Sender::from(Ok(\"xyzzy\".into())))])])",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__delegate.rs_line_114_col_9_022.log",
+      "diff_path": "diff/bin__craft__src__run__delegate.rs_line_114_col_9_022.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 1.713132461,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::new(HashMap::from_iter([(0, Sender::from(Ok(\"xyzzy\".into())))]))",
+          "package": "craft",
+          "file": "bin/craft/src/run/delegate.rs",
+          "function": {
+            "function_name": "Delegate::pending",
+            "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+            "span": {
+              "start": {
+                "line": 111,
+                "column": 5
+              },
+              "end": {
+                "line": 118,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 114,
+              "column": 9
+            },
+            "end": {
+              "line": 117,
+              "column": 53
+            }
+          },
+          "replacement": "MutexGuard::new(HashMap::from_iter([(0, Sender::from(Ok(\"xyzzy\".into())))]))",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__delegate.rs_line_114_col_9_023.log",
+      "diff_path": "diff/bin__craft__src__run__delegate.rs_line_114_col_9_023.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 1.507717263,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from(HashMap::from_iter([(0, Sender::from(Ok(\"xyzzy\".into())))]))",
+          "package": "craft",
+          "file": "bin/craft/src/run/delegate.rs",
+          "function": {
+            "function_name": "Delegate::pending",
+            "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+            "span": {
+              "start": {
+                "line": 111,
+                "column": 5
+              },
+              "end": {
+                "line": 118,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 114,
+              "column": 9
+            },
+            "end": {
+              "line": 117,
+              "column": 53
+            }
+          },
+          "replacement": "MutexGuard::from(HashMap::from_iter([(0, Sender::from(Ok(\"xyzzy\".into())))]))",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__delegate.rs_line_114_col_9_024.log",
+      "diff_path": "diff/bin__craft__src__run__delegate.rs_line_114_col_9_024.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 2.415396467,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from_iter([HashMap::from_iter([(1, Sender::new())])])",
+          "package": "craft",
+          "file": "bin/craft/src/run/delegate.rs",
+          "function": {
+            "function_name": "Delegate::pending",
+            "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+            "span": {
+              "start": {
+                "line": 111,
+                "column": 5
+              },
+              "end": {
+                "line": 118,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 114,
+              "column": 9
+            },
+            "end": {
+              "line": 117,
+              "column": 53
+            }
+          },
+          "replacement": "MutexGuard::from_iter([HashMap::from_iter([(1, Sender::new())])])",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__delegate.rs_line_114_col_9_025.log",
+      "diff_path": "diff/bin__craft__src__run__delegate.rs_line_114_col_9_025.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 1.459843234,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::new(HashMap::from_iter([(1, Sender::new())]))",
+          "package": "craft",
+          "file": "bin/craft/src/run/delegate.rs",
+          "function": {
+            "function_name": "Delegate::pending",
+            "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+            "span": {
+              "start": {
+                "line": 111,
+                "column": 5
+              },
+              "end": {
+                "line": 118,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 114,
+              "column": 9
+            },
+            "end": {
+              "line": 117,
+              "column": 53
+            }
+          },
+          "replacement": "MutexGuard::new(HashMap::from_iter([(1, Sender::new())]))",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__delegate.rs_line_114_col_9_026.log",
+      "diff_path": "diff/bin__craft__src__run__delegate.rs_line_114_col_9_026.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 2.466394075,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from(HashMap::from_iter([(1, Sender::new())]))",
+          "package": "craft",
+          "file": "bin/craft/src/run/delegate.rs",
+          "function": {
+            "function_name": "Delegate::pending",
+            "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+            "span": {
+              "start": {
+                "line": 111,
+                "column": 5
+              },
+              "end": {
+                "line": 118,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 114,
+              "column": 9
+            },
+            "end": {
+              "line": 117,
+              "column": 53
+            }
+          },
+          "replacement": "MutexGuard::from(HashMap::from_iter([(1, Sender::new())]))",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__delegate.rs_line_114_col_9_027.log",
+      "diff_path": "diff/bin__craft__src__run__delegate.rs_line_114_col_9_027.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 2.360972079,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from_iter([HashMap::from_iter([(1, Sender::from_iter([Ok(String::new())]))])])",
+          "package": "craft",
+          "file": "bin/craft/src/run/delegate.rs",
+          "function": {
+            "function_name": "Delegate::pending",
+            "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+            "span": {
+              "start": {
+                "line": 111,
+                "column": 5
+              },
+              "end": {
+                "line": 118,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 114,
+              "column": 9
+            },
+            "end": {
+              "line": 117,
+              "column": 53
+            }
+          },
+          "replacement": "MutexGuard::from_iter([HashMap::from_iter([(1, Sender::from_iter([Ok(String::new())]))])])",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__delegate.rs_line_114_col_9_028.log",
+      "diff_path": "diff/bin__craft__src__run__delegate.rs_line_114_col_9_028.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 3.5213286630000002,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::new(HashMap::from_iter([(1, Sender::from_iter([Ok(String::new())]))]))",
+          "package": "craft",
+          "file": "bin/craft/src/run/delegate.rs",
+          "function": {
+            "function_name": "Delegate::pending",
+            "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+            "span": {
+              "start": {
+                "line": 111,
+                "column": 5
+              },
+              "end": {
+                "line": 118,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 114,
+              "column": 9
+            },
+            "end": {
+              "line": 117,
+              "column": 53
+            }
+          },
+          "replacement": "MutexGuard::new(HashMap::from_iter([(1, Sender::from_iter([Ok(String::new())]))]))",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__delegate.rs_line_114_col_9_029.log",
+      "diff_path": "diff/bin__craft__src__run__delegate.rs_line_114_col_9_029.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 1.310184591,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from(HashMap::from_iter([(1, Sender::from_iter([Ok(String::new())]))]))",
+          "package": "craft",
+          "file": "bin/craft/src/run/delegate.rs",
+          "function": {
+            "function_name": "Delegate::pending",
+            "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+            "span": {
+              "start": {
+                "line": 111,
+                "column": 5
+              },
+              "end": {
+                "line": 118,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 114,
+              "column": 9
+            },
+            "end": {
+              "line": 117,
+              "column": 53
+            }
+          },
+          "replacement": "MutexGuard::from(HashMap::from_iter([(1, Sender::from_iter([Ok(String::new())]))]))",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__delegate.rs_line_114_col_9_030.log",
+      "diff_path": "diff/bin__craft__src__run__delegate.rs_line_114_col_9_030.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 1.81835488,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from_iter([HashMap::from_iter([(1, Sender::new(Ok(String::new())))])])",
+          "package": "craft",
+          "file": "bin/craft/src/run/delegate.rs",
+          "function": {
+            "function_name": "Delegate::pending",
+            "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+            "span": {
+              "start": {
+                "line": 111,
+                "column": 5
+              },
+              "end": {
+                "line": 118,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 114,
+              "column": 9
+            },
+            "end": {
+              "line": 117,
+              "column": 53
+            }
+          },
+          "replacement": "MutexGuard::from_iter([HashMap::from_iter([(1, Sender::new(Ok(String::new())))])])",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__delegate.rs_line_114_col_9_031.log",
+      "diff_path": "diff/bin__craft__src__run__delegate.rs_line_114_col_9_031.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 1.8782917129999999,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::new(HashMap::from_iter([(1, Sender::new(Ok(String::new())))]))",
+          "package": "craft",
+          "file": "bin/craft/src/run/delegate.rs",
+          "function": {
+            "function_name": "Delegate::pending",
+            "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+            "span": {
+              "start": {
+                "line": 111,
+                "column": 5
+              },
+              "end": {
+                "line": 118,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 114,
+              "column": 9
+            },
+            "end": {
+              "line": 117,
+              "column": 53
+            }
+          },
+          "replacement": "MutexGuard::new(HashMap::from_iter([(1, Sender::new(Ok(String::new())))]))",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__delegate.rs_line_114_col_9_032.log",
+      "diff_path": "diff/bin__craft__src__run__delegate.rs_line_114_col_9_032.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 3.1761312090000002,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from(HashMap::from_iter([(1, Sender::new(Ok(String::new())))]))",
+          "package": "craft",
+          "file": "bin/craft/src/run/delegate.rs",
+          "function": {
+            "function_name": "Delegate::pending",
+            "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+            "span": {
+              "start": {
+                "line": 111,
+                "column": 5
+              },
+              "end": {
+                "line": 118,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 114,
+              "column": 9
+            },
+            "end": {
+              "line": 117,
+              "column": 53
+            }
+          },
+          "replacement": "MutexGuard::from(HashMap::from_iter([(1, Sender::new(Ok(String::new())))]))",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__delegate.rs_line_114_col_9_033.log",
+      "diff_path": "diff/bin__craft__src__run__delegate.rs_line_114_col_9_033.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 2.478788104,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from_iter([HashMap::from_iter([(1, Sender::from(Ok(String::new())))])])",
+          "package": "craft",
+          "file": "bin/craft/src/run/delegate.rs",
+          "function": {
+            "function_name": "Delegate::pending",
+            "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+            "span": {
+              "start": {
+                "line": 111,
+                "column": 5
+              },
+              "end": {
+                "line": 118,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 114,
+              "column": 9
+            },
+            "end": {
+              "line": 117,
+              "column": 53
+            }
+          },
+          "replacement": "MutexGuard::from_iter([HashMap::from_iter([(1, Sender::from(Ok(String::new())))])])",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__delegate.rs_line_114_col_9_034.log",
+      "diff_path": "diff/bin__craft__src__run__delegate.rs_line_114_col_9_034.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 3.839766482,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::new(HashMap::from_iter([(1, Sender::from(Ok(String::new())))]))",
+          "package": "craft",
+          "file": "bin/craft/src/run/delegate.rs",
+          "function": {
+            "function_name": "Delegate::pending",
+            "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+            "span": {
+              "start": {
+                "line": 111,
+                "column": 5
+              },
+              "end": {
+                "line": 118,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 114,
+              "column": 9
+            },
+            "end": {
+              "line": 117,
+              "column": 53
+            }
+          },
+          "replacement": "MutexGuard::new(HashMap::from_iter([(1, Sender::from(Ok(String::new())))]))",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__delegate.rs_line_114_col_9_035.log",
+      "diff_path": "diff/bin__craft__src__run__delegate.rs_line_114_col_9_035.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 1.771062401,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from(HashMap::from_iter([(1, Sender::from(Ok(String::new())))]))",
+          "package": "craft",
+          "file": "bin/craft/src/run/delegate.rs",
+          "function": {
+            "function_name": "Delegate::pending",
+            "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+            "span": {
+              "start": {
+                "line": 111,
+                "column": 5
+              },
+              "end": {
+                "line": 118,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 114,
+              "column": 9
+            },
+            "end": {
+              "line": 117,
+              "column": 53
+            }
+          },
+          "replacement": "MutexGuard::from(HashMap::from_iter([(1, Sender::from(Ok(String::new())))]))",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__delegate.rs_line_114_col_9_036.log",
+      "diff_path": "diff/bin__craft__src__run__delegate.rs_line_114_col_9_036.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 2.695747032,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from_iter([HashMap::from_iter([(1, Sender::from_iter([Ok(\"xyzzy\".into())]))])])",
+          "package": "craft",
+          "file": "bin/craft/src/run/delegate.rs",
+          "function": {
+            "function_name": "Delegate::pending",
+            "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+            "span": {
+              "start": {
+                "line": 111,
+                "column": 5
+              },
+              "end": {
+                "line": 118,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 114,
+              "column": 9
+            },
+            "end": {
+              "line": 117,
+              "column": 53
+            }
+          },
+          "replacement": "MutexGuard::from_iter([HashMap::from_iter([(1, Sender::from_iter([Ok(\"xyzzy\".into())]))])])",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__delegate.rs_line_114_col_9_037.log",
+      "diff_path": "diff/bin__craft__src__run__delegate.rs_line_114_col_9_037.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 4.19922404,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::new(HashMap::from_iter([(1, Sender::from_iter([Ok(\"xyzzy\".into())]))]))",
+          "package": "craft",
+          "file": "bin/craft/src/run/delegate.rs",
+          "function": {
+            "function_name": "Delegate::pending",
+            "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+            "span": {
+              "start": {
+                "line": 111,
+                "column": 5
+              },
+              "end": {
+                "line": 118,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 114,
+              "column": 9
+            },
+            "end": {
+              "line": 117,
+              "column": 53
+            }
+          },
+          "replacement": "MutexGuard::new(HashMap::from_iter([(1, Sender::from_iter([Ok(\"xyzzy\".into())]))]))",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__delegate.rs_line_114_col_9_038.log",
+      "diff_path": "diff/bin__craft__src__run__delegate.rs_line_114_col_9_038.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 2.467789685,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from(HashMap::from_iter([(1, Sender::from_iter([Ok(\"xyzzy\".into())]))]))",
+          "package": "craft",
+          "file": "bin/craft/src/run/delegate.rs",
+          "function": {
+            "function_name": "Delegate::pending",
+            "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+            "span": {
+              "start": {
+                "line": 111,
+                "column": 5
+              },
+              "end": {
+                "line": 118,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 114,
+              "column": 9
+            },
+            "end": {
+              "line": 117,
+              "column": 53
+            }
+          },
+          "replacement": "MutexGuard::from(HashMap::from_iter([(1, Sender::from_iter([Ok(\"xyzzy\".into())]))]))",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__delegate.rs_line_114_col_9_039.log",
+      "diff_path": "diff/bin__craft__src__run__delegate.rs_line_114_col_9_039.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 3.028277594,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from_iter([HashMap::from_iter([(1, Sender::new(Ok(\"xyzzy\".into())))])])",
+          "package": "craft",
+          "file": "bin/craft/src/run/delegate.rs",
+          "function": {
+            "function_name": "Delegate::pending",
+            "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+            "span": {
+              "start": {
+                "line": 111,
+                "column": 5
+              },
+              "end": {
+                "line": 118,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 114,
+              "column": 9
+            },
+            "end": {
+              "line": 117,
+              "column": 53
+            }
+          },
+          "replacement": "MutexGuard::from_iter([HashMap::from_iter([(1, Sender::new(Ok(\"xyzzy\".into())))])])",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__delegate.rs_line_114_col_9_040.log",
+      "diff_path": "diff/bin__craft__src__run__delegate.rs_line_114_col_9_040.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 4.670848748,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::new(HashMap::from_iter([(1, Sender::new(Ok(\"xyzzy\".into())))]))",
+          "package": "craft",
+          "file": "bin/craft/src/run/delegate.rs",
+          "function": {
+            "function_name": "Delegate::pending",
+            "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+            "span": {
+              "start": {
+                "line": 111,
+                "column": 5
+              },
+              "end": {
+                "line": 118,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 114,
+              "column": 9
+            },
+            "end": {
+              "line": 117,
+              "column": 53
+            }
+          },
+          "replacement": "MutexGuard::new(HashMap::from_iter([(1, Sender::new(Ok(\"xyzzy\".into())))]))",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__delegate.rs_line_114_col_9_041.log",
+      "diff_path": "diff/bin__craft__src__run__delegate.rs_line_114_col_9_041.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 4.813760713,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from(HashMap::from_iter([(1, Sender::new(Ok(\"xyzzy\".into())))]))",
+          "package": "craft",
+          "file": "bin/craft/src/run/delegate.rs",
+          "function": {
+            "function_name": "Delegate::pending",
+            "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+            "span": {
+              "start": {
+                "line": 111,
+                "column": 5
+              },
+              "end": {
+                "line": 118,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 114,
+              "column": 9
+            },
+            "end": {
+              "line": 117,
+              "column": 53
+            }
+          },
+          "replacement": "MutexGuard::from(HashMap::from_iter([(1, Sender::new(Ok(\"xyzzy\".into())))]))",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__delegate.rs_line_114_col_9_042.log",
+      "diff_path": "diff/bin__craft__src__run__delegate.rs_line_114_col_9_042.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 3.392492505,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from_iter([HashMap::from_iter([(1, Sender::from(Ok(\"xyzzy\".into())))])])",
+          "package": "craft",
+          "file": "bin/craft/src/run/delegate.rs",
+          "function": {
+            "function_name": "Delegate::pending",
+            "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+            "span": {
+              "start": {
+                "line": 111,
+                "column": 5
+              },
+              "end": {
+                "line": 118,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 114,
+              "column": 9
+            },
+            "end": {
+              "line": 117,
+              "column": 53
+            }
+          },
+          "replacement": "MutexGuard::from_iter([HashMap::from_iter([(1, Sender::from(Ok(\"xyzzy\".into())))])])",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__delegate.rs_line_114_col_9_043.log",
+      "diff_path": "diff/bin__craft__src__run__delegate.rs_line_114_col_9_043.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 2.9855225560000003,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::new(HashMap::from_iter([(1, Sender::from(Ok(\"xyzzy\".into())))]))",
+          "package": "craft",
+          "file": "bin/craft/src/run/delegate.rs",
+          "function": {
+            "function_name": "Delegate::pending",
+            "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+            "span": {
+              "start": {
+                "line": 111,
+                "column": 5
+              },
+              "end": {
+                "line": 118,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 114,
+              "column": 9
+            },
+            "end": {
+              "line": 117,
+              "column": 53
+            }
+          },
+          "replacement": "MutexGuard::new(HashMap::from_iter([(1, Sender::from(Ok(\"xyzzy\".into())))]))",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__delegate.rs_line_114_col_9_044.log",
+      "diff_path": "diff/bin__craft__src__run__delegate.rs_line_114_col_9_044.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 3.01189483,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from(HashMap::from_iter([(1, Sender::from(Ok(\"xyzzy\".into())))]))",
+          "package": "craft",
+          "file": "bin/craft/src/run/delegate.rs",
+          "function": {
+            "function_name": "Delegate::pending",
+            "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+            "span": {
+              "start": {
+                "line": 111,
+                "column": 5
+              },
+              "end": {
+                "line": 118,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 114,
+              "column": 9
+            },
+            "end": {
+              "line": 117,
+              "column": 53
+            }
+          },
+          "replacement": "MutexGuard::from(HashMap::from_iter([(1, Sender::from(Ok(\"xyzzy\".into())))]))",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__delegate.rs_line_114_col_9_045.log",
+      "diff_path": "diff/bin__craft__src__run__delegate.rs_line_114_col_9_045.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 2.217127419,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/delegate.rs:129:9: replace <impl Drop for Waiting<'_>>::drop with ()",
+          "package": "craft",
+          "file": "bin/craft/src/run/delegate.rs",
+          "function": {
+            "function_name": "<impl Drop for Waiting<'_>>::drop",
+            "return_type": "",
+            "span": {
+              "start": {
+                "line": 128,
+                "column": 5
+              },
+              "end": {
+                "line": 132,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 129,
+              "column": 9
+            },
+            "end": {
+              "line": 131,
+              "column": 10
+            }
+          },
+          "replacement": "()",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/bin__craft__src__run__delegate.rs_line_129_col_9.log",
+      "diff_path": "diff/bin__craft__src__run__delegate.rs_line_129_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 6.626731051,
+          "process_status": "Success",
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 7.570841093,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=craft@0.58.0",
+            "--bin",
+            "craft"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/delegate.rs:137:5: replace reply_of -> Result<AgentReply, AgentError> with Ok(Default::default())",
+          "package": "craft",
+          "file": "bin/craft/src/run/delegate.rs",
+          "function": {
+            "function_name": "reply_of",
+            "return_type": "-> Result<AgentReply, AgentError>",
+            "span": {
+              "start": {
+                "line": 135,
+                "column": 1
+              },
+              "end": {
+                "line": 151,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 137,
+              "column": 5
+            },
+            "end": {
+              "line": 150,
+              "column": 7
+            }
+          },
+          "replacement": "Ok(Default::default())",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__delegate.rs_line_137_col_5.log",
+      "diff_path": "diff/bin__craft__src__run__delegate.rs_line_137_col_5.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 3.016322841,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/delegate.rs:155:9: replace <impl AgentBackend for Delegate>::run -> Result<AgentReply, AgentError> with Ok(Default::default())",
+          "package": "craft",
+          "file": "bin/craft/src/run/delegate.rs",
+          "function": {
+            "function_name": "<impl AgentBackend for Delegate>::run",
+            "return_type": "-> Result<AgentReply, AgentError>",
+            "span": {
+              "start": {
+                "line": 154,
+                "column": 5
+              },
+              "end": {
+                "line": 181,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 155,
+              "column": 9
+            },
+            "end": {
+              "line": 180,
+              "column": 72
+            }
+          },
+          "replacement": "Ok(Default::default())",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__delegate.rs_line_155_col_9.log",
+      "diff_path": "diff/bin__craft__src__run__delegate.rs_line_155_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 3.275298776,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/drive.rs:271:5: replace round_of -> RoundResult with Default::default()",
+          "package": "craft",
+          "file": "bin/craft/src/run/drive.rs",
+          "function": {
+            "function_name": "round_of",
+            "return_type": "-> RoundResult",
+            "span": {
+              "start": {
+                "line": 269,
+                "column": 1
+              },
+              "end": {
+                "line": 307,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 271,
+              "column": 5
+            },
+            "end": {
+              "line": 306,
+              "column": 6
+            }
+          },
+          "replacement": "Default::default()",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/bin__craft__src__run__drive.rs_line_271_col_5.log",
+      "diff_path": "diff/bin__craft__src__run__drive.rs_line_271_col_5.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 7.7860106909999995,
+          "process_status": "Success",
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 6.726652112,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=craft@0.58.0",
+            "--bin",
+            "craft"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/drive.rs:293:31: replace match guard let Some(delegate) = &ctx.host.delegate with true in round_of",
+          "package": "craft",
+          "file": "bin/craft/src/run/drive.rs",
+          "function": {
+            "function_name": "round_of",
+            "return_type": "-> RoundResult",
+            "span": {
+              "start": {
+                "line": 269,
+                "column": 1
+              },
+              "end": {
+                "line": 307,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 293,
+              "column": 31
+            },
+            "end": {
+              "line": 293,
+              "column": 70
+            }
+          },
+          "replacement": "true",
+          "genre": "MatchArmGuard"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__drive.rs_line_293_col_31.log",
+      "diff_path": "diff/bin__craft__src__run__drive.rs_line_293_col_31.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 1.356749379,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/drive.rs:293:31: replace match guard let Some(delegate) = &ctx.host.delegate with false in round_of",
+          "package": "craft",
+          "file": "bin/craft/src/run/drive.rs",
+          "function": {
+            "function_name": "round_of",
+            "return_type": "-> RoundResult",
+            "span": {
+              "start": {
+                "line": 269,
+                "column": 1
+              },
+              "end": {
+                "line": 307,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 293,
+              "column": 31
+            },
+            "end": {
+              "line": 293,
+              "column": 70
+            }
+          },
+          "replacement": "false",
+          "genre": "MatchArmGuard"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__drive.rs_line_293_col_31_001.log",
+      "diff_path": "diff/bin__craft__src__run__drive.rs_line_293_col_31_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 1.20748913,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/outcome.rs:68:5: replace stops -> bool with true",
+          "package": "craft",
+          "file": "bin/craft/src/run/outcome.rs",
+          "function": {
+            "function_name": "stops",
+            "return_type": "-> bool",
+            "span": {
+              "start": {
+                "line": 66,
+                "column": 1
+              },
+              "end": {
+                "line": 86,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 68,
+              "column": 5
+            },
+            "end": {
+              "line": 85,
+              "column": 6
+            }
+          },
+          "replacement": "true",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "MissedMutant",
+      "log_path": "log/bin__craft__src__run__outcome.rs_line_68_col_5.log",
+      "diff_path": "diff/bin__craft__src__run__outcome.rs_line_68_col_5.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 7.968962544,
+          "process_status": "Success",
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 8.447228773,
+          "process_status": "Success",
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=craft@0.58.0",
+            "--bin",
+            "craft"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/outcome.rs:68:5: replace stops -> bool with false",
+          "package": "craft",
+          "file": "bin/craft/src/run/outcome.rs",
+          "function": {
+            "function_name": "stops",
+            "return_type": "-> bool",
+            "span": {
+              "start": {
+                "line": 66,
+                "column": 1
+              },
+              "end": {
+                "line": 86,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 68,
+              "column": 5
+            },
+            "end": {
+              "line": 85,
+              "column": 6
+            }
+          },
+          "replacement": "false",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/bin__craft__src__run__outcome.rs_line_68_col_5_001.log",
+      "diff_path": "diff/bin__craft__src__run__outcome.rs_line_68_col_5_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 3.575452478,
+          "process_status": "Success",
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 7.346117362,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=craft@0.58.0",
+            "--bin",
+            "craft"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/outcome.rs:110:5: replace outcome_of -> Outcome with Default::default()",
+          "package": "craft",
+          "file": "bin/craft/src/run/outcome.rs",
+          "function": {
+            "function_name": "outcome_of",
+            "return_type": "-> Outcome",
+            "span": {
+              "start": {
+                "line": 104,
+                "column": 1
+              },
+              "end": {
+                "line": 134,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 110,
+              "column": 5
+            },
+            "end": {
+              "line": 133,
+              "column": 6
+            }
+          },
+          "replacement": "Default::default()",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__outcome.rs_line_110_col_5.log",
+      "diff_path": "diff/bin__craft__src__run__outcome.rs_line_110_col_5.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 2.932707485,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/outcome.rs:119:48: replace match guard let Some(limit) = usage_limit_text(&subtype) with true in outcome_of",
+          "package": "craft",
+          "file": "bin/craft/src/run/outcome.rs",
+          "function": {
+            "function_name": "outcome_of",
+            "return_type": "-> Outcome",
+            "span": {
+              "start": {
+                "line": 104,
+                "column": 1
+              },
+              "end": {
+                "line": 134,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 119,
+              "column": 48
+            },
+            "end": {
+              "line": 119,
+              "column": 92
+            }
+          },
+          "replacement": "true",
+          "genre": "MatchArmGuard"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__outcome.rs_line_119_col_48.log",
+      "diff_path": "diff/bin__craft__src__run__outcome.rs_line_119_col_48.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 1.657576146,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/outcome.rs:119:48: replace match guard let Some(limit) = usage_limit_text(&subtype) with false in outcome_of",
+          "package": "craft",
+          "file": "bin/craft/src/run/outcome.rs",
+          "function": {
+            "function_name": "outcome_of",
+            "return_type": "-> Outcome",
+            "span": {
+              "start": {
+                "line": 104,
+                "column": 1
+              },
+              "end": {
+                "line": 134,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 119,
+              "column": 48
+            },
+            "end": {
+              "line": 119,
+              "column": 92
+            }
+          },
+          "replacement": "false",
+          "genre": "MatchArmGuard"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__outcome.rs_line_119_col_48_001.log",
+      "diff_path": "diff/bin__craft__src__run__outcome.rs_line_119_col_48_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 3.178641188,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/there.rs:20:5: replace host_in -> Result<Host, String> with Ok(Default::default())",
+          "package": "craft",
+          "file": "bin/craft/src/run/there.rs",
+          "function": {
+            "function_name": "host_in",
+            "return_type": "-> Result<Host, String>",
+            "span": {
+              "start": {
+                "line": 14,
+                "column": 1
+              },
+              "end": {
+                "line": 34,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 20,
+              "column": 5
+            },
+            "end": {
+              "line": 33,
+              "column": 7
+            }
+          },
+          "replacement": "Ok(Default::default())",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/bin__craft__src__run__there.rs_line_20_col_5.log",
+      "diff_path": "diff/bin__craft__src__run__there.rs_line_20_col_5.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 3.8814121249999998,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/there.rs:20:40: replace || with && in host_in",
+          "package": "craft",
+          "file": "bin/craft/src/run/there.rs",
+          "function": {
+            "function_name": "host_in",
+            "return_type": "-> Result<Host, String>",
+            "span": {
+              "start": {
+                "line": 14,
+                "column": 1
+              },
+              "end": {
+                "line": 34,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 20,
+              "column": 40
+            },
+            "end": {
+              "line": 20,
+              "column": 42
+            }
+          },
+          "replacement": "&&",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/bin__craft__src__run__there.rs_line_20_col_40.log",
+      "diff_path": "diff/bin__craft__src__run__there.rs_line_20_col_40.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 8.8732772,
+          "process_status": "Success",
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 13.588416579,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=craft@0.58.0",
+            "--bin",
+            "craft"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "bin/craft/src/run/there.rs:20:18: replace != with == in host_in",
+          "package": "craft",
+          "file": "bin/craft/src/run/there.rs",
+          "function": {
+            "function_name": "host_in",
+            "return_type": "-> Result<Host, String>",
+            "span": {
+              "start": {
+                "line": 14,
+                "column": 1
+              },
+              "end": {
+                "line": 34,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 20,
+              "column": 18
+            },
+            "end": {
+              "line": 20,
+              "column": 20
+            }
+          },
+          "replacement": "==",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "CaughtMutant",
+      "log_path": "log/bin__craft__src__run__there.rs_line_20_col_18.log",
+      "diff_path": "diff/bin__craft__src__run__there.rs_line_20_col_18.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 6.027668314,
+          "process_status": "Success",
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=craft@0.58.0"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 7.726650981,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/ubuntu/.rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=craft@0.58.0",
+            "--bin",
+            "craft"
+          ]
+        }
+      ]
+    }
+  ],
+  "total_mutants": 71,
+  "missed": 2,
+  "caught": 9,
+  "timeout": 3,
+  "unviable": 57,
+  "success": 0,
+  "start_time": "2026-11-23T19:57:42.850196049Z",
+  "end_time": "2026-11-23T20:05:28.814674585Z",
+  "cargo_mutants_version": "27.1.0"
+}

@@ -1,0 +1,9 @@
+bin/craft/src/run/mod.rs:134:44: replace || with && in ready
+bin/craft/src/run/mod.rs:134:22: replace != with == in ready
+bin/craft/src/run/mod.rs:134:47: delete ! in ready
+bin/craft/src/run/delegate.rs:85:9: replace Delegate::name with ()
+bin/craft/src/run/delegate.rs:129:9: replace <impl Drop for Waiting<'_>>::drop with ()
+bin/craft/src/run/drive.rs:271:5: replace round_of -> RoundResult with Default::default()
+bin/craft/src/run/outcome.rs:68:5: replace stops -> bool with false
+bin/craft/src/run/there.rs:20:40: replace || with && in host_in
+bin/craft/src/run/there.rs:20:18: replace != with == in host_in

@@ -1,0 +1,2274 @@
+[
+  {
+    "diff": "--- bin/craft/src/run/mod.rs\n+++ replace ready -> Result<(NonZeroUsize, Host, PathBuf), String> with Ok((1.try_into().unwrap(), Default::default(), Default::default()))\n@@ -123,30 +123,17 @@\n     )?;\n     sink.emit(&Event::result(None, None, 2));\n     Ok(ExitCode::from(2))\n }\n \n /// The host and what it runs with, or why it cannot be used: opencode is asked first which\n /// agents it has.\n fn ready(args: &RunArgs, repo: &Path, sink: Sink) -> Result<(NonZeroUsize, Host, PathBuf), String> {\n-    let (concurrency, mut host, root) =\n-        concurrency_of(args).and_then(|c| Ok((c, host_of(args)?, root_of(args)?)))?;\n-    if args.delegate {\n-        if host.kind != HostKind::OpenCode || !sink.json {\n-            return Err(\"--delegate is opencode's alone, with --events json\".into());\n-        }\n-        host.delegate = Some(delegate::Delegate::on_stdin(move |e| sink.emit(&e)));\n-        return Ok((concurrency, host, root));\n-    }\n-    if host.kind == HostKind::OpenCode {\n-        let ready = opencode::preflight(&host.command, repo, &|l| sink.log(l))?;\n-        (host.agents, host.archived) = (ready.agents, ready.archived);\n-    }\n-    Ok((concurrency, host, root))\n+    Ok((1.try_into().unwrap(), Default::default(), Default::default())) /* ~ changed by cargo-mutants ~ */\n }\n \n pub async fn run(args: RunArgs) -> Result<ExitCode> {\n     // Before any task starts, so no stopping signal finds craft without a handler while a task's\n     // process group is up: the round in flight stops its tasks, and the run is filed INCOMPLETE\n     // with how to resume it (realm @nick/craft, node #40).\n     let signal = crate::review::stop_signal();\n     let (stopping, stop) = tokio::sync::watch::channel(None);\n",
+    "file": "bin/craft/src/run/mod.rs",
+    "function": {
+      "function_name": "ready",
+      "return_type": "-> Result<(NonZeroUsize, Host, PathBuf), String>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 145
+        },
+        "start": {
+          "column": 1,
+          "line": 128
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/mod.rs:131:5: replace ready -> Result<(NonZeroUsize, Host, PathBuf), String> with Ok((1.try_into().unwrap(), Default::default(), Default::default()))",
+    "package": "craft",
+    "replacement": "Ok((1.try_into().unwrap(), Default::default(), Default::default()))",
+    "span": {
+      "end": {
+        "column": 34,
+        "line": 144
+      },
+      "start": {
+        "column": 5,
+        "line": 131
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/mod.rs\n+++ replace || with && in ready\n@@ -126,17 +126,17 @@\n }\n \n /// The host and what it runs with, or why it cannot be used: opencode is asked first which\n /// agents it has.\n fn ready(args: &RunArgs, repo: &Path, sink: Sink) -> Result<(NonZeroUsize, Host, PathBuf), String> {\n     let (concurrency, mut host, root) =\n         concurrency_of(args).and_then(|c| Ok((c, host_of(args)?, root_of(args)?)))?;\n     if args.delegate {\n-        if host.kind != HostKind::OpenCode || !sink.json {\n+        if host.kind != HostKind::OpenCode && /* ~ changed by cargo-mutants ~ */ !sink.json {\n             return Err(\"--delegate is opencode's alone, with --events json\".into());\n         }\n         host.delegate = Some(delegate::Delegate::on_stdin(move |e| sink.emit(&e)));\n         return Ok((concurrency, host, root));\n     }\n     if host.kind == HostKind::OpenCode {\n         let ready = opencode::preflight(&host.command, repo, &|l| sink.log(l))?;\n         (host.agents, host.archived) = (ready.agents, ready.archived);\n",
+    "file": "bin/craft/src/run/mod.rs",
+    "function": {
+      "function_name": "ready",
+      "return_type": "-> Result<(NonZeroUsize, Host, PathBuf), String>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 145
+        },
+        "start": {
+          "column": 1,
+          "line": 128
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "bin/craft/src/run/mod.rs:134:44: replace || with && in ready",
+    "package": "craft",
+    "replacement": "&&",
+    "span": {
+      "end": {
+        "column": 46,
+        "line": 134
+      },
+      "start": {
+        "column": 44,
+        "line": 134
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/mod.rs\n+++ replace != with == in ready\n@@ -126,17 +126,17 @@\n }\n \n /// The host and what it runs with, or why it cannot be used: opencode is asked first which\n /// agents it has.\n fn ready(args: &RunArgs, repo: &Path, sink: Sink) -> Result<(NonZeroUsize, Host, PathBuf), String> {\n     let (concurrency, mut host, root) =\n         concurrency_of(args).and_then(|c| Ok((c, host_of(args)?, root_of(args)?)))?;\n     if args.delegate {\n-        if host.kind != HostKind::OpenCode || !sink.json {\n+        if host.kind == /* ~ changed by cargo-mutants ~ */ HostKind::OpenCode || !sink.json {\n             return Err(\"--delegate is opencode's alone, with --events json\".into());\n         }\n         host.delegate = Some(delegate::Delegate::on_stdin(move |e| sink.emit(&e)));\n         return Ok((concurrency, host, root));\n     }\n     if host.kind == HostKind::OpenCode {\n         let ready = opencode::preflight(&host.command, repo, &|l| sink.log(l))?;\n         (host.agents, host.archived) = (ready.agents, ready.archived);\n",
+    "file": "bin/craft/src/run/mod.rs",
+    "function": {
+      "function_name": "ready",
+      "return_type": "-> Result<(NonZeroUsize, Host, PathBuf), String>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 145
+        },
+        "start": {
+          "column": 1,
+          "line": 128
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "bin/craft/src/run/mod.rs:134:22: replace != with == in ready",
+    "package": "craft",
+    "replacement": "==",
+    "span": {
+      "end": {
+        "column": 24,
+        "line": 134
+      },
+      "start": {
+        "column": 22,
+        "line": 134
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/mod.rs\n+++ delete ! in ready\n@@ -126,17 +126,17 @@\n }\n \n /// The host and what it runs with, or why it cannot be used: opencode is asked first which\n /// agents it has.\n fn ready(args: &RunArgs, repo: &Path, sink: Sink) -> Result<(NonZeroUsize, Host, PathBuf), String> {\n     let (concurrency, mut host, root) =\n         concurrency_of(args).and_then(|c| Ok((c, host_of(args)?, root_of(args)?)))?;\n     if args.delegate {\n-        if host.kind != HostKind::OpenCode || !sink.json {\n+        if host.kind != HostKind::OpenCode ||  /* ~ changed by cargo-mutants ~ */sink.json {\n             return Err(\"--delegate is opencode's alone, with --events json\".into());\n         }\n         host.delegate = Some(delegate::Delegate::on_stdin(move |e| sink.emit(&e)));\n         return Ok((concurrency, host, root));\n     }\n     if host.kind == HostKind::OpenCode {\n         let ready = opencode::preflight(&host.command, repo, &|l| sink.log(l))?;\n         (host.agents, host.archived) = (ready.agents, ready.archived);\n",
+    "file": "bin/craft/src/run/mod.rs",
+    "function": {
+      "function_name": "ready",
+      "return_type": "-> Result<(NonZeroUsize, Host, PathBuf), String>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 145
+        },
+        "start": {
+          "column": 1,
+          "line": 128
+        }
+      }
+    },
+    "genre": "UnaryOperator",
+    "name": "bin/craft/src/run/mod.rs:134:47: delete ! in ready",
+    "package": "craft",
+    "replacement": "",
+    "span": {
+      "end": {
+        "column": 48,
+        "line": 134
+      },
+      "start": {
+        "column": 47,
+        "line": 134
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/args.rs\n+++ replace host_with -> Result<Host, String> with Ok(Default::default())\n@@ -59,42 +59,17 @@\n         }\n         (_, None) => Ok(ThinkingTable::new()),\n     }\n }\n \n /// The host from the arguments and `env`, the host's variable for a name, or why it cannot be\n /// used.\n fn host_with(args: &RunArgs, env: &dyn Fn(&str) -> Option<String>) -> Result<Host, String> {\n-    let (name, command) = match args.backend {\n-        HostKind::Codex => (r\"^[\\w.:/-]{1,80}$\", \"codex\"),\n-        HostKind::Pi => (r\"^[\\w.:/@*-]{1,120}$\", \"pi\"),\n-        // `provider/model`, a `#variant` allowed (opencode 2.x).\n-        HostKind::OpenCode => (r\"^[\\w.@-]{1,60}/[\\w.:/@#-]{1,120}$\", \"opencode\"),\n-    };\n-    let name = Regex::new(name).map_err(|e| e.to_string())?;\n-    let spec = args\n-        .models\n-        .clone()\n-        .or_else(|| env(\"MODELS\"))\n-        .unwrap_or_default();\n-    let command = args\n-        .host_bin\n-        .clone()\n-        .or_else(|| env(\"BIN\").map(PathBuf::from))\n-        .unwrap_or_else(|| PathBuf::from(command));\n-    Ok(Host {\n-        kind: args.backend,\n-        models: models::model_table(&spec, &name)?,\n-        thinking: thinking_of(args, env)?,\n-        command,\n-        agents: None,\n-        archived: true,\n-        delegate: None,\n-    })\n+    Ok(Default::default()) /* ~ changed by cargo-mutants ~ */\n }\n \n /// The plugin root the tasks read craft's agents and skills from, and the run is filed through.\n pub(super) fn root_of(args: &RunArgs) -> Result<PathBuf, String> {\n     let given = args.start.craft_root.as_deref().map(std::path::absolute);\n     let near = match given {\n         Some(Ok(p)) => plugin_root_at(&p),\n         Some(Err(e)) => return Err(format!(\"--craft-root cannot be resolved: {e}\")),\n",
+    "file": "bin/craft/src/run/args.rs",
+    "function": {
+      "function_name": "host_with",
+      "return_type": "-> Result<Host, String>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 93
+        },
+        "start": {
+          "column": 1,
+          "line": 64
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/args.rs:67:5: replace host_with -> Result<Host, String> with Ok(Default::default())",
+    "package": "craft",
+    "replacement": "Ok(Default::default())",
+    "span": {
+      "end": {
+        "column": 7,
+        "line": 92
+      },
+      "start": {
+        "column": 5,
+        "line": 67
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/delegate.rs\n+++ replace <impl std::fmt::Debug for Delegate>::fmt -> std::fmt::Result with Ok(Default::default())\n@@ -42,17 +42,17 @@\n }\n \n /// The backend that hands each task to the delegating process.\n #[derive(Clone)]\n pub(crate) struct Delegate(Arc<Shared>);\n \n impl std::fmt::Debug for Delegate {\n     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {\n-        f.write_str(\"Delegate\")\n+        Ok(Default::default()) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n /// Why a dispatch has no reply: the delegating process closed its input first.\n const CLOSED: &str = \"the process that delegates the tasks closed its input\";\n \n impl Delegate {\n     /// A delegate whose events go to `emit`; replies come through [`Delegate::deliver`].\n",
+    "file": "bin/craft/src/run/delegate.rs",
+    "function": {
+      "function_name": "<impl std::fmt::Debug for Delegate>::fmt",
+      "return_type": "-> std::fmt::Result",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 51
+        },
+        "start": {
+          "column": 5,
+          "line": 49
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/delegate.rs:50:9: replace <impl std::fmt::Debug for Delegate>::fmt -> std::fmt::Result with Ok(Default::default())",
+    "package": "craft",
+    "replacement": "Ok(Default::default())",
+    "span": {
+      "end": {
+        "column": 32,
+        "line": 50
+      },
+      "start": {
+        "column": 9,
+        "line": 50
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/delegate.rs\n+++ replace Delegate::on_stdin -> Self with Default::default()\n@@ -63,26 +63,17 @@\n             labels: Mutex::new(HashMap::new()),\n             emit: Box::new(emit),\n         }))\n     }\n \n     /// A delegate whose replies are read from this process's stdin, on a thread of their own;\n     /// once stdin ends, every dispatch still waiting fails.\n     pub(crate) fn on_stdin(emit: impl Fn(Event) + Send + Sync + 'static) -> Self {\n-        let delegate = Self::new(emit);\n-        let reader = delegate.clone();\n-        std::thread::spawn(move || {\n-            for line in std::io::stdin().lock().lines() {\n-                let Ok(line) = line else { break };\n-                reader.deliver(&line);\n-            }\n-            reader.close();\n-        });\n-        delegate\n+        Default::default() /* ~ changed by cargo-mutants ~ */\n     }\n \n     /// Names the round's tasks, so each `task` event carries its label.\n     pub(crate) fn name(&self, tasks: &[Task]) {\n         let mut labels = self.0.labels.lock().unwrap_or_else(PoisonError::into_inner);\n         for t in tasks {\n             labels.insert(t.id.clone(), t.label.clone());\n         }\n",
+    "file": "bin/craft/src/run/delegate.rs",
+    "function": {
+      "function_name": "Delegate::on_stdin",
+      "return_type": "-> Self",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 81
+        },
+        "start": {
+          "column": 5,
+          "line": 68
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/delegate.rs:71:9: replace Delegate::on_stdin -> Self with Default::default()",
+    "package": "craft",
+    "replacement": "Default::default()",
+    "span": {
+      "end": {
+        "column": 17,
+        "line": 80
+      },
+      "start": {
+        "column": 9,
+        "line": 71
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/delegate.rs\n+++ replace Delegate::name with ()\n@@ -77,20 +77,17 @@\n             }\n             reader.close();\n         });\n         delegate\n     }\n \n     /// Names the round's tasks, so each `task` event carries its label.\n     pub(crate) fn name(&self, tasks: &[Task]) {\n-        let mut labels = self.0.labels.lock().unwrap_or_else(PoisonError::into_inner);\n-        for t in tasks {\n-            labels.insert(t.id.clone(), t.label.clone());\n-        }\n+        () /* ~ changed by cargo-mutants ~ */\n     }\n \n     /// One reply line handed to the dispatch it names; a line that is no reply, or names no\n     /// dispatch still waiting, is passed over. Whether it was taken.\n     pub(crate) fn deliver(&self, line: &str) -> bool {\n         let Ok(reply) = serde_json::from_str::<Reply>(line) else {\n             return false;\n         };\n",
+    "file": "bin/craft/src/run/delegate.rs",
+    "function": {
+      "function_name": "Delegate::name",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 89
+        },
+        "start": {
+          "column": 5,
+          "line": 83
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/delegate.rs:85:9: replace Delegate::name with ()",
+    "package": "craft",
+    "replacement": "()",
+    "span": {
+      "end": {
+        "column": 10,
+        "line": 88
+      },
+      "start": {
+        "column": 9,
+        "line": 85
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/delegate.rs\n+++ replace Delegate::deliver -> bool with true\n@@ -86,26 +86,17 @@\n         for t in tasks {\n             labels.insert(t.id.clone(), t.label.clone());\n         }\n     }\n \n     /// One reply line handed to the dispatch it names; a line that is no reply, or names no\n     /// dispatch still waiting, is passed over. Whether it was taken.\n     pub(crate) fn deliver(&self, line: &str) -> bool {\n-        let Ok(reply) = serde_json::from_str::<Reply>(line) else {\n-            return false;\n-        };\n-        let said = match (reply.text, reply.error) {\n-            (_, Some(error)) => Err(error),\n-            (Some(text), None) => Ok(text),\n-            (None, None) => return false,\n-        };\n-        let waiting = self.pending().remove(&reply.key);\n-        waiting.is_some_and(|tx| tx.send(said).is_ok())\n+        true /* ~ changed by cargo-mutants ~ */\n     }\n \n     /// Every dispatch still waiting fails: no reply can come any more.\n     fn close(&self) {\n         self.pending().clear();\n     }\n \n     fn pending(\n",
+    "file": "bin/craft/src/run/delegate.rs",
+    "function": {
+      "function_name": "Delegate::deliver",
+      "return_type": "-> bool",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 104
+        },
+        "start": {
+          "column": 5,
+          "line": 91
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/delegate.rs:94:9: replace Delegate::deliver -> bool with true",
+    "package": "craft",
+    "replacement": "true",
+    "span": {
+      "end": {
+        "column": 56,
+        "line": 103
+      },
+      "start": {
+        "column": 9,
+        "line": 94
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/delegate.rs\n+++ replace Delegate::deliver -> bool with false\n@@ -86,26 +86,17 @@\n         for t in tasks {\n             labels.insert(t.id.clone(), t.label.clone());\n         }\n     }\n \n     /// One reply line handed to the dispatch it names; a line that is no reply, or names no\n     /// dispatch still waiting, is passed over. Whether it was taken.\n     pub(crate) fn deliver(&self, line: &str) -> bool {\n-        let Ok(reply) = serde_json::from_str::<Reply>(line) else {\n-            return false;\n-        };\n-        let said = match (reply.text, reply.error) {\n-            (_, Some(error)) => Err(error),\n-            (Some(text), None) => Ok(text),\n-            (None, None) => return false,\n-        };\n-        let waiting = self.pending().remove(&reply.key);\n-        waiting.is_some_and(|tx| tx.send(said).is_ok())\n+        false /* ~ changed by cargo-mutants ~ */\n     }\n \n     /// Every dispatch still waiting fails: no reply can come any more.\n     fn close(&self) {\n         self.pending().clear();\n     }\n \n     fn pending(\n",
+    "file": "bin/craft/src/run/delegate.rs",
+    "function": {
+      "function_name": "Delegate::deliver",
+      "return_type": "-> bool",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 104
+        },
+        "start": {
+          "column": 5,
+          "line": 91
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/delegate.rs:94:9: replace Delegate::deliver -> bool with false",
+    "package": "craft",
+    "replacement": "false",
+    "span": {
+      "end": {
+        "column": 56,
+        "line": 103
+      },
+      "start": {
+        "column": 9,
+        "line": 94
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/delegate.rs\n+++ replace Delegate::close with ()\n@@ -100,17 +100,17 @@\n             (None, None) => return false,\n         };\n         let waiting = self.pending().remove(&reply.key);\n         waiting.is_some_and(|tx| tx.send(said).is_ok())\n     }\n \n     /// Every dispatch still waiting fails: no reply can come any more.\n     fn close(&self) {\n-        self.pending().clear();\n+        () /* ~ changed by cargo-mutants ~ */\n     }\n \n     fn pending(\n         &self,\n     ) -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> {\n         self.0\n             .pending\n             .lock()\n",
+    "file": "bin/craft/src/run/delegate.rs",
+    "function": {
+      "function_name": "Delegate::close",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 109
+        },
+        "start": {
+          "column": 5,
+          "line": 106
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/delegate.rs:108:9: replace Delegate::close with ()",
+    "package": "craft",
+    "replacement": "()",
+    "span": {
+      "end": {
+        "column": 32,
+        "line": 108
+      },
+      "start": {
+        "column": 9,
+        "line": 108
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/delegate.rs\n+++ replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::new()\n@@ -106,20 +106,17 @@\n     /// Every dispatch still waiting fails: no reply can come any more.\n     fn close(&self) {\n         self.pending().clear();\n     }\n \n     fn pending(\n         &self,\n     ) -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> {\n-        self.0\n-            .pending\n-            .lock()\n-            .unwrap_or_else(PoisonError::into_inner)\n+        MutexGuard::new() /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n /// A dispatch still waiting when its future is dropped: the delegating process is told to stop it.\n struct Waiting<'a> {\n     delegate: &'a Delegate,\n     key: u64,\n }\n",
+    "file": "bin/craft/src/run/delegate.rs",
+    "function": {
+      "function_name": "Delegate::pending",
+      "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 118
+        },
+        "start": {
+          "column": 5,
+          "line": 111
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::new()",
+    "package": "craft",
+    "replacement": "MutexGuard::new()",
+    "span": {
+      "end": {
+        "column": 53,
+        "line": 117
+      },
+      "start": {
+        "column": 9,
+        "line": 114
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/delegate.rs\n+++ replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from_iter([HashMap::new()])\n@@ -106,20 +106,17 @@\n     /// Every dispatch still waiting fails: no reply can come any more.\n     fn close(&self) {\n         self.pending().clear();\n     }\n \n     fn pending(\n         &self,\n     ) -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> {\n-        self.0\n-            .pending\n-            .lock()\n-            .unwrap_or_else(PoisonError::into_inner)\n+        MutexGuard::from_iter([HashMap::new()]) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n /// A dispatch still waiting when its future is dropped: the delegating process is told to stop it.\n struct Waiting<'a> {\n     delegate: &'a Delegate,\n     key: u64,\n }\n",
+    "file": "bin/craft/src/run/delegate.rs",
+    "function": {
+      "function_name": "Delegate::pending",
+      "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 118
+        },
+        "start": {
+          "column": 5,
+          "line": 111
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from_iter([HashMap::new()])",
+    "package": "craft",
+    "replacement": "MutexGuard::from_iter([HashMap::new()])",
+    "span": {
+      "end": {
+        "column": 53,
+        "line": 117
+      },
+      "start": {
+        "column": 9,
+        "line": 114
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/delegate.rs\n+++ replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::new(HashMap::new())\n@@ -106,20 +106,17 @@\n     /// Every dispatch still waiting fails: no reply can come any more.\n     fn close(&self) {\n         self.pending().clear();\n     }\n \n     fn pending(\n         &self,\n     ) -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> {\n-        self.0\n-            .pending\n-            .lock()\n-            .unwrap_or_else(PoisonError::into_inner)\n+        MutexGuard::new(HashMap::new()) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n /// A dispatch still waiting when its future is dropped: the delegating process is told to stop it.\n struct Waiting<'a> {\n     delegate: &'a Delegate,\n     key: u64,\n }\n",
+    "file": "bin/craft/src/run/delegate.rs",
+    "function": {
+      "function_name": "Delegate::pending",
+      "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 118
+        },
+        "start": {
+          "column": 5,
+          "line": 111
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::new(HashMap::new())",
+    "package": "craft",
+    "replacement": "MutexGuard::new(HashMap::new())",
+    "span": {
+      "end": {
+        "column": 53,
+        "line": 117
+      },
+      "start": {
+        "column": 9,
+        "line": 114
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/delegate.rs\n+++ replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from(HashMap::new())\n@@ -106,20 +106,17 @@\n     /// Every dispatch still waiting fails: no reply can come any more.\n     fn close(&self) {\n         self.pending().clear();\n     }\n \n     fn pending(\n         &self,\n     ) -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> {\n-        self.0\n-            .pending\n-            .lock()\n-            .unwrap_or_else(PoisonError::into_inner)\n+        MutexGuard::from(HashMap::new()) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n /// A dispatch still waiting when its future is dropped: the delegating process is told to stop it.\n struct Waiting<'a> {\n     delegate: &'a Delegate,\n     key: u64,\n }\n",
+    "file": "bin/craft/src/run/delegate.rs",
+    "function": {
+      "function_name": "Delegate::pending",
+      "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 118
+        },
+        "start": {
+          "column": 5,
+          "line": 111
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from(HashMap::new())",
+    "package": "craft",
+    "replacement": "MutexGuard::from(HashMap::new())",
+    "span": {
+      "end": {
+        "column": 53,
+        "line": 117
+      },
+      "start": {
+        "column": 9,
+        "line": 114
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/delegate.rs\n+++ replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from_iter([HashMap::from_iter([(0, Sender::new())])])\n@@ -106,20 +106,17 @@\n     /// Every dispatch still waiting fails: no reply can come any more.\n     fn close(&self) {\n         self.pending().clear();\n     }\n \n     fn pending(\n         &self,\n     ) -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> {\n-        self.0\n-            .pending\n-            .lock()\n-            .unwrap_or_else(PoisonError::into_inner)\n+        MutexGuard::from_iter([HashMap::from_iter([(0, Sender::new())])]) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n /// A dispatch still waiting when its future is dropped: the delegating process is told to stop it.\n struct Waiting<'a> {\n     delegate: &'a Delegate,\n     key: u64,\n }\n",
+    "file": "bin/craft/src/run/delegate.rs",
+    "function": {
+      "function_name": "Delegate::pending",
+      "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 118
+        },
+        "start": {
+          "column": 5,
+          "line": 111
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from_iter([HashMap::from_iter([(0, Sender::new())])])",
+    "package": "craft",
+    "replacement": "MutexGuard::from_iter([HashMap::from_iter([(0, Sender::new())])])",
+    "span": {
+      "end": {
+        "column": 53,
+        "line": 117
+      },
+      "start": {
+        "column": 9,
+        "line": 114
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/delegate.rs\n+++ replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::new(HashMap::from_iter([(0, Sender::new())]))\n@@ -106,20 +106,17 @@\n     /// Every dispatch still waiting fails: no reply can come any more.\n     fn close(&self) {\n         self.pending().clear();\n     }\n \n     fn pending(\n         &self,\n     ) -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> {\n-        self.0\n-            .pending\n-            .lock()\n-            .unwrap_or_else(PoisonError::into_inner)\n+        MutexGuard::new(HashMap::from_iter([(0, Sender::new())])) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n /// A dispatch still waiting when its future is dropped: the delegating process is told to stop it.\n struct Waiting<'a> {\n     delegate: &'a Delegate,\n     key: u64,\n }\n",
+    "file": "bin/craft/src/run/delegate.rs",
+    "function": {
+      "function_name": "Delegate::pending",
+      "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 118
+        },
+        "start": {
+          "column": 5,
+          "line": 111
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::new(HashMap::from_iter([(0, Sender::new())]))",
+    "package": "craft",
+    "replacement": "MutexGuard::new(HashMap::from_iter([(0, Sender::new())]))",
+    "span": {
+      "end": {
+        "column": 53,
+        "line": 117
+      },
+      "start": {
+        "column": 9,
+        "line": 114
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/delegate.rs\n+++ replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from(HashMap::from_iter([(0, Sender::new())]))\n@@ -106,20 +106,17 @@\n     /// Every dispatch still waiting fails: no reply can come any more.\n     fn close(&self) {\n         self.pending().clear();\n     }\n \n     fn pending(\n         &self,\n     ) -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> {\n-        self.0\n-            .pending\n-            .lock()\n-            .unwrap_or_else(PoisonError::into_inner)\n+        MutexGuard::from(HashMap::from_iter([(0, Sender::new())])) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n /// A dispatch still waiting when its future is dropped: the delegating process is told to stop it.\n struct Waiting<'a> {\n     delegate: &'a Delegate,\n     key: u64,\n }\n",
+    "file": "bin/craft/src/run/delegate.rs",
+    "function": {
+      "function_name": "Delegate::pending",
+      "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 118
+        },
+        "start": {
+          "column": 5,
+          "line": 111
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from(HashMap::from_iter([(0, Sender::new())]))",
+    "package": "craft",
+    "replacement": "MutexGuard::from(HashMap::from_iter([(0, Sender::new())]))",
+    "span": {
+      "end": {
+        "column": 53,
+        "line": 117
+      },
+      "start": {
+        "column": 9,
+        "line": 114
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/delegate.rs\n+++ replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from_iter([HashMap::from_iter([(0, Sender::from_iter([Ok(String::new())]))])])\n@@ -106,20 +106,17 @@\n     /// Every dispatch still waiting fails: no reply can come any more.\n     fn close(&self) {\n         self.pending().clear();\n     }\n \n     fn pending(\n         &self,\n     ) -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> {\n-        self.0\n-            .pending\n-            .lock()\n-            .unwrap_or_else(PoisonError::into_inner)\n+        MutexGuard::from_iter([HashMap::from_iter([(0, Sender::from_iter([Ok(String::new())]))])]) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n /// A dispatch still waiting when its future is dropped: the delegating process is told to stop it.\n struct Waiting<'a> {\n     delegate: &'a Delegate,\n     key: u64,\n }\n",
+    "file": "bin/craft/src/run/delegate.rs",
+    "function": {
+      "function_name": "Delegate::pending",
+      "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 118
+        },
+        "start": {
+          "column": 5,
+          "line": 111
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from_iter([HashMap::from_iter([(0, Sender::from_iter([Ok(String::new())]))])])",
+    "package": "craft",
+    "replacement": "MutexGuard::from_iter([HashMap::from_iter([(0, Sender::from_iter([Ok(String::new())]))])])",
+    "span": {
+      "end": {
+        "column": 53,
+        "line": 117
+      },
+      "start": {
+        "column": 9,
+        "line": 114
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/delegate.rs\n+++ replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::new(HashMap::from_iter([(0, Sender::from_iter([Ok(String::new())]))]))\n@@ -106,20 +106,17 @@\n     /// Every dispatch still waiting fails: no reply can come any more.\n     fn close(&self) {\n         self.pending().clear();\n     }\n \n     fn pending(\n         &self,\n     ) -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> {\n-        self.0\n-            .pending\n-            .lock()\n-            .unwrap_or_else(PoisonError::into_inner)\n+        MutexGuard::new(HashMap::from_iter([(0, Sender::from_iter([Ok(String::new())]))])) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n /// A dispatch still waiting when its future is dropped: the delegating process is told to stop it.\n struct Waiting<'a> {\n     delegate: &'a Delegate,\n     key: u64,\n }\n",
+    "file": "bin/craft/src/run/delegate.rs",
+    "function": {
+      "function_name": "Delegate::pending",
+      "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 118
+        },
+        "start": {
+          "column": 5,
+          "line": 111
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::new(HashMap::from_iter([(0, Sender::from_iter([Ok(String::new())]))]))",
+    "package": "craft",
+    "replacement": "MutexGuard::new(HashMap::from_iter([(0, Sender::from_iter([Ok(String::new())]))]))",
+    "span": {
+      "end": {
+        "column": 53,
+        "line": 117
+      },
+      "start": {
+        "column": 9,
+        "line": 114
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/delegate.rs\n+++ replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from(HashMap::from_iter([(0, Sender::from_iter([Ok(String::new())]))]))\n@@ -106,20 +106,17 @@\n     /// Every dispatch still waiting fails: no reply can come any more.\n     fn close(&self) {\n         self.pending().clear();\n     }\n \n     fn pending(\n         &self,\n     ) -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> {\n-        self.0\n-            .pending\n-            .lock()\n-            .unwrap_or_else(PoisonError::into_inner)\n+        MutexGuard::from(HashMap::from_iter([(0, Sender::from_iter([Ok(String::new())]))])) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n /// A dispatch still waiting when its future is dropped: the delegating process is told to stop it.\n struct Waiting<'a> {\n     delegate: &'a Delegate,\n     key: u64,\n }\n",
+    "file": "bin/craft/src/run/delegate.rs",
+    "function": {
+      "function_name": "Delegate::pending",
+      "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 118
+        },
+        "start": {
+          "column": 5,
+          "line": 111
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from(HashMap::from_iter([(0, Sender::from_iter([Ok(String::new())]))]))",
+    "package": "craft",
+    "replacement": "MutexGuard::from(HashMap::from_iter([(0, Sender::from_iter([Ok(String::new())]))]))",
+    "span": {
+      "end": {
+        "column": 53,
+        "line": 117
+      },
+      "start": {
+        "column": 9,
+        "line": 114
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/delegate.rs\n+++ replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from_iter([HashMap::from_iter([(0, Sender::new(Ok(String::new())))])])\n@@ -106,20 +106,17 @@\n     /// Every dispatch still waiting fails: no reply can come any more.\n     fn close(&self) {\n         self.pending().clear();\n     }\n \n     fn pending(\n         &self,\n     ) -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> {\n-        self.0\n-            .pending\n-            .lock()\n-            .unwrap_or_else(PoisonError::into_inner)\n+        MutexGuard::from_iter([HashMap::from_iter([(0, Sender::new(Ok(String::new())))])]) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n /// A dispatch still waiting when its future is dropped: the delegating process is told to stop it.\n struct Waiting<'a> {\n     delegate: &'a Delegate,\n     key: u64,\n }\n",
+    "file": "bin/craft/src/run/delegate.rs",
+    "function": {
+      "function_name": "Delegate::pending",
+      "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 118
+        },
+        "start": {
+          "column": 5,
+          "line": 111
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from_iter([HashMap::from_iter([(0, Sender::new(Ok(String::new())))])])",
+    "package": "craft",
+    "replacement": "MutexGuard::from_iter([HashMap::from_iter([(0, Sender::new(Ok(String::new())))])])",
+    "span": {
+      "end": {
+        "column": 53,
+        "line": 117
+      },
+      "start": {
+        "column": 9,
+        "line": 114
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/delegate.rs\n+++ replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::new(HashMap::from_iter([(0, Sender::new(Ok(String::new())))]))\n@@ -106,20 +106,17 @@\n     /// Every dispatch still waiting fails: no reply can come any more.\n     fn close(&self) {\n         self.pending().clear();\n     }\n \n     fn pending(\n         &self,\n     ) -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> {\n-        self.0\n-            .pending\n-            .lock()\n-            .unwrap_or_else(PoisonError::into_inner)\n+        MutexGuard::new(HashMap::from_iter([(0, Sender::new(Ok(String::new())))])) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n /// A dispatch still waiting when its future is dropped: the delegating process is told to stop it.\n struct Waiting<'a> {\n     delegate: &'a Delegate,\n     key: u64,\n }\n",
+    "file": "bin/craft/src/run/delegate.rs",
+    "function": {
+      "function_name": "Delegate::pending",
+      "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 118
+        },
+        "start": {
+          "column": 5,
+          "line": 111
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::new(HashMap::from_iter([(0, Sender::new(Ok(String::new())))]))",
+    "package": "craft",
+    "replacement": "MutexGuard::new(HashMap::from_iter([(0, Sender::new(Ok(String::new())))]))",
+    "span": {
+      "end": {
+        "column": 53,
+        "line": 117
+      },
+      "start": {
+        "column": 9,
+        "line": 114
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/delegate.rs\n+++ replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from(HashMap::from_iter([(0, Sender::new(Ok(String::new())))]))\n@@ -106,20 +106,17 @@\n     /// Every dispatch still waiting fails: no reply can come any more.\n     fn close(&self) {\n         self.pending().clear();\n     }\n \n     fn pending(\n         &self,\n     ) -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> {\n-        self.0\n-            .pending\n-            .lock()\n-            .unwrap_or_else(PoisonError::into_inner)\n+        MutexGuard::from(HashMap::from_iter([(0, Sender::new(Ok(String::new())))])) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n /// A dispatch still waiting when its future is dropped: the delegating process is told to stop it.\n struct Waiting<'a> {\n     delegate: &'a Delegate,\n     key: u64,\n }\n",
+    "file": "bin/craft/src/run/delegate.rs",
+    "function": {
+      "function_name": "Delegate::pending",
+      "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 118
+        },
+        "start": {
+          "column": 5,
+          "line": 111
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from(HashMap::from_iter([(0, Sender::new(Ok(String::new())))]))",
+    "package": "craft",
+    "replacement": "MutexGuard::from(HashMap::from_iter([(0, Sender::new(Ok(String::new())))]))",
+    "span": {
+      "end": {
+        "column": 53,
+        "line": 117
+      },
+      "start": {
+        "column": 9,
+        "line": 114
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/delegate.rs\n+++ replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from_iter([HashMap::from_iter([(0, Sender::from(Ok(String::new())))])])\n@@ -106,20 +106,17 @@\n     /// Every dispatch still waiting fails: no reply can come any more.\n     fn close(&self) {\n         self.pending().clear();\n     }\n \n     fn pending(\n         &self,\n     ) -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> {\n-        self.0\n-            .pending\n-            .lock()\n-            .unwrap_or_else(PoisonError::into_inner)\n+        MutexGuard::from_iter([HashMap::from_iter([(0, Sender::from(Ok(String::new())))])]) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n /// A dispatch still waiting when its future is dropped: the delegating process is told to stop it.\n struct Waiting<'a> {\n     delegate: &'a Delegate,\n     key: u64,\n }\n",
+    "file": "bin/craft/src/run/delegate.rs",
+    "function": {
+      "function_name": "Delegate::pending",
+      "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 118
+        },
+        "start": {
+          "column": 5,
+          "line": 111
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from_iter([HashMap::from_iter([(0, Sender::from(Ok(String::new())))])])",
+    "package": "craft",
+    "replacement": "MutexGuard::from_iter([HashMap::from_iter([(0, Sender::from(Ok(String::new())))])])",
+    "span": {
+      "end": {
+        "column": 53,
+        "line": 117
+      },
+      "start": {
+        "column": 9,
+        "line": 114
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/delegate.rs\n+++ replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::new(HashMap::from_iter([(0, Sender::from(Ok(String::new())))]))\n@@ -106,20 +106,17 @@\n     /// Every dispatch still waiting fails: no reply can come any more.\n     fn close(&self) {\n         self.pending().clear();\n     }\n \n     fn pending(\n         &self,\n     ) -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> {\n-        self.0\n-            .pending\n-            .lock()\n-            .unwrap_or_else(PoisonError::into_inner)\n+        MutexGuard::new(HashMap::from_iter([(0, Sender::from(Ok(String::new())))])) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n /// A dispatch still waiting when its future is dropped: the delegating process is told to stop it.\n struct Waiting<'a> {\n     delegate: &'a Delegate,\n     key: u64,\n }\n",
+    "file": "bin/craft/src/run/delegate.rs",
+    "function": {
+      "function_name": "Delegate::pending",
+      "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 118
+        },
+        "start": {
+          "column": 5,
+          "line": 111
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::new(HashMap::from_iter([(0, Sender::from(Ok(String::new())))]))",
+    "package": "craft",
+    "replacement": "MutexGuard::new(HashMap::from_iter([(0, Sender::from(Ok(String::new())))]))",
+    "span": {
+      "end": {
+        "column": 53,
+        "line": 117
+      },
+      "start": {
+        "column": 9,
+        "line": 114
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/delegate.rs\n+++ replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from(HashMap::from_iter([(0, Sender::from(Ok(String::new())))]))\n@@ -106,20 +106,17 @@\n     /// Every dispatch still waiting fails: no reply can come any more.\n     fn close(&self) {\n         self.pending().clear();\n     }\n \n     fn pending(\n         &self,\n     ) -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> {\n-        self.0\n-            .pending\n-            .lock()\n-            .unwrap_or_else(PoisonError::into_inner)\n+        MutexGuard::from(HashMap::from_iter([(0, Sender::from(Ok(String::new())))])) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n /// A dispatch still waiting when its future is dropped: the delegating process is told to stop it.\n struct Waiting<'a> {\n     delegate: &'a Delegate,\n     key: u64,\n }\n",
+    "file": "bin/craft/src/run/delegate.rs",
+    "function": {
+      "function_name": "Delegate::pending",
+      "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 118
+        },
+        "start": {
+          "column": 5,
+          "line": 111
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from(HashMap::from_iter([(0, Sender::from(Ok(String::new())))]))",
+    "package": "craft",
+    "replacement": "MutexGuard::from(HashMap::from_iter([(0, Sender::from(Ok(String::new())))]))",
+    "span": {
+      "end": {
+        "column": 53,
+        "line": 117
+      },
+      "start": {
+        "column": 9,
+        "line": 114
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/delegate.rs\n+++ replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from_iter([HashMap::from_iter([(0, Sender::from_iter([Ok(\"xyzzy\".into())]))])])\n@@ -106,20 +106,17 @@\n     /// Every dispatch still waiting fails: no reply can come any more.\n     fn close(&self) {\n         self.pending().clear();\n     }\n \n     fn pending(\n         &self,\n     ) -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> {\n-        self.0\n-            .pending\n-            .lock()\n-            .unwrap_or_else(PoisonError::into_inner)\n+        MutexGuard::from_iter([HashMap::from_iter([(0, Sender::from_iter([Ok(\"xyzzy\".into())]))])]) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n /// A dispatch still waiting when its future is dropped: the delegating process is told to stop it.\n struct Waiting<'a> {\n     delegate: &'a Delegate,\n     key: u64,\n }\n",
+    "file": "bin/craft/src/run/delegate.rs",
+    "function": {
+      "function_name": "Delegate::pending",
+      "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 118
+        },
+        "start": {
+          "column": 5,
+          "line": 111
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from_iter([HashMap::from_iter([(0, Sender::from_iter([Ok(\"xyzzy\".into())]))])])",
+    "package": "craft",
+    "replacement": "MutexGuard::from_iter([HashMap::from_iter([(0, Sender::from_iter([Ok(\"xyzzy\".into())]))])])",
+    "span": {
+      "end": {
+        "column": 53,
+        "line": 117
+      },
+      "start": {
+        "column": 9,
+        "line": 114
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/delegate.rs\n+++ replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::new(HashMap::from_iter([(0, Sender::from_iter([Ok(\"xyzzy\".into())]))]))\n@@ -106,20 +106,17 @@\n     /// Every dispatch still waiting fails: no reply can come any more.\n     fn close(&self) {\n         self.pending().clear();\n     }\n \n     fn pending(\n         &self,\n     ) -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> {\n-        self.0\n-            .pending\n-            .lock()\n-            .unwrap_or_else(PoisonError::into_inner)\n+        MutexGuard::new(HashMap::from_iter([(0, Sender::from_iter([Ok(\"xyzzy\".into())]))])) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n /// A dispatch still waiting when its future is dropped: the delegating process is told to stop it.\n struct Waiting<'a> {\n     delegate: &'a Delegate,\n     key: u64,\n }\n",
+    "file": "bin/craft/src/run/delegate.rs",
+    "function": {
+      "function_name": "Delegate::pending",
+      "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 118
+        },
+        "start": {
+          "column": 5,
+          "line": 111
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::new(HashMap::from_iter([(0, Sender::from_iter([Ok(\"xyzzy\".into())]))]))",
+    "package": "craft",
+    "replacement": "MutexGuard::new(HashMap::from_iter([(0, Sender::from_iter([Ok(\"xyzzy\".into())]))]))",
+    "span": {
+      "end": {
+        "column": 53,
+        "line": 117
+      },
+      "start": {
+        "column": 9,
+        "line": 114
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/delegate.rs\n+++ replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from(HashMap::from_iter([(0, Sender::from_iter([Ok(\"xyzzy\".into())]))]))\n@@ -106,20 +106,17 @@\n     /// Every dispatch still waiting fails: no reply can come any more.\n     fn close(&self) {\n         self.pending().clear();\n     }\n \n     fn pending(\n         &self,\n     ) -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> {\n-        self.0\n-            .pending\n-            .lock()\n-            .unwrap_or_else(PoisonError::into_inner)\n+        MutexGuard::from(HashMap::from_iter([(0, Sender::from_iter([Ok(\"xyzzy\".into())]))])) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n /// A dispatch still waiting when its future is dropped: the delegating process is told to stop it.\n struct Waiting<'a> {\n     delegate: &'a Delegate,\n     key: u64,\n }\n",
+    "file": "bin/craft/src/run/delegate.rs",
+    "function": {
+      "function_name": "Delegate::pending",
+      "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 118
+        },
+        "start": {
+          "column": 5,
+          "line": 111
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from(HashMap::from_iter([(0, Sender::from_iter([Ok(\"xyzzy\".into())]))]))",
+    "package": "craft",
+    "replacement": "MutexGuard::from(HashMap::from_iter([(0, Sender::from_iter([Ok(\"xyzzy\".into())]))]))",
+    "span": {
+      "end": {
+        "column": 53,
+        "line": 117
+      },
+      "start": {
+        "column": 9,
+        "line": 114
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/delegate.rs\n+++ replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from_iter([HashMap::from_iter([(0, Sender::new(Ok(\"xyzzy\".into())))])])\n@@ -106,20 +106,17 @@\n     /// Every dispatch still waiting fails: no reply can come any more.\n     fn close(&self) {\n         self.pending().clear();\n     }\n \n     fn pending(\n         &self,\n     ) -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> {\n-        self.0\n-            .pending\n-            .lock()\n-            .unwrap_or_else(PoisonError::into_inner)\n+        MutexGuard::from_iter([HashMap::from_iter([(0, Sender::new(Ok(\"xyzzy\".into())))])]) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n /// A dispatch still waiting when its future is dropped: the delegating process is told to stop it.\n struct Waiting<'a> {\n     delegate: &'a Delegate,\n     key: u64,\n }\n",
+    "file": "bin/craft/src/run/delegate.rs",
+    "function": {
+      "function_name": "Delegate::pending",
+      "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 118
+        },
+        "start": {
+          "column": 5,
+          "line": 111
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from_iter([HashMap::from_iter([(0, Sender::new(Ok(\"xyzzy\".into())))])])",
+    "package": "craft",
+    "replacement": "MutexGuard::from_iter([HashMap::from_iter([(0, Sender::new(Ok(\"xyzzy\".into())))])])",
+    "span": {
+      "end": {
+        "column": 53,
+        "line": 117
+      },
+      "start": {
+        "column": 9,
+        "line": 114
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/delegate.rs\n+++ replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::new(HashMap::from_iter([(0, Sender::new(Ok(\"xyzzy\".into())))]))\n@@ -106,20 +106,17 @@\n     /// Every dispatch still waiting fails: no reply can come any more.\n     fn close(&self) {\n         self.pending().clear();\n     }\n \n     fn pending(\n         &self,\n     ) -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> {\n-        self.0\n-            .pending\n-            .lock()\n-            .unwrap_or_else(PoisonError::into_inner)\n+        MutexGuard::new(HashMap::from_iter([(0, Sender::new(Ok(\"xyzzy\".into())))])) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n /// A dispatch still waiting when its future is dropped: the delegating process is told to stop it.\n struct Waiting<'a> {\n     delegate: &'a Delegate,\n     key: u64,\n }\n",
+    "file": "bin/craft/src/run/delegate.rs",
+    "function": {
+      "function_name": "Delegate::pending",
+      "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 118
+        },
+        "start": {
+          "column": 5,
+          "line": 111
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::new(HashMap::from_iter([(0, Sender::new(Ok(\"xyzzy\".into())))]))",
+    "package": "craft",
+    "replacement": "MutexGuard::new(HashMap::from_iter([(0, Sender::new(Ok(\"xyzzy\".into())))]))",
+    "span": {
+      "end": {
+        "column": 53,
+        "line": 117
+      },
+      "start": {
+        "column": 9,
+        "line": 114
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/delegate.rs\n+++ replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from(HashMap::from_iter([(0, Sender::new(Ok(\"xyzzy\".into())))]))\n@@ -106,20 +106,17 @@\n     /// Every dispatch still waiting fails: no reply can come any more.\n     fn close(&self) {\n         self.pending().clear();\n     }\n \n     fn pending(\n         &self,\n     ) -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> {\n-        self.0\n-            .pending\n-            .lock()\n-            .unwrap_or_else(PoisonError::into_inner)\n+        MutexGuard::from(HashMap::from_iter([(0, Sender::new(Ok(\"xyzzy\".into())))])) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n /// A dispatch still waiting when its future is dropped: the delegating process is told to stop it.\n struct Waiting<'a> {\n     delegate: &'a Delegate,\n     key: u64,\n }\n",
+    "file": "bin/craft/src/run/delegate.rs",
+    "function": {
+      "function_name": "Delegate::pending",
+      "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 118
+        },
+        "start": {
+          "column": 5,
+          "line": 111
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from(HashMap::from_iter([(0, Sender::new(Ok(\"xyzzy\".into())))]))",
+    "package": "craft",
+    "replacement": "MutexGuard::from(HashMap::from_iter([(0, Sender::new(Ok(\"xyzzy\".into())))]))",
+    "span": {
+      "end": {
+        "column": 53,
+        "line": 117
+      },
+      "start": {
+        "column": 9,
+        "line": 114
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/delegate.rs\n+++ replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from_iter([HashMap::from_iter([(0, Sender::from(Ok(\"xyzzy\".into())))])])\n@@ -106,20 +106,17 @@\n     /// Every dispatch still waiting fails: no reply can come any more.\n     fn close(&self) {\n         self.pending().clear();\n     }\n \n     fn pending(\n         &self,\n     ) -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> {\n-        self.0\n-            .pending\n-            .lock()\n-            .unwrap_or_else(PoisonError::into_inner)\n+        MutexGuard::from_iter([HashMap::from_iter([(0, Sender::from(Ok(\"xyzzy\".into())))])]) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n /// A dispatch still waiting when its future is dropped: the delegating process is told to stop it.\n struct Waiting<'a> {\n     delegate: &'a Delegate,\n     key: u64,\n }\n",
+    "file": "bin/craft/src/run/delegate.rs",
+    "function": {
+      "function_name": "Delegate::pending",
+      "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 118
+        },
+        "start": {
+          "column": 5,
+          "line": 111
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from_iter([HashMap::from_iter([(0, Sender::from(Ok(\"xyzzy\".into())))])])",
+    "package": "craft",
+    "replacement": "MutexGuard::from_iter([HashMap::from_iter([(0, Sender::from(Ok(\"xyzzy\".into())))])])",
+    "span": {
+      "end": {
+        "column": 53,
+        "line": 117
+      },
+      "start": {
+        "column": 9,
+        "line": 114
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/delegate.rs\n+++ replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::new(HashMap::from_iter([(0, Sender::from(Ok(\"xyzzy\".into())))]))\n@@ -106,20 +106,17 @@\n     /// Every dispatch still waiting fails: no reply can come any more.\n     fn close(&self) {\n         self.pending().clear();\n     }\n \n     fn pending(\n         &self,\n     ) -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> {\n-        self.0\n-            .pending\n-            .lock()\n-            .unwrap_or_else(PoisonError::into_inner)\n+        MutexGuard::new(HashMap::from_iter([(0, Sender::from(Ok(\"xyzzy\".into())))])) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n /// A dispatch still waiting when its future is dropped: the delegating process is told to stop it.\n struct Waiting<'a> {\n     delegate: &'a Delegate,\n     key: u64,\n }\n",
+    "file": "bin/craft/src/run/delegate.rs",
+    "function": {
+      "function_name": "Delegate::pending",
+      "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 118
+        },
+        "start": {
+          "column": 5,
+          "line": 111
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::new(HashMap::from_iter([(0, Sender::from(Ok(\"xyzzy\".into())))]))",
+    "package": "craft",
+    "replacement": "MutexGuard::new(HashMap::from_iter([(0, Sender::from(Ok(\"xyzzy\".into())))]))",
+    "span": {
+      "end": {
+        "column": 53,
+        "line": 117
+      },
+      "start": {
+        "column": 9,
+        "line": 114
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/delegate.rs\n+++ replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from(HashMap::from_iter([(0, Sender::from(Ok(\"xyzzy\".into())))]))\n@@ -106,20 +106,17 @@\n     /// Every dispatch still waiting fails: no reply can come any more.\n     fn close(&self) {\n         self.pending().clear();\n     }\n \n     fn pending(\n         &self,\n     ) -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> {\n-        self.0\n-            .pending\n-            .lock()\n-            .unwrap_or_else(PoisonError::into_inner)\n+        MutexGuard::from(HashMap::from_iter([(0, Sender::from(Ok(\"xyzzy\".into())))])) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n /// A dispatch still waiting when its future is dropped: the delegating process is told to stop it.\n struct Waiting<'a> {\n     delegate: &'a Delegate,\n     key: u64,\n }\n",
+    "file": "bin/craft/src/run/delegate.rs",
+    "function": {
+      "function_name": "Delegate::pending",
+      "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 118
+        },
+        "start": {
+          "column": 5,
+          "line": 111
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from(HashMap::from_iter([(0, Sender::from(Ok(\"xyzzy\".into())))]))",
+    "package": "craft",
+    "replacement": "MutexGuard::from(HashMap::from_iter([(0, Sender::from(Ok(\"xyzzy\".into())))]))",
+    "span": {
+      "end": {
+        "column": 53,
+        "line": 117
+      },
+      "start": {
+        "column": 9,
+        "line": 114
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/delegate.rs\n+++ replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from_iter([HashMap::from_iter([(1, Sender::new())])])\n@@ -106,20 +106,17 @@\n     /// Every dispatch still waiting fails: no reply can come any more.\n     fn close(&self) {\n         self.pending().clear();\n     }\n \n     fn pending(\n         &self,\n     ) -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> {\n-        self.0\n-            .pending\n-            .lock()\n-            .unwrap_or_else(PoisonError::into_inner)\n+        MutexGuard::from_iter([HashMap::from_iter([(1, Sender::new())])]) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n /// A dispatch still waiting when its future is dropped: the delegating process is told to stop it.\n struct Waiting<'a> {\n     delegate: &'a Delegate,\n     key: u64,\n }\n",
+    "file": "bin/craft/src/run/delegate.rs",
+    "function": {
+      "function_name": "Delegate::pending",
+      "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 118
+        },
+        "start": {
+          "column": 5,
+          "line": 111
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from_iter([HashMap::from_iter([(1, Sender::new())])])",
+    "package": "craft",
+    "replacement": "MutexGuard::from_iter([HashMap::from_iter([(1, Sender::new())])])",
+    "span": {
+      "end": {
+        "column": 53,
+        "line": 117
+      },
+      "start": {
+        "column": 9,
+        "line": 114
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/delegate.rs\n+++ replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::new(HashMap::from_iter([(1, Sender::new())]))\n@@ -106,20 +106,17 @@\n     /// Every dispatch still waiting fails: no reply can come any more.\n     fn close(&self) {\n         self.pending().clear();\n     }\n \n     fn pending(\n         &self,\n     ) -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> {\n-        self.0\n-            .pending\n-            .lock()\n-            .unwrap_or_else(PoisonError::into_inner)\n+        MutexGuard::new(HashMap::from_iter([(1, Sender::new())])) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n /// A dispatch still waiting when its future is dropped: the delegating process is told to stop it.\n struct Waiting<'a> {\n     delegate: &'a Delegate,\n     key: u64,\n }\n",
+    "file": "bin/craft/src/run/delegate.rs",
+    "function": {
+      "function_name": "Delegate::pending",
+      "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 118
+        },
+        "start": {
+          "column": 5,
+          "line": 111
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::new(HashMap::from_iter([(1, Sender::new())]))",
+    "package": "craft",
+    "replacement": "MutexGuard::new(HashMap::from_iter([(1, Sender::new())]))",
+    "span": {
+      "end": {
+        "column": 53,
+        "line": 117
+      },
+      "start": {
+        "column": 9,
+        "line": 114
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/delegate.rs\n+++ replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from(HashMap::from_iter([(1, Sender::new())]))\n@@ -106,20 +106,17 @@\n     /// Every dispatch still waiting fails: no reply can come any more.\n     fn close(&self) {\n         self.pending().clear();\n     }\n \n     fn pending(\n         &self,\n     ) -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> {\n-        self.0\n-            .pending\n-            .lock()\n-            .unwrap_or_else(PoisonError::into_inner)\n+        MutexGuard::from(HashMap::from_iter([(1, Sender::new())])) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n /// A dispatch still waiting when its future is dropped: the delegating process is told to stop it.\n struct Waiting<'a> {\n     delegate: &'a Delegate,\n     key: u64,\n }\n",
+    "file": "bin/craft/src/run/delegate.rs",
+    "function": {
+      "function_name": "Delegate::pending",
+      "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 118
+        },
+        "start": {
+          "column": 5,
+          "line": 111
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from(HashMap::from_iter([(1, Sender::new())]))",
+    "package": "craft",
+    "replacement": "MutexGuard::from(HashMap::from_iter([(1, Sender::new())]))",
+    "span": {
+      "end": {
+        "column": 53,
+        "line": 117
+      },
+      "start": {
+        "column": 9,
+        "line": 114
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/delegate.rs\n+++ replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from_iter([HashMap::from_iter([(1, Sender::from_iter([Ok(String::new())]))])])\n@@ -106,20 +106,17 @@\n     /// Every dispatch still waiting fails: no reply can come any more.\n     fn close(&self) {\n         self.pending().clear();\n     }\n \n     fn pending(\n         &self,\n     ) -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> {\n-        self.0\n-            .pending\n-            .lock()\n-            .unwrap_or_else(PoisonError::into_inner)\n+        MutexGuard::from_iter([HashMap::from_iter([(1, Sender::from_iter([Ok(String::new())]))])]) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n /// A dispatch still waiting when its future is dropped: the delegating process is told to stop it.\n struct Waiting<'a> {\n     delegate: &'a Delegate,\n     key: u64,\n }\n",
+    "file": "bin/craft/src/run/delegate.rs",
+    "function": {
+      "function_name": "Delegate::pending",
+      "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 118
+        },
+        "start": {
+          "column": 5,
+          "line": 111
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from_iter([HashMap::from_iter([(1, Sender::from_iter([Ok(String::new())]))])])",
+    "package": "craft",
+    "replacement": "MutexGuard::from_iter([HashMap::from_iter([(1, Sender::from_iter([Ok(String::new())]))])])",
+    "span": {
+      "end": {
+        "column": 53,
+        "line": 117
+      },
+      "start": {
+        "column": 9,
+        "line": 114
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/delegate.rs\n+++ replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::new(HashMap::from_iter([(1, Sender::from_iter([Ok(String::new())]))]))\n@@ -106,20 +106,17 @@\n     /// Every dispatch still waiting fails: no reply can come any more.\n     fn close(&self) {\n         self.pending().clear();\n     }\n \n     fn pending(\n         &self,\n     ) -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> {\n-        self.0\n-            .pending\n-            .lock()\n-            .unwrap_or_else(PoisonError::into_inner)\n+        MutexGuard::new(HashMap::from_iter([(1, Sender::from_iter([Ok(String::new())]))])) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n /// A dispatch still waiting when its future is dropped: the delegating process is told to stop it.\n struct Waiting<'a> {\n     delegate: &'a Delegate,\n     key: u64,\n }\n",
+    "file": "bin/craft/src/run/delegate.rs",
+    "function": {
+      "function_name": "Delegate::pending",
+      "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 118
+        },
+        "start": {
+          "column": 5,
+          "line": 111
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::new(HashMap::from_iter([(1, Sender::from_iter([Ok(String::new())]))]))",
+    "package": "craft",
+    "replacement": "MutexGuard::new(HashMap::from_iter([(1, Sender::from_iter([Ok(String::new())]))]))",
+    "span": {
+      "end": {
+        "column": 53,
+        "line": 117
+      },
+      "start": {
+        "column": 9,
+        "line": 114
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/delegate.rs\n+++ replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from(HashMap::from_iter([(1, Sender::from_iter([Ok(String::new())]))]))\n@@ -106,20 +106,17 @@\n     /// Every dispatch still waiting fails: no reply can come any more.\n     fn close(&self) {\n         self.pending().clear();\n     }\n \n     fn pending(\n         &self,\n     ) -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> {\n-        self.0\n-            .pending\n-            .lock()\n-            .unwrap_or_else(PoisonError::into_inner)\n+        MutexGuard::from(HashMap::from_iter([(1, Sender::from_iter([Ok(String::new())]))])) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n /// A dispatch still waiting when its future is dropped: the delegating process is told to stop it.\n struct Waiting<'a> {\n     delegate: &'a Delegate,\n     key: u64,\n }\n",
+    "file": "bin/craft/src/run/delegate.rs",
+    "function": {
+      "function_name": "Delegate::pending",
+      "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 118
+        },
+        "start": {
+          "column": 5,
+          "line": 111
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from(HashMap::from_iter([(1, Sender::from_iter([Ok(String::new())]))]))",
+    "package": "craft",
+    "replacement": "MutexGuard::from(HashMap::from_iter([(1, Sender::from_iter([Ok(String::new())]))]))",
+    "span": {
+      "end": {
+        "column": 53,
+        "line": 117
+      },
+      "start": {
+        "column": 9,
+        "line": 114
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/delegate.rs\n+++ replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from_iter([HashMap::from_iter([(1, Sender::new(Ok(String::new())))])])\n@@ -106,20 +106,17 @@\n     /// Every dispatch still waiting fails: no reply can come any more.\n     fn close(&self) {\n         self.pending().clear();\n     }\n \n     fn pending(\n         &self,\n     ) -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> {\n-        self.0\n-            .pending\n-            .lock()\n-            .unwrap_or_else(PoisonError::into_inner)\n+        MutexGuard::from_iter([HashMap::from_iter([(1, Sender::new(Ok(String::new())))])]) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n /// A dispatch still waiting when its future is dropped: the delegating process is told to stop it.\n struct Waiting<'a> {\n     delegate: &'a Delegate,\n     key: u64,\n }\n",
+    "file": "bin/craft/src/run/delegate.rs",
+    "function": {
+      "function_name": "Delegate::pending",
+      "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 118
+        },
+        "start": {
+          "column": 5,
+          "line": 111
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from_iter([HashMap::from_iter([(1, Sender::new(Ok(String::new())))])])",
+    "package": "craft",
+    "replacement": "MutexGuard::from_iter([HashMap::from_iter([(1, Sender::new(Ok(String::new())))])])",
+    "span": {
+      "end": {
+        "column": 53,
+        "line": 117
+      },
+      "start": {
+        "column": 9,
+        "line": 114
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/delegate.rs\n+++ replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::new(HashMap::from_iter([(1, Sender::new(Ok(String::new())))]))\n@@ -106,20 +106,17 @@\n     /// Every dispatch still waiting fails: no reply can come any more.\n     fn close(&self) {\n         self.pending().clear();\n     }\n \n     fn pending(\n         &self,\n     ) -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> {\n-        self.0\n-            .pending\n-            .lock()\n-            .unwrap_or_else(PoisonError::into_inner)\n+        MutexGuard::new(HashMap::from_iter([(1, Sender::new(Ok(String::new())))])) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n /// A dispatch still waiting when its future is dropped: the delegating process is told to stop it.\n struct Waiting<'a> {\n     delegate: &'a Delegate,\n     key: u64,\n }\n",
+    "file": "bin/craft/src/run/delegate.rs",
+    "function": {
+      "function_name": "Delegate::pending",
+      "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 118
+        },
+        "start": {
+          "column": 5,
+          "line": 111
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::new(HashMap::from_iter([(1, Sender::new(Ok(String::new())))]))",
+    "package": "craft",
+    "replacement": "MutexGuard::new(HashMap::from_iter([(1, Sender::new(Ok(String::new())))]))",
+    "span": {
+      "end": {
+        "column": 53,
+        "line": 117
+      },
+      "start": {
+        "column": 9,
+        "line": 114
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/delegate.rs\n+++ replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from(HashMap::from_iter([(1, Sender::new(Ok(String::new())))]))\n@@ -106,20 +106,17 @@\n     /// Every dispatch still waiting fails: no reply can come any more.\n     fn close(&self) {\n         self.pending().clear();\n     }\n \n     fn pending(\n         &self,\n     ) -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> {\n-        self.0\n-            .pending\n-            .lock()\n-            .unwrap_or_else(PoisonError::into_inner)\n+        MutexGuard::from(HashMap::from_iter([(1, Sender::new(Ok(String::new())))])) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n /// A dispatch still waiting when its future is dropped: the delegating process is told to stop it.\n struct Waiting<'a> {\n     delegate: &'a Delegate,\n     key: u64,\n }\n",
+    "file": "bin/craft/src/run/delegate.rs",
+    "function": {
+      "function_name": "Delegate::pending",
+      "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 118
+        },
+        "start": {
+          "column": 5,
+          "line": 111
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from(HashMap::from_iter([(1, Sender::new(Ok(String::new())))]))",
+    "package": "craft",
+    "replacement": "MutexGuard::from(HashMap::from_iter([(1, Sender::new(Ok(String::new())))]))",
+    "span": {
+      "end": {
+        "column": 53,
+        "line": 117
+      },
+      "start": {
+        "column": 9,
+        "line": 114
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/delegate.rs\n+++ replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from_iter([HashMap::from_iter([(1, Sender::from(Ok(String::new())))])])\n@@ -106,20 +106,17 @@\n     /// Every dispatch still waiting fails: no reply can come any more.\n     fn close(&self) {\n         self.pending().clear();\n     }\n \n     fn pending(\n         &self,\n     ) -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> {\n-        self.0\n-            .pending\n-            .lock()\n-            .unwrap_or_else(PoisonError::into_inner)\n+        MutexGuard::from_iter([HashMap::from_iter([(1, Sender::from(Ok(String::new())))])]) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n /// A dispatch still waiting when its future is dropped: the delegating process is told to stop it.\n struct Waiting<'a> {\n     delegate: &'a Delegate,\n     key: u64,\n }\n",
+    "file": "bin/craft/src/run/delegate.rs",
+    "function": {
+      "function_name": "Delegate::pending",
+      "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 118
+        },
+        "start": {
+          "column": 5,
+          "line": 111
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from_iter([HashMap::from_iter([(1, Sender::from(Ok(String::new())))])])",
+    "package": "craft",
+    "replacement": "MutexGuard::from_iter([HashMap::from_iter([(1, Sender::from(Ok(String::new())))])])",
+    "span": {
+      "end": {
+        "column": 53,
+        "line": 117
+      },
+      "start": {
+        "column": 9,
+        "line": 114
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/delegate.rs\n+++ replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::new(HashMap::from_iter([(1, Sender::from(Ok(String::new())))]))\n@@ -106,20 +106,17 @@\n     /// Every dispatch still waiting fails: no reply can come any more.\n     fn close(&self) {\n         self.pending().clear();\n     }\n \n     fn pending(\n         &self,\n     ) -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> {\n-        self.0\n-            .pending\n-            .lock()\n-            .unwrap_or_else(PoisonError::into_inner)\n+        MutexGuard::new(HashMap::from_iter([(1, Sender::from(Ok(String::new())))])) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n /// A dispatch still waiting when its future is dropped: the delegating process is told to stop it.\n struct Waiting<'a> {\n     delegate: &'a Delegate,\n     key: u64,\n }\n",
+    "file": "bin/craft/src/run/delegate.rs",
+    "function": {
+      "function_name": "Delegate::pending",
+      "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 118
+        },
+        "start": {
+          "column": 5,
+          "line": 111
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::new(HashMap::from_iter([(1, Sender::from(Ok(String::new())))]))",
+    "package": "craft",
+    "replacement": "MutexGuard::new(HashMap::from_iter([(1, Sender::from(Ok(String::new())))]))",
+    "span": {
+      "end": {
+        "column": 53,
+        "line": 117
+      },
+      "start": {
+        "column": 9,
+        "line": 114
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/delegate.rs\n+++ replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from(HashMap::from_iter([(1, Sender::from(Ok(String::new())))]))\n@@ -106,20 +106,17 @@\n     /// Every dispatch still waiting fails: no reply can come any more.\n     fn close(&self) {\n         self.pending().clear();\n     }\n \n     fn pending(\n         &self,\n     ) -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> {\n-        self.0\n-            .pending\n-            .lock()\n-            .unwrap_or_else(PoisonError::into_inner)\n+        MutexGuard::from(HashMap::from_iter([(1, Sender::from(Ok(String::new())))])) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n /// A dispatch still waiting when its future is dropped: the delegating process is told to stop it.\n struct Waiting<'a> {\n     delegate: &'a Delegate,\n     key: u64,\n }\n",
+    "file": "bin/craft/src/run/delegate.rs",
+    "function": {
+      "function_name": "Delegate::pending",
+      "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 118
+        },
+        "start": {
+          "column": 5,
+          "line": 111
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from(HashMap::from_iter([(1, Sender::from(Ok(String::new())))]))",
+    "package": "craft",
+    "replacement": "MutexGuard::from(HashMap::from_iter([(1, Sender::from(Ok(String::new())))]))",
+    "span": {
+      "end": {
+        "column": 53,
+        "line": 117
+      },
+      "start": {
+        "column": 9,
+        "line": 114
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/delegate.rs\n+++ replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from_iter([HashMap::from_iter([(1, Sender::from_iter([Ok(\"xyzzy\".into())]))])])\n@@ -106,20 +106,17 @@\n     /// Every dispatch still waiting fails: no reply can come any more.\n     fn close(&self) {\n         self.pending().clear();\n     }\n \n     fn pending(\n         &self,\n     ) -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> {\n-        self.0\n-            .pending\n-            .lock()\n-            .unwrap_or_else(PoisonError::into_inner)\n+        MutexGuard::from_iter([HashMap::from_iter([(1, Sender::from_iter([Ok(\"xyzzy\".into())]))])]) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n /// A dispatch still waiting when its future is dropped: the delegating process is told to stop it.\n struct Waiting<'a> {\n     delegate: &'a Delegate,\n     key: u64,\n }\n",
+    "file": "bin/craft/src/run/delegate.rs",
+    "function": {
+      "function_name": "Delegate::pending",
+      "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 118
+        },
+        "start": {
+          "column": 5,
+          "line": 111
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from_iter([HashMap::from_iter([(1, Sender::from_iter([Ok(\"xyzzy\".into())]))])])",
+    "package": "craft",
+    "replacement": "MutexGuard::from_iter([HashMap::from_iter([(1, Sender::from_iter([Ok(\"xyzzy\".into())]))])])",
+    "span": {
+      "end": {
+        "column": 53,
+        "line": 117
+      },
+      "start": {
+        "column": 9,
+        "line": 114
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/delegate.rs\n+++ replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::new(HashMap::from_iter([(1, Sender::from_iter([Ok(\"xyzzy\".into())]))]))\n@@ -106,20 +106,17 @@\n     /// Every dispatch still waiting fails: no reply can come any more.\n     fn close(&self) {\n         self.pending().clear();\n     }\n \n     fn pending(\n         &self,\n     ) -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> {\n-        self.0\n-            .pending\n-            .lock()\n-            .unwrap_or_else(PoisonError::into_inner)\n+        MutexGuard::new(HashMap::from_iter([(1, Sender::from_iter([Ok(\"xyzzy\".into())]))])) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n /// A dispatch still waiting when its future is dropped: the delegating process is told to stop it.\n struct Waiting<'a> {\n     delegate: &'a Delegate,\n     key: u64,\n }\n",
+    "file": "bin/craft/src/run/delegate.rs",
+    "function": {
+      "function_name": "Delegate::pending",
+      "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 118
+        },
+        "start": {
+          "column": 5,
+          "line": 111
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::new(HashMap::from_iter([(1, Sender::from_iter([Ok(\"xyzzy\".into())]))]))",
+    "package": "craft",
+    "replacement": "MutexGuard::new(HashMap::from_iter([(1, Sender::from_iter([Ok(\"xyzzy\".into())]))]))",
+    "span": {
+      "end": {
+        "column": 53,
+        "line": 117
+      },
+      "start": {
+        "column": 9,
+        "line": 114
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/delegate.rs\n+++ replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from(HashMap::from_iter([(1, Sender::from_iter([Ok(\"xyzzy\".into())]))]))\n@@ -106,20 +106,17 @@\n     /// Every dispatch still waiting fails: no reply can come any more.\n     fn close(&self) {\n         self.pending().clear();\n     }\n \n     fn pending(\n         &self,\n     ) -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> {\n-        self.0\n-            .pending\n-            .lock()\n-            .unwrap_or_else(PoisonError::into_inner)\n+        MutexGuard::from(HashMap::from_iter([(1, Sender::from_iter([Ok(\"xyzzy\".into())]))])) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n /// A dispatch still waiting when its future is dropped: the delegating process is told to stop it.\n struct Waiting<'a> {\n     delegate: &'a Delegate,\n     key: u64,\n }\n",
+    "file": "bin/craft/src/run/delegate.rs",
+    "function": {
+      "function_name": "Delegate::pending",
+      "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 118
+        },
+        "start": {
+          "column": 5,
+          "line": 111
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from(HashMap::from_iter([(1, Sender::from_iter([Ok(\"xyzzy\".into())]))]))",
+    "package": "craft",
+    "replacement": "MutexGuard::from(HashMap::from_iter([(1, Sender::from_iter([Ok(\"xyzzy\".into())]))]))",
+    "span": {
+      "end": {
+        "column": 53,
+        "line": 117
+      },
+      "start": {
+        "column": 9,
+        "line": 114
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/delegate.rs\n+++ replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from_iter([HashMap::from_iter([(1, Sender::new(Ok(\"xyzzy\".into())))])])\n@@ -106,20 +106,17 @@\n     /// Every dispatch still waiting fails: no reply can come any more.\n     fn close(&self) {\n         self.pending().clear();\n     }\n \n     fn pending(\n         &self,\n     ) -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> {\n-        self.0\n-            .pending\n-            .lock()\n-            .unwrap_or_else(PoisonError::into_inner)\n+        MutexGuard::from_iter([HashMap::from_iter([(1, Sender::new(Ok(\"xyzzy\".into())))])]) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n /// A dispatch still waiting when its future is dropped: the delegating process is told to stop it.\n struct Waiting<'a> {\n     delegate: &'a Delegate,\n     key: u64,\n }\n",
+    "file": "bin/craft/src/run/delegate.rs",
+    "function": {
+      "function_name": "Delegate::pending",
+      "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 118
+        },
+        "start": {
+          "column": 5,
+          "line": 111
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from_iter([HashMap::from_iter([(1, Sender::new(Ok(\"xyzzy\".into())))])])",
+    "package": "craft",
+    "replacement": "MutexGuard::from_iter([HashMap::from_iter([(1, Sender::new(Ok(\"xyzzy\".into())))])])",
+    "span": {
+      "end": {
+        "column": 53,
+        "line": 117
+      },
+      "start": {
+        "column": 9,
+        "line": 114
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/delegate.rs\n+++ replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::new(HashMap::from_iter([(1, Sender::new(Ok(\"xyzzy\".into())))]))\n@@ -106,20 +106,17 @@\n     /// Every dispatch still waiting fails: no reply can come any more.\n     fn close(&self) {\n         self.pending().clear();\n     }\n \n     fn pending(\n         &self,\n     ) -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> {\n-        self.0\n-            .pending\n-            .lock()\n-            .unwrap_or_else(PoisonError::into_inner)\n+        MutexGuard::new(HashMap::from_iter([(1, Sender::new(Ok(\"xyzzy\".into())))])) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n /// A dispatch still waiting when its future is dropped: the delegating process is told to stop it.\n struct Waiting<'a> {\n     delegate: &'a Delegate,\n     key: u64,\n }\n",
+    "file": "bin/craft/src/run/delegate.rs",
+    "function": {
+      "function_name": "Delegate::pending",
+      "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 118
+        },
+        "start": {
+          "column": 5,
+          "line": 111
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::new(HashMap::from_iter([(1, Sender::new(Ok(\"xyzzy\".into())))]))",
+    "package": "craft",
+    "replacement": "MutexGuard::new(HashMap::from_iter([(1, Sender::new(Ok(\"xyzzy\".into())))]))",
+    "span": {
+      "end": {
+        "column": 53,
+        "line": 117
+      },
+      "start": {
+        "column": 9,
+        "line": 114
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/delegate.rs\n+++ replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from(HashMap::from_iter([(1, Sender::new(Ok(\"xyzzy\".into())))]))\n@@ -106,20 +106,17 @@\n     /// Every dispatch still waiting fails: no reply can come any more.\n     fn close(&self) {\n         self.pending().clear();\n     }\n \n     fn pending(\n         &self,\n     ) -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> {\n-        self.0\n-            .pending\n-            .lock()\n-            .unwrap_or_else(PoisonError::into_inner)\n+        MutexGuard::from(HashMap::from_iter([(1, Sender::new(Ok(\"xyzzy\".into())))])) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n /// A dispatch still waiting when its future is dropped: the delegating process is told to stop it.\n struct Waiting<'a> {\n     delegate: &'a Delegate,\n     key: u64,\n }\n",
+    "file": "bin/craft/src/run/delegate.rs",
+    "function": {
+      "function_name": "Delegate::pending",
+      "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 118
+        },
+        "start": {
+          "column": 5,
+          "line": 111
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from(HashMap::from_iter([(1, Sender::new(Ok(\"xyzzy\".into())))]))",
+    "package": "craft",
+    "replacement": "MutexGuard::from(HashMap::from_iter([(1, Sender::new(Ok(\"xyzzy\".into())))]))",
+    "span": {
+      "end": {
+        "column": 53,
+        "line": 117
+      },
+      "start": {
+        "column": 9,
+        "line": 114
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/delegate.rs\n+++ replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from_iter([HashMap::from_iter([(1, Sender::from(Ok(\"xyzzy\".into())))])])\n@@ -106,20 +106,17 @@\n     /// Every dispatch still waiting fails: no reply can come any more.\n     fn close(&self) {\n         self.pending().clear();\n     }\n \n     fn pending(\n         &self,\n     ) -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> {\n-        self.0\n-            .pending\n-            .lock()\n-            .unwrap_or_else(PoisonError::into_inner)\n+        MutexGuard::from_iter([HashMap::from_iter([(1, Sender::from(Ok(\"xyzzy\".into())))])]) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n /// A dispatch still waiting when its future is dropped: the delegating process is told to stop it.\n struct Waiting<'a> {\n     delegate: &'a Delegate,\n     key: u64,\n }\n",
+    "file": "bin/craft/src/run/delegate.rs",
+    "function": {
+      "function_name": "Delegate::pending",
+      "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 118
+        },
+        "start": {
+          "column": 5,
+          "line": 111
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from_iter([HashMap::from_iter([(1, Sender::from(Ok(\"xyzzy\".into())))])])",
+    "package": "craft",
+    "replacement": "MutexGuard::from_iter([HashMap::from_iter([(1, Sender::from(Ok(\"xyzzy\".into())))])])",
+    "span": {
+      "end": {
+        "column": 53,
+        "line": 117
+      },
+      "start": {
+        "column": 9,
+        "line": 114
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/delegate.rs\n+++ replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::new(HashMap::from_iter([(1, Sender::from(Ok(\"xyzzy\".into())))]))\n@@ -106,20 +106,17 @@\n     /// Every dispatch still waiting fails: no reply can come any more.\n     fn close(&self) {\n         self.pending().clear();\n     }\n \n     fn pending(\n         &self,\n     ) -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> {\n-        self.0\n-            .pending\n-            .lock()\n-            .unwrap_or_else(PoisonError::into_inner)\n+        MutexGuard::new(HashMap::from_iter([(1, Sender::from(Ok(\"xyzzy\".into())))])) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n /// A dispatch still waiting when its future is dropped: the delegating process is told to stop it.\n struct Waiting<'a> {\n     delegate: &'a Delegate,\n     key: u64,\n }\n",
+    "file": "bin/craft/src/run/delegate.rs",
+    "function": {
+      "function_name": "Delegate::pending",
+      "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 118
+        },
+        "start": {
+          "column": 5,
+          "line": 111
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::new(HashMap::from_iter([(1, Sender::from(Ok(\"xyzzy\".into())))]))",
+    "package": "craft",
+    "replacement": "MutexGuard::new(HashMap::from_iter([(1, Sender::from(Ok(\"xyzzy\".into())))]))",
+    "span": {
+      "end": {
+        "column": 53,
+        "line": 117
+      },
+      "start": {
+        "column": 9,
+        "line": 114
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/delegate.rs\n+++ replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from(HashMap::from_iter([(1, Sender::from(Ok(\"xyzzy\".into())))]))\n@@ -106,20 +106,17 @@\n     /// Every dispatch still waiting fails: no reply can come any more.\n     fn close(&self) {\n         self.pending().clear();\n     }\n \n     fn pending(\n         &self,\n     ) -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> {\n-        self.0\n-            .pending\n-            .lock()\n-            .unwrap_or_else(PoisonError::into_inner)\n+        MutexGuard::from(HashMap::from_iter([(1, Sender::from(Ok(\"xyzzy\".into())))])) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n /// A dispatch still waiting when its future is dropped: the delegating process is told to stop it.\n struct Waiting<'a> {\n     delegate: &'a Delegate,\n     key: u64,\n }\n",
+    "file": "bin/craft/src/run/delegate.rs",
+    "function": {
+      "function_name": "Delegate::pending",
+      "return_type": "-> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 118
+        },
+        "start": {
+          "column": 5,
+          "line": 111
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/delegate.rs:114:9: replace Delegate::pending -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> with MutexGuard::from(HashMap::from_iter([(1, Sender::from(Ok(\"xyzzy\".into())))]))",
+    "package": "craft",
+    "replacement": "MutexGuard::from(HashMap::from_iter([(1, Sender::from(Ok(\"xyzzy\".into())))]))",
+    "span": {
+      "end": {
+        "column": 53,
+        "line": 117
+      },
+      "start": {
+        "column": 9,
+        "line": 114
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/delegate.rs\n+++ replace <impl Drop for Waiting<'_>>::drop with ()\n@@ -121,19 +121,17 @@\n /// A dispatch still waiting when its future is dropped: the delegating process is told to stop it.\n struct Waiting<'a> {\n     delegate: &'a Delegate,\n     key: u64,\n }\n \n impl Drop for Waiting<'_> {\n     fn drop(&mut self) {\n-        if self.delegate.pending().remove(&self.key).is_some() {\n-            (self.delegate.0.emit)(Event::TaskCancelled { key: self.key });\n-        }\n+        () /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n /// The reply as the round reads an agent's: an answer, no answer, or a failure's words.\n fn reply_of(said: Result<String, String>) -> Result<AgentReply, AgentError> {\n     let text = said.map_err(|subtype| AgentError::Failed { subtype })?;\n     let Some(answer) = answer_of(&text) else {\n         return Err(AgentError::NoAnswer {\n",
+    "file": "bin/craft/src/run/delegate.rs",
+    "function": {
+      "function_name": "<impl Drop for Waiting<'_>>::drop",
+      "return_type": "",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 132
+        },
+        "start": {
+          "column": 5,
+          "line": 128
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/delegate.rs:129:9: replace <impl Drop for Waiting<'_>>::drop with ()",
+    "package": "craft",
+    "replacement": "()",
+    "span": {
+      "end": {
+        "column": 10,
+        "line": 131
+      },
+      "start": {
+        "column": 9,
+        "line": 129
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/delegate.rs\n+++ replace reply_of -> Result<AgentReply, AgentError> with Ok(Default::default())\n@@ -129,30 +129,17 @@\n         if self.delegate.pending().remove(&self.key).is_some() {\n             (self.delegate.0.emit)(Event::TaskCancelled { key: self.key });\n         }\n     }\n }\n \n /// The reply as the round reads an agent's: an answer, no answer, or a failure's words.\n fn reply_of(said: Result<String, String>) -> Result<AgentReply, AgentError> {\n-    let text = said.map_err(|subtype| AgentError::Failed { subtype })?;\n-    let Some(answer) = answer_of(&text) else {\n-        return Err(AgentError::NoAnswer {\n-            stderr: String::new(),\n-            stdout: text.trim().to_owned(),\n-        });\n-    };\n-    Ok(AgentReply {\n-        structured: Some(Value::Object(answer)),\n-        text: Some(text),\n-        usage: Usage::default(),\n-        cost_usd: 0.0,\n-        denials: Vec::new(),\n-    })\n+    Ok(Default::default()) /* ~ changed by cargo-mutants ~ */\n }\n \n impl AgentBackend for Delegate {\n     async fn run(&self, request: &AgentRequest) -> Result<AgentReply, AgentError> {\n         let key = self.0.next.fetch_add(1, Ordering::SeqCst);\n         let (tx, rx) = oneshot::channel();\n         self.pending().insert(key, tx);\n         let waiting = Waiting {\n",
+    "file": "bin/craft/src/run/delegate.rs",
+    "function": {
+      "function_name": "reply_of",
+      "return_type": "-> Result<AgentReply, AgentError>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 151
+        },
+        "start": {
+          "column": 1,
+          "line": 135
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/delegate.rs:137:5: replace reply_of -> Result<AgentReply, AgentError> with Ok(Default::default())",
+    "package": "craft",
+    "replacement": "Ok(Default::default())",
+    "span": {
+      "end": {
+        "column": 7,
+        "line": 150
+      },
+      "start": {
+        "column": 5,
+        "line": 137
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/delegate.rs\n+++ replace <impl AgentBackend for Delegate>::run -> Result<AgentReply, AgentError> with Ok(Default::default())\n@@ -147,40 +147,15 @@\n         usage: Usage::default(),\n         cost_usd: 0.0,\n         denials: Vec::new(),\n     })\n }\n \n impl AgentBackend for Delegate {\n     async fn run(&self, request: &AgentRequest) -> Result<AgentReply, AgentError> {\n-        let key = self.0.next.fetch_add(1, Ordering::SeqCst);\n-        let (tx, rx) = oneshot::channel();\n-        self.pending().insert(key, tx);\n-        let waiting = Waiting {\n-            delegate: self,\n-            key,\n-        };\n-        let label = self\n-            .0\n-            .labels\n-            .lock()\n-            .unwrap_or_else(PoisonError::into_inner)\n-            .get(&request.label)\n-            .cloned()\n-            .unwrap_or_else(|| request.label.clone());\n-        (self.0.emit)(Event::Task {\n-            key,\n-            id: request.label.clone(),\n-            label,\n-            agent: request.agent.clone(),\n-            model: request.model.clone(),\n-            prompt: request.prompt.clone(),\n-        });\n-        let said = rx.await;\n-        drop(waiting);\n-        reply_of(said.unwrap_or_else(|_closed| Err(CLOSED.to_owned())))\n+        Ok(Default::default()) /* ~ changed by cargo-mutants ~ */\n     }\n }\n \n #[cfg(test)]\n #[path = \"delegate_tests.rs\"]\n mod tests;\n",
+    "file": "bin/craft/src/run/delegate.rs",
+    "function": {
+      "function_name": "<impl AgentBackend for Delegate>::run",
+      "return_type": "-> Result<AgentReply, AgentError>",
+      "span": {
+        "end": {
+          "column": 6,
+          "line": 181
+        },
+        "start": {
+          "column": 5,
+          "line": 154
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/delegate.rs:155:9: replace <impl AgentBackend for Delegate>::run -> Result<AgentReply, AgentError> with Ok(Default::default())",
+    "package": "craft",
+    "replacement": "Ok(Default::default())",
+    "span": {
+      "end": {
+        "column": 72,
+        "line": 180
+      },
+      "start": {
+        "column": 9,
+        "line": 155
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/drive.rs\n+++ replace round_of -> RoundResult with Default::default()\n@@ -263,45 +263,10 @@\n         resume: false,\n         agents: r.agents,\n     };\n     (said, res.login)\n }\n \n /// A round through the host's backend, each process told the plugin root.\n async fn round_of(ctx: &RoundCtx<'_>, tasks: &[Task], round: usize) -> RoundResult {\n-    let env = vec![(\n-        \"CLAUDE_PLUGIN_ROOT\".to_owned(),\n-        ctx.root.display().to_string(),\n-    )];\n-    let command = ctx.host.command.clone();\n-    match ctx.host.kind {\n-        HostKind::Codex => {\n-            let codex = Codex {\n-                command,\n-                env,\n-                ..Codex::default()\n-            };\n-            run_round(codex, tasks, round, ctx).await\n-        }\n-        HostKind::Pi => {\n-            let pi = Pi {\n-                command,\n-                env,\n-                ..Pi::default()\n-            };\n-            run_round(pi, tasks, round, ctx).await\n-        }\n-        HostKind::OpenCode if let Some(delegate) = &ctx.host.delegate => {\n-            delegate.name(tasks);\n-            run_round(delegate.clone(), tasks, round, ctx).await\n-        }\n-        HostKind::OpenCode => {\n-            let opencode = OpenCode {\n-                command,\n-                env,\n-                archived: ctx.host.archived,\n-                ..OpenCode::default()\n-            };\n-            run_round(opencode, tasks, round, ctx).await\n-        }\n-    }\n+    Default::default() /* ~ changed by cargo-mutants ~ */\n }\n",
+    "file": "bin/craft/src/run/drive.rs",
+    "function": {
+      "function_name": "round_of",
+      "return_type": "-> RoundResult",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 307
+        },
+        "start": {
+          "column": 1,
+          "line": 269
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/drive.rs:271:5: replace round_of -> RoundResult with Default::default()",
+    "package": "craft",
+    "replacement": "Default::default()",
+    "span": {
+      "end": {
+        "column": 6,
+        "line": 306
+      },
+      "start": {
+        "column": 5,
+        "line": 271
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/drive.rs\n+++ replace match guard let Some(delegate) = &ctx.host.delegate with true in round_of\n@@ -285,17 +285,17 @@\n         HostKind::Pi => {\n             let pi = Pi {\n                 command,\n                 env,\n                 ..Pi::default()\n             };\n             run_round(pi, tasks, round, ctx).await\n         }\n-        HostKind::OpenCode if let Some(delegate) = &ctx.host.delegate => {\n+        HostKind::OpenCode if true /* ~ changed by cargo-mutants ~ */ => {\n             delegate.name(tasks);\n             run_round(delegate.clone(), tasks, round, ctx).await\n         }\n         HostKind::OpenCode => {\n             let opencode = OpenCode {\n                 command,\n                 env,\n                 archived: ctx.host.archived,\n",
+    "file": "bin/craft/src/run/drive.rs",
+    "function": {
+      "function_name": "round_of",
+      "return_type": "-> RoundResult",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 307
+        },
+        "start": {
+          "column": 1,
+          "line": 269
+        }
+      }
+    },
+    "genre": "MatchArmGuard",
+    "name": "bin/craft/src/run/drive.rs:293:31: replace match guard let Some(delegate) = &ctx.host.delegate with true in round_of",
+    "package": "craft",
+    "replacement": "true",
+    "span": {
+      "end": {
+        "column": 70,
+        "line": 293
+      },
+      "start": {
+        "column": 31,
+        "line": 293
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/drive.rs\n+++ replace match guard let Some(delegate) = &ctx.host.delegate with false in round_of\n@@ -285,17 +285,17 @@\n         HostKind::Pi => {\n             let pi = Pi {\n                 command,\n                 env,\n                 ..Pi::default()\n             };\n             run_round(pi, tasks, round, ctx).await\n         }\n-        HostKind::OpenCode if let Some(delegate) = &ctx.host.delegate => {\n+        HostKind::OpenCode if false /* ~ changed by cargo-mutants ~ */ => {\n             delegate.name(tasks);\n             run_round(delegate.clone(), tasks, round, ctx).await\n         }\n         HostKind::OpenCode => {\n             let opencode = OpenCode {\n                 command,\n                 env,\n                 archived: ctx.host.archived,\n",
+    "file": "bin/craft/src/run/drive.rs",
+    "function": {
+      "function_name": "round_of",
+      "return_type": "-> RoundResult",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 307
+        },
+        "start": {
+          "column": 1,
+          "line": 269
+        }
+      }
+    },
+    "genre": "MatchArmGuard",
+    "name": "bin/craft/src/run/drive.rs:293:31: replace match guard let Some(delegate) = &ctx.host.delegate with false in round_of",
+    "package": "craft",
+    "replacement": "false",
+    "span": {
+      "end": {
+        "column": 70,
+        "line": 293
+      },
+      "start": {
+        "column": 31,
+        "line": 293
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/outcome.rs\n+++ replace stops -> bool with true\n@@ -60,34 +60,17 @@\n     let lines: Vec<&str> = all.trim().lines().collect();\n     let from = lines.len().saturating_sub(3);\n     let joined = lines.get(from..).unwrap_or_default().join(\" \");\n     joined.chars().take(300).collect()\n }\n \n /// Whether the failure `e` stops the run: the usage limit, or no login.\n pub(crate) fn stops(host: &Host, e: &AgentError) -> bool {\n-    match e {\n-        AgentError::Quit { stderr, stdout, .. } => {\n-            let said = format!(\"{stderr}\\n{stdout}\");\n-            usage_limit_text(&said).is_some() || host.not_logged_in(&said).is_some()\n-        }\n-        // A delegated task's failure, in the words the delegating process gave (delegate.rs).\n-        AgentError::Failed { subtype } => usage_limit_text(subtype).is_some(),\n-        AgentError::Spawn { .. }\n-        | AgentError::Io(_)\n-        | AgentError::TimedOut(_)\n-        | AgentError::Exit { .. }\n-        | AgentError::Unreadable(_)\n-        | AgentError::NotAnObject\n-        | AgentError::NoStructuredOutput\n-        | AgentError::NotYet { .. }\n-        | AgentError::NoAnswer { .. }\n-        | AgentError::NotStarted => false,\n-    }\n+    true /* ~ changed by cargo-mutants ~ */\n }\n \n /// A failed exit's outcome.\n fn quit(host: &Host, code: Option<i32>, stderr: &str, stdout: &str) -> Outcome {\n     let said = format!(\"{stderr}\\n{stdout}\");\n     if let Some(limit) = usage_limit_text(&said) {\n         return Outcome::Limit(limit);\n     }\n",
+    "file": "bin/craft/src/run/outcome.rs",
+    "function": {
+      "function_name": "stops",
+      "return_type": "-> bool",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 86
+        },
+        "start": {
+          "column": 1,
+          "line": 66
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/outcome.rs:68:5: replace stops -> bool with true",
+    "package": "craft",
+    "replacement": "true",
+    "span": {
+      "end": {
+        "column": 6,
+        "line": 85
+      },
+      "start": {
+        "column": 5,
+        "line": 68
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/outcome.rs\n+++ replace stops -> bool with false\n@@ -60,34 +60,17 @@\n     let lines: Vec<&str> = all.trim().lines().collect();\n     let from = lines.len().saturating_sub(3);\n     let joined = lines.get(from..).unwrap_or_default().join(\" \");\n     joined.chars().take(300).collect()\n }\n \n /// Whether the failure `e` stops the run: the usage limit, or no login.\n pub(crate) fn stops(host: &Host, e: &AgentError) -> bool {\n-    match e {\n-        AgentError::Quit { stderr, stdout, .. } => {\n-            let said = format!(\"{stderr}\\n{stdout}\");\n-            usage_limit_text(&said).is_some() || host.not_logged_in(&said).is_some()\n-        }\n-        // A delegated task's failure, in the words the delegating process gave (delegate.rs).\n-        AgentError::Failed { subtype } => usage_limit_text(subtype).is_some(),\n-        AgentError::Spawn { .. }\n-        | AgentError::Io(_)\n-        | AgentError::TimedOut(_)\n-        | AgentError::Exit { .. }\n-        | AgentError::Unreadable(_)\n-        | AgentError::NotAnObject\n-        | AgentError::NoStructuredOutput\n-        | AgentError::NotYet { .. }\n-        | AgentError::NoAnswer { .. }\n-        | AgentError::NotStarted => false,\n-    }\n+    false /* ~ changed by cargo-mutants ~ */\n }\n \n /// A failed exit's outcome.\n fn quit(host: &Host, code: Option<i32>, stderr: &str, stdout: &str) -> Outcome {\n     let said = format!(\"{stderr}\\n{stdout}\");\n     if let Some(limit) = usage_limit_text(&said) {\n         return Outcome::Limit(limit);\n     }\n",
+    "file": "bin/craft/src/run/outcome.rs",
+    "function": {
+      "function_name": "stops",
+      "return_type": "-> bool",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 86
+        },
+        "start": {
+          "column": 1,
+          "line": 66
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/outcome.rs:68:5: replace stops -> bool with false",
+    "package": "craft",
+    "replacement": "false",
+    "span": {
+      "end": {
+        "column": 6,
+        "line": 85
+      },
+      "start": {
+        "column": 5,
+        "line": 68
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/outcome.rs\n+++ replace outcome_of -> Outcome with Default::default()\n@@ -102,40 +102,17 @@\n }\n \n /// The outcome of `task`'s run, its answer written when it gave one.\n pub(crate) fn outcome_of(\n     task: &Task,\n     reply: Result<AgentReply, AgentError>,\n     host: &Host,\n ) -> Outcome {\n-    match reply {\n-        Ok(r) => write_answer(task, &r),\n-        Err(AgentError::NotStarted) => Outcome::NotStarted,\n-        Err(AgentError::TimedOut(_)) => Outcome::Abandoned,\n-        Err(AgentError::Quit {\n-            code,\n-            stderr,\n-            stdout,\n-        }) => quit(host, code, &stderr, &stdout),\n-        Err(AgentError::Failed { subtype }) if let Some(limit) = usage_limit_text(&subtype) => {\n-            Outcome::Limit(limit)\n-        }\n-        Err(AgentError::NoAnswer { stderr, stdout }) => Outcome::Unanswered {\n-            why: format!(\"{} gave no answer: {}\", host.name(), tail(&stderr, &stdout)),\n-            said: last_line(&stderr),\n-        },\n-        Err(e) => {\n-            let why = e.to_string();\n-            Outcome::Unanswered {\n-                said: last_line(&why),\n-                why,\n-            }\n-        }\n-    }\n+    Default::default() /* ~ changed by cargo-mutants ~ */\n }\n \n /// Why the agent of `reply` said it could not look: its shaped answer, else its text read as\n /// JSON; `None` when it did not say so.\n pub(crate) fn blocked_in(reply: &AgentReply) -> Option<String> {\n     let parsed = || {\n         let t = reply.text.as_deref()?;\n         serde_json::from_str(t.trim()).ok()\n",
+    "file": "bin/craft/src/run/outcome.rs",
+    "function": {
+      "function_name": "outcome_of",
+      "return_type": "-> Outcome",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 134
+        },
+        "start": {
+          "column": 1,
+          "line": 104
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/outcome.rs:110:5: replace outcome_of -> Outcome with Default::default()",
+    "package": "craft",
+    "replacement": "Default::default()",
+    "span": {
+      "end": {
+        "column": 6,
+        "line": 133
+      },
+      "start": {
+        "column": 5,
+        "line": 110
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/outcome.rs\n+++ replace match guard let Some(limit) = usage_limit_text(&subtype) with true in outcome_of\n@@ -111,17 +111,17 @@\n         Ok(r) => write_answer(task, &r),\n         Err(AgentError::NotStarted) => Outcome::NotStarted,\n         Err(AgentError::TimedOut(_)) => Outcome::Abandoned,\n         Err(AgentError::Quit {\n             code,\n             stderr,\n             stdout,\n         }) => quit(host, code, &stderr, &stdout),\n-        Err(AgentError::Failed { subtype }) if let Some(limit) = usage_limit_text(&subtype) => {\n+        Err(AgentError::Failed { subtype }) if true /* ~ changed by cargo-mutants ~ */ => {\n             Outcome::Limit(limit)\n         }\n         Err(AgentError::NoAnswer { stderr, stdout }) => Outcome::Unanswered {\n             why: format!(\"{} gave no answer: {}\", host.name(), tail(&stderr, &stdout)),\n             said: last_line(&stderr),\n         },\n         Err(e) => {\n             let why = e.to_string();\n",
+    "file": "bin/craft/src/run/outcome.rs",
+    "function": {
+      "function_name": "outcome_of",
+      "return_type": "-> Outcome",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 134
+        },
+        "start": {
+          "column": 1,
+          "line": 104
+        }
+      }
+    },
+    "genre": "MatchArmGuard",
+    "name": "bin/craft/src/run/outcome.rs:119:48: replace match guard let Some(limit) = usage_limit_text(&subtype) with true in outcome_of",
+    "package": "craft",
+    "replacement": "true",
+    "span": {
+      "end": {
+        "column": 92,
+        "line": 119
+      },
+      "start": {
+        "column": 48,
+        "line": 119
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/outcome.rs\n+++ replace match guard let Some(limit) = usage_limit_text(&subtype) with false in outcome_of\n@@ -111,17 +111,17 @@\n         Ok(r) => write_answer(task, &r),\n         Err(AgentError::NotStarted) => Outcome::NotStarted,\n         Err(AgentError::TimedOut(_)) => Outcome::Abandoned,\n         Err(AgentError::Quit {\n             code,\n             stderr,\n             stdout,\n         }) => quit(host, code, &stderr, &stdout),\n-        Err(AgentError::Failed { subtype }) if let Some(limit) = usage_limit_text(&subtype) => {\n+        Err(AgentError::Failed { subtype }) if false /* ~ changed by cargo-mutants ~ */ => {\n             Outcome::Limit(limit)\n         }\n         Err(AgentError::NoAnswer { stderr, stdout }) => Outcome::Unanswered {\n             why: format!(\"{} gave no answer: {}\", host.name(), tail(&stderr, &stdout)),\n             said: last_line(&stderr),\n         },\n         Err(e) => {\n             let why = e.to_string();\n",
+    "file": "bin/craft/src/run/outcome.rs",
+    "function": {
+      "function_name": "outcome_of",
+      "return_type": "-> Outcome",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 134
+        },
+        "start": {
+          "column": 1,
+          "line": 104
+        }
+      }
+    },
+    "genre": "MatchArmGuard",
+    "name": "bin/craft/src/run/outcome.rs:119:48: replace match guard let Some(limit) = usage_limit_text(&subtype) with false in outcome_of",
+    "package": "craft",
+    "replacement": "false",
+    "span": {
+      "end": {
+        "column": 92,
+        "line": 119
+      },
+      "start": {
+        "column": 48,
+        "line": 119
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/there.rs\n+++ replace host_in -> Result<Host, String> with Ok(Default::default())\n@@ -12,30 +12,17 @@\n use super::opencode;\n \n /// `host` as it runs in `repo`: opencode's agents listed there; another host as it is, and so is\n /// opencode whose tasks are delegated, which runs no `opencode` of its own.\n ///\n /// # Errors\n /// Why opencode cannot run the review's tasks in `repo`, naming the worktree.\n pub(crate) fn host_in(host: &Host, repo: &Path, log: &dyn Fn(&str)) -> Result<Host, String> {\n-    if host.kind != HostKind::OpenCode || host.delegate.is_some() {\n-        return Ok(host.clone());\n-    }\n-    let ready = opencode::preflight(&host.command, repo, log).map_err(|why| {\n-        format!(\n-            \"the review runs in {}, not in the checkout it was started from, and there {why}. Agents installed into a project (`.opencode/`, install.sh's default) are not in craft's own worktree of a pull request: install craft's OpenCode agents globally (`integrations/opencode/install.sh --global`) or, on OpenCode 2.x, add the craft package\",\n-            repo.display()\n-        )\n-    })?;\n-    Ok(Host {\n-        agents: ready.agents,\n-        archived: ready.archived,\n-        ..host.clone()\n-    })\n+    Ok(Default::default()) /* ~ changed by cargo-mutants ~ */\n }\n \n #[cfg(test)]\n mod tests {\n     use super::super::exe::write_executable;\n     use super::super::models::{ModelTable, ThinkingTable};\n     use super::*;\n \n",
+    "file": "bin/craft/src/run/there.rs",
+    "function": {
+      "function_name": "host_in",
+      "return_type": "-> Result<Host, String>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 34
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "FnValue",
+    "name": "bin/craft/src/run/there.rs:20:5: replace host_in -> Result<Host, String> with Ok(Default::default())",
+    "package": "craft",
+    "replacement": "Ok(Default::default())",
+    "span": {
+      "end": {
+        "column": 7,
+        "line": 33
+      },
+      "start": {
+        "column": 5,
+        "line": 20
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/there.rs\n+++ replace || with && in host_in\n@@ -12,17 +12,17 @@\n use super::opencode;\n \n /// `host` as it runs in `repo`: opencode's agents listed there; another host as it is, and so is\n /// opencode whose tasks are delegated, which runs no `opencode` of its own.\n ///\n /// # Errors\n /// Why opencode cannot run the review's tasks in `repo`, naming the worktree.\n pub(crate) fn host_in(host: &Host, repo: &Path, log: &dyn Fn(&str)) -> Result<Host, String> {\n-    if host.kind != HostKind::OpenCode || host.delegate.is_some() {\n+    if host.kind != HostKind::OpenCode && /* ~ changed by cargo-mutants ~ */ host.delegate.is_some() {\n         return Ok(host.clone());\n     }\n     let ready = opencode::preflight(&host.command, repo, log).map_err(|why| {\n         format!(\n             \"the review runs in {}, not in the checkout it was started from, and there {why}. Agents installed into a project (`.opencode/`, install.sh's default) are not in craft's own worktree of a pull request: install craft's OpenCode agents globally (`integrations/opencode/install.sh --global`) or, on OpenCode 2.x, add the craft package\",\n             repo.display()\n         )\n     })?;\n",
+    "file": "bin/craft/src/run/there.rs",
+    "function": {
+      "function_name": "host_in",
+      "return_type": "-> Result<Host, String>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 34
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "bin/craft/src/run/there.rs:20:40: replace || with && in host_in",
+    "package": "craft",
+    "replacement": "&&",
+    "span": {
+      "end": {
+        "column": 42,
+        "line": 20
+      },
+      "start": {
+        "column": 40,
+        "line": 20
+      }
+    }
+  },
+  {
+    "diff": "--- bin/craft/src/run/there.rs\n+++ replace != with == in host_in\n@@ -12,17 +12,17 @@\n use super::opencode;\n \n /// `host` as it runs in `repo`: opencode's agents listed there; another host as it is, and so is\n /// opencode whose tasks are delegated, which runs no `opencode` of its own.\n ///\n /// # Errors\n /// Why opencode cannot run the review's tasks in `repo`, naming the worktree.\n pub(crate) fn host_in(host: &Host, repo: &Path, log: &dyn Fn(&str)) -> Result<Host, String> {\n-    if host.kind != HostKind::OpenCode || host.delegate.is_some() {\n+    if host.kind == /* ~ changed by cargo-mutants ~ */ HostKind::OpenCode || host.delegate.is_some() {\n         return Ok(host.clone());\n     }\n     let ready = opencode::preflight(&host.command, repo, log).map_err(|why| {\n         format!(\n             \"the review runs in {}, not in the checkout it was started from, and there {why}. Agents installed into a project (`.opencode/`, install.sh's default) are not in craft's own worktree of a pull request: install craft's OpenCode agents globally (`integrations/opencode/install.sh --global`) or, on OpenCode 2.x, add the craft package\",\n             repo.display()\n         )\n     })?;\n",
+    "file": "bin/craft/src/run/there.rs",
+    "function": {
+      "function_name": "host_in",
+      "return_type": "-> Result<Host, String>",
+      "span": {
+        "end": {
+          "column": 2,
+          "line": 34
+        },
+        "start": {
+          "column": 1,
+          "line": 14
+        }
+      }
+    },
+    "genre": "BinaryOperator",
+    "name": "bin/craft/src/run/there.rs:20:18: replace != with == in host_in",
+    "package": "craft",
+    "replacement": "==",
+    "span": {
+      "end": {
+        "column": 20,
+        "line": 20
+      },
+      "start": {
+        "column": 18,
+        "line": 20
+      }
+    }
+  }
+]

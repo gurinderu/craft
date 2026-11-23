@@ -1,0 +1,44 @@
+--- bin/craft/src/run/outcome.rs
++++ replace outcome_of -> Outcome with Default::default()
+@@ -102,40 +102,17 @@
+ }
+ 
+ /// The outcome of `task`'s run, its answer written when it gave one.
+ pub(crate) fn outcome_of(
+     task: &Task,
+     reply: Result<AgentReply, AgentError>,
+     host: &Host,
+ ) -> Outcome {
+-    match reply {
+-        Ok(r) => write_answer(task, &r),
+-        Err(AgentError::NotStarted) => Outcome::NotStarted,
+-        Err(AgentError::TimedOut(_)) => Outcome::Abandoned,
+-        Err(AgentError::Quit {
+-            code,
+-            stderr,
+-            stdout,
+-        }) => quit(host, code, &stderr, &stdout),
+-        Err(AgentError::Failed { subtype }) if let Some(limit) = usage_limit_text(&subtype) => {
+-            Outcome::Limit(limit)
+-        }
+-        Err(AgentError::NoAnswer { stderr, stdout }) => Outcome::Unanswered {
+-            why: format!("{} gave no answer: {}", host.name(), tail(&stderr, &stdout)),
+-            said: last_line(&stderr),
+-        },
+-        Err(e) => {
+-            let why = e.to_string();
+-            Outcome::Unanswered {
+-                said: last_line(&why),
+-                why,
+-            }
+-        }
+-    }
++    Default::default() /* ~ changed by cargo-mutants ~ */
+ }
+ 
+ /// Why the agent of `reply` said it could not look: its shaped answer, else its text read as
+ /// JSON; `None` when it did not say so.
+ pub(crate) fn blocked_in(reply: &AgentReply) -> Option<String> {
+     let parsed = || {
+         let t = reply.text.as_deref()?;
+         serde_json::from_str(t.trim()).ok()

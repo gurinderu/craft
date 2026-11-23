@@ -1,0 +1,21 @@
+--- bin/craft/src/run/delegate.rs
++++ replace <impl std::fmt::Debug for Delegate>::fmt -> std::fmt::Result with Ok(Default::default())
+@@ -42,17 +42,17 @@
+ }
+ 
+ /// The backend that hands each task to the delegating process.
+ #[derive(Clone)]
+ pub(crate) struct Delegate(Arc<Shared>);
+ 
+ impl std::fmt::Debug for Delegate {
+     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+-        f.write_str("Delegate")
++        Ok(Default::default()) /* ~ changed by cargo-mutants ~ */
+     }
+ }
+ 
+ /// Why a dispatch has no reply: the delegating process closed its input first.
+ const CLOSED: &str = "the process that delegates the tasks closed its input";
+ 
+ impl Delegate {
+     /// A delegate whose events go to `emit`; replies come through [`Delegate::deliver`].

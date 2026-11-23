@@ -1,0 +1,21 @@
+--- bin/craft/src/run/delegate.rs
++++ replace Delegate::close with ()
+@@ -100,17 +100,17 @@
+             (None, None) => return false,
+         };
+         let waiting = self.pending().remove(&reply.key);
+         waiting.is_some_and(|tx| tx.send(said).is_ok())
+     }
+ 
+     /// Every dispatch still waiting fails: no reply can come any more.
+     fn close(&self) {
+-        self.pending().clear();
++        () /* ~ changed by cargo-mutants ~ */
+     }
+ 
+     fn pending(
+         &self,
+     ) -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> {
+         self.0
+             .pending
+             .lock()

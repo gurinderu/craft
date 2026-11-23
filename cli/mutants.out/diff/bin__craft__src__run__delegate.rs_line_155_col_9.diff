@@ -1,0 +1,44 @@
+--- bin/craft/src/run/delegate.rs
++++ replace <impl AgentBackend for Delegate>::run -> Result<AgentReply, AgentError> with Ok(Default::default())
+@@ -147,40 +147,15 @@
+         usage: Usage::default(),
+         cost_usd: 0.0,
+         denials: Vec::new(),
+     })
+ }
+ 
+ impl AgentBackend for Delegate {
+     async fn run(&self, request: &AgentRequest) -> Result<AgentReply, AgentError> {
+-        let key = self.0.next.fetch_add(1, Ordering::SeqCst);
+-        let (tx, rx) = oneshot::channel();
+-        self.pending().insert(key, tx);
+-        let waiting = Waiting {
+-            delegate: self,
+-            key,
+-        };
+-        let label = self
+-            .0
+-            .labels
+-            .lock()
+-            .unwrap_or_else(PoisonError::into_inner)
+-            .get(&request.label)
+-            .cloned()
+-            .unwrap_or_else(|| request.label.clone());
+-        (self.0.emit)(Event::Task {
+-            key,
+-            id: request.label.clone(),
+-            label,
+-            agent: request.agent.clone(),
+-            model: request.model.clone(),
+-            prompt: request.prompt.clone(),
+-        });
+-        let said = rx.await;
+-        drop(waiting);
+-        reply_of(said.unwrap_or_else(|_closed| Err(CLOSED.to_owned())))
++        Ok(Default::default()) /* ~ changed by cargo-mutants ~ */
+     }
+ }
+ 
+ #[cfg(test)]
+ #[path = "delegate_tests.rs"]
+ mod tests;

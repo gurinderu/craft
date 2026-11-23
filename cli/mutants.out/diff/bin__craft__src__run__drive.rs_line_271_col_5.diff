@@ -1,0 +1,49 @@
+--- bin/craft/src/run/drive.rs
++++ replace round_of -> RoundResult with Default::default()
+@@ -263,45 +263,10 @@
+         resume: false,
+         agents: r.agents,
+     };
+     (said, res.login)
+ }
+ 
+ /// A round through the host's backend, each process told the plugin root.
+ async fn round_of(ctx: &RoundCtx<'_>, tasks: &[Task], round: usize) -> RoundResult {
+-    let env = vec![(
+-        "CLAUDE_PLUGIN_ROOT".to_owned(),
+-        ctx.root.display().to_string(),
+-    )];
+-    let command = ctx.host.command.clone();
+-    match ctx.host.kind {
+-        HostKind::Codex => {
+-            let codex = Codex {
+-                command,
+-                env,
+-                ..Codex::default()
+-            };
+-            run_round(codex, tasks, round, ctx).await
+-        }
+-        HostKind::Pi => {
+-            let pi = Pi {
+-                command,
+-                env,
+-                ..Pi::default()
+-            };
+-            run_round(pi, tasks, round, ctx).await
+-        }
+-        HostKind::OpenCode if let Some(delegate) = &ctx.host.delegate => {
+-            delegate.name(tasks);
+-            run_round(delegate.clone(), tasks, round, ctx).await
+-        }
+-        HostKind::OpenCode => {
+-            let opencode = OpenCode {
+-                command,
+-                env,
+-                archived: ctx.host.archived,
+-                ..OpenCode::default()
+-            };
+-            run_round(opencode, tasks, round, ctx).await
+-        }
+-    }
++    Default::default() /* ~ changed by cargo-mutants ~ */
+ }

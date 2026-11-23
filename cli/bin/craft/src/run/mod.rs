@@ -10,6 +10,7 @@ mod args;
 #[cfg(test)]
 mod blocked_tests;
 mod deadline;
+mod delegate;
 mod drive;
 #[cfg(test)]
 mod drive_tests;
@@ -101,6 +102,12 @@ pub struct RunArgs {
     /// Progress as events on stderr rather than lines: `json`, one object per line.
     #[arg(long, value_enum)]
     pub events: Option<EventFormat>,
+    /// opencode only, with `--events json`: hand each task to the process that runs this command
+    /// as a `task` event and read its reply from stdin, one JSON line `{"key":n,"text":…}` or
+    /// `{"key":n,"error":…}` — the OpenCode 2.x plugin runs each as a child session. No `opencode`
+    /// is run.
+    #[arg(long)]
+    pub delegate: bool,
 }
 
 fn say(out: &mut dyn Write, text: &str) -> Result<()> {
@@ -123,6 +130,13 @@ fn refused(sink: Sink, why: &str) -> Result<ExitCode> {
 fn ready(args: &RunArgs, repo: &Path, sink: Sink) -> Result<(NonZeroUsize, Host, PathBuf), String> {
     let (concurrency, mut host, root) =
         concurrency_of(args).and_then(|c| Ok((c, host_of(args)?, root_of(args)?)))?;
+    if args.delegate {
+        if host.kind != HostKind::OpenCode || !sink.json {
+            return Err("--delegate is opencode's alone, with --events json".into());
+        }
+        host.delegate = Some(delegate::Delegate::on_stdin(move |e| sink.emit(&e)));
+        return Ok((concurrency, host, root));
+    }
     if host.kind == HostKind::OpenCode {
         let ready = opencode::preflight(&host.command, repo, &|l| sink.log(l))?;
         (host.agents, host.archived) = (ready.agents, ready.archived);

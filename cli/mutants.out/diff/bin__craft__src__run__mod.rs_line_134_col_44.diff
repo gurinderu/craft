@@ -1,0 +1,21 @@
+--- bin/craft/src/run/mod.rs
++++ replace || with && in ready
+@@ -126,17 +126,17 @@
+ }
+ 
+ /// The host and what it runs with, or why it cannot be used: opencode is asked first which
+ /// agents it has.
+ fn ready(args: &RunArgs, repo: &Path, sink: Sink) -> Result<(NonZeroUsize, Host, PathBuf), String> {
+     let (concurrency, mut host, root) =
+         concurrency_of(args).and_then(|c| Ok((c, host_of(args)?, root_of(args)?)))?;
+     if args.delegate {
+-        if host.kind != HostKind::OpenCode || !sink.json {
++        if host.kind != HostKind::OpenCode && /* ~ changed by cargo-mutants ~ */ !sink.json {
+             return Err("--delegate is opencode's alone, with --events json".into());
+         }
+         host.delegate = Some(delegate::Delegate::on_stdin(move |e| sink.emit(&e)));
+         return Ok((concurrency, host, root));
+     }
+     if host.kind == HostKind::OpenCode {
+         let ready = opencode::preflight(&host.command, repo, &|l| sink.log(l))?;
+         (host.agents, host.archived) = (ready.agents, ready.archived);

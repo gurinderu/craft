@@ -20,6 +20,10 @@ use serde_json::Value;
 /// - `{"type":"task_failed","id":…,"reason":…}` — a task's process gave no reply.
 /// - `{"type":"degraded","note":…}` — part of the run ran weaker than asked.
 /// - `{"type":"usage_limit","text":…}` — the account's usage limit: no further task starts.
+/// - `{"type":"task","key":n,"id":…,"label":…,"agent":…|null,"model":…|null,"prompt":…}` — with
+///   `--delegate`, a task for the delegating process to run, its reply awaited on stdin under `key`
+///   (`delegate.rs`).
+/// - `{"type":"task_cancelled","key":n}` — with `--delegate`, a task no longer awaited: stop it.
 /// - `{"type":"result","verdict":…,"report":…|null,"run":…|null,"findings":n,"exit_code":n}` —
 ///   the last event: the verdict line, the report file and run directory when there are, how many
 ///   findings the answer lists, and the exit code.
@@ -58,6 +62,17 @@ pub(crate) enum Event {
     },
     UsageLimit {
         text: String,
+    },
+    Task {
+        key: u64,
+        id: String,
+        label: String,
+        agent: Option<String>,
+        model: Option<String>,
+        prompt: String,
+    },
+    TaskCancelled {
+        key: u64,
     },
     Result {
         verdict: String,
@@ -182,6 +197,21 @@ mod tests {
         round_trip(
             &Event::UsageLimit { text: s("l") },
             &json!({"type": "usage_limit", "text": "l"}),
+        );
+        round_trip(
+            &Event::Task {
+                key: 7,
+                id: s("t1"),
+                label: s("lens a"),
+                agent: Some(s("review-task")),
+                model: None,
+                prompt: s("p"),
+            },
+            &json!({"type": "task", "key": 7, "id": "t1", "label": "lens a", "agent": "review-task", "model": null, "prompt": "p"}),
+        );
+        round_trip(
+            &Event::TaskCancelled { key: 7 },
+            &json!({"type": "task_cancelled", "key": 7}),
         );
     }
 

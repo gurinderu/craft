@@ -70,13 +70,14 @@ pub(crate) fn stops(host: &Host, e: &AgentError) -> bool {
             let said = format!("{stderr}\n{stdout}");
             usage_limit_text(&said).is_some() || host.not_logged_in(&said).is_some()
         }
+        // A delegated task's failure, in the words the delegating process gave (delegate.rs).
+        AgentError::Failed { subtype } => usage_limit_text(subtype).is_some(),
         AgentError::Spawn { .. }
         | AgentError::Io(_)
         | AgentError::TimedOut(_)
         | AgentError::Exit { .. }
         | AgentError::Unreadable(_)
         | AgentError::NotAnObject
-        | AgentError::Failed { .. }
         | AgentError::NoStructuredOutput
         | AgentError::NotYet { .. }
         | AgentError::NoAnswer { .. }
@@ -115,6 +116,9 @@ pub(crate) fn outcome_of(
             stderr,
             stdout,
         }) => quit(host, code, &stderr, &stdout),
+        Err(AgentError::Failed { subtype }) if let Some(limit) = usage_limit_text(&subtype) => {
+            Outcome::Limit(limit)
+        }
         Err(AgentError::NoAnswer { stderr, stdout }) => Outcome::Unanswered {
             why: format!("{} gave no answer: {}", host.name(), tail(&stderr, &stdout)),
             said: last_line(&stderr),

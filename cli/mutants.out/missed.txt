@@ -1,0 +1,2 @@
+bin/craft/src/run/delegate.rs:50:9: replace <impl std::fmt::Debug for Delegate>::fmt -> std::fmt::Result with Ok(Default::default())
+bin/craft/src/run/outcome.rs:68:5: replace stops -> bool with true
