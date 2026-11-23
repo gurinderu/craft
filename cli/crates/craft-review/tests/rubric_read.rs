@@ -3,7 +3,7 @@
 
 mod common;
 
-use common::{answers, fixture, ids, lens, opts, scout, submit};
+use common::{answers, finding, fixture, git, ids, lens, opts, scout, submit, verdict};
 use craft_review::step;
 use serde_json::{Value, json};
 
@@ -20,32 +20,72 @@ fn the_unit_findings_schema_offers_rubric_read_as_the_findings_schema_does() {
     }
 }
 
-#[test]
-fn a_run_with_no_plugin_root_names_its_unread_rubrics_once() {
-    let repo = fixture(true);
-    let out = tempfile::tempdir().unwrap();
-    let run = out.path().join("run");
-    let mut o = opts(repo.path(), out.path());
-    o.craft_root = None;
-    step::start(&o).unwrap();
-    let s = submit(&run, json!({"scout-rust": scout("small", &["errors"])}));
-    // No lens could read a file it was never shown: none names one.
-    let round: serde_json::Map<String, Value> = ids(&s)
+/// Every pending task of `s` answered: each lens with `found` and no `rubricRead` (no lens could
+/// read a file it was never shown), the dedup with no group, each verifier upholding.
+fn answered(s: &Value, found: &[Value]) -> Value {
+    let all: serde_json::Map<String, Value> = ids(s)
         .into_iter()
         .map(|id| {
-            let mut a = lens("x", &[]);
-            a.as_object_mut().unwrap().remove("rubricRead");
+            let a = if id.starts_with("dedup") {
+                json!({"groups": []})
+            } else if id.starts_with("verify") {
+                verdict(false)
+            } else {
+                let mut a = lens("x", if id.contains("errors") { found } else { &[] });
+                a.as_object_mut().unwrap().remove("rubricRead");
+                a
+            };
             (id, a)
         })
         .collect();
-    let s = step::submit(&run, Some(&answers(Value::Object(round)))).unwrap();
-    let degraded = s["degraded"].to_string();
+    Value::Object(all)
+}
+
+#[test]
+fn a_run_with_no_plugin_root_names_its_unread_rubrics_once_whatever_phase_it_ends_in() {
+    // A general-profile change: its verifiers name no skill, so the run ends past every task
+    // that named one.
+    let repo = fixture(false);
+    let d = repo.path();
+    std::fs::create_dir_all(d.join("web")).unwrap();
+    std::fs::write(d.join("web/app.ts"), "export const f = () => 1\n").unwrap();
+    git(d, &["add", "."]);
+    git(d, &["commit", "-qm", "feat: f"]);
+    let out = tempfile::tempdir().unwrap();
+    let run = out.path().join("run");
+    let mut o = opts(d, out.path());
+    o.craft_root = None;
+    step::start(&o).unwrap();
+    let mut s = submit(&run, json!({"scout-general": scout("small", &["errors"])}));
+    let mut f = finding("High", 1);
+    f["file"] = json!("web/app.ts");
+    let found = [f];
+    let mut phases = Vec::new();
+    for _ in 0..8 {
+        if s["done"] == json!(true) {
+            break;
+        }
+        s = step::submit(&run, Some(&answers(answered(&s, &found)))).unwrap();
+        phases.push(s["phase"].clone());
+    }
     assert!(
-        degraded.contains("could not be named by an absolute path"),
-        "{degraded}"
+        phases.contains(&json!("verify")),
+        "the run went past its lenses: {phases:?}"
     );
-    assert!(
-        !degraded.contains("named no rubric file they read whole"),
-        "the same cause named twice: {degraded}"
+    assert_eq!(s["done"], json!(true), "{s}");
+    let degraded: Vec<&str> = s["degraded"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(Value::as_str)
+        .collect();
+    let named = |what: &str| degraded.iter().filter(|d| d.contains(what)).count();
+    assert_eq!(
+        (
+            named("could not be named by an absolute path"),
+            named("named no rubric file they read whole")
+        ),
+        (1, 0),
+        "one cause, named once though the lenses are long gone: {degraded:?}"
     );
 }

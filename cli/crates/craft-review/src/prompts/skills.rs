@@ -115,6 +115,16 @@ pub fn unresolved(ctx: &PromptContext, tasks: &[Task]) -> Vec<String> {
     out
 }
 
+/// Keeps in `run` the skills its current tasks named that no path was found for, beside those
+/// earlier steps' tasks named: the report names each once, whatever phase the run ends in.
+pub fn keep_unresolved(run: &mut crate::state::RunState) {
+    for name in unresolved(&run.context, &run.tasks) {
+        if !run.skills_unresolved.contains(&name) {
+            run.skills_unresolved.push(name);
+        }
+    }
+}
+
 #[cfg(test)]
 #[path = "skills_tests.rs"]
 mod tests;

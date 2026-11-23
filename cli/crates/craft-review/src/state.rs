@@ -271,6 +271,11 @@ pub struct RunState {
     /// a state written before it reads as before and the format keeps its version.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub degraded: Vec<String>,
+    /// The skills the tasks of any step so far were told to load that no absolute path was found
+    /// for, each once ([`crate::prompts::skills::keep_unresolved`]): a later phase's tasks replace
+    /// the lenses that named them, so the report reads them here. Optional, as `degraded`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skills_unresolved: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub verdict: Option<String>,
     /// Where the run stands in its branch's chain of review rounds. Optional, so a state written

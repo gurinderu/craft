@@ -164,6 +164,7 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
         not_run: Vec::new(),
         capped: Vec::new(),
         degraded: Vec::new(),
+        skills_unresolved: Vec::new(),
         verdict: None,
         exit: None,
         chain,
@@ -345,6 +346,7 @@ fn save_and_next_with(
     save: Save<'_>,
 ) -> Result<Value, Error> {
     let setup = said.post.cloned().unwrap_or_default();
+    crate::prompts::skills::keep_unresolved(run);
     publish::deliver(dir, run, &setup)?;
     handoff::write_pending(dir, run)?;
     save(dir, run)?;
