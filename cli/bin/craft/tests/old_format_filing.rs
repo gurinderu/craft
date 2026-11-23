@@ -10,7 +10,6 @@
 
 mod store_fixture;
 
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
@@ -24,31 +23,23 @@ const ROOT: &str = concat!(
     "/../../../integrations/claude-code"
 );
 
-/// `home`'s run store made writable or not: a write into a shut one fails, as a full disk's would.
-fn store_open(home: &Path, open: bool) {
-    let runs = home.join(".craft/runs");
-    std::fs::create_dir_all(&runs).unwrap();
-    let mode = if open { 0o755 } else { 0o555 };
-    std::fs::set_permissions(&runs, std::fs::Permissions::from_mode(mode)).unwrap();
-}
-
-/// Whether a shut store refuses this user's writes: not for root or `CAP_DAC_OVERRIDE`, where a
-/// test that loses a record by a shut store has nothing to test and says it skipped.
-#[expect(
-    clippy::print_stderr,
-    reason = "a skipped test says so where its runner shows it"
-)]
-fn shut_holds(tmp: &Path) -> bool {
-    let probe = tmp.join("probe");
-    store_open(&probe, false);
-    let refused = std::fs::write(probe.join(".craft/runs/x"), "x").is_err();
-    store_open(&probe, true);
-    if !refused {
-        eprintln!(
-            "skipped: a shut store does not refuse this user's writes (root or CAP_DAC_OVERRIDE)"
-        );
+/// `home`'s run store blocked or restored: blocked, a regular file stands where the store's
+/// directory is (the store itself set aside), so every write into it fails for any user, root
+/// included, as a full disk's would; restored, the store is back as it was.
+fn store_blocked(home: &Path, blocked: bool) {
+    let (runs, held) = (home.join(".craft/runs"), home.join(".craft/runs.held"));
+    if blocked {
+        std::fs::create_dir_all(home.join(".craft")).unwrap();
+        if runs.exists() {
+            std::fs::rename(&runs, &held).unwrap();
+        }
+        std::fs::write(&runs, "not a directory").unwrap();
+    } else {
+        std::fs::remove_file(&runs).unwrap();
+        if held.exists() {
+            std::fs::rename(&held, &runs).unwrap();
+        }
     }
-    refused
 }
 
 /// `run`'s telemetry as a run whose plugin root was since uninstalled keeps it: a submit told of
@@ -72,15 +63,15 @@ fn kept_record(run: &Path) -> Value {
 fn stopped_lost(tmp: &Path) -> (PathBuf, PathBuf, String) {
     let (run, home, path, out) = started(tmp);
     assert!(out.status.success());
-    store_open(&home, false);
+    store_blocked(&home, true);
     let stopped = submit(&run, &home, &path, &["--limit", "usage limit"]);
-    store_open(&home, true);
+    store_blocked(&home, false);
     assert!(
         stopped.status.success(),
         "{}",
         String::from_utf8_lossy(&stopped.stderr)
     );
-    assert!(records(&home).is_empty());
+    assert_eq!(records(&home), Vec::<String>::new());
     assert_eq!(kept_record(&run), json!("failed"));
     (run, home, path)
 }
@@ -101,9 +92,6 @@ fn refused_as_earlier(run: &Path, home: &Path, path: &str, flags: &[&str]) {
 fn a_stopped_record_that_never_landed_is_filed_once_whatever_the_submit() {
     for flags in SUBMITS {
         let tmp = tempfile::tempdir().unwrap();
-        if !shut_holds(tmp.path()) {
-            return;
-        }
         let (run, home, path) = stopped_lost(tmp.path());
         refused_as_earlier(&run, &home, &path, flags);
         let filed = records(&home);
@@ -133,9 +121,9 @@ fn a_stopped_record_that_landed_though_kept_as_failed_is_not_filed_twice() {
 /// store: run, home, PATH.
 fn finished_lost(tmp: &Path) -> (PathBuf, PathBuf, String) {
     let home = tmp.join("home");
-    store_open(&home, false);
+    store_blocked(&home, true);
     let (run, _, path, out) = started_with(tmp, ("notes.md", "n\n"));
-    store_open(&home, true);
+    store_blocked(&home, false);
     let step: Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(step.get("done"), Some(&json!(true)), "{step}");
     assert_eq!(records(&home), Vec::<String>::new());
@@ -146,9 +134,6 @@ fn finished_lost(tmp: &Path) -> (PathBuf, PathBuf, String) {
 fn a_finished_runs_record_that_never_landed_is_filed_once_whatever_the_submit() {
     for flags in SUBMITS {
         let tmp = tempfile::tempdir().unwrap();
-        if !shut_holds(tmp.path()) {
-            return;
-        }
         let (run, home, path) = finished_lost(tmp.path());
         if flags == ["--resume"] {
             // A finished run's resume re-files its record and ends there, as any format's does.
