@@ -8,13 +8,13 @@
 //! verdict is read back by ([`noise`]) and the issue class 1 files ([`issue`]); the plan's ledger
 //! with the rows this side settled pinned ([`pinned`]); the banners that lead the plan
 //! ([`banner`]); the run record ([`record`]). Each is the engine's object, its keys in the engine's
-//! order ([`json`]), read as JavaScript reads a value ([`js`]).
+//! order, held in the run store's JavaScript-compatible value (`craft_store::js`) and read as
+//! the engine reads it ([`field`]).
 
 pub mod banner;
+pub mod field;
 pub mod finding;
 pub mod issue;
-pub mod js;
-pub mod json;
 pub mod ledger;
 pub mod noise;
 #[cfg(test)]

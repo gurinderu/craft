@@ -1,11 +1,11 @@
 use super::*;
 
 fn plan(text: &str) -> Plan {
-    Plan::read(&serde_json::from_str(text).unwrap()).unwrap()
+    Plan::read(&craft_store::js::parse(text).unwrap()).unwrap()
 }
 
 fn text(p: Plan) -> String {
-    serde_json::to_string(&Json::Object(p.0)).unwrap()
+    Js::Obj(p.0).compact()
 }
 
 const BODY: &str = r#"{"summary":"SUM","plan_markdown":"BODY","ledger":[]}"#;
@@ -33,18 +33,15 @@ fn the_lost_record_leads_then_what_did_not_run_then_the_memory_each_field_in_the
         memory: "m".into(),
         prior_refused: vec!["r".into()],
         rule_notices: vec!["n".into()],
-        issues: vec![Json::from("i")],
+        issues: vec![Js::str("i")],
     };
     let p = bannered(plan(BODY), &b);
     assert_eq!(
-        p.0.text("plan_markdown"),
+        field::text(&p.0, "plan_markdown"),
         "LOST\n> **INCOMPLETE TRIAGE** — this plan does not cover everything that was asked for:\n> - source `pr` produced nothing — its findings are NOT in this plan\n> - 2 finding(s) were never judged against the code (validator died); they sit in the ledger as needs-decision, not in the plan\n\n> **MEMORY DEGRADED** — the sift may have run without some or all of the project's records:\n> - memory: not read\n\nBODY"
     );
-    assert!(
-        p.0.text("summary")
-            .starts_with("INCOMPLETE: source `pr` produced nothing")
-    );
-    assert!(p.0.text("summary").ends_with("not in the plan\n\nSUM"));
+    assert!(field::text(&p.0, "summary").starts_with("INCOMPLETE: source `pr` produced nothing"));
+    assert!(field::text(&p.0, "summary").ends_with("not in the plan\n\nSUM"));
     let order = text(bannered(plan(BODY), &b));
     let at = |k: &str| order.find(&format!("\"{k}\":")).unwrap();
     let wanted = [
@@ -72,21 +69,20 @@ fn a_dead_plan_is_named_after_the_lost_record() {
 }
 
 #[test]
-fn a_plan_missing_what_the_schema_requires_is_refused_one_with_any_ledger_read() {
-    for bad in [
-        r#"{"plan_markdown":3,"summary":"","ledger":[]}"#,
-        r#"{"plan_markdown":"","ledger":[]}"#,
-        r#"{"plan_markdown":"","summary":""}"#,
-        "[]",
-    ] {
-        let answer = serde_json::from_str(bad).unwrap();
-        assert!(
-            matches!(Plan::read(&answer), Err(TriageError::Answer { .. })),
-            "{bad}"
-        );
-    }
-    assert_eq!(
-        plan(r#"{"plan_markdown":"","summary":"","ledger":"oops"}"#).rows(),
-        None
+fn a_plan_is_read_as_the_engine_takes_it_any_object() {
+    let bare = bannered(
+        plan(r#"{"plan_markdown":3,"ledger":"oops"}"#),
+        &Banners {
+            not_run_sources: vec!["pr".into()],
+            ..Banners::default()
+        },
     );
+    assert_eq!(bare.rows(), None);
+    assert!(field::text(&bare.0, "plan_markdown").ends_with("\n3"));
+    assert!(field::text(&bare.0, "summary").ends_with("plan\n\n"));
+    let answer = craft_store::js::parse("[]").unwrap();
+    assert!(matches!(
+        Plan::read(&answer),
+        Err(TriageError::Answer { .. })
+    ));
 }

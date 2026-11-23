@@ -9,8 +9,6 @@ publish.workspace = true
 [dependencies]
 craft-review.workspace = true
 craft-store.workspace = true
-serde.workspace = true
-serde_json.workspace = true
 thiserror.workspace = true
 
 [lints]

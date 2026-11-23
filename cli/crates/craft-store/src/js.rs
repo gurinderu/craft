@@ -3,11 +3,13 @@
 //! that are array indices first, ascending, then the rest in the order they were first set. A key
 //! set again keeps its place. `serde_json`'s map sorts its keys, so it cannot carry that order.
 
+mod coerce;
 mod number;
 mod parse;
 mod string;
 mod write;
 
+pub use coerce::{is_space, trim};
 pub use number::number_text;
 pub use parse::{ParseError, parse};
 pub use string::{JsString, Utf16Error};

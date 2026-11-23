@@ -1,16 +1,16 @@
 use super::*;
-use crate::json::{Json, Obj};
+use craft_store::js::{Obj, parse};
 
-fn j(s: &str) -> Json {
-    serde_json::from_str(s).unwrap()
+fn j(s: &str) -> Js {
+    parse(s).unwrap()
 }
 
 fn v(verdict: &str, class: &str, premise: &str) -> Row {
     Row(Obj::new()
-        .with("stable_id", "id")
-        .with("verdict", verdict)
-        .with("reason", "why")
-        .with("premise_checked", premise)
+        .with("stable_id", Js::str("id"))
+        .with("verdict", Js::str(verdict))
+        .with("reason", Js::str("why"))
+        .with("premise_checked", Js::str(premise))
         .with("noise_class", j(class)))
 }
 

@@ -4,14 +4,15 @@
 //! fork point the triage was given (node #309); "not decidable from the code" (class 5) is a
 //! `needs-decision`.
 
-use crate::js;
+use craft_store::js::{Js, is_space, trim};
+
 use crate::ledger::Row;
 
 /// A validator's noise class: `Number(noise_class)` when it is an integer from 1 to 6, else 0
 /// (none named, or one outside the classes).
 #[must_use]
 pub fn noise_class_of(v: &Row) -> u8 {
-    let n = js::number(v.0.get("noise_class"));
+    let n = v.0.get("noise_class").map_or(f64::NAN, Js::to_js_number);
     (1u8..=6)
         .find(|c| (n - f64::from(*c)).abs() < f64::EPSILON)
         .unwrap_or(0)
@@ -35,7 +36,7 @@ pub fn same_commit(a: &str, b: &str) -> bool {
 /// beside the validation pin `base` and different from it; `HEAD` never counts.
 #[must_use]
 pub fn effective_pr_base(pr_base: &str, base: &str) -> String {
-    let (at, pin) = (js::trim(pr_base), js::trim(base));
+    let (at, pin) = (trim(pr_base), trim(base));
     if at.is_empty() || pin.is_empty() || at == "HEAD" || same_commit(at, pin) {
         String::new()
     } else {
@@ -46,7 +47,7 @@ pub fn effective_pr_base(pr_base: &str, base: &str) -> String {
 /// What the validator is told about where class 1 must be shown.
 #[must_use]
 pub fn class_one_base_line(pr_base: &str) -> String {
-    let at = js::trim(pr_base);
+    let at = trim(pr_base);
     if at.is_empty() {
         return "no prBase (the PR's fork point) was given to this triage, so it cannot be checked here — name the class all the same; a human decides it".into();
     }
@@ -70,8 +71,8 @@ pub fn opened_at(premise: &str, r: &str) -> bool {
         let after = premise
             .get(i + needle.len()..)
             .and_then(|p| p.chars().next());
-        let opens = |c: char| js::is_space(c) || "`'\"(".contains(c);
-        let closes = |c: char| js::is_space(c) || ":`'\")".contains(c);
+        let opens = |c: char| is_space(c) || "`'\"(".contains(c);
+        let closes = |c: char| is_space(c) || ":`'\")".contains(c);
         if opens(before) && after.is_some_and(|c| !closes(c)) {
             return true;
         }
@@ -84,8 +85,8 @@ pub fn opened_at(premise: &str, r: &str) -> bool {
 #[must_use]
 pub fn classified_verdict(v: Row, pr_base: &str) -> Row {
     match noise_class_of(&v) {
-        1 => not_this_prs(v, js::trim(pr_base)),
-        5 => v.with("verdict", "needs-decision"),
+        1 => not_this_prs(v, trim(pr_base)),
+        5 => v.with("verdict", Js::str("needs-decision")),
         _ => v,
     }
 }
@@ -99,7 +100,8 @@ pub fn not_this_prs(v: Row, pr_base: &str) -> Row {
     }
     let human = |v: Row, why: String| {
         let reason = format!("{why} — {}", v.js("reason"));
-        v.with("verdict", "needs-decision").with("reason", reason)
+        v.with("verdict", Js::str("needs-decision"))
+            .with("reason", Js::str(reason))
     };
     if pr_base.is_empty() {
         let why =
@@ -112,7 +114,8 @@ pub fn not_this_prs(v: Row, pr_base: &str) -> Row {
         );
         return human(v, why);
     }
-    v.with("verdict", "defer").with("action", "issue")
+    v.with("verdict", Js::str("defer"))
+        .with("action", Js::str("issue"))
 }
 
 #[cfg(test)]

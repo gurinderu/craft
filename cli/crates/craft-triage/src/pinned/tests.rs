@@ -1,19 +1,19 @@
 use super::*;
 
-fn j(s: &str) -> Json {
-    serde_json::from_str(s).unwrap()
+fn j(s: &str) -> Js {
+    craft_store::js::parse(s).unwrap()
 }
 
 fn row(s: &str) -> Row {
-    Row(j(s).as_object().unwrap().clone())
+    Row(j(s).as_obj().unwrap().clone())
 }
 
-fn rows(s: &str) -> Vec<Json> {
-    j(s).as_array().unwrap().to_vec()
+fn rows(s: &str) -> Vec<Js> {
+    j(s).as_arr().unwrap().to_vec()
 }
 
-fn text(v: &[Json]) -> String {
-    serde_json::to_string(v).unwrap()
+fn text(v: &[Js]) -> String {
+    Js::Arr(v.to_vec()).compact()
 }
 
 const REPEAT: &str = r#"{"stable_id":"r","verdict":"reject","sifted":true,"repeat_of":"a","reason":"SIFTED BEFORE VALIDATION — repeats"}"#;
@@ -56,8 +56,16 @@ fn a_sifted_row_missing_either_field_is_restored() {
         r#"[{"stable_id":"r","verdict":"reject","reason":"SIFTED BEFORE VALIDATION — repeats","sifted":true,"repeat_of":"b"}]"#,
     ] {
         let got = pinned_ledger(&rows(planned), &[row(REPEAT)], &[]);
-        assert_eq!(got[0].at("sifted"), &Json::Bool(true), "{planned}");
-        assert_eq!(got[0].at("repeat_of").as_str(), Some("a"), "{planned}");
+        assert_eq!(
+            crate::field::at(&got[0], "sifted"),
+            &Js::Bool(true),
+            "{planned}"
+        );
+        assert_eq!(
+            crate::field::at(&got[0], "repeat_of").as_str(),
+            Some("a"),
+            "{planned}"
+        );
     }
     let kept = format!("[{REPEAT}]");
     assert_eq!(
@@ -80,5 +88,8 @@ fn a_class_one_row_carries_the_issue_action_at_its_end() {
     );
     let fallback = final_ledger(None, &[row(REPEAT)], &[issue]);
     assert_eq!(fallback.len(), 2);
-    assert_eq!(fallback[1].at("action").as_str(), Some("issue"));
+    assert_eq!(
+        crate::field::at(&fallback[1], "action").as_str(),
+        Some("issue")
+    );
 }

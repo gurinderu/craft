@@ -7,8 +7,8 @@ use craft_review::ledger::overlap;
 pub use craft_review::memory::SURE_WINDOW;
 
 use crate::finding::{Finding, location_parts, severity_rank};
-use crate::json::Obj;
 use crate::ledger::Row;
+use craft_store::js::{Js, Obj};
 
 /// How much two titles at one site must share to be one finding said twice.
 pub const REPEAT_TITLE_OVERLAP: f64 = 0.6;
@@ -112,11 +112,11 @@ pub fn repeat_entry(r: &Repeat) -> Row {
         r.of
     );
     Row(Obj::new()
-        .with("stable_id", r.finding.stable_id.as_str())
-        .with("verdict", "reject")
-        .with("sifted", true)
-        .with("repeat_of", r.of.as_str())
-        .with("reason", reason))
+        .with("stable_id", Js::str(r.finding.stable_id.as_str()))
+        .with("verdict", Js::str("reject"))
+        .with("sifted", Js::Bool(true))
+        .with("repeat_of", Js::str(r.of.as_str()))
+        .with("reason", Js::str(reason)))
 }
 
 #[cfg(test)]

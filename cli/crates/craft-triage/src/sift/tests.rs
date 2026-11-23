@@ -4,11 +4,11 @@ use crate::finding::id_of;
 fn sifted(severity: &str, title: &str, location: &str, thread: &str) -> Sifted {
     let f = Finding(
         Obj::new()
-            .with("severity", severity)
-            .with("title", title)
-            .with("location", location)
-            .with("thread_id", thread)
-            .with("source", "review"),
+            .with("severity", Js::str(severity))
+            .with("title", Js::str(title))
+            .with("location", Js::str(location))
+            .with("thread_id", Js::str(thread))
+            .with("source", Js::str("review")),
     );
     let id = id_of(&f);
     Sifted::new(f, id)
@@ -79,7 +79,7 @@ fn a_repeat_row_is_a_sifted_reject_naming_its_twin_in_the_engines_order() {
         finding: sifted("Low", "t", "a.rs:1", ""),
         of: "x".into(),
     };
-    let row = serde_json::to_string(&crate::json::Json::from(repeat_entry(&r))).unwrap();
+    let row = Js::from(repeat_entry(&r)).compact();
     assert_eq!(
         row,
         r#"{"stable_id":"review::a.rs:1::t","verdict":"reject","sifted":true,"repeat_of":"x","reason":"SIFTED BEFORE VALIDATION — repeats x in this batch (same site, same title words); judged there"}"#

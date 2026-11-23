@@ -1,8 +1,8 @@
 use super::*;
 
 fn ledger(text: &str) -> HashMap<String, Row> {
-    let entries: Json = serde_json::from_str(text).unwrap();
-    ledger_by_id(entries.as_array().unwrap())
+    let entries = craft_store::js::parse(text).unwrap();
+    ledger_by_id(entries.as_arr().unwrap())
 }
 
 #[test]
@@ -13,8 +13,8 @@ fn the_prior_ledger_is_read_as_far_as_its_entries_are_objects() {
     );
     assert_eq!(by.len(), 4);
     assert_eq!(by["a"].text("reason"), "no");
-    assert_eq!(by["a"].0.get("sifted"), Some(&Json::Bool(false)));
-    assert_eq!(by["7"].0.get("sifted"), Some(&Json::Bool(true)));
+    assert_eq!(by["a"].0.get("sifted"), Some(&Js::Bool(false)));
+    assert_eq!(by["7"].0.get("sifted"), Some(&Js::Bool(true)));
     assert_eq!(by["7"].verdict(), "");
     assert_eq!(by["undefined"].verdict(), "");
     assert_eq!(by["1"].text("reason"), "1,2");

@@ -9,8 +9,9 @@
 use std::collections::HashSet;
 
 use crate::issue::with_issue_actions;
-use crate::js;
-use crate::json::{Json, Obj};
+use craft_store::js::{Js, Obj};
+
+use crate::field;
 use crate::ledger::{Row, UNJUDGED_MARKER};
 use crate::sift::SIFT_MARK;
 
@@ -32,9 +33,8 @@ fn pinned_rows<'a>(sifted: &'a [Row], validations: &'a [Row]) -> Vec<(&'a str, &
 
 /// `String(e.reason || '')`.
 fn js_reason(r: &Row) -> String {
-    let reason = r.0.get("reason");
-    if js::truthy(reason) {
-        js::string(reason)
+    if field::truthy(&r.0, "reason") {
+        field::js(&r.0, "reason")
     } else {
         String::new()
     }
@@ -66,10 +66,10 @@ fn restored(mut e: Obj, v: &Row) -> Obj {
             e.set(k, x.clone());
         }
     }
-    if js::truthy(v.0.get("sifted")) {
-        e.set("sifted", true);
+    if field::truthy(&v.0, "sifted") {
+        e.set("sifted", Js::Bool(true));
     }
-    if let Some(of) = v.0.get("repeat_of").filter(|of| js::truthy(Some(of))) {
+    if let Some(of) = v.0.get("repeat_of").filter(|of| of.truthy()) {
         e.set("repeat_of", of.clone());
     }
     e
@@ -77,7 +77,7 @@ fn restored(mut e: Obj, v: &Row) -> Obj {
 
 /// `planned` with each pinned row restored and a pinned row the agent dropped appended.
 #[must_use]
-pub fn pinned_ledger(planned: &[Json], sifted: &[Row], validations: &[Row]) -> Vec<Json> {
+pub fn pinned_ledger(planned: &[Js], sifted: &[Row], validations: &[Row]) -> Vec<Js> {
     let pinned = pinned_rows(sifted, validations);
     if pinned.is_empty() {
         return planned.to_vec();
@@ -85,24 +85,22 @@ pub fn pinned_ledger(planned: &[Json], sifted: &[Row], validations: &[Row]) -> V
     let mut seen = HashSet::new();
     let find = |e: &Obj| {
         e.get("stable_id")
-            .and_then(Json::as_str)
+            .and_then(Js::as_str)
             .and_then(|id| pinned.iter().find(|(p, _)| *p == id))
     };
-    let mut rows: Vec<Json> = planned
+    let mut rows: Vec<Js> = planned
         .iter()
-        .map(
-            |e| match e.as_object().and_then(|o| find(o).map(|p| (o, p))) {
-                Some((o, (id, v))) => {
-                    seen.insert(*id);
-                    Json::Object(pin(o, v))
-                }
-                None => e.clone(),
-            },
-        )
+        .map(|e| match e.as_obj().and_then(|o| find(o).map(|p| (o, p))) {
+            Some((o, (id, v))) => {
+                seen.insert(*id);
+                Js::Obj(pin(o, v))
+            }
+            None => e.clone(),
+        })
         .collect();
     let dropped = pinned.iter().filter(|(id, _)| !seen.contains(id));
     rows.extend(
-        dropped.map(|(id, v)| Json::Object(restored(Obj::new().with("stable_id", *id), v))),
+        dropped.map(|(id, v)| Js::Obj(restored(Obj::new().with("stable_id", Js::str(*id)), v))),
     );
     rows
 }
@@ -110,14 +108,14 @@ pub fn pinned_ledger(planned: &[Json], sifted: &[Row], validations: &[Row]) -> V
 /// The ledger the record tallies: the plan's list pinned, or with no list the sifted rows and the
 /// verdicts; the issue actions on both.
 #[must_use]
-pub fn final_ledger(planned: Option<&[Json]>, sifted: &[Row], validations: &[Row]) -> Vec<Json> {
+pub fn final_ledger(planned: Option<&[Js]>, sifted: &[Row], validations: &[Row]) -> Vec<Js> {
     let rows = match planned {
         Some(p) => pinned_ledger(p, sifted, validations),
         None => sifted
             .iter()
             .chain(validations)
             .cloned()
-            .map(Json::from)
+            .map(Js::from)
             .collect(),
     };
     with_issue_actions(rows, validations)

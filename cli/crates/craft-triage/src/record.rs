@@ -4,8 +4,10 @@
 //! It holds the findings triaged and their severity mix, each source's count, the verdicts
 //! tallied over the final ledger, what the sift settled, the memory, and what did not run.
 
+use craft_store::js::{Js, Obj};
+
+use crate::field::{self, num};
 use crate::finding::{Finding, Gathered, SEVERITIES};
-use crate::json::{Json, Obj};
 
 /// The verdicts a ledger is tallied by, in `tallyVerdicts`' order.
 pub const VERDICTS: [&str; 5] = ["accept", "reject", "defer", "needs-decision", "conflict"];
@@ -21,56 +23,60 @@ pub struct SiftCounts {
 }
 
 /// What the record is made from.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct RecordInput<'a> {
     pub craft_version: &'a str,
     pub gathered: &'a [Gathered],
     pub raw: &'a [Finding],
     pub validated: usize,
-    pub ledger: &'a [Json],
+    pub ledger: &'a [Js],
     /// How many repeats collapsed.
     pub repeats: usize,
     pub sift_counts: SiftCounts,
     pub issues: usize,
     /// The memory as the record carries it (`memoryRecord`), its keys in that order.
-    pub memory: Json,
+    pub memory: Js,
     pub not_run_sources: &'a [String],
     pub unjudged: usize,
 }
 
-/// How many of `items` have the text `want` under `key`.
-fn count(items: impl Iterator<Item = Option<Json>>, want: &str) -> usize {
+/// How many of `items` are the text `want`.
+fn count<'a>(items: impl Iterator<Item = Option<&'a Js>>, want: &str) -> usize {
     items
-        .filter(|v| v.as_ref().and_then(Json::as_str) == Some(want))
+        .filter(|v| v.and_then(Js::as_str) == Some(want))
         .count()
 }
 
 /// The findings' total and severity mix, an unknown severity uncounted (`summarizeFindings`).
 #[must_use]
-pub fn summarize(raw: &[Finding]) -> Json {
+pub fn summarize(raw: &[Finding]) -> Js {
     let mut by = Obj::new();
     let mut total = 0;
     for s in SEVERITIES {
-        let n = count(raw.iter().map(|f| f.0.get("severity").cloned()), s);
+        let n = count(raw.iter().map(|f| f.0.get("severity")), s);
         total += n;
-        by.set(s, n);
+        by.set(s, num(n));
     }
-    Json::Object(Obj::new().with("total", total).with("bySeverity", by))
+    Js::Obj(
+        Obj::new()
+            .with("total", num(total))
+            .with("bySeverity", Js::Obj(by)),
+    )
 }
 
 /// The ledger's verdicts counted, an unknown one uncounted (`tallyVerdicts`).
 #[must_use]
-pub fn tally(ledger: &[Json]) -> Obj {
+pub fn tally(ledger: &[Js]) -> Obj {
     let mut t = Obj::new();
     for v in VERDICTS {
         t.set(
             v,
-            count(
+            num(count(
                 ledger
                     .iter()
-                    .map(|e| e.as_object().and_then(|o| o.get("verdict")).cloned()),
+                    .map(|e| e.as_obj().and_then(|o| o.get("verdict"))),
                 v,
-            ),
+            )),
         );
     }
     t
@@ -80,32 +86,33 @@ pub fn tally(ledger: &[Json]) -> Obj {
 fn triage(r: &RecordInput<'_>) -> Obj {
     let c = r.sift_counts;
     let sifted = Obj::new()
-        .with("repeats", r.repeats)
-        .with("rejectedBefore", c.rejected_before)
-        .with("deferred", c.deferred)
-        .with("covered", c.covered)
-        .with("conflict", c.conflict)
-        .with("reraised", c.reraised);
+        .with("repeats", num(r.repeats))
+        .with("rejectedBefore", num(c.rejected_before))
+        .with("deferred", num(c.deferred))
+        .with("covered", num(c.covered))
+        .with("conflict", num(c.conflict))
+        .with("reraised", num(c.reraised));
     let mut t = Obj::new()
-        .with("gathered", r.raw.len())
-        .with("validated", r.validated);
-    for (k, v) in tally(r.ledger) {
-        t.set(&k, v);
+        .with("gathered", num(r.raw.len()))
+        .with("validated", num(r.validated));
+    for (k, v) in tally(r.ledger).iter() {
+        t.set(k, v.clone());
     }
-    t.with("sifted", sifted).with("issues", r.issues)
+    t.with("sifted", Js::Obj(sifted))
+        .with("issues", num(r.issues))
 }
 
 /// The run record.
 #[must_use]
-pub fn run_record(r: &RecordInput<'_>) -> Json {
-    let sources: Vec<Json> = r
+pub fn run_record(r: &RecordInput<'_>) -> Js {
+    let sources: Vec<Js> = r
         .gathered
         .iter()
         .map(|g| {
-            Json::Object(
+            Js::Obj(
                 Obj::new()
-                    .with("source", g.source.as_str())
-                    .with("count", g.findings.len()),
+                    .with("source", Js::str(g.source.as_str()))
+                    .with("count", num(g.findings.len())),
             )
         })
         .collect();
@@ -118,20 +125,20 @@ pub fn run_record(r: &RecordInput<'_>) -> Json {
         not_run.push("findings-unjudged".into());
     }
     let o = Obj::new()
-        .with("schemaVersion", 1usize)
-        .with("runtime", "claude-code")
-        .with("craftVersion", r.craft_version)
-        .with("kind", "workflow")
-        .with("name", "triage-findings")
-        .with("verdict", "")
+        .with("schemaVersion", num(1))
+        .with("runtime", Js::str("claude-code"))
+        .with("craftVersion", Js::str(r.craft_version))
+        .with("kind", Js::str("workflow"))
+        .with("name", Js::str("triage-findings"))
+        .with("verdict", Js::str(""))
         .with("findings", summarize(r.raw))
-        .with("nested", false)
-        .with("via", Json::Null)
-        .with("sources", sources)
-        .with("triage", triage(r))
+        .with("nested", Js::Bool(false))
+        .with("via", Js::Null)
+        .with("sources", Js::Arr(sources))
+        .with("triage", Js::Obj(triage(r)))
         .with("memory", r.memory.clone())
-        .with("notRun", not_run);
-    Json::Object(o)
+        .with("notRun", field::texts(&not_run));
+    Js::Obj(o)
 }
 
 #[cfg(test)]

@@ -4,8 +4,9 @@
 use std::collections::HashMap;
 use std::hash::BuildHasher;
 
-use crate::js;
-use crate::json::{Json, Obj};
+use craft_store::js::{Js, Obj};
+
+use crate::field;
 use crate::ledger::{Row, UNJUDGED_MARKER};
 use crate::sift::SIFT_MARK;
 
@@ -13,20 +14,18 @@ use crate::sift::SIFT_MARK;
 /// its id, verdict and reason as `String()` writes them (a missing or null verdict and reason
 /// ''), `sifted` true only when it is `true`; a later entry under one id replaces an earlier one.
 #[must_use]
-pub fn ledger_by_id(entries: &[Json]) -> HashMap<String, Row> {
+pub fn ledger_by_id(entries: &[Js]) -> HashMap<String, Row> {
     let mut by_id = HashMap::new();
     for e in entries {
-        let Some(x) = e.as_object() else { continue };
-        let text_or_empty = |k: &str| match x.get(k) {
-            None | Some(Json::Null) => String::new(),
-            v => js::string(v),
-        };
-        let id = js::string(x.get("stable_id"));
+        let Some(x) = e.as_obj() else { continue };
+        let id = x
+            .get("stable_id")
+            .map_or_else(|| "undefined".into(), field::string);
         let row = Obj::new()
-            .with("stable_id", id.as_str())
-            .with("verdict", text_or_empty("verdict"))
-            .with("reason", text_or_empty("reason"))
-            .with("sifted", x.get("sifted") == Some(&Json::Bool(true)));
+            .with("stable_id", Js::str(id.as_str()))
+            .with("verdict", Js::str(field::or_empty(x, "verdict")))
+            .with("reason", Js::str(field::or_empty(x, "reason")))
+            .with("sifted", Js::Bool(x.get("sifted") == Some(&Js::Bool(true))));
         by_id.insert(id, Row(row));
     }
     by_id
@@ -43,7 +42,7 @@ pub fn settled_prior<'a, S: BuildHasher>(
     let reason = p.text("reason");
     if !["reject", "defer", "needs-decision"].contains(&p.verdict())
         || reason.contains(UNJUDGED_MARKER)
-        || js::truthy(p.0.get("sifted"))
+        || field::truthy(&p.0, "sifted")
         || reason.contains(SIFT_MARK)
     {
         return None;

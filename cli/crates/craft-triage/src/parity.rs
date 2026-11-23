@@ -12,7 +12,9 @@
 mod phases;
 mod replay;
 
-use crate::json::Json;
+use craft_store::js::Js;
+
+use crate::field::At;
 use replay::Replay;
 
 const CASES: &str = include_str!(concat!(
@@ -20,15 +22,15 @@ const CASES: &str = include_str!(concat!(
     "/../../../content/parity/triage-cases.json"
 ));
 
-fn cases() -> Vec<Json> {
-    let file: Json = serde_json::from_str(CASES).unwrap();
-    let cases = file.at("cases").as_array().unwrap().to_vec();
+fn cases() -> Vec<Js> {
+    let file = craft_store::js::parse(CASES).unwrap();
+    let cases = file.at("cases").as_arr().unwrap().to_vec();
     assert!(cases.len() >= 8, "the cases were not found");
     cases
 }
 
-fn text(v: &Json) -> String {
-    serde_json::to_string(v).unwrap()
+fn text(v: &Js) -> String {
+    v.compact()
 }
 
 #[test]
@@ -42,9 +44,10 @@ fn the_validators_asked_and_the_plan_agents_blocks_are_the_engines() {
         let mut asked: Vec<&str> = want
             .at("prompts")
             .at("validate")
-            .as_object()
+            .as_obj()
             .unwrap()
-            .keys()
+            .iter()
+            .map(|(k, _)| k.as_str().unwrap())
             .collect();
         asked.sort_unstable();
         let mut got_asked: Vec<&str> = got.asked.iter().map(String::as_str).collect();
@@ -53,7 +56,8 @@ fn the_validators_asked_and_the_plan_agents_blocks_are_the_engines() {
             got_asked, asked,
             "{name}: the findings a validator was asked about"
         );
-        let rows = |r: &[crate::ledger::Row]| text(&Json::from(r.to_vec()));
+        let rows =
+            |r: &[crate::ledger::Row]| text(&Js::Arr(r.iter().cloned().map(Js::from).collect()));
         assert_eq!(
             rows(&got.validations),
             text(want.at("validations")),

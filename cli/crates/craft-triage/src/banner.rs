@@ -6,40 +6,35 @@
 //! set in place or appended in the engine's order.
 
 use crate::TriageError;
-use crate::json::{Json, Obj};
+use craft_store::js::{Js, Obj};
+
+use crate::field;
 
 /// The plan agent's answer (`content/schemas/triage-plan.schema.json`) and what the triage sets.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Plan(pub Obj);
 
 impl Plan {
-    /// The plan agent's answer read.
+    /// The plan agent's answer read as the engine takes it: any object. A missing
+    /// `plan_markdown` or `summary` reads as '' and a ledger that is no list leaves the ledger to
+    /// the verdicts, as there.
     ///
     /// # Errors
-    /// [`TriageError::Answer`] when it is no object, or lacks a text `plan_markdown` or `summary`
-    /// or a `ledger` (which, as in the engine, may be no list: the ledger then comes from the
-    /// verdicts).
-    pub fn read(answer: &Json) -> Result<Self, TriageError> {
-        let refused = |why: &str| TriageError::Answer {
-            what: "the plan agent's answer".into(),
-            why: why.to_owned(),
-        };
-        let o = answer.as_object().ok_or_else(|| refused("no object"))?;
-        for k in ["plan_markdown", "summary"] {
-            if o.get(k).and_then(Json::as_str).is_none() {
-                return Err(refused(&format!("no text {k}")));
-            }
-        }
-        if o.get("ledger").is_none() {
-            return Err(refused("no ledger"));
-        }
-        Ok(Self(o.clone()))
+    /// [`TriageError::Answer`] when it is no object, which the engine cannot extend either.
+    pub fn read(answer: &Js) -> Result<Self, TriageError> {
+        answer
+            .as_obj()
+            .map(|o| Self(o.clone()))
+            .ok_or_else(|| TriageError::Answer {
+                what: "the plan agent's answer".into(),
+                why: "no object".into(),
+            })
     }
 
     /// The ledger's rows, when it is a list.
     #[must_use]
-    pub fn rows(&self) -> Option<&[Json]> {
-        self.0.get("ledger").and_then(Json::as_array)
+    pub fn rows(&self) -> Option<&[Js]> {
+        self.0.get("ledger").and_then(Js::as_arr)
     }
 }
 
@@ -59,7 +54,7 @@ pub struct Banners {
     pub memory: String,
     pub prior_refused: Vec<String>,
     pub rule_notices: Vec<String>,
-    pub issues: Vec<Json>,
+    pub issues: Vec<Js>,
 }
 
 /// A banner: its heading, a `> - ` line per note, an empty line.
@@ -85,8 +80,8 @@ pub fn incomplete(not_run_sources: &[String], unjudged: usize) -> Vec<String> {
 
 /// The plan's markdown with `head` before it.
 fn led(o: &mut Obj, head: &str) {
-    let md = format!("{head}{}", o.text("plan_markdown"));
-    o.set("plan_markdown", md);
+    let md = format!("{head}{}", field::or_empty(o, "plan_markdown"));
+    o.set("plan_markdown", Js::str(md));
 }
 
 /// `plan` as its reader gets it.
@@ -94,7 +89,7 @@ fn led(o: &mut Obj, head: &str) {
 pub fn bannered(plan: Plan, b: &Banners) -> Plan {
     let mut o = plan.0;
     if !b.memory_degraded.is_empty() {
-        o.set("memoryDegraded", b.memory_degraded.clone());
+        o.set("memoryDegraded", field::texts(&b.memory_degraded));
         let head = "> **MEMORY DEGRADED** — the sift may have run without some or all of the project's records:";
         led(&mut o, &format!("{}\n", quoted(head, &b.memory_degraded)));
     }
@@ -106,26 +101,26 @@ pub fn bannered(plan: Plan, b: &Banners) -> Plan {
         let summary = format!(
             "INCOMPLETE: {}\n\n{}",
             missing.join("; "),
-            o.text("summary")
+            field::or_empty(&o, "summary")
         );
-        o.set("summary", summary);
-        o.set("notRun", missing);
+        o.set("summary", Js::str(summary));
+        o.set("notRun", field::texts(&missing));
     }
     if !b.lost_section.is_empty() {
         led(&mut o, &b.lost_section);
-        o.set("telemetryLost", b.telemetry_lost.clone());
+        o.set("telemetryLost", field::texts(&b.telemetry_lost));
     }
-    o.set("memory", b.memory.as_str());
+    o.set("memory", Js::str(b.memory.as_str()));
     for (k, v) in [
         ("priorDecisionsNotApplied", &b.prior_refused),
         ("ruleNotices", &b.rule_notices),
     ] {
         if !v.is_empty() {
-            o.set(k, v.clone());
+            o.set(k, field::texts(v));
         }
     }
     if !b.issues.is_empty() {
-        o.set("issues", b.issues.clone());
+        o.set("issues", Js::Arr(b.issues.clone()));
     }
     Plan(o)
 }
