@@ -1,0 +1,1608 @@
+{
+  "schemas": {
+    "raw": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "findings"
+      ],
+      "properties": {
+        "source": {
+          "type": "string",
+          "description": "review | adversarial-review | rust-audit | rust-reviewer | nix-review | report | github-pr"
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "severity",
+              "title",
+              "location",
+              "detail",
+              "proposed_fix",
+              "thread_id"
+            ],
+            "properties": {
+              "severity": {
+                "type": "string",
+                "description": "Critical | High | Medium | Low | Info"
+              },
+              "title": {
+                "type": "string"
+              },
+              "location": {
+                "type": "string",
+                "description": "file:line, crate/module, PR-level, or empty if none"
+              },
+              "detail": {
+                "type": "string",
+                "description": "why it is a problem"
+              },
+              "proposed_fix": {
+                "type": "string",
+                "description": "fix direction from the source, empty if none"
+              },
+              "thread_id": {
+                "type": "string",
+                "description": "GitHub review thread id, empty if not from a PR"
+              }
+            }
+          }
+        }
+      }
+    },
+    "validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stable_id",
+        "verdict",
+        "reason",
+        "fix_pointer",
+        "premise_checked",
+        "noise_class",
+        "severity"
+      ],
+      "properties": {
+        "stable_id": {
+          "type": "string",
+          "description": "composite identity: source::location::title"
+        },
+        "verdict": {
+          "type": "string",
+          "description": "accept | reject | defer | needs-decision"
+        },
+        "noise_class": {
+          "type": "integer",
+          "description": "the noise class the finding falls in, 1..6 as the prompt lists them; 0 when none — a defect of this change"
+        },
+        "severity": {
+          "type": "string",
+          "description": "the severity the code supports: Critical | High | Medium | Low | Info — lowered from the source's when its harm is unreachable or heals itself"
+        },
+        "reason": {
+          "type": "string",
+          "description": "one line justifying the verdict against the code"
+        },
+        "premise_checked": {
+          "type": "string",
+          "description": "the file:line you actually opened to settle the verdict's load-bearing premise when it lives outside the cited location — a dependency's behaviour, reachability, what a caller or sibling does. Applies to reject exactly as much as to accept. Empty string only when the cited location alone settled it"
+        },
+        "fix_pointer": {
+          "type": "string",
+          "description": "owning craft skill + one-line fix direction; empty unless accept"
+        }
+      }
+    },
+    "plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "plan_markdown",
+        "ledger",
+        "summary"
+      ],
+      "properties": {
+        "plan_markdown": {
+          "type": "string",
+          "description": "the fix plan in checkbox-task markdown format (accepted findings only)"
+        },
+        "ledger": {
+          "type": "array",
+          "description": "every finding keyed by stable_id with its final verdict",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "stable_id",
+              "verdict",
+              "reason"
+            ],
+            "properties": {
+              "stable_id": {
+                "type": "string"
+              },
+              "verdict": {
+                "type": "string",
+                "description": "accept | reject | defer | needs-decision | conflict"
+              },
+              "reason": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "summary": {
+          "type": "string",
+          "description": "human-readable rundown of reject/defer/needs-decision/conflict"
+        }
+      }
+    }
+  },
+  "cases": [
+    {
+      "name": "carry-forward of a prior ledger",
+      "args": {
+        "report": "/r.md",
+        "base": "v1",
+        "priorLedger": [
+          {
+            "stable_id": "report::src/a.rs:10::memory leak",
+            "verdict": "accept",
+            "reason": "was fine"
+          },
+          {
+            "stable_id": "report::no-loc::nit",
+            "verdict": "reject",
+            "reason": "not a bug"
+          },
+          {
+            "stable_id": "report::src/b.rs:5::race on close",
+            "verdict": "needs-decision",
+            "reason": "carried from prior run: NOT JUDGED — died"
+          },
+          {
+            "stable_id": "report::src/c.rs:1::unwrap on input",
+            "verdict": "defer",
+            "reason": "SIFTED BEFORE VALIDATION — x",
+            "sifted": true
+          },
+          "not an object"
+        ]
+      },
+      "answers": {
+        "report": {
+          "source": "weird",
+          "findings": [
+            {
+              "severity": "High",
+              "title": "memory leak",
+              "location": "src/a.rs:10",
+              "detail": "why memory leak",
+              "proposed_fix": "free it",
+              "thread_id": ""
+            },
+            {
+              "severity": "Low",
+              "title": "nit",
+              "location": "",
+              "detail": "why nit",
+              "proposed_fix": "",
+              "thread_id": ""
+            },
+            {
+              "severity": "Medium",
+              "title": "race on close",
+              "location": "src/b.rs:5",
+              "detail": "why race on close",
+              "proposed_fix": "",
+              "thread_id": ""
+            },
+            {
+              "severity": "Medium",
+              "title": "unwrap on input",
+              "location": "src/c.rs:1",
+              "detail": "why unwrap on input",
+              "proposed_fix": "",
+              "thread_id": ""
+            }
+          ]
+        },
+        "validate": {
+          "report::src/a.rs:10::memory leak": {
+            "stable_id": "report::src/a.rs:10::memory leak",
+            "verdict": "accept",
+            "reason": "accept on the code",
+            "fix_pointer": "rust-errors: free",
+            "premise_checked": ""
+          }
+        },
+        "plan": {
+          "plan_markdown": "BODY",
+          "summary": "SUM",
+          "ledger": [
+            {
+              "stable_id": "report::src/a.rs:10::memory leak",
+              "verdict": "accept",
+              "reason": "real"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "prompts": {
+          "gather": {
+            "gather:report": "Read the review report at `/r.md`. Extract every finding into the schema. Set source to the engine that wrote the report, as the report names it: \"review\" (craft:review), \"adversarial-review\", \"rust-audit\", \"rust-reviewer\" (a single reviewer verdict) or \"nix-review\"; \"report\" when the report does not say. Copy severity/title/location/detail verbatim; leave proposed_fix and thread_id empty unless present. The report's `## Tool finding titles (verbatim)` section (also nested under `## Prior decisions in the nested reviews (verbatim)`) lists titles, not findings: never extract its rows as findings. For a finding at a `file:line` it lists, take the title from it — the listed title equal to the finding's line; or the only one listed there, but only when the report prints a single finding at that `file:line` (the section lists gate-tool findings only, so a lens finding at the same site is printed beside the tool's and must not take its title). When several findings are printed there, or several titles are listed and none is equal, keep the finding's own line, never a guess between them."
+          },
+          "validate": {
+            "report::src/a.rs:10::memory leak": "Judge ONE review finding against the actual code. Validate against ref `v1` (the ref the findings were generated against), not the live working tree.\n\nFinding (source: report):\n- severity: High\n- location: src/a.rs:10\n- what: memory leak\n- why: why memory leak\n- proposed fix: free it\n\n\nRead the cited code, then decide ONE verdict:\n- accept — a real, in-scope problem. fix_pointer = owning craft skill (rust-errors/rust-ownership/rust-concurrency/rust-security/rust-performance/rust-idioms/rust-testing/rust-unsafe) + a one-line fix direction.\n- reject — not a real problem / wrong; explain why (this becomes reviewer pushback).\n- defer — real but out of scope now; say why.\n- needs-decision — valid but needs a product/spec decision, OR the finding has no resolvable location; say what is needed.\n\nPREMISE DISCIPLINE: name the ONE claim your verdict rests on. If it lives outside the cited location — the dependency behaves this way, this is reachable from untrusted input, a caller already guards it, the sibling path does X — OPEN that code (dependency sources included) and record the file:line in premise_checked. This binds **reject** exactly as much as accept: \"a caller must already validate this\" waved through without opening the caller is the same unfounded claim as the finding it dismisses, and it silently discards a real bug. If you cannot open it, do not guess — verdict needs-decision, saying which premise is unverified. Finding a dependency's source: open the version the project pins, never the newest or a remembered one, and never let a tool rewrite the lockfile to find it. For a Rust crate, take the package's `manifest_path` from `cargo metadata --locked --format-version 1` — its directory is the source of the version Cargo.lock pins (under `~/.cargo/registry`, a git checkout, or the vendored tree); if that directory is missing, run `cargo fetch --locked` first. A build or test command run before you may already have written Cargo.lock: take the lockfile cargo uses, `Cargo.lock` under the `workspace_root` from `cargo metadata --no-deps --format-version 1`, and unless `git ls-files --error-unmatch <that path>` succeeds and `git status --porcelain <that path>` is empty, the version it names is resolved today, not pinned — say so. If the reviewed checkout has no Cargo.lock (a library that does not commit one), nothing is pinned: resolve in a throwaway copy (`git worktree add --detach <tmp>` of the reviewed commit, or, when a Cargo.toml has uncommitted changes, a copy of the working tree without `target/` and `.git`), run `cargo metadata --format-version 1` there, open the sources it names, and always remove the copy (`git worktree remove <tmp>` when you added one); say the version is the one resolved today, not a pinned one, and never write Cargo.lock in the reviewed checkout. If Cargo.lock exists but `--locked` refuses (it is stale), the pinned version cannot be determined — do not run cargo without the flag: treat the premise as one you could not open. For a Nix flake input, open the input at the revision flake.lock pins, not a channel or its current head. For another ecosystem, the same way: the version from the project's lockfile, the code from the package manager's cache or the vendor directory.\n\nNOISE CLASSES (noise_class; 0 when none applies — a defect of this change). They are judged on the code, never on the source's own label:\n1 — not this change's: the problem already stands at the PR's base (the diff did not bring it) or lies outside the change's task. Check it AT THE BASE, not by the reviewer's word (\"pre-existing\", \"out of scope\"): no prBase (the PR's fork point) was given to this triage, so it cannot be checked here — name the class all the same; a human decides it. Verdict defer when the problem is real — the triage carries it to an issue; reject when it is not (no issue is filed).\n2 — inflated severity: the claimed harm is unreachable or heals itself (a default requeue, only a metric). Judge the verdict on the merits and lower severity to what the code supports.\n3 — a repeat of a finding already decided — reject, naming it.\n4 — a deliberate trade-off written in the project's docs or rules — reject, naming where it is written.\n5 — not decidable from the code (a rollout step, a version you cannot verify) — needs-decision, not a fix.\n6 — an optional nicety in tests or comments — accept only when worth doing; it is planned apart from the defects.\nseverity: the source's severity unless the code supports another.\n\nstable_id MUST be exactly: report::src/a.rs:10::memory leak\nKeep reason to one line. fix_pointer empty unless verdict is accept.",
+            "report::src/b.rs:5::race on close": "Judge ONE review finding against the actual code. Validate against ref `v1` (the ref the findings were generated against), not the live working tree.\n\nFinding (source: report):\n- severity: Medium\n- location: src/b.rs:5\n- what: race on close\n- why: why race on close\n\n\n\nRead the cited code, then decide ONE verdict:\n- accept — a real, in-scope problem. fix_pointer = owning craft skill (rust-errors/rust-ownership/rust-concurrency/rust-security/rust-performance/rust-idioms/rust-testing/rust-unsafe) + a one-line fix direction.\n- reject — not a real problem / wrong; explain why (this becomes reviewer pushback).\n- defer — real but out of scope now; say why.\n- needs-decision — valid but needs a product/spec decision, OR the finding has no resolvable location; say what is needed.\n\nPREMISE DISCIPLINE: name the ONE claim your verdict rests on. If it lives outside the cited location — the dependency behaves this way, this is reachable from untrusted input, a caller already guards it, the sibling path does X — OPEN that code (dependency sources included) and record the file:line in premise_checked. This binds **reject** exactly as much as accept: \"a caller must already validate this\" waved through without opening the caller is the same unfounded claim as the finding it dismisses, and it silently discards a real bug. If you cannot open it, do not guess — verdict needs-decision, saying which premise is unverified. Finding a dependency's source: open the version the project pins, never the newest or a remembered one, and never let a tool rewrite the lockfile to find it. For a Rust crate, take the package's `manifest_path` from `cargo metadata --locked --format-version 1` — its directory is the source of the version Cargo.lock pins (under `~/.cargo/registry`, a git checkout, or the vendored tree); if that directory is missing, run `cargo fetch --locked` first. A build or test command run before you may already have written Cargo.lock: take the lockfile cargo uses, `Cargo.lock` under the `workspace_root` from `cargo metadata --no-deps --format-version 1`, and unless `git ls-files --error-unmatch <that path>` succeeds and `git status --porcelain <that path>` is empty, the version it names is resolved today, not pinned — say so. If the reviewed checkout has no Cargo.lock (a library that does not commit one), nothing is pinned: resolve in a throwaway copy (`git worktree add --detach <tmp>` of the reviewed commit, or, when a Cargo.toml has uncommitted changes, a copy of the working tree without `target/` and `.git`), run `cargo metadata --format-version 1` there, open the sources it names, and always remove the copy (`git worktree remove <tmp>` when you added one); say the version is the one resolved today, not a pinned one, and never write Cargo.lock in the reviewed checkout. If Cargo.lock exists but `--locked` refuses (it is stale), the pinned version cannot be determined — do not run cargo without the flag: treat the premise as one you could not open. For a Nix flake input, open the input at the revision flake.lock pins, not a channel or its current head. For another ecosystem, the same way: the version from the project's lockfile, the code from the package manager's cache or the vendor directory.\n\nNOISE CLASSES (noise_class; 0 when none applies — a defect of this change). They are judged on the code, never on the source's own label:\n1 — not this change's: the problem already stands at the PR's base (the diff did not bring it) or lies outside the change's task. Check it AT THE BASE, not by the reviewer's word (\"pre-existing\", \"out of scope\"): no prBase (the PR's fork point) was given to this triage, so it cannot be checked here — name the class all the same; a human decides it. Verdict defer when the problem is real — the triage carries it to an issue; reject when it is not (no issue is filed).\n2 — inflated severity: the claimed harm is unreachable or heals itself (a default requeue, only a metric). Judge the verdict on the merits and lower severity to what the code supports.\n3 — a repeat of a finding already decided — reject, naming it.\n4 — a deliberate trade-off written in the project's docs or rules — reject, naming where it is written.\n5 — not decidable from the code (a rollout step, a version you cannot verify) — needs-decision, not a fix.\n6 — an optional nicety in tests or comments — accept only when worth doing; it is planned apart from the defects.\nseverity: the source's severity unless the code supports another.\n\nstable_id MUST be exactly: report::src/b.rs:5::race on close\nKeep reason to one line. fix_pointer empty unless verdict is accept.",
+            "report::src/c.rs:1::unwrap on input": "Judge ONE review finding against the actual code. Validate against ref `v1` (the ref the findings were generated against), not the live working tree.\n\nFinding (source: report):\n- severity: Medium\n- location: src/c.rs:1\n- what: unwrap on input\n- why: why unwrap on input\n\n\n\nRead the cited code, then decide ONE verdict:\n- accept — a real, in-scope problem. fix_pointer = owning craft skill (rust-errors/rust-ownership/rust-concurrency/rust-security/rust-performance/rust-idioms/rust-testing/rust-unsafe) + a one-line fix direction.\n- reject — not a real problem / wrong; explain why (this becomes reviewer pushback).\n- defer — real but out of scope now; say why.\n- needs-decision — valid but needs a product/spec decision, OR the finding has no resolvable location; say what is needed.\n\nPREMISE DISCIPLINE: name the ONE claim your verdict rests on. If it lives outside the cited location — the dependency behaves this way, this is reachable from untrusted input, a caller already guards it, the sibling path does X — OPEN that code (dependency sources included) and record the file:line in premise_checked. This binds **reject** exactly as much as accept: \"a caller must already validate this\" waved through without opening the caller is the same unfounded claim as the finding it dismisses, and it silently discards a real bug. If you cannot open it, do not guess — verdict needs-decision, saying which premise is unverified. Finding a dependency's source: open the version the project pins, never the newest or a remembered one, and never let a tool rewrite the lockfile to find it. For a Rust crate, take the package's `manifest_path` from `cargo metadata --locked --format-version 1` — its directory is the source of the version Cargo.lock pins (under `~/.cargo/registry`, a git checkout, or the vendored tree); if that directory is missing, run `cargo fetch --locked` first. A build or test command run before you may already have written Cargo.lock: take the lockfile cargo uses, `Cargo.lock` under the `workspace_root` from `cargo metadata --no-deps --format-version 1`, and unless `git ls-files --error-unmatch <that path>` succeeds and `git status --porcelain <that path>` is empty, the version it names is resolved today, not pinned — say so. If the reviewed checkout has no Cargo.lock (a library that does not commit one), nothing is pinned: resolve in a throwaway copy (`git worktree add --detach <tmp>` of the reviewed commit, or, when a Cargo.toml has uncommitted changes, a copy of the working tree without `target/` and `.git`), run `cargo metadata --format-version 1` there, open the sources it names, and always remove the copy (`git worktree remove <tmp>` when you added one); say the version is the one resolved today, not a pinned one, and never write Cargo.lock in the reviewed checkout. If Cargo.lock exists but `--locked` refuses (it is stale), the pinned version cannot be determined — do not run cargo without the flag: treat the premise as one you could not open. For a Nix flake input, open the input at the revision flake.lock pins, not a channel or its current head. For another ecosystem, the same way: the version from the project's lockfile, the code from the package manager's cache or the vendor directory.\n\nNOISE CLASSES (noise_class; 0 when none applies — a defect of this change). They are judged on the code, never on the source's own label:\n1 — not this change's: the problem already stands at the PR's base (the diff did not bring it) or lies outside the change's task. Check it AT THE BASE, not by the reviewer's word (\"pre-existing\", \"out of scope\"): no prBase (the PR's fork point) was given to this triage, so it cannot be checked here — name the class all the same; a human decides it. Verdict defer when the problem is real — the triage carries it to an issue; reject when it is not (no issue is filed).\n2 — inflated severity: the claimed harm is unreachable or heals itself (a default requeue, only a metric). Judge the verdict on the merits and lower severity to what the code supports.\n3 — a repeat of a finding already decided — reject, naming it.\n4 — a deliberate trade-off written in the project's docs or rules — reject, naming where it is written.\n5 — not decidable from the code (a rollout step, a version you cannot verify) — needs-decision, not a fix.\n6 — an optional nicety in tests or comments — accept only when worth doing; it is planned apart from the defects.\nseverity: the source's severity unless the code supports another.\n\nstable_id MUST be exactly: report::src/c.rs:1::unwrap on input\nKeep reason to one line. fix_pointer empty unless verdict is accept."
+          },
+          "plan": "Turn validated review findings into ONE fix plan. Do not invent findings; only organise what is given. Ignore any ACCEPTED entry whose `finding` is null (a data glitch) — leave it out of the plan and note it in the summary.\n\n1. Dedup by stable_id (merge findings at the same location with the same fix).\n2. Detect conflicts — two findings demanding opposite changes. Mark each such finding verdict \"conflict\" in the ledger, DO NOT put it in the plan, and surface both in the summary for a human to decide.\n3. Group the remaining accepted findings by file; order groups blocking (Critical/High) → simple → complex, by the validator's `severity` (it may be lower than the source's). Accepted findings with noise_class 6 (optional, in tests or comments) go apart: one last task headed \"Optional (tests and comments)\", never mixed into the defect groups.\n4. Render plan_markdown as a checkbox-task plan: one task per file-group, bite-sized checkbox steps, each step naming the file and the owning craft skill; a bug fix starts with a RED→GREEN regression test. Mark independent file-groups as parallelisable (one subagent per group).\n5. ledger = EVERY finding (accept/reject/defer/needs-decision/conflict) keyed by stable_id with verdict + one-line reason — the SETTLED BEFORE VALIDATION rows below included, as given. Any reason containing \"NOT JUDGED\" or \"SIFTED BEFORE VALIDATION\" must be copied VERBATIM, marker included — that string is what tells a later re-run how this finding was settled; paraphrasing it makes the finding look judged on the code when it was not. summary = human-readable rundown of everything not in the plan; a deferral with action \"issue\" is named there as going to an issue on the forge (it is not this change's).\n\nACCEPTED (with their findings):\n[\n  {\n    \"stable_id\": \"report::src/a.rs:10::memory leak\",\n    \"verdict\": \"accept\",\n    \"reason\": \"accept on the code\",\n    \"fix_pointer\": \"rust-errors: free\",\n    \"premise_checked\": \"\",\n    \"finding\": {\n      \"severity\": \"High\",\n      \"title\": \"memory leak\",\n      \"location\": \"src/a.rs:10\",\n      \"detail\": \"why memory leak\",\n      \"proposed_fix\": \"free it\",\n      \"thread_id\": \"\",\n      \"source\": \"report\"\n    }\n  }\n]\n\nALL VERDICTS (include reject/defer/needs-decision in the ledger):\n[\n  {\n    \"stable_id\": \"report::src/a.rs:10::memory leak\",\n    \"verdict\": \"accept\",\n    \"reason\": \"accept on the code\",\n    \"fix_pointer\": \"rust-errors: free\",\n    \"premise_checked\": \"\"\n  },\n  {\n    \"stable_id\": \"report::no-loc::nit\",\n    \"verdict\": \"reject\",\n    \"reason\": \"carried from prior run: not a bug\",\n    \"fix_pointer\": \"\",\n    \"premise_checked\": \"(carried from prior run — not re-checked)\"\n  },\n  {\n    \"stable_id\": \"report::src/b.rs:5::race on close\",\n    \"verdict\": \"needs-decision\",\n    \"reason\": \"NOT JUDGED — the validator agent died; this finding was never checked against the code\",\n    \"fix_pointer\": \"\",\n    \"premise_checked\": \"(validator died — nothing was opened)\"\n  },\n  {\n    \"stable_id\": \"report::src/c.rs:1::unwrap on input\",\n    \"verdict\": \"needs-decision\",\n    \"reason\": \"NOT JUDGED — the validator agent died; this finding was never checked against the code\",\n    \"fix_pointer\": \"\",\n    \"premise_checked\": \"(validator died — nothing was opened)\"\n  }\n]\n\nSETTLED BEFORE VALIDATION (repeats in this batch, and what the project memory already answered — final; into the ledger as given, never into the plan):\n[]"
+        },
+        "accepted": [
+          {
+            "stable_id": "report::src/a.rs:10::memory leak",
+            "verdict": "accept",
+            "reason": "accept on the code",
+            "fix_pointer": "rust-errors: free",
+            "premise_checked": "",
+            "finding": {
+              "severity": "High",
+              "title": "memory leak",
+              "location": "src/a.rs:10",
+              "detail": "why memory leak",
+              "proposed_fix": "free it",
+              "thread_id": "",
+              "source": "report"
+            }
+          }
+        ],
+        "validations": [
+          {
+            "stable_id": "report::src/a.rs:10::memory leak",
+            "verdict": "accept",
+            "reason": "accept on the code",
+            "fix_pointer": "rust-errors: free",
+            "premise_checked": ""
+          },
+          {
+            "stable_id": "report::no-loc::nit",
+            "verdict": "reject",
+            "reason": "carried from prior run: not a bug",
+            "fix_pointer": "",
+            "premise_checked": "(carried from prior run — not re-checked)"
+          },
+          {
+            "stable_id": "report::src/b.rs:5::race on close",
+            "verdict": "needs-decision",
+            "reason": "NOT JUDGED — the validator agent died; this finding was never checked against the code",
+            "fix_pointer": "",
+            "premise_checked": "(validator died — nothing was opened)"
+          },
+          {
+            "stable_id": "report::src/c.rs:1::unwrap on input",
+            "verdict": "needs-decision",
+            "reason": "NOT JUDGED — the validator agent died; this finding was never checked against the code",
+            "fix_pointer": "",
+            "premise_checked": "(validator died — nothing was opened)"
+          }
+        ],
+        "sifted": [],
+        "record": {
+          "schemaVersion": 1,
+          "runtime": "claude-code",
+          "craftVersion": "0.58.0",
+          "kind": "workflow",
+          "name": "triage-findings",
+          "verdict": "",
+          "findings": {
+            "total": 4,
+            "bySeverity": {
+              "Critical": 0,
+              "High": 1,
+              "Medium": 2,
+              "Low": 1,
+              "Info": 0
+            }
+          },
+          "nested": false,
+          "via": null,
+          "sources": [
+            {
+              "source": "report",
+              "count": 4
+            }
+          ],
+          "triage": {
+            "gathered": 4,
+            "validated": 4,
+            "accept": 1,
+            "reject": 0,
+            "defer": 0,
+            "needs-decision": 2,
+            "conflict": 0,
+            "sifted": {
+              "repeats": 0,
+              "rejectedBefore": 0,
+              "deferred": 0,
+              "covered": 0,
+              "conflict": 0,
+              "reraised": 0
+            },
+            "issues": 0
+          },
+          "memory": {
+            "source": "none",
+            "count": 0,
+            "why": "recalled (backend mcp iskron)",
+            "backend": "mcp iskron"
+          },
+          "notRun": [
+            "findings-unjudged"
+          ]
+        },
+        "plan": {
+          "plan_markdown": "> **INCOMPLETE TRIAGE** — this plan does not cover everything that was asked for:\n> - 2 finding(s) were never judged against the code (validator died); they sit in the ledger as needs-decision, not in the plan\n\nBODY",
+          "summary": "INCOMPLETE: 2 finding(s) were never judged against the code (validator died); they sit in the ledger as needs-decision, not in the plan\n\nSUM",
+          "ledger": [
+            {
+              "stable_id": "report::src/a.rs:10::memory leak",
+              "verdict": "accept",
+              "reason": "real"
+            },
+            {
+              "stable_id": "report::src/b.rs:5::race on close",
+              "verdict": "needs-decision",
+              "reason": "NOT JUDGED — the validator agent died; this finding was never checked against the code"
+            },
+            {
+              "stable_id": "report::src/c.rs:1::unwrap on input",
+              "verdict": "needs-decision",
+              "reason": "NOT JUDGED — the validator agent died; this finding was never checked against the code"
+            }
+          ],
+          "notRun": [
+            "2 finding(s) were never judged against the code (validator died); they sit in the ledger as needs-decision, not in the plan"
+          ],
+          "memory": "memory: none — recalled (backend mcp iskron)"
+        }
+      }
+    },
+    {
+      "name": "a dead validator is NOT JUDGED",
+      "args": {
+        "report": "/r.md"
+      },
+      "answers": {
+        "report": {
+          "source": "rust-audit",
+          "findings": [
+            {
+              "severity": "High",
+              "title": "memory leak",
+              "location": "src/a.rs:10",
+              "detail": "why memory leak",
+              "proposed_fix": "free it",
+              "thread_id": ""
+            },
+            {
+              "severity": "Low",
+              "title": "nit",
+              "location": "",
+              "detail": "why nit",
+              "proposed_fix": "",
+              "thread_id": ""
+            }
+          ]
+        },
+        "validate": {
+          "rust-audit::no-loc::nit": {
+            "stable_id": "rust-audit::no-loc::nit",
+            "verdict": "reject",
+            "reason": "reject on the code",
+            "fix_pointer": "",
+            "premise_checked": ""
+          }
+        },
+        "plan": {
+          "plan_markdown": "BODY",
+          "summary": "SUM",
+          "ledger": []
+        }
+      },
+      "expected": {
+        "prompts": {
+          "gather": {
+            "gather:report": "Read the review report at `/r.md`. Extract every finding into the schema. Set source to the engine that wrote the report, as the report names it: \"review\" (craft:review), \"adversarial-review\", \"rust-audit\", \"rust-reviewer\" (a single reviewer verdict) or \"nix-review\"; \"report\" when the report does not say. Copy severity/title/location/detail verbatim; leave proposed_fix and thread_id empty unless present. The report's `## Tool finding titles (verbatim)` section (also nested under `## Prior decisions in the nested reviews (verbatim)`) lists titles, not findings: never extract its rows as findings. For a finding at a `file:line` it lists, take the title from it — the listed title equal to the finding's line; or the only one listed there, but only when the report prints a single finding at that `file:line` (the section lists gate-tool findings only, so a lens finding at the same site is printed beside the tool's and must not take its title). When several findings are printed there, or several titles are listed and none is equal, keep the finding's own line, never a guess between them."
+          },
+          "validate": {
+            "rust-audit::src/a.rs:10::memory leak": "Judge ONE review finding against the actual code. Validate against the currently checked-out tree.\n\nFinding (source: rust-audit):\n- severity: High\n- location: src/a.rs:10\n- what: memory leak\n- why: why memory leak\n- proposed fix: free it\n\n\nRead the cited code, then decide ONE verdict:\n- accept — a real, in-scope problem. fix_pointer = owning craft skill (rust-errors/rust-ownership/rust-concurrency/rust-security/rust-performance/rust-idioms/rust-testing/rust-unsafe) + a one-line fix direction.\n- reject — not a real problem / wrong; explain why (this becomes reviewer pushback).\n- defer — real but out of scope now; say why.\n- needs-decision — valid but needs a product/spec decision, OR the finding has no resolvable location; say what is needed.\n\nPREMISE DISCIPLINE: name the ONE claim your verdict rests on. If it lives outside the cited location — the dependency behaves this way, this is reachable from untrusted input, a caller already guards it, the sibling path does X — OPEN that code (dependency sources included) and record the file:line in premise_checked. This binds **reject** exactly as much as accept: \"a caller must already validate this\" waved through without opening the caller is the same unfounded claim as the finding it dismisses, and it silently discards a real bug. If you cannot open it, do not guess — verdict needs-decision, saying which premise is unverified. Finding a dependency's source: open the version the project pins, never the newest or a remembered one, and never let a tool rewrite the lockfile to find it. For a Rust crate, take the package's `manifest_path` from `cargo metadata --locked --format-version 1` — its directory is the source of the version Cargo.lock pins (under `~/.cargo/registry`, a git checkout, or the vendored tree); if that directory is missing, run `cargo fetch --locked` first. A build or test command run before you may already have written Cargo.lock: take the lockfile cargo uses, `Cargo.lock` under the `workspace_root` from `cargo metadata --no-deps --format-version 1`, and unless `git ls-files --error-unmatch <that path>` succeeds and `git status --porcelain <that path>` is empty, the version it names is resolved today, not pinned — say so. If the reviewed checkout has no Cargo.lock (a library that does not commit one), nothing is pinned: resolve in a throwaway copy (`git worktree add --detach <tmp>` of the reviewed commit, or, when a Cargo.toml has uncommitted changes, a copy of the working tree without `target/` and `.git`), run `cargo metadata --format-version 1` there, open the sources it names, and always remove the copy (`git worktree remove <tmp>` when you added one); say the version is the one resolved today, not a pinned one, and never write Cargo.lock in the reviewed checkout. If Cargo.lock exists but `--locked` refuses (it is stale), the pinned version cannot be determined — do not run cargo without the flag: treat the premise as one you could not open. For a Nix flake input, open the input at the revision flake.lock pins, not a channel or its current head. For another ecosystem, the same way: the version from the project's lockfile, the code from the package manager's cache or the vendor directory.\n\nNOISE CLASSES (noise_class; 0 when none applies — a defect of this change). They are judged on the code, never on the source's own label:\n1 — not this change's: the problem already stands at the PR's base (the diff did not bring it) or lies outside the change's task. Check it AT THE BASE, not by the reviewer's word (\"pre-existing\", \"out of scope\"): no prBase (the PR's fork point) was given to this triage, so it cannot be checked here — name the class all the same; a human decides it. Verdict defer when the problem is real — the triage carries it to an issue; reject when it is not (no issue is filed).\n2 — inflated severity: the claimed harm is unreachable or heals itself (a default requeue, only a metric). Judge the verdict on the merits and lower severity to what the code supports.\n3 — a repeat of a finding already decided — reject, naming it.\n4 — a deliberate trade-off written in the project's docs or rules — reject, naming where it is written.\n5 — not decidable from the code (a rollout step, a version you cannot verify) — needs-decision, not a fix.\n6 — an optional nicety in tests or comments — accept only when worth doing; it is planned apart from the defects.\nseverity: the source's severity unless the code supports another.\n\nstable_id MUST be exactly: rust-audit::src/a.rs:10::memory leak\nKeep reason to one line. fix_pointer empty unless verdict is accept.",
+            "rust-audit::no-loc::nit": "Judge ONE review finding against the actual code. Validate against the currently checked-out tree.\n\nFinding (source: rust-audit):\n- severity: Low\n- location: (none given)\n- what: nit\n- why: why nit\n\n\n\nRead the cited code, then decide ONE verdict:\n- accept — a real, in-scope problem. fix_pointer = owning craft skill (rust-errors/rust-ownership/rust-concurrency/rust-security/rust-performance/rust-idioms/rust-testing/rust-unsafe) + a one-line fix direction.\n- reject — not a real problem / wrong; explain why (this becomes reviewer pushback).\n- defer — real but out of scope now; say why.\n- needs-decision — valid but needs a product/spec decision, OR the finding has no resolvable location; say what is needed.\n\nPREMISE DISCIPLINE: name the ONE claim your verdict rests on. If it lives outside the cited location — the dependency behaves this way, this is reachable from untrusted input, a caller already guards it, the sibling path does X — OPEN that code (dependency sources included) and record the file:line in premise_checked. This binds **reject** exactly as much as accept: \"a caller must already validate this\" waved through without opening the caller is the same unfounded claim as the finding it dismisses, and it silently discards a real bug. If you cannot open it, do not guess — verdict needs-decision, saying which premise is unverified. Finding a dependency's source: open the version the project pins, never the newest or a remembered one, and never let a tool rewrite the lockfile to find it. For a Rust crate, take the package's `manifest_path` from `cargo metadata --locked --format-version 1` — its directory is the source of the version Cargo.lock pins (under `~/.cargo/registry`, a git checkout, or the vendored tree); if that directory is missing, run `cargo fetch --locked` first. A build or test command run before you may already have written Cargo.lock: take the lockfile cargo uses, `Cargo.lock` under the `workspace_root` from `cargo metadata --no-deps --format-version 1`, and unless `git ls-files --error-unmatch <that path>` succeeds and `git status --porcelain <that path>` is empty, the version it names is resolved today, not pinned — say so. If the reviewed checkout has no Cargo.lock (a library that does not commit one), nothing is pinned: resolve in a throwaway copy (`git worktree add --detach <tmp>` of the reviewed commit, or, when a Cargo.toml has uncommitted changes, a copy of the working tree without `target/` and `.git`), run `cargo metadata --format-version 1` there, open the sources it names, and always remove the copy (`git worktree remove <tmp>` when you added one); say the version is the one resolved today, not a pinned one, and never write Cargo.lock in the reviewed checkout. If Cargo.lock exists but `--locked` refuses (it is stale), the pinned version cannot be determined — do not run cargo without the flag: treat the premise as one you could not open. For a Nix flake input, open the input at the revision flake.lock pins, not a channel or its current head. For another ecosystem, the same way: the version from the project's lockfile, the code from the package manager's cache or the vendor directory.\n\nNOISE CLASSES (noise_class; 0 when none applies — a defect of this change). They are judged on the code, never on the source's own label:\n1 — not this change's: the problem already stands at the PR's base (the diff did not bring it) or lies outside the change's task. Check it AT THE BASE, not by the reviewer's word (\"pre-existing\", \"out of scope\"): no prBase (the PR's fork point) was given to this triage, so it cannot be checked here — name the class all the same; a human decides it. Verdict defer when the problem is real — the triage carries it to an issue; reject when it is not (no issue is filed).\n2 — inflated severity: the claimed harm is unreachable or heals itself (a default requeue, only a metric). Judge the verdict on the merits and lower severity to what the code supports.\n3 — a repeat of a finding already decided — reject, naming it.\n4 — a deliberate trade-off written in the project's docs or rules — reject, naming where it is written.\n5 — not decidable from the code (a rollout step, a version you cannot verify) — needs-decision, not a fix.\n6 — an optional nicety in tests or comments — accept only when worth doing; it is planned apart from the defects.\nseverity: the source's severity unless the code supports another.\n\nstable_id MUST be exactly: rust-audit::no-loc::nit\nKeep reason to one line. fix_pointer empty unless verdict is accept."
+          },
+          "plan": "Turn validated review findings into ONE fix plan. Do not invent findings; only organise what is given. Ignore any ACCEPTED entry whose `finding` is null (a data glitch) — leave it out of the plan and note it in the summary.\n\n1. Dedup by stable_id (merge findings at the same location with the same fix).\n2. Detect conflicts — two findings demanding opposite changes. Mark each such finding verdict \"conflict\" in the ledger, DO NOT put it in the plan, and surface both in the summary for a human to decide.\n3. Group the remaining accepted findings by file; order groups blocking (Critical/High) → simple → complex, by the validator's `severity` (it may be lower than the source's). Accepted findings with noise_class 6 (optional, in tests or comments) go apart: one last task headed \"Optional (tests and comments)\", never mixed into the defect groups.\n4. Render plan_markdown as a checkbox-task plan: one task per file-group, bite-sized checkbox steps, each step naming the file and the owning craft skill; a bug fix starts with a RED→GREEN regression test. Mark independent file-groups as parallelisable (one subagent per group).\n5. ledger = EVERY finding (accept/reject/defer/needs-decision/conflict) keyed by stable_id with verdict + one-line reason — the SETTLED BEFORE VALIDATION rows below included, as given. Any reason containing \"NOT JUDGED\" or \"SIFTED BEFORE VALIDATION\" must be copied VERBATIM, marker included — that string is what tells a later re-run how this finding was settled; paraphrasing it makes the finding look judged on the code when it was not. summary = human-readable rundown of everything not in the plan; a deferral with action \"issue\" is named there as going to an issue on the forge (it is not this change's).\n\nACCEPTED (with their findings):\n[]\n\nALL VERDICTS (include reject/defer/needs-decision in the ledger):\n[\n  {\n    \"stable_id\": \"rust-audit::src/a.rs:10::memory leak\",\n    \"verdict\": \"needs-decision\",\n    \"reason\": \"NOT JUDGED — the validator agent died; this finding was never checked against the code\",\n    \"fix_pointer\": \"\",\n    \"premise_checked\": \"(validator died — nothing was opened)\"\n  },\n  {\n    \"stable_id\": \"rust-audit::no-loc::nit\",\n    \"verdict\": \"reject\",\n    \"reason\": \"reject on the code\",\n    \"fix_pointer\": \"\",\n    \"premise_checked\": \"\"\n  }\n]\n\nSETTLED BEFORE VALIDATION (repeats in this batch, and what the project memory already answered — final; into the ledger as given, never into the plan):\n[]"
+        },
+        "accepted": [],
+        "validations": [
+          {
+            "stable_id": "rust-audit::src/a.rs:10::memory leak",
+            "verdict": "needs-decision",
+            "reason": "NOT JUDGED — the validator agent died; this finding was never checked against the code",
+            "fix_pointer": "",
+            "premise_checked": "(validator died — nothing was opened)"
+          },
+          {
+            "stable_id": "rust-audit::no-loc::nit",
+            "verdict": "reject",
+            "reason": "reject on the code",
+            "fix_pointer": "",
+            "premise_checked": ""
+          }
+        ],
+        "sifted": [],
+        "record": {
+          "schemaVersion": 1,
+          "runtime": "claude-code",
+          "craftVersion": "0.58.0",
+          "kind": "workflow",
+          "name": "triage-findings",
+          "verdict": "",
+          "findings": {
+            "total": 2,
+            "bySeverity": {
+              "Critical": 0,
+              "High": 1,
+              "Medium": 0,
+              "Low": 1,
+              "Info": 0
+            }
+          },
+          "nested": false,
+          "via": null,
+          "sources": [
+            {
+              "source": "rust-audit",
+              "count": 2
+            }
+          ],
+          "triage": {
+            "gathered": 2,
+            "validated": 2,
+            "accept": 0,
+            "reject": 0,
+            "defer": 0,
+            "needs-decision": 1,
+            "conflict": 0,
+            "sifted": {
+              "repeats": 0,
+              "rejectedBefore": 0,
+              "deferred": 0,
+              "covered": 0,
+              "conflict": 0,
+              "reraised": 0
+            },
+            "issues": 0
+          },
+          "memory": {
+            "source": "none",
+            "count": 0,
+            "why": "recalled (backend mcp iskron)",
+            "backend": "mcp iskron"
+          },
+          "notRun": [
+            "findings-unjudged"
+          ]
+        },
+        "plan": {
+          "plan_markdown": "> **INCOMPLETE TRIAGE** — this plan does not cover everything that was asked for:\n> - 1 finding(s) were never judged against the code (validator died); they sit in the ledger as needs-decision, not in the plan\n\nBODY",
+          "summary": "INCOMPLETE: 1 finding(s) were never judged against the code (validator died); they sit in the ledger as needs-decision, not in the plan\n\nSUM",
+          "ledger": [
+            {
+              "stable_id": "rust-audit::src/a.rs:10::memory leak",
+              "verdict": "needs-decision",
+              "reason": "NOT JUDGED — the validator agent died; this finding was never checked against the code"
+            }
+          ],
+          "notRun": [
+            "1 finding(s) were never judged against the code (validator died); they sit in the ledger as needs-decision, not in the plan"
+          ],
+          "memory": "memory: none — recalled (backend mcp iskron)"
+        }
+      }
+    },
+    {
+      "name": "a plan that paraphrased and dropped ledger rows is pinned",
+      "args": {
+        "report": "/r.md"
+      },
+      "answers": {
+        "report": {
+          "source": "review",
+          "findings": [
+            {
+              "severity": "High",
+              "title": "memory leak",
+              "location": "src/a.rs:10",
+              "detail": "why memory leak",
+              "proposed_fix": "free it",
+              "thread_id": ""
+            },
+            {
+              "severity": "Low",
+              "title": "nit",
+              "location": "",
+              "detail": "why nit",
+              "proposed_fix": "",
+              "thread_id": ""
+            },
+            {
+              "severity": "Low",
+              "title": "leak of memory",
+              "location": "src/a.rs:11",
+              "detail": "why leak of memory",
+              "proposed_fix": "",
+              "thread_id": ""
+            }
+          ]
+        },
+        "validate": {
+          "review::no-loc::nit": {
+            "stable_id": "review::no-loc::nit",
+            "verdict": "reject",
+            "reason": "reject on the code",
+            "fix_pointer": "",
+            "premise_checked": ""
+          }
+        },
+        "plan": {
+          "plan_markdown": "BODY",
+          "summary": "SUM",
+          "ledger": [
+            {
+              "stable_id": "review::src/a.rs:10::memory leak",
+              "verdict": "accept",
+              "reason": "looked fine"
+            },
+            {
+              "stable_id": "review::no-loc::nit",
+              "verdict": "reject",
+              "reason": "no"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "prompts": {
+          "gather": {
+            "gather:report": "Read the review report at `/r.md`. Extract every finding into the schema. Set source to the engine that wrote the report, as the report names it: \"review\" (craft:review), \"adversarial-review\", \"rust-audit\", \"rust-reviewer\" (a single reviewer verdict) or \"nix-review\"; \"report\" when the report does not say. Copy severity/title/location/detail verbatim; leave proposed_fix and thread_id empty unless present. The report's `## Tool finding titles (verbatim)` section (also nested under `## Prior decisions in the nested reviews (verbatim)`) lists titles, not findings: never extract its rows as findings. For a finding at a `file:line` it lists, take the title from it — the listed title equal to the finding's line; or the only one listed there, but only when the report prints a single finding at that `file:line` (the section lists gate-tool findings only, so a lens finding at the same site is printed beside the tool's and must not take its title). When several findings are printed there, or several titles are listed and none is equal, keep the finding's own line, never a guess between them."
+          },
+          "validate": {
+            "review::src/a.rs:10::memory leak": "Judge ONE review finding against the actual code. Validate against the currently checked-out tree.\n\nFinding (source: review):\n- severity: High\n- location: src/a.rs:10\n- what: memory leak\n- why: why memory leak\n- proposed fix: free it\n\n\nRead the cited code, then decide ONE verdict:\n- accept — a real, in-scope problem. fix_pointer = owning craft skill (rust-errors/rust-ownership/rust-concurrency/rust-security/rust-performance/rust-idioms/rust-testing/rust-unsafe) + a one-line fix direction.\n- reject — not a real problem / wrong; explain why (this becomes reviewer pushback).\n- defer — real but out of scope now; say why.\n- needs-decision — valid but needs a product/spec decision, OR the finding has no resolvable location; say what is needed.\n\nPREMISE DISCIPLINE: name the ONE claim your verdict rests on. If it lives outside the cited location — the dependency behaves this way, this is reachable from untrusted input, a caller already guards it, the sibling path does X — OPEN that code (dependency sources included) and record the file:line in premise_checked. This binds **reject** exactly as much as accept: \"a caller must already validate this\" waved through without opening the caller is the same unfounded claim as the finding it dismisses, and it silently discards a real bug. If you cannot open it, do not guess — verdict needs-decision, saying which premise is unverified. Finding a dependency's source: open the version the project pins, never the newest or a remembered one, and never let a tool rewrite the lockfile to find it. For a Rust crate, take the package's `manifest_path` from `cargo metadata --locked --format-version 1` — its directory is the source of the version Cargo.lock pins (under `~/.cargo/registry`, a git checkout, or the vendored tree); if that directory is missing, run `cargo fetch --locked` first. A build or test command run before you may already have written Cargo.lock: take the lockfile cargo uses, `Cargo.lock` under the `workspace_root` from `cargo metadata --no-deps --format-version 1`, and unless `git ls-files --error-unmatch <that path>` succeeds and `git status --porcelain <that path>` is empty, the version it names is resolved today, not pinned — say so. If the reviewed checkout has no Cargo.lock (a library that does not commit one), nothing is pinned: resolve in a throwaway copy (`git worktree add --detach <tmp>` of the reviewed commit, or, when a Cargo.toml has uncommitted changes, a copy of the working tree without `target/` and `.git`), run `cargo metadata --format-version 1` there, open the sources it names, and always remove the copy (`git worktree remove <tmp>` when you added one); say the version is the one resolved today, not a pinned one, and never write Cargo.lock in the reviewed checkout. If Cargo.lock exists but `--locked` refuses (it is stale), the pinned version cannot be determined — do not run cargo without the flag: treat the premise as one you could not open. For a Nix flake input, open the input at the revision flake.lock pins, not a channel or its current head. For another ecosystem, the same way: the version from the project's lockfile, the code from the package manager's cache or the vendor directory.\n\nNOISE CLASSES (noise_class; 0 when none applies — a defect of this change). They are judged on the code, never on the source's own label:\n1 — not this change's: the problem already stands at the PR's base (the diff did not bring it) or lies outside the change's task. Check it AT THE BASE, not by the reviewer's word (\"pre-existing\", \"out of scope\"): no prBase (the PR's fork point) was given to this triage, so it cannot be checked here — name the class all the same; a human decides it. Verdict defer when the problem is real — the triage carries it to an issue; reject when it is not (no issue is filed).\n2 — inflated severity: the claimed harm is unreachable or heals itself (a default requeue, only a metric). Judge the verdict on the merits and lower severity to what the code supports.\n3 — a repeat of a finding already decided — reject, naming it.\n4 — a deliberate trade-off written in the project's docs or rules — reject, naming where it is written.\n5 — not decidable from the code (a rollout step, a version you cannot verify) — needs-decision, not a fix.\n6 — an optional nicety in tests or comments — accept only when worth doing; it is planned apart from the defects.\nseverity: the source's severity unless the code supports another.\n\nstable_id MUST be exactly: review::src/a.rs:10::memory leak\nKeep reason to one line. fix_pointer empty unless verdict is accept.",
+            "review::no-loc::nit": "Judge ONE review finding against the actual code. Validate against the currently checked-out tree.\n\nFinding (source: review):\n- severity: Low\n- location: (none given)\n- what: nit\n- why: why nit\n\n\n\nRead the cited code, then decide ONE verdict:\n- accept — a real, in-scope problem. fix_pointer = owning craft skill (rust-errors/rust-ownership/rust-concurrency/rust-security/rust-performance/rust-idioms/rust-testing/rust-unsafe) + a one-line fix direction.\n- reject — not a real problem / wrong; explain why (this becomes reviewer pushback).\n- defer — real but out of scope now; say why.\n- needs-decision — valid but needs a product/spec decision, OR the finding has no resolvable location; say what is needed.\n\nPREMISE DISCIPLINE: name the ONE claim your verdict rests on. If it lives outside the cited location — the dependency behaves this way, this is reachable from untrusted input, a caller already guards it, the sibling path does X — OPEN that code (dependency sources included) and record the file:line in premise_checked. This binds **reject** exactly as much as accept: \"a caller must already validate this\" waved through without opening the caller is the same unfounded claim as the finding it dismisses, and it silently discards a real bug. If you cannot open it, do not guess — verdict needs-decision, saying which premise is unverified. Finding a dependency's source: open the version the project pins, never the newest or a remembered one, and never let a tool rewrite the lockfile to find it. For a Rust crate, take the package's `manifest_path` from `cargo metadata --locked --format-version 1` — its directory is the source of the version Cargo.lock pins (under `~/.cargo/registry`, a git checkout, or the vendored tree); if that directory is missing, run `cargo fetch --locked` first. A build or test command run before you may already have written Cargo.lock: take the lockfile cargo uses, `Cargo.lock` under the `workspace_root` from `cargo metadata --no-deps --format-version 1`, and unless `git ls-files --error-unmatch <that path>` succeeds and `git status --porcelain <that path>` is empty, the version it names is resolved today, not pinned — say so. If the reviewed checkout has no Cargo.lock (a library that does not commit one), nothing is pinned: resolve in a throwaway copy (`git worktree add --detach <tmp>` of the reviewed commit, or, when a Cargo.toml has uncommitted changes, a copy of the working tree without `target/` and `.git`), run `cargo metadata --format-version 1` there, open the sources it names, and always remove the copy (`git worktree remove <tmp>` when you added one); say the version is the one resolved today, not a pinned one, and never write Cargo.lock in the reviewed checkout. If Cargo.lock exists but `--locked` refuses (it is stale), the pinned version cannot be determined — do not run cargo without the flag: treat the premise as one you could not open. For a Nix flake input, open the input at the revision flake.lock pins, not a channel or its current head. For another ecosystem, the same way: the version from the project's lockfile, the code from the package manager's cache or the vendor directory.\n\nNOISE CLASSES (noise_class; 0 when none applies — a defect of this change). They are judged on the code, never on the source's own label:\n1 — not this change's: the problem already stands at the PR's base (the diff did not bring it) or lies outside the change's task. Check it AT THE BASE, not by the reviewer's word (\"pre-existing\", \"out of scope\"): no prBase (the PR's fork point) was given to this triage, so it cannot be checked here — name the class all the same; a human decides it. Verdict defer when the problem is real — the triage carries it to an issue; reject when it is not (no issue is filed).\n2 — inflated severity: the claimed harm is unreachable or heals itself (a default requeue, only a metric). Judge the verdict on the merits and lower severity to what the code supports.\n3 — a repeat of a finding already decided — reject, naming it.\n4 — a deliberate trade-off written in the project's docs or rules — reject, naming where it is written.\n5 — not decidable from the code (a rollout step, a version you cannot verify) — needs-decision, not a fix.\n6 — an optional nicety in tests or comments — accept only when worth doing; it is planned apart from the defects.\nseverity: the source's severity unless the code supports another.\n\nstable_id MUST be exactly: review::no-loc::nit\nKeep reason to one line. fix_pointer empty unless verdict is accept."
+          },
+          "plan": "Turn validated review findings into ONE fix plan. Do not invent findings; only organise what is given. Ignore any ACCEPTED entry whose `finding` is null (a data glitch) — leave it out of the plan and note it in the summary.\n\n1. Dedup by stable_id (merge findings at the same location with the same fix).\n2. Detect conflicts — two findings demanding opposite changes. Mark each such finding verdict \"conflict\" in the ledger, DO NOT put it in the plan, and surface both in the summary for a human to decide.\n3. Group the remaining accepted findings by file; order groups blocking (Critical/High) → simple → complex, by the validator's `severity` (it may be lower than the source's). Accepted findings with noise_class 6 (optional, in tests or comments) go apart: one last task headed \"Optional (tests and comments)\", never mixed into the defect groups.\n4. Render plan_markdown as a checkbox-task plan: one task per file-group, bite-sized checkbox steps, each step naming the file and the owning craft skill; a bug fix starts with a RED→GREEN regression test. Mark independent file-groups as parallelisable (one subagent per group).\n5. ledger = EVERY finding (accept/reject/defer/needs-decision/conflict) keyed by stable_id with verdict + one-line reason — the SETTLED BEFORE VALIDATION rows below included, as given. Any reason containing \"NOT JUDGED\" or \"SIFTED BEFORE VALIDATION\" must be copied VERBATIM, marker included — that string is what tells a later re-run how this finding was settled; paraphrasing it makes the finding look judged on the code when it was not. summary = human-readable rundown of everything not in the plan; a deferral with action \"issue\" is named there as going to an issue on the forge (it is not this change's).\n\nACCEPTED (with their findings):\n[]\n\nALL VERDICTS (include reject/defer/needs-decision in the ledger):\n[\n  {\n    \"stable_id\": \"review::src/a.rs:10::memory leak\",\n    \"verdict\": \"needs-decision\",\n    \"reason\": \"NOT JUDGED — the validator agent died; this finding was never checked against the code\",\n    \"fix_pointer\": \"\",\n    \"premise_checked\": \"(validator died — nothing was opened)\"\n  },\n  {\n    \"stable_id\": \"review::no-loc::nit\",\n    \"verdict\": \"reject\",\n    \"reason\": \"reject on the code\",\n    \"fix_pointer\": \"\",\n    \"premise_checked\": \"\"\n  }\n]\n\nSETTLED BEFORE VALIDATION (repeats in this batch, and what the project memory already answered — final; into the ledger as given, never into the plan):\n[\n  {\n    \"stable_id\": \"review::src/a.rs:11::leak of memory\",\n    \"verdict\": \"reject\",\n    \"sifted\": true,\n    \"repeat_of\": \"review::src/a.rs:10::memory leak\",\n    \"reason\": \"SIFTED BEFORE VALIDATION — repeats review::src/a.rs:10::memory leak in this batch (same site, same title words); judged there\"\n  }\n]"
+        },
+        "accepted": [],
+        "validations": [
+          {
+            "stable_id": "review::src/a.rs:10::memory leak",
+            "verdict": "needs-decision",
+            "reason": "NOT JUDGED — the validator agent died; this finding was never checked against the code",
+            "fix_pointer": "",
+            "premise_checked": "(validator died — nothing was opened)"
+          },
+          {
+            "stable_id": "review::no-loc::nit",
+            "verdict": "reject",
+            "reason": "reject on the code",
+            "fix_pointer": "",
+            "premise_checked": ""
+          }
+        ],
+        "sifted": [
+          {
+            "stable_id": "review::src/a.rs:11::leak of memory",
+            "verdict": "reject",
+            "sifted": true,
+            "repeat_of": "review::src/a.rs:10::memory leak",
+            "reason": "SIFTED BEFORE VALIDATION — repeats review::src/a.rs:10::memory leak in this batch (same site, same title words); judged there"
+          }
+        ],
+        "record": {
+          "schemaVersion": 1,
+          "runtime": "claude-code",
+          "craftVersion": "0.58.0",
+          "kind": "workflow",
+          "name": "triage-findings",
+          "verdict": "",
+          "findings": {
+            "total": 3,
+            "bySeverity": {
+              "Critical": 0,
+              "High": 1,
+              "Medium": 0,
+              "Low": 2,
+              "Info": 0
+            }
+          },
+          "nested": false,
+          "via": null,
+          "sources": [
+            {
+              "source": "review",
+              "count": 3
+            }
+          ],
+          "triage": {
+            "gathered": 3,
+            "validated": 2,
+            "accept": 0,
+            "reject": 2,
+            "defer": 0,
+            "needs-decision": 1,
+            "conflict": 0,
+            "sifted": {
+              "repeats": 1,
+              "rejectedBefore": 0,
+              "deferred": 0,
+              "covered": 0,
+              "conflict": 0,
+              "reraised": 0
+            },
+            "issues": 0
+          },
+          "memory": {
+            "source": "none",
+            "count": 0,
+            "why": "recalled (backend mcp iskron)",
+            "backend": "mcp iskron"
+          },
+          "notRun": [
+            "findings-unjudged"
+          ]
+        },
+        "plan": {
+          "plan_markdown": "> **INCOMPLETE TRIAGE** — this plan does not cover everything that was asked for:\n> - 1 finding(s) were never judged against the code (validator died); they sit in the ledger as needs-decision, not in the plan\n\nBODY",
+          "summary": "INCOMPLETE: 1 finding(s) were never judged against the code (validator died); they sit in the ledger as needs-decision, not in the plan\n\nSUM",
+          "ledger": [
+            {
+              "stable_id": "review::src/a.rs:10::memory leak",
+              "verdict": "needs-decision",
+              "reason": "NOT JUDGED — the validator agent died; this finding was never checked against the code"
+            },
+            {
+              "stable_id": "review::no-loc::nit",
+              "verdict": "reject",
+              "reason": "no"
+            },
+            {
+              "stable_id": "review::src/a.rs:11::leak of memory",
+              "verdict": "reject",
+              "reason": "SIFTED BEFORE VALIDATION — repeats review::src/a.rs:10::memory leak in this batch (same site, same title words); judged there",
+              "sifted": true,
+              "repeat_of": "review::src/a.rs:10::memory leak"
+            }
+          ],
+          "notRun": [
+            "1 finding(s) were never judged against the code (validator died); they sit in the ledger as needs-decision, not in the plan"
+          ],
+          "memory": "memory: none — recalled (backend mcp iskron)"
+        }
+      }
+    },
+    {
+      "name": "class 1 with a prBase",
+      "args": {
+        "report": "/r.md",
+        "base": "aaaaaaa1111",
+        "prBase": "bbbbbbb2222"
+      },
+      "answers": {
+        "report": {
+          "source": " rust-reviewer ",
+          "findings": [
+            {
+              "severity": "High",
+              "title": "memory leak",
+              "location": "src/a.rs:10",
+              "detail": "why memory leak",
+              "proposed_fix": "free it",
+              "thread_id": ""
+            },
+            {
+              "severity": "Low",
+              "title": "nit",
+              "location": "",
+              "detail": "why nit",
+              "proposed_fix": "",
+              "thread_id": ""
+            },
+            {
+              "severity": "Medium",
+              "title": "race on close",
+              "location": "src/b.rs:5",
+              "detail": "why race on close",
+              "proposed_fix": "",
+              "thread_id": ""
+            }
+          ]
+        },
+        "validate": {
+          "rust-reviewer::src/a.rs:10::memory leak": {
+            "stable_id": "rust-reviewer::src/a.rs:10::memory leak",
+            "verdict": "accept",
+            "reason": "accept on the code",
+            "fix_pointer": "",
+            "premise_checked": "`git show bbbbbbb2222:src/a.rs`",
+            "noise_class": 1
+          },
+          "rust-reviewer::no-loc::nit": {
+            "stable_id": "rust-reviewer::no-loc::nit",
+            "verdict": "defer",
+            "reason": "defer on the code",
+            "fix_pointer": "",
+            "premise_checked": "git show HEAD:x",
+            "noise_class": 1
+          },
+          "rust-reviewer::src/b.rs:5::race on close": {
+            "stable_id": "rust-reviewer::src/b.rs:5::race on close",
+            "verdict": "accept",
+            "reason": "accept on the code",
+            "fix_pointer": "",
+            "premise_checked": "",
+            "noise_class": 5,
+            "severity": "Low"
+          }
+        },
+        "plan": {
+          "plan_markdown": "BODY",
+          "summary": "SUM",
+          "ledger": [
+            {
+              "stable_id": "rust-reviewer::src/a.rs:10::memory leak",
+              "verdict": "defer",
+              "reason": "not this PR",
+              "action": "issue"
+            }
+          ],
+          "memory": "memory: none — recalled (backend mcp iskron)",
+          "issues": [
+            {
+              "stable_id": "rust-reviewer::src/a.rs:10::memory leak",
+              "title": "memory leak",
+              "body": "High · src/a.rs:10 · from rust-reviewer\n\nwhy memory leak\n\nNot introduced by the PR it was raised on: accept on the code (checked at `git show bbbbbbb2222:src/a.rs`)"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "prompts": {
+          "gather": {
+            "gather:report": "Read the review report at `/r.md`. Extract every finding into the schema. Set source to the engine that wrote the report, as the report names it: \"review\" (craft:review), \"adversarial-review\", \"rust-audit\", \"rust-reviewer\" (a single reviewer verdict) or \"nix-review\"; \"report\" when the report does not say. Copy severity/title/location/detail verbatim; leave proposed_fix and thread_id empty unless present. The report's `## Tool finding titles (verbatim)` section (also nested under `## Prior decisions in the nested reviews (verbatim)`) lists titles, not findings: never extract its rows as findings. For a finding at a `file:line` it lists, take the title from it — the listed title equal to the finding's line; or the only one listed there, but only when the report prints a single finding at that `file:line` (the section lists gate-tool findings only, so a lens finding at the same site is printed beside the tool's and must not take its title). When several findings are printed there, or several titles are listed and none is equal, keep the finding's own line, never a guess between them."
+          },
+          "validate": {
+            "rust-reviewer::src/a.rs:10::memory leak": "Judge ONE review finding against the actual code. Validate against ref `aaaaaaa1111` (the ref the findings were generated against), not the live working tree.\n\nFinding (source: rust-reviewer):\n- severity: High\n- location: src/a.rs:10\n- what: memory leak\n- why: why memory leak\n- proposed fix: free it\n\n\nRead the cited code, then decide ONE verdict:\n- accept — a real, in-scope problem. fix_pointer = owning craft skill (rust-errors/rust-ownership/rust-concurrency/rust-security/rust-performance/rust-idioms/rust-testing/rust-unsafe) + a one-line fix direction.\n- reject — not a real problem / wrong; explain why (this becomes reviewer pushback).\n- defer — real but out of scope now; say why.\n- needs-decision — valid but needs a product/spec decision, OR the finding has no resolvable location; say what is needed.\n\nPREMISE DISCIPLINE: name the ONE claim your verdict rests on. If it lives outside the cited location — the dependency behaves this way, this is reachable from untrusted input, a caller already guards it, the sibling path does X — OPEN that code (dependency sources included) and record the file:line in premise_checked. This binds **reject** exactly as much as accept: \"a caller must already validate this\" waved through without opening the caller is the same unfounded claim as the finding it dismisses, and it silently discards a real bug. If you cannot open it, do not guess — verdict needs-decision, saying which premise is unverified. Finding a dependency's source: open the version the project pins, never the newest or a remembered one, and never let a tool rewrite the lockfile to find it. For a Rust crate, take the package's `manifest_path` from `cargo metadata --locked --format-version 1` — its directory is the source of the version Cargo.lock pins (under `~/.cargo/registry`, a git checkout, or the vendored tree); if that directory is missing, run `cargo fetch --locked` first. A build or test command run before you may already have written Cargo.lock: take the lockfile cargo uses, `Cargo.lock` under the `workspace_root` from `cargo metadata --no-deps --format-version 1`, and unless `git ls-files --error-unmatch <that path>` succeeds and `git status --porcelain <that path>` is empty, the version it names is resolved today, not pinned — say so. If the reviewed checkout has no Cargo.lock (a library that does not commit one), nothing is pinned: resolve in a throwaway copy (`git worktree add --detach <tmp>` of the reviewed commit, or, when a Cargo.toml has uncommitted changes, a copy of the working tree without `target/` and `.git`), run `cargo metadata --format-version 1` there, open the sources it names, and always remove the copy (`git worktree remove <tmp>` when you added one); say the version is the one resolved today, not a pinned one, and never write Cargo.lock in the reviewed checkout. If Cargo.lock exists but `--locked` refuses (it is stale), the pinned version cannot be determined — do not run cargo without the flag: treat the premise as one you could not open. For a Nix flake input, open the input at the revision flake.lock pins, not a channel or its current head. For another ecosystem, the same way: the version from the project's lockfile, the code from the package manager's cache or the vendor directory.\n\nNOISE CLASSES (noise_class; 0 when none applies — a defect of this change). They are judged on the code, never on the source's own label:\n1 — not this change's: the problem already stands at the PR's base (the diff did not bring it) or lies outside the change's task. Check it AT THE BASE, not by the reviewer's word (\"pre-existing\", \"out of scope\"): the PR forks from `bbbbbbb2222` (prBase) — open the cited code there and record in premise_checked exactly `git show bbbbbbb2222:<path>`; a premise naming any other ref (HEAD, the ref you validate against, a branch, a merge-base you computed) reads as unchecked and goes to a human. Verdict defer when the problem is real — the triage carries it to an issue; reject when it is not (no issue is filed).\n2 — inflated severity: the claimed harm is unreachable or heals itself (a default requeue, only a metric). Judge the verdict on the merits and lower severity to what the code supports.\n3 — a repeat of a finding already decided — reject, naming it.\n4 — a deliberate trade-off written in the project's docs or rules — reject, naming where it is written.\n5 — not decidable from the code (a rollout step, a version you cannot verify) — needs-decision, not a fix.\n6 — an optional nicety in tests or comments — accept only when worth doing; it is planned apart from the defects.\nseverity: the source's severity unless the code supports another.\n\nstable_id MUST be exactly: rust-reviewer::src/a.rs:10::memory leak\nKeep reason to one line. fix_pointer empty unless verdict is accept.",
+            "rust-reviewer::no-loc::nit": "Judge ONE review finding against the actual code. Validate against ref `aaaaaaa1111` (the ref the findings were generated against), not the live working tree.\n\nFinding (source: rust-reviewer):\n- severity: Low\n- location: (none given)\n- what: nit\n- why: why nit\n\n\n\nRead the cited code, then decide ONE verdict:\n- accept — a real, in-scope problem. fix_pointer = owning craft skill (rust-errors/rust-ownership/rust-concurrency/rust-security/rust-performance/rust-idioms/rust-testing/rust-unsafe) + a one-line fix direction.\n- reject — not a real problem / wrong; explain why (this becomes reviewer pushback).\n- defer — real but out of scope now; say why.\n- needs-decision — valid but needs a product/spec decision, OR the finding has no resolvable location; say what is needed.\n\nPREMISE DISCIPLINE: name the ONE claim your verdict rests on. If it lives outside the cited location — the dependency behaves this way, this is reachable from untrusted input, a caller already guards it, the sibling path does X — OPEN that code (dependency sources included) and record the file:line in premise_checked. This binds **reject** exactly as much as accept: \"a caller must already validate this\" waved through without opening the caller is the same unfounded claim as the finding it dismisses, and it silently discards a real bug. If you cannot open it, do not guess — verdict needs-decision, saying which premise is unverified. Finding a dependency's source: open the version the project pins, never the newest or a remembered one, and never let a tool rewrite the lockfile to find it. For a Rust crate, take the package's `manifest_path` from `cargo metadata --locked --format-version 1` — its directory is the source of the version Cargo.lock pins (under `~/.cargo/registry`, a git checkout, or the vendored tree); if that directory is missing, run `cargo fetch --locked` first. A build or test command run before you may already have written Cargo.lock: take the lockfile cargo uses, `Cargo.lock` under the `workspace_root` from `cargo metadata --no-deps --format-version 1`, and unless `git ls-files --error-unmatch <that path>` succeeds and `git status --porcelain <that path>` is empty, the version it names is resolved today, not pinned — say so. If the reviewed checkout has no Cargo.lock (a library that does not commit one), nothing is pinned: resolve in a throwaway copy (`git worktree add --detach <tmp>` of the reviewed commit, or, when a Cargo.toml has uncommitted changes, a copy of the working tree without `target/` and `.git`), run `cargo metadata --format-version 1` there, open the sources it names, and always remove the copy (`git worktree remove <tmp>` when you added one); say the version is the one resolved today, not a pinned one, and never write Cargo.lock in the reviewed checkout. If Cargo.lock exists but `--locked` refuses (it is stale), the pinned version cannot be determined — do not run cargo without the flag: treat the premise as one you could not open. For a Nix flake input, open the input at the revision flake.lock pins, not a channel or its current head. For another ecosystem, the same way: the version from the project's lockfile, the code from the package manager's cache or the vendor directory.\n\nNOISE CLASSES (noise_class; 0 when none applies — a defect of this change). They are judged on the code, never on the source's own label:\n1 — not this change's: the problem already stands at the PR's base (the diff did not bring it) or lies outside the change's task. Check it AT THE BASE, not by the reviewer's word (\"pre-existing\", \"out of scope\"): the PR forks from `bbbbbbb2222` (prBase) — open the cited code there and record in premise_checked exactly `git show bbbbbbb2222:<path>`; a premise naming any other ref (HEAD, the ref you validate against, a branch, a merge-base you computed) reads as unchecked and goes to a human. Verdict defer when the problem is real — the triage carries it to an issue; reject when it is not (no issue is filed).\n2 — inflated severity: the claimed harm is unreachable or heals itself (a default requeue, only a metric). Judge the verdict on the merits and lower severity to what the code supports.\n3 — a repeat of a finding already decided — reject, naming it.\n4 — a deliberate trade-off written in the project's docs or rules — reject, naming where it is written.\n5 — not decidable from the code (a rollout step, a version you cannot verify) — needs-decision, not a fix.\n6 — an optional nicety in tests or comments — accept only when worth doing; it is planned apart from the defects.\nseverity: the source's severity unless the code supports another.\n\nstable_id MUST be exactly: rust-reviewer::no-loc::nit\nKeep reason to one line. fix_pointer empty unless verdict is accept.",
+            "rust-reviewer::src/b.rs:5::race on close": "Judge ONE review finding against the actual code. Validate against ref `aaaaaaa1111` (the ref the findings were generated against), not the live working tree.\n\nFinding (source: rust-reviewer):\n- severity: Medium\n- location: src/b.rs:5\n- what: race on close\n- why: why race on close\n\n\n\nRead the cited code, then decide ONE verdict:\n- accept — a real, in-scope problem. fix_pointer = owning craft skill (rust-errors/rust-ownership/rust-concurrency/rust-security/rust-performance/rust-idioms/rust-testing/rust-unsafe) + a one-line fix direction.\n- reject — not a real problem / wrong; explain why (this becomes reviewer pushback).\n- defer — real but out of scope now; say why.\n- needs-decision — valid but needs a product/spec decision, OR the finding has no resolvable location; say what is needed.\n\nPREMISE DISCIPLINE: name the ONE claim your verdict rests on. If it lives outside the cited location — the dependency behaves this way, this is reachable from untrusted input, a caller already guards it, the sibling path does X — OPEN that code (dependency sources included) and record the file:line in premise_checked. This binds **reject** exactly as much as accept: \"a caller must already validate this\" waved through without opening the caller is the same unfounded claim as the finding it dismisses, and it silently discards a real bug. If you cannot open it, do not guess — verdict needs-decision, saying which premise is unverified. Finding a dependency's source: open the version the project pins, never the newest or a remembered one, and never let a tool rewrite the lockfile to find it. For a Rust crate, take the package's `manifest_path` from `cargo metadata --locked --format-version 1` — its directory is the source of the version Cargo.lock pins (under `~/.cargo/registry`, a git checkout, or the vendored tree); if that directory is missing, run `cargo fetch --locked` first. A build or test command run before you may already have written Cargo.lock: take the lockfile cargo uses, `Cargo.lock` under the `workspace_root` from `cargo metadata --no-deps --format-version 1`, and unless `git ls-files --error-unmatch <that path>` succeeds and `git status --porcelain <that path>` is empty, the version it names is resolved today, not pinned — say so. If the reviewed checkout has no Cargo.lock (a library that does not commit one), nothing is pinned: resolve in a throwaway copy (`git worktree add --detach <tmp>` of the reviewed commit, or, when a Cargo.toml has uncommitted changes, a copy of the working tree without `target/` and `.git`), run `cargo metadata --format-version 1` there, open the sources it names, and always remove the copy (`git worktree remove <tmp>` when you added one); say the version is the one resolved today, not a pinned one, and never write Cargo.lock in the reviewed checkout. If Cargo.lock exists but `--locked` refuses (it is stale), the pinned version cannot be determined — do not run cargo without the flag: treat the premise as one you could not open. For a Nix flake input, open the input at the revision flake.lock pins, not a channel or its current head. For another ecosystem, the same way: the version from the project's lockfile, the code from the package manager's cache or the vendor directory.\n\nNOISE CLASSES (noise_class; 0 when none applies — a defect of this change). They are judged on the code, never on the source's own label:\n1 — not this change's: the problem already stands at the PR's base (the diff did not bring it) or lies outside the change's task. Check it AT THE BASE, not by the reviewer's word (\"pre-existing\", \"out of scope\"): the PR forks from `bbbbbbb2222` (prBase) — open the cited code there and record in premise_checked exactly `git show bbbbbbb2222:<path>`; a premise naming any other ref (HEAD, the ref you validate against, a branch, a merge-base you computed) reads as unchecked and goes to a human. Verdict defer when the problem is real — the triage carries it to an issue; reject when it is not (no issue is filed).\n2 — inflated severity: the claimed harm is unreachable or heals itself (a default requeue, only a metric). Judge the verdict on the merits and lower severity to what the code supports.\n3 — a repeat of a finding already decided — reject, naming it.\n4 — a deliberate trade-off written in the project's docs or rules — reject, naming where it is written.\n5 — not decidable from the code (a rollout step, a version you cannot verify) — needs-decision, not a fix.\n6 — an optional nicety in tests or comments — accept only when worth doing; it is planned apart from the defects.\nseverity: the source's severity unless the code supports another.\n\nstable_id MUST be exactly: rust-reviewer::src/b.rs:5::race on close\nKeep reason to one line. fix_pointer empty unless verdict is accept."
+          },
+          "plan": "Turn validated review findings into ONE fix plan. Do not invent findings; only organise what is given. Ignore any ACCEPTED entry whose `finding` is null (a data glitch) — leave it out of the plan and note it in the summary.\n\n1. Dedup by stable_id (merge findings at the same location with the same fix).\n2. Detect conflicts — two findings demanding opposite changes. Mark each such finding verdict \"conflict\" in the ledger, DO NOT put it in the plan, and surface both in the summary for a human to decide.\n3. Group the remaining accepted findings by file; order groups blocking (Critical/High) → simple → complex, by the validator's `severity` (it may be lower than the source's). Accepted findings with noise_class 6 (optional, in tests or comments) go apart: one last task headed \"Optional (tests and comments)\", never mixed into the defect groups.\n4. Render plan_markdown as a checkbox-task plan: one task per file-group, bite-sized checkbox steps, each step naming the file and the owning craft skill; a bug fix starts with a RED→GREEN regression test. Mark independent file-groups as parallelisable (one subagent per group).\n5. ledger = EVERY finding (accept/reject/defer/needs-decision/conflict) keyed by stable_id with verdict + one-line reason — the SETTLED BEFORE VALIDATION rows below included, as given. Any reason containing \"NOT JUDGED\" or \"SIFTED BEFORE VALIDATION\" must be copied VERBATIM, marker included — that string is what tells a later re-run how this finding was settled; paraphrasing it makes the finding look judged on the code when it was not. summary = human-readable rundown of everything not in the plan; a deferral with action \"issue\" is named there as going to an issue on the forge (it is not this change's).\n\nACCEPTED (with their findings):\n[]\n\nALL VERDICTS (include reject/defer/needs-decision in the ledger):\n[\n  {\n    \"stable_id\": \"rust-reviewer::src/a.rs:10::memory leak\",\n    \"verdict\": \"defer\",\n    \"reason\": \"accept on the code\",\n    \"fix_pointer\": \"\",\n    \"premise_checked\": \"`git show bbbbbbb2222:src/a.rs`\",\n    \"noise_class\": 1,\n    \"action\": \"issue\"\n  },\n  {\n    \"stable_id\": \"rust-reviewer::no-loc::nit\",\n    \"verdict\": \"needs-decision\",\n    \"reason\": \"claimed not this PR's, but nothing at the PR's fork point bbbbbbb2222 was opened to show it — defer on the code\",\n    \"fix_pointer\": \"\",\n    \"premise_checked\": \"git show HEAD:x\",\n    \"noise_class\": 1\n  },\n  {\n    \"stable_id\": \"rust-reviewer::src/b.rs:5::race on close\",\n    \"verdict\": \"needs-decision\",\n    \"reason\": \"accept on the code\",\n    \"fix_pointer\": \"\",\n    \"premise_checked\": \"\",\n    \"noise_class\": 5,\n    \"severity\": \"Low\"\n  }\n]\n\nSETTLED BEFORE VALIDATION (repeats in this batch, and what the project memory already answered — final; into the ledger as given, never into the plan):\n[]"
+        },
+        "accepted": [],
+        "validations": [
+          {
+            "stable_id": "rust-reviewer::src/a.rs:10::memory leak",
+            "verdict": "defer",
+            "reason": "accept on the code",
+            "fix_pointer": "",
+            "premise_checked": "`git show bbbbbbb2222:src/a.rs`",
+            "noise_class": 1,
+            "action": "issue"
+          },
+          {
+            "stable_id": "rust-reviewer::no-loc::nit",
+            "verdict": "needs-decision",
+            "reason": "claimed not this PR's, but nothing at the PR's fork point bbbbbbb2222 was opened to show it — defer on the code",
+            "fix_pointer": "",
+            "premise_checked": "git show HEAD:x",
+            "noise_class": 1
+          },
+          {
+            "stable_id": "rust-reviewer::src/b.rs:5::race on close",
+            "verdict": "needs-decision",
+            "reason": "accept on the code",
+            "fix_pointer": "",
+            "premise_checked": "",
+            "noise_class": 5,
+            "severity": "Low"
+          }
+        ],
+        "sifted": [],
+        "record": {
+          "schemaVersion": 1,
+          "runtime": "claude-code",
+          "craftVersion": "0.58.0",
+          "kind": "workflow",
+          "name": "triage-findings",
+          "verdict": "",
+          "findings": {
+            "total": 3,
+            "bySeverity": {
+              "Critical": 0,
+              "High": 1,
+              "Medium": 1,
+              "Low": 1,
+              "Info": 0
+            }
+          },
+          "nested": false,
+          "via": null,
+          "sources": [
+            {
+              "source": "rust-reviewer",
+              "count": 3
+            }
+          ],
+          "triage": {
+            "gathered": 3,
+            "validated": 3,
+            "accept": 0,
+            "reject": 0,
+            "defer": 1,
+            "needs-decision": 0,
+            "conflict": 0,
+            "sifted": {
+              "repeats": 0,
+              "rejectedBefore": 0,
+              "deferred": 0,
+              "covered": 0,
+              "conflict": 0,
+              "reraised": 0
+            },
+            "issues": 1
+          },
+          "memory": {
+            "source": "none",
+            "count": 0,
+            "why": "recalled (backend mcp iskron)",
+            "backend": "mcp iskron"
+          },
+          "notRun": []
+        },
+        "plan": {
+          "plan_markdown": "BODY",
+          "summary": "SUM",
+          "ledger": [
+            {
+              "stable_id": "rust-reviewer::src/a.rs:10::memory leak",
+              "verdict": "defer",
+              "reason": "not this PR",
+              "action": "issue"
+            }
+          ],
+          "memory": "memory: none — recalled (backend mcp iskron)",
+          "issues": [
+            {
+              "stable_id": "rust-reviewer::src/a.rs:10::memory leak",
+              "title": "memory leak",
+              "body": "High · src/a.rs:10 · from rust-reviewer\n\nwhy memory leak\n\nNot introduced by the PR it was raised on: accept on the code (checked at `git show bbbbbbb2222:src/a.rs`)"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "class 1 without a prBase",
+      "args": {
+        "report": "/r.md",
+        "base": "v1",
+        "prBase": "v1"
+      },
+      "answers": {
+        "report": {
+          "source": "nix-review",
+          "findings": [
+            {
+              "severity": "High",
+              "title": "memory leak",
+              "location": "src/a.rs:10",
+              "detail": "why memory leak",
+              "proposed_fix": "free it",
+              "thread_id": ""
+            },
+            {
+              "severity": "Low",
+              "title": "nit",
+              "location": "",
+              "detail": "why nit",
+              "proposed_fix": "",
+              "thread_id": ""
+            }
+          ]
+        },
+        "validate": {
+          "nix-review::src/a.rs:10::memory leak": {
+            "stable_id": "nix-review::src/a.rs:10::memory leak",
+            "verdict": "defer",
+            "reason": "defer on the code",
+            "fix_pointer": "",
+            "premise_checked": "",
+            "noise_class": 1
+          },
+          "nix-review::no-loc::nit": {
+            "stable_id": "nix-review::no-loc::nit",
+            "verdict": "reject",
+            "reason": "reject on the code",
+            "fix_pointer": "",
+            "premise_checked": "",
+            "noise_class": 1
+          }
+        },
+        "plan": null
+      },
+      "expected": {
+        "prompts": {
+          "gather": {
+            "gather:report": "Read the review report at `/r.md`. Extract every finding into the schema. Set source to the engine that wrote the report, as the report names it: \"review\" (craft:review), \"adversarial-review\", \"rust-audit\", \"rust-reviewer\" (a single reviewer verdict) or \"nix-review\"; \"report\" when the report does not say. Copy severity/title/location/detail verbatim; leave proposed_fix and thread_id empty unless present. The report's `## Tool finding titles (verbatim)` section (also nested under `## Prior decisions in the nested reviews (verbatim)`) lists titles, not findings: never extract its rows as findings. For a finding at a `file:line` it lists, take the title from it — the listed title equal to the finding's line; or the only one listed there, but only when the report prints a single finding at that `file:line` (the section lists gate-tool findings only, so a lens finding at the same site is printed beside the tool's and must not take its title). When several findings are printed there, or several titles are listed and none is equal, keep the finding's own line, never a guess between them."
+          },
+          "validate": {
+            "nix-review::src/a.rs:10::memory leak": "Judge ONE review finding against the actual code. Validate against ref `v1` (the ref the findings were generated against), not the live working tree.\n\nFinding (source: nix-review):\n- severity: High\n- location: src/a.rs:10\n- what: memory leak\n- why: why memory leak\n- proposed fix: free it\n\n\nRead the cited code, then decide ONE verdict:\n- accept — a real, in-scope problem. fix_pointer = owning craft skill (rust-errors/rust-ownership/rust-concurrency/rust-security/rust-performance/rust-idioms/rust-testing/rust-unsafe) + a one-line fix direction.\n- reject — not a real problem / wrong; explain why (this becomes reviewer pushback).\n- defer — real but out of scope now; say why.\n- needs-decision — valid but needs a product/spec decision, OR the finding has no resolvable location; say what is needed.\n\nPREMISE DISCIPLINE: name the ONE claim your verdict rests on. If it lives outside the cited location — the dependency behaves this way, this is reachable from untrusted input, a caller already guards it, the sibling path does X — OPEN that code (dependency sources included) and record the file:line in premise_checked. This binds **reject** exactly as much as accept: \"a caller must already validate this\" waved through without opening the caller is the same unfounded claim as the finding it dismisses, and it silently discards a real bug. If you cannot open it, do not guess — verdict needs-decision, saying which premise is unverified. Finding a dependency's source: open the version the project pins, never the newest or a remembered one, and never let a tool rewrite the lockfile to find it. For a Rust crate, take the package's `manifest_path` from `cargo metadata --locked --format-version 1` — its directory is the source of the version Cargo.lock pins (under `~/.cargo/registry`, a git checkout, or the vendored tree); if that directory is missing, run `cargo fetch --locked` first. A build or test command run before you may already have written Cargo.lock: take the lockfile cargo uses, `Cargo.lock` under the `workspace_root` from `cargo metadata --no-deps --format-version 1`, and unless `git ls-files --error-unmatch <that path>` succeeds and `git status --porcelain <that path>` is empty, the version it names is resolved today, not pinned — say so. If the reviewed checkout has no Cargo.lock (a library that does not commit one), nothing is pinned: resolve in a throwaway copy (`git worktree add --detach <tmp>` of the reviewed commit, or, when a Cargo.toml has uncommitted changes, a copy of the working tree without `target/` and `.git`), run `cargo metadata --format-version 1` there, open the sources it names, and always remove the copy (`git worktree remove <tmp>` when you added one); say the version is the one resolved today, not a pinned one, and never write Cargo.lock in the reviewed checkout. If Cargo.lock exists but `--locked` refuses (it is stale), the pinned version cannot be determined — do not run cargo without the flag: treat the premise as one you could not open. For a Nix flake input, open the input at the revision flake.lock pins, not a channel or its current head. For another ecosystem, the same way: the version from the project's lockfile, the code from the package manager's cache or the vendor directory.\n\nNOISE CLASSES (noise_class; 0 when none applies — a defect of this change). They are judged on the code, never on the source's own label:\n1 — not this change's: the problem already stands at the PR's base (the diff did not bring it) or lies outside the change's task. Check it AT THE BASE, not by the reviewer's word (\"pre-existing\", \"out of scope\"): no prBase (the PR's fork point) was given to this triage, so it cannot be checked here — name the class all the same; a human decides it. Verdict defer when the problem is real — the triage carries it to an issue; reject when it is not (no issue is filed).\n2 — inflated severity: the claimed harm is unreachable or heals itself (a default requeue, only a metric). Judge the verdict on the merits and lower severity to what the code supports.\n3 — a repeat of a finding already decided — reject, naming it.\n4 — a deliberate trade-off written in the project's docs or rules — reject, naming where it is written.\n5 — not decidable from the code (a rollout step, a version you cannot verify) — needs-decision, not a fix.\n6 — an optional nicety in tests or comments — accept only when worth doing; it is planned apart from the defects.\nseverity: the source's severity unless the code supports another.\n\nstable_id MUST be exactly: nix-review::src/a.rs:10::memory leak\nKeep reason to one line. fix_pointer empty unless verdict is accept.",
+            "nix-review::no-loc::nit": "Judge ONE review finding against the actual code. Validate against ref `v1` (the ref the findings were generated against), not the live working tree.\n\nFinding (source: nix-review):\n- severity: Low\n- location: (none given)\n- what: nit\n- why: why nit\n\n\n\nRead the cited code, then decide ONE verdict:\n- accept — a real, in-scope problem. fix_pointer = owning craft skill (rust-errors/rust-ownership/rust-concurrency/rust-security/rust-performance/rust-idioms/rust-testing/rust-unsafe) + a one-line fix direction.\n- reject — not a real problem / wrong; explain why (this becomes reviewer pushback).\n- defer — real but out of scope now; say why.\n- needs-decision — valid but needs a product/spec decision, OR the finding has no resolvable location; say what is needed.\n\nPREMISE DISCIPLINE: name the ONE claim your verdict rests on. If it lives outside the cited location — the dependency behaves this way, this is reachable from untrusted input, a caller already guards it, the sibling path does X — OPEN that code (dependency sources included) and record the file:line in premise_checked. This binds **reject** exactly as much as accept: \"a caller must already validate this\" waved through without opening the caller is the same unfounded claim as the finding it dismisses, and it silently discards a real bug. If you cannot open it, do not guess — verdict needs-decision, saying which premise is unverified. Finding a dependency's source: open the version the project pins, never the newest or a remembered one, and never let a tool rewrite the lockfile to find it. For a Rust crate, take the package's `manifest_path` from `cargo metadata --locked --format-version 1` — its directory is the source of the version Cargo.lock pins (under `~/.cargo/registry`, a git checkout, or the vendored tree); if that directory is missing, run `cargo fetch --locked` first. A build or test command run before you may already have written Cargo.lock: take the lockfile cargo uses, `Cargo.lock` under the `workspace_root` from `cargo metadata --no-deps --format-version 1`, and unless `git ls-files --error-unmatch <that path>` succeeds and `git status --porcelain <that path>` is empty, the version it names is resolved today, not pinned — say so. If the reviewed checkout has no Cargo.lock (a library that does not commit one), nothing is pinned: resolve in a throwaway copy (`git worktree add --detach <tmp>` of the reviewed commit, or, when a Cargo.toml has uncommitted changes, a copy of the working tree without `target/` and `.git`), run `cargo metadata --format-version 1` there, open the sources it names, and always remove the copy (`git worktree remove <tmp>` when you added one); say the version is the one resolved today, not a pinned one, and never write Cargo.lock in the reviewed checkout. If Cargo.lock exists but `--locked` refuses (it is stale), the pinned version cannot be determined — do not run cargo without the flag: treat the premise as one you could not open. For a Nix flake input, open the input at the revision flake.lock pins, not a channel or its current head. For another ecosystem, the same way: the version from the project's lockfile, the code from the package manager's cache or the vendor directory.\n\nNOISE CLASSES (noise_class; 0 when none applies — a defect of this change). They are judged on the code, never on the source's own label:\n1 — not this change's: the problem already stands at the PR's base (the diff did not bring it) or lies outside the change's task. Check it AT THE BASE, not by the reviewer's word (\"pre-existing\", \"out of scope\"): no prBase (the PR's fork point) was given to this triage, so it cannot be checked here — name the class all the same; a human decides it. Verdict defer when the problem is real — the triage carries it to an issue; reject when it is not (no issue is filed).\n2 — inflated severity: the claimed harm is unreachable or heals itself (a default requeue, only a metric). Judge the verdict on the merits and lower severity to what the code supports.\n3 — a repeat of a finding already decided — reject, naming it.\n4 — a deliberate trade-off written in the project's docs or rules — reject, naming where it is written.\n5 — not decidable from the code (a rollout step, a version you cannot verify) — needs-decision, not a fix.\n6 — an optional nicety in tests or comments — accept only when worth doing; it is planned apart from the defects.\nseverity: the source's severity unless the code supports another.\n\nstable_id MUST be exactly: nix-review::no-loc::nit\nKeep reason to one line. fix_pointer empty unless verdict is accept."
+          },
+          "plan": "Turn validated review findings into ONE fix plan. Do not invent findings; only organise what is given. Ignore any ACCEPTED entry whose `finding` is null (a data glitch) — leave it out of the plan and note it in the summary.\n\n1. Dedup by stable_id (merge findings at the same location with the same fix).\n2. Detect conflicts — two findings demanding opposite changes. Mark each such finding verdict \"conflict\" in the ledger, DO NOT put it in the plan, and surface both in the summary for a human to decide.\n3. Group the remaining accepted findings by file; order groups blocking (Critical/High) → simple → complex, by the validator's `severity` (it may be lower than the source's). Accepted findings with noise_class 6 (optional, in tests or comments) go apart: one last task headed \"Optional (tests and comments)\", never mixed into the defect groups.\n4. Render plan_markdown as a checkbox-task plan: one task per file-group, bite-sized checkbox steps, each step naming the file and the owning craft skill; a bug fix starts with a RED→GREEN regression test. Mark independent file-groups as parallelisable (one subagent per group).\n5. ledger = EVERY finding (accept/reject/defer/needs-decision/conflict) keyed by stable_id with verdict + one-line reason — the SETTLED BEFORE VALIDATION rows below included, as given. Any reason containing \"NOT JUDGED\" or \"SIFTED BEFORE VALIDATION\" must be copied VERBATIM, marker included — that string is what tells a later re-run how this finding was settled; paraphrasing it makes the finding look judged on the code when it was not. summary = human-readable rundown of everything not in the plan; a deferral with action \"issue\" is named there as going to an issue on the forge (it is not this change's).\n\nACCEPTED (with their findings):\n[]\n\nALL VERDICTS (include reject/defer/needs-decision in the ledger):\n[\n  {\n    \"stable_id\": \"nix-review::src/a.rs:10::memory leak\",\n    \"verdict\": \"needs-decision\",\n    \"reason\": \"claimed not this PR's, but no prBase (the PR's fork point) was given to check it at — defer on the code\",\n    \"fix_pointer\": \"\",\n    \"premise_checked\": \"\",\n    \"noise_class\": 1\n  },\n  {\n    \"stable_id\": \"nix-review::no-loc::nit\",\n    \"verdict\": \"reject\",\n    \"reason\": \"reject on the code\",\n    \"fix_pointer\": \"\",\n    \"premise_checked\": \"\",\n    \"noise_class\": 1\n  }\n]\n\nSETTLED BEFORE VALIDATION (repeats in this batch, and what the project memory already answered — final; into the ledger as given, never into the plan):\n[]"
+        },
+        "accepted": [],
+        "validations": [
+          {
+            "stable_id": "nix-review::src/a.rs:10::memory leak",
+            "verdict": "needs-decision",
+            "reason": "claimed not this PR's, but no prBase (the PR's fork point) was given to check it at — defer on the code",
+            "fix_pointer": "",
+            "premise_checked": "",
+            "noise_class": 1
+          },
+          {
+            "stable_id": "nix-review::no-loc::nit",
+            "verdict": "reject",
+            "reason": "reject on the code",
+            "fix_pointer": "",
+            "premise_checked": "",
+            "noise_class": 1
+          }
+        ],
+        "sifted": [],
+        "record": {
+          "schemaVersion": 1,
+          "runtime": "claude-code",
+          "craftVersion": "0.58.0",
+          "kind": "workflow",
+          "name": "triage-findings",
+          "verdict": "",
+          "findings": {
+            "total": 2,
+            "bySeverity": {
+              "Critical": 0,
+              "High": 1,
+              "Medium": 0,
+              "Low": 1,
+              "Info": 0
+            }
+          },
+          "nested": false,
+          "via": null,
+          "sources": [
+            {
+              "source": "nix-review",
+              "count": 2
+            }
+          ],
+          "triage": {
+            "gathered": 2,
+            "validated": 2,
+            "accept": 0,
+            "reject": 1,
+            "defer": 0,
+            "needs-decision": 1,
+            "conflict": 0,
+            "sifted": {
+              "repeats": 0,
+              "rejectedBefore": 0,
+              "deferred": 0,
+              "covered": 0,
+              "conflict": 0,
+              "reraised": 0
+            },
+            "issues": 0
+          },
+          "memory": {
+            "source": "none",
+            "count": 0,
+            "why": "recalled (backend mcp iskron)",
+            "backend": "mcp iskron"
+          },
+          "notRun": []
+        },
+        "plan": "Triage failed: the Plan-phase agent returned no result. Re-run, or triage the findings manually."
+      }
+    },
+    {
+      "name": "a dead gather source",
+      "args": {
+        "report": "/r.md",
+        "pr": "7"
+      },
+      "answers": {
+        "report": {
+          "source": "rust-audit",
+          "findings": [
+            {
+              "severity": "Low",
+              "title": "nit",
+              "location": "",
+              "detail": "why nit",
+              "proposed_fix": "",
+              "thread_id": ""
+            }
+          ]
+        },
+        "pr": null,
+        "validate": {
+          "rust-audit::no-loc::nit": {
+            "stable_id": "rust-audit::no-loc::nit",
+            "verdict": "accept",
+            "reason": "accept on the code",
+            "fix_pointer": "",
+            "premise_checked": ""
+          }
+        },
+        "plan": {
+          "plan_markdown": "BODY",
+          "summary": "SUM",
+          "ledger": []
+        }
+      },
+      "expected": {
+        "prompts": {
+          "gather": {
+            "gather:report": "Read the review report at `/r.md`. Extract every finding into the schema. Set source to the engine that wrote the report, as the report names it: \"review\" (craft:review), \"adversarial-review\", \"rust-audit\", \"rust-reviewer\" (a single reviewer verdict) or \"nix-review\"; \"report\" when the report does not say. Copy severity/title/location/detail verbatim; leave proposed_fix and thread_id empty unless present. The report's `## Tool finding titles (verbatim)` section (also nested under `## Prior decisions in the nested reviews (verbatim)`) lists titles, not findings: never extract its rows as findings. For a finding at a `file:line` it lists, take the title from it — the listed title equal to the finding's line; or the only one listed there, but only when the report prints a single finding at that `file:line` (the section lists gate-tool findings only, so a lens finding at the same site is printed beside the tool's and must not take its title). When several findings are printed there, or several titles are listed and none is equal, keep the finding's own line, never a guess between them.",
+            "gather:pr": "Gather inline review comments from GitHub PR #7. Resolve the repo with `gh repo view --json owner,name`, then `gh api repos/{owner}/{repo}/pulls/7/comments --paginate`. For each UNRESOLVED, non-outdated review comment make one finding: title = short summary, location = `<path>:<line>` (path + line/original_line), detail = the comment body, thread_id = the comment/thread id, severity = your best estimate (Critical|High|Medium|Low|Info), proposed_fix = empty. Set source = \"github-pr\"."
+          },
+          "validate": {
+            "rust-audit::no-loc::nit": "Judge ONE review finding against the actual code. Validate against the currently checked-out tree.\n\nFinding (source: rust-audit):\n- severity: Low\n- location: (none given)\n- what: nit\n- why: why nit\n\n\n\nRead the cited code, then decide ONE verdict:\n- accept — a real, in-scope problem. fix_pointer = owning craft skill (rust-errors/rust-ownership/rust-concurrency/rust-security/rust-performance/rust-idioms/rust-testing/rust-unsafe) + a one-line fix direction.\n- reject — not a real problem / wrong; explain why (this becomes reviewer pushback).\n- defer — real but out of scope now; say why.\n- needs-decision — valid but needs a product/spec decision, OR the finding has no resolvable location; say what is needed.\n\nPREMISE DISCIPLINE: name the ONE claim your verdict rests on. If it lives outside the cited location — the dependency behaves this way, this is reachable from untrusted input, a caller already guards it, the sibling path does X — OPEN that code (dependency sources included) and record the file:line in premise_checked. This binds **reject** exactly as much as accept: \"a caller must already validate this\" waved through without opening the caller is the same unfounded claim as the finding it dismisses, and it silently discards a real bug. If you cannot open it, do not guess — verdict needs-decision, saying which premise is unverified. Finding a dependency's source: open the version the project pins, never the newest or a remembered one, and never let a tool rewrite the lockfile to find it. For a Rust crate, take the package's `manifest_path` from `cargo metadata --locked --format-version 1` — its directory is the source of the version Cargo.lock pins (under `~/.cargo/registry`, a git checkout, or the vendored tree); if that directory is missing, run `cargo fetch --locked` first. A build or test command run before you may already have written Cargo.lock: take the lockfile cargo uses, `Cargo.lock` under the `workspace_root` from `cargo metadata --no-deps --format-version 1`, and unless `git ls-files --error-unmatch <that path>` succeeds and `git status --porcelain <that path>` is empty, the version it names is resolved today, not pinned — say so. If the reviewed checkout has no Cargo.lock (a library that does not commit one), nothing is pinned: resolve in a throwaway copy (`git worktree add --detach <tmp>` of the reviewed commit, or, when a Cargo.toml has uncommitted changes, a copy of the working tree without `target/` and `.git`), run `cargo metadata --format-version 1` there, open the sources it names, and always remove the copy (`git worktree remove <tmp>` when you added one); say the version is the one resolved today, not a pinned one, and never write Cargo.lock in the reviewed checkout. If Cargo.lock exists but `--locked` refuses (it is stale), the pinned version cannot be determined — do not run cargo without the flag: treat the premise as one you could not open. For a Nix flake input, open the input at the revision flake.lock pins, not a channel or its current head. For another ecosystem, the same way: the version from the project's lockfile, the code from the package manager's cache or the vendor directory.\n\nNOISE CLASSES (noise_class; 0 when none applies — a defect of this change). They are judged on the code, never on the source's own label:\n1 — not this change's: the problem already stands at the PR's base (the diff did not bring it) or lies outside the change's task. Check it AT THE BASE, not by the reviewer's word (\"pre-existing\", \"out of scope\"): no prBase (the PR's fork point) was given to this triage, so it cannot be checked here — name the class all the same; a human decides it. Verdict defer when the problem is real — the triage carries it to an issue; reject when it is not (no issue is filed).\n2 — inflated severity: the claimed harm is unreachable or heals itself (a default requeue, only a metric). Judge the verdict on the merits and lower severity to what the code supports.\n3 — a repeat of a finding already decided — reject, naming it.\n4 — a deliberate trade-off written in the project's docs or rules — reject, naming where it is written.\n5 — not decidable from the code (a rollout step, a version you cannot verify) — needs-decision, not a fix.\n6 — an optional nicety in tests or comments — accept only when worth doing; it is planned apart from the defects.\nseverity: the source's severity unless the code supports another.\n\nstable_id MUST be exactly: rust-audit::no-loc::nit\nKeep reason to one line. fix_pointer empty unless verdict is accept."
+          },
+          "plan": "Turn validated review findings into ONE fix plan. Do not invent findings; only organise what is given. Ignore any ACCEPTED entry whose `finding` is null (a data glitch) — leave it out of the plan and note it in the summary.\n\n1. Dedup by stable_id (merge findings at the same location with the same fix).\n2. Detect conflicts — two findings demanding opposite changes. Mark each such finding verdict \"conflict\" in the ledger, DO NOT put it in the plan, and surface both in the summary for a human to decide.\n3. Group the remaining accepted findings by file; order groups blocking (Critical/High) → simple → complex, by the validator's `severity` (it may be lower than the source's). Accepted findings with noise_class 6 (optional, in tests or comments) go apart: one last task headed \"Optional (tests and comments)\", never mixed into the defect groups.\n4. Render plan_markdown as a checkbox-task plan: one task per file-group, bite-sized checkbox steps, each step naming the file and the owning craft skill; a bug fix starts with a RED→GREEN regression test. Mark independent file-groups as parallelisable (one subagent per group).\n5. ledger = EVERY finding (accept/reject/defer/needs-decision/conflict) keyed by stable_id with verdict + one-line reason — the SETTLED BEFORE VALIDATION rows below included, as given. Any reason containing \"NOT JUDGED\" or \"SIFTED BEFORE VALIDATION\" must be copied VERBATIM, marker included — that string is what tells a later re-run how this finding was settled; paraphrasing it makes the finding look judged on the code when it was not. summary = human-readable rundown of everything not in the plan; a deferral with action \"issue\" is named there as going to an issue on the forge (it is not this change's).\n\nACCEPTED (with their findings):\n[\n  {\n    \"stable_id\": \"rust-audit::no-loc::nit\",\n    \"verdict\": \"accept\",\n    \"reason\": \"accept on the code\",\n    \"fix_pointer\": \"\",\n    \"premise_checked\": \"\",\n    \"finding\": {\n      \"severity\": \"Low\",\n      \"title\": \"nit\",\n      \"location\": \"\",\n      \"detail\": \"why nit\",\n      \"proposed_fix\": \"\",\n      \"thread_id\": \"\",\n      \"source\": \"rust-audit\"\n    }\n  }\n]\n\nALL VERDICTS (include reject/defer/needs-decision in the ledger):\n[\n  {\n    \"stable_id\": \"rust-audit::no-loc::nit\",\n    \"verdict\": \"accept\",\n    \"reason\": \"accept on the code\",\n    \"fix_pointer\": \"\",\n    \"premise_checked\": \"\"\n  }\n]\n\nSETTLED BEFORE VALIDATION (repeats in this batch, and what the project memory already answered — final; into the ledger as given, never into the plan):\n[]"
+        },
+        "accepted": [
+          {
+            "stable_id": "rust-audit::no-loc::nit",
+            "verdict": "accept",
+            "reason": "accept on the code",
+            "fix_pointer": "",
+            "premise_checked": "",
+            "finding": {
+              "severity": "Low",
+              "title": "nit",
+              "location": "",
+              "detail": "why nit",
+              "proposed_fix": "",
+              "thread_id": "",
+              "source": "rust-audit"
+            }
+          }
+        ],
+        "validations": [
+          {
+            "stable_id": "rust-audit::no-loc::nit",
+            "verdict": "accept",
+            "reason": "accept on the code",
+            "fix_pointer": "",
+            "premise_checked": ""
+          }
+        ],
+        "sifted": [],
+        "record": {
+          "schemaVersion": 1,
+          "runtime": "claude-code",
+          "craftVersion": "0.58.0",
+          "kind": "workflow",
+          "name": "triage-findings",
+          "verdict": "",
+          "findings": {
+            "total": 1,
+            "bySeverity": {
+              "Critical": 0,
+              "High": 0,
+              "Medium": 0,
+              "Low": 1,
+              "Info": 0
+            }
+          },
+          "nested": false,
+          "via": null,
+          "sources": [
+            {
+              "source": "rust-audit",
+              "count": 1
+            }
+          ],
+          "triage": {
+            "gathered": 1,
+            "validated": 1,
+            "accept": 0,
+            "reject": 0,
+            "defer": 0,
+            "needs-decision": 0,
+            "conflict": 0,
+            "sifted": {
+              "repeats": 0,
+              "rejectedBefore": 0,
+              "deferred": 0,
+              "covered": 0,
+              "conflict": 0,
+              "reraised": 0
+            },
+            "issues": 0
+          },
+          "memory": {
+            "source": "none",
+            "count": 0,
+            "why": "not recalled — no gathered finding names a file"
+          },
+          "notRun": [
+            "gather:pr"
+          ]
+        },
+        "plan": {
+          "plan_markdown": "> **INCOMPLETE TRIAGE** — this plan does not cover everything that was asked for:\n> - source `pr` produced nothing — its findings are NOT in this plan\n\nBODY",
+          "summary": "INCOMPLETE: source `pr` produced nothing — its findings are NOT in this plan\n\nSUM",
+          "ledger": [],
+          "notRun": [
+            "source `pr` produced nothing — its findings are NOT in this plan"
+          ],
+          "memory": "memory: none — not recalled — no gathered finding names a file"
+        }
+      }
+    },
+    {
+      "name": "memory degraded",
+      "args": {
+        "pr": "9"
+      },
+      "answers": {
+        "pr": {
+          "source": "github-pr",
+          "findings": [
+            {
+              "severity": "Medium",
+              "title": "race on close",
+              "location": "src/b.rs:5",
+              "detail": "why race on close",
+              "proposed_fix": "",
+              "thread_id": "T1"
+            }
+          ]
+        },
+        "memoryRecall": {
+          "backend": "mcp iskron",
+          "why": "recalled",
+          "decisions": [],
+          "queryError": "iskron_search answered: not found"
+        },
+        "validate": {
+          "github-pr::src/b.rs:5::race on close": {
+            "stable_id": "github-pr::src/b.rs:5::race on close",
+            "verdict": "accept",
+            "reason": "accept on the code",
+            "fix_pointer": "",
+            "premise_checked": ""
+          }
+        },
+        "plan": {
+          "plan_markdown": "BODY",
+          "summary": "SUM",
+          "ledger": [
+            {
+              "stable_id": "github-pr::src/b.rs:5::race on close",
+              "verdict": "accept",
+              "reason": "real"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "prompts": {
+          "gather": {
+            "gather:pr": "Gather inline review comments from GitHub PR #9. Resolve the repo with `gh repo view --json owner,name`, then `gh api repos/{owner}/{repo}/pulls/9/comments --paginate`. For each UNRESOLVED, non-outdated review comment make one finding: title = short summary, location = `<path>:<line>` (path + line/original_line), detail = the comment body, thread_id = the comment/thread id, severity = your best estimate (Critical|High|Medium|Low|Info), proposed_fix = empty. Set source = \"github-pr\"."
+          },
+          "validate": {
+            "github-pr::src/b.rs:5::race on close": "Judge ONE review finding against the actual code. Validate against the currently checked-out tree.\n\nFinding (source: github-pr):\n- severity: Medium\n- location: src/b.rs:5\n- what: race on close\n- why: why race on close\n\n\n\nRead the cited code, then decide ONE verdict:\n- accept — a real, in-scope problem. fix_pointer = owning craft skill (rust-errors/rust-ownership/rust-concurrency/rust-security/rust-performance/rust-idioms/rust-testing/rust-unsafe) + a one-line fix direction.\n- reject — not a real problem / wrong; explain why (this becomes reviewer pushback).\n- defer — real but out of scope now; say why.\n- needs-decision — valid but needs a product/spec decision, OR the finding has no resolvable location; say what is needed.\n\nPREMISE DISCIPLINE: name the ONE claim your verdict rests on. If it lives outside the cited location — the dependency behaves this way, this is reachable from untrusted input, a caller already guards it, the sibling path does X — OPEN that code (dependency sources included) and record the file:line in premise_checked. This binds **reject** exactly as much as accept: \"a caller must already validate this\" waved through without opening the caller is the same unfounded claim as the finding it dismisses, and it silently discards a real bug. If you cannot open it, do not guess — verdict needs-decision, saying which premise is unverified. Finding a dependency's source: open the version the project pins, never the newest or a remembered one, and never let a tool rewrite the lockfile to find it. For a Rust crate, take the package's `manifest_path` from `cargo metadata --locked --format-version 1` — its directory is the source of the version Cargo.lock pins (under `~/.cargo/registry`, a git checkout, or the vendored tree); if that directory is missing, run `cargo fetch --locked` first. A build or test command run before you may already have written Cargo.lock: take the lockfile cargo uses, `Cargo.lock` under the `workspace_root` from `cargo metadata --no-deps --format-version 1`, and unless `git ls-files --error-unmatch <that path>` succeeds and `git status --porcelain <that path>` is empty, the version it names is resolved today, not pinned — say so. If the reviewed checkout has no Cargo.lock (a library that does not commit one), nothing is pinned: resolve in a throwaway copy (`git worktree add --detach <tmp>` of the reviewed commit, or, when a Cargo.toml has uncommitted changes, a copy of the working tree without `target/` and `.git`), run `cargo metadata --format-version 1` there, open the sources it names, and always remove the copy (`git worktree remove <tmp>` when you added one); say the version is the one resolved today, not a pinned one, and never write Cargo.lock in the reviewed checkout. If Cargo.lock exists but `--locked` refuses (it is stale), the pinned version cannot be determined — do not run cargo without the flag: treat the premise as one you could not open. For a Nix flake input, open the input at the revision flake.lock pins, not a channel or its current head. For another ecosystem, the same way: the version from the project's lockfile, the code from the package manager's cache or the vendor directory.\n\nNOISE CLASSES (noise_class; 0 when none applies — a defect of this change). They are judged on the code, never on the source's own label:\n1 — not this change's: the problem already stands at the PR's base (the diff did not bring it) or lies outside the change's task. Check it AT THE BASE, not by the reviewer's word (\"pre-existing\", \"out of scope\"): no prBase (the PR's fork point) was given to this triage, so it cannot be checked here — name the class all the same; a human decides it. Verdict defer when the problem is real — the triage carries it to an issue; reject when it is not (no issue is filed).\n2 — inflated severity: the claimed harm is unreachable or heals itself (a default requeue, only a metric). Judge the verdict on the merits and lower severity to what the code supports.\n3 — a repeat of a finding already decided — reject, naming it.\n4 — a deliberate trade-off written in the project's docs or rules — reject, naming where it is written.\n5 — not decidable from the code (a rollout step, a version you cannot verify) — needs-decision, not a fix.\n6 — an optional nicety in tests or comments — accept only when worth doing; it is planned apart from the defects.\nseverity: the source's severity unless the code supports another.\n\nstable_id MUST be exactly: github-pr::src/b.rs:5::race on close\nKeep reason to one line. fix_pointer empty unless verdict is accept."
+          },
+          "plan": "Turn validated review findings into ONE fix plan. Do not invent findings; only organise what is given. Ignore any ACCEPTED entry whose `finding` is null (a data glitch) — leave it out of the plan and note it in the summary.\n\n1. Dedup by stable_id (merge findings at the same location with the same fix).\n2. Detect conflicts — two findings demanding opposite changes. Mark each such finding verdict \"conflict\" in the ledger, DO NOT put it in the plan, and surface both in the summary for a human to decide.\n3. Group the remaining accepted findings by file; order groups blocking (Critical/High) → simple → complex, by the validator's `severity` (it may be lower than the source's). Accepted findings with noise_class 6 (optional, in tests or comments) go apart: one last task headed \"Optional (tests and comments)\", never mixed into the defect groups.\n4. Render plan_markdown as a checkbox-task plan: one task per file-group, bite-sized checkbox steps, each step naming the file and the owning craft skill; a bug fix starts with a RED→GREEN regression test. Mark independent file-groups as parallelisable (one subagent per group).\n5. ledger = EVERY finding (accept/reject/defer/needs-decision/conflict) keyed by stable_id with verdict + one-line reason — the SETTLED BEFORE VALIDATION rows below included, as given. Any reason containing \"NOT JUDGED\" or \"SIFTED BEFORE VALIDATION\" must be copied VERBATIM, marker included — that string is what tells a later re-run how this finding was settled; paraphrasing it makes the finding look judged on the code when it was not. summary = human-readable rundown of everything not in the plan; a deferral with action \"issue\" is named there as going to an issue on the forge (it is not this change's).\n\nACCEPTED (with their findings):\n[\n  {\n    \"stable_id\": \"github-pr::src/b.rs:5::race on close\",\n    \"verdict\": \"accept\",\n    \"reason\": \"accept on the code\",\n    \"fix_pointer\": \"\",\n    \"premise_checked\": \"\",\n    \"finding\": {\n      \"severity\": \"Medium\",\n      \"title\": \"race on close\",\n      \"location\": \"src/b.rs:5\",\n      \"detail\": \"why race on close\",\n      \"proposed_fix\": \"\",\n      \"thread_id\": \"T1\",\n      \"source\": \"github-pr\"\n    }\n  }\n]\n\nALL VERDICTS (include reject/defer/needs-decision in the ledger):\n[\n  {\n    \"stable_id\": \"github-pr::src/b.rs:5::race on close\",\n    \"verdict\": \"accept\",\n    \"reason\": \"accept on the code\",\n    \"fix_pointer\": \"\",\n    \"premise_checked\": \"\"\n  }\n]\n\nSETTLED BEFORE VALIDATION (repeats in this batch, and what the project memory already answered — final; into the ledger as given, never into the plan):\n[]"
+        },
+        "accepted": [
+          {
+            "stable_id": "github-pr::src/b.rs:5::race on close",
+            "verdict": "accept",
+            "reason": "accept on the code",
+            "fix_pointer": "",
+            "premise_checked": "",
+            "finding": {
+              "severity": "Medium",
+              "title": "race on close",
+              "location": "src/b.rs:5",
+              "detail": "why race on close",
+              "proposed_fix": "",
+              "thread_id": "T1",
+              "source": "github-pr"
+            }
+          }
+        ],
+        "validations": [
+          {
+            "stable_id": "github-pr::src/b.rs:5::race on close",
+            "verdict": "accept",
+            "reason": "accept on the code",
+            "fix_pointer": "",
+            "premise_checked": ""
+          }
+        ],
+        "sifted": [],
+        "record": {
+          "schemaVersion": 1,
+          "runtime": "claude-code",
+          "craftVersion": "0.58.0",
+          "kind": "workflow",
+          "name": "triage-findings",
+          "verdict": "",
+          "findings": {
+            "total": 1,
+            "bySeverity": {
+              "Critical": 0,
+              "High": 0,
+              "Medium": 1,
+              "Low": 0,
+              "Info": 0
+            }
+          },
+          "nested": false,
+          "via": null,
+          "sources": [
+            {
+              "source": "github-pr",
+              "count": 1
+            }
+          ],
+          "triage": {
+            "gathered": 1,
+            "validated": 1,
+            "accept": 1,
+            "reject": 0,
+            "defer": 0,
+            "needs-decision": 0,
+            "conflict": 0,
+            "sifted": {
+              "repeats": 0,
+              "rejectedBefore": 0,
+              "deferred": 0,
+              "covered": 0,
+              "conflict": 0,
+              "reraised": 0
+            },
+            "issues": 0
+          },
+          "memory": {
+            "source": "none",
+            "count": 0,
+            "why": "recalled; recall found nothing — backend query may have failed: iskron_search answered: not found (backend mcp iskron)",
+            "backend": "mcp iskron",
+            "queryError": "iskron_search answered: not found"
+          },
+          "notRun": []
+        },
+        "plan": {
+          "plan_markdown": "> **MEMORY DEGRADED** — the sift may have run without some or all of the project's records:\n> - memory: not read — recall found nothing, backend query may have failed: iskron_search answered: not found; none of the project's decisions or rules were applied\n\nBODY",
+          "summary": "SUM",
+          "ledger": [
+            {
+              "stable_id": "github-pr::src/b.rs:5::race on close",
+              "verdict": "accept",
+              "reason": "real"
+            }
+          ],
+          "memoryDegraded": [
+            "memory: not read — recall found nothing, backend query may have failed: iskron_search answered: not found; none of the project's decisions or rules were applied"
+          ],
+          "memory": "memory: not read — recalled; recall found nothing — backend query may have failed: iskron_search answered: not found (backend mcp iskron)"
+        }
+      }
+    },
+    {
+      "name": "repeats collapsed",
+      "args": {
+        "report": "/r.md",
+        "pr": "3"
+      },
+      "answers": {
+        "report": {
+          "source": "review",
+          "findings": [
+            {
+              "severity": "Medium",
+              "title": "memory leak",
+              "location": "src/a.rs:10",
+              "detail": "why memory leak",
+              "proposed_fix": "",
+              "thread_id": ""
+            },
+            {
+              "severity": "High",
+              "title": "leak of memory",
+              "location": "src/a.rs:12",
+              "detail": "why leak of memory",
+              "proposed_fix": "",
+              "thread_id": ""
+            },
+            {
+              "severity": "Medium",
+              "title": "unwrap on input",
+              "location": "src/c.rs:1",
+              "detail": "why unwrap on input",
+              "proposed_fix": "",
+              "thread_id": ""
+            },
+            {
+              "severity": "Medium",
+              "title": "unwrap on input",
+              "location": "src/c.rs:1",
+              "detail": "why unwrap on input",
+              "proposed_fix": "",
+              "thread_id": ""
+            }
+          ]
+        },
+        "pr": {
+          "source": "github-pr",
+          "findings": [
+            {
+              "severity": "Low",
+              "title": "close is racy",
+              "location": "src/b.rs:5",
+              "detail": "why close is racy",
+              "proposed_fix": "",
+              "thread_id": "T7"
+            },
+            {
+              "severity": "Info",
+              "title": "other words",
+              "location": "src/z.rs:90",
+              "detail": "why other words",
+              "proposed_fix": "",
+              "thread_id": "T7"
+            }
+          ]
+        },
+        "validate": {
+          "review::src/a.rs:12::leak of memory": {
+            "stable_id": "review::src/a.rs:12::leak of memory",
+            "verdict": "accept",
+            "reason": "accept on the code",
+            "fix_pointer": "",
+            "premise_checked": ""
+          },
+          "review::src/c.rs:1::unwrap on input": {
+            "stable_id": "review::src/c.rs:1::unwrap on input",
+            "verdict": "accept",
+            "reason": "accept on the code",
+            "fix_pointer": "",
+            "premise_checked": ""
+          },
+          "github-pr::src/b.rs:5::close is racy": {
+            "stable_id": "github-pr::src/b.rs:5::close is racy",
+            "verdict": "accept",
+            "reason": "accept on the code",
+            "fix_pointer": "",
+            "premise_checked": ""
+          }
+        },
+        "plan": {
+          "plan_markdown": "BODY",
+          "summary": "SUM",
+          "ledger": [
+            {
+              "stable_id": "review::src/a.rs:12::leak of memory",
+              "verdict": "accept",
+              "reason": "real"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "prompts": {
+          "gather": {
+            "gather:report": "Read the review report at `/r.md`. Extract every finding into the schema. Set source to the engine that wrote the report, as the report names it: \"review\" (craft:review), \"adversarial-review\", \"rust-audit\", \"rust-reviewer\" (a single reviewer verdict) or \"nix-review\"; \"report\" when the report does not say. Copy severity/title/location/detail verbatim; leave proposed_fix and thread_id empty unless present. The report's `## Tool finding titles (verbatim)` section (also nested under `## Prior decisions in the nested reviews (verbatim)`) lists titles, not findings: never extract its rows as findings. For a finding at a `file:line` it lists, take the title from it — the listed title equal to the finding's line; or the only one listed there, but only when the report prints a single finding at that `file:line` (the section lists gate-tool findings only, so a lens finding at the same site is printed beside the tool's and must not take its title). When several findings are printed there, or several titles are listed and none is equal, keep the finding's own line, never a guess between them.",
+            "gather:pr": "Gather inline review comments from GitHub PR #3. Resolve the repo with `gh repo view --json owner,name`, then `gh api repos/{owner}/{repo}/pulls/3/comments --paginate`. For each UNRESOLVED, non-outdated review comment make one finding: title = short summary, location = `<path>:<line>` (path + line/original_line), detail = the comment body, thread_id = the comment/thread id, severity = your best estimate (Critical|High|Medium|Low|Info), proposed_fix = empty. Set source = \"github-pr\"."
+          },
+          "validate": {
+            "review::src/a.rs:12::leak of memory": "Judge ONE review finding against the actual code. Validate against the currently checked-out tree.\n\nFinding (source: review):\n- severity: High\n- location: src/a.rs:12\n- what: leak of memory\n- why: why leak of memory\n\n\n\nRead the cited code, then decide ONE verdict:\n- accept — a real, in-scope problem. fix_pointer = owning craft skill (rust-errors/rust-ownership/rust-concurrency/rust-security/rust-performance/rust-idioms/rust-testing/rust-unsafe) + a one-line fix direction.\n- reject — not a real problem / wrong; explain why (this becomes reviewer pushback).\n- defer — real but out of scope now; say why.\n- needs-decision — valid but needs a product/spec decision, OR the finding has no resolvable location; say what is needed.\n\nPREMISE DISCIPLINE: name the ONE claim your verdict rests on. If it lives outside the cited location — the dependency behaves this way, this is reachable from untrusted input, a caller already guards it, the sibling path does X — OPEN that code (dependency sources included) and record the file:line in premise_checked. This binds **reject** exactly as much as accept: \"a caller must already validate this\" waved through without opening the caller is the same unfounded claim as the finding it dismisses, and it silently discards a real bug. If you cannot open it, do not guess — verdict needs-decision, saying which premise is unverified. Finding a dependency's source: open the version the project pins, never the newest or a remembered one, and never let a tool rewrite the lockfile to find it. For a Rust crate, take the package's `manifest_path` from `cargo metadata --locked --format-version 1` — its directory is the source of the version Cargo.lock pins (under `~/.cargo/registry`, a git checkout, or the vendored tree); if that directory is missing, run `cargo fetch --locked` first. A build or test command run before you may already have written Cargo.lock: take the lockfile cargo uses, `Cargo.lock` under the `workspace_root` from `cargo metadata --no-deps --format-version 1`, and unless `git ls-files --error-unmatch <that path>` succeeds and `git status --porcelain <that path>` is empty, the version it names is resolved today, not pinned — say so. If the reviewed checkout has no Cargo.lock (a library that does not commit one), nothing is pinned: resolve in a throwaway copy (`git worktree add --detach <tmp>` of the reviewed commit, or, when a Cargo.toml has uncommitted changes, a copy of the working tree without `target/` and `.git`), run `cargo metadata --format-version 1` there, open the sources it names, and always remove the copy (`git worktree remove <tmp>` when you added one); say the version is the one resolved today, not a pinned one, and never write Cargo.lock in the reviewed checkout. If Cargo.lock exists but `--locked` refuses (it is stale), the pinned version cannot be determined — do not run cargo without the flag: treat the premise as one you could not open. For a Nix flake input, open the input at the revision flake.lock pins, not a channel or its current head. For another ecosystem, the same way: the version from the project's lockfile, the code from the package manager's cache or the vendor directory.\n\nNOISE CLASSES (noise_class; 0 when none applies — a defect of this change). They are judged on the code, never on the source's own label:\n1 — not this change's: the problem already stands at the PR's base (the diff did not bring it) or lies outside the change's task. Check it AT THE BASE, not by the reviewer's word (\"pre-existing\", \"out of scope\"): no prBase (the PR's fork point) was given to this triage, so it cannot be checked here — name the class all the same; a human decides it. Verdict defer when the problem is real — the triage carries it to an issue; reject when it is not (no issue is filed).\n2 — inflated severity: the claimed harm is unreachable or heals itself (a default requeue, only a metric). Judge the verdict on the merits and lower severity to what the code supports.\n3 — a repeat of a finding already decided — reject, naming it.\n4 — a deliberate trade-off written in the project's docs or rules — reject, naming where it is written.\n5 — not decidable from the code (a rollout step, a version you cannot verify) — needs-decision, not a fix.\n6 — an optional nicety in tests or comments — accept only when worth doing; it is planned apart from the defects.\nseverity: the source's severity unless the code supports another.\n\nstable_id MUST be exactly: review::src/a.rs:12::leak of memory\nKeep reason to one line. fix_pointer empty unless verdict is accept.",
+            "review::src/c.rs:1::unwrap on input": "Judge ONE review finding against the actual code. Validate against the currently checked-out tree.\n\nFinding (source: review):\n- severity: Medium\n- location: src/c.rs:1\n- what: unwrap on input\n- why: why unwrap on input\n\n\n\nRead the cited code, then decide ONE verdict:\n- accept — a real, in-scope problem. fix_pointer = owning craft skill (rust-errors/rust-ownership/rust-concurrency/rust-security/rust-performance/rust-idioms/rust-testing/rust-unsafe) + a one-line fix direction.\n- reject — not a real problem / wrong; explain why (this becomes reviewer pushback).\n- defer — real but out of scope now; say why.\n- needs-decision — valid but needs a product/spec decision, OR the finding has no resolvable location; say what is needed.\n\nPREMISE DISCIPLINE: name the ONE claim your verdict rests on. If it lives outside the cited location — the dependency behaves this way, this is reachable from untrusted input, a caller already guards it, the sibling path does X — OPEN that code (dependency sources included) and record the file:line in premise_checked. This binds **reject** exactly as much as accept: \"a caller must already validate this\" waved through without opening the caller is the same unfounded claim as the finding it dismisses, and it silently discards a real bug. If you cannot open it, do not guess — verdict needs-decision, saying which premise is unverified. Finding a dependency's source: open the version the project pins, never the newest or a remembered one, and never let a tool rewrite the lockfile to find it. For a Rust crate, take the package's `manifest_path` from `cargo metadata --locked --format-version 1` — its directory is the source of the version Cargo.lock pins (under `~/.cargo/registry`, a git checkout, or the vendored tree); if that directory is missing, run `cargo fetch --locked` first. A build or test command run before you may already have written Cargo.lock: take the lockfile cargo uses, `Cargo.lock` under the `workspace_root` from `cargo metadata --no-deps --format-version 1`, and unless `git ls-files --error-unmatch <that path>` succeeds and `git status --porcelain <that path>` is empty, the version it names is resolved today, not pinned — say so. If the reviewed checkout has no Cargo.lock (a library that does not commit one), nothing is pinned: resolve in a throwaway copy (`git worktree add --detach <tmp>` of the reviewed commit, or, when a Cargo.toml has uncommitted changes, a copy of the working tree without `target/` and `.git`), run `cargo metadata --format-version 1` there, open the sources it names, and always remove the copy (`git worktree remove <tmp>` when you added one); say the version is the one resolved today, not a pinned one, and never write Cargo.lock in the reviewed checkout. If Cargo.lock exists but `--locked` refuses (it is stale), the pinned version cannot be determined — do not run cargo without the flag: treat the premise as one you could not open. For a Nix flake input, open the input at the revision flake.lock pins, not a channel or its current head. For another ecosystem, the same way: the version from the project's lockfile, the code from the package manager's cache or the vendor directory.\n\nNOISE CLASSES (noise_class; 0 when none applies — a defect of this change). They are judged on the code, never on the source's own label:\n1 — not this change's: the problem already stands at the PR's base (the diff did not bring it) or lies outside the change's task. Check it AT THE BASE, not by the reviewer's word (\"pre-existing\", \"out of scope\"): no prBase (the PR's fork point) was given to this triage, so it cannot be checked here — name the class all the same; a human decides it. Verdict defer when the problem is real — the triage carries it to an issue; reject when it is not (no issue is filed).\n2 — inflated severity: the claimed harm is unreachable or heals itself (a default requeue, only a metric). Judge the verdict on the merits and lower severity to what the code supports.\n3 — a repeat of a finding already decided — reject, naming it.\n4 — a deliberate trade-off written in the project's docs or rules — reject, naming where it is written.\n5 — not decidable from the code (a rollout step, a version you cannot verify) — needs-decision, not a fix.\n6 — an optional nicety in tests or comments — accept only when worth doing; it is planned apart from the defects.\nseverity: the source's severity unless the code supports another.\n\nstable_id MUST be exactly: review::src/c.rs:1::unwrap on input\nKeep reason to one line. fix_pointer empty unless verdict is accept.",
+            "github-pr::src/b.rs:5::close is racy": "Judge ONE review finding against the actual code. Validate against the currently checked-out tree.\n\nFinding (source: github-pr):\n- severity: Low\n- location: src/b.rs:5\n- what: close is racy\n- why: why close is racy\n\n\n\nRead the cited code, then decide ONE verdict:\n- accept — a real, in-scope problem. fix_pointer = owning craft skill (rust-errors/rust-ownership/rust-concurrency/rust-security/rust-performance/rust-idioms/rust-testing/rust-unsafe) + a one-line fix direction.\n- reject — not a real problem / wrong; explain why (this becomes reviewer pushback).\n- defer — real but out of scope now; say why.\n- needs-decision — valid but needs a product/spec decision, OR the finding has no resolvable location; say what is needed.\n\nPREMISE DISCIPLINE: name the ONE claim your verdict rests on. If it lives outside the cited location — the dependency behaves this way, this is reachable from untrusted input, a caller already guards it, the sibling path does X — OPEN that code (dependency sources included) and record the file:line in premise_checked. This binds **reject** exactly as much as accept: \"a caller must already validate this\" waved through without opening the caller is the same unfounded claim as the finding it dismisses, and it silently discards a real bug. If you cannot open it, do not guess — verdict needs-decision, saying which premise is unverified. Finding a dependency's source: open the version the project pins, never the newest or a remembered one, and never let a tool rewrite the lockfile to find it. For a Rust crate, take the package's `manifest_path` from `cargo metadata --locked --format-version 1` — its directory is the source of the version Cargo.lock pins (under `~/.cargo/registry`, a git checkout, or the vendored tree); if that directory is missing, run `cargo fetch --locked` first. A build or test command run before you may already have written Cargo.lock: take the lockfile cargo uses, `Cargo.lock` under the `workspace_root` from `cargo metadata --no-deps --format-version 1`, and unless `git ls-files --error-unmatch <that path>` succeeds and `git status --porcelain <that path>` is empty, the version it names is resolved today, not pinned — say so. If the reviewed checkout has no Cargo.lock (a library that does not commit one), nothing is pinned: resolve in a throwaway copy (`git worktree add --detach <tmp>` of the reviewed commit, or, when a Cargo.toml has uncommitted changes, a copy of the working tree without `target/` and `.git`), run `cargo metadata --format-version 1` there, open the sources it names, and always remove the copy (`git worktree remove <tmp>` when you added one); say the version is the one resolved today, not a pinned one, and never write Cargo.lock in the reviewed checkout. If Cargo.lock exists but `--locked` refuses (it is stale), the pinned version cannot be determined — do not run cargo without the flag: treat the premise as one you could not open. For a Nix flake input, open the input at the revision flake.lock pins, not a channel or its current head. For another ecosystem, the same way: the version from the project's lockfile, the code from the package manager's cache or the vendor directory.\n\nNOISE CLASSES (noise_class; 0 when none applies — a defect of this change). They are judged on the code, never on the source's own label:\n1 — not this change's: the problem already stands at the PR's base (the diff did not bring it) or lies outside the change's task. Check it AT THE BASE, not by the reviewer's word (\"pre-existing\", \"out of scope\"): no prBase (the PR's fork point) was given to this triage, so it cannot be checked here — name the class all the same; a human decides it. Verdict defer when the problem is real — the triage carries it to an issue; reject when it is not (no issue is filed).\n2 — inflated severity: the claimed harm is unreachable or heals itself (a default requeue, only a metric). Judge the verdict on the merits and lower severity to what the code supports.\n3 — a repeat of a finding already decided — reject, naming it.\n4 — a deliberate trade-off written in the project's docs or rules — reject, naming where it is written.\n5 — not decidable from the code (a rollout step, a version you cannot verify) — needs-decision, not a fix.\n6 — an optional nicety in tests or comments — accept only when worth doing; it is planned apart from the defects.\nseverity: the source's severity unless the code supports another.\n\nstable_id MUST be exactly: github-pr::src/b.rs:5::close is racy\nKeep reason to one line. fix_pointer empty unless verdict is accept."
+          },
+          "plan": "Turn validated review findings into ONE fix plan. Do not invent findings; only organise what is given. Ignore any ACCEPTED entry whose `finding` is null (a data glitch) — leave it out of the plan and note it in the summary.\n\n1. Dedup by stable_id (merge findings at the same location with the same fix).\n2. Detect conflicts — two findings demanding opposite changes. Mark each such finding verdict \"conflict\" in the ledger, DO NOT put it in the plan, and surface both in the summary for a human to decide.\n3. Group the remaining accepted findings by file; order groups blocking (Critical/High) → simple → complex, by the validator's `severity` (it may be lower than the source's). Accepted findings with noise_class 6 (optional, in tests or comments) go apart: one last task headed \"Optional (tests and comments)\", never mixed into the defect groups.\n4. Render plan_markdown as a checkbox-task plan: one task per file-group, bite-sized checkbox steps, each step naming the file and the owning craft skill; a bug fix starts with a RED→GREEN regression test. Mark independent file-groups as parallelisable (one subagent per group).\n5. ledger = EVERY finding (accept/reject/defer/needs-decision/conflict) keyed by stable_id with verdict + one-line reason — the SETTLED BEFORE VALIDATION rows below included, as given. Any reason containing \"NOT JUDGED\" or \"SIFTED BEFORE VALIDATION\" must be copied VERBATIM, marker included — that string is what tells a later re-run how this finding was settled; paraphrasing it makes the finding look judged on the code when it was not. summary = human-readable rundown of everything not in the plan; a deferral with action \"issue\" is named there as going to an issue on the forge (it is not this change's).\n\nACCEPTED (with their findings):\n[\n  {\n    \"stable_id\": \"review::src/a.rs:12::leak of memory\",\n    \"verdict\": \"accept\",\n    \"reason\": \"accept on the code\",\n    \"fix_pointer\": \"\",\n    \"premise_checked\": \"\",\n    \"finding\": {\n      \"severity\": \"High\",\n      \"title\": \"leak of memory\",\n      \"location\": \"src/a.rs:12\",\n      \"detail\": \"why leak of memory\",\n      \"proposed_fix\": \"\",\n      \"thread_id\": \"\",\n      \"source\": \"review\"\n    }\n  },\n  {\n    \"stable_id\": \"review::src/c.rs:1::unwrap on input\",\n    \"verdict\": \"accept\",\n    \"reason\": \"accept on the code\",\n    \"fix_pointer\": \"\",\n    \"premise_checked\": \"\",\n    \"finding\": {\n      \"severity\": \"Medium\",\n      \"title\": \"unwrap on input\",\n      \"location\": \"src/c.rs:1\",\n      \"detail\": \"why unwrap on input\",\n      \"proposed_fix\": \"\",\n      \"thread_id\": \"\",\n      \"source\": \"review\"\n    }\n  },\n  {\n    \"stable_id\": \"github-pr::src/b.rs:5::close is racy\",\n    \"verdict\": \"accept\",\n    \"reason\": \"accept on the code\",\n    \"fix_pointer\": \"\",\n    \"premise_checked\": \"\",\n    \"finding\": {\n      \"severity\": \"Low\",\n      \"title\": \"close is racy\",\n      \"location\": \"src/b.rs:5\",\n      \"detail\": \"why close is racy\",\n      \"proposed_fix\": \"\",\n      \"thread_id\": \"T7\",\n      \"source\": \"github-pr\"\n    }\n  }\n]\n\nALL VERDICTS (include reject/defer/needs-decision in the ledger):\n[\n  {\n    \"stable_id\": \"review::src/a.rs:12::leak of memory\",\n    \"verdict\": \"accept\",\n    \"reason\": \"accept on the code\",\n    \"fix_pointer\": \"\",\n    \"premise_checked\": \"\"\n  },\n  {\n    \"stable_id\": \"review::src/c.rs:1::unwrap on input\",\n    \"verdict\": \"accept\",\n    \"reason\": \"accept on the code\",\n    \"fix_pointer\": \"\",\n    \"premise_checked\": \"\"\n  },\n  {\n    \"stable_id\": \"github-pr::src/b.rs:5::close is racy\",\n    \"verdict\": \"accept\",\n    \"reason\": \"accept on the code\",\n    \"fix_pointer\": \"\",\n    \"premise_checked\": \"\"\n  }\n]\n\nSETTLED BEFORE VALIDATION (repeats in this batch, and what the project memory already answered — final; into the ledger as given, never into the plan):\n[\n  {\n    \"stable_id\": \"review::src/a.rs:10::memory leak\",\n    \"verdict\": \"reject\",\n    \"sifted\": true,\n    \"repeat_of\": \"review::src/a.rs:12::leak of memory\",\n    \"reason\": \"SIFTED BEFORE VALIDATION — repeats review::src/a.rs:12::leak of memory in this batch (same site, same title words); judged there\"\n  },\n  {\n    \"stable_id\": \"github-pr::src/z.rs:90::other words\",\n    \"verdict\": \"reject\",\n    \"sifted\": true,\n    \"repeat_of\": \"github-pr::src/b.rs:5::close is racy\",\n    \"reason\": \"SIFTED BEFORE VALIDATION — repeats github-pr::src/b.rs:5::close is racy in this batch (same site, same title words); judged there\"\n  }\n]"
+        },
+        "accepted": [
+          {
+            "stable_id": "review::src/a.rs:12::leak of memory",
+            "verdict": "accept",
+            "reason": "accept on the code",
+            "fix_pointer": "",
+            "premise_checked": "",
+            "finding": {
+              "severity": "High",
+              "title": "leak of memory",
+              "location": "src/a.rs:12",
+              "detail": "why leak of memory",
+              "proposed_fix": "",
+              "thread_id": "",
+              "source": "review"
+            }
+          },
+          {
+            "stable_id": "review::src/c.rs:1::unwrap on input",
+            "verdict": "accept",
+            "reason": "accept on the code",
+            "fix_pointer": "",
+            "premise_checked": "",
+            "finding": {
+              "severity": "Medium",
+              "title": "unwrap on input",
+              "location": "src/c.rs:1",
+              "detail": "why unwrap on input",
+              "proposed_fix": "",
+              "thread_id": "",
+              "source": "review"
+            }
+          },
+          {
+            "stable_id": "github-pr::src/b.rs:5::close is racy",
+            "verdict": "accept",
+            "reason": "accept on the code",
+            "fix_pointer": "",
+            "premise_checked": "",
+            "finding": {
+              "severity": "Low",
+              "title": "close is racy",
+              "location": "src/b.rs:5",
+              "detail": "why close is racy",
+              "proposed_fix": "",
+              "thread_id": "T7",
+              "source": "github-pr"
+            }
+          }
+        ],
+        "validations": [
+          {
+            "stable_id": "review::src/a.rs:12::leak of memory",
+            "verdict": "accept",
+            "reason": "accept on the code",
+            "fix_pointer": "",
+            "premise_checked": ""
+          },
+          {
+            "stable_id": "review::src/c.rs:1::unwrap on input",
+            "verdict": "accept",
+            "reason": "accept on the code",
+            "fix_pointer": "",
+            "premise_checked": ""
+          },
+          {
+            "stable_id": "github-pr::src/b.rs:5::close is racy",
+            "verdict": "accept",
+            "reason": "accept on the code",
+            "fix_pointer": "",
+            "premise_checked": ""
+          }
+        ],
+        "sifted": [
+          {
+            "stable_id": "review::src/a.rs:10::memory leak",
+            "verdict": "reject",
+            "sifted": true,
+            "repeat_of": "review::src/a.rs:12::leak of memory",
+            "reason": "SIFTED BEFORE VALIDATION — repeats review::src/a.rs:12::leak of memory in this batch (same site, same title words); judged there"
+          },
+          {
+            "stable_id": "github-pr::src/z.rs:90::other words",
+            "verdict": "reject",
+            "sifted": true,
+            "repeat_of": "github-pr::src/b.rs:5::close is racy",
+            "reason": "SIFTED BEFORE VALIDATION — repeats github-pr::src/b.rs:5::close is racy in this batch (same site, same title words); judged there"
+          }
+        ],
+        "record": {
+          "schemaVersion": 1,
+          "runtime": "claude-code",
+          "craftVersion": "0.58.0",
+          "kind": "workflow",
+          "name": "triage-findings",
+          "verdict": "",
+          "findings": {
+            "total": 6,
+            "bySeverity": {
+              "Critical": 0,
+              "High": 1,
+              "Medium": 3,
+              "Low": 1,
+              "Info": 1
+            }
+          },
+          "nested": false,
+          "via": null,
+          "sources": [
+            {
+              "source": "review",
+              "count": 4
+            },
+            {
+              "source": "github-pr",
+              "count": 2
+            }
+          ],
+          "triage": {
+            "gathered": 6,
+            "validated": 3,
+            "accept": 1,
+            "reject": 2,
+            "defer": 0,
+            "needs-decision": 0,
+            "conflict": 0,
+            "sifted": {
+              "repeats": 2,
+              "rejectedBefore": 0,
+              "deferred": 0,
+              "covered": 0,
+              "conflict": 0,
+              "reraised": 0
+            },
+            "issues": 0
+          },
+          "memory": {
+            "source": "none",
+            "count": 0,
+            "why": "recalled (backend mcp iskron)",
+            "backend": "mcp iskron"
+          },
+          "notRun": []
+        },
+        "plan": {
+          "plan_markdown": "BODY",
+          "summary": "SUM",
+          "ledger": [
+            {
+              "stable_id": "review::src/a.rs:12::leak of memory",
+              "verdict": "accept",
+              "reason": "real"
+            },
+            {
+              "stable_id": "review::src/a.rs:10::memory leak",
+              "verdict": "reject",
+              "reason": "SIFTED BEFORE VALIDATION — repeats review::src/a.rs:12::leak of memory in this batch (same site, same title words); judged there",
+              "sifted": true,
+              "repeat_of": "review::src/a.rs:12::leak of memory"
+            },
+            {
+              "stable_id": "github-pr::src/z.rs:90::other words",
+              "verdict": "reject",
+              "reason": "SIFTED BEFORE VALIDATION — repeats github-pr::src/b.rs:5::close is racy in this batch (same site, same title words); judged there",
+              "sifted": true,
+              "repeat_of": "github-pr::src/b.rs:5::close is racy"
+            }
+          ],
+          "memory": "memory: none — recalled (backend mcp iskron)"
+        }
+      }
+    }
+  ]
+}
