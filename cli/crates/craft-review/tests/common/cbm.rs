@@ -4,7 +4,10 @@ use std::path::{Path, PathBuf};
 
 use craft_review::project::{self, CodeGraph, ProjectProfile};
 use craft_review::sources::{Git, SourcesSetup};
-use craft_review::step::StartOptions;
+use craft_review::step::{self, StartOptions};
+use serde_json::{Value, json};
+
+use super::{fixture, git, ids, lens, opts, scout, submit};
 
 /// `opts`, its profiles under `out/projects`; with `tool`, the profile records it as the code
 /// graph (indexing a project of the reviewer's own, `theirs`); `probe` the program a review asks
@@ -68,4 +71,45 @@ pub fn stand_in_answering(
     );
     super::exe::write_executable(&tool, &script).unwrap();
     (tool, log)
+}
+
+/// A finished run over a change adding `files` (path, text) to the fixture, whose code graph
+/// answers the metrics question over `web/app.ts` with `metrics` and its probe with `probe` (shell;
+/// `None`: one function's numbers, one function found), the scout picking `picks` and every lens
+/// answering nothing.
+pub fn finished_over(
+    files: &[(&str, &str)],
+    (metrics, probe): (Option<&str>, Option<&str>),
+    picks: &[&str],
+) -> Value {
+    let repo = fixture(false);
+    let d = repo.path();
+    for (file, text) in files {
+        let path = d.join(file);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, text).unwrap();
+    }
+    git(d, &["add", "."]);
+    git(d, &["commit", "-qm", "feat: f"]);
+    let out = tempfile::tempdir().unwrap();
+    let graphs = tempfile::tempdir().unwrap();
+    let (tool, _) = stand_in_answering(graphs.path(), d, (metrics, probe));
+    let unused = out.path().join("unused");
+    let o = with_profile(opts(d, out.path()), out.path(), (Some(&tool), &unused));
+    step::start(&o).unwrap();
+    let run = out.path().join("run");
+    let mut s = submit(&run, json!({"scout-general": scout("medium", picks)}));
+    while s["done"] == json!(false) {
+        let answers: serde_json::Map<String, Value> = ids(&s)
+            .into_iter()
+            .map(|id| {
+                let name = id.strip_prefix("lens-general-").unwrap();
+                let name = name.split('-').next().unwrap().to_owned();
+                (id, lens(&name, &[]))
+            })
+            .collect();
+        s = submit(&run, Value::Object(answers));
+    }
+    let _keep = (out.keep(), graphs.keep(), repo);
+    s
 }

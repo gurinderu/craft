@@ -12,8 +12,6 @@ mod common;
 
 use std::path::Path;
 
-use common::{fixture, git, ids, lens, opts, scout, submit};
-use craft_review::step;
 use serde_json::{Value, json};
 
 /// A finished run over a TypeScript change whose code graph answers the metrics question with
@@ -30,38 +28,8 @@ fn finished_probed(metrics: Option<&str>, probe: Option<&str>) -> Value {
 /// [`finished`], the graph's probe for any function's numbers answered by `probe` when given and
 /// the scout picking `picks`.
 fn finished_picking(metrics: Option<&str>, probe: Option<&str>, picks: &[&str]) -> Value {
-    let repo = fixture(false);
-    let d = repo.path();
-    std::fs::create_dir_all(d.join("web")).unwrap();
-    std::fs::write(d.join("web/app.ts"), "export const f = () => 1\n").unwrap();
-    git(d, &["add", "."]);
-    git(d, &["commit", "-qm", "feat: f"]);
-    let out = tempfile::tempdir().unwrap();
-    let graphs = tempfile::tempdir().unwrap();
-    let (tool, _) = common::cbm::stand_in_answering(graphs.path(), d, (metrics, probe));
-    let unused = out.path().join("unused");
-    let o = common::cbm::with_profile(opts(d, out.path()), out.path(), (Some(&tool), &unused));
-    step::start(&o).unwrap();
-    let run = out.path().join("run");
-    let mut s = submit(&run, json!({"scout-general": scout("medium", picks)}));
-    while s["done"] == json!(false) {
-        let answers: serde_json::Map<String, Value> = ids(&s)
-            .into_iter()
-            .map(|id| {
-                let name = id
-                    .strip_prefix("lens-general-")
-                    .unwrap()
-                    .split('-')
-                    .next()
-                    .unwrap();
-                let name = name.to_owned();
-                (id, lens(&name, &[]))
-            })
-            .collect();
-        s = submit(&run, Value::Object(answers));
-    }
-    let _keep = (out.keep(), graphs.keep(), repo);
-    s
+    let app = [("web/app.ts", "export const f = () => 1\n")];
+    common::cbm::finished_over(&app, (metrics, probe), picks)
 }
 
 fn report(s: &Value) -> String {

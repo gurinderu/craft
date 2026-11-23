@@ -21,7 +21,7 @@ mod table;
 pub use look::{Look, gap as look_gap, look};
 pub(crate) use metrics::{COUNTS, FLAGS};
 pub use metrics::{findings_schema, sift, values};
-pub use table::{lens_table, rows_of};
+pub use table::{lens_table, rows_of, unmeasured};
 
 /// Whether `profile` has a lens that needs the index.
 #[must_use]
@@ -37,20 +37,22 @@ pub fn project(repo: &str) -> Option<String> {
     crate::consumers::craft_project(std::path::Path::new(repo)).ok()
 }
 
-/// Whether the metrics-or-nothing lenses may run, from what the binary found when it indexed the
-/// graph beside the consumers list and read the numbers of the functions the change touches (no
-/// agent indexes, warms or asks it: node #529 — the lenses judge from the numbers in their prompt),
-/// as [`look`] decides it, and the note when they may not: why the index was unavailable, or that
-/// there was nothing to judge; `None` when no profile taking part has one (`wanted` false). A lens
-/// that could not look gets no note: it is named once, as a coverage gap ([`look_gap`]).
+/// Whether the metrics-or-nothing lenses may run: only on numbers the binary read itself when it
+/// indexed the graph beside the consumers list (no agent indexes, warms or asks it: node #529 — the
+/// lenses judge from the numbers in their prompt), that is when [`look`] says [`Look::Measured`].
 #[must_use]
-pub fn indexed(ctx: &PromptContext, wanted: bool) -> Option<(bool, Option<String>)> {
-    if !wanted {
-        return None;
-    }
-    let note = match look(ctx) {
-        Some(Look::Measured) => return Some((true, None)),
-        Some(Look::CouldNotLook(_)) => return Some((false, None)),
+pub fn ready(look: Option<&Look>) -> bool {
+    matches!(look, Some(Look::Measured))
+}
+
+/// The note on why the metrics-or-nothing lenses may not run, `look` being what [`look`] decided
+/// for `ctx`: why the index was unavailable, or that there was nothing to judge; `None` when they
+/// run. A lens that could not look gets no note: it is named once, as a coverage gap
+/// ([`look_gap`]). Asked only when a profile taking part has such a lens ([`wanted`]).
+#[must_use]
+pub fn note(ctx: &PromptContext, look: Option<&Look>) -> Option<String> {
+    Some(match look {
+        Some(Look::Measured | Look::CouldNotLook(_)) => return None,
         Some(Look::NothingToJudge(what)) => format!(
             "the complexity lens did not run: {what} -> the metrics-or-nothing lenses had nothing \
              to judge"
@@ -60,8 +62,7 @@ pub fn indexed(ctx: &PromptContext, wanted: bool) -> Option<(bool, Option<String
              metrics-or-nothing lenses dropped",
             prompts::sanitize(unavailable(ctx))
         ),
-    };
-    Some((false, Some(note)))
+    })
 }
 
 /// Why the index was not ready to read the numbers from.

@@ -5,6 +5,7 @@ use serde_json::Value;
 
 use crate::consumers::{Consumers, Measured};
 use crate::profile::{Profile, literal_pathspec};
+use crate::prompts::PromptContext;
 
 /// How many functions one lens's table shows.
 const SHOWN: usize = 200;
@@ -40,15 +41,39 @@ fn in_part(profile: &Profile, pathspec: &str, file: &str) -> bool {
     }
 }
 
+/// The measured functions in the part of the change `pathspec` names for `profile`.
+fn mine<'c>(c: &'c Consumers, profile: &Profile, pathspec: &str) -> Vec<&'c Measured> {
+    c.metrics
+        .iter()
+        .filter(|m| in_part(profile, pathspec, &m.file))
+        .collect()
+}
+
+/// The degraded note of a run whose metrics lenses, one over each of `parts` (a profile and its
+/// files), judge part of the change without its numbers: the files not wholly read, and the
+/// functions past the [`SHOWN`] a lens's table holds; `None` when every function touched is shown.
+#[must_use]
+pub fn unmeasured(ctx: &PromptContext, parts: &[(&Profile, &[String])]) -> Option<String> {
+    if parts.is_empty() {
+        return None;
+    }
+    let c = &ctx.consumers;
+    let cut = parts
+        .iter()
+        .map(|(p, files)| {
+            mine(c, p, &ctx.pathspec(p, files))
+                .len()
+                .saturating_sub(SHOWN)
+        })
+        .sum();
+    super::look::unmeasured(&c.metrics_unread, cut, SHOWN)
+}
+
 /// The table of a metrics lens of `profile` over the part `pathspec` names: each measured
 /// function there, at most [`SHOWN`], then the files whose functions were not read.
 #[must_use]
 pub fn lens_table(c: &Consumers, profile: &Profile, pathspec: &str) -> String {
-    let mine: Vec<&Measured> = c
-        .metrics
-        .iter()
-        .filter(|m| in_part(profile, pathspec, &m.file))
-        .collect();
+    let mine = mine(c, profile, pathspec);
     let mut out: Vec<String> = mine.iter().take(SHOWN).map(|m| line(m)).collect();
     if mine.len() > SHOWN {
         out.push(format!(

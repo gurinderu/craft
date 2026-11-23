@@ -9,10 +9,11 @@ pub enum Look {
     /// Some function the change touches has its numbers: the lens runs. Files beside them not
     /// wholly read are named in its table; that is no coverage gap.
     Measured,
-    /// The read went through and no function the change touches came back, and the graph's probe
-    /// found numbers elsewhere, so its properties are as asked: the files hold none (types,
-    /// re-exports, constants; realm @nick/craft, node #613). A note, no gap: the verdict may
-    /// approve.
+    /// The read went through and no function the change touches came back: each file asked
+    /// answered none and the graph's probe found numbers elsewhere, so its properties are as asked
+    /// and the files hold none (types, re-exports, constants; realm @nick/craft, node #613) — or no
+    /// file was asked at all (every changed file inert or without changed lines), and no probe
+    /// ran. A note, no gap: the verdict may approve.
     NothingToJudge(String),
     /// The read failed, or nothing was measured and files went unread: there may be functions it
     /// never saw. A coverage gap, capping the verdict at Warning; why, with each file.
@@ -81,6 +82,30 @@ fn listed(items: &[String], sep: &str) -> String {
         text.push_str(&format!(" +{} more", items.len() - FILES_SHOWN));
     }
     text
+}
+
+/// The degraded note of a measured run whose lens judges part of the change without its numbers:
+/// the `unread` files, then the `cut` functions past the `shown` its table holds; `None` when
+/// neither. Not a gap: what was measured is judged, and the verdict stands.
+pub(super) fn unmeasured(unread: &[String], cut: usize, shown: usize) -> Option<String> {
+    let mut what = Vec::new();
+    if !unread.is_empty() {
+        what.push(format!(
+            "files not wholly read, their functions unmeasured: {}",
+            listed(unread, " · ")
+        ));
+    }
+    if cut > 0 {
+        what.push(format!(
+            "{cut} function(s) past the {shown} its table shows, unjudged"
+        ));
+    }
+    (!what.is_empty()).then(|| {
+        format!(
+            "the complexity lens judged part of the change without the code graph's numbers — {}",
+            what.join("; ")
+        )
+    })
 }
 
 /// The coverage gap `look` files when the lens could not look, as "Not run" names it.

@@ -82,12 +82,15 @@ fn carries(f: &mut Value) -> bool {
     !read.is_empty()
 }
 
-/// Keeps, in each answered task of a metrics lens among `tasks`, only the findings that carry a
-/// metric value, each stating them; returns the notes on what was dropped.
+/// Keeps, in each answered task of a metrics lens among `tasks` — a round's or one the critic
+/// admitted —, only the findings that carry a metric value, each stating them; returns the notes
+/// on what was dropped.
 pub fn sift(tasks: &mut [Task], profiles: &[Profile]) -> Vec<String> {
     let mut notes = Vec::new();
     for t in tasks.iter_mut().filter(|t| t.state == TaskState::Answered) {
-        let TaskKind::Lens { profile, lens, .. } = &t.kind else {
+        let (TaskKind::Lens { profile, lens, .. } | TaskKind::CriticLens { profile, lens }) =
+            &t.kind
+        else {
             continue;
         };
         let metrics_lens = profiles

@@ -135,6 +135,8 @@ pub(crate) fn advance(dir: &Path, run: &mut RunState) -> Result<(), Error> {
         Phase::Critic => critic::answered(dir, run, &profiles),
         Phase::CriticLenses => {
             run.telemetry.dispatched(&run.tasks);
+            let sifted = complexity::sift(&mut run.tasks, &profiles);
+            run.notes.extend(sifted);
             run.degraded
                 .extend(crate::rubric_read::unread(&run.tasks, &profiles));
             critic::lenses_back(dir, run, &profiles)
@@ -160,9 +162,14 @@ fn lens_model(run: &RunState, profiles: &[Profile]) -> Model {
 fn plan_tracks(run: &mut RunState, profiles: &[Profile]) {
     let taking_part = |p: &&Profile| run.tracks.iter().any(|t| t.profile == p.id);
     let wanted = profiles.iter().filter(taking_part).any(complexity::wanted);
-    let index = complexity::indexed(&run.context, wanted);
-    let metrics = index.as_ref().is_some_and(|(found, _)| *found);
-    run.notes.extend(index.and_then(|(_, note)| note));
+    // One decision over what the binary read of the graph's numbers, which the plan, its note,
+    // the coverage gap and the degraded note all follow.
+    let look = complexity::look(&run.context);
+    let metrics = wanted && complexity::ready(look.as_ref());
+    if wanted {
+        run.notes
+            .extend(complexity::note(&run.context, look.as_ref()));
+    }
     for (track, p) in run.tracks.iter_mut().zip(profiles) {
         let task = run
             .tasks
@@ -199,9 +206,27 @@ fn plan_tracks(run: &mut RunState, profiles: &[Profile]) {
             .as_ref()
             .is_some_and(|p| !p.metrics_dropped.is_empty())
     });
-    let look = complexity::look(&run.context).filter(|_| wanted && planned);
-    run.capped
-        .extend(look.as_ref().and_then(complexity::look_gap));
+    run.capped.extend(
+        look.as_ref()
+            .filter(|_| wanted && planned)
+            .and_then(complexity::look_gap),
+    );
+    // A lens that runs over part of the change without its numbers is named, though not a gap.
+    let parts: Vec<(&Profile, &[String])> = run
+        .tracks
+        .iter()
+        .zip(profiles)
+        .filter(|(t, p)| {
+            let lenses = t
+                .plan
+                .as_ref()
+                .map_or(&[][..], |plan| plan.lenses.as_slice());
+            metrics && lenses.iter().any(|l| p.metrics_only(l))
+        })
+        .map(|(t, p)| (p, t.files.as_slice()))
+        .collect();
+    run.degraded
+        .extend(complexity::unmeasured(&run.context, &parts));
 }
 
 /// Hands out the next lens round, of every track still live; after the last, ends the rounds.
