@@ -9,6 +9,7 @@ pub mod cbm;
 pub mod consumers;
 #[path = "../../../../test-support/exe.rs"]
 pub mod exe;
+pub mod markdown;
 pub mod post;
 pub mod pr_gh;
 

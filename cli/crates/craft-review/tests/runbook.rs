@@ -7,38 +7,12 @@ mod common;
 
 use std::path::Path;
 
+use common::markdown::repo;
 use common::{git, ids, opts, prompt_of, scout, submit};
 use craft_review::step;
 use serde_json::{Value, json};
 
 const STEPS: &str = "# Recover OVN\n\nFind the leader.\n\n```sh\nkubectl -n kube-system get pods -l app=ovn-central\nkubectl -n kube-system delete pod ovn-central-0\n```\n";
-
-/// A repository whose `origin/main` holds `before`, with `after` written on top and committed.
-#[expect(
-    clippy::unwrap_used,
-    reason = "a step of the tests, failing loudly like them"
-)]
-fn repo(before: &[(&str, &str)], after: &[(&str, &str)]) -> tempfile::TempDir {
-    let dir = tempfile::tempdir().unwrap();
-    let d = dir.path();
-    git(d, &["init", "-q", "-b", "main"]);
-    let write = |files: &[(&str, &str)]| {
-        for (f, text) in files {
-            let path = d.join(f);
-            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-            std::fs::write(path, text).unwrap();
-        }
-    };
-    write(&[("LICENSE", "x\n")]);
-    write(before);
-    git(d, &["add", "."]);
-    git(d, &["commit", "-qm", "init"]);
-    git(d, &["update-ref", "refs/remotes/origin/main", "HEAD"]);
-    write(after);
-    git(d, &["add", "."]);
-    git(d, &["commit", "-qm", "docs: the OVN recovery runbook"]);
-    dir
-}
 
 #[expect(
     clippy::unwrap_used,

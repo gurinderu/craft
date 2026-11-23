@@ -1,5 +1,9 @@
 use super::{carries_steps, step_lines};
 
+fn lines(text: &str) -> Vec<u32> {
+    step_lines(text).into_iter().collect()
+}
+
 fn sh(body: &str) -> String {
     format!("```sh\n{body}\n```\n")
 }
@@ -20,10 +24,17 @@ fn a_command_against_an_external_system_is_a_step_wherever_it_sits_on_its_line()
         "watch -n 5 kubectl get pods",
         "/usr/local/bin/gh pr merge 12",
         "curl -X DELETE https://api.example.com/v1/things/1",
-        "git push --force origin main",
+        "timeout 30 kubectl get pods",
+        "echo a | xargs -I {} kubectl delete pod {}",
         "docker push registry.example.com/app:1",
         "nix copy --to ssh://host ./result",
         "user@bastion:~$ ssh node-1",
+        "sudo -n systemctl restart kubelet",
+        "sudo -i kubectl get pods",
+        "timeout 300 kubectl rollout status deploy/x",
+        "docker --context prod exec app sh",
+        "nix --extra-experimental-features nix-command copy --to ssh://h ./r",
+        "deploy .#host",
     ] {
         assert!(carries_steps(&sh(line)), "{line}");
     }
@@ -39,6 +50,8 @@ fn a_command_that_runs_in_the_checkout_is_no_step() {
         "docker build -t app .",
         "curl --version",
         "git commit -m x",
+        "git push --force origin main",
+        "docker --context prod build .",
         "echo kubectl",
         "# kubectl delete pod p  (a comment)",
     ] {
@@ -49,13 +62,13 @@ fn a_command_that_runs_in_the_checkout_is_no_step() {
 #[test]
 fn a_continued_command_is_one_step_over_all_its_lines() {
     let text = "intro\n```bash\n# drain first\nkubectl drain node-1 \\\n  --ignore-daemonsets\nnpm ci\n```\n";
-    assert_eq!(step_lines(text), [4, 5]);
+    assert_eq!(step_lines(text).into_iter().collect::<Vec<_>>(), [2, 4, 5]);
 }
 
 #[test]
 fn a_numbered_step_counts_by_its_inline_code() {
     assert_eq!(
-        step_lines("Steps:\n\n1. Drain: `kubectl drain node-1`\n2. Wait.\n3) `pg_dump -Fc db`\n"),
+        lines("Steps:\n\n1. Drain: `kubectl drain node-1`\n2. Wait.\n3) `pg_dump -Fc db`\n"),
         [3, 5]
     );
     for text in [
@@ -74,15 +87,45 @@ fn fences_open_and_close_by_commonmark_s_rule() {
     assert!(!carries_steps(four), "{four}");
     // A closing fence carries no info string: ```python does not close a sh block.
     let inner = "```sh\n```python\nkubectl get pods\n```\n";
-    assert_eq!(step_lines(inner), [3]);
+    assert_eq!(lines(inner), [1, 3]);
     // A ~~~ block closes only on ~~~, at least as long.
     let tilde = "~~~~zsh\n```\nterraform apply\n~~~\nhelm list\n~~~~\n";
-    assert_eq!(step_lines(tilde), [3, 5]);
+    assert_eq!(lines(tilde), [1, 3, 5]);
     // A one-line ```code``` opens nothing, so the real block after it is read as shell.
     let inline =
         "```kubectl get pods``` lists them.\n\n```sh\nkubectl delete pod p\n```\nkubectl prose\n";
-    assert_eq!(step_lines(inline), [4]);
-    // A non-shell block's lines are no steps; nor is code indented four spaces into a fence.
+    assert_eq!(lines(inline), [3, 4]);
+    // A non-shell block's lines are no steps; nor is a top-level indented code block.
     assert!(!carries_steps("```rust\nkubectl();\n```"));
     assert!(!carries_steps("    ```sh\n    kubectl get pods\n    ```"));
+    // A shorter closer, or one indented four spaces, closes nothing: the block runs on.
+    assert_eq!(
+        lines("````sh\nkubectl get pods\n```\nhelm list\n````\n"),
+        [1, 2, 4]
+    );
+    assert_eq!(
+        lines("```sh\nkubectl get pods\n    ```\nhelm list\n```\n"),
+        [1, 2, 4]
+    );
+    // A command a `\` leaves open at the block's end is still a step.
+    assert_eq!(lines("```sh\nkubectl drain n1 \\\n```\n"), [1, 2]);
+}
+
+#[test]
+fn a_fence_nested_in_a_list_item_is_a_shell_block() {
+    let numbered = "1. Drain the node:\n\n    ```sh\n    kubectl drain n1\n    ```\n2. Wait.\n";
+    assert_eq!(lines(numbered), [3, 4]);
+    let bullet = "- Upgrade:\n\n    ```bash\n    helm upgrade x ./chart\n    ```\n";
+    assert_eq!(lines(bullet), [3, 4]);
+}
+
+#[test]
+fn a_hash_is_a_root_prompt_only_in_a_session_block() {
+    assert!(carries_steps(
+        "```console\n# systemctl restart kubelet\n```"
+    ));
+    assert!(carries_steps(
+        "```shell-session\n# systemctl restart kubelet\n```"
+    ));
+    assert!(!carries_steps("```sh\n# systemctl restart kubelet\n```"));
 }

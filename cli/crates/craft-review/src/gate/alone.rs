@@ -75,6 +75,8 @@ pub fn alone(
     };
     std::fs::create_dir_all(dir).map_err(no_dir)?;
     let profiles = Profile::all()?;
+    // The gate runs only the Rust and Nix profiles' tools, so the uncovered files and the runbook
+    // signal's notes are the review's to say, which reads them again at its own start.
     let (tracks, _, _) = crate::step::tracks_of(&cwd, &diff, &profiles);
     let (gate, seeds) = super::run(&cwd, &diff.base, &tracks, setup, dir);
     let kept = Kept {
