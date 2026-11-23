@@ -114,3 +114,41 @@ fn a_gate_whose_changed_lines_could_not_be_read_is_a_degraded_note() {
         "{notes:?}"
     );
 }
+
+const CUT: &str = "- 1 line(s) cut from every lens's prompt by its budget, in the whole list's file only: tools/z.rs:3\n";
+
+#[test]
+fn outside_unit_mode_a_line_no_lens_was_shown_is_named_as_cut_not_degraded() {
+    let s = state(&[], &Value::Null);
+    assert!(markdown(&s, "Approve").contains(CUT));
+    assert!(!degraded_notes(&s).contains(&note(CUT)));
+    // No lens shown any line: no lens of the list's track ran, so nothing was cut.
+    let mut none = s;
+    none.rounds.consumers_shown.clear();
+    assert!(!markdown(&none, "Approve").contains("cut from every lens"));
+}
+
+#[test]
+fn a_line_past_the_seam_pass_s_budget_is_cut_not_handed_to_it() {
+    let mut s = state(&["src/a"], &answered());
+    let sym = s.context.consumers.symbols[0].clone();
+    // 81 symbols, one line each, none shown to a lens: the seam pass's part holds the first 80.
+    s.context.consumers.symbols = (0..=80u32)
+        .map(|n| {
+            let mut x = sym.clone();
+            x.name = format!("s{n}");
+            x.sites = vec![crate::consumers::Site {
+                line: n,
+                ..sym.sites[1].clone()
+            }];
+            x
+        })
+        .collect();
+    let report = markdown(&s, "Approve");
+    assert!(
+        report.contains("- 80 line(s) handed to the seam pass"),
+        "{report}"
+    );
+    let cut = "- 1 line(s) cut from every lens's prompt by its budget, in the whole list's file only: tools/z.rs:80\n";
+    assert!(report.contains(cut), "{report}");
+}

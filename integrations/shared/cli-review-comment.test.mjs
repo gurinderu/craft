@@ -42,7 +42,7 @@ test('run= with comment=true publishes the finished run through the binary and f
     },
   })
   const comment = run.calls.find(c => c.label === 'step:comment')
-  assert.match(comment?.prompt ?? '', new RegExp(`^/opt/craft review comment --run '${RUN}' --record-root '/plugin'$`, 'm'))
+  assert.match(comment?.prompt ?? '', new RegExp(`^/opt/craft review comment --run '${RUN}' --record-root '/plugin' --paged$`, 'm'))
   assert.match(run.report, /^## Verdict\n\n⛔ Block — 1 High/)
   assert.match(run.report, /PR comments: 1 of 1 defect\(s\) posted, 0 already on the PR — PR #7 https:\/\/github\.com\/o\/r\/pull\/7\./)
   assert.ok(
@@ -124,7 +124,7 @@ test('pr= names the pull request of a run reviewed on a detached HEAD, and besid
   })
   assert.match(
     run.calls.find(c => c.label === 'step:comment')?.prompt ?? '',
-    new RegExp(`^/opt/craft review comment --run '${RUN}' --pr 42 --record-root '/plugin'$`, 'm'),
+    new RegExp(`^/opt/craft review comment --run '${RUN}' --pr 42 --record-root '/plugin' --paged$`, 'm'),
   )
   for (const args of [
     { craftBin: '/opt/craft', run: RUN, pr: 42 },

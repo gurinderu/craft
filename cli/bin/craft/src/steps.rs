@@ -13,6 +13,16 @@ use serde_json::{Map, Value, json};
 
 use crate::review::find_craft_root;
 
+/// `craft review start` as the command line takes it: the run's options, and how its step is
+/// printed.
+#[derive(Debug, clap::Args)]
+pub struct StartCommand {
+    #[command(flatten)]
+    pub start: StartArgs,
+    #[command(flatten)]
+    pub paging: crate::paged::Paging,
+}
+
 #[derive(Debug, clap::Args)]
 pub struct StartArgs {
     /// The repository to review.
@@ -187,6 +197,8 @@ pub struct SubmitArgs {
     /// in the prompts.
     #[arg(long)]
     pub record_root: Option<PathBuf>,
+    #[command(flatten)]
+    pub paging: crate::paged::Paging,
 }
 
 #[derive(Debug, clap::Args)]
@@ -198,6 +210,8 @@ pub struct StatusArgs {
     /// whether the record is filed, without the finished step the status embeds.
     #[arg(long)]
     pub brief: bool,
+    #[command(flatten)]
+    pub paging: crate::paged::Paging,
 }
 
 #[derive(Debug, clap::Args)]
@@ -258,8 +272,9 @@ fn run_dir_in(home: Option<PathBuf>) -> Result<PathBuf> {
         .join(format!("{secs}-{}", std::process::id())))
 }
 
-pub fn start(args: &StartArgs) -> Result<ExitCode> {
-    print(&start_step(args, &craft_review::cancel::Cancel::default())?)
+pub fn start(args: &StartCommand) -> Result<ExitCode> {
+    let step = start_step(&args.start, &craft_review::cancel::Cancel::default())?;
+    crate::paged::print(&step, &args.paging)
 }
 
 /// The step `start` prints, its telemetry opened when `--record` asks for it.
@@ -443,7 +458,7 @@ fn given_answers(path: &Path) -> Result<Map<String, Value>> {
 }
 
 pub fn submit(args: &SubmitArgs) -> Result<ExitCode> {
-    print(&submit_step(args)?)
+    crate::paged::print(&submit_step(args)?, &args.paging)
 }
 
 /// The step `submit` prints, with what its telemetry write did.
@@ -555,7 +570,7 @@ pub fn status(args: &StatusArgs) -> Result<ExitCode> {
     if args.brief {
         return print(&status::brief(&args.run)?);
     }
-    print(&status::status(&args.run)?)
+    crate::paged::print(&status::status(&args.run)?, &args.paging)
 }
 
 /// Where the run in `run` stands, as `status` prints it.

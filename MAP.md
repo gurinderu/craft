@@ -258,7 +258,7 @@ releases wrote out of the harness's `MEMORY.md`, leaving one pointer line; the m
 a host (the `review` engine above) runs its agents. The step protocol was observed end to end
 in a live session (craft 0.41.0, a Rust diff, finished with Approve); the full-lens review it runs
 now is not yet observed live. `bin/craft` (the command: `craft review start | submit | status`, the step
-protocol; `craft review run --backend codex|pi|opencode`, which drives that protocol itself to the verdict, each task its own
+protocol, with `--paged` writing a step to the run directory and printing it a page at a time, `craft review page` the next (`src/paged.rs`, read by `integrations/shared/cli-review-paged.mjs`); `craft review run --backend codex|pi|opencode`, which drives that protocol itself to the verdict, each task its own
 `codex exec`, `pi -p` or `opencode run` process, its progress as lines or `--events json`; `craft review probe`, one agent end to end; `filing_worker.rs` isolates a run-store write in a time-bounded child of the same binary; and `craft runs ls | show | stats | check | retro`, the run store read by streaming its files, a table or NDJSON), `crates/craft-agent` (one agent run through a
 backend — the `claude`, `codex`, `pi` or `opencode` CLI — and many under a concurrency cap), `crates/craft-review` (the steps — each changed file to one profile (Rust, Nix, SQL, or the general lenses for source in
 any other language, `content/profiles/`; a Rust or general file whose changed lines hold a query string also gets the
@@ -291,7 +291,7 @@ when it moved), the graph's callers merged in (`graph/sites.rs`: none from a che
 numbers of the functions the change touches read after them within a floor of the budget kept for it (`graph/ask.rs`,
 `graph/metrics.rs`, `cbm/functions.rs`), whether the complexity lens could look decided once (`src/complexity/look.rs`), the report
 naming which sources built it and why the graph was not asked; the whole list
-saved as `consumers.json` in the run directory, each lens given a budgeted part to go through line by line; `craft
+saved as `consumers.json` in the run directory, each lens task given its own scope's part of it — a directory slice the symbols its files declare, a unit batch the lines under its units — cut to a budget, the rest left in that file (`src/consumers/scope.rs`), to go through line by line; `craft
 init` probes codebase-memory and writes `[code_graph]` into the profile, keeping a usable one it held while the graph
 does not answer, a section of a shape it does not read taken as unusable rather than as an unreadable profile), the
 lenses round after round until each profile's round finds nothing new or its plan's rounds are spent, the

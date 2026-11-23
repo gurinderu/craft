@@ -93,7 +93,7 @@ test('one full loop: start, the lens, its findings verified, done, the report by
   assert.ok(start && lensCall && submit1)
   assert.match(
     start.prompt,
-    /^Run exactly this one command, in one Bash call with a timeout of 600000 ms \(it may fetch the source of each integration point the reviewer's profile names, and may build and lint the branch for the mechanical gate\):\n\n\/opt\/craft review start --cwd '\/work\/repo' --base 'origin\/main' --record-root '\/home\/u\/\.claude\/plugins\/cache\/craft\/craft\/0\.40\.1' --record '[^']+'$/m,
+    /^Run exactly this one command, in one Bash call with a timeout of 600000 ms \(it may fetch the source of each integration point the reviewer's profile names, and may build and lint the branch for the mechanical gate\):\n\n\/opt\/craft review start --cwd '\/work\/repo' --base 'origin\/main' --record-root '\/home\/u\/\.claude\/plugins\/cache\/craft\/craft\/0\.40\.1' --record '[^']+' --paged$/m,
   )
   assert.equal(start.opts.agentType, 'craft:engine-service')
   assert.equal(
@@ -107,7 +107,7 @@ test('one full loop: start, the lens, its findings verified, done, the report by
   )
   assert.match(
     submit1.prompt.split('\n\n')[1] ?? '',
-    new RegExp(`^/opt/craft review submit --run '${RUN}' --agents 1 --output-tokens \\d+ --output-tokens-scope turn-delta$`),
+    new RegExp(`^/opt/craft review submit --run '${RUN}' --agents 1 --output-tokens \\d+ --output-tokens-scope turn-delta --paged$`),
     "the task agents dispatched and the tokens spent, for the binary's telemetry",
   )
   assert.doesNotMatch(submit1.prompt, /findings|--answers/, 'no answer passes through the service agent')
@@ -230,7 +230,7 @@ test('a dead agent on the default type writes no file; the retry the binary hand
   assert.equal(run.calls[0]?.label, 'step:resolve')
   assert.match(
     run.calls[1]?.prompt ?? '',
-    /^\/home\/u\/\.craft\/bin\/0\.40\.1\/craft review start --cwd \. --craft-root '\/home\/u\/\.claude\/plugins\/cache\/craft\/craft\/0\.40\.1' --record '[^']+'$/m,
+    /^\/home\/u\/\.craft\/bin\/0\.40\.1\/craft review start --cwd \. --craft-root '\/home\/u\/\.claude\/plugins\/cache\/craft\/craft\/0\.40\.1' --record '[^']+' --paged$/m,
     'the fetched path runs every step, told the plugin root it cannot find above itself',
   )
   assert.equal(verdictOf(run), '⛔ Block')
@@ -405,7 +405,7 @@ test('without craftBin the released binary of this version is fetched first, the
   assert.match(fetch.prompt, /stdout is two lines, root=<the plugin root> and bin=<the binary's path>, the caller parses/)
   assert.equal(
     run.calls[1]?.prompt.split('\n\n')[1],
-    `${FETCHED} review start --cwd '/work/repo' --craft-root '${PLUGIN}'${RECORD}`,
+    `${FETCHED} review start --cwd '/work/repo' --craft-root '${PLUGIN}'${RECORD} --paged`,
     'start gets the root the step printed',
   )
   assert.equal(verdictOf(run), '⛔ Block')
@@ -441,7 +441,7 @@ test('with craftBin, start gets --craft-root when craftRoot is given and checked
   assert.match(rootStep.prompt, /CRAFT_REPO="\$\(cd '\/work\/repo' /, 'checked against the reviewed repo')
   assert.equal(
     given.calls[1]?.prompt.split('\n\n')[1],
-    `/opt/craft review start --cwd '/work/repo' --craft-root '/srv/craft-plugin'${RECORD}`,
+    `/opt/craft review start --cwd '/work/repo' --craft-root '/srv/craft-plugin'${RECORD} --paged`,
     'start gets the resolved root',
   )
   const refused = await runEngine('review', {
@@ -470,7 +470,7 @@ test('with craftBin, start gets --craft-root when craftRoot is given and checked
   assert.match(locate.prompt, /CRAFT_ROOT_PATH="\$\(dirname "\$\(dirname "\$\(dirname "\$CRAFT_ADAPTER"\)"\)"\)"\n/, 'the root its fetcher was found in')
   assert.equal(
     located.calls[1]?.prompt.split('\n\n')[1],
-    `/opt/craft review start --cwd '/work/repo' --record-root '${PLUGIN}'${RECORD}`,
+    `/opt/craft review start --cwd '/work/repo' --record-root '${PLUGIN}'${RECORD} --paged`,
     "start files through the located root; its prompts keep the binary's own",
   )
   const lost = await runEngine('review', {
@@ -480,7 +480,7 @@ test('with craftBin, start gets --craft-root when craftRoot is given and checked
       'step:start': done(),
     },
   })
-  assert.equal(lost.calls.at(-1)?.prompt.split('\n\n')[1], `/opt/craft review start --cwd .${RECORD}`, 'none located: the binary looks for one itself')
+  assert.equal(lost.calls.at(-1)?.prompt.split('\n\n')[1], `/opt/craft review start --cwd .${RECORD} --paged`, 'none located: the binary looks for one itself')
   assert.ok(
     lost.logs.some(l =>
       /no craft plugin root was located for the run's telemetry: the command exited 1: no usable integrations\/shared\/craft-cli\.sh/.test(l),
@@ -495,10 +495,10 @@ test('a Windows drive path is an absolute path: a given craft.exe, and the one a
     args: { craftBin: 'C:\\craft\\craft.exe' },
     script: { 'step:locate': ran('root=C:/plugin\n'), 'step:start': done() },
   })
-  assert.equal(given.calls[1]?.prompt.split('\n\n')[1], `'C:\\craft\\craft.exe' review start --cwd . --record-root 'C:/plugin'${RECORD}`)
+  assert.equal(given.calls[1]?.prompt.split('\n\n')[1], `'C:\\craft\\craft.exe' review start --cwd . --record-root 'C:/plugin'${RECORD} --paged`)
   const exe = 'C:\\Users\\u\\.craft\\bin\\9.9.9\\craft.exe'
   const fetched = await runEngine('review', { args: {}, script: { 'step:resolve': ran(`root=C:/plugin\nbin=${exe}\n`), 'step:start': done() } })
-  assert.equal(fetched.calls[1]?.prompt.split('\n\n')[1], `'${exe}' review start --cwd . --craft-root 'C:/plugin'${RECORD}`)
+  assert.equal(fetched.calls[1]?.prompt.split('\n\n')[1], `'${exe}' review start --cwd . --craft-root 'C:/plugin'${RECORD} --paged`)
   const relative = await runEngine('review', { args: { craftBin: 'craft.exe' }, script: { 'log-run': { ok: true, output: ['wrote /store/r.json'] } } })
   assert.match(verdictOf(relative), /^⚠️ INCOMPLETE — review: craftBin="craft\.exe" is not an absolute path/)
 })
@@ -507,7 +507,7 @@ test("a Windows fetch whose step printed Git Bash's /c/… root hands the binary
   const exe = 'C:\\Users\\u\\.craft\\bin\\9.9.9\\craft.exe'
   const win = await runEngine('review', { args: {}, script: { 'step:resolve': ran(`root=/c/Users/u/plugin\nbin=${exe}\n`), 'step:start': done() } })
   assert.match(win.calls[0]?.prompt ?? '', /cygpath -m/)
-  assert.equal(win.calls[1]?.prompt.split('\n\n')[1], `'${exe}' review start --cwd . --craft-root 'C:/Users/u/plugin'${RECORD}`)
+  assert.equal(win.calls[1]?.prompt.split('\n\n')[1], `'${exe}' review start --cwd . --craft-root 'C:/Users/u/plugin'${RECORD} --paged`)
   const posix = await runEngine('review', { args: {}, script: { 'step:resolve': ran('root=/c/plugin\nbin=/c/bin/craft\n'), 'step:start': done() } })
-  assert.equal(posix.calls[1]?.prompt.split('\n\n')[1], `/c/bin/craft review start --cwd . --craft-root '/c/plugin'${RECORD}`)
+  assert.equal(posix.calls[1]?.prompt.split('\n\n')[1], `/c/bin/craft review start --cwd . --craft-root '/c/plugin'${RECORD} --paged`)
 })

@@ -218,7 +218,6 @@ fn consumers(g: &mut Golden, ctx: &PromptContext, plan: &Plan, prior: &str) {
             },
         ],
         unsearched: vec!["new".into()],
-        cut: 3,
         file: "/run/consumers.json".into(),
         ..Consumers::default()
     };

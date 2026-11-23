@@ -65,6 +65,7 @@ impl Protocol for InProcess {
             output_tokens: None,
             output_tokens_scope: None,
             record_root: Some(self.record_root.clone()),
+            paging: crate::paged::Paging::default(),
         })
     }
 
@@ -77,6 +78,7 @@ impl Protocol for InProcess {
             run: run.to_path_buf(),
             pr: self.start.pr,
             record_root: Some(self.record_root.clone()),
+            paging: crate::paged::Paging::default(),
         })
     }
 

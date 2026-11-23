@@ -162,7 +162,7 @@ pub struct LensIn<'a> {
 /// # Errors
 /// When the lens is not the profile's, a content file is missing or a placeholder has no value.
 pub fn lens_prompt(ctx: &PromptContext, at: &LensIn<'_>) -> Result<String, ContentError> {
-    lens_prompt_in(ctx, at, String::new())
+    lens_prompt_in(ctx, at, String::new(), None)
 }
 
 /// The lens `at` names, of its profile.
@@ -245,11 +245,13 @@ pub(super) fn rust_only(
     }
 }
 
-/// [`lens_prompt`] with `slice`, the YOUR SLICE block of a directory slice (empty unsliced).
+/// [`lens_prompt`] with `slice`, the YOUR SLICE block of a directory slice (empty unsliced), and
+/// `consumers`, the slice's CONSUMERS block in place of the whole list's (`None` unsliced).
 pub(super) fn lens_prompt_in(
     ctx: &PromptContext,
     at: &LensIn<'_>,
     slice: String,
+    consumers: Option<String>,
 ) -> Result<String, ContentError> {
     let spec = lens_spec(at)?;
     let (profile, lens) = (at.profile, at.lens);
@@ -283,6 +285,7 @@ pub(super) fn lens_prompt_in(
             ("dependencySource", content::text("dependency-source")?),
             ("ruleId", rule_id(profile, lens)?),
         ]));
+        v.extend(consumers.map(|c| ("consumers".to_owned(), c)));
         content::prompt("lens", &v)?
     };
     Ok(format!("{}{body}", repo_directive(&ctx.repo)))
