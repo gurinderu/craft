@@ -13,7 +13,7 @@ import {
   siftByMemory,
   siftFinding,
 } from './triage-sift.mjs'
-import { classifiedVerdict, effectivePrBase, issueOf, noiseClassOf } from './triage-noise-class.mjs'
+import { classifiedVerdict, effectivePrBase, issueOf, noiseClassOf, settledByClass } from './triage-noise-class.mjs'
 
 /** @param {string} title @param {string} location @param {string} [severity] @param {string} [thread] */
 const f = (title, location, severity = 'Medium', thread = '') =>
@@ -98,6 +98,11 @@ test('siftByMemory with no records sends everything to the validator and asks no
   assert.equal(r.toValidate.length, 1)
   assert.deepEqual(r.ledger, [])
   assert.deepEqual(r.counts, { rejectedBefore: 0, deferred: 0, covered: 0, conflict: 0, reraised: 0 })
+})
+
+test('settledByClass: only classes 1 and 5 are settled by the triage itself', () => {
+  for (const n of [1, 5]) assert.equal(settledByClass({ noise_class: n }), true, String(n))
+  for (const v of [{ noise_class: 2 }, { noise_class: 6 }, {}, null]) assert.equal(settledByClass(v), false, JSON.stringify(v))
 })
 
 test('noiseClassOf reads 1..6 and nothing else', () => {

@@ -11,7 +11,7 @@ import { MATCH_JUDGE_SCHEMA } from '../../shared/prior-decision-match.mjs'
 import { SCOPE_CHECK_SCHEMA, scopeCheckPrompt } from '../../shared/prior-decision-scope.mjs'
 import { RULE_JUDGE_SCHEMA } from '../../shared/project-rule-judge.mjs'
 import { SIFT_MARK, siftFinding, collapseRepeats, repeatEntry, siftByMemory } from '../../shared/triage-sift.mjs'
-import { effectivePrBase, classOneBaseLine, classifiedVerdict, issueOf } from '../../shared/triage-noise-class.mjs'
+import { effectivePrBase, classOneBaseLine, classifiedVerdict, issueOf, settledByClass } from '../../shared/triage-noise-class.mjs'
 import { RAW_SCHEMA, VALIDATION_SCHEMA, PLAN_SCHEMA, gatherReportPrompt, gatherPrPrompt, validatePrompt, planPrompt } from '../../shared/triage-content.mjs'
 
 export const meta = {
@@ -346,7 +346,8 @@ function finalLedger(planIn) {
   return finalRows
 }
 /**
- * The plan's ledger with every row this script settled itself restored: an unjudged one and a sifted one.
+ * The plan's ledger with every row this script settled itself restored: an unjudged one, a sifted one and
+ * one its noise class settled (class 1 or 5, realm @nick/craft, node #303).
  * @param {LedgerEntry[]} planLedger @returns {LedgerEntry[]}
  */
 function pinnedLedger(planLedger) {
@@ -360,8 +361,9 @@ function pinnedLedger(planLedger) {
   // what each finding's verdict actually was, so a marked reason is restored (and a dropped entry
   // re-added) regardless of what the agent returned. The prompt instruction stays as belt and braces.
   // A row the sift settled is restored the same way: no validator judged it, and its mark says so.
+  // So is a verdict a noise class settled here: dropped, a needs-decision would reach no human.
   /** @type {Map<string, LedgerEntry>} */
-  const pinned = new Map([...sifted, ...validations.filter(v => String(v.reason || '').includes(UNJUDGED_MARKER))].map(v => [v.stable_id, v]))
+  const pinned = new Map([...sifted, ...validations.filter(v => String(v.reason || '').includes(UNJUDGED_MARKER) || settledByClass(v))].map(v => [v.stable_id, v]))
   if (!pinned.size) return planLedger
   /** @type {Set<string>} */
   const seen = new Set()
@@ -369,7 +371,8 @@ function pinnedLedger(planLedger) {
     const v = e && pinned.get(e.stable_id)
     if (!v) return e
     seen.add(e.stable_id)
-    const mark = v.reason.includes(UNJUDGED_MARKER) ? UNJUDGED_MARKER : SIFT_MARK
+    // A verdict its class settled carries no mark: its reason may be paraphrased, its verdict not.
+    const mark = v.reason.includes(UNJUDGED_MARKER) ? UNJUDGED_MARKER : settledByClass(v) ? '' : SIFT_MARK
     const kept = String(e.reason || '').includes(mark) && e.verdict === v.verdict && e.sifted === v.sifted && e.repeat_of === v.repeat_of
     return kept ? e : restored(e, v)
   })

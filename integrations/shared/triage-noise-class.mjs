@@ -76,6 +76,16 @@ export function openedAt(premise, ref) {
 }
 
 /**
+ * Whether the triage settled `v`'s verdict by its noise class itself (class 1 or 5), so the plan
+ * agent's ledger cannot drop or change it: it is restored there as the unjudged and sifted rows are.
+ * @param {unknown} v @returns {boolean}
+ */
+export function settledByClass(v) {
+  const n = noiseClassOf(v)
+  return n === 1 || n === 5
+}
+
+/**
  * The verdict a noise class settles: class 1 (not this PR's) on a finding the validator accepted or
  * deferred is a deferral carried by an issue on the consumer's forge — but only when premise_checked
  * shows a file opened at `prBase`, the PR's fork point the triage was given, never a ref the validator

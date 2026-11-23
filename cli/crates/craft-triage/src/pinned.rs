@@ -1,8 +1,8 @@
 //! The ledger the triage returns and tallies: the plan agent's, with every row this side settled
 //! itself restored.
 //!
-//! The restored rows are an unjudged one and a sifted one, whatever the agent paraphrased or
-//! dropped; the rows a class-1 verdict carries get the issue action (realm @nick/craft, node #303).
+//! The restored rows are an unjudged one, a sifted one and one whose verdict its noise class
+//! settled (class 1 or 5), whatever the agent paraphrased or dropped; the rows a class-1 verdict carries get the issue action (realm @nick/craft, node #303).
 //! A row is the agent's object as it came, extended in place as the engine extends it, and a
 //! row that is no object passes through untouched.
 
@@ -15,12 +15,18 @@ use crate::field;
 use crate::ledger::{Row, UNJUDGED_MARKER};
 use crate::sift::SIFT_MARK;
 
+/// Whether this side settled `v`'s verdict by its noise class (realm @nick/craft, node #303).
+fn settled_by_class(v: &Row) -> bool {
+    matches!(crate::noise::noise_class_of(v), 1 | 5)
+}
+
 /// The rows this side settled, by id in first-insertion order, a later row under one id
-/// replacing an earlier one: the sifted rows, then every verdict marked unjudged.
+/// replacing an earlier one: the sifted rows, then every verdict marked unjudged or settled by its
+/// noise class.
 fn pinned_rows<'a>(sifted: &'a [Row], validations: &'a [Row]) -> Vec<(JsString, &'a Row)> {
     let unjudged = validations
         .iter()
-        .filter(|v| js_reason(v).contains(UNJUDGED_MARKER));
+        .filter(|v| js_reason(v).contains(UNJUDGED_MARKER) || settled_by_class(v));
     let mut pinned: Vec<(JsString, &Row)> = Vec::new();
     for row in sifted.iter().chain(unjudged) {
         match pinned.iter_mut().find(|(id, _)| *id == row.id()) {
@@ -41,11 +47,13 @@ fn js_reason(r: &Row) -> JsString {
 }
 
 /// The plan's row `e` against the pinned row `v`: kept when it already says what `v` does, its
-/// mark included, else `v`'s verdict, reason, `sifted` and a repeat's `repeat_of` (realm
+/// mark included (a verdict its class settled carries none: its reason may be paraphrased), else `v`'s verdict, reason, `sifted` and a repeat's `repeat_of` (realm
 /// @nick/craft, node #312) spread over it.
 fn pin(e: &Obj, v: &Row) -> Obj {
     let mark = if v.text("reason").contains(UNJUDGED_MARKER) {
         UNJUDGED_MARKER
+    } else if settled_by_class(v) {
+        ""
     } else {
         SIFT_MARK
     };
