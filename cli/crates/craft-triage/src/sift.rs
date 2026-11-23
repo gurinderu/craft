@@ -6,9 +6,10 @@
 use craft_review::ledger::overlap;
 pub use craft_review::memory::SURE_WINDOW;
 
+use crate::field;
 use crate::finding::{Finding, location_parts, severity_rank};
 use crate::ledger::Row;
-use craft_store::js::{Js, Obj};
+use craft_store::js::{Js, JsString, Obj};
 
 /// How much two titles at one site must share to be one finding said twice.
 pub const REPEAT_TITLE_OVERLAP: f64 = 0.6;
@@ -19,7 +20,7 @@ pub const SIFT_MARK: &str = "SIFTED BEFORE VALIDATION";
 #[derive(Debug, Clone, PartialEq)]
 pub struct Sifted {
     pub finding: Finding,
-    pub stable_id: String,
+    pub stable_id: JsString,
     pub file: String,
     pub line: u64,
 }
@@ -27,8 +28,8 @@ pub struct Sifted {
 impl Sifted {
     /// `f` under the id `id`, its location read.
     #[must_use]
-    pub fn new(f: Finding, id: String) -> Self {
-        let (file, line) = location_parts(f.text("location"));
+    pub fn new(f: Finding, id: JsString) -> Self {
+        let (file, line) = location_parts(&f.text("location"));
         Self {
             finding: f,
             stable_id: id,
@@ -42,7 +43,7 @@ impl Sifted {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Repeat {
     pub finding: Sifted,
-    pub of: String,
+    pub of: JsString,
 }
 
 /// The batch with its repeats collapsed.
@@ -56,8 +57,8 @@ pub struct Collapsed {
 /// window when both carry one, and titles sharing most of their words.
 #[must_use]
 pub fn repeats_finding(a: &Sifted, b: &Sifted) -> bool {
-    let thread = a.finding.text("thread_id");
-    if !thread.is_empty() && thread == b.finding.text("thread_id") {
+    let thread = a.finding.0.text_units("thread_id");
+    if !thread.is_empty() && thread == b.finding.0.text_units("thread_id") {
         return true;
     }
     if a.file.is_empty() || a.file != b.file {
@@ -66,7 +67,7 @@ pub fn repeats_finding(a: &Sifted, b: &Sifted) -> bool {
     if a.line != 0 && b.line != 0 && a.line.abs_diff(b.line) > SURE_WINDOW {
         return false;
     }
-    overlap(a.finding.text("title"), b.finding.text("title")) >= REPEAT_TITLE_OVERLAP
+    overlap(&a.finding.text("title"), &b.finding.text("title")) >= REPEAT_TITLE_OVERLAP
 }
 
 /// The batch with each repeat collapsed onto the most severe of them, so a repeat never lowers
@@ -75,7 +76,7 @@ pub fn repeats_finding(a: &Sifted, b: &Sifted) -> bool {
 #[must_use]
 pub fn collapse_repeats(findings: Vec<Sifted>) -> Collapsed {
     let (mut kept, mut repeated): (Vec<Sifted>, Vec<Repeat>) = (Vec::new(), Vec::new());
-    let mut seen = std::collections::HashSet::new();
+    let mut seen = std::collections::BTreeSet::new();
     for f in findings {
         if !seen.insert(f.stable_id.clone()) {
             continue;
@@ -84,7 +85,8 @@ pub fn collapse_repeats(findings: Vec<Sifted>) -> Collapsed {
             kept.push(f);
             continue;
         };
-        if severity_rank(f.finding.text("severity")) >= severity_rank(twin.finding.text("severity"))
+        if severity_rank(&f.finding.text("severity"))
+            >= severity_rank(&twin.finding.text("severity"))
         {
             let of = twin.stable_id.clone();
             repeated.push(Repeat { finding: f, of });
@@ -107,16 +109,17 @@ pub fn collapse_repeats(findings: Vec<Sifted>) -> Collapsed {
 /// `repeat_of` naming the twin (realm @nick/craft, node #312).
 #[must_use]
 pub fn repeat_entry(r: &Repeat) -> Row {
-    let reason = format!(
-        "{SIFT_MARK} — repeats {} in this batch (same site, same title words); judged there",
-        r.of
-    );
+    let reason = field::cat(&[
+        format!("{SIFT_MARK} — repeats ").into(),
+        r.of.clone(),
+        " in this batch (same site, same title words); judged there".into(),
+    ]);
     Row(Obj::new()
-        .with("stable_id", Js::str(r.finding.stable_id.as_str()))
+        .with("stable_id", Js::Str(r.finding.stable_id.clone()))
         .with("verdict", Js::str("reject"))
         .with("sifted", Js::Bool(true))
-        .with("repeat_of", Js::str(r.of.as_str()))
-        .with("reason", Js::str(reason)))
+        .with("repeat_of", Js::Str(r.of.clone()))
+        .with("reason", Js::Str(reason)))
 }
 
 #[cfg(test)]

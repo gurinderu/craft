@@ -37,25 +37,9 @@ pub fn compile(pattern: &str) -> Option<Regex> {
     Regex::new(&pattern.replace("{S}", SPACE).replace("{B}", BOUNDARY)).ok()
 }
 
-/// Whether `c` is in JS's `\s`.
-pub fn is_space(c: char) -> bool {
-    matches!(
-        c,
-        '\t' | '\n' | '\u{0B}' | '\u{0C}' | '\r' | ' ' | '\u{A0}' | '\u{1680}' | '\u{2000}'
-            ..='\u{200A}'
-                | '\u{2028}'
-                | '\u{2029}'
-                | '\u{202F}'
-                | '\u{205F}'
-                | '\u{3000}'
-                | '\u{FEFF}'
-    )
-}
-
-/// JS's `String.prototype.trim`.
-pub fn trim(s: &str) -> &str {
-    s.trim_matches(is_space)
-}
+// JS's `\s` and `trim` are the store's (`craft_store::js`), one copy for every crate; `SPACE`
+// above spells the same set for a regex class.
+pub use craft_store::js::{is_space, trim};
 
 /// `text` for a case-insensitive pattern JS reads without the `u` flag: the two letters Unicode
 /// folding takes onto ASCII ones are put out of any ASCII letter's reach.

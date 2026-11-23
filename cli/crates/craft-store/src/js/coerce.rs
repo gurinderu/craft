@@ -32,18 +32,36 @@ fn radix_literal(s: &str) -> Option<f64> {
     if digits.is_empty() || !digits.chars().all(|c| c.is_digit(base)) {
         return Some(f64::NAN);
     }
-    // Digit by digit, so a literal past 2^64 rounds as JavaScript's does instead of failing.
-    Some(
-        digits
-            .chars()
-            .filter_map(|c| c.to_digit(base))
-            .fold(0.0, |n, d| n * f64::from(base) + f64::from(d)),
+    Some(exact_value(digits, base))
+}
+
+/// The digits' value rounded once to the nearest double, as JavaScript rounds a literal's
+/// mathematical value: exact in an integer while it fits 128 bits, past that (a literal of more
+/// than 32 hex digits, whose rounding no case needs) digit by digit.
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "the one rounding to a double is the conversion JavaScript makes"
+)]
+fn exact_value(digits: &str, base: u32) -> f64 {
+    let exact = digits.chars().try_fold(0u128, |n, c| {
+        n.checked_mul(u128::from(base))?
+            .checked_add(u128::from(c.to_digit(base)?))
+    });
+    exact.map_or_else(
+        || {
+            digits
+                .chars()
+                .filter_map(|c| c.to_digit(base))
+                .fold(0.0, |n, d| n * f64::from(base) + f64::from(d))
+        },
+        |n| n as f64,
     )
 }
 
 /// `Number(s)` of a string: trimmed, '' is 0, a radix literal, `Infinity` with its sign, a decimal
 /// literal; anything else NaN.
-fn number_of_text(s: &str) -> f64 {
+#[must_use]
+pub fn number_of_text(s: &str) -> f64 {
     let s = trim(s);
     if s.is_empty() {
         return 0.0;

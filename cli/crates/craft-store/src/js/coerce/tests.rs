@@ -35,6 +35,9 @@ fn number_reads_what_javascript_reads() {
         ("[1,2]", f64::NAN),
         ("{}", f64::NAN),
         (r#""\u00851""#, f64::NAN),
+        // 2^53 + 1 rounds once, to 2^53, as JavaScript's literal does — not digit by digit.
+        (r#""0x20000000000001""#, 9_007_199_254_740_992.0),
+        (r#""0x1fffffffffffff1""#, 144_115_188_075_855_860.0),
     ] {
         assert!(same(number(text), want), "{text}: {}", number(text));
     }
@@ -46,4 +49,21 @@ fn whitespace_is_javascripts_without_next_line_and_with_the_byte_order_mark() {
     assert!(!is_space('\u{85}'));
     assert_eq!(trim("\u{feff} a \n"), "a");
     assert_eq!(trim("\u{85}a"), "\u{85}a");
+}
+
+#[test]
+fn truthiness_is_javascripts() {
+    for (text, want) in [
+        ("0", false),
+        ("-0", false),
+        (r#""""#, false),
+        ("null", false),
+        ("false", false),
+        ("[]", true),
+        ("{}", true),
+        (r#""0""#, true),
+        ("1", true),
+    ] {
+        assert_eq!(parse(text).unwrap().truthy(), want, "{text}");
+    }
 }

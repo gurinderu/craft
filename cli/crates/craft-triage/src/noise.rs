@@ -6,6 +6,7 @@
 
 use craft_store::js::{Js, is_space, trim};
 
+use crate::field;
 use crate::ledger::Row;
 
 /// A validator's noise class: `Number(noise_class)` when it is an integer from 1 to 6, else 0
@@ -13,9 +14,12 @@ use crate::ledger::Row;
 #[must_use]
 pub fn noise_class_of(v: &Row) -> u8 {
     let n = v.0.get("noise_class").map_or(f64::NAN, Js::to_js_number);
-    (1u8..=6)
-        .find(|c| (n - f64::from(*c)).abs() < f64::EPSILON)
-        .unwrap_or(0)
+    #[expect(
+        clippy::float_cmp,
+        reason = "`Number.isInteger` and the class compare exactly"
+    )]
+    let class = (1u8..=6).find(|c| n == f64::from(*c));
+    class.unwrap_or(0)
 }
 
 /// Whether two refs name one commit as given: equal, or both SHA-shaped and one a prefix of the other.
@@ -99,16 +103,16 @@ pub fn not_this_prs(v: Row, pr_base: &str) -> Row {
         return v;
     }
     let human = |v: Row, why: String| {
-        let reason = format!("{why} — {}", v.js("reason"));
+        let reason = field::cat(&[format!("{why} — ").into(), field::js_text(&v.0, "reason")]);
         v.with("verdict", Js::str("needs-decision"))
-            .with("reason", Js::str(reason))
+            .with("reason", Js::Str(reason))
     };
     if pr_base.is_empty() {
         let why =
             "claimed not this PR's, but no prBase (the PR's fork point) was given to check it at";
         return human(v, why.into());
     }
-    if !opened_at(v.text("premise_checked"), pr_base) {
+    if !opened_at(&v.text("premise_checked"), pr_base) {
         let why = format!(
             "claimed not this PR's, but nothing at the PR's fork point {pr_base} was opened to show it"
         );

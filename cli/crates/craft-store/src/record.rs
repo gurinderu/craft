@@ -1,7 +1,7 @@
 //! A record's derived parts as `integrations/shared/run-record.mjs` computes them: a finding's fingerprint, the
 //! findings counted by severity, the record's index line and its file name.
 
-use crate::js::{Js, JsString, Obj};
+use crate::js::{self, Js, JsString, Obj};
 
 /// The logger's engine revision (`ENGINE_REVISION`), stamped on every record and checkpoint.
 pub const ENGINE_REVISION: f64 = 4.0;
@@ -14,11 +14,6 @@ fn or_empty(v: Option<&Js>) -> JsString {
     v.filter(|v| v.truthy())
         .map(Js::to_js_text)
         .unwrap_or_default()
-}
-
-/// JavaScript's `trim`: white space and line terminators, the byte-order mark among them.
-fn js_trim(s: &str) -> &str {
-    s.trim_matches(|c: char| c.is_whitespace() || c == '\u{feff}')
 }
 
 /// `titleShingle`: the title's lower-cased words of letters and digits, sorted.
@@ -49,7 +44,7 @@ pub fn normalize_symbol(symbol: &str) -> String {
             s = next;
         }
     }
-    js_trim(&s).to_owned()
+    js::trim(&s).to_owned()
 }
 
 /// `fingerprint`: djb2 over the finding's file, symbol and rule — or its title's words when it

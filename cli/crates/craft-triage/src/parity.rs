@@ -12,7 +12,7 @@
 mod phases;
 mod replay;
 
-use craft_store::js::Js;
+use craft_store::js::{Js, JsString};
 
 use crate::field::At;
 use replay::Replay;
@@ -41,16 +41,10 @@ fn the_validators_asked_and_the_plan_agents_blocks_are_the_engines() {
             case.at("expected"),
             Replay::of(&case),
         );
-        let mut asked: Vec<&str> = want
-            .at("prompts")
-            .at("validate")
-            .as_obj()
-            .unwrap()
-            .iter()
-            .map(|(k, _)| k.as_str().unwrap())
-            .collect();
+        let scripted = want.at("prompts").at("validate").as_obj().unwrap();
+        let mut asked: Vec<&JsString> = scripted.iter().map(|(k, _)| k).collect();
         asked.sort_unstable();
-        let mut got_asked: Vec<&str> = got.asked.iter().map(String::as_str).collect();
+        let mut got_asked: Vec<&JsString> = got.asked.iter().collect();
         got_asked.sort_unstable();
         assert_eq!(
             got_asked, asked,

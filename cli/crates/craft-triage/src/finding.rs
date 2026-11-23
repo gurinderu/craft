@@ -1,7 +1,9 @@
 //! A gathered finding, as `triage-findings.js` reads one: the source it came from, its stable id,
 //! and the file and line its location names.
 
-use craft_store::js::{Js, Obj, trim};
+use std::borrow::Cow;
+
+use craft_store::js::{Js, JsString, Obj, trim};
 
 use crate::TriageError;
 use crate::field;
@@ -49,7 +51,7 @@ impl Finding {
 
     /// A field's text, '' when absent or no string.
     #[must_use]
-    pub fn text(&self, key: &str) -> &str {
+    pub fn text(&self, key: &str) -> Cow<'_, str> {
         field::text(&self.0, key)
     }
 }
@@ -57,7 +59,7 @@ impl Finding {
 /// One gatherer's answer: its source and findings.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Gathered {
-    pub source: String,
+    pub source: JsString,
     pub findings: Vec<Finding>,
 }
 
@@ -75,7 +77,7 @@ fn finding(f: &Js) -> Result<Finding, TriageError> {
         .ok_or_else(|| refused("a finding is no object"))?;
     match FIELDS
         .iter()
-        .find(|k| o.get(**k).and_then(Js::as_str).is_none())
+        .find(|k| !o.get(**k).is_some_and(Js::is_string))
     {
         Some(k) => Err(refused(&format!("a finding has no text {k}"))),
         None => Ok(Finding(o.clone())),
@@ -87,20 +89,23 @@ impl Gathered {
     ///
     /// # Errors
     /// [`TriageError::Answer`] when it lacks what the raw schema requires: the source, the list
-    /// of findings, each finding's six text fields (a text with an unpaired surrogate counts as
-    /// none).
+    /// of findings, each finding's six text fields (a text holding an unpaired surrogate
+    /// is text, as to the engine).
     pub fn read(answer: &Js, from_report: bool) -> Result<Self, TriageError> {
-        let source = field::at(answer, "source")
-            .as_str()
+        let [source_key, findings_key] = ANSWER_FIELDS;
+        let source = answer
+            .as_obj()
+            .filter(|o| o.get(source_key).is_some_and(Js::is_string))
+            .map(|o| o.text_units(source_key))
             .ok_or_else(|| refused("no source"))?;
-        let list = field::at(answer, "findings")
+        let list = field::at(answer, findings_key)
             .as_arr()
             .ok_or_else(|| refused("no list of findings"))?;
         let findings = list.iter().map(finding).collect::<Result<_, _>>()?;
         let source = if from_report {
-            report_source(Some(source))
+            report_source(source.as_str()).into()
         } else {
-            source.to_owned()
+            source
         };
         Ok(Self { source, findings })
     }
@@ -109,11 +114,12 @@ impl Gathered {
     pub fn sourced(&self) -> impl Iterator<Item = Finding> + '_ {
         self.findings
             .iter()
-            .map(|f| Finding(f.0.clone().with("source", Js::str(self.source.as_str()))))
+            .map(|f| Finding(f.0.clone().with("source", Js::Str(self.source.clone()))))
     }
 }
 
-/// A report's source: the engine that wrote it as the gatherer read it, else `report`.
+/// A report's source: the engine that wrote it as the gatherer read it, else `report` (also for
+/// a source with an unpaired surrogate, which names no engine).
 #[must_use]
 pub fn report_source(said: Option<&str>) -> String {
     let said = said.map(trim).unwrap_or_default();
@@ -124,15 +130,21 @@ pub fn report_source(said: Option<&str>) -> String {
     }
 }
 
-/// The stable composite id: `source::location::title`, `no-loc` for an empty location.
+/// The stable composite id: `source::location::title`, `no-loc` for an empty location, every
+/// UTF-16 code unit kept.
 #[must_use]
-pub fn id_of(f: &Finding) -> String {
+pub fn id_of(f: &Finding) -> JsString {
     let location = if field::truthy(&f.0, "location") {
-        f.js("location")
+        field::js_text(&f.0, "location")
     } else {
         "no-loc".into()
     };
-    format!("{}::{location}::{}", f.js("source"), f.js("title"))
+    let parts = [
+        field::js_text(&f.0, "source"),
+        location,
+        field::js_text(&f.0, "title"),
+    ];
+    JsString::join(&parts, "::")
 }
 
 /// A severity's rank, Critical first, compared without case; an unknown one last.

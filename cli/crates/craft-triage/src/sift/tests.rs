@@ -50,16 +50,16 @@ fn the_most_severe_repeat_is_kept_and_earlier_repeats_follow_it() {
     let high = sifted("High", "the memory leak", "src/a.rs:12", "");
     let c = collapse_repeats(vec![mid.clone(), low.clone(), high.clone(), low.clone()]);
     assert_eq!(c.kept, std::slice::from_ref(&high));
-    let of: Vec<(&str, &str)> = c
+    let of: Vec<(&JsString, &JsString)> = c
         .repeated
         .iter()
-        .map(|r| (r.finding.stable_id.as_str(), r.of.as_str()))
+        .map(|r| (&r.finding.stable_id, &r.of))
         .collect();
     assert_eq!(
         of,
         [
-            (low.stable_id.as_str(), high.stable_id.as_str()),
-            (mid.stable_id.as_str(), high.stable_id.as_str()),
+            (&low.stable_id, &high.stable_id),
+            (&mid.stable_id, &high.stable_id),
         ]
     );
 }

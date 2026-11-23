@@ -3,7 +3,9 @@
 //! settled spread over it; the stand-in for a dead validator is marked so no later run carries it
 //! as settled.
 
-use craft_store::js::{Js, Obj};
+use std::borrow::Cow;
+
+use craft_store::js::{Js, JsString, Obj};
 
 use crate::TriageError;
 use crate::field;
@@ -32,7 +34,7 @@ pub struct Row(pub Obj);
 impl Row {
     /// A field's text, '' when absent or no string.
     #[must_use]
-    pub fn text(&self, key: &str) -> &str {
+    pub fn text(&self, key: &str) -> Cow<'_, str> {
         field::text(&self.0, key)
     }
 
@@ -42,15 +44,15 @@ impl Row {
         field::js(&self.0, key)
     }
 
-    /// The stable id.
+    /// The stable id, every UTF-16 code unit kept.
     #[must_use]
-    pub fn id(&self) -> &str {
-        self.text("stable_id")
+    pub fn id(&self) -> JsString {
+        self.0.text_units("stable_id")
     }
 
     /// The verdict.
     #[must_use]
-    pub fn verdict(&self) -> &str {
+    pub fn verdict(&self) -> Cow<'_, str> {
         self.text("verdict")
     }
 
@@ -64,7 +66,7 @@ impl Row {
     ///
     /// # Errors
     /// [`TriageError::Answer`] when it is no object or lacks a field the validation schema
-    /// requires: its six text fields and a numeric `noise_class`.
+    /// requires: its six text fields and an integer `noise_class`.
     pub fn validation(answer: &Js) -> Result<Self, TriageError> {
         let refused = |why: String| TriageError::Answer {
             what: "a validator's answer".into(),
@@ -73,12 +75,14 @@ impl Row {
         let o = answer.as_obj().ok_or_else(|| refused("no object".into()))?;
         if let Some(k) = TEXT_FIELDS
             .iter()
-            .find(|k| o.get(**k).and_then(Js::as_str).is_none())
+            .find(|k| !o.get(**k).is_some_and(Js::is_string))
         {
             return Err(refused(format!("no text {k}")));
         }
-        if o.get(NUMBER_FIELD).and_then(Js::as_num).is_none() {
-            return Err(refused(format!("no numeric {NUMBER_FIELD}")));
+        // The schema's `integer`: `Number.isInteger`.
+        let whole = |n: f64| n.is_finite() && n.trunc().to_bits() == n.to_bits();
+        if !o.get(NUMBER_FIELD).and_then(Js::as_num).is_some_and(whole) {
+            return Err(refused(format!("no integer {NUMBER_FIELD}")));
         }
         Ok(Self(o.clone()))
     }
@@ -86,12 +90,15 @@ impl Row {
     /// A prior ledger's settled row carried: no agent, so no fresh premise check.
     #[must_use]
     pub fn carried(prior: &Self) -> Self {
-        let reason = format!("carried from prior run: {}", prior.js("reason"));
+        let reason = field::cat(&[
+            "carried from prior run: ".into(),
+            field::js_text(&prior.0, "reason"),
+        ]);
         Self(
             Obj::new()
-                .with("stable_id", Js::str(prior.id()))
-                .with("verdict", Js::str(prior.js("verdict")))
-                .with("reason", Js::str(reason))
+                .with("stable_id", Js::Str(prior.id()))
+                .with("verdict", Js::Str(field::js_text(&prior.0, "verdict")))
+                .with("reason", Js::Str(reason))
                 .with("fix_pointer", Js::str(""))
                 .with(
                     "premise_checked",
@@ -102,13 +109,13 @@ impl Row {
 
     /// The verdict of a finding whose validator died: unjudged, so a human looks at it.
     #[must_use]
-    pub fn unjudged(id: &str) -> Self {
+    pub fn unjudged(id: &JsString) -> Self {
         let reason = format!(
             "{UNJUDGED_MARKER} — the validator agent died; this finding was never checked against the code"
         );
         Self(
             Obj::new()
-                .with("stable_id", Js::str(id))
+                .with("stable_id", Js::Str(id.clone()))
                 .with("verdict", Js::str("needs-decision"))
                 .with("reason", Js::str(reason))
                 .with("fix_pointer", Js::str(""))

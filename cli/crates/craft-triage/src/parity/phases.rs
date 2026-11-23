@@ -2,7 +2,7 @@
 
 use crate::field;
 use crate::finding::Gathered;
-use craft_store::js::Js;
+use craft_store::js::{Js, JsString};
 
 use crate::field::At;
 use crate::ledger::Row;
@@ -44,16 +44,21 @@ pub(super) fn gather(args: &Js, answers: &Js) -> (Vec<Gathered>, Vec<String>) {
 }
 
 /// The Validate phase: each kept finding's verdict, the ids an agent was asked about, the dead.
-pub(super) fn validate(args: &Js, answers: &Js, kept: &[Sifted]) -> (Vec<Row>, Vec<String>, usize) {
+pub(super) fn validate(
+    args: &Js,
+    answers: &Js,
+    kept: &[Sifted],
+) -> (Vec<Row>, Vec<JsString>, usize) {
     let pr_base = effective_pr_base(&text(args, "prBase"), &text(args, "base"));
     let prior = ledger_by_id(args.at("priorLedger").as_arr().unwrap_or_default());
     let (mut validations, mut asked, mut unjudged) = (Vec::new(), Vec::new(), 0);
-    for id in kept.iter().map(|f| f.stable_id.as_str()) {
+    let scripted = answers.at("validate").as_obj();
+    for id in kept.iter().map(|f| &f.stable_id) {
         let v = if let Some(p) = settled_prior(&prior, id) {
             Row::carried(p)
         } else {
-            asked.push(id.to_owned());
-            let a = answers.at("validate").at(id);
+            asked.push(id.clone());
+            let a = scripted.and_then(|o| o.get(id)).unwrap_or(&Js::Null);
             if matches!(a, Js::Null) {
                 unjudged += 1;
                 Row::unjudged(id)

@@ -1,12 +1,12 @@
 //! One case of `content/parity/triage-cases.json` replayed through this crate's functions, phase
 //! by phase as `triage-findings.js` runs them.
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use crate::banner::{self, Banners, Plan};
 use crate::finding::{Finding, Gathered, id_of};
 use crate::issue::issue_of;
-use craft_store::js::Js;
+use craft_store::js::{Js, JsString};
 
 use crate::field::At;
 use crate::ledger::Row;
@@ -24,7 +24,7 @@ pub(super) struct Replay {
     collapsed: Collapsed,
     pub(super) sifted: Vec<Row>,
     pub(super) validations: Vec<Row>,
-    pub(super) asked: Vec<String>,
+    pub(super) asked: Vec<JsString>,
     unjudged: usize,
 }
 
@@ -58,7 +58,7 @@ impl Replay {
         }
     }
 
-    fn raw_by_id(&self) -> HashMap<String, &Finding> {
+    fn raw_by_id(&self) -> BTreeMap<JsString, &Finding> {
         self.raw.iter().map(|f| (id_of(f), f)).collect()
     }
 
@@ -68,7 +68,7 @@ impl Replay {
         let accepted = self.validations.iter().filter(|v| v.verdict() == "accept");
         let rows: Vec<Js> = accepted
             .map(|v| {
-                let finding = by.get(v.id()).map_or(Js::Null, |f| Js::Obj(f.0.clone()));
+                let finding = by.get(&v.id()).map_or(Js::Null, |f| Js::Obj(f.0.clone()));
                 Js::from(v.clone().with("finding", finding))
             })
             .collect();
@@ -82,7 +82,7 @@ impl Replay {
             .iter()
             .filter(|v| v.text("action") == "issue");
         class_one
-            .filter_map(|v| by.get(v.id()).map(|f| issue_of(f, v.id(), v)))
+            .filter_map(|v| by.get(&v.id()).map(|f| issue_of(f, &v.id(), v)))
             .collect()
     }
 

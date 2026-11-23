@@ -1,6 +1,8 @@
 //! Reading the fields of the store's JavaScript-compatible values (`craft_store::js`) as the
 //! engine reads them.
 
+use std::borrow::Cow;
+
 use craft_store::js::{Js, JsString, Obj};
 
 static NULL: Js = Js::Null;
@@ -23,34 +25,63 @@ impl At for Js {
     }
 }
 
-/// The text under `key`, '' when it is absent, no string, or holds an unpaired surrogate.
+/// The text under `key`, '' when it is absent or no string. A string holding an unpaired
+/// surrogate is text all the same, as the engine reads it; UTF-8 cannot hold the surrogate, which
+/// reads as U+FFFD.
 #[must_use]
-pub fn text<'a>(o: &'a Obj, key: &str) -> &'a str {
-    o.get(key).and_then(Js::as_str).unwrap_or("")
+pub fn text<'a>(o: &'a Obj, key: &str) -> Cow<'a, str> {
+    match o.get(key) {
+        Some(Js::Str(s)) => s
+            .as_str()
+            .map_or_else(|| Cow::Owned(lossy(s)), Cow::Borrowed),
+        _ => Cow::Borrowed(""),
+    }
 }
 
-/// `String(o[key])` as a template literal writes it, `undefined` when absent; an unpaired
-/// surrogate, which UTF-8 cannot hold, is written as U+FFFD.
+/// A JavaScript string as UTF-8, an unpaired surrogate as U+FFFD.
+fn lossy(s: &JsString) -> String {
+    String::from_utf16_lossy(&s.units().collect::<Vec<_>>())
+}
+
+/// `String(o[key])` as a template literal writes it, `undefined` when absent, every UTF-16
+/// code unit kept.
+#[must_use]
+pub fn js_text(o: &Obj, key: &str) -> JsString {
+    o.get(key)
+        .map_or_else(|| "undefined".into(), Js::to_js_text)
+}
+
+/// `o[key] ?? ''` as a template literal writes it, every UTF-16 code unit kept.
+#[must_use]
+pub fn or_empty_text(o: &Obj, key: &str) -> JsString {
+    match o.get(key) {
+        None | Some(Js::Null) => JsString::default(),
+        Some(v) => v.to_js_text(),
+    }
+}
+
+/// The pieces of a template literal joined, every UTF-16 code unit kept.
+#[must_use]
+pub fn cat(parts: &[JsString]) -> JsString {
+    JsString::join(parts, "")
+}
+
+/// [`js_text`] as UTF-8, an unpaired surrogate written as U+FFFD.
 #[must_use]
 pub fn js(o: &Obj, key: &str) -> String {
-    o.get(key).map_or_else(|| "undefined".into(), string)
+    utf8(&js_text(o, key))
 }
 
-/// `String(v)`, an unpaired surrogate written as U+FFFD.
-#[must_use]
-pub fn string(v: &Js) -> String {
-    let t: JsString = v.to_js_text();
-    t.to_utf8()
-        .unwrap_or_else(|_| String::from_utf16_lossy(&t.units().collect::<Vec<_>>()))
-}
-
-/// `o[key] ?? ''` as a template literal writes it.
+/// [`or_empty_text`] as UTF-8, an unpaired surrogate written as U+FFFD.
 #[must_use]
 pub fn or_empty(o: &Obj, key: &str) -> String {
-    match o.get(key) {
-        None | Some(Js::Null) => String::new(),
-        Some(v) => string(v),
-    }
+    utf8(&or_empty_text(o, key))
+}
+
+/// A JavaScript string as UTF-8, an unpaired surrogate written as U+FFFD.
+#[must_use]
+pub fn utf8(t: &JsString) -> String {
+    t.to_utf8().unwrap_or_else(|_| lossy(t))
 }
 
 /// Whether `o[key]` is truthy; absent is not.
@@ -59,10 +90,14 @@ pub fn truthy(o: &Obj, key: &str) -> bool {
     o.get(key).is_some_and(Js::truthy)
 }
 
-/// A count as JavaScript holds a number.
+/// A count as JavaScript holds a number: a double.
 #[must_use]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "a JavaScript count is a double; one past 2^53 rounds there too"
+)]
 pub fn num(n: usize) -> Js {
-    Js::Num(f64::from(u32::try_from(n).unwrap_or(u32::MAX)))
+    Js::Num(n as f64)
 }
 
 /// A list of text.
@@ -83,16 +118,25 @@ mod tests {
         let o = v.as_obj().unwrap();
         assert_eq!(text(o, "s"), "t");
         assert_eq!(text(o, "n"), "");
-        assert_eq!(text(o, "bad"), "");
+        assert_eq!(text(o, "bad"), "\u{fffd}");
         assert_eq!(js(o, "n"), "6");
         assert_eq!(js(o, "missing"), "undefined");
         assert_eq!(js(o, "bad"), "\u{fffd}");
+        assert_eq!(js_text(o, "bad"), JsString::from_utf16(vec![0xd800]));
+        assert_eq!(cat(&["a".into(), js_text(o, "n")]), "a6");
+    }
+
+    #[test]
+    fn empties_truthiness_paths_and_counts_read_as_the_engine_reads_them() {
+        let v = parse(r#"{"s":"t","n":6.0,"z":null,"o":{"k":"v"}}"#).unwrap();
+        let o = v.as_obj().unwrap();
         assert_eq!(or_empty(o, "z"), "");
         assert_eq!(or_empty(o, "n"), "6");
         assert!(truthy(o, "s") && !truthy(o, "z") && !truthy(o, "missing"));
         assert_eq!(at(at(&v, "o"), "k").as_str(), Some("v"));
         assert_eq!(at(&v, "missing"), &Js::Null);
         assert_eq!(num(3).compact(), "3");
+        assert_eq!(num(5_000_000_000).compact(), "5000000000");
         assert_eq!(texts(&["a".into()]).compact(), r#"["a"]"#);
     }
 

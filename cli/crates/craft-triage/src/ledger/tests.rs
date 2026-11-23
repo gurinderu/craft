@@ -43,7 +43,7 @@ fn a_carried_and_an_unjudged_verdict_say_so_in_the_engines_order() {
         text(&Row::carried(&prior)),
         r#"{"stable_id":"r","verdict":"defer","reason":"carried from prior run: later","fix_pointer":"","premise_checked":"(carried from prior run — not re-checked)"}"#
     );
-    let u = Row::unjudged("x");
+    let u = Row::unjudged(&"x".into());
     assert_eq!(u.verdict(), "needs-decision");
     assert!(
         text(&u)
@@ -64,6 +64,7 @@ fn a_validator_answer_is_read_as_it_came_or_refused() {
     for bad in [
         r#"{"verdict":"accept"}"#.to_owned(),
         full.replace(r#""noise_class":6"#, r#""noise_class":"6""#),
+        full.replace(r#""noise_class":6"#, r#""noise_class":1.5"#),
         "[]".to_owned(),
     ] {
         let read = Row::validation(&parse(&bad).unwrap());

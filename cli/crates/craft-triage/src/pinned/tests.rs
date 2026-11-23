@@ -27,7 +27,7 @@ fn with_nothing_pinned_the_plan_ledger_stands() {
 
 #[test]
 fn a_paraphrased_row_is_restored_in_place_a_dropped_one_appended_a_kept_one_untouched() {
-    let dead = Row::unjudged("d");
+    let dead = Row::unjudged(&"d".into());
     let planned = rows(
         r#"[{"reason":"looked fine","stable_id":"d","verdict":"accept"},
             {"stable_id":"k","verdict":"needs-decision","reason":"x NOT JUDGED y"},
@@ -36,7 +36,7 @@ fn a_paraphrased_row_is_restored_in_place_a_dropped_one_appended_a_kept_one_unto
     );
     let validations = [
         dead.clone(),
-        Row::unjudged("k"),
+        Row::unjudged(&"k".into()),
         row(r#"{"stable_id":"a","verdict":"accept","reason":"ok"}"#),
     ];
     let got = pinned_ledger(&planned, &[row(REPEAT)], &validations);

@@ -111,7 +111,7 @@ pub fn run_record(r: &RecordInput<'_>) -> Js {
         .map(|g| {
             Js::Obj(
                 Obj::new()
-                    .with("source", Js::str(g.source.as_str()))
+                    .with("source", Js::Str(g.source.clone()))
                     .with("count", num(g.findings.len())),
             )
         })

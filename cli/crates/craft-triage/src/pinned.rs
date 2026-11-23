@@ -6,10 +6,10 @@
 //! A row is the agent's object as it came, extended in place as the engine extends it, and a
 //! row that is no object passes through untouched.
 
-use std::collections::HashSet;
+use std::collections::BTreeSet;
 
 use crate::issue::with_issue_actions;
-use craft_store::js::{Js, Obj};
+use craft_store::js::{Js, JsString, Obj};
 
 use crate::field;
 use crate::ledger::{Row, UNJUDGED_MARKER};
@@ -17,11 +17,11 @@ use crate::sift::SIFT_MARK;
 
 /// The rows this side settled, by id in first-insertion order, a later row under one id
 /// replacing an earlier one: the sifted rows, then every verdict marked unjudged.
-fn pinned_rows<'a>(sifted: &'a [Row], validations: &'a [Row]) -> Vec<(&'a str, &'a Row)> {
+fn pinned_rows<'a>(sifted: &'a [Row], validations: &'a [Row]) -> Vec<(JsString, &'a Row)> {
     let unjudged = validations
         .iter()
         .filter(|v| js_reason(v).contains(UNJUDGED_MARKER));
-    let mut pinned: Vec<(&str, &Row)> = Vec::new();
+    let mut pinned: Vec<(JsString, &Row)> = Vec::new();
     for row in sifted.iter().chain(unjudged) {
         match pinned.iter_mut().find(|(id, _)| *id == row.id()) {
             Some(p) => p.1 = row,
@@ -32,11 +32,11 @@ fn pinned_rows<'a>(sifted: &'a [Row], validations: &'a [Row]) -> Vec<(&'a str, &
 }
 
 /// `String(e.reason || '')`.
-fn js_reason(r: &Row) -> String {
+fn js_reason(r: &Row) -> JsString {
     if field::truthy(&r.0, "reason") {
-        field::js(&r.0, "reason")
+        field::js_text(&r.0, "reason")
     } else {
-        String::new()
+        JsString::default()
     }
 }
 
@@ -82,26 +82,28 @@ pub fn pinned_ledger(planned: &[Js], sifted: &[Row], validations: &[Row]) -> Vec
     if pinned.is_empty() {
         return planned.to_vec();
     }
-    let mut seen = HashSet::new();
-    let find = |e: &Obj| {
-        e.get("stable_id")
-            .and_then(Js::as_str)
-            .and_then(|id| pinned.iter().find(|(p, _)| *p == id))
+    let mut seen = BTreeSet::new();
+    let find = |e: &Obj| match e.get("stable_id") {
+        Some(Js::Str(id)) => pinned.iter().find(|(p, _)| p == id),
+        _ => None,
     };
     let mut rows: Vec<Js> = planned
         .iter()
         .map(|e| match e.as_obj().and_then(|o| find(o).map(|p| (o, p))) {
             Some((o, (id, v))) => {
-                seen.insert(*id);
+                seen.insert(id.clone());
                 Js::Obj(pin(o, v))
             }
             None => e.clone(),
         })
         .collect();
     let dropped = pinned.iter().filter(|(id, _)| !seen.contains(id));
-    rows.extend(
-        dropped.map(|(id, v)| Js::Obj(restored(Obj::new().with("stable_id", Js::str(*id)), v))),
-    );
+    rows.extend(dropped.map(|(id, v)| {
+        Js::Obj(restored(
+            Obj::new().with("stable_id", Js::Str(id.clone())),
+            v,
+        ))
+    }));
     rows
 }
 

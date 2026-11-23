@@ -61,7 +61,10 @@ fn a_premise_opened_at_exactly_the_ref() {
 #[test]
 fn class_one_defers_with_an_issue_only_when_shown_at_the_fork_point() {
     let shown = classified_verdict(v("accept", "1", "git show b1:a.rs"), "b1");
-    assert_eq!((shown.verdict(), shown.text("action")), ("defer", "issue"));
+    assert_eq!(
+        (&*shown.verdict(), &*shown.text("action")),
+        ("defer", "issue")
+    );
     let other = classified_verdict(v("defer", "1", "git show HEAD:a.rs"), "b1");
     assert_eq!(other.verdict(), "needs-decision");
     assert!(
