@@ -17,10 +17,12 @@ use serde_json::{Map, Value, json};
 use super::{lens, opts, scout, titled, verdict};
 
 /// A stand-in `gh` in `dir`: it logs each call, answers `pr view` and `pr list` with PR 7 at the
-/// head in `dir/head` on the branch in `dir/branch` (`pr view` a fork's while `dir/fork` exists,
-/// `pr list` with `dir/prs` when it exists),
+/// head in `dir/head` on the branch in `dir/branch` in the state in `dir/state` (OPEN when absent;
+/// `pr view` a fork's while `dir/fork` exists, `pr list` with `dir/prs` when it exists) — only
+/// with the fields its `--json` asks for, as gh prints them —,
 /// lists the comments it was asked to post (the request files it kept), keeps each
-/// posted request, fails every call while `dir/fail` exists, and refuses a comment on a line with
+/// posted request, fails every call while `dir/fail` exists and the read of the comments while
+/// `dir/fail-comments` does, and refuses a comment on a line with
 /// GitHub's 422 while `dir/no-lines` exists — on a later line of its stderr while
 /// `dir/no-lines-late` does.
 pub fn stand_in(dir: &Path, head: &str) -> PostSetup {
@@ -33,11 +35,19 @@ pub fn stand_in(dir: &Path, head: &str) -> PostSetup {
 S='{s}'
 echo "$*" >> "$S/calls"
 if [ -f "$S/fail" ]; then echo "HTTP 401: Bad credentials (https://api.github.com)" >&2; exit 1; fi
+fields=; prev=
+for a in "$@"; do [ "$prev" = --json ] && fields=",$a,"; prev=$a; done
+only() {{ out=$(cat)
+  for k in isCrossRepository state headRefName headRefOid url; do case "$fields" in *",$k,"*) ;;
+    *) out=$(printf '%s' "$out" | sed -E "s/,\"$k\":(\"[^\"]*\"|true|false)//g") ;; esac; done
+  printf '%s\n' "$out"; }}
+state=OPEN; [ -f "$S/state" ] && state=$(cat "$S/state")
 case "$1 $2" in
   "pr view") fork=false; [ -f "$S/fork" ] && fork=true
-    printf '{{"number":7,"url":"https://github.com/o/r/pull/7","headRefOid":"%s","headRefName":"%s","isCrossRepository":%s}}\n' "$(cat "$S/head")" "$(cat "$S/branch")" "$fork" ;;
-  "pr list") if [ -f "$S/prs" ]; then cat "$S/prs"; else printf '[{{"number":7,"url":"https://github.com/o/r/pull/7","headRefOid":"%s","headRefName":"%s"}}]\n' "$(cat "$S/head")" "$(cat "$S/branch")"; fi ;;
-  "api --paginate") printf '['; first=1
+    printf '{{"number":7,"url":"https://github.com/o/r/pull/7","headRefOid":"%s","headRefName":"%s","isCrossRepository":%s,"state":"%s"}}\n' "$(cat "$S/head")" "$(cat "$S/branch")" "$fork" "$state" | only ;;
+  "pr list") if [ -f "$S/prs" ]; then only < "$S/prs"; else printf '[{{"number":7,"url":"https://github.com/o/r/pull/7","headRefOid":"%s","headRefName":"%s","isCrossRepository":false,"state":"OPEN"}}]\n' "$(cat "$S/head")" "$(cat "$S/branch")" | only; fi ;;
+  "api --paginate") if [ -f "$S/fail-comments" ]; then echo "HTTP 502: Bad Gateway" >&2; exit 1; fi
+    printf '['; first=1
     for f in "$S"/posted/*.json; do [ -e "$f" ] || continue; [ $first = 1 ] || printf ','; first=0; cat "$f"; done
     printf ']\n' ;;
   "api --method") n=$(ls "$S/posted" | wc -l)
@@ -152,4 +162,10 @@ pub fn posted(gh: &Path) -> Vec<Value> {
         .iter()
         .map(|f| serde_json::from_str(&std::fs::read_to_string(f).unwrap()).unwrap())
         .collect()
+}
+
+/// The stand-in's PR without the comments posted on it so far.
+pub fn unpost(gh: &Path) {
+    std::fs::remove_dir_all(gh.join("posted")).unwrap();
+    std::fs::create_dir(gh.join("posted")).unwrap();
 }

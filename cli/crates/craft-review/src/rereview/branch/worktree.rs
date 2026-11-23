@@ -96,9 +96,10 @@ fn place(cwd: &Path, root: &Path, n: u64, pr_head: &str) -> Result<PathBuf, Stri
 
 const FETCH: [&str; 4] = ["fetch", "--no-tags", "--no-write-fetch-head", "--quiet"];
 
-/// PR `n`'s head `pr_head` in this repository: fetched from `origin`'s `pull/<n>/head` when it
-/// lacks it, never prompting, and leaving the user's `FETCH_HEAD` as it was.
-fn fetch(cwd: &Path, n: u64, pr_head: &str, cancel: &Cancel) -> Result<(), String> {
+/// PR `n`'s head `pr_head` in this repository — for a review's worktree and a doubtful finding's
+/// post alike: fetched from `origin`'s `pull/<n>/head` when it lacks it, bounded, never prompting,
+/// and leaving the user's `FETCH_HEAD` as it was.
+pub(crate) fn fetch(cwd: &Path, n: u64, pr_head: &str, cancel: &Cancel) -> Result<(), String> {
     if git::has_commit(cwd, pr_head) {
         return Ok(());
     }

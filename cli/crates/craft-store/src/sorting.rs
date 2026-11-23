@@ -6,6 +6,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::js::{Js, JsString, Obj, parse};
+use crate::posthoc::SortedRecordError;
 
 /// The choices a reviewer can make for a doubtful finding.
 pub const CHOICES: [&str; 3] = ["question", "defect", "dropped"];
@@ -28,7 +29,11 @@ fn sorted_findings(r: &Obj) -> Vec<&Obj> {
 ///
 /// # Errors
 /// When there is none, or the newest is another branch's.
-pub fn latest_sorted_record(store: &Path, project: &str, branch: &str) -> Result<PathBuf, String> {
+pub fn latest_sorted_record(
+    store: &Path,
+    project: &str,
+    branch: &str,
+) -> Result<PathBuf, SortedRecordError> {
     let mut names = crate::cost::entries_of(store);
     names.retain(|n| n.ends_with("-review.json"));
     for name in names.iter().rev() {
@@ -44,17 +49,17 @@ pub fn latest_sorted_record(store: &Path, project: &str, branch: &str) -> Result
         if branch.is_empty() || on.and_then(Js::as_str) == Some(branch) {
             return Ok(file);
         }
-        return Err(format!(
-            "the newest review record of {project} with doubtful findings, {}, is of branch {}, not {} — name the one meant with --record",
-            file.display(),
-            on.map_or_else(|| "undefined".to_owned(), Js::compact),
-            Js::str(branch).compact()
-        ));
+        return Err(SortedRecordError::OtherBranch {
+            project: project.to_owned(),
+            file: file.display().to_string(),
+            on: on.map_or_else(|| "undefined".to_owned(), Js::compact),
+            branch: Js::str(branch).compact(),
+        });
     }
-    Err(format!(
-        "no review record of {project} in {} carries doubtful findings",
-        store.display()
-    ))
+    Err(SortedRecordError::None {
+        project: project.to_owned(),
+        store: store.display().to_string(),
+    })
 }
 
 /// A value in a template literal: `undefined` for what is absent.

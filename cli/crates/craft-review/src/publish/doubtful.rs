@@ -3,8 +3,9 @@
 //! record; for each the human picks "ask the author" or "post as a defect", and this posts that one —
 //! read from the record, never from a hand-copied list — with the craft-finding marker, by the rules
 //! the defects are posted by: not a second time when its comment is on the PR already, on its file
-//! when GitHub refuses its line (node #285), only on a same-repository PR of the record's own
-//! branch whose head holds the reviewed commit, on the
+//! when GitHub refuses its line (node #285) — found before the PR's state and head are judged, so a
+//! retry sees its own earlier comment —, only on an open same-repository PR of the record's own
+//! branch whose head holds the reviewed commit, never from a review of uncommitted work, on the
 //! reviewed commit when the PR's head moved past it without touching its line, and nothing when it
 //! did or the record names no reviewed commit.
 
@@ -13,12 +14,15 @@ use std::path::Path;
 use serde::Serialize;
 use serde_json::Value;
 
-use super::after::moved_over;
 use super::gh::read;
-use super::gh::{Moved, send::To};
-use super::{Defect, PostSetup, body, short, sort};
+use super::gh::send::To;
+use super::{Defect, PostSetup, body, short};
 use crate::gate::runner::Runner;
 
+pub use error::PostError;
+
+mod error;
+mod head;
 #[cfg(test)]
 mod parity;
 mod request;
@@ -39,6 +43,9 @@ pub struct Doubtful<'a> {
     pub branch: Option<&'a str>,
     /// The PR the run published on (`prComments.pr`), when it names one.
     pub record_pr: Option<u64>,
+    /// The review read uncommitted work (the record's `dirty`): its lines are not the PR's, and
+    /// nothing is posted.
+    pub dirty: bool,
 }
 
 /// What came of posting it.
@@ -55,24 +62,6 @@ pub struct Posting {
     /// Posted on its file, its line outside the diff or refused by GitHub.
     pub to_file: bool,
     pub reason: String,
-}
-
-/// Why nothing was posted.
-#[derive(Debug, thiserror::Error)]
-pub enum PostError {
-    /// The record lists no such finding, or it names no file.
-    #[error("{0}")]
-    Finding(String),
-    /// The pull request cannot be told: none, several, one of another branch (`--pr`), or one
-    /// whose head does not hold the reviewed commit.
-    #[error("{0}")]
-    Pr(String),
-    /// gh failed, or the PR names no commit to post on.
-    #[error("{0}")]
-    Gh(String),
-    /// The PR's head moved past the reviewed head over the finding's line.
-    #[error("nothing was posted: {0}")]
-    Refused(String),
 }
 
 /// Posts `d` on its branch's pull request (`pr`, checked against it, or the one open
@@ -95,35 +84,23 @@ pub fn post(
     )]
     let c = request::chosen(d.findings, d.n as f64, d.question, d.lines_judged)
         .map_err(PostError::Finding)?;
+    if d.dirty {
+        return Err(PostError::Refused(super::DIRTY.into()));
+    }
     let runner = Runner::new(setup.budget, setup.path.clone(), scratch.to_path_buf());
     let reviewed = target::full(d).ok_or_else(|| PostError::Refused(target::NO_REVIEWED.into()))?;
-    let p = target::which_pr(&runner, repo, (d, reviewed), pr)?;
-
-    let (commit, note) = if reviewed == p.head {
-        (reviewed.to_owned(), String::new())
-    } else {
-        let line = sort::line(c.finding);
-        let title = sort::text(c.finding, "title");
-        let touched = |old: &crate::gate::lines::Lines| {
-            (line > 0 && old.touches(&c.file, line))
-                .then(|| format!("`{}:{line}` {title}", c.file))
-                .into_iter()
-                .collect()
-        };
-        match moved_over(repo, reviewed, &p.head, &touched) {
-            Moved::Post(note) => (reviewed.to_owned(), format!(" · {note}")),
-            Moved::Refuse(why) | Moved::Skip(why) => return Err(PostError::Refused(why)),
-        }
-    };
+    let p = target::which_pr(&runner, repo, d, pr)?;
     let mut out = Posting {
         pr: p.number,
         url: p.url.clone(),
-        commit,
+        commit: reviewed.to_owned(),
         posted: false,
         already: false,
         to_file: false,
         reason: String::new(),
     };
+    // Before the PR's state and head are judged: a retry finds the comment it posted already
+    // even once the PR closed or its head moved over the line.
     let seen = read::posted_already(&runner, repo, p.number).map_err(|e| {
         PostError::Gh(format!(
             "{e} — nothing posted, since what is there already could not be read"
@@ -139,6 +116,8 @@ pub fn post(
         );
         return Ok(out);
     }
+    head::postable(repo, &p, reviewed)?;
+    let note = head::commit_for(repo, &c, reviewed, &p)?;
     let to = To {
         runner: &runner,
         repo,

@@ -19,10 +19,13 @@ pub(in crate::publish) struct Pr {
     pub(in crate::publish) head_ref: String,
     /// Its head is in a fork (`isCrossRepository`; false when gh did not say).
     pub(in crate::publish) cross_repository: bool,
+    /// `OPEN`, `CLOSED` or `MERGED`; '' when gh did not say.
+    pub(in crate::publish) state: String,
 }
 
 /// The fields every pull request is read with.
-const FIELDS: &str = "number,url,headRefOid,headRefName,isCrossRepository,headRepositoryOwner";
+const FIELDS: &str =
+    "number,url,headRefOid,headRefName,isCrossRepository,headRepositoryOwner,state";
 
 /// A pull request as gh prints it.
 fn pr_of(v: &Value) -> Result<Pr, String> {
@@ -37,6 +40,7 @@ fn pr_of(v: &Value) -> Result<Pr, String> {
         head: text("headRefOid"),
         head_ref: text("headRefName"),
         cross_repository: v.get("isCrossRepository").and_then(Value::as_bool) == Some(true),
+        state: text("state"),
     })
 }
 
