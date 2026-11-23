@@ -68,7 +68,8 @@ fn without_a_code_metrics_index_the_lens_is_dropped_and_said_so() {
             "lens-general-correctness-r1",
             "lens-general-intent-r1",
             "lens-general-tests-r1",
-            "lens-general-design-r1"
+            "lens-general-design-r1",
+            "lens-general-maintainability-r1"
         ]
     );
     let run = out.path().join("run");
@@ -120,7 +121,8 @@ fn with_an_index_a_finding_stands_on_the_metrics_it_carries_and_the_verifier_rer
             "lens-general-correctness-r1",
             "lens-general-intent-r1",
             "lens-general-tests-r1",
-            "lens-general-design-r1"
+            "lens-general-design-r1",
+            "lens-general-maintainability-r1"
         ]
     );
     // A judging lens names its rubric's file by an absolute path any agent can read.
@@ -161,18 +163,11 @@ fn with_an_index_a_finding_stands_on_the_metrics_it_carries_and_the_verifier_rer
                "lens-general-correctness-r1": lens("correctness", &[]),
                "lens-general-intent-r1": lens("intent", &[]),
                "lens-general-tests-r1": lens("tests", &[]),
-               "lens-general-design-r1": lens("design", &[])}),
+               "lens-general-design-r1": lens("design", &[]),
+               "lens-general-maintainability-r1": lens("maintainability", &[])}),
     );
-    // Round 2 adds nothing; then the one finding with metrics goes to one metric verifier.
-    let quiet: serde_json::Map<String, Value> = ids(&s)
-        .into_iter()
-        .map(|id| {
-            let name = id.strip_prefix("lens-general-").unwrap();
-            let name = name.split('-').next().unwrap().to_owned();
-            (id, lens(&name, &[]))
-        })
-        .collect();
-    let s = submit(&run, Value::Object(quiet));
+    // Only the complexity lens found anything, and it runs in the first round alone: no round 2
+    // (realm @nick/craft, node #625); the one finding with metrics goes to one metric verifier.
     assert_eq!(ids(&s), ["verify-0-v0"], "one verifier, not a panel");
     let v = prompt_of(&s["tasks"][0]);
     assert_contains_all(
@@ -211,7 +206,8 @@ fn a_graph_answering_where_no_profile_records_one_is_indexed_and_the_lens_runs()
             "lens-general-correctness-r1",
             "lens-general-intent-r1",
             "lens-general-tests-r1",
-            "lens-general-design-r1"
+            "lens-general-design-r1",
+            "lens-general-maintainability-r1"
         ]
     );
 }

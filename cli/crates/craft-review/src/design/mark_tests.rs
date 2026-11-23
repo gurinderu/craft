@@ -9,14 +9,14 @@ use crate::git::Diff;
 use crate::git::tests::git;
 use crate::state::Track;
 
-pub(super) fn write(d: &Path, f: &str, text: &str) {
+pub(crate) fn write(d: &Path, f: &str, text: &str) {
     let p = d.join(f);
     std::fs::create_dir_all(p.parent().unwrap()).unwrap();
     std::fs::write(p, text).unwrap();
 }
 
 /// A repository holding `files` committed; its commit.
-pub(super) fn commit(d: &Path, files: &[(&str, &str)]) -> String {
+pub(crate) fn commit(d: &Path, files: &[(&str, &str)]) -> String {
     git(d, &["init", "-q", "-b", "main"]);
     for (f, t) in files {
         write(d, f, t);
@@ -27,7 +27,7 @@ pub(super) fn commit(d: &Path, files: &[(&str, &str)]) -> String {
 }
 
 /// What the working tree, staged, changes against `rev`.
-pub(super) fn staged(d: &Path, rev: &str) -> Diff {
+pub(crate) fn staged(d: &Path, rev: &str) -> Diff {
     git(d, &["add", "."]);
     let files = git(d, &["diff", "--name-only", rev]);
     Diff {
@@ -43,7 +43,7 @@ pub(super) fn staged(d: &Path, rev: &str) -> Diff {
 }
 
 /// A repository holding `base` committed, then `head` written and staged; the diff between them.
-pub(super) fn change(d: &Path, base: &[(&str, &str)], head: &[(&str, &str)]) -> Diff {
+pub(crate) fn change(d: &Path, base: &[(&str, &str)], head: &[(&str, &str)]) -> Diff {
     let rev = commit(d, base);
     for (f, t) in head {
         write(d, f, t);

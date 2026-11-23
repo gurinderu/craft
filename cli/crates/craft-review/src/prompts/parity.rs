@@ -48,6 +48,7 @@ fn every_prompt_renders_as_the_engines_render_it() {
         surface_dropped: Vec::new(),
         light_skipped: Vec::new(),
         metrics_dropped: Vec::new(),
+        signal_skipped: Vec::new(),
     };
     let pool = input["pool"].as_array().unwrap();
     let prior = prior_found_summary(pool);

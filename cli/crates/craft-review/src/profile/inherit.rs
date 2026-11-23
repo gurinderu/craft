@@ -16,7 +16,7 @@
 //! `exclude` without a base or naming a lens the base lacks, a lens both excluded and declared, a
 //! replacement that moves a lens between the roster and the floors, flips `metrics` or drops the
 //! base lens's own rubric; and, once merged, an always, safety or security-floor lens the roster
-//! lacks.
+//! lacks, or a lens gated on a signal that is unknown, unconditional or always run.
 
 use serde_json::{Map, Value};
 
@@ -229,6 +229,27 @@ pub(super) fn check(p: &Profile) -> Result<(), ContentError> {
             &p.id,
             format!("securityFloor names {l:?}, not in its lenses"),
         ));
+    }
+    signals(p)
+}
+
+/// Each lens's `signal` is one [`crate::lens_signal`] reads, on a `conditional` lens — a blanket
+/// fill would plan it signal or not — that no always set holds (realm @nick/craft, node #625).
+fn signals(p: &Profile) -> Result<(), ContentError> {
+    for l in p.lenses.iter().chain(&p.floor_lenses) {
+        let Some(s) = &l.signal else {
+            continue;
+        };
+        let why = if !crate::lens_signal::SIGNALS.contains(&s.as_str()) {
+            format!("lens {:?} names the unknown signal {s:?}", l.id)
+        } else if !l.conditional {
+            format!("lens {:?} is gated on {s:?} but not conditional", l.id)
+        } else if p.always_lenses.contains(&l.id) {
+            format!("lens {:?} is gated on {s:?} and in alwaysLenses", l.id)
+        } else {
+            continue;
+        };
+        return Err(bad(&p.id, why));
     }
     Ok(())
 }

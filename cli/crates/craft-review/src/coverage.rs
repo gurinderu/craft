@@ -10,9 +10,11 @@ use serde::{Deserialize, Serialize};
 use crate::git::Diff;
 
 mod assign;
+mod data;
 mod gap;
 
 pub use assign::{assign, supported};
+pub use data::is_data;
 pub use gap::{gap, is_ancillary, is_project_config, note, uncovered};
 
 /// A run that ended before any lens ran: its verdict, the line under it, and the files it lists.

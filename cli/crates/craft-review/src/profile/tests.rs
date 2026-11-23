@@ -258,8 +258,8 @@ fn rust_and_nix_extend_the_general_lenses_and_sql_stays_narrow() {
             rust.rule_catalog
         ),
         (
-            ["intent".to_owned(), "performance".to_owned()].as_slice(),
-            "safety",
+            ["intent".to_owned()].as_slice(),
+            "security",
             "rust-review",
             true
         ),

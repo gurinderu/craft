@@ -110,9 +110,20 @@ pub(crate) fn advance(dir: &Path, run: &mut RunState) -> Result<(), Error> {
             extra::take(&mut run.extra, &run.tasks, first.as_deref().unwrap_or(""));
             units::keep_questions(run);
             let added = run.rounds.absorb(&run.tasks);
-            for t in run.tracks.iter_mut().filter(|t| t.live()) {
+            for (t, p) in run
+                .tracks
+                .iter_mut()
+                .zip(&profiles)
+                .filter(|(t, _)| t.live())
+            {
                 t.rounds += 1;
-                t.dry = added.get(&t.profile).copied().unwrap_or(0) == 0;
+                // Dry too when no lens that found something may run again (realm @nick/craft,
+                // node #625): the next round would dispatch none of its lenses.
+                let again = t
+                    .plan
+                    .as_ref()
+                    .is_some_and(|plan| run.rounds.reruns_any(p, plan));
+                t.dry = added.get(&t.profile).copied().unwrap_or(0) == 0 || !again;
             }
             next_round(dir, run, &profiles)
         }
@@ -203,6 +214,7 @@ fn plan_tracks(run: &mut RunState, profiles: &[Profile]) {
             optional: &run.optional,
             embedded_sql: track.embedded_sql,
             design: track.design,
+            signals: track.signals.as_deref(),
         }));
     }
     // A lens the plan would run that could not look is a coverage gap, named once, under Not run;

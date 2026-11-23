@@ -19,6 +19,7 @@ fn input<'a>(p: &'a Profile, files: &'a [String], embedded_sql: bool) -> PlanInp
         optional: &[],
         embedded_sql,
         design: false,
+        signals: Some(&[]),
     }
 }
 
@@ -88,9 +89,11 @@ fn a_rust_diff_can_plan_the_general_lenses_complexity_behind_its_index() {
     let files = ["src/billing.rs".to_owned()];
     let scout = json!({"sizeBucket": "medium", "securitySensitive": false,
         "lenses": ["correctness", "security", "money", "complexity"]});
+    let money = ["money".to_owned()];
     let with = plan(PlanInput {
         scout: Some(&scout),
         metrics: true,
+        signals: Some(&money),
         ..input(&p, &files, false)
     });
     for l in ["correctness", "security", "money", "complexity"] {
@@ -110,8 +113,10 @@ fn a_general_diff_can_plan_the_lenses_it_gained() {
     let files = ["web/app.ts".to_owned()];
     let gained = ["tests", "maintainability", "compat", "invariants"];
     let scout = json!({"sizeBucket": "large", "securitySensitive": false, "lenses": gained});
+    let fired = ["new-or-large-file".to_owned()];
     let got = plan(PlanInput {
         scout: Some(&scout),
+        signals: Some(&fired),
         ..input(&p, &files, false)
     });
     for l in gained
@@ -132,23 +137,8 @@ fn holds(l: &[String], ids: &[&str]) -> Vec<String> {
 
 #[test]
 fn the_security_floor_adds_only_the_profiles_security_lenses() {
-    let rust_floor = [
-        "security",
-        "safety",
-        "correctness",
-        "errors",
-        "concurrency",
-        "compat",
-        "invariants",
-    ];
-    let general_floor = [
-        "security",
-        "correctness",
-        "errors",
-        "concurrency",
-        "compat",
-        "invariants",
-    ];
+    let rust_floor = ["security", "correctness", "errors", "compat", "invariants"];
+    let general_floor = ["security", "correctness", "errors", "compat", "invariants"];
     let scout_picked = ["money", "maintainability", "complexity", "performance"];
     for (id, file, floor) in [
         ("rust", "src/lib.rs", rust_floor.as_slice()),

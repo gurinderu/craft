@@ -259,3 +259,43 @@ fn the_security_floor_is_inherited_overridable_and_in_the_roster() {
         "{why}"
     );
 }
+
+/// A lens gated on a diff signal (realm @nick/craft, node #625) names one the binary reads, and is
+/// conditional and outside the always set: else no plan could tell whether it runs.
+#[test]
+fn a_signal_gated_lens_names_a_known_signal_on_a_conditional_lens_not_always_run() {
+    let gated = |signal: &str, conditional: bool| {
+        let mut l = lens("c", "base-c");
+        l["signal"] = json!(signal);
+        l["conditional"] = json!(conditional);
+        l
+    };
+    let with = |l: Value, always: &[&str]| {
+        let mut p = base("general");
+        p["lenses"][2] = l;
+        p["alwaysLenses"] = json!(always);
+        p
+    };
+    let ok = with(gated("money", true), &["a"]);
+    assert_eq!(
+        load("general", &[&ok])
+            .unwrap()
+            .lens("c")
+            .unwrap()
+            .signal
+            .as_deref(),
+        Some("money")
+    );
+    for (p, named) in [
+        (with(gated("moneyy", true), &["a"]), "unknown signal"),
+        (with(gated("money", false), &["a"]), "not conditional"),
+        (with(gated("money", true), &["a", "c"]), "in alwaysLenses"),
+    ] {
+        let why = refused("general", &[&p]);
+        assert!(why.contains(named), "{named}: {why}");
+    }
+    let mut floor = base("general");
+    floor["floorLenses"][0]["signal"] = json!("nope");
+    floor["floorLenses"][0]["conditional"] = json!(true);
+    assert!(refused("general", &[&floor]).contains("unknown signal"));
+}

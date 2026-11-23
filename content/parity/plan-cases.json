@@ -22,7 +22,6 @@
         "lenses": [
           "errors",
           "intent",
-          "performance",
           "tests"
         ],
         "maxRounds": 1,
@@ -34,7 +33,14 @@
         "churn": [],
         "repoRules": [],
         "surfaceDropped": [],
-        "lightSkipped": []
+        "lightSkipped": [],
+        "signalSkipped": [
+          "money",
+          "concurrency",
+          "performance",
+          "maintainability",
+          "safety"
+        ]
       }
     },
     {
@@ -59,9 +65,7 @@
         "sizeBucket": "small",
         "lenses": [
           "errors",
-          "safety",
-          "intent",
-          "performance"
+          "intent"
         ],
         "maxRounds": 1,
         "verifyVotes": 1,
@@ -72,7 +76,14 @@
         "churn": [],
         "repoRules": [],
         "surfaceDropped": [],
-        "lightSkipped": []
+        "lightSkipped": [],
+        "signalSkipped": [
+          "money",
+          "concurrency",
+          "performance",
+          "maintainability",
+          "safety"
+        ]
       }
     },
     {
@@ -86,13 +97,10 @@
         "lenses": [
           "correctness",
           "security",
-          "concurrency",
           "errors",
           "compat",
           "invariants",
-          "safety",
           "intent",
-          "performance",
           "tests",
           "negative-space"
         ],
@@ -105,7 +113,14 @@
         "churn": [],
         "repoRules": [],
         "surfaceDropped": [],
-        "lightSkipped": []
+        "lightSkipped": [],
+        "signalSkipped": [
+          "money",
+          "concurrency",
+          "performance",
+          "maintainability",
+          "safety"
+        ]
       }
     },
     {
@@ -130,14 +145,11 @@
         "lenses": [
           "errors",
           "intent",
-          "performance",
           "tests",
           "correctness",
           "security",
-          "concurrency",
           "compat",
           "invariants",
-          "safety",
           "negative-space"
         ],
         "maxRounds": 2,
@@ -149,7 +161,14 @@
         "churn": [],
         "repoRules": [],
         "surfaceDropped": [],
-        "lightSkipped": []
+        "lightSkipped": [],
+        "signalSkipped": [
+          "money",
+          "concurrency",
+          "performance",
+          "maintainability",
+          "safety"
+        ]
       }
     },
     {
@@ -176,13 +195,9 @@
       "expected": {
         "sizeBucket": "large",
         "lenses": [
-          "safety",
           "errors",
-          "concurrency",
-          "maintainability",
           "invariants",
           "intent",
-          "performance",
           "tests",
           "correctness",
           "security",
@@ -198,7 +213,14 @@
         "churn": [],
         "repoRules": [],
         "surfaceDropped": [],
-        "lightSkipped": []
+        "lightSkipped": [],
+        "signalSkipped": [
+          "money",
+          "concurrency",
+          "performance",
+          "maintainability",
+          "safety"
+        ]
       }
     },
     {
@@ -225,7 +247,6 @@
           "reconciler",
           "errors",
           "intent",
-          "performance",
           "tests",
           "failure-windows"
         ],
@@ -238,7 +259,14 @@
         "churn": [],
         "repoRules": [],
         "surfaceDropped": [],
-        "lightSkipped": []
+        "lightSkipped": [],
+        "signalSkipped": [
+          "money",
+          "concurrency",
+          "performance",
+          "maintainability",
+          "safety"
+        ]
       }
     },
     {
@@ -265,7 +293,6 @@
       "expected": {
         "sizeBucket": "small",
         "lenses": [
-          "performance",
           "failure-windows",
           "intent",
           "tests"
@@ -279,7 +306,14 @@
         "churn": [],
         "repoRules": [],
         "surfaceDropped": [],
-        "lightSkipped": []
+        "lightSkipped": [],
+        "signalSkipped": [
+          "money",
+          "concurrency",
+          "performance",
+          "maintainability",
+          "safety"
+        ]
       }
     },
     {
@@ -311,12 +345,9 @@
         "lenses": [
           "errors",
           "intent",
-          "performance",
           "tests",
           "correctness",
-          "security",
-          "concurrency",
-          "safety"
+          "security"
         ],
         "maxRounds": 3,
         "verifyVotes": 3,
@@ -331,7 +362,14 @@
           "invariants",
           "negative-space"
         ],
-        "lightSkipped": []
+        "lightSkipped": [],
+        "signalSkipped": [
+          "money",
+          "concurrency",
+          "performance",
+          "maintainability",
+          "safety"
+        ]
       }
     },
     {
@@ -361,7 +399,6 @@
         "lenses": [
           "errors",
           "intent",
-          "performance",
           "tests",
           "compat"
         ],
@@ -374,7 +411,14 @@
         "churn": [],
         "repoRules": [],
         "surfaceDropped": [],
-        "lightSkipped": []
+        "lightSkipped": [],
+        "signalSkipped": [
+          "money",
+          "concurrency",
+          "performance",
+          "maintainability",
+          "safety"
+        ]
       }
     },
     {
@@ -407,7 +451,6 @@
         "lenses": [
           "errors",
           "intent",
-          "performance",
           "tests"
         ],
         "maxRounds": 2,
@@ -424,7 +467,14 @@
           "CLAUDE.md"
         ],
         "surfaceDropped": [],
-        "lightSkipped": []
+        "lightSkipped": [],
+        "signalSkipped": [
+          "money",
+          "concurrency",
+          "performance",
+          "maintainability",
+          "safety"
+        ]
       }
     },
     {
@@ -451,14 +501,11 @@
       "expected": {
         "sizeBucket": "large",
         "lenses": [
-          "safety",
           "errors",
           "intent",
-          "performance",
           "tests",
           "correctness",
-          "security",
-          "concurrency"
+          "security"
         ],
         "maxRounds": 1,
         "verifyVotes": 3,
@@ -473,6 +520,13 @@
           "invariants",
           "compat",
           "negative-space"
+        ],
+        "signalSkipped": [
+          "money",
+          "concurrency",
+          "performance",
+          "maintainability",
+          "safety"
         ]
       }
     },
@@ -499,7 +553,6 @@
         "lenses": [
           "reconciler",
           "intent",
-          "performance",
           "tests",
           "failure-windows"
         ],
@@ -512,7 +565,14 @@
         "churn": [],
         "repoRules": [],
         "surfaceDropped": [],
-        "lightSkipped": []
+        "lightSkipped": [],
+        "signalSkipped": [
+          "money",
+          "concurrency",
+          "performance",
+          "maintainability",
+          "safety"
+        ]
       }
     },
     {
@@ -538,7 +598,6 @@
         "lenses": [
           "failure-windows",
           "intent",
-          "performance",
           "tests"
         ],
         "maxRounds": 1,
@@ -550,7 +609,14 @@
         "churn": [],
         "repoRules": [],
         "surfaceDropped": [],
-        "lightSkipped": []
+        "lightSkipped": [],
+        "signalSkipped": [
+          "money",
+          "concurrency",
+          "performance",
+          "maintainability",
+          "safety"
+        ]
       }
     },
     {
@@ -574,7 +640,12 @@
       "expected": {
         "sizeBucket": "small",
         "lenses": [
-          "performance"
+          "correctness",
+          "security",
+          "errors",
+          "tests",
+          "complexity",
+          "reconciler"
         ],
         "maxRounds": 1,
         "verifyVotes": 1,
@@ -588,6 +659,13 @@
         "lightSkipped": [
           "invariants",
           "intent"
+        ],
+        "signalSkipped": [
+          "money",
+          "concurrency",
+          "performance",
+          "maintainability",
+          "safety"
         ]
       }
     },
@@ -626,7 +704,8 @@
         "churn": [],
         "repoRules": [],
         "surfaceDropped": [],
-        "lightSkipped": []
+        "lightSkipped": [],
+        "signalSkipped": []
       }
     },
     {
@@ -656,7 +735,8 @@
         "churn": [],
         "repoRules": [],
         "surfaceDropped": [],
-        "lightSkipped": []
+        "lightSkipped": [],
+        "signalSkipped": []
       }
     },
     {
@@ -697,7 +777,8 @@
         "churn": [],
         "repoRules": [],
         "surfaceDropped": [],
-        "lightSkipped": []
+        "lightSkipped": [],
+        "signalSkipped": []
       }
     },
     {
@@ -742,7 +823,8 @@
         "churn": [],
         "repoRules": [],
         "surfaceDropped": [],
-        "lightSkipped": []
+        "lightSkipped": [],
+        "signalSkipped": []
       }
     },
     {
@@ -789,7 +871,8 @@
         "surfaceDropped": [
           "negative-space"
         ],
-        "lightSkipped": []
+        "lightSkipped": [],
+        "signalSkipped": []
       }
     },
     {
@@ -834,7 +917,8 @@
         "lightSkipped": [
           "compat",
           "negative-space"
-        ]
+        ],
+        "signalSkipped": []
       }
     },
     {
@@ -859,7 +943,6 @@
         "lenses": [
           "errors",
           "intent",
-          "performance",
           "tests",
           "maintainability"
         ],
@@ -872,7 +955,13 @@
         "churn": [],
         "repoRules": [],
         "surfaceDropped": [],
-        "lightSkipped": []
+        "lightSkipped": [],
+        "signalSkipped": [
+          "money",
+          "concurrency",
+          "performance",
+          "safety"
+        ]
       },
       "strict": true
     },
@@ -899,7 +988,6 @@
         "lenses": [
           "errors",
           "intent",
-          "performance",
           "tests",
           "sql-queries"
         ],
@@ -912,7 +1000,14 @@
         "churn": [],
         "repoRules": [],
         "surfaceDropped": [],
-        "lightSkipped": []
+        "lightSkipped": [],
+        "signalSkipped": [
+          "money",
+          "concurrency",
+          "performance",
+          "maintainability",
+          "safety"
+        ]
       }
     },
     {
@@ -950,7 +1045,13 @@
         "sizeBucket": "small",
         "surfaceDropped": [],
         "verifyVotes": 1,
-        "lensModel": "opus"
+        "lensModel": "opus",
+        "signalSkipped": [
+          "money",
+          "concurrency",
+          "performance",
+          "maintainability"
+        ]
       }
     },
     {
@@ -980,13 +1081,11 @@
         "isLibrary": false,
         "lenses": [
           "tests",
-          "maintainability",
           "compat",
           "invariants",
           "correctness",
           "intent",
           "security",
-          "concurrency",
           "errors",
           "negative-space"
         ],
@@ -997,7 +1096,13 @@
         "sizeBucket": "large",
         "surfaceDropped": [],
         "verifyVotes": 3,
-        "lensModel": "opus"
+        "lensModel": "opus",
+        "signalSkipped": [
+          "money",
+          "concurrency",
+          "performance",
+          "maintainability"
+        ]
       }
     },
     {
@@ -1014,7 +1119,6 @@
         "lenses": [
           "correctness",
           "security",
-          "concurrency",
           "errors",
           "compat",
           "invariants",
@@ -1029,7 +1133,13 @@
         "sizeBucket": "medium",
         "surfaceDropped": [],
         "verifyVotes": 3,
-        "lensModel": "opus"
+        "lensModel": "opus",
+        "signalSkipped": [
+          "money",
+          "concurrency",
+          "performance",
+          "maintainability"
+        ]
       }
     },
     {
@@ -1065,7 +1175,8 @@
         "churn": [],
         "repoRules": [],
         "surfaceDropped": [],
-        "lightSkipped": []
+        "lightSkipped": [],
+        "signalSkipped": []
       }
     }
   ]

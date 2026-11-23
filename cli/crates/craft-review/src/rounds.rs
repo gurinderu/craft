@@ -6,7 +6,7 @@
 //! verdict reads as INCOMPLETE.
 
 use craft_store::js::JsStr;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -61,6 +61,12 @@ pub struct Rounds {
     /// The CONSUMERS lines shown to a lens task that did not answer: died, failed or still out.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub consumers_unanswered: Vec<String>,
+    /// The dispatches of the last round, each as `profile:lens` with its slice's key, whose answer
+    /// held a finding the pool lacked when the round began: only these run again ([`rerun`]);
+    /// `None` before the first round's answers, and in a state written before it was kept, which
+    /// reruns every lens.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub yielded: Option<Vec<String>>,
 }
 
 /// The exact key of a finding: its file and title folded, and its line, as `key` in
@@ -108,34 +114,59 @@ pub fn tasks(
     let (profile, plan) = at;
     let prior = prompts::prior_found_summary(&rounds.pool);
     let pathspec = ctx.pathspec(profile, files);
+    let source = rerun::source(profile, files);
+    let source_spec = ctx.pathspec(profile, &source);
     let mut out = Vec::new();
-    // A metrics lens reads numbers another round would not change, and the design lens decisions
-    // another round would not change (realm @nick/craft, node #534): each runs in the first only.
-    let once = |l: &str| l == crate::design::LENS || profile.lens(l).is_some_and(|x| x.metrics);
-    let lenses = plan.lenses.iter().filter(|l| rounds.round <= 1 || !once(l));
+    let lenses = plan
+        .lenses
+        .iter()
+        .filter(|l| rounds.round <= 1 || !rerun::first_only(profile, l));
     for lens in lenses {
-        let at = LensIn {
-            profile,
-            lens,
-            plan,
-            pathspec: &pathspec,
-            prior: &prior,
-        };
         // A lens that judges the change as a whole (`WHOLE_DIFF_LENSES` in integrations/shared/lens-scope.mjs, the
         // profile's `wholeDiff`), one marked `unsliced` (the runbook lens) or one reading metrics is
         // never sliced.
         let whole = profile
             .lens(lens)
             .is_none_or(|l| l.metrics || l.whole_diff || l.unsliced);
+        // A per-file lens of the general profile reads no data file (realm @nick/craft, node #625).
+        let (spec, own) = if whole {
+            (&pathspec, files)
+        } else {
+            (&source_spec, source.as_slice())
+        };
+        if own.is_empty() && !files.is_empty() {
+            continue;
+        }
+        let at = LensIn {
+            profile,
+            lens,
+            plan,
+            pathspec: spec,
+            prior: &prior,
+        };
+        let again = |slice: Option<&Slice>| rounds.reruns(&dispatch_key(&profile.id, lens, slice));
         if slices.is_empty() || whole {
-            out.push(lens_task(ctx, &at, rounds.round, None)?);
+            if again(None) {
+                out.push(lens_task(ctx, &at, rounds.round, None)?);
+            }
             continue;
         }
         for (i, slice) in slices.iter().enumerate() {
-            out.push(lens_task(ctx, &at, rounds.round, Some((i, slice)))?);
+            if again(Some(slice)) {
+                out.push(lens_task(ctx, &at, rounds.round, Some((i, slice)))?);
+            }
         }
     }
     Ok(out)
+}
+
+/// A dispatch's key: its lens's, and its slice's when sliced.
+fn dispatch_key(profile: &str, lens: &str, slice: Option<&Slice>) -> String {
+    let k = lens_key(profile, lens);
+    match slice {
+        Some(s) => format!("{k}{SLICE_SEP}{}", s.key),
+        None => k,
+    }
 }
 
 /// The answer schema of `profile`'s `lens`, for a round's dispatch and one the critic admits: a
@@ -244,6 +275,8 @@ impl Rounds {
     pub fn absorb(&mut self, tasks: &[Task]) -> BTreeMap<String, usize> {
         let mut fresh: Vec<Value> = Vec::new();
         let mut added: BTreeMap<String, usize> = BTreeMap::new();
+        let before: BTreeSet<String> = self.pool.iter().map(key).collect();
+        let mut yielded: Vec<String> = Vec::new();
         let (mut returned, mut raw) = (0, 0);
         for t in tasks {
             let TaskKind::Lens {
@@ -261,6 +294,9 @@ impl Rounds {
                 k = format!("{k}{SLICE_SEP}{s}");
             }
             let answer = self.answered(t, &k);
+            if answer.is_some_and(|a| rerun::found_new(a, &before)) && !yielded.contains(&k) {
+                yielded.push(k.clone());
+            }
             self.note_lines(t, answer.is_some());
             let Some(answer) = answer else {
                 continue;
@@ -296,6 +332,7 @@ impl Rounds {
             raw: Some(raw),
         });
         self.pool.extend(fresh);
+        self.yielded = Some(yielded);
         added
     }
 
@@ -424,6 +461,9 @@ impl Rounds {
     }
 }
 
+mod rerun;
+#[cfg(test)]
+mod rerun_tests;
 #[cfg(test)]
 mod shown_tests;
 #[cfg(test)]

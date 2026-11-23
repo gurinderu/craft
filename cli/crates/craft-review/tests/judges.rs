@@ -50,7 +50,6 @@ fn verified(
         json!({
             "lens-rust-errors-r1": lens("errors", found),
             "lens-rust-intent-r1": lens("intent", &[]),
-            "lens-rust-performance-r1": lens("performance", &[]),
             "lens-rust-tests-r1": lens("tests", &[]),
         }),
     );

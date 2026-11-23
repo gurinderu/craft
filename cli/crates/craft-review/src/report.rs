@@ -294,6 +294,12 @@ fn plan_lines(state: &RunState, t: &Track, out: &mut String) {
             plan.surface_dropped.join(", ")
         ));
     }
+    if !plan.signal_skipped.is_empty() {
+        out.push_str(&format!(
+            "Held back, no diff signal for them{whose}: {}.\n",
+            plan.signal_skipped.join(", ")
+        ));
+    }
 }
 
 /// The findings the verdict stands on: the priors going against memory and every settled finding

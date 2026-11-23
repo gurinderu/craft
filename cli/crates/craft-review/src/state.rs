@@ -204,6 +204,10 @@ pub struct Track {
     /// its scout and lenses, so git shows each rename, but not counted among its files.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub renamed_from: Vec<String>,
+    /// The lens signals its part shows ([`crate::lens_signal`]); `None` when they could not be read,
+    /// or in a state written before they were, which admits every signal-gated lens.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signals: Option<Vec<String>>,
 }
 
 impl Track {
@@ -218,6 +222,7 @@ impl Track {
             embedded_sql: false,
             design: false,
             renamed_from: Vec::new(),
+            signals: Some(Vec::new()),
         }
     }
 

@@ -9,9 +9,9 @@
   "navSkill": "rust-navigation",
   "securityHints": "auth, crypto, input parsing, unsafe, FFI, or dependencies",
   "usesLibrary": true,
-  "alwaysLenses": ["intent", "performance"],
-  "safetyLens": "safety",
-  "securityFloor": ["security", "safety", "correctness", "errors", "concurrency", "compat", "invariants"],
+  "alwaysLenses": ["intent"],
+  "safetyLens": "security",
+  "securityFloor": ["security", "correctness", "errors", "compat", "invariants"],
   "scoutRules": "scout-rules-rust",
   "scoutModel": "haiku",
   "dedupModel": "haiku",
@@ -25,10 +25,10 @@
   },
   "negativeSpace": { "newSurface": "enum variant / status value / DB column / table / migration / public fn / route / struct field", "shapeUses": "lists, updates, deletes, cascades, serializes, orders, or authorizes" },
   "lenses": [
-    { "id": "safety", "brief": "lens-briefs/rust-safety", "model": "opus" },
+    { "id": "safety", "brief": "lens-briefs/rust-safety", "model": "opus", "conditional": true, "signal": "unsafe" },
     { "id": "errors", "brief": "lens-briefs/rust-errors", "model": "opus" },
-    { "id": "concurrency", "brief": "lens-briefs/rust-concurrency", "model": "opus" },
-    { "id": "performance", "brief": "lens-briefs/rust-performance", "model": "opus" },
+    { "id": "concurrency", "brief": "lens-briefs/rust-concurrency", "model": "opus", "conditional": true, "signal": "concurrency" },
+    { "id": "performance", "brief": "lens-briefs/rust-performance", "model": "opus", "conditional": true, "signal": "loop-io" },
     { "id": "api-idioms", "brief": "lens-briefs/rust-api-idioms", "model": "opus", "optional": true },
     { "id": "api-boundary", "brief": "lens-briefs/rust-api-boundary", "model": "opus", "optional": true },
     {
@@ -36,7 +36,7 @@
       "catalogue": { "label": "RACE CATALOGUE", "file": "skills/distributed-races/catalogue.md", "fallback": "R1–R6" }
     },
     { "id": "failure-windows", "brief": "lens-briefs/rust-failure-windows", "model": "opus", "conditional": true, "wholeDiff": true },
-    { "id": "maintainability", "brief": "lens-briefs/rust-maintainability", "model": "opus" },
+    { "id": "maintainability", "brief": "lens-briefs/rust-maintainability", "model": "opus", "conditional": true, "signal": "new-or-large-file" },
     { "id": "intent", "brief": "lens-briefs/rust-intent", "model": "opus", "wholeDiff": true }
   ],
   "floorLenses": [

@@ -68,7 +68,6 @@ fn round1(findings: &[Value]) -> Value {
     json!({
         "lens-rust-errors-r1": lens("errors", findings),
         "lens-rust-intent-r1": lens("intent", &[]),
-        "lens-rust-performance-r1": lens("performance", &[]),
         "lens-rust-tests-r1": lens("tests", &[]),
     })
 }
@@ -263,9 +262,15 @@ fn maintainability() -> Value {
 }
 
 /// A small run, `strict` or not, its scout picking `picks`, its lenses answering, the one
-/// maintainability finding confirmed: the finished step.
+/// maintainability finding confirmed: the finished step. Outside strict mode the change also adds
+/// a file, the signal the maintainability lens is gated on (realm @nick/craft, node #625).
 fn maintainability_run(strict: bool, picks: &[&str]) -> (Value, Value) {
     let repo = fixture(true);
+    if !strict {
+        std::fs::write(repo.path().join("src/more.rs"), "pub fn g() {}\n").unwrap();
+        common::git(repo.path(), &["add", "."]);
+        common::git(repo.path(), &["commit", "-qm", "feat: add g"]);
+    }
     let out = tempfile::tempdir().unwrap();
     let run = out.path().join("run");
     let s = step::start(&StartOptions {

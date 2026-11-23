@@ -124,11 +124,11 @@ fn a_two_crate_change_is_sliced_judged_by_contract_and_seam_and_its_questions_de
             "lens-rust-errors-r1-s0",
             "lens-rust-errors-r1-s1",
             "lens-rust-intent-r1",
-            "lens-rust-performance-r1-s0",
-            "lens-rust-performance-r1-s1",
             "lens-rust-tests-r1-s0",
             "lens-rust-tests-r1-s1",
             "lens-rust-design-r1",
+            "lens-rust-maintainability-r1-s0",
+            "lens-rust-maintainability-r1-s1",
             "lens-rust-contract-r1-u0",
             "lens-rust-contract-r1-u1",
         ]
@@ -221,10 +221,12 @@ fn a_change_unit_mode_cannot_slice_runs_in_the_normal_mode_with_its_warning() {
         let mut want = vec![
             "lens-rust-errors-r1",
             "lens-rust-intent-r1",
-            "lens-rust-performance-r1",
             "lens-rust-tests-r1",
         ];
-        want.extend(design.then_some("lens-rust-design-r1"));
+        // A change that adds a crate adds files too: the maintainability lens's signal.
+        if design {
+            want.extend(["lens-rust-design-r1", "lens-rust-maintainability-r1"]);
+        }
         assert_eq!(ids(&s), want);
         let mut s = submit(&run, answer_all(&s, &Map::new()));
         while s["done"] == json!(false) {
@@ -251,9 +253,9 @@ fn without_the_flag_a_large_change_is_cut_by_directory_and_a_small_one_not_at_al
         [
             "lens-rust-errors-r1",
             "lens-rust-intent-r1",
-            "lens-rust-performance-r1",
             "lens-rust-tests-r1",
-            "lens-rust-design-r1"
+            "lens-rust-design-r1",
+            "lens-rust-maintainability-r1"
         ]
     );
     let repo = workspace(7, 120);
@@ -269,11 +271,11 @@ fn without_the_flag_a_large_change_is_cut_by_directory_and_a_small_one_not_at_al
             "lens-rust-errors-r1-s0",
             "lens-rust-errors-r1-s1",
             "lens-rust-intent-r1",
-            "lens-rust-performance-r1-s0",
-            "lens-rust-performance-r1-s1",
             "lens-rust-tests-r1-s0",
             "lens-rust-tests-r1-s1",
-            "lens-rust-design-r1"
+            "lens-rust-design-r1",
+            "lens-rust-maintainability-r1-s0",
+            "lens-rust-maintainability-r1-s1"
         ]
     );
     let sliced = prompt_of(task(&s, "lens-rust-errors-r1-s1"));

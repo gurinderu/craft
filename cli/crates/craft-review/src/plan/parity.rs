@@ -24,6 +24,7 @@ fn every_case_plans_as_the_engines_plan_it() {
         let profile = Profile::load(c["profile"].as_str().unwrap_or("rust")).unwrap();
         let files: Vec<String> = serde_json::from_value(c["changedFiles"].clone()).unwrap();
         let scout = Some(&c["scout"]).filter(|s| !s.is_null());
+        let signals: Vec<String> = serde_json::from_value(c["signals"].clone()).unwrap_or_default();
         let got = plan(PlanInput {
             profile: &profile,
             scout,
@@ -36,13 +37,14 @@ fn every_case_plans_as_the_engines_plan_it() {
             optional: &[],
             embedded_sql: c["embeddedSql"] == json!(true),
             design: c["design"] == json!(true),
+            signals: Some(&signals),
         });
         let got_json = json!({
             "sizeBucket": got.size_bucket, "lenses": got.lenses, "maxRounds": got.max_rounds,
             "verifyVotes": got.verify_votes, "isLibrary": got.is_library,
             "securitySensitive": got.security_sensitive, "intent": got.intent, "churn": got.churn,
             "repoRules": got.repo_rules, "surfaceDropped": got.surface_dropped,
-            "lightSkipped": got.light_skipped,
+            "lightSkipped": got.light_skipped, "signalSkipped": got.signal_skipped,
         });
         for (k, v) in got_json.as_object().unwrap() {
             g.check(&format!("{at}/{k}"), v.clone());
@@ -73,6 +75,7 @@ fn a_plan_names_the_model_its_lenses_run_on() {
         optional: &[],
         embedded_sql: false,
         design: false,
+        signals: Some(&[]),
     });
     assert_eq!(got.lens_model(&profile), crate::agent::Model::Sonnet);
     let none = super::Plan {

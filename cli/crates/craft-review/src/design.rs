@@ -21,6 +21,7 @@ mod types;
 
 pub use seed::Seed;
 pub(crate) use seed::lens_block;
+pub(crate) use signal::added_files;
 
 /// The lens this module admits and seeds.
 pub(crate) const LENS: &str = "design";
@@ -112,7 +113,7 @@ pub(crate) fn mark(cwd: &Path, diff: &Diff, tracks: &mut [Track]) -> (Seed, Opti
 #[cfg(test)]
 mod delta_tests;
 #[cfg(test)]
-mod mark_tests;
+pub(crate) mod mark_tests;
 #[cfg(test)]
 mod seed_tests;
 #[cfg(test)]

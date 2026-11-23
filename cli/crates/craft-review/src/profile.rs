@@ -72,6 +72,11 @@ pub struct Lens {
     /// Admitted by a code signal, never by a blanket fill.
     #[serde(default)]
     pub conditional: bool,
+    /// The diff signal ([`crate::lens_signal`]) that admits it: without that signal in its
+    /// profile's part of the change it runs in no plan, whoever picked it, and only the
+    /// completeness critic of a full review may still name it (realm @nick/craft, node #625).
+    #[serde(default)]
+    pub signal: Option<String>,
     /// Reviews the whole diff: a light pass skips it unless the diff calls for it.
     #[serde(default)]
     pub whole_diff: bool,

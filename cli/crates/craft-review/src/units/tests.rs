@@ -82,3 +82,34 @@ fn the_general_profile_s_slices_carry_no_project_configuration_and_the_rust_ones
         "{rust:?}"
     );
 }
+
+/// The general profile slices over no data file (realm @nick/craft, node #625): its schemas,
+/// fixtures and golden files neither ride on a slice nor make one of their own, and a part of
+/// nothing but data is not sliced at all.
+#[test]
+fn the_general_profile_slices_over_source_only() {
+    let py: Vec<String> = (0..12)
+        .map(|i| format!("{}/m/f{i}.py", if i % 2 == 0 { "a" } else { "b" }))
+        .collect();
+    let data: Vec<String> = (0..20)
+        .map(|i| format!("content/{}/c{i}.json", if i % 2 == 0 { "p" } else { "s" }))
+        .chain(["tests/fixtures/x.py".to_owned(), "cfg/app.yaml".to_owned()])
+        .collect();
+    let profiles = [Profile::load("general").unwrap()];
+    let slices = |files: Vec<String>| {
+        let tracks = [Track::new("general", files.clone())];
+        let none = Path::new("/nonexistent");
+        open(false, none, "origin/main", &files, &tracks, &profiles).directory
+    };
+    let units = slices([py, data.clone()].concat());
+    let general = &units["general"];
+    assert_eq!(general.len(), 2, "{general:?}");
+    assert!(
+        general
+            .iter()
+            .flat_map(|s| &s.files)
+            .all(|f| f.ends_with(".py") && !f.contains("fixtures")),
+        "{general:?}"
+    );
+    assert!(slices(data).is_empty(), "nothing but data is not sliced");
+}
