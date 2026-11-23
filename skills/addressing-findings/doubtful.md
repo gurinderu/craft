@@ -41,12 +41,13 @@ The sorting changes nothing in the verdict.
    finding (→ [pr-rejections.md](pr-rejections.md)). A finding on a changed line is anchored to it;
    one whose line is outside the diff, or a line GitHub refuses, becomes a file-level comment, since
    GitHub takes no line comment outside the diff — same marker, same thread reading. A comment
-   already on the PR for that finding is not posted again — found before the PR's state and head
-   are judged on the record's own PR, so a retry records its choice even once the PR closed or
-   its head moved; with no PR open for the record's branch, its closed PRs are searched, each one's
-   head checked to hold the reviewed commit before its comments are read (a head that cannot be
-   fetched is named, exit 1; a closed PR whose comments cannot be read is passed over and named);
-   on a PR named with `--pr` a comment counts only once that PR's head holds the reviewed commit. It is posted on the reviewed commit the
+   already on the PR for that finding is not posted again — on the record's own open PR found
+   before its head is judged, so a retry records its choice even once the head moved. **A retry
+   names its PR**: when the record's PR is closed, or its branch has no open PR, and no `--pr` is
+   given, it is refused (exit 2) — pass `--pr <n>` with the PR the first attempt printed (its
+   JSON line's `pr`); closed PRs are never searched. On a PR named with `--pr`,
+   closed or not, its head is checked to hold the reviewed commit first, then a comment there
+   counts as posted already; a closed PR takes no new comment. It is posted on the reviewed commit the
    record names: when the PR's head moved since, only if the new commits leave its line alone; a
    record naming no reviewed commit posts nothing. It prints one JSON line — the PR, `posted`,
    `already`, `toFile`, `reason`, and `recorded`: the choice it wrote into the record (step 4 is
@@ -54,11 +55,11 @@ The sorting changes nothing in the verdict.
    cannot read or tell — no record, a number the record does not list, a finding without a file,
    no single open same-repository PR of the record's branch, a `--pr` of another branch, a PR
    whose head does not hold the reviewed commit, a fork's PR, a closed or merged PR, a record
-   whose run directory cannot be read, a
-   detached-HEAD record with neither a PR of its own nor `--pr`, no `gh` answer about the PR;
-   exit 1 is the post failing (`gh` refusing it, the PR's head not fetched from `origin`, a moved
-   head over its line, no reviewed commit, a review of uncommitted work), named in one line with
-   the record to retry with — nothing posted. A file the PR does not touch takes no review
+   that names no run directory or whose run directory is gone or its state unreadable, a
+   detached-HEAD record with neither a PR of its own nor `--pr`, no `gh` answer about a named
+   PR; exit 1 is the post failing — `gh` failing (its list of the branch's PRs, the post) or the
+   PR's head not fetched from `origin`, each named in one line with the record to retry with; a
+   moved head over its line, no reviewed commit, a review of uncommitted work — nothing posted. A file the PR does not touch takes no review
    comment at all: GitHub refuses it; say so to the human and leave that finding to a word with the
    author. **Never post a finding by hand**: a comment without the marker ties nothing.
 3. **Do not post** — the human's "no" is a disposition, and it is written at once, without asking

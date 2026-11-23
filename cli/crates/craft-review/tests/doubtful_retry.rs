@@ -1,7 +1,6 @@
-//! What a second post of a doubtful finding trusts: on the record's own PR, its earlier comment
-//! even once the PR closed; on a PR named with `--pr`, a matching comment only when that PR's head
-//! holds the reviewed commit; on a closed PR of the branch, the head is checked first, a fetch that
-//! fails is named, and a PR whose comments cannot be read is passed over and named.
+//! What a second post of a doubtful finding trusts: a retry names its PR with `--pr` once the PR
+//! closed (no closed PR is searched for it), and on a PR named with `--pr` a matching comment
+//! counts only when that PR's head holds the reviewed commit.
 
 mod common;
 
@@ -35,7 +34,7 @@ fn post(
 }
 
 #[test]
-fn a_merged_pr_of_the_branch_takes_no_first_post_but_holds_a_retrys_comment() {
+fn a_retry_whose_pr_closed_names_it_and_finds_its_comment() {
     let (repo, out) = (fixture(true), tempfile::tempdir().unwrap());
     let (gh, h) = (out.path().join("gh"), head(repo.path()));
     let setup = stand_in(&gh, &h);
@@ -43,17 +42,27 @@ fn a_merged_pr_of_the_branch_takes_no_first_post_but_holds_a_retrys_comment() {
     std::fs::write(gh.join("state"), "MERGED").unwrap();
     let e = post(at, &h, None, &setup).unwrap_err();
     assert!(
-        matches!(&e, PostError::Pr(w) if w.contains("no open PR of this repository")),
+        matches!(&e, PostError::Pr(w) if w.contains("no open PR of this repository") && w.contains("name it with --pr <n> (the first attempt printed it)")),
         "{e}"
+    );
+    let e = post(at, &h, Some(7), &setup).unwrap_err();
+    assert!(
+        matches!(&e, PostError::Pr(w) if w.contains("PR #7 is MERGED, not open")),
+        "a first post on a named closed PR: {e}"
     );
     assert!(posted(&gh).is_empty());
     std::fs::remove_file(gh.join("state")).unwrap();
     assert!(post(at, &h, None, &setup).unwrap().posted);
     std::fs::write(gh.join("state"), "MERGED").unwrap();
-    let again = post(at, &h, None, &setup).unwrap();
+    let e = post(at, &h, None, &setup).unwrap_err();
+    assert!(
+        matches!(&e, PostError::Pr(w) if w.contains("the PR is closed or gone")),
+        "no closed PR is searched: {e}"
+    );
+    let again = post(at, &h, Some(7), &setup).unwrap();
     assert_eq!((again.pr, again.already), (7, true), "{again:?}");
     let calls = std::fs::read_to_string(gh.join("calls")).unwrap();
-    assert!(calls.contains("--state all"), "{calls}");
+    assert!(!calls.contains("--state all"), "{calls}");
 }
 
 #[test]
@@ -72,37 +81,4 @@ fn a_named_pr_whose_head_lacks_the_reviewed_commit_is_refused_though_it_holds_th
         "{e}"
     );
     assert_eq!(posted(&gh).len(), 1);
-}
-
-#[test]
-fn a_closed_pr_whose_comments_cannot_be_read_is_passed_over_and_named() {
-    let (repo, out) = (fixture(true), tempfile::tempdir().unwrap());
-    let (gh, h) = (out.path().join("gh"), head(repo.path()));
-    let setup = stand_in(&gh, &h);
-    let at = (repo.path(), out.path());
-    assert!(post(at, &h, None, &setup).unwrap().posted);
-    common::post::closed(&gh, &h, &h);
-    std::fs::write(gh.join("fail-comments-of"), "8").unwrap();
-    let again = post(at, &h, None, &setup).unwrap();
-    assert_eq!((again.pr, again.already), (7, true), "{again:?}");
-    common::post::unpost(&gh);
-    let e = post(at, &h, None, &setup).unwrap_err();
-    assert!(
-        matches!(&e, PostError::Gh(w) if w.contains("no open PR") && w.contains("PR #8: ") && w.contains("HTTP 502")),
-        "{e}"
-    );
-    assert!(posted(&gh).is_empty());
-}
-
-#[test]
-fn a_closed_prs_head_that_cannot_be_fetched_is_named_not_read_as_no_pr() {
-    let (repo, out) = (fixture(true), tempfile::tempdir().unwrap());
-    let (gh, h) = (out.path().join("gh"), head(repo.path()));
-    let setup = stand_in(&gh, &h);
-    common::post::closed(&gh, &"e".repeat(40), &h);
-    let e = post((repo.path(), out.path()), &h, None, &setup).unwrap_err();
-    assert!(
-        matches!(&e, PostError::Fetch(w) if w.contains("PR #8's head") && w.contains("fetching it from origin failed")),
-        "{e}"
-    );
 }

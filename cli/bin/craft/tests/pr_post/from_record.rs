@@ -54,3 +54,28 @@ fn a_defect_is_posted_without_the_ask_and_recorded_as_a_defect() {
         json!("defect")
     );
 }
+
+#[test]
+fn a_closed_pr_without_pr_is_refused_and_a_failed_list_is_a_failure_to_retry() {
+    let f = Posting::with(&json!({"prComments": {"pr": 5}}));
+    let merged = r#"{"number":5,"url":"u","headRefOid":"0","headRefName":"feat/x","isCrossRepository":false,"state":"MERGED"}"#;
+    std::fs::write(f.bin.join("view"), merged).unwrap();
+    let closed = f.post(&["--n", "1", "--as", "question"]);
+    assert_eq!(closed.status.code(), Some(2), "{}", text(&closed.stderr));
+    assert!(
+        text(&closed.stderr)
+            .contains("PR #5 is not open: the PR is closed or gone: name it with --pr <n>"),
+        "{}",
+        text(&closed.stderr)
+    );
+    let g = Posting::new();
+    std::fs::write(g.bin.join("fail-list"), "").unwrap();
+    let failed = g.post(&["--n", "1", "--as", "question"]);
+    assert_eq!(failed.status.code(), Some(1), "{}", text(&failed.stderr));
+    let err = text(&failed.stderr);
+    assert!(
+        err.contains("gh pr list failed") && err.contains("a retry names it with --record"),
+        "{err}"
+    );
+    assert!(!f.bin.join("sent.json").exists() && !g.bin.join("sent.json").exists());
+}

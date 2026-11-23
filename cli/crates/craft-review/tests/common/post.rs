@@ -18,14 +18,12 @@ use super::{lens, opts, scout, titled, verdict};
 
 /// A stand-in `gh` in `dir`: it logs each call, answers `pr view` and `pr list` with PR 7 at the
 /// head in `dir/head` on the branch in `dir/branch` in the state in `dir/state` (OPEN when absent;
-/// `pr view` a fork's while `dir/fork` exists, `pr list` with `dir/prs` when it exists — with
-/// `dir/prs-all` for `--state all` when that does —, else
+/// `pr view` a fork's while `dir/fork` exists, `pr list` with `dir/prs` when it exists, else
 /// with nothing for `--state open` while the PR is not open) — only
 /// with the fields its `--json` asks for, as gh prints them —,
 /// lists the comments it was asked to post (the request files it kept), keeps each
 /// posted request, fails every call while `dir/fail` exists and the read of the comments while
-/// `dir/fail-comments` does (of the PR numbered in `dir/fail-comments-of` while that does), and
-/// refuses a comment on a line with
+/// `dir/fail-comments` does, and refuses a comment on a line with
 /// GitHub's 422 while `dir/no-lines` exists — on a later line of its stderr while
 /// `dir/no-lines-late` does.
 pub fn stand_in(dir: &Path, head: &str) -> PostSetup {
@@ -49,9 +47,8 @@ want=; prev=; for a in "$@"; do [ "$prev" = --state ] && want=$a; prev=$a; done
 case "$1 $2" in
   "pr view") fork=false; [ -f "$S/fork" ] && fork=true
     printf '{{"number":7,"url":"https://github.com/o/r/pull/7","headRefOid":"%s","headRefName":"%s","isCrossRepository":%s,"state":"%s"}}\n' "$(cat "$S/head")" "$(cat "$S/branch")" "$fork" "$state" | only ;;
-  "pr list") if [ "$want" = all ] && [ -f "$S/prs-all" ]; then only < "$S/prs-all"; elif [ -f "$S/prs" ]; then only < "$S/prs"; elif [ "$want" = open ] && [ "$state" != OPEN ]; then echo '[]'; else printf '[{{"number":7,"url":"https://github.com/o/r/pull/7","headRefOid":"%s","headRefName":"%s","isCrossRepository":false,"state":"%s"}}]\n' "$(cat "$S/head")" "$(cat "$S/branch")" "$state" | only; fi ;;
+  "pr list") if [ -f "$S/prs" ]; then only < "$S/prs"; elif [ "$want" = open ] && [ "$state" != OPEN ]; then echo '[]'; else printf '[{{"number":7,"url":"https://github.com/o/r/pull/7","headRefOid":"%s","headRefName":"%s","isCrossRepository":false,"state":"%s"}}]\n' "$(cat "$S/head")" "$(cat "$S/branch")" "$state" | only; fi ;;
   "api --paginate") if [ -f "$S/fail-comments" ]; then echo "HTTP 502: Bad Gateway" >&2; exit 1; fi
-    if [ -f "$S/fail-comments-of" ] && [ "${{3%/comments}}" = "${{3%/pulls/*}}/pulls/$(cat "$S/fail-comments-of")" ]; then echo "HTTP 502: Bad Gateway" >&2; exit 1; fi
     printf '['; first=1
     for f in "$S"/posted/*.json; do [ -e "$f" ] || continue; [ $first = 1 ] || printf ','; first=0; cat "$f"; done
     printf ']\n' ;;
@@ -173,16 +170,4 @@ pub fn posted(gh: &Path) -> Vec<Value> {
 pub fn unpost(gh: &Path) {
     std::fs::remove_dir_all(gh.join("posted")).unwrap();
     std::fs::create_dir(gh.join("posted")).unwrap();
-}
-
-/// No open PR of `main`, and closed PRs 8 and 7 of it at `head8` and `head7`.
-pub fn closed(gh: &Path, head8: &str, head7: &str) {
-    let pr = |n: u64, h: &str| {
-        format!(
-            r#"{{"number":{n},"url":"u{n}","headRefOid":"{h}","headRefName":"main","isCrossRepository":false,"state":"MERGED"}}"#
-        )
-    };
-    std::fs::write(gh.join("prs"), "[]").unwrap();
-    let all = format!("[{},{}]", pr(8, head8), pr(7, head7));
-    std::fs::write(gh.join("prs-all"), all).unwrap();
 }

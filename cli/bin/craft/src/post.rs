@@ -47,8 +47,11 @@ pub struct PostArgs {
 }
 
 /// Why nothing was posted: what was asked cannot be read or told — no record, no such finding,
-/// no PR of the record's branch, no working directory — (exit 2, as the JavaScript poster
-/// refused), or a failure on the way: gh refusing the post, a moved head (exit 1).
+/// no run state to tell uncommitted work by, no open PR of the record's branch (or the record's PR
+/// closed) without `--pr`, no working directory — (exit 2, as the JavaScript poster refused), or a
+/// failure on the way: gh failing (its list of the branch's PRs, the post), the PR's head not
+/// fetched (both with the record to retry with), a review of uncommitted work, a moved head over
+/// the finding's line (exit 1).
 enum Stop {
     Refused(String),
     Failed(anyhow::Error),

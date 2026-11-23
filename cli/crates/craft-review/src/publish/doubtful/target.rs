@@ -17,16 +17,21 @@ pub(super) fn full<'a>(d: &Doubtful<'a>) -> Option<&'a str> {
         .filter(|h| matches!(h.len(), 40 | 64) && request::is_sha(h))
 }
 
+/// The tail of the refusal when no `--pr` is given and the record's PR is closed or none of its
+/// branch is open: a retry names its PR, which the first attempt printed and the recorded choice
+/// carries — closed PRs are never searched for it.
+pub(super) const NAME_IT: &str =
+    "the PR is closed or gone: name it with --pr <n> (the first attempt printed it)";
+
 /// The PR the record's review read, and how far it is trusted before its comments are read.
 pub(super) enum Found {
-    /// The record's own: the PR it published on, or the one open PR of its branch — a comment of
-    /// the finding on it is the record's, so a retry finds it first.
+    /// The record's own, no `--pr` given: the PR it published on, or the one open PR of its
+    /// branch — open, or refused; a comment of the finding on it is the record's, so a retry
+    /// finds it before the head is judged.
     Own(Pr),
-    /// Named with `--pr`: its head must hold the reviewed commit before a comment on it counts.
+    /// Named with `--pr`, closed or not: its head must hold the reviewed commit before a comment
+    /// on it counts.
     Named(Pr),
-    /// No open PR of the record's branch: its closed same-repository ones, on which an earlier
-    /// post may sit, and why nothing can be posted otherwise.
-    Closed(Vec<Pr>, String),
 }
 
 /// The pull request the record's review read (realm @nick/craft, node #270: the PR is never
@@ -47,7 +52,7 @@ pub(super) fn which_pr(
         (Some(rp), Some(n), _) if rp != n => Err(PostError::Pr(format!(
             "PR #{n} is not PR #{rp}, the one the review published on: drop --pr or name #{rp}"
         ))),
-        (Some(n), _, _) => Ok(Found::Own(same_repo(view(runner, repo, n)?)?)),
+        (Some(n), None, _) => Ok(Found::Own(same_repo(view(runner, repo, n)?)?)),
         (None, None, Some(b)) => only_pr(runner, repo, b),
         (None, Some(n), Some(b)) => {
             let p = view(runner, repo, n)?;
@@ -60,33 +65,25 @@ pub(super) fn which_pr(
                 )))
             }
         }
-        (None, Some(n), None) => Ok(Found::Named(same_repo(view(runner, repo, n)?)?)),
+        (Some(n), Some(_), _) | (None, Some(n), None) => {
+            Ok(Found::Named(same_repo(view(runner, repo, n)?)?))
+        }
         (None, None, None) => Err(PostError::Pr(
             "the record names no branch and no PR (a review on a detached HEAD that published nothing): name the PR it reviewed with --pr".into(),
         )),
     }
 }
 
-/// The one open same-repository PR whose head branch is `branch`; with none, its closed ones.
+/// The one open same-repository PR whose head branch is `branch`. A list gh could not give is a
+/// failure on the way (a retry may get it), not a refusal.
 fn only_pr(runner: &Runner, repo: &Path, branch: &str) -> Result<Found, PostError> {
-    let ours = |state| -> Result<Vec<Pr>, PostError> {
-        let mut prs = read::prs(runner, repo, branch, state).map_err(PostError::Pr)?;
-        prs.retain(|p| !p.cross_repository);
-        Ok(prs)
-    };
-    let mut prs = ours("open")?;
+    let mut prs = read::prs(runner, repo, branch, "open").map_err(PostError::Gh)?;
+    prs.retain(|p| !p.cross_repository);
     match prs.len() {
         1 => Ok(Found::Own(prs.remove(0))),
-        0 => {
-            let mut closed = ours("all")?;
-            closed.retain(|p| p.state != "OPEN");
-            Ok(Found::Closed(
-                closed,
-                format!(
-                    "no open PR of this repository has the record's branch {branch} as its head: name it with --pr"
-                ),
-            ))
-        }
+        0 => Err(PostError::Pr(format!(
+            "no open PR of this repository has the record's branch {branch} as its head — {NAME_IT}"
+        ))),
         k => Err(PostError::Pr(format!(
             "{k} open PRs of this repository have the record's branch {branch} as their head: name one with --pr"
         ))),

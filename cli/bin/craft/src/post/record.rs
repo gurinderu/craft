@@ -62,21 +62,28 @@ pub(super) fn read(file: &Path) -> Result<Record, String> {
 /// Whether the review read uncommitted work, as the review itself judged it when it started
 /// (`diff.dirty` in the state of the run the record names, `cliRun`: tracked files only) — not the
 /// record's own `dirty`, the filing's look at the checkout, untracked files included. A run that
-/// cannot be read tells nothing, and nothing is posted.
+/// cannot be read tells nothing, and nothing is posted: the refusal says whether its directory is
+/// gone or its state could not be read, and why.
 fn reviewed_dirty(run: Option<&str>) -> Result<bool, String> {
+    const UNTOLD: &str =
+        "so whether the review read uncommitted work cannot be told: nothing posted";
     let Some(run) = run.filter(|r| !r.is_empty()) else {
-        return Err("the record names no review run directory (cliRun), so whether the review read uncommitted work cannot be told: nothing posted".into());
+        return Err(format!(
+            "the record names no review run directory (cliRun), {UNTOLD}"
+        ));
     };
-    let state = craft_review::state::state_path(Path::new(run));
-    let gone = |why: String| {
-        format!(
-            "the review's run directory {run} cannot be read ({why}), so whether it read uncommitted work cannot be told: nothing posted"
-        )
-    };
-    let text = std::fs::read_to_string(&state).map_err(|e| gone(e.to_string()))?;
-    let v: Value = serde_json::from_str(&text).map_err(|e| gone(e.to_string()))?;
-    v.get("diff")
-        .and_then(|d| d.get("dirty"))
-        .and_then(Value::as_bool)
-        .ok_or_else(|| gone(format!("{} names no diff.dirty", state.display())))
+    let dir = Path::new(run);
+    if !dir.exists() {
+        return Err(format!(
+            "the review's run directory {run} is gone, {UNTOLD}"
+        ));
+    }
+    craft_review::state::load(dir)
+        .map(|state| state.diff.dirty)
+        .map_err(|e| {
+            format!(
+                "the review's run state cannot be read ({:#}), {UNTOLD}",
+                anyhow::Error::from(e)
+            )
+        })
 }

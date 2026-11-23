@@ -19,7 +19,7 @@ fn the_reviews_own_dirty_flag_decides_not_the_filings() {
     let out = f.post(&["--n", "1", "--as", "question"]);
     assert!(out.status.success(), "{}", text(&out.stderr));
     std::fs::remove_file(f.bin.join("sent.json")).unwrap();
-    std::fs::write(f.run.join("state.json"), r#"{"diff": {"dirty": true}}"#).unwrap();
+    f.review(true);
     let dirty = f.post(&["--n", "1", "--as", "question"]);
     assert_eq!(dirty.status.code(), Some(1), "{}", text(&dirty.stderr));
     assert!(
@@ -27,19 +27,38 @@ fn the_reviews_own_dirty_flag_decides_not_the_filings() {
         "{}",
         text(&dirty.stderr)
     );
+    assert!(!f.bin.join("sent.json").exists(), "nothing posted");
+}
+
+/// `craft review post` exits 2, nothing posted, saying `said`.
+fn refused(f: &Posting, said: &str) {
+    let out = f.post(&["--n", "1", "--as", "question"]);
+    assert_eq!(out.status.code(), Some(2), "{}", text(&out.stderr));
+    let err = text(&out.stderr);
+    assert!(
+        err.contains(said) && err.contains("cannot be told: nothing posted"),
+        "{err}"
+    );
+    assert!(!f.bin.join("sent.json").exists(), "nothing posted");
+}
+
+#[test]
+fn a_run_that_cannot_tell_uncommitted_work_is_refused_with_2() {
+    let f = Posting::with(&json!({"cliRun": ""}));
+    refused(&f, "names no review run directory (cliRun)");
+    let f = Posting::new();
+    std::fs::write(f.run.join("state.json"), "{ not json").unwrap();
+    refused(
+        &f,
+        "the review's run state cannot be read (parsing the run state",
+    );
+    std::fs::remove_file(f.run.join("state.json")).unwrap();
+    refused(
+        &f,
+        "the review's run state cannot be read (reading the run state",
+    );
     std::fs::remove_dir_all(&f.run).unwrap();
-    let gone = f.post(&["--n", "1", "--as", "question"]);
-    assert_eq!(gone.status.code(), Some(2), "{}", text(&gone.stderr));
-    assert!(
-        text(&gone.stderr).contains("cannot be read")
-            && text(&gone.stderr).contains("nothing posted"),
-        "{}",
-        text(&gone.stderr)
-    );
-    assert!(
-        !f.bin.join("sent.json").exists(),
-        "nothing posted after the first"
-    );
+    refused(&f, "is gone");
 }
 
 /// A record of `branch` newer than the fixture's, its finding 1 titled `title`.

@@ -2,12 +2,13 @@
 //! #270, #271, #194): the review posts only defects and keeps the doubtful ones, numbered, in its run
 //! record; for each the human picks "ask the author" or "post as a defect", and this posts that one —
 //! read from the record, never from a hand-copied list — with the craft-finding marker, by the rules
-//! the defects are posted by: not a second time when its comment is on the PR already, on its file
-//! when GitHub refuses its line (node #285) — found before the PR's state and head are judged, so a
-//! retry sees its own earlier comment —, only on an open same-repository PR of the record's own
-//! branch whose head holds the reviewed commit, never from a review of uncommitted work, on the
-//! reviewed commit when the PR's head moved past it without touching its line, and nothing when it
-//! did or the record names no reviewed commit.
+//! the defects are posted by: never from a review of uncommitted work; only on an open
+//! same-repository PR of the record's own branch whose head holds the reviewed commit — a retry
+//! whose PR closed names it with `--pr`; not a second time when its comment is on the PR already
+//! (on the record's own PR found before the head is judged, so a retry sees its earlier comment
+//! after the head moved); on its file when GitHub refuses its line (node #285); on the reviewed
+//! commit when the PR's head moved past it without touching its line, and nothing when it did or
+//! the record names no reviewed commit.
 
 use std::path::Path;
 
@@ -74,17 +75,23 @@ pub fn post(
     }
     let runner = Runner::new(setup.budget, setup.path.clone(), scratch.to_path_buf());
     let reviewed = target::full(d).ok_or_else(|| PostError::Refused(target::NO_REVIEWED.into()))?;
-    // The record's own PR is read for the finding's comment before its state and head are
-    // judged, so a retry finds what it posted even once the PR closed or its head moved; a PR
-    // named with --pr, or a closed one of the branch, first shows it holds the reviewed commit.
+    // The record's own PR, no --pr given, must be open; its comments are read before its head is
+    // judged, so a retry finds what it posted even once the head moved. A PR named with --pr,
+    // closed or not, first shows it holds the reviewed commit.
     let p = match target::which_pr(&runner, repo, d, pr)? {
-        Found::Own(p) => p,
+        Found::Own(p) => {
+            if p.state != "OPEN" {
+                return Err(PostError::Pr(format!(
+                    "PR #{} is not open: {}",
+                    p.number,
+                    target::NAME_IT
+                )));
+            }
+            p
+        }
         Found::Named(p) => {
             head::holding(repo, &p, reviewed)?;
             p
-        }
-        Found::Closed(prs, why) => {
-            return head::on_closed(&runner, repo, (&prs, &why), &c, reviewed);
         }
     };
     if head::already(&runner, repo, &p, &c)? {

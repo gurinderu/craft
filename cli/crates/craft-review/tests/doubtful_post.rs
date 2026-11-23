@@ -152,8 +152,8 @@ fn a_number_the_record_lacks_is_refused_before_gh_and_a_gh_failure_is_named() {
     let h = head(repo.path());
     let e = post((repo.path(), out.path()), 1, true, Some(&h), &setup).unwrap_err();
     assert!(
-        matches!(&e, PostError::Pr(w) if w.contains("HTTP 401")),
-        "{e}"
+        matches!(&e, PostError::Gh(w) if w.starts_with("gh pr list failed") && w.contains("HTTP 401")),
+        "a list gh could not give is a failure on the way, not a refusal: {e}"
     );
 }
 

@@ -1,7 +1,8 @@
 //! What keeps a doubtful finding off a PR it does not belong on, and what a second post finds:
 //! a named fork's PR or a closed one is refused, a review of uncommitted work posts nothing, a read
 //! of the PR's comments that fails posts nothing, and a retry finds its own earlier comment — on
-//! its file after GitHub refused its line, or after the PR closed or its head moved over the line.
+//! its file after GitHub refused its line, after its head moved over the line, or — named with
+//! `--pr` — after the PR closed.
 
 mod common;
 
@@ -115,7 +116,7 @@ fn a_finding_posted_on_its_file_after_a_422_is_not_posted_again() {
 }
 
 #[test]
-fn a_retry_finds_its_comment_after_the_pr_closed_or_its_head_moved_over_the_line() {
+fn a_retry_finds_its_comment_after_the_head_moved_over_the_line_or_the_named_pr_closed() {
     let (repo, out) = (fixture(true), tempfile::tempdir().unwrap());
     let (gh, reviewed) = (out.path().join("gh"), head(repo.path()));
     let setup = stand_in(&gh, &reviewed);
@@ -124,10 +125,10 @@ fn a_retry_finds_its_comment_after_the_pr_closed_or_its_head_moved_over_the_line
     std::fs::write(repo.path().join("src/lib.rs"), "pub fn f() -> u8 { 2 }\n").unwrap();
     common::git(repo.path(), &["commit", "-qam", "fix: f"]);
     std::fs::write(gh.join("head"), head(repo.path())).unwrap();
+    let moved = post(at, (&reviewed, false), None, &setup).unwrap();
+    assert_eq!((moved.posted, moved.already), (false, true), "{moved:?}");
     std::fs::write(gh.join("state"), "MERGED").unwrap();
-    for pr in [None, Some(7)] {
-        let again = post(at, (&reviewed, false), pr, &setup).unwrap();
-        assert_eq!((again.posted, again.already), (false, true), "{again:?}");
-    }
+    let again = post(at, (&reviewed, false), Some(7), &setup).unwrap();
+    assert_eq!((again.posted, again.already), (false, true), "{again:?}");
     assert_eq!(posted(&gh).len(), 1);
 }
