@@ -1,5 +1,7 @@
 //! Why a doubtful finding was not posted.
 
+use craft_store::sorting::posting::MarkError;
+
 /// Why nothing was posted.
 #[derive(Debug, thiserror::Error)]
 pub enum PostError {
@@ -13,9 +15,14 @@ pub enum PostError {
     /// gh failed, or the PR names no commit to post on.
     #[error("{0}")]
     Gh(String),
-    /// The PR could not be noted in the record before the post.
-    #[error("{0}")]
-    Remember(String),
+    /// The PR could not be noted in the record before the post: the record refused it, or could
+    /// not be read or written ([`MarkError::is_refusal`] tells them apart).
+    #[error("PR #{pr} could not be noted in the record before posting: {source} — nothing posted")]
+    Remember {
+        pr: u64,
+        #[source]
+        source: MarkError,
+    },
     /// The PR's head, missing here, could not be fetched from `origin` in time.
     #[error("{0}")]
     Fetch(String),
