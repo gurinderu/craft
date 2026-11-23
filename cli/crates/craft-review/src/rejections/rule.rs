@@ -1,8 +1,8 @@
 //! What the two thread readers share, as the JavaScript reader held it (frozen in
 //! `content/parity/pr-rejections-cases.json`; realm
 //! @nick/craft, nodes #177, #182, #185, #196): the last word a rejection only when it opens with a
-//! rejection phrase and comes from the PR author or an OWNER/MEMBER/COLLABORATOR, and what keeps
-//! one from becoming a record.
+//! rejection phrase and comes from an OWNER/MEMBER/COLLABORATOR or the author of a PR of this
+//! repository's own (never a fork's: its author is an outside contributor).
 
 use std::sync::LazyLock;
 
@@ -12,14 +12,27 @@ use crate::js::{self, str_of};
 
 /// One page of comments per thread (`comments(first: 50)`): past it, the last word is unknown.
 pub(super) const THREAD_COMMENTS_MAX: usize = 50;
-const TITLE_MAX: usize = 200;
-const REASON_MAX: usize = 1200;
 
 /// Who may reject besides the PR author (node #182).
 pub(super) const ASSOCIATIONS: [&str; 3] = ["OWNER", "MEMBER", "COLLABORATOR"];
 /// The tail of the skip line for a rejection from anyone else.
 pub(super) const NOT_AUTHORIZED: &str =
     "who is neither the PR author nor an owner, member or collaborator: not recorded";
+
+/// The tail of the skip line for a PR author with no such association whose PR is a fork's, or not
+/// known to be this repository's own: an outside contributor does not settle a finding on their
+/// own PR as a human decision would.
+pub(super) const FORK_AUTHOR: &str = "the PR author, but the PR is not known to be this repository's own (a fork's, or an answer that does not say) and they are not an owner, member or collaborator: not recorded";
+
+/// The PR's author as the thread rules read it.
+#[derive(Debug, Default)]
+pub(super) struct Author {
+    pub(super) login: String,
+    /// The answer says the PR's head is in this repository (`isCrossRepository: false`).
+    pub(super) same_repo: bool,
+    /// A page says it is a fork's: no page outweighs that.
+    pub(super) fork: bool,
+}
 
 /// A reply rejects only when it opens with one of these; JavaScript's `/i` folds ASCII only, and
 /// its `\b` is ASCII's.
@@ -52,7 +65,7 @@ pub(super) struct Rejection {
     pub(super) url: String,
 }
 
-pub(super) fn rejection(cs: &[Value], pr_author: &str) -> Result<Rejection, String> {
+pub(super) fn rejection(cs: &[Value], pr_author: &Author) -> Result<Rejection, String> {
     let last = cs.last().unwrap_or(&Value::Null);
     if cs.len() == 1 {
         return Err("no reply — only an explicit rejection reply counts".into());
@@ -62,9 +75,14 @@ pub(super) fn rejection(cs: &[Value], pr_author: &str) -> Result<Rejection, Stri
         return Err("the last reply does not open with a rejection".into());
     }
     let (by, assoc) = (login(last), association(last));
-    let author = !by.is_empty() && by == pr_author;
-    if !author && !ASSOCIATIONS.contains(&assoc.as_str()) {
-        return Err(rejected_by(&by, &assoc, NOT_AUTHORIZED));
+    let author = !by.is_empty() && by == pr_author.login;
+    if !ASSOCIATIONS.contains(&assoc.as_str()) {
+        if !author {
+            return Err(rejected_by(&by, &assoc, NOT_AUTHORIZED));
+        }
+        if !pr_author.same_repo {
+            return Err(rejected_by(&by, &assoc, FORK_AUTHOR));
+        }
     }
     Ok(Rejection {
         by,
@@ -87,28 +105,6 @@ pub(super) fn rejected_by(by: &str, assoc: &str, tail: &str) -> String {
         or(by, "?"),
         or(assoc, "unknown")
     )
-}
-
-/// What stops a rejection from becoming a record: no anchor, a scope carrying a line (node #606),
-/// or a field past its bound. `None` when nothing does.
-pub(super) fn problem(title: &str, scope: &str, commit: &str, reason: &str) -> Option<String> {
-    let sha = (7..=40).contains(&commit.len()) && commit.bytes().all(|b| b.is_ascii_hexdigit());
-    if scope.is_empty() || !sha {
-        return Some("no path or commit to anchor the decision to".into());
-    }
-    let (path, line) = crate::memory::split_scope_line(scope);
-    if path != js::trim(scope) {
-        let quoted = serde_json::to_string(js::trim(scope)).unwrap_or_default();
-        return Some(format!(
-            "scope {quoted} carries a line: write scope={path}, line={line}"
-        ));
-    }
-    if js::len(title) > TITLE_MAX {
-        return Some(format!("title over {TITLE_MAX} chars: record it by hand"));
-    }
-    let n = js::len(reason);
-    (n > REASON_MAX)
-        .then(|| format!("reason is {n} chars, over {REASON_MAX}: summarise it and record by hand"))
 }
 
 /// Whether JavaScript reads `v` as true: a thread's root that is not is no root.
