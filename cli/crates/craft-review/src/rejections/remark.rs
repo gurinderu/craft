@@ -7,7 +7,7 @@ use serde_json::Value;
 
 use super::Decision;
 use super::rule::{self, ASSOCIATIONS, THREAD_COMMENTS_MAX, field, truthy};
-use craft_store::js::JsString;
+use craft_store::js::{JsStr, JsString};
 
 use crate::js::{self, is_space, number_text};
 
@@ -42,7 +42,7 @@ pub(super) fn title(body: &str) -> String {
         .filter(|&a| a > TITLE_MAX / 2);
     let kept =
         JsString::from_utf16(at.and_then(|a| cut.get(..a)).unwrap_or(cut).to_vec()).to_utf8_lossy();
-    format!("{}…", kept.trim_end_matches(is_space))
+    format!("{}…", kept.js_trim_end())
 }
 
 /// One thread whose root is not a craft finding as a decision record (`Ok(Some)`), why its

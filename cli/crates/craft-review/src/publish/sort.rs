@@ -153,3 +153,24 @@ pub(super) fn postable(f: &Value, i: usize, reasons: &[String]) -> Value {
         "toolRule": text(f, "toolRule"), "outsideDiff": reasons.iter().any(|r| r == OUTSIDE_REASON),
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::line;
+
+    #[test]
+    fn a_line_is_read_as_finding_line_reads_it() {
+        for (given, want) in [
+            (json!("10.0"), 10),
+            (json!("0xa"), 10),
+            (json!(" 11 "), 11),
+            (json!("\u{feff}7"), 7),
+            (json!("\u{85}7"), 0),
+            (json!(1.5), 0),
+        ] {
+            assert_eq!(line(&json!({ "line": given })), want, "{given}");
+        }
+    }
+}

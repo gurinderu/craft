@@ -45,7 +45,7 @@ pub(super) struct Verdict {
 /// `clipLine` cuts it.
 pub(super) fn clip(s: &str, max: usize) -> String {
     let one = s.js_split_whitespace().collect::<Vec<_>>().join(" ");
-    if one.encode_utf16().count() <= max {
+    if crate::js::len(&one) <= max {
         return one;
     }
     let mut n = 0;

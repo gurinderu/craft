@@ -38,8 +38,8 @@ pub fn compile(pattern: &str) -> Option<Regex> {
     Regex::new(&pattern.replace("{S}", SPACE).replace("{B}", BOUNDARY)).ok()
 }
 
-// JS's `\s` and `trim` are the store's (`craft_store::js`), one copy for every crate; `SPACE`
-// above spells the same set for a regex class.
+// JS's `\s` is the store's (`craft_store::js::is_space`; its `trim` is `JsStr::js_trim`), one
+// copy for every crate; `SPACE` above is the store's same set spelled for a regex class.
 pub use craft_store::js::is_space;
 
 /// `text` for a case-insensitive pattern JS reads without the `u` flag: the two letters Unicode

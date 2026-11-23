@@ -69,3 +69,22 @@ fn a_scope_with_any_other_colon_is_still_refused() {
     let why = read(&o, "decision #0").unwrap_err();
     assert!(why.contains("has a character outside"), "{why}");
 }
+
+#[test]
+fn a_fields_ceiling_counts_utf16_units_as_javascript_does() {
+    let titled = |title: String| {
+        let mut o = old();
+        o["title"] = json!(title);
+        read(&o, "d")
+    };
+    // 198 letters and one emoji: 200 UTF-16 units, the ceiling (202 bytes, 199 chars).
+    let at = format!("{}😀", "a".repeat(198));
+    assert_eq!(titled(at).map(|d| crate::js::len(&d.title)), Ok(200));
+    // One letter more: 201 units (200 chars), past it.
+    let over = format!("{}😀", "a".repeat(199));
+    let why = titled(over).unwrap_err();
+    assert!(
+        why.contains("title is 201 chars, over the 200-char ceiling"),
+        "{why}"
+    );
+}
