@@ -78,9 +78,15 @@ test('a dead or thrown recall agent is named apart from a failed query, and degr
   assert.match(memoryLine(threw.memory), /^memory: not read — the recall agent did not run/)
 })
 
-test('a truncated empty recall reads as partly read, degraded', () => {
+test('an empty recall truncated and failed at once still reads as not read', () => {
+  const r = readMemoryRecall({ backend: 'kg', why: 'w', decisions: [], truncated: '0 of 12 shown', queryError: Q }, 0)
+  assert.match(memoryLine(r.memory), /^memory: not read — /)
+  assert.equal(memoryDegradedNotes(r.memory).length, 2)
+})
+
+test('a truncated empty recall reads as not read, degraded', () => {
   const r = readMemoryRecall({ backend: 'kg', why: 'w', decisions: [], truncated: '0 of 12 shown' }, 0)
-  assert.equal(memoryLine(r.memory), 'memory: partly read — w (backend kg); truncated — the backend held more than was read: 0 of 12 shown')
+  assert.equal(memoryLine(r.memory), 'memory: not read — w (backend kg); truncated — the backend held more than was read: 0 of 12 shown')
   assert.equal(memoryDegradedNotes(r.memory).length, 1)
 })
 

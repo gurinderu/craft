@@ -710,7 +710,7 @@ fn an_empty_recall_whose_answer_was_truncated_reads_as_not_read_and_degraded() {
     assert_contains_all(
         &report,
         &[
-            "## Memory\n- memory: partly read — found by capability (backend mcp iskron); truncated — the backend held more than was read: 0 of 12 shown",
+            "## Memory\n- memory: not read — found by capability (backend mcp iskron); truncated — the backend held more than was read: 0 of 12 shown",
             "## Degraded\n",
         ],
     );

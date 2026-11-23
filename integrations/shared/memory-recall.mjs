@@ -44,7 +44,7 @@ import { render } from './content.mjs'
 import { pathEntries } from './memory-bounds.mjs'
 import memoryRecallTpl from '../../content/prompts/memory-recall.md'
 import memoryRecallSchema from '../../content/schemas/memory-recall.schema.json' with { type: 'json' }
-import { failedWhy, memoryDegradedNotes, readLead, recallNote } from './recall-degraded.mjs'
+import { failedWhy, memoryDegradedNotes, notRead, recallNote } from './recall-degraded.mjs'
 
 // The most changed paths one recall prompt lists; past it they are listed by directory (pathEntries), and
 // the report says so. It keeps the read-only recall agent's prompt and its searches bounded.
@@ -684,7 +684,7 @@ export function memoryLine(m, forwarded = false) {
 export function sourceLine(m, forwarded) {
   if (m.source === 'launcher') return launcherLine(m)
   const plus = m.passed ? `; plus ${m.passed} passed by the launcher${m.source === 'recalled' ? ` (${m.added ?? m.passed} new)` : ''}` : ''
-  if (m.source !== 'recalled') return `memory: ${readLead(m)} — ${m.why}${plus}`
+  if (m.source !== 'recalled') return `memory: ${notRead(m) ? 'not read' : 'none'} — ${m.why}${plus}`
   return forwarded
     ? `memory: returned ${countedRecords(m)} from ${m.why}${plus}; each nested review reports how many it applied`
     : `memory: recalled ${countedRecords(m)} from ${m.why}${plus}`

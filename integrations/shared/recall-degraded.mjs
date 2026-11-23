@@ -101,15 +101,12 @@ function degradedCauses(m) {
 export const memoryDegradedNotes = m => degradedCauses(m).map(n => `memory: ${n}`)
 
 /**
- * How a source that recalled nothing read the store, as its memory line leads: 'not read' when its query failed, its
- * agent died or its launcher's recall was degraded; 'partly read' when only its answer was truncated; 'none' when it
- * read the store whole and found nothing.
- * @param {DegradedSource} m @returns {'not read' | 'partly read' | 'none'}
+ * Whether a source that recalled nothing read none of the store it meant to: its query failed, its answer was truncated
+ * (nothing of what the backend held was read), its agent died, or its launcher's recall was degraded. A recall that read
+ * records beside a truncated answer or a failed call is partly read (`memory-tally.mjs`), never this.
+ * @param {DegradedSource} m @returns {boolean}
  */
-export const readLead = m => {
-  if (m.queryError || m.recallDied || m.recallDegraded) return 'not read'
-  return m.truncated ? 'partly read' : 'none'
-}
+export const notRead = m => Boolean(m.queryError || m.truncated || m.recallDied || m.recallDegraded)
 
 /**
  * What a launching engine tells the reviews it starts of its own recall's degradation (`_recallDegraded`): each cause

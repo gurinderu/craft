@@ -151,7 +151,8 @@ impl MemorySource {
                 self.why
             )
         } else {
-            format!("memory: {} — {}{plus}", self.read_lead(), self.why)
+            let lead = if self.not_read() { "not read" } else { "none" };
+            format!("memory: {lead} — {}{plus}", self.why)
         };
         format!("{head}{}", self.derived_tail())
     }
