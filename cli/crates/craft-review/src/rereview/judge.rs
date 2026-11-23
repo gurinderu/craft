@@ -14,9 +14,10 @@ use crate::prompts::{self, PromptContext};
 use crate::state::{Task, TaskKind, TaskState};
 
 /// The skill whose rubric judges a finding in `file` raised by the lens `source`: that lens's own
-/// rubric or its profile's, the general rules otherwise.
+/// rubric or its profile's, the general rules otherwise — a runbook's too, so its steps need not be
+/// read again.
 fn rubric_for(file: &str, source: &str, profiles: &[Profile]) -> String {
-    coverage::assign(&[file.to_owned()], profiles)
+    coverage::assign(&[file.to_owned()], profiles, &|_| false)
         .first()
         .and_then(|(i, _)| profiles.get(*i))
         .map_or_else(|| "review-rules".into(), |p| p.rubric_of(source).to_owned())

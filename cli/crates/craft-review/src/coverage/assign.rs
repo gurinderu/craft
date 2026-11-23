@@ -1,16 +1,24 @@
 //! Which profile takes each changed file: the first whose suffixes or names match it, else the one
 //! taking the rest (`general`), so a file is reviewed by one profile only and a mixed diff is
-//! planned per profile over its own files.
+//! planned per profile over its own files. A profile taking files by their steps (`runbook`) takes
+//! one only when `steps` says it carries them (realm @nick/craft, node #620).
 
 use crate::profile::Profile;
 
 /// Each profile's part of `files`, in the order of `profiles`, as the profile's index and the
-/// files it takes in diff order; a profile taking none is left out.
+/// files it takes in diff order; a profile taking none is left out. `steps` says whether a file
+/// carries operator steps ([`crate::runbook::reader`]).
 #[must_use]
-pub fn assign(files: &[String], profiles: &[Profile]) -> Vec<(usize, Vec<String>)> {
+pub fn assign(
+    files: &[String],
+    profiles: &[Profile],
+    steps: &dyn Fn(&str) -> bool,
+) -> Vec<(usize, Vec<String>)> {
     let mut parts: Vec<(usize, Vec<String>)> = Vec::new();
+    let named_by =
+        |p: &Profile, f: &str| !p.detect.rest && p.covers(f) && (!p.detect.steps || steps(f));
     for f in files {
-        let named = profiles.iter().position(|p| !p.detect.rest && p.covers(f));
+        let named = profiles.iter().position(|p| named_by(p, f));
         let taker = named.or_else(|| profiles.iter().position(|p| p.detect.rest && p.covers(f)));
         let Some(at) = taker else {
             continue;
@@ -56,7 +64,7 @@ mod tests {
     }
 
     #[test]
-    fn each_file_goes_to_one_profile_and_config_and_prose_to_none() {
+    fn each_file_goes_to_one_profile_and_config_and_prose_without_steps_to_none() {
         let all = Profile::all().unwrap();
         let files = owned(&[
             "web/app.ts",
@@ -64,21 +72,26 @@ mod tests {
             "flake.nix",
             "Cargo.toml",
             "README.md",
+            "RUNBOOK.md",
+            ".github/RELEASE.md",
             "Dockerfile",
             "flake.lock",
             "x.py",
             "db/migrations/0001_init.sql",
         ]);
-        let parts: Vec<(String, Vec<String>)> = assign(&files, &all)
-            .into_iter()
-            .map(|(i, f)| (all[i].id.clone(), f))
-            .collect();
+        let parts: Vec<(String, Vec<String>)> = assign(&files, &all, &|f| {
+            f == "RUNBOOK.md" || f == ".github/RELEASE.md"
+        })
+        .into_iter()
+        .map(|(i, f)| (all[i].id.clone(), f))
+        .collect();
         assert_eq!(
             parts,
             [
                 ("rust".into(), owned(&["src/lib.rs", "Cargo.toml"])),
                 ("nix".into(), owned(&["flake.nix", "flake.lock"])),
                 ("sql".into(), owned(&["db/migrations/0001_init.sql"])),
+                ("runbook".into(), owned(&["RUNBOOK.md"])),
                 ("general".into(), owned(&["web/app.ts", "x.py"])),
             ]
         );
@@ -89,7 +102,7 @@ mod tests {
         let all = Profile::all().unwrap();
         assert_eq!(
             supported(&all),
-            "Rust, Nix, SQL and source in any other language, but no project configuration or build recipe"
+            "Rust, Nix, SQL, Markdown runbook and source in any other language, but no project configuration or build recipe"
         );
         assert_eq!(supported(&all[..1]), "Rust only");
     }

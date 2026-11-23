@@ -10,16 +10,20 @@ use crate::agent::{AgentKind, Model};
 use crate::content::{self, ContentError};
 
 /// The profiles a run may review with, in the order a changed file is offered to them.
-pub const IDS: [&str; 4] = ["rust", "nix", "sql", "general"];
+pub const IDS: [&str; 5] = ["rust", "nix", "sql", "runbook", "general"];
 
 /// What files a profile reviews: a changed path ending in one of `suffixes` or named one of `names`;
-/// with `rest`, every file carrying code no other profile takes, project configuration aside.
+/// with `rest`, every file carrying code no other profile takes, project configuration aside; with
+/// `steps`, only those of its files that carry operator steps ([`crate::runbook`]), which the
+/// working tree decides, not the name ([`crate::coverage::assign`]).
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Detect {
     pub suffixes: Vec<String>,
     pub names: Vec<String>,
     #[serde(default)]
     pub rest: bool,
+    #[serde(default)]
+    pub steps: bool,
 }
 
 /// What the negative-space lens of a profile inventories as new surface, and the uses of it it
@@ -267,12 +271,17 @@ impl Profile {
     }
 
     /// Whether the profile reviews `file`: by its suffixes and names, or, a profile taking the
-    /// rest, when it carries code and is no project configuration. Which of several profiles takes
-    /// a file is [`crate::coverage::assign`]'s.
+    /// rest, when it carries code and is no project configuration. A profile taking files by their
+    /// steps never takes project configuration, and takes the rest of its files only when they
+    /// carry steps, which [`crate::coverage::assign`] reads; which of several profiles takes a
+    /// file is its too.
     #[must_use]
     pub fn covers(&self, file: &str) -> bool {
         if self.detect.rest {
             return !crate::coverage::is_inert(file) && !crate::coverage::is_project_config(file);
+        }
+        if self.detect.steps && crate::coverage::is_project_config(file) {
+            return false;
         }
         let base = file.rsplit('/').next().unwrap_or(file);
         self.detect

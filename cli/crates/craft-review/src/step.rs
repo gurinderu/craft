@@ -142,7 +142,7 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
         scope,
         ..PromptContext::default()
     };
-    let (tracks, uncovered) = tracks_of(&diff.files, &profiles);
+    let (tracks, uncovered) = tracks_of(&cwd, &diff.files, &profiles);
     let (optional, unknown) = crate::optional::request(opts.optional.as_deref(), &profiles);
     let notes =
         crate::optional::unknown_note(opts.optional.as_deref().unwrap_or(""), &unknown, &profiles);
@@ -206,10 +206,16 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
     first_step(dir, &mut run)
 }
 
-/// Each profile's part of the changed `files`, and the files no profile covers that carry
-/// something to review.
-pub(crate) fn tracks_of(files: &[String], profiles: &[Profile]) -> (Vec<Track>, Vec<String>) {
-    let tracks: Vec<Track> = coverage::assign(files, profiles)
+/// Each profile's part of the changed `files` of the checkout `cwd` is in, and the files no
+/// profile covers that carry something to review. Whether a Markdown file carries operator steps
+/// is read from the working tree ([`crate::runbook`]).
+pub(crate) fn tracks_of(
+    cwd: &Path,
+    files: &[String],
+    profiles: &[Profile],
+) -> (Vec<Track>, Vec<String>) {
+    let top = crate::git::toplevel(cwd).unwrap_or_else(|_| cwd.to_path_buf());
+    let tracks: Vec<Track> = coverage::assign(files, profiles, &crate::runbook::reader(&top))
         .into_iter()
         .filter_map(|(i, files)| Some(Track::new(&profiles.get(i)?.id, files)))
         .collect();

@@ -1,0 +1,23 @@
+{
+  "id": "runbook",
+  "lang": "Markdown runbook",
+  "detect": { "suffixes": [".md", ".markdown"], "names": [], "steps": true },
+  "diffGlobs": [],
+  "rubricSkill": "review-rules",
+  "fpRules": "",
+  "ruleCatalog": false,
+  "navSkill": "",
+  "securityHints": "credentials or tokens on a command line, production data, access grants, or a step that deletes or overwrites state",
+  "usesLibrary": false,
+  "alwaysLenses": ["runbook"],
+  "safetyLens": "runbook",
+  "securityFloor": ["runbook"],
+  "scoutRules": "scout-rules-runbook",
+  "scoutModel": "haiku",
+  "dedupModel": "haiku",
+  "rollupRuleIds": [],
+  "lenses": [
+    { "id": "runbook", "brief": "lens-runbook", "model": "opus" }
+  ],
+  "floorLenses": []
+}
