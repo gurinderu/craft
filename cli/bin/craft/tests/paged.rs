@@ -106,4 +106,9 @@ fn a_paged_start_reads_back_page_by_page_as_the_step_it_wrote() {
     );
     let whole: Value = serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
     assert_eq!(step, whole);
+    // Without --paged, a status prints its step whole on one line.
+    let status = craft(&["review", "status", "--run", dir], tmp.path());
+    assert_eq!(status.lines().count(), 1, "{status}");
+    let status: Value = serde_json::from_str(&status).unwrap();
+    assert_eq!(status["run"], Value::String(dir.to_owned()));
 }
