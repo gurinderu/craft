@@ -29,6 +29,11 @@ fn a_step_removed_in_a_rename_reaches_the_lens_at_both_paths_and_counts_once() {
     let out = tempfile::tempdir().unwrap();
     let s = step::start(&opts(repo.path(), out.path())).unwrap();
     assert_eq!(ids(&s), ["scout-runbook"], "{s}");
+    let scout_prompt = prompt_of(&s["tasks"][0]);
+    assert!(
+        scout_prompt.contains("':(literal)docs/ops/drain.md' ':(literal)docs/drain.md'"),
+        "the scout's pathspec holds both paths: {scout_prompt}"
+    );
     let run = out.path().join("run");
     let status = craft_review::status::status(&run).unwrap();
     assert_eq!(
@@ -46,8 +51,10 @@ fn a_step_removed_in_a_rename_reaches_the_lens_at_both_paths_and_counts_once() {
 }
 
 #[test]
-fn many_renamed_runbooks_across_directories_reach_one_unsliced_lens_holding_their_old_paths() {
-    let texts: Vec<(String, String, String, String)> = (0..12)
+fn twenty_renamed_runbooks_across_directories_reach_one_unsliced_lens_holding_their_old_paths() {
+    // More renamed runbooks than the slicing threshold (12 owned files across directories), so a
+    // change of that threshold cannot leave this test unsliced and vacuous.
+    let texts: Vec<(String, String, String, String)> = (0..20)
         .map(|i| {
             let dir = if i % 2 == 0 { "a" } else { "b" };
             let (before, after) = runbook(i);
@@ -83,4 +90,24 @@ fn many_renamed_runbooks_across_directories_reach_one_unsliced_lens_holding_thei
             t.0
         );
     }
+}
+
+#[test]
+fn a_light_pass_over_a_runbook_still_runs_the_runbook_lens() {
+    let (before, after) = runbook(1);
+    let repo = repo(&[("docs/drain.md", &before)], &[("docs/drain.md", &after)]);
+    let out = tempfile::tempdir().unwrap();
+    let mut o = opts(repo.path(), out.path());
+    o.light = true;
+    let s = step::start(&o).unwrap();
+    assert_eq!(ids(&s), ["scout-runbook"], "{s}");
+    let s = submit(
+        &out.path().join("run"),
+        json!({"scout-runbook": scout("small", &[])}),
+    );
+    assert_eq!(
+        ids(&s),
+        ["lens-runbook-runbook-r1"],
+        "a light pass keeps the unsliced lens: {s}"
+    );
 }

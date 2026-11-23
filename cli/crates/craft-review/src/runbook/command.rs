@@ -1,13 +1,15 @@
 //! Whether a shell command line acts on a system outside the checkout (realm @nick/craft, node
 //! #620). No option is parsed — enumerating every tool's flags does not converge. The line is cut
-//! into words at whitespace and shell punctuation (redirections too: `psql<<EOF`), each word stripped of its quotes, a leading
-//! `$`/`#` and a directory, and the line is a step when any word is a known command anywhere on it
+//! into words at whitespace and shell punctuation (redirections too: `psql<<EOF`), each word
+//! stripped of its quotes, a leading `$`/`#` and a directory, and the line is a step when any word is a known command anywhere on it
 //! (`sudo -iu postgres psql`, `watch 'kubectl get pods'`, `sh -c 'systemctl restart x'`), when a
 //! tool whose subcommand matters is followed anywhere later by one of its listed subcommands
-//! (`nix --substituters https://x copy`), or when a fetcher names a URL. A false positive only runs
-//! the lens once more; a false negative would skip a procedure silently. A build or a package
-//! manager's command, which runs in the checkout (`cargo`, `npm`, `nix build`, `docker build`), is
-//! no such step, nor is `git push` (a contributing guide's, not an operator's).
+//! (`nix --substituters https://x copy`), or when a fetcher names a URL. A known word anywhere
+//! counts, so a checkout build or a push that merely names one is a step too
+//! (`docker build -t reg/deploy`, `git push origin deploy`, `npm run deploy`): that over-fire is
+//! accepted, since a false positive only runs the lens once more and a false negative would skip
+//! a procedure silently. A line with no known word — `cargo build`, `nix build`, `git push` — is
+//! no step.
 
 /// Programs whose every use acts on a cluster, a forge, a cloud, a database or a host.
 #[rustfmt::skip]
