@@ -56,3 +56,18 @@ fn a_file_name_holds_only_what_a_name_can() {
     assert_eq!(filename(&r), "2026-01-01T00-00-00Z-work-flow-a-b.json");
     assert_eq!(filename(&Obj::new()), "unknown-unknown-unknown.json");
 }
+
+#[test]
+fn a_symbol_normalizes_alike_by_either_path_with_next_line_no_space() {
+    // U+0085 is no JavaScript whitespace: `fn\u{85}x` keeps its keyword, and is not trimmed.
+    for symbol in ["fn\u{85}x", "\u{85}Foo\u{85}", "impl\u{2028}Bar<T>"] {
+        let units = JsString::from_utf16(symbol.encode_utf16().chain([0xd800]).collect());
+        let mut want: Vec<u16> = normalize_symbol(symbol).encode_utf16().collect();
+        let via_units: Vec<u16> = normalize_units(&units).units().collect();
+        want.push(0xd800);
+        assert_eq!(via_units, want, "{symbol:?}");
+    }
+    assert_eq!(normalize_symbol("fn\u{85}x"), "fn\u{85}x");
+    assert_eq!(normalize_symbol("\u{85}Foo\u{85}"), "\u{85}foo\u{85}");
+    assert_eq!(normalize_symbol("impl\u{2028}Bar<T>"), "bar");
+}

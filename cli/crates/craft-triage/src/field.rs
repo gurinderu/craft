@@ -33,14 +33,9 @@ pub fn text<'a>(o: &'a Obj, key: &str) -> Cow<'a, str> {
     match o.get(key) {
         Some(Js::Str(s)) => s
             .as_str()
-            .map_or_else(|| Cow::Owned(lossy(s)), Cow::Borrowed),
+            .map_or_else(|| Cow::Owned(s.to_utf8_lossy()), Cow::Borrowed),
         _ => Cow::Borrowed(""),
     }
-}
-
-/// A JavaScript string as UTF-8, an unpaired surrogate as U+FFFD.
-fn lossy(s: &JsString) -> String {
-    String::from_utf16_lossy(&s.units().collect::<Vec<_>>())
 }
 
 /// `String(o[key])` as a template literal writes it, `undefined` when absent, every UTF-16
@@ -66,22 +61,26 @@ pub fn cat(parts: &[JsString]) -> JsString {
     JsString::join(parts, "")
 }
 
-/// [`js_text`] as UTF-8, an unpaired surrogate written as U+FFFD.
+/// [`js_text`] as UTF-8, an unpaired surrogate written as U+FFFD (`JsString::to_utf8_lossy`).
 #[must_use]
 pub fn js(o: &Obj, key: &str) -> String {
-    utf8(&js_text(o, key))
+    js_text(o, key).to_utf8_lossy()
 }
 
 /// [`or_empty_text`] as UTF-8, an unpaired surrogate written as U+FFFD.
 #[must_use]
 pub fn or_empty(o: &Obj, key: &str) -> String {
-    utf8(&or_empty_text(o, key))
+    or_empty_text(o, key).to_utf8_lossy()
 }
 
-/// A JavaScript string as UTF-8, an unpaired surrogate written as U+FFFD.
+/// The first of `fields` that `o` does not hold as a string (one with an unpaired surrogate is
+/// a string), for a reader refusing what its schema requires.
 #[must_use]
-pub fn utf8(t: &JsString) -> String {
-    t.to_utf8().unwrap_or_else(|_| lossy(t))
+pub fn first_not_text<'a>(o: &Obj, fields: &[&'a str]) -> Option<&'a str> {
+    fields
+        .iter()
+        .copied()
+        .find(|k| !o.get(*k).is_some_and(Js::is_string))
 }
 
 /// Whether `o[key]` is truthy; absent is not.

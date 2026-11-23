@@ -85,3 +85,26 @@ fn a_repeat_row_is_a_sifted_reject_naming_its_twin_in_the_engines_order() {
         r#"{"stable_id":"review::a.rs:1::t","verdict":"reject","sifted":true,"repeat_of":"x","reason":"SIFTED BEFORE VALIDATION — repeats x in this batch (same site, same title words); judged there"}"#
     );
 }
+
+#[test]
+fn files_apart_only_in_an_unpaired_surrogate_are_two_sites() {
+    let at = |location: &str| {
+        let answer = format!(
+            r#"{{"severity":"Low","title":"memory leak","location":"{location}","detail":"d","proposed_fix":"","thread_id":"","source":"r"}}"#
+        );
+        let f = Finding(
+            craft_store::js::parse(&answer)
+                .unwrap()
+                .as_obj()
+                .unwrap()
+                .clone(),
+        );
+        let id = id_of(&f);
+        Sifted::new(f, id)
+    };
+    let (a, b) = (at("\\ud800.rs:10"), at("\\ud801.rs:10"));
+    assert_eq!(a.file, JsString::from_utf16(vec![0xd800, 0x2e, 0x72, 0x73]));
+    assert_eq!(a.line, 10);
+    assert!(!repeats_finding(&a, &b));
+    assert!(repeats_finding(&a, &at(" \\ud800.rs:12")));
+}

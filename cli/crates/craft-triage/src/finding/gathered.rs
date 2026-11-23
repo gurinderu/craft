@@ -25,10 +25,7 @@ fn finding(f: &Js) -> Result<Finding, TriageError> {
     let o = f
         .as_obj()
         .ok_or_else(|| refused("a finding is no object"))?;
-    match FIELDS
-        .iter()
-        .find(|k| !o.get(**k).is_some_and(Js::is_string))
-    {
+    match field::first_not_text(o, &FIELDS) {
         Some(k) => Err(refused(&format!("a finding has no text {k}"))),
         None => Ok(Finding(o.clone())),
     }

@@ -38,12 +38,6 @@ impl Row {
         field::text(&self.0, key)
     }
 
-    /// A field as `String()` writes it (`undefined` when absent).
-    #[must_use]
-    pub fn js(&self, key: &str) -> String {
-        field::js(&self.0, key)
-    }
-
     /// The stable id, every UTF-16 code unit kept.
     #[must_use]
     pub fn id(&self) -> JsString {
@@ -73,10 +67,7 @@ impl Row {
             why,
         };
         let o = answer.as_obj().ok_or_else(|| refused("no object".into()))?;
-        if let Some(k) = TEXT_FIELDS
-            .iter()
-            .find(|k| !o.get(**k).is_some_and(Js::is_string))
-        {
+        if let Some(k) = field::first_not_text(o, &TEXT_FIELDS) {
             return Err(refused(format!("no text {k}")));
         }
         // The schema's `integer`: `Number.isInteger`.

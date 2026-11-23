@@ -3,7 +3,7 @@
 //! lines when the body holds them (a question's kind line no record carries) (realm @nick/craft, nodes #194, #230, #236, #271). A
 //! comment without them is not craft's, and nothing is recorded from it as a finding.
 
-use crate::js::{space, trim};
+use crate::js::{is_space, trim};
 use crate::publish::body::{LENS, MARKER, RULE, fits};
 
 /// The finding a comment carries.
@@ -22,7 +22,7 @@ pub(super) fn read(body: &str) -> Option<Finding> {
     }
     let first = trim(body.split('\n').next().unwrap_or(""));
     let (severity, rest) = first.strip_prefix('[')?.split_once("] ")?;
-    let starts = rest.chars().next().is_some_and(|c| !space(c));
+    let starts = rest.chars().next().is_some_and(|c| !is_space(c));
     let one_line = !rest.contains(['\r', '\u{2028}', '\u{2029}']);
     if !SEVERITIES.contains(&severity.to_ascii_lowercase().as_str()) || !starts || !one_line {
         return None;

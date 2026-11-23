@@ -104,8 +104,35 @@ fn a_gathered_answer_missing_what_the_schema_requires_is_refused() {
         r#"{"source":"r","findings":"x"}"#,
         r#"{"source":"r","findings":[1]}"#,
         r#"{"source":"r","findings":[{"title":"t"}]}"#,
+        r#"{"source":1,"findings":[]}"#,
+        r#"[{"source":"r","findings":[]}]"#,
+        r#""report""#,
+        r#"{"source":"r","findings":[{"severity":"Low","title":"t","location":"","detail":"d","proposed_fix":""}]}"#,
     ] {
         let read = Gathered::read(&parse(bad).unwrap(), true);
         assert!(matches!(read, Err(TriageError::Answer { .. })), "{bad}");
     }
+}
+
+#[test]
+fn an_unpaired_surrogate_is_kept_in_the_id_and_the_answer() {
+    let answer = parse(
+        r#"{"source":"src\ud800","findings":[
+            {"severity":"Low","title":"t\ud800","location":"","detail":"d","proposed_fix":"","thread_id":""},
+            {"severity":"Low","title":"t\ud801","location":"","detail":"d","proposed_fix":"","thread_id":""}]}"#,
+    )
+    .unwrap();
+    let g = Gathered::read(&answer, false).unwrap();
+    assert_eq!(
+        g.source,
+        JsString::from_utf16(vec![0x73, 0x72, 0x63, 0xd800])
+    );
+    let ids: Vec<JsString> = g.sourced().map(|f| id_of(&f)).collect();
+    assert_ne!(ids[0], ids[1]);
+    let want: Vec<u16> = "src\u{fffd}::no-loc::t".encode_utf16().collect();
+    let mut want = want;
+    want[3] = 0xd800;
+    want.push(0xd800);
+    assert_eq!(ids[0], JsString::from_utf16(want));
+    assert_eq!(Gathered::read(&answer, true).unwrap().source, "report");
 }

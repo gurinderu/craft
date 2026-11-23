@@ -1,20 +1,7 @@
 use craft_store::js::{Js, JsString};
 
-pub(super) fn whitespace(c: char) -> bool {
-    matches!(c, '\u{0009}'..='\u{000d}' | ' ' | '\u{00a0}' | '\u{1680}' |
-        '\u{2000}'..='\u{200a}' | '\u{2028}' | '\u{2029}' | '\u{202f}' |
-        '\u{205f}' | '\u{3000}' | '\u{feff}')
-}
-
-pub(super) fn trim(s: &JsString) -> JsString {
-    let mut units: Vec<_> = s.units().collect();
-    let space = |u: &u16| char::from_u32(u32::from(*u)).is_some_and(whitespace);
-    let first = units.iter().position(|u| !space(u)).unwrap_or(units.len());
-    units.drain(..first);
-    let last = units.iter().rposition(|u| !space(u)).map_or(0, |i| i + 1);
-    units.truncate(last);
-    JsString::from_utf16(units)
-}
+// JavaScript's whitespace and `trim` over code units are the store's (`craft_store::js`).
+pub(super) use craft_store::js::{is_space as whitespace, trim_text as trim};
 
 pub(super) fn field(v: &Js, key: &str) -> JsString {
     v.as_obj().map(|o| o.text_units(key)).unwrap_or_default()
@@ -29,7 +16,7 @@ pub(super) fn slice(s: &JsString, len: usize) -> JsString {
 }
 
 pub(super) fn lossy(s: &JsString) -> String {
-    String::from_utf16_lossy(&s.units().collect::<Vec<_>>())
+    s.to_utf8_lossy()
 }
 
 pub(super) fn ref_fault(s: &JsString) -> Option<String> {

@@ -10,8 +10,9 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
-/// The members of JS's `\s`, for use inside a character class.
-const SPACE: &str = r"\t\n\x0B\x0C\r \x{A0}\x{1680}\x{2000}-\x{200A}\x{2028}\x{2029}\x{202F}\x{205F}\x{3000}\x{FEFF}";
+// The members of JS's `\s`, for use inside a character class: the store's, held equal to
+// `is_space` by its tests.
+use craft_store::js::SPACE_CLASS as SPACE;
 /// JS's `\b`: a boundary between `[A-Za-z0-9_]` and anything else.
 const BOUNDARY: &str = r"(?-u:\b)";
 

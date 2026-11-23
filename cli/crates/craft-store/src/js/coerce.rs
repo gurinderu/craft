@@ -2,7 +2,10 @@
 //! whitespace `String.prototype.trim` and a regular expression's `\s` know — Unicode `White_Space`
 //! without U+0085, which JavaScript does not count, and with U+FEFF, which it does.
 
-use super::Js;
+use super::{Js, JsString};
+
+/// The members of [`is_space`] spelled for the inside of a `regex` character class.
+pub const SPACE_CLASS: &str = r"\t\n\x0B\x0C\r \x{A0}\x{1680}\x{2000}-\x{200A}\x{2028}\x{2029}\x{202F}\x{205F}\x{3000}\x{FEFF}";
 
 /// Whether `c` is whitespace to JavaScript's `trim` and `\s`.
 #[must_use]
@@ -14,6 +17,27 @@ pub fn is_space(c: char) -> bool {
 #[must_use]
 pub fn trim(s: &str) -> &str {
     s.trim_matches(is_space)
+}
+
+/// Whether the code unit `u` is whitespace to JavaScript (a surrogate never is).
+#[must_use]
+pub fn is_space_unit(u: u16) -> bool {
+    char::from_u32(u32::from(u)).is_some_and(is_space)
+}
+
+/// `s.trim()` over its code units, an unpaired surrogate kept.
+#[must_use]
+pub fn trim_text(s: &JsString) -> JsString {
+    let units: Vec<u16> = s.units().collect();
+    let start = units
+        .iter()
+        .position(|u| !is_space_unit(*u))
+        .unwrap_or(units.len());
+    let end = units
+        .iter()
+        .rposition(|u| !is_space_unit(*u))
+        .map_or(start, |i| i + 1);
+    JsString::from_utf16(units.get(start..end).unwrap_or_default().to_vec())
 }
 
 /// An unsigned `0x`, `0o` or `0b` literal's value, when `s` is one; NaN for one with no digits

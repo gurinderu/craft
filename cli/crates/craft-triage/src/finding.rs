@@ -44,12 +44,6 @@ pub use craft_store::record::SEVERITIES;
 pub struct Finding(pub Obj);
 
 impl Finding {
-    /// A field as a template literal writes it (`undefined` when absent).
-    #[must_use]
-    pub fn js(&self, key: &str) -> String {
-        field::js(&self.0, key)
-    }
-
     /// A field's text, '' when absent or no string.
     #[must_use]
     pub fn text(&self, key: &str) -> Cow<'_, str> {

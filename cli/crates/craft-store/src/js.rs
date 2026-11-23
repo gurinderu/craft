@@ -9,7 +9,7 @@ mod parse;
 mod string;
 mod write;
 
-pub use coerce::{is_space, number_of_text, trim};
+pub use coerce::{SPACE_CLASS, is_space, is_space_unit, number_of_text, trim, trim_text};
 pub use number::number_text;
 pub use parse::{ParseError, parse};
 pub use string::{JsString, Utf16Error};

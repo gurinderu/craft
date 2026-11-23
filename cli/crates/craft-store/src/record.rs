@@ -32,7 +32,7 @@ pub fn title_shingle(title: &str) -> String {
 #[must_use]
 pub fn normalize_symbol(symbol: &str) -> String {
     let lower = symbol.to_lowercase();
-    let keyword = regex::Regex::new(r"(?-u:\b)(?:fn|impl)[\s\u{feff}]+").ok();
+    let keyword = regex::Regex::new(&format!(r"(?-u:\b)(?:fn|impl)[{}]+", js::SPACE_CLASS)).ok();
     let generic = regex::Regex::new(r"<[^<>]*>").ok();
     let mut s = keyword.map_or(lower.clone(), |re| re.replace_all(&lower, "").into_owned());
     if let Some(re) = generic {
@@ -132,10 +132,6 @@ fn title_units(s: &JsString) -> String {
     title_shingle(&text)
 }
 
-fn unit_space(u: u16) -> bool {
-    char::from_u32(u32::from(u)).is_some_and(|c| c.is_whitespace() || c == '\u{feff}')
-}
-
 fn unit_word(u: u16) -> bool {
     char::from_u32(u32::from(u)).is_some_and(|c| c.is_ascii_alphanumeric() || c == '_')
 }
@@ -153,11 +149,13 @@ fn normalize_units(s: &JsString) -> JsString {
                 && lower
                     .get(i..i + word.len())
                     .is_some_and(|slice| slice.iter().copied().eq(word.encode_utf16()))
-                && lower.get(i + word.len()).is_some_and(|u| unit_space(*u))
+                && lower
+                    .get(i + word.len())
+                    .is_some_and(|u| js::is_space_unit(*u))
         });
         if let Some(word) = keyword {
             i += word.len();
-            while lower.get(i).is_some_and(|u| unit_space(*u)) {
+            while lower.get(i).is_some_and(|u| js::is_space_unit(*u)) {
                 i += 1;
             }
         } else {
@@ -166,15 +164,7 @@ fn normalize_units(s: &JsString) -> JsString {
         }
     }
     strip_generics(&mut out);
-    let start = out
-        .iter()
-        .position(|u| !unit_space(*u))
-        .unwrap_or(out.len());
-    let end = out
-        .iter()
-        .rposition(|u| !unit_space(*u))
-        .map_or(start, |i| i + 1);
-    JsString::from_utf16(out.get(start..end).unwrap_or_default().to_vec())
+    js::trim_text(&JsString::from_utf16(out))
 }
 
 fn strip_generics(out: &mut Vec<u16>) {

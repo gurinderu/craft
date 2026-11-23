@@ -24,6 +24,8 @@ fn the_noise_class_is_numbers_integer_from_one_to_six_else_zero() {
     assert_eq!(class(r#""0x1""#), 1);
     assert_eq!(class("7"), 0);
     assert_eq!(class("1.5"), 0);
+    assert_eq!(class("0.9999999999999999"), 0);
+    assert_eq!(class("5.000000000000001"), 0);
     assert_eq!(class(r#""x""#), 0);
     assert_eq!(class("null"), 0);
     assert_eq!(noise_class_of(&Row::default()), 0);

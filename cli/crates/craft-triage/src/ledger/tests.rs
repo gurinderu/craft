@@ -71,3 +71,14 @@ fn a_validator_answer_is_read_as_it_came_or_refused() {
         assert!(matches!(read, Err(TriageError::Answer { .. })), "{bad}");
     }
 }
+
+#[test]
+fn a_validator_answer_with_an_unpaired_surrogate_is_read_with_it() {
+    let text = r#"{"stable_id":"a\ud800","verdict":"reject","reason":"r\udc00","fix_pointer":"","premise_checked":"","noise_class":0,"severity":"Low"}"#;
+    let v = Row::validation(&parse(text).unwrap()).unwrap();
+    assert_eq!(v.id(), JsString::from_utf16(vec![0x61, 0xd800]));
+    assert_eq!(
+        v.0.text_units("reason"),
+        JsString::from_utf16(vec![0x72, 0xdc00])
+    );
+}

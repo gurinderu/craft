@@ -19,24 +19,9 @@ fn sorted_findings(sorting: Option<&Obj>) -> Vec<&Obj> {
     list.unwrap_or(&[]).iter().filter_map(Js::as_obj).collect()
 }
 
-/// `Number(v)` for what a stored finding's line can be.
+/// `Number(v)` ([`Js::to_js_number`]), an absent value NaN as `Number(undefined)` is.
 pub(crate) fn js_number(v: Option<&Js>) -> f64 {
-    match v {
-        Some(Js::Null) => 0.0,
-        Some(Js::Bool(b)) => f64::from(u8::from(*b)),
-        Some(Js::Num(n)) => *n,
-        Some(Js::Str(s)) => {
-            let Some(t) = s.as_str().map(str::trim) else {
-                return f64::NAN;
-            };
-            if t.is_empty() {
-                0.0
-            } else {
-                t.parse().unwrap_or(f64::NAN)
-            }
-        }
-        None | Some(Js::Arr(_) | Js::Obj(_)) => f64::NAN,
-    }
+    v.map_or(f64::NAN, Js::to_js_number)
 }
 
 /// `String(v ?? '')`.

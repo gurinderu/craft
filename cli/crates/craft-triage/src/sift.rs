@@ -9,27 +9,34 @@ pub use craft_review::memory::SURE_WINDOW;
 use crate::field;
 use crate::finding::{Finding, location_parts, severity_rank};
 use crate::ledger::Row;
-use craft_store::js::{Js, JsString, Obj};
+use craft_store::js::{Js, JsString, Obj, is_space_unit};
 
 /// How much two titles at one site must share to be one finding said twice.
 pub const REPEAT_TITLE_OVERLAP: f64 = 0.6;
 /// The mark every ledger row the sift settles carries in its reason.
 pub const SIFT_MARK: &str = "SIFTED BEFORE VALIDATION";
 
-/// A gathered finding as the sift reads it: its stable id, file and line.
+/// A gathered finding as the sift reads it: its stable id, file and line, the file in its own
+/// code units.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Sifted {
     pub finding: Finding,
     pub stable_id: JsString,
-    pub file: String,
+    pub file: JsString,
     pub line: u64,
 }
 
 impl Sifted {
-    /// `f` under the id `id`, its location read.
+    /// `f` under the id `id`, its location read. The location is read as UTF-8, where an
+    /// unpaired surrogate is U+FFFD — one code unit for one, and neither whitespace nor a digit
+    /// nor `:` — so the file is the same span of the location's own code units.
     #[must_use]
     pub fn new(f: Finding, id: JsString) -> Self {
-        let (file, line) = location_parts(&f.text("location"));
+        let location = f.0.text_units("location");
+        let (file, line) = location_parts(&location.to_utf8_lossy());
+        let lead = location.units().take_while(|u| is_space_unit(*u)).count();
+        let span = file.encode_utf16().count();
+        let file = JsString::from_utf16(location.units().skip(lead).take(span).collect());
         Self {
             finding: f,
             stable_id: id,

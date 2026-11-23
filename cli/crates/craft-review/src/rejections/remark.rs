@@ -7,7 +7,7 @@ use serde_json::Value;
 
 use super::Decision;
 use super::rule::{self, ASSOCIATIONS, THREAD_COMMENTS_MAX, field, truthy};
-use crate::js::{self, number_text, space};
+use crate::js::{self, is_space, number_text};
 
 /// A remark has no title line: its first line, cut at a word, stands in for one.
 const TITLE_MAX: usize = 120;
@@ -21,9 +21,9 @@ pub(super) fn title(body: &str) -> String {
     let first = body
         .split('\n')
         .map(|l| {
-            let l = l.trim_start_matches(|c| space(c) || "#>*_-".contains(c));
-            let l = l.trim_end_matches(|c| space(c) || "*_".contains(c));
-            l.split(space)
+            let l = l.trim_start_matches(|c| is_space(c) || "#>*_-".contains(c));
+            let l = l.trim_end_matches(|c| is_space(c) || "*_".contains(c));
+            l.split(is_space)
                 .filter(|w| !w.is_empty())
                 .collect::<Vec<_>>()
                 .join(" ")
@@ -39,7 +39,7 @@ pub(super) fn title(body: &str) -> String {
         .rposition(|&u| u == u16::from(b' '))
         .filter(|&a| a > TITLE_MAX / 2);
     let kept = String::from_utf16_lossy(at.and_then(|a| cut.get(..a)).unwrap_or(cut));
-    format!("{}…", kept.trim_end_matches(space))
+    format!("{}…", kept.trim_end_matches(is_space))
 }
 
 /// One thread whose root is not a craft finding as a decision record (`Ok(Some)`), why its
