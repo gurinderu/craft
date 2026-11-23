@@ -73,9 +73,21 @@ pub(crate) fn verifier_lines(f: &Value) -> String {
          not on the cited test line — reachable=true when that production line runs in production, \
          so the regression would reach it; reachable=false only when the regression itself cannot \
          reach production (that code is test-, example- or fixture-only). The cited line being \
-         test code is expected here and is NOT reachable=false.\
-         \n  SEVERITY OF THIS TEST GAP: {PROMISE_FLOOR}"
+         test code is expected here and is NOT reachable=false.{}",
+        promise_line(f)
     )
+}
+
+/// The test-promise rule for a weak assertion still at Low or Info — one the floor did not raise —
+/// so its verifier can confirm the unmet promise; a missing test, or a weak assertion already at
+/// Medium or above, is not read the rule, which must never argue it down.
+fn promise_line(f: &Value) -> String {
+    let low = matches!(text(f, "severity"), Some("Low" | "Info"));
+    if gap(f) == Some(WEAK) && low {
+        format!("\n  SEVERITY OF THIS TEST GAP: {PROMISE_FLOOR}")
+    } else {
+        String::new()
+    }
 }
 
 /// The weak-assertion floor's note in `why`, or `""` when the floor did not raise it.

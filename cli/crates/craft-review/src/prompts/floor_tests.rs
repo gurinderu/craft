@@ -48,3 +48,27 @@ fn the_test_promise_floor_reaches_the_tests_lens_and_its_verifier() {
     let other = verify_prompt(&ctx, &general, &plain, 0, "").unwrap();
     assert!(!other.contains(PROMISE_FLOOR), "only a test gap's verifier");
 }
+
+#[test]
+fn the_floor_never_reaches_a_raised_weak_assertion_or_a_missing_test() {
+    let ctx = PromptContext::default();
+    let general = Profile::load("general").unwrap();
+    let with = |severity: &str, kind: &str| {
+        let f = json!({"severity": severity, "title": "t", "file": "src/a_test.rs", "line": 3,
+                       "why": "w", "source": "tests", "harmLevel": "intent-unmet",
+                       "testGap": kind, "regression": "any message passes"});
+        verify_prompt(&ctx, &general, &f, 0, "").unwrap()
+    };
+    assert!(with("Info", "weak-assertion").contains(PROMISE_FLOOR));
+    for (severity, kind) in [
+        ("Medium", "weak-assertion"),
+        ("High", "weak-assertion"),
+        ("Low", "missing"),
+        ("High", "missing"),
+    ] {
+        assert!(
+            !with(severity, kind).contains(PROMISE_FLOOR),
+            "{severity} {kind}"
+        );
+    }
+}
