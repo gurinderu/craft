@@ -259,7 +259,7 @@ fn rust_and_nix_extend_the_general_lenses_and_sql_stays_narrow() {
         ),
         (
             ["intent".to_owned()].as_slice(),
-            "security",
+            "safety",
             "rust-review",
             true
         ),
@@ -318,4 +318,19 @@ fn no_shipped_profile_runs_a_lens_on_a_reviewer_agent() {
         "a metrics lens never names one"
     );
     assert_eq!(rust.agent_of("correctness"), Some(AgentKind::RustReviewer));
+}
+
+/// Which files a lens reads (realm @nick/craft, node #625): the general profile's per-file lenses
+/// read no data file; its whole-diff lenses and its security lens read them all, as every lens of
+/// a profile taking files by name does.
+#[test]
+fn a_general_per_file_lens_reads_no_data_and_security_and_whole_diff_lenses_read_all() {
+    let files = vec!["web/app.ts".to_owned(), "web/rows.csv".to_owned()];
+    let general = Profile::load("general").unwrap();
+    assert_eq!(general.reads("correctness", &files), ["web/app.ts"]);
+    for lens in ["security", "compat", "intent", "complexity"] {
+        assert_eq!(general.reads(lens, &files), files, "{lens}");
+    }
+    let rust = Profile::rust().unwrap();
+    assert_eq!(rust.reads("errors", &files), files);
 }

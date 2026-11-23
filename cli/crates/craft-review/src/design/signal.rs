@@ -16,7 +16,7 @@ const API_DESCRIPTIONS: [&str; 3] = ["openapi", "asyncapi", "swagger"];
 
 /// The files the zero-context `diff` creates (`new file mode`), by their new path; a rename or a
 /// copy is not one.
-pub(crate) fn added_files(diff: &str) -> Vec<String> {
+pub(super) fn added_files(diff: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut new = false;
     for l in diff.lines() {

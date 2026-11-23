@@ -21,7 +21,6 @@ mod types;
 
 pub use seed::Seed;
 pub(crate) use seed::lens_block;
-pub(crate) use signal::added_files;
 
 /// The lens this module admits and seeds.
 pub(crate) const LENS: &str = "design";

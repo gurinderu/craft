@@ -65,14 +65,18 @@ fn in_scope(plan: &Plan) -> bool {
 
 /// The lenses a critic may name: the roster's that the plan did not run. A metrics-or-nothing lens
 /// is no candidate while the run's code-metrics index is not ready (`metrics`), picked or not:
-/// nothing it would read is there.
+/// nothing it would read is there; nor is a per-file lens over a part of nothing but data. A lens
+/// held back for want of its diff signal is one (realm @nick/craft, node #625).
 pub(crate) fn candidates(profile: &Profile, plan: &Plan, metrics: bool) -> Vec<String> {
     let no_index = profile.flagged(|l| l.metrics && !metrics);
     profile
         .roster()
         .into_iter()
         .filter(|l| {
-            !plan.lenses.contains(l) && !plan.metrics_dropped.contains(l) && !no_index.contains(l)
+            !plan.lenses.contains(l)
+                && !plan.metrics_dropped.contains(l)
+                && !plan.data_skipped.contains(l)
+                && !no_index.contains(l)
         })
         .collect()
 }
@@ -141,7 +145,7 @@ fn lens_task(run: &RunState, p: &Profile, plan: &Plan, lens: &str) -> Result<Tas
         .track(&p.id)
         .map(crate::state::Track::read_paths)
         .unwrap_or_default();
-    let pathspec = run.context.pathspec(p, &track);
+    let pathspec = run.context.pathspec(p, &p.reads(lens, &track));
     let at = LensIn {
         profile: p,
         lens,

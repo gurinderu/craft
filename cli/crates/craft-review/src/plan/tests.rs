@@ -137,7 +137,14 @@ fn holds(l: &[String], ids: &[&str]) -> Vec<String> {
 
 #[test]
 fn the_security_floor_adds_only_the_profiles_security_lenses() {
-    let rust_floor = ["security", "correctness", "errors", "compat", "invariants"];
+    let rust_floor = [
+        "security",
+        "safety",
+        "correctness",
+        "errors",
+        "compat",
+        "invariants",
+    ];
     let general_floor = ["security", "correctness", "errors", "compat", "invariants"];
     let scout_picked = ["money", "maintainability", "complexity", "performance"];
     for (id, file, floor) in [

@@ -1,6 +1,6 @@
 //! The plan's last say on what yields (realm @nick/craft, node #625): a signal-gated lens runs
 //! when, and only when, its profile's part shows its signal; a part of nothing but data is read by
-//! the whole-diff lenses alone. What either holds back stays a candidate the completeness critic of
+//! the whole-diff lenses and the security lens alone. What either holds back stays a candidate the completeness critic of
 //! a full review may name ([`crate::critic::candidates`]): gated, never dropped.
 
 use super::{Plan, push_missing};
@@ -29,21 +29,30 @@ pub(super) fn signals(p: &Profile, (fired, strict): (Option<&[String]>, bool), p
         .collect();
 }
 
-/// A profile taking the rest whose part `own` is nothing but data keeps only its whole-diff
-/// lenses, its whole-diff always lenses when it had none; the others join `signal_skipped`.
-pub(super) fn data_only(p: &Profile, own: &[String], plan: &mut Plan) {
-    if !p.detect.rest || own.is_empty() || !own.iter().all(|f| crate::coverage::is_data(f)) {
+/// The data in the part `own` of a profile taking the rest ([`crate::coverage::is_data`]): a part
+/// with source beside it keeps it from its per-file lenses, named in `data_files`; a part of
+/// nothing but data keeps only the lenses that read it ([`Profile::reads`]), its always ones that
+/// do when it had none, the others named in `data_skipped`.
+pub(super) fn data(p: &Profile, own: &[String], plan: &mut Plan) {
+    if !p.detect.rest {
         return;
     }
-    let whole = |id: &str| p.lens(id).is_some_and(|l| l.whole_diff);
-    let (kept, held): (Vec<String>, Vec<String>) = plan.lenses.drain(..).partition(|l| whole(l));
+    let data: Vec<String> = own
+        .iter()
+        .filter(|f| crate::coverage::is_data(f))
+        .cloned()
+        .collect();
+    if data.len() < own.len() {
+        plan.data_files = data;
+        return;
+    }
+    let reads = |l: &String| !p.reads(l, own).is_empty();
+    let (kept, held): (Vec<String>, Vec<String>) = plan.lenses.drain(..).partition(reads);
     plan.lenses = kept;
     if plan.lenses.is_empty() {
-        for l in p.always_lenses.iter().filter(|l| whole(l)) {
+        for l in p.always_lenses.iter().filter(|l| reads(l)) {
             push_missing(&mut plan.lenses, l);
         }
     }
-    for l in held {
-        push_missing(&mut plan.signal_skipped, &l);
-    }
+    plan.data_skipped = held;
 }

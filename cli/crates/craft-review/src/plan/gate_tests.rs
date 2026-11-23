@@ -28,47 +28,46 @@ fn owned(s: &[&str]) -> Vec<String> {
     s.iter().map(|x| (*x).to_owned()).collect()
 }
 
-const RUST_GATED: [&str; 5] = [
-    "money",
-    "concurrency",
-    "performance",
-    "maintainability",
-    "safety",
-];
+const GATED: [&str; 4] = ["money", "concurrency", "performance", "maintainability"];
 
 #[test]
 fn a_gated_lens_runs_on_its_signal_and_on_no_pick_without_it() {
-    let p = Profile::rust().unwrap();
-    let files = owned(&["src/lib.rs"]);
-    let scout = json!({"sizeBucket": "large", "securitySensitive": true, "lenses": RUST_GATED});
+    for (id, file) in [("rust", "src/lib.rs"), ("general", "web/app.ts")] {
+        gated_on_its_signal(&Profile::load(id).unwrap(), file);
+    }
+}
+
+/// Each of `p`'s gated lenses, over a change to `file`, runs on its signal and on nothing else.
+fn gated_on_its_signal(p: &Profile, file: &str) {
+    let files = owned(&[file]);
+    let scout = json!({"sizeBucket": "large", "securitySensitive": true, "lenses": GATED});
     let none = plan(PlanInput {
         scout: Some(&scout),
-        ..input(&p, &files, Some(&[]))
+        ..input(p, &files, Some(&[]))
     });
-    for l in RUST_GATED {
+    for l in GATED {
         assert!(
             !none.lenses.iter().any(|x| x == l),
             "{l}: {:?}",
             none.lenses
         );
     }
-    assert_eq!(none.signal_skipped, RUST_GATED, "named, in roster order");
+    assert_eq!(none.signal_skipped, GATED, "named, in roster order");
     for (signal, lens) in [
-        ("unsafe", "safety"),
         ("money", "money"),
         ("concurrency", "concurrency"),
         ("loop-io", "performance"),
         ("new-or-large-file", "maintainability"),
     ] {
         let fired = owned(&[signal]);
-        let got = plan(input(&p, &files, Some(&fired)));
+        let got = plan(input(p, &files, Some(&fired)));
         assert!(
             got.lenses.iter().any(|x| x == lens),
             "{signal}: {:?}",
             got.lenses
         );
         assert!(!got.signal_skipped.iter().any(|x| x == lens), "{signal}");
-        let others: Vec<&str> = RUST_GATED.iter().copied().filter(|l| *l != lens).collect();
+        let others: Vec<&str> = GATED.iter().copied().filter(|l| *l != lens).collect();
         assert_eq!(got.signal_skipped, others, "{signal}");
     }
 }
@@ -78,7 +77,7 @@ fn unknown_signals_admit_every_gated_lens() {
     let p = Profile::rust().unwrap();
     let files = owned(&["src/lib.rs"]);
     let got = plan(input(&p, &files, None));
-    for l in RUST_GATED {
+    for l in GATED {
         assert!(got.lenses.iter().any(|x| x == l), "{l}: {:?}", got.lenses);
     }
     assert!(got.signal_skipped.is_empty());
@@ -112,15 +111,15 @@ fn a_held_lens_stays_a_candidate_the_full_review_critic_may_name() {
         ..input(&p, &files, Some(&[]))
     });
     let open = crate::critic::candidates(&p, &got, false);
-    for l in RUST_GATED {
+    for l in GATED {
         assert!(open.iter().any(|x| x == l), "{l}: {open:?}");
     }
 }
 
 #[test]
-fn a_general_part_of_only_data_is_read_by_its_whole_diff_lenses() {
+fn a_general_part_of_only_data_is_read_by_its_whole_diff_lenses_and_security() {
     let p = Profile::load("general").unwrap();
-    let files = owned(&["content/parity/a.json", "deploy/values.yaml"]);
+    let files = owned(&["content/parity/a.json", "tests/fixtures/rows.csv"]);
     let scout = json!({"sizeBucket": "large", "securitySensitive": true,
         "lenses": ["correctness", "errors", "compat", "invariants"]});
     let got = plan(PlanInput {
@@ -128,18 +127,31 @@ fn a_general_part_of_only_data_is_read_by_its_whole_diff_lenses() {
         ..input(&p, &files, Some(&[]))
     });
     for l in &got.lenses {
-        assert!(p.lens(l).unwrap().whole_diff, "{l}: {:?}", got.lenses);
-    }
-    for l in ["compat", "invariants", "intent"] {
-        assert!(got.lenses.iter().any(|x| x == l), "{l}: {:?}", got.lenses);
-    }
-    for l in ["correctness", "errors", "security"] {
         assert!(
-            got.signal_skipped.iter().any(|x| x == l),
+            p.lens(l).unwrap().whole_diff || l == "security",
             "{l}: {:?}",
-            got.signal_skipped
+            got.lenses
         );
     }
+    for l in ["compat", "invariants", "intent", "security"] {
+        assert!(got.lenses.iter().any(|x| x == l), "{l}: {:?}", got.lenses);
+    }
+    assert_eq!(
+        got.data_skipped,
+        ["correctness", "errors"],
+        "named, with their reason"
+    );
+    assert!(
+        got.signal_skipped
+            .iter()
+            .all(|l| GATED.contains(&l.as_str()))
+    );
+    assert!(got.data_files.is_empty(), "no source to keep them from");
+    let open = crate::critic::candidates(&p, &got, false);
+    assert!(
+        !open.iter().any(|l| l == "correctness"),
+        "a per-file lens over nothing but data is no critic candidate: {open:?}"
+    );
     assert!(
         !got.lenses.iter().any(|l| l == "tests"),
         "data is no production code"
@@ -171,6 +183,19 @@ fn a_part_with_source_beside_its_data_or_another_profile_keeps_its_per_file_lens
         got.lenses
     );
     assert!(got.lenses.iter().any(|l| l == "tests"), "{:?}", got.lenses);
+    assert_eq!(
+        got.data_files,
+        ["web/app.json"],
+        "named as kept from the per-file lenses"
+    );
+    assert!(got.data_skipped.is_empty());
+    let config = owned(&[".github/workflows/ci.yml", "deploy/values.yaml"]);
+    let got = plan(input(&general, &config, Some(&[])));
+    assert!(
+        got.lenses.iter().any(|l| l == "correctness") && got.data_files.is_empty(),
+        "configuration is no data: {:?}",
+        got.lenses
+    );
     let rust = Profile::rust().unwrap();
     let manifest = owned(&["Cargo.toml"]);
     let got = plan(input(&rust, &manifest, Some(&[])));

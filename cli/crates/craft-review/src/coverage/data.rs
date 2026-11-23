@@ -1,15 +1,16 @@
-//! Data, not source: a file the general profile takes but no code lens of it reads per file
-//! (realm @nick/craft, node #625). JSON, YAML, TOML and other data or markup formats, and any file
-//! under a fixtures or test-data directory, are judged by the profile's whole-diff lenses — intent,
-//! compat, invariants, negative-space, which read a schema or format change as the contract it
-//! is — never sliced or read by correctness, security, errors and the other per-file lenses.
-//! Told by the file's kind, not by a repository's layout: craft reviews repositories it never sees.
+//! Data, not source: a file the general profile takes but its per-file lenses do not read (realm
+//! @nick/craft, node #625). Pure data only — JSON and its kin, CSV, lockfiles, snapshots, and any
+//! file under a fixtures or test-data directory — is judged by the profile's whole-diff lenses
+//! (intent, compat, invariants, negative-space, which read a format change as the contract it is)
+//! and by its security lens, never sliced or read by correctness, errors and the other per-file
+//! lenses. Configuration (YAML, TOML, INI, env, XML, properties) is no data: it carries behaviour,
+//! and every lens reads it. Told by the file's kind, not by a repository's layout: craft reviews
+//! repositories it never sees.
 
-/// Extensions of data and markup formats.
+/// Extensions of pure data.
 #[rustfmt::skip]
 const DATA_EXT: &[&str] = &[
-    "json", "jsonc", "json5", "jsonl", "ndjson", "geojson", "yaml", "yml", "toml", "csv", "tsv",
-    "xml", "ini", "cfg", "conf", "properties", "env", "plist", "har",
+    "json", "jsonc", "json5", "jsonl", "ndjson", "geojson", "har", "csv", "tsv", "lock", "snap",
 ];
 /// Directories whose files are data a test reads, whatever their extension.
 const FIXTURE_DIRS: &[&str] = &[
@@ -18,6 +19,7 @@ const FIXTURE_DIRS: &[&str] = &[
     "testdata",
     "test-data",
     "test_data",
+    "__snapshots__",
 ];
 
 /// Whether `f` is data rather than source.
@@ -35,14 +37,12 @@ mod tests {
     use super::is_data;
 
     #[test]
-    fn data_is_told_by_kind_not_by_path() {
+    fn pure_data_is_told_by_kind_not_by_path_and_configuration_is_no_data() {
         for f in [
             "content/parity/plan-cases.json",
-            "config/app.YAML",
-            "deploy/values.yml",
-            "settings.toml",
             "data/rows.csv",
-            "api/schema.xml",
+            "Cargo.lock",
+            "web/__snapshots__/app.test.ts.snap",
             "tests/fixtures/bad.js",
             "pkg/testdata/input.go",
             "x/__fixtures__/a.ts",
@@ -57,6 +57,12 @@ mod tests {
             "src/fixture.rs",
             "Makefile",
             "fixtures.py",
+            "config/app.YAML",
+            ".github/workflows/ci.yml",
+            "settings.toml",
+            ".env",
+            "api/schema.xml",
+            "app.properties",
         ] {
             assert!(!is_data(f), "{f}");
         }

@@ -59,6 +59,8 @@ fn plan() -> Plan {
         light_skipped: Vec::new(),
         metrics_dropped: Vec::new(),
         signal_skipped: Vec::new(),
+        data_skipped: Vec::new(),
+        data_files: Vec::new(),
     }
 }
 

@@ -45,6 +45,7 @@ fn every_case_plans_as_the_engines_plan_it() {
             "securitySensitive": got.security_sensitive, "intent": got.intent, "churn": got.churn,
             "repoRules": got.repo_rules, "surfaceDropped": got.surface_dropped,
             "lightSkipped": got.light_skipped, "signalSkipped": got.signal_skipped,
+            "dataSkipped": got.data_skipped, "dataFiles": got.data_files,
         });
         for (k, v) in got_json.as_object().unwrap() {
             g.check(&format!("{at}/{k}"), v.clone());

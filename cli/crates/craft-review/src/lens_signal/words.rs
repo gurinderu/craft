@@ -2,45 +2,32 @@
 //! parser, which errs toward firing — a lens it lets through costs tokens, one it holds back costs
 //! findings (realm @nick/craft, node #625).
 
-/// Unsafe code and the foreign-function boundary: `unsafe`, `extern "C"`, raw pointers,
-/// `transmute`, the FFI modules and C layouts.
-const UNSAFE: [&str; 16] = [
-    "unsafe",
-    "extern \"",
-    "#[no_mangle]",
-    "transmute",
-    "*const ",
-    "*mut ",
-    "ffi::",
-    "libc::",
-    "#[repr(C",
-    "from_raw",
-    "into_raw",
-    "MaybeUninit",
-    "as_ptr()",
-    "as_mut_ptr()",
-    "ptr::read",
-    "ptr::write",
-];
-
 /// Words of an identifier that name money, matched whole after splitting snake and camel case.
 #[rustfmt::skip]
-const MONEY: [&str; 34] = [
+const MONEY: [&str; 75] = [
     "amount", "amounts", "price", "prices", "pricing", "balance", "balances", "currency",
     "currencies", "decimal", "decimals", "cents", "money", "monetary", "payment", "payments",
-    "invoice", "invoices", "refund", "refunds", "wallet", "wallets", "fee", "fees", "tax", "taxes",
-    "billing", "payout", "payouts", "usd", "eur", "satoshi", "lamports", "wei",
+    "invoice", "invoices", "refund", "refunds", "refunded", "wallet", "wallets", "fee", "fees",
+    "tax", "taxes", "billing", "pay", "paid", "payout", "payouts", "usd", "eur", "sats",
+    "satoshi", "gwei", "wei", "btc", "lamports", "charge", "charges", "charged", "ledger",
+    "ledgers", "credit", "credits", "credited", "debit", "debits", "debited", "transfer",
+    "transfers", "deposit", "deposits", "withdraw", "withdraws", "withdrawal", "withdrawals",
+    "cost", "costs", "total", "totals", "subtotal", "subtotals", "discount", "discounts",
+    "payable", "receivable", "settlement", "settlements", "escrow", "fiat", "cent", "rounding",
 ];
 
-/// Threads, async spawns, locks, atomics and channels, across the languages the profiles review.
+/// Threads, async spawns and awaits, locks and their acquisition, atomics and channels, across
+/// the languages the profiles review.
 #[rustfmt::skip]
-const CONCURRENCY: [&str; 38] = [
+const CONCURRENCY: [&str; 46] = [
     "thread::spawn", "std::thread", "tokio::spawn", "task::spawn", "spawn_blocking", "spawn_local",
-    "JoinSet", "JoinHandle", "Mutex", "RwLock", "Atomic", "Ordering::SeqCst", "Ordering::Acquire",
-    "Ordering::Release", "Ordering::Relaxed", "Ordering::AcqRel", "mpsc", "oneshot", "broadcast::",
-    "crossbeam", "rayon", "par_iter", "Condvar", "Semaphore", "Barrier", "select!", "Promise.all",
-    "Promise.race", "new Worker(", "worker_threads", "Atomics.", "SharedArrayBuffer", "threading",
-    "multiprocessing", "asyncio.gather", "asyncio.create_task", "go func", "sync.WaitGroup",
+    "thread::sleep", "JoinSet", "JoinHandle", "Mutex", "RwLock", ".lock(", "Arc<", "Atomic",
+    "Ordering::SeqCst", "Ordering::Acquire", "Ordering::Release", "Ordering::Relaxed",
+    "Ordering::AcqRel", "mpsc", "oneshot", "broadcast::", "crossbeam", "rayon", "par_iter",
+    "Condvar", "Semaphore", "Barrier", "select!", "join!", ".await", "async fn", "block_on",
+    "Promise.all", "Promise.race", "new Worker(", "worker_threads", "Atomics.", "SharedArrayBuffer",
+    "threading", "multiprocessing", "asyncio.gather", "asyncio.create_task", "go func",
+    "sync.WaitGroup", "synchronized",
 ];
 
 /// An allocation or an I/O call: what a loop body pays for on every turn.
@@ -55,10 +42,6 @@ const LOOP_COST: [&str; 30] = [
 
 /// How many lines past a loop's opening an allocation or I/O call still counts as its body.
 pub(super) const LOOP_BODY: u32 = 10;
-
-pub(super) fn is_unsafe(line: &str) -> bool {
-    UNSAFE.iter().any(|t| line.contains(t))
-}
 
 pub(super) fn is_money(line: &str) -> bool {
     words(line).any(|w| MONEY.contains(&w.as_str()))

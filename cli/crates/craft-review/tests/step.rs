@@ -42,7 +42,7 @@ fn start_renders_the_scout_over_the_diff() {
         "You are scouting a Rust diff",
         "git diff --stat 'origin/main'...HEAD -- '*.rs'",
         r#"choose from ["correctness","security","money","concurrency","errors","performance","intent","tests","maintainability","compat","invariants","design","sql-queries","complexity","safety","api-idioms","api-boundary","reconciler","failure-windows"]"#,
-        r#"EXCEPT ["money","concurrency","performance","maintainability","design","sql-queries","safety","failure-windows"]"#,
+        r#"EXCEPT ["money","concurrency","performance","maintainability","design","sql-queries","failure-windows"]"#,
         "Decide what is \"in play\" from the diff",
         "Return repo-relative paths, at most 5",
     ] {
@@ -209,7 +209,7 @@ fn a_full_run_goes_scout_lenses_two_rounds_dedup_verify_done() {
             "Plan: medium diff, full review, at most 2 round(s). Lenses planned: errors, intent, tests; ran: errors, intent, tests.",
             "- Round 1: 3 lens(es) dispatched, 3 returned, 4 new finding(s).",
             "- Round 2: 2 lens(es) dispatched, 2 returned, 0 new finding(s).",
-            "Held back, no diff signal for them: money, concurrency, performance, maintainability, safety.",
+            "Held back, no diff signal for them: money, concurrency, performance, maintainability.",
             "## Confirmed findings\n\n- **High** `src/lib.rs:1` — f returns 1 where 0 is claimed (errors, intent)",
             "(same defect also reported by: intent)",
             "## Unverified findings\n\n- **Low** `src/lib.rs:1` — naming (intent)",
@@ -372,7 +372,7 @@ fn a_scout_that_never_answers_runs_the_conservative_plan_and_says_so() {
     let lenses = ids(&s);
     assert_eq!(
         lenses.len(),
-        8,
+        9,
         "the security floor, the always set, tests and negative-space: {lenses:?}"
     );
     let ns = s["tasks"]
@@ -528,7 +528,8 @@ fn a_light_pass_runs_one_round_of_the_scoped_lenses() {
             "lens-rust-intent-r1",
             "lens-rust-tests-r1",
             "lens-rust-correctness-r1",
-            "lens-rust-security-r1"
+            "lens-rust-security-r1",
+            "lens-rust-safety-r1"
         ],
         "the security floor's diff-scoped lenses too, a large plan; no signal buys a gated one"
     );
@@ -540,7 +541,7 @@ fn a_light_pass_runs_one_round_of_the_scoped_lenses() {
     assert_eq!(st["profiles"][0]["plan"]["maxRounds"], json!(1));
     let low = titled("Low", 2, "naming");
     let mut answers = round1(&[low]);
-    for l in ["correctness", "security"] {
+    for l in ["correctness", "security", "safety"] {
         answers[format!("lens-rust-{l}-r1")] = lens(l, &[]);
     }
     let s = submit(&run, answers);
@@ -573,4 +574,47 @@ fn a_base_that_is_no_commit_is_refused() {
         );
         assert!(err.to_string().contains("is not a commit"), "{err}");
     }
+}
+
+/// A profile whose round found something only through a lens that runs in the first round alone
+/// goes dry: no lens of it may run again, so no round 2 is dispatched though its plan allows two
+/// (realm @nick/craft, node #625).
+#[test]
+fn a_profile_whose_only_yield_was_a_first_round_lens_runs_no_second_round() {
+    let repo = fixture(true);
+    std::fs::write(repo.path().join("src/more.rs"), "pub fn g() {}\n").unwrap();
+    common::git(repo.path(), &["add", "."]);
+    common::git(repo.path(), &["commit", "-qm", "feat: add g"]);
+    let out = tempfile::tempdir().unwrap();
+    let run = out.path().join("run");
+    step::start(&opts(repo.path(), out.path())).unwrap();
+    let s = submit(&run, json!({"scout-rust": scout("medium", &["errors"])}));
+    let lenses = ids(&s);
+    assert!(
+        lenses.contains(&"lens-rust-design-r1".to_owned()),
+        "{lenses:?}"
+    );
+    let mut answers = Map::new();
+    for id in &lenses {
+        let name = id.trim_start_matches("lens-rust-").trim_end_matches("-r1");
+        let found = if name == "design" {
+            vec![titled("Medium", 1, "a second implementation of f")]
+        } else {
+            Vec::new()
+        };
+        answers.insert(id.clone(), lens(name, &found));
+    }
+    let s = submit(&run, Value::Object(answers));
+    let next = ids(&s);
+    assert!(
+        next.first().is_some_and(|id| id.starts_with("verify-")),
+        "straight to verification, no round 2 and no empty step: {next:?}"
+    );
+    assert_eq!(
+        status::status(&run).unwrap()["rounds"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
 }

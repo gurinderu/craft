@@ -93,7 +93,7 @@ fn the_general_profile_slices_over_source_only() {
         .collect();
     let data: Vec<String> = (0..20)
         .map(|i| format!("content/{}/c{i}.json", if i % 2 == 0 { "p" } else { "s" }))
-        .chain(["tests/fixtures/x.py".to_owned(), "cfg/app.yaml".to_owned()])
+        .chain(["tests/fixtures/x.py".to_owned(), "data/rows.csv".to_owned()])
         .collect();
     let profiles = [Profile::load("general").unwrap()];
     let slices = |files: Vec<String>| {

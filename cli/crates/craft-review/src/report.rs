@@ -294,11 +294,26 @@ fn plan_lines(state: &RunState, t: &Track, out: &mut String) {
             plan.surface_dropped.join(", ")
         ));
     }
-    if !plan.signal_skipped.is_empty() {
-        out.push_str(&format!(
-            "Held back, no diff signal for them{whose}: {}.\n",
-            plan.signal_skipped.join(", ")
-        ));
+    held_back(plan, &whose, out);
+}
+
+/// What the plan held back and why (realm @nick/craft, node #625): the signal-gated lenses whose
+/// signal the diff did not show, the per-file lenses of a part of nothing but data, and the data
+/// files a part with source kept from its per-file lenses.
+fn held_back(plan: &crate::plan::Plan, whose: &str, out: &mut String) {
+    let lines = [
+        (&plan.signal_skipped, "Held back, no diff signal for them"),
+        (
+            &plan.data_skipped,
+            "Held back, the part is data only (read by the whole-diff lenses and security)",
+        ),
+        (
+            &plan.data_files,
+            "Kept from the per-file lenses (data, read by the whole-diff lenses and security)",
+        ),
+    ];
+    for (names, why) in lines.into_iter().filter(|(n, _)| !n.is_empty()) {
+        out.push_str(&format!("{why}{whose}: {}.\n", names.join(", ")));
     }
 }
 

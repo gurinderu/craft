@@ -58,6 +58,10 @@ pub struct Catalogue {
     pub fallback: String,
 }
 
+/// The lens no part is withheld from: it reads a part's data files too (realm @nick/craft, node
+/// #625).
+pub const SECURITY: &str = "security";
+
 /// One lens of a profile.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -300,6 +304,23 @@ impl Profile {
             .iter()
             .any(|s| named.ends_with(s.as_str()))
             || self.detect.names.iter().any(|n| n == base)
+    }
+
+    /// The files of `files` its lens `lens` reads: all of them, but for a per-file lens of a
+    /// profile taking the rest, which reads no data file ([`crate::coverage::is_data`]) — its
+    /// whole-diff lenses and its security lens read them (realm @nick/craft, node #625).
+    #[must_use]
+    pub fn reads(&self, lens: &str, files: &[String]) -> Vec<String> {
+        let all = !self.detect.rest
+            || lens == SECURITY
+            || self
+                .lens(lens)
+                .is_none_or(|l| l.whole_diff || l.metrics || l.unsliced);
+        files
+            .iter()
+            .filter(|f| all || !crate::coverage::is_data(f))
+            .cloned()
+            .collect()
     }
 
     /// What a `git diff` of this profile's part of a change names: its globs, or, a profile

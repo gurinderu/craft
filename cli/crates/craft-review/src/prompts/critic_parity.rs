@@ -32,6 +32,8 @@ fn plan_of(p: &Value) -> Plan {
         light_skipped: Vec::new(),
         metrics_dropped: Vec::new(),
         signal_skipped: Vec::new(),
+        data_skipped: Vec::new(),
+        data_files: Vec::new(),
     }
 }
 
