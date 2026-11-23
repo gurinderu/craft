@@ -3,7 +3,7 @@
 
 mod common;
 
-use common::{answers, finding, fixture, git, ids, lens, opts, scout, submit, verdict};
+use common::{answers, finding, fixture, git, ids, opts, scout, submit, verdict};
 use craft_review::step;
 use serde_json::{Value, json};
 
@@ -31,9 +31,8 @@ fn answered(s: &Value, found: &[Value]) -> Value {
             } else if id.starts_with("verify") {
                 verdict(false)
             } else {
-                let mut a = lens("x", if id.contains("errors") { found } else { &[] });
-                a.as_object_mut().unwrap().remove("rubricRead");
-                a
+                let found = if id.contains("errors") { found } else { &[] };
+                json!({"lens": "x", "findings": found})
             };
             (id, a)
         })

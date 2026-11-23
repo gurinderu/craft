@@ -151,12 +151,7 @@ fn lens_task(run: &RunState, p: &Profile, plan: &Plan, lens: &str) -> Result<Tas
         format!("lens:{}:{lens} (critic)", p.id),
         prompts::lens_prompt(&run.context, &at)?,
         p.lens(lens).map_or(Model::Opus, |l| l.model),
-        // A metrics lens's findings carry the numbers they rest on, as the rounds' do.
-        if p.metrics_only(lens) {
-            crate::complexity::findings_schema()?
-        } else {
-            content::schema("findings")?
-        },
+        crate::rounds::answer_schema(p, lens, false)?,
         TaskKind::CriticLens {
             profile: p.id.clone(),
             lens: lens.to_owned(),

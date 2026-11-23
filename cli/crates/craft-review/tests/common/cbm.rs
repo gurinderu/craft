@@ -107,7 +107,7 @@ pub fn scouted_over(
 pub fn drive(run: &Path, mut s: Value, answer: impl Fn(&str) -> Value) -> Value {
     for _ in 0..12 {
         if s.get("done") != Some(&json!(false)) {
-            return s;
+            break;
         }
         let answers: serde_json::Map<String, Value> = ids(&s)
             .into_iter()
@@ -116,7 +116,11 @@ pub fn drive(run: &Path, mut s: Value, answer: impl Fn(&str) -> Value) -> Value 
             .collect();
         s = submit(run, Value::Object(answers));
     }
-    panic!("the run did not finish: {s}");
+    assert!(
+        s.get("done") != Some(&json!(false)),
+        "the run did not finish: {s}"
+    );
+    s
 }
 
 /// The lens answer of task `id`, finding nothing.

@@ -1,6 +1,7 @@
 //! Whether a run counts as a full craft review of the pull request's whole change on its head
 //! (realm @nick/craft, node #541): silence must mean exactly that, so every field a record carries
-//! that narrows what it reviewed takes it out, and a record that lacks the field to tell is out too.
+//! that narrows what it reviewed takes it out, and a record that lacks the field to tell is out too
+//! — but its coverage gaps (`capped`), which hold its verdict at Warning instead.
 //! Only a `craft:review` run counts (`review`, or the CLI's interim `cli-review`).
 
 use craft_review::coverage;
