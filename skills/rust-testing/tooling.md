@@ -132,9 +132,10 @@ cargo mutants --in-diff /tmp/change.diff                    # run them
   Rust change selected no mutants ("No mutants to filter", exit 0) while the same range with
   `git diff --relative` from the workspace root selected 14. Where the workspace is the git root,
   both are the same.
-- **Zero selected mutants on a diff that touches Rust means the paths are wrong, not that the
-  change is covered** — cargo-mutants exits 0 either way. Check the `--list` count before reading
-  a run as clean.
+- **Check the paths before reading zero selected mutants as clean** — cargo-mutants exits 0
+  whether the paths missed or the diff truly holds nothing to mutate (it touches only tests,
+  comments or attributes, or only deletes lines). Read the `--list` count and the diff's paths
+  before reading a run as covered.
 - The argument is a file: in 27.1.0 `--in-diff -` is read as a file named `-`, not stdin.
 - Write the diff at the commit you test: its lines must match the tree.
 - The selection is by touched lines, so a one-line function next to a changed line can come along.
