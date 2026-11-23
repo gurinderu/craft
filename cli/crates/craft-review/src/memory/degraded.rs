@@ -40,8 +40,8 @@ pub(super) fn failed_why(why: &str, q: &str, found: bool) -> String {
 impl MemorySource {
     /// Whether a recall that found nothing read none of the store it meant to: its query failed,
     /// its answer was truncated (nothing of what the backend held was read), its agent gave none,
-    /// or its launcher's recall was degraded. A recall that read records beside a truncated answer
-    /// or a failed call is partly read, never this.
+    /// or its launcher's recall was degraded. Its memory line then leads `not read`; a recall that
+    /// returned records leads with what it recalled, its degraded notes saying what was missed.
     pub(super) fn not_read(&self) -> bool {
         self.query_error.is_some()
             || self.truncated.is_some()
