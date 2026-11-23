@@ -1,7 +1,7 @@
 ---
 name: rust-testing
 description: >-
-  Rust testing — unit, integration, async, table-driven (rstest), property-based (proptest), fuzzing (cargo-fuzz), mutation (cargo-mutants), mocking (mockall), snapshot (insta), doc tests, and coverage. Use when writing or reviewing Rust tests, adding coverage, choosing a testing crate, or setting up CI. Triggers: #[tokio::test], rstest, proptest, cargo-fuzz, cargo-mutants, mockall, insta, nextest.
+  Rust testing — unit, integration, async, table-driven (rstest), property-based (proptest), fuzzing (cargo-fuzz), mutation (cargo-mutants, over the crate or only a change's diff with --in-diff), mocking (mockall), snapshot (insta), doc tests, and coverage. Use when writing or reviewing Rust tests, adding coverage, choosing a testing crate, or setting up CI. Triggers: #[tokio::test], rstest, proptest, cargo-fuzz, cargo-mutants, mutants on the diff, --in-diff, mockall, insta, nextest.
 ---
 
 # Rust Testing
@@ -34,6 +34,7 @@ Self-contained guide to testing Rust: what to reach for, the TDD loop in Rust te
 | Prove what's tested | `cargo llvm-cov` | [tooling.md](tooling.md) |
 | Find crashes/panics on adversarial bytes (parser, untrusted input, `unsafe`) | `cargo-fuzz` | [advanced.md](advanced.md) |
 | Check tests actually *catch* bugs, not just run | `cargo-mutants` | [tooling.md](tooling.md) |
+| Check a change's tests catch its own breakage | `cargo mutants --in-diff <diff file>` | [tooling.md](tooling.md) |
 
 > Benchmarking (`criterion`, `cargo bench`) is **not** testing — it belongs to `rust-performance`, not here.
 

@@ -93,6 +93,15 @@
     "expected_behavior": ["Selects rust-testing (async tests, integration tests, nextest, CI wiring).", "Covers the runner setup, not just a single test body."]
   },
   {
+    "skills": ["rust-testing"],
+    "query": "Before I hand this branch back, run cargo-mutants only on what my diff against main changed and tell me which test fails without which fix.",
+    "expected_behavior": [
+      "Selects rust-testing (mutation testing on a change's diff).",
+      "Writes the branch diff to a file and runs cargo mutants --in-diff on it, not the whole crate.",
+      "Names, for each mutant, the test that caught it, and treats each missed mutant as a missing test."
+    ]
+  },
+  {
     "skills": ["rust-performance"],
     "query": "I need a criterion benchmark to measure how fast this hashing function is.",
     "expected_behavior": [
