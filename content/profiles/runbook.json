@@ -17,7 +17,7 @@
   "dedupModel": "haiku",
   "rollupRuleIds": [],
   "lenses": [
-    { "id": "runbook", "brief": "lens-runbook", "model": "opus" }
+    { "id": "runbook", "brief": "lens-runbook", "model": "opus", "unsliced": true }
   ],
   "floorLenses": []
 }

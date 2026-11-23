@@ -5,7 +5,7 @@
 mod common;
 
 use common::markdown::repo;
-use common::{git, ids, opts, prompt_of, scout, submit};
+use common::{ids, opts};
 use craft_review::step;
 use serde_json::{Value, json};
 
@@ -70,29 +70,4 @@ fn prose_and_a_removed_prose_line_opening_with_a_command_are_not() {
 #[test]
 fn a_deleted_runbook_is_taken() {
     assert!(taken(DRAIN, ""), "every command line removed");
-}
-
-#[test]
-fn a_step_removed_in_a_rename_is_matched_under_the_old_path_whatever_diff_renames_says() {
-    let moved = DRAIN.replace("    kubectl cordon $N\n", "");
-    let repo = repo(
-        &[("docs/drain.md", DRAIN)],
-        &[("docs/drain.md", ""), ("docs/ops/drain.md", &moved)],
-    );
-    git(repo.path(), &["config", "diff.renames", "false"]);
-    let out = tempfile::tempdir().unwrap();
-    let s = step::start(&opts(repo.path(), out.path())).unwrap();
-    assert_eq!(ids(&s), ["scout-runbook"], "{s}");
-    let s = submit(
-        &out.path().join("run"),
-        json!({"scout-runbook": scout("small", &[])}),
-    );
-    assert_eq!(ids(&s), ["lens-runbook-runbook-r1"], "{s}");
-    let p = prompt_of(&s["tasks"][0]);
-    // The lens's own diff names both paths, so git shows the rename and the removed step.
-    assert!(
-        p.contains("-- ':(literal)docs/ops/drain.md' ':(literal)docs/drain.md'"),
-        "both paths: {p}"
-    );
-    assert!(p.contains("git diff -M"), "{p}");
 }

@@ -232,8 +232,7 @@ pub(crate) fn tracks_of(
                 .files
                 .iter()
                 .filter_map(|f| runbooks.renamed.get(f).cloned());
-            let old: Vec<String> = old.collect();
-            t.files.extend(old);
+            t.renamed_from = old.collect();
             t
         })
         .collect();

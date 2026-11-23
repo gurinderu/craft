@@ -142,7 +142,7 @@ pub(super) fn scouts(run: &RunState, profiles: &[Profile]) -> Result<Vec<Task>, 
         tasks.push(Task::new(
             format!("scout-{}", p.id),
             format!("scout:{}", p.id),
-            prompts::scout_prompt(&run.context, p, &t.files)?,
+            prompts::scout_prompt(&run.context, p, &t.read_paths())?,
             p.scout_model,
             content::schema("scout")?,
             TaskKind::Scout {

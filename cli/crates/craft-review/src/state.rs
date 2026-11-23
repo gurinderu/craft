@@ -174,6 +174,10 @@ pub struct Track {
     /// ([`crate::design`]), so its plan takes the `design` lens when its profile holds one.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub design: bool,
+    /// The old paths of its files the change renamed ([`crate::runbook`]): read beside `files` by
+    /// its scout and lenses, so git shows each rename, but not counted among its files.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub renamed_from: Vec<String>,
 }
 
 impl Track {
@@ -187,7 +191,18 @@ impl Track {
             dry: false,
             embedded_sql: false,
             design: false,
+            renamed_from: Vec::new(),
         }
+    }
+
+    /// The paths its scout and lenses read: its files, then the old paths of those renamed.
+    #[must_use]
+    pub fn read_paths(&self) -> Vec<String> {
+        self.files
+            .iter()
+            .chain(&self.renamed_from)
+            .cloned()
+            .collect()
     }
 
     /// Whether it runs another lens round: planned, not dry, and its plan's rounds not spent.

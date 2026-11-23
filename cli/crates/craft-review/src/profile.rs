@@ -75,6 +75,10 @@ pub struct Lens {
     /// Reviews the whole diff: a light pass skips it unless the diff calls for it.
     #[serde(default)]
     pub whole_diff: bool,
+    /// Never sliced, though a light pass keeps it: the runbook lens, whose renamed files' old
+    /// paths no directory slice holds (realm @nick/craft, node #620).
+    #[serde(default)]
+    pub unsliced: bool,
     /// The scout surface that, said absent, drops it.
     #[serde(default)]
     pub surface: Option<String>,
