@@ -58,15 +58,37 @@ pub fn unmeasured(ctx: &PromptContext, parts: &[(&Profile, &[String])]) -> Optio
         return None;
     }
     let c = &ctx.consumers;
-    let cut = parts
+    let specs: Vec<(&Profile, String)> = parts
         .iter()
-        .map(|(p, files)| {
-            mine(c, p, &ctx.pathspec(p, files))
-                .len()
-                .saturating_sub(SHOWN)
+        .map(|(p, files)| (*p, ctx.pathspec(p, files)))
+        .collect();
+    let cut = specs
+        .iter()
+        .map(|(p, spec)| {
+            let n = c
+                .metrics
+                .iter()
+                .filter(|m| in_part(p, spec, &m.file))
+                .count();
+            n.saturating_sub(SHOWN)
         })
         .sum();
-    super::look::unmeasured(&c.metrics_unread, cut, SHOWN)
+    // Only the unread files of the parts a metrics lens runs over, as its table names them.
+    let unread: Vec<String> = c
+        .metrics_unread
+        .iter()
+        .filter(|u| {
+            let file = unread_file(u);
+            specs.iter().any(|(p, spec)| in_part(p, spec, file))
+        })
+        .cloned()
+        .collect();
+    super::look::unmeasured(&unread, cut, SHOWN)
+}
+
+/// The file an entry of `metrics_unread` (`file (why)`) names.
+fn unread_file(u: &str) -> &str {
+    u.split(" (").next().unwrap_or(u)
 }
 
 /// The table of a metrics lens of `profile` over the part `pathspec` names: each measured
@@ -89,7 +111,7 @@ pub fn lens_table(c: &Consumers, profile: &Profile, pathspec: &str) -> String {
     let unread: Vec<String> = c
         .metrics_unread
         .iter()
-        .filter(|u| in_part(profile, pathspec, u.split(" (").next().unwrap_or(u)))
+        .filter(|u| in_part(profile, pathspec, unread_file(u)))
         .map(|u| plain(u))
         .collect();
     if !unread.is_empty() {

@@ -218,21 +218,12 @@ fn plan_tracks(run: &mut RunState, profiles: &[Profile]) {
             .and_then(complexity::look_gap),
     );
     // A lens that runs over part of the change without its numbers is named, though not a gap.
-    let parts: Vec<(&Profile, &[String])> = run
-        .tracks
-        .iter()
-        .zip(profiles)
-        .filter(|(t, p)| {
-            let lenses = t
-                .plan
-                .as_ref()
-                .map_or(&[][..], |plan| plan.lenses.as_slice());
-            metrics && lenses.iter().any(|l| p.metrics_only(l))
-        })
-        .map(|(t, p)| (p, t.files.as_slice()))
-        .collect();
-    run.degraded
-        .extend(complexity::unmeasured(&run.context, &parts));
+    if metrics {
+        complexity::note_unmeasured(run, profiles, |t, p| {
+            let plan = t.plan.as_ref();
+            plan.is_some_and(|plan| plan.lenses.iter().any(|l| p.metrics_only(l)))
+        });
+    }
 }
 
 /// Hands out the next lens round, of every track still live; after the last, ends the rounds.

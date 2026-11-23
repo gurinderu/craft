@@ -65,6 +65,27 @@ pub fn note(ctx: &PromptContext, look: Option<&Look>) -> Option<String> {
     })
 }
 
+/// Names in `run`'s degraded notes, once, what the metrics lenses `runs` says run (over a track's
+/// part, of its profile among `profiles`) judge without the graph's numbers ([`unmeasured`]): the
+/// plan's, and those the critic admits.
+pub fn note_unmeasured(
+    run: &mut crate::state::RunState,
+    profiles: &[Profile],
+    runs: impl Fn(&crate::state::Track, &Profile) -> bool,
+) {
+    let parts: Vec<(&Profile, &[String])> = run
+        .tracks
+        .iter()
+        .zip(profiles)
+        .filter(|(t, p)| runs(t, p))
+        .map(|(t, p)| (p, t.files.as_slice()))
+        .collect();
+    let note = unmeasured(&run.context, &parts);
+    if let Some(note) = note.filter(|n| !run.degraded.contains(n)) {
+        run.degraded.push(note);
+    }
+}
+
 /// Why the index was not ready to read the numbers from.
 fn unavailable(ctx: &PromptContext) -> &str {
     let c = &ctx.consumers;

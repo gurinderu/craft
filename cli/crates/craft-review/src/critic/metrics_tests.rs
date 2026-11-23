@@ -16,7 +16,7 @@ fn a_complexity_lens_the_critic_admits_answers_with_the_metrics_schema_and_is_si
     let metrics = "/properties/findings/items/properties/metrics";
     assert!(
         task.schema == crate::complexity::findings_schema().unwrap(),
-        "the plain findings schema, which has no `metrics`"
+        "a critic-admitted complexity lens answers with the metrics schema, which carries `metrics`"
     );
     let plain = lens_task(&run, &rust, &p, "maintainability").unwrap();
     assert!(plain.schema.pointer(metrics).is_none());

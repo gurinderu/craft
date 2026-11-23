@@ -73,15 +73,15 @@ pub fn stand_in_answering(
     (tool, log)
 }
 
-/// A finished run over a change adding `files` (path, text) to the fixture, whose code graph
-/// answers the metrics question over `web/app.ts` with `metrics` and its probe with `probe` (shell;
-/// `None`: one function's numbers, one function found), the scout picking `picks` and every lens
-/// answering nothing.
-pub fn finished_over(
+/// A run over a change adding `files` (path, text) to the fixture, whose code graph answers the
+/// metrics question over `web/app.ts` with `metrics` and its probe with `probe` (shell; `None`:
+/// one function's numbers, one function found), past its scout sized `size` and picking `picks`:
+/// its run directory, the step, and the directories the caller keeps while it reads them.
+pub fn scouted_over(
     files: &[(&str, &str)],
     (metrics, probe): (Option<&str>, Option<&str>),
-    picks: &[&str],
-) -> Value {
+    (size, picks): (&str, &[&str]),
+) -> (PathBuf, Value, [tempfile::TempDir; 3]) {
     let repo = fixture(false);
     let d = repo.path();
     for (file, text) in files {
@@ -98,18 +98,42 @@ pub fn finished_over(
     let o = with_profile(opts(d, out.path()), out.path(), (Some(&tool), &unused));
     step::start(&o).unwrap();
     let run = out.path().join("run");
-    let mut s = submit(&run, json!({"scout-general": scout("medium", picks)}));
-    while s.get("done") == Some(&json!(false)) {
+    let s = submit(&run, json!({"scout-general": scout(size, picks)}));
+    (run, s, [repo, out, graphs])
+}
+
+/// The run in `run` driven from step `s` until done, each pending task answered by `answer` of its
+/// id; a run still going after a dozen steps fails the test.
+pub fn drive(run: &Path, mut s: Value, answer: impl Fn(&str) -> Value) -> Value {
+    for _ in 0..12 {
+        if s.get("done") != Some(&json!(false)) {
+            return s;
+        }
         let answers: serde_json::Map<String, Value> = ids(&s)
             .into_iter()
-            .map(|id| {
-                let name = id.strip_prefix("lens-general-").unwrap();
-                let name = name.split('-').next().unwrap().to_owned();
-                (id, lens(&name, &[]))
-            })
+            .map(|id| (answer(&id), id))
+            .map(|(a, id)| (id, a))
             .collect();
-        s = submit(&run, Value::Object(answers));
+        s = submit(run, Value::Object(answers));
     }
+    panic!("the run did not finish: {s}");
+}
+
+/// The lens answer of task `id`, finding nothing.
+pub fn quiet(id: &str) -> Value {
+    let name = id.strip_prefix("lens-general-").unwrap();
+    lens(name.split('-').next().unwrap(), &[])
+}
+
+/// [`scouted_over`], a medium scout, driven to its end with every lens finding nothing; the run's
+/// directories stay on disk, so the step's report can be read.
+pub fn finished_over(
+    files: &[(&str, &str)],
+    graph: (Option<&str>, Option<&str>),
+    picks: &[&str],
+) -> Value {
+    let (run, s, [repo, out, graphs]) = scouted_over(files, graph, ("medium", picks));
+    let s = drive(&run, s, quiet);
     let _keep = (out.keep(), graphs.keep(), repo);
     s
 }
