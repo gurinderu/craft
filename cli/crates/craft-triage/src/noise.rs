@@ -4,23 +4,16 @@
 //! fork point the triage was given (node #309); "not decidable from the code" (class 5) is a
 //! `needs-decision`.
 
-use serde_json::Value;
+use crate::js;
+use crate::ledger::Row;
 
-use crate::ledger::Validation;
-
-/// A validator's noise class, 0 when it named none or one outside 1..6 (`Number()` of a number
-/// or of a numeric string).
+/// A validator's noise class: `Number(noise_class)` when it is an integer from 1 to 6, else 0
+/// (none named, or one outside the classes).
 #[must_use]
-pub fn noise_class_of(v: &Validation) -> u8 {
-    let n = match &v.noise_class {
-        Some(Value::Number(n)) => n.as_f64(),
-        Some(Value::String(s)) if s.trim().is_empty() => Some(0.0),
-        Some(Value::String(s)) => s.trim().parse::<f64>().ok(),
-        _ => None,
-    };
-    [1u8, 2, 3, 4, 5, 6]
-        .into_iter()
-        .find(|c| n.is_some_and(|n| (n - f64::from(*c)).abs() < f64::EPSILON))
+pub fn noise_class_of(v: &Row) -> u8 {
+    let n = js::number(v.0.get("noise_class"));
+    (1u8..=6)
+        .find(|c| (n - f64::from(*c)).abs() < f64::EPSILON)
         .unwrap_or(0)
 }
 
@@ -42,7 +35,7 @@ pub fn same_commit(a: &str, b: &str) -> bool {
 /// beside the validation pin `base` and different from it; `HEAD` never counts.
 #[must_use]
 pub fn effective_pr_base(pr_base: &str, base: &str) -> String {
-    let (at, pin) = (pr_base.trim(), base.trim());
+    let (at, pin) = (js::trim(pr_base), js::trim(base));
     if at.is_empty() || pin.is_empty() || at == "HEAD" || same_commit(at, pin) {
         String::new()
     } else {
@@ -53,7 +46,7 @@ pub fn effective_pr_base(pr_base: &str, base: &str) -> String {
 /// What the validator is told about where class 1 must be shown.
 #[must_use]
 pub fn class_one_base_line(pr_base: &str) -> String {
-    let at = pr_base.trim();
+    let at = js::trim(pr_base);
     if at.is_empty() {
         return "no prBase (the PR's fork point) was given to this triage, so it cannot be checked here — name the class all the same; a human decides it".into();
     }
@@ -77,8 +70,8 @@ pub fn opened_at(premise: &str, r: &str) -> bool {
         let after = premise
             .get(i + needle.len()..)
             .and_then(|p| p.chars().next());
-        let opens = |c: char| c.is_whitespace() || "`'\"(".contains(c);
-        let closes = |c: char| c.is_whitespace() || ":`'\")".contains(c);
+        let opens = |c: char| js::is_space(c) || "`'\"(".contains(c);
+        let closes = |c: char| js::is_space(c) || ":`'\")".contains(c);
         if opens(before) && after.is_some_and(|c| !closes(c)) {
             return true;
         }
@@ -89,13 +82,10 @@ pub fn opened_at(premise: &str, r: &str) -> bool {
 
 /// The verdict a noise class settles; every other verdict stands as given.
 #[must_use]
-pub fn classified_verdict(v: Validation, pr_base: &str) -> Validation {
+pub fn classified_verdict(v: Row, pr_base: &str) -> Row {
     match noise_class_of(&v) {
-        1 => not_this_prs(v, pr_base.trim()),
-        5 => Validation {
-            verdict: "needs-decision".into(),
-            ..v
-        },
+        1 => not_this_prs(v, js::trim(pr_base)),
+        5 => v.with("verdict", "needs-decision"),
         _ => v,
     }
 }
@@ -103,31 +93,26 @@ pub fn classified_verdict(v: Validation, pr_base: &str) -> Validation {
 /// A class-1 verdict settled: a real problem shown at `pr_base` is a deferral with an issue, one
 /// not shown there a human's; a `reject` or `needs-decision` stands.
 #[must_use]
-pub fn not_this_prs(v: Validation, pr_base: &str) -> Validation {
-    if v.verdict != "accept" && v.verdict != "defer" {
+pub fn not_this_prs(v: Row, pr_base: &str) -> Row {
+    if v.verdict() != "accept" && v.verdict() != "defer" {
         return v;
     }
-    let human = |why: String| Validation {
-        verdict: "needs-decision".into(),
-        reason: format!("{why} — {}", v.reason),
-        ..v.clone()
+    let human = |v: Row, why: String| {
+        let reason = format!("{why} — {}", v.js("reason"));
+        v.with("verdict", "needs-decision").with("reason", reason)
     };
     if pr_base.is_empty() {
-        return human(
-            "claimed not this PR's, but no prBase (the PR's fork point) was given to check it at"
-                .into(),
-        );
+        let why =
+            "claimed not this PR's, but no prBase (the PR's fork point) was given to check it at";
+        return human(v, why.into());
     }
-    if !opened_at(&v.premise_checked, pr_base) {
-        return human(format!(
+    if !opened_at(v.text("premise_checked"), pr_base) {
+        let why = format!(
             "claimed not this PR's, but nothing at the PR's fork point {pr_base} was opened to show it"
-        ));
+        );
+        return human(v, why);
     }
-    Validation {
-        verdict: "defer".into(),
-        action: Some("issue".into()),
-        ..v
-    }
+    v.with("verdict", "defer").with("action", "issue")
 }
 
 #[cfg(test)]

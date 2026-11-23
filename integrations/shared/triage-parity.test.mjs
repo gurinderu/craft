@@ -54,26 +54,44 @@ async function expectedOf(c) {
   }
 }
 
-/** The answer schemas, as the gather, validate and plan agents were handed them in a case that runs all three.
-@param {Case} c */
-async function schemasOf(c) {
+// The schema each agent is handed is the content file it names, key for key; each agent kind is seen in some case.
+const SCHEMAS = { 'gather:report': 'triage-raw', 'gather:pr': 'triage-raw', 'validate:': 'triage-validation', plan: 'triage-plan' }
+/** @param {string} name */
+const schemaFile = name => readFileSync(new URL(`../../content/schemas/${name}.schema.json`, import.meta.url), 'utf8')
+
+/** Each dispatched agent's schema against its content file, by kind: the kinds seen. @param {Case} c @returns {Promise<string[]>} */
+async function schemasSeen(c) {
   const r = await runEngine('triage-findings', { args: c.args, script: scriptOf(structuredClone(c.answers)) })
-  const schema = (/** @type {string} */ label) => /** @type {{ schema?: unknown } | undefined} */ (r.calls.find(x => x.label.startsWith(label))?.opts)?.schema
-  return { raw: schema('gather:'), validation: schema('validate:'), plan: schema('plan') }
+  /** @type {string[]} */
+  const seen = []
+  for (const [kind, name] of Object.entries(SCHEMAS)) {
+    for (const call of r.calls.filter(x => x.label.startsWith(kind))) {
+      const schema = /** @type {{ schema?: unknown }} */ (call.opts).schema
+      assert.equal(JSON.stringify(schema), JSON.stringify(JSON.parse(schemaFile(name))), `${c.name}: ${call.label} is handed ${name}`)
+      seen.push(kind)
+    }
+  }
+  return seen
 }
 
-// The inputs are the file's own — a new case is added there and its expected side written by this test.
+// The inputs are the file's own — a new case is added there and its expected side written by this test. Compared as JSON
+// text, so a key out of the engine's order fails as a wrong value does.
 test('triage-cases.json is what the engine dispatches, files and returns', async () => {
-  const file = JSON.parse(readFileSync(FILE, 'utf8'))
+  const before = JSON.parse(readFileSync(FILE, 'utf8'))
   /** @type {Case[]} */
-  const inputs = file.cases.map((/** @type {Case} */ { name, args, answers }) => ({ name, args, answers }))
+  const inputs = before.cases.map((/** @type {Case} */ { name, args, answers }) => ({ name, args, answers }))
   /** @type {unknown[]} */
   const cases = []
   for (const c of inputs) cases.push({ ...c, expected: await expectedOf(c) })
-  const now = JSON.parse(
-    JSON.stringify({ schemas: await schemasOf(inputs.find(c => c.name === 'class 1 with a prBase') ?? { name: '', args: {}, answers: {} }), cases }),
-  )
-  if (process.env['UPDATE_TRIAGE_PARITY']) writeFileSync(FILE, `${JSON.stringify(now, null, 2)}\n`)
-  assert.deepEqual(file.schemas, now.schemas, 'the answer schemas')
-  assert.deepEqual(file.cases, now.cases, 'regenerate with UPDATE_TRIAGE_PARITY=1 after a change the port must follow')
+  const now = `${JSON.stringify({ cases }, null, 2)}\n`
+  if (process.env['UPDATE_TRIAGE_PARITY']) writeFileSync(FILE, now)
+  assert.equal(readFileSync(FILE, 'utf8'), now, 'regenerate with UPDATE_TRIAGE_PARITY=1 after a change the port must follow')
+})
+
+test('every agent the cases dispatch is handed its schema from content/schemas', async () => {
+  const inputs = /** @type {Case[]} */ (JSON.parse(readFileSync(FILE, 'utf8')).cases)
+  /** @type {Set<string>} */
+  const seen = new Set()
+  for (const c of inputs) for (const kind of await schemasSeen(c)) seen.add(kind)
+  assert.deepEqual([...seen].sort(), Object.keys(SCHEMAS).sort())
 })

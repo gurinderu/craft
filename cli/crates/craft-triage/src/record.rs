@@ -1,14 +1,24 @@
-//! The run record triage-findings files, of the same form the JavaScript engine writes (realm
-//! @nick/craft, node #616): the findings triaged and their severity mix, each source's count, the
-//! verdicts tallied over the final ledger, what the sift settled, the memory, and what did not run.
-
-use serde_json::{Map, Value, json};
+//! The run record triage-findings files, key for key in the order the JavaScript engine hands it
+//! to the logger (realm @nick/craft, node #616).
+//!
+//! It holds the findings triaged and their severity mix, each source's count, the verdicts
+//! tallied over the final ledger, what the sift settled, the memory, and what did not run.
 
 use crate::finding::{Finding, Gathered, SEVERITIES};
-use crate::ledger::LedgerEntry;
+use crate::json::{Json, Obj};
 
-/// The verdicts a ledger is tallied by.
+/// The verdicts a ledger is tallied by, in `tallyVerdicts`' order.
 pub const VERDICTS: [&str; 5] = ["accept", "reject", "defer", "needs-decision", "conflict"];
+
+/// The memory sift's own counts (`siftByMemory`'s `counts`), in its order.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SiftCounts {
+    pub rejected_before: usize,
+    pub deferred: usize,
+    pub covered: usize,
+    pub conflict: usize,
+    pub reraised: usize,
+}
 
 /// What the record is made from.
 #[derive(Debug, Clone, Default)]
@@ -17,65 +27,88 @@ pub struct RecordInput<'a> {
     pub gathered: &'a [Gathered],
     pub raw: &'a [Finding],
     pub validated: usize,
-    pub ledger: &'a [LedgerEntry],
-    /// How many repeats collapsed, and the memory sift's own counts in its order
-    /// (`rejectedBefore`, `deferred`, `covered`, `conflict`, `reraised`).
+    pub ledger: &'a [Json],
+    /// How many repeats collapsed.
     pub repeats: usize,
-    pub sift_counts: Map<String, Value>,
+    pub sift_counts: SiftCounts,
     pub issues: usize,
-    /// The memory as the record carries it (`memoryRecord`).
-    pub memory: Value,
+    /// The memory as the record carries it (`memoryRecord`), its keys in that order.
+    pub memory: Json,
     pub not_run_sources: &'a [String],
     pub unjudged: usize,
 }
 
+/// How many of `items` have the text `want` under `key`.
+fn count(items: impl Iterator<Item = Option<Json>>, want: &str) -> usize {
+    items
+        .filter(|v| v.as_ref().and_then(Json::as_str) == Some(want))
+        .count()
+}
+
 /// The findings' total and severity mix, an unknown severity uncounted (`summarizeFindings`).
 #[must_use]
-pub fn summarize(raw: &[Finding]) -> Value {
-    let by: Map<String, Value> = SEVERITIES
-        .iter()
-        .map(|s| {
-            (
-                (*s).to_owned(),
-                json!(raw.iter().filter(|f| f.severity == *s).count()),
-            )
-        })
-        .collect();
-    let total: u64 = by.values().filter_map(Value::as_u64).sum();
-    json!({ "total": total, "bySeverity": by })
+pub fn summarize(raw: &[Finding]) -> Json {
+    let mut by = Obj::new();
+    let mut total = 0;
+    for s in SEVERITIES {
+        let n = count(raw.iter().map(|f| f.0.get("severity").cloned()), s);
+        total += n;
+        by.set(s, n);
+    }
+    Json::Object(Obj::new().with("total", total).with("bySeverity", by))
 }
 
 /// The ledger's verdicts counted, an unknown one uncounted (`tallyVerdicts`).
 #[must_use]
-pub fn tally(ledger: &[LedgerEntry]) -> Map<String, Value> {
-    VERDICTS
-        .iter()
-        .map(|v| {
-            (
-                (*v).to_owned(),
-                json!(ledger.iter().filter(|e| e.verdict == *v).count()),
-            )
-        })
-        .collect()
+pub fn tally(ledger: &[Json]) -> Obj {
+    let mut t = Obj::new();
+    for v in VERDICTS {
+        t.set(
+            v,
+            count(
+                ledger
+                    .iter()
+                    .map(|e| e.as_object().and_then(|o| o.get("verdict")).cloned()),
+                v,
+            ),
+        );
+    }
+    t
+}
+
+/// The record's `triage` part.
+fn triage(r: &RecordInput<'_>) -> Obj {
+    let c = r.sift_counts;
+    let sifted = Obj::new()
+        .with("repeats", r.repeats)
+        .with("rejectedBefore", c.rejected_before)
+        .with("deferred", c.deferred)
+        .with("covered", c.covered)
+        .with("conflict", c.conflict)
+        .with("reraised", c.reraised);
+    let mut t = Obj::new()
+        .with("gathered", r.raw.len())
+        .with("validated", r.validated);
+    for (k, v) in tally(r.ledger) {
+        t.set(&k, v);
+    }
+    t.with("sifted", sifted).with("issues", r.issues)
 }
 
 /// The run record.
 #[must_use]
-pub fn run_record(r: &RecordInput<'_>) -> Value {
-    let sources: Vec<Value> = r
+pub fn run_record(r: &RecordInput<'_>) -> Json {
+    let sources: Vec<Json> = r
         .gathered
         .iter()
-        .map(|g| json!({ "source": g.source, "count": g.findings.len() }))
+        .map(|g| {
+            Json::Object(
+                Obj::new()
+                    .with("source", g.source.as_str())
+                    .with("count", g.findings.len()),
+            )
+        })
         .collect();
-    let mut sifted = Map::new();
-    sifted.insert("repeats".into(), json!(r.repeats));
-    sifted.extend(r.sift_counts.clone());
-    let mut triage = Map::new();
-    triage.insert("gathered".into(), json!(r.raw.len()));
-    triage.insert("validated".into(), json!(r.validated));
-    triage.extend(tally(r.ledger));
-    triage.insert("sifted".into(), Value::Object(sifted));
-    triage.insert("issues".into(), json!(r.issues));
     let mut not_run: Vec<String> = r
         .not_run_sources
         .iter()
@@ -84,21 +117,21 @@ pub fn run_record(r: &RecordInput<'_>) -> Value {
     if r.unjudged > 0 {
         not_run.push("findings-unjudged".into());
     }
-    json!({
-        "schemaVersion": 1,
-        "runtime": "claude-code",
-        "craftVersion": r.craft_version,
-        "kind": "workflow",
-        "name": "triage-findings",
-        "verdict": "",
-        "findings": summarize(r.raw),
-        "nested": false,
-        "via": null,
-        "sources": sources,
-        "triage": triage,
-        "memory": r.memory,
-        "notRun": not_run,
-    })
+    let o = Obj::new()
+        .with("schemaVersion", 1usize)
+        .with("runtime", "claude-code")
+        .with("craftVersion", r.craft_version)
+        .with("kind", "workflow")
+        .with("name", "triage-findings")
+        .with("verdict", "")
+        .with("findings", summarize(r.raw))
+        .with("nested", false)
+        .with("via", Json::Null)
+        .with("sources", sources)
+        .with("triage", triage(r))
+        .with("memory", r.memory.clone())
+        .with("notRun", not_run);
+    Json::Object(o)
 }
 
 #[cfg(test)]

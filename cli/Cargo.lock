@@ -403,7 +403,7 @@ name = "craft-triage"
 version = "0.58.0"
 dependencies = [
  "craft-review",
- "regex",
+ "craft-store",
  "serde",
  "serde_json",
  "thiserror 2.0.21",

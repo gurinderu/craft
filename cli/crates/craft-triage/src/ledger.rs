@@ -1,96 +1,125 @@
-//! The ledger's rows and the validators' verdicts, as `triage-findings.js` keeps them: a prior
-//! run's settled verdict carried rather than judged again, and the stand-in for a validator that
-//! died, marked so no later run carries it as settled.
-
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
+//! The ledger's rows and the validators' verdicts, kept as the engine keeps them: one object
+//! each, its keys in the engine's order, a validator's answer as it came and a verdict the engine
+//! settled spread over it; the stand-in for a dead validator is marked so no later run carries it
+//! as settled.
 
 use crate::TriageError;
+use crate::js;
+use crate::json::{Json, Obj};
 
 /// The mark on a `needs-decision` nothing judged; a carry-forward prefixes the reason, so the
 /// test is `contains`.
 pub const UNJUDGED_MARKER: &str = "NOT JUDGED";
 
-/// One ledger row: a finding's final verdict and its one-line reason.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct LedgerEntry {
-    pub stable_id: String,
-    pub verdict: String,
-    #[serde(default)]
-    pub reason: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sifted: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub action: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub repeat_of: Option<String>,
-}
+/// The fields `content/schemas/triage-validation.schema.json` requires as text.
+const TEXT_FIELDS: [&str; 6] = [
+    "stable_id",
+    "verdict",
+    "reason",
+    "fix_pointer",
+    "premise_checked",
+    "severity",
+];
 
-/// One validator's verdict on one finding (`content/schemas/triage-validation.schema.json`), and
-/// the `action` a noise class adds.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct Validation {
-    pub stable_id: String,
-    pub verdict: String,
-    pub reason: String,
-    #[serde(default)]
-    pub fix_pointer: String,
-    #[serde(default)]
-    pub premise_checked: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub noise_class: Option<Value>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub severity: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub action: Option<String>,
-}
+/// One ledger row or one verdict: an object whose keys keep the engine's order.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Row(pub Obj);
 
-impl Validation {
+impl Row {
+    /// A field's text, '' when absent or no string.
+    #[must_use]
+    pub fn text(&self, key: &str) -> &str {
+        self.0.text(key)
+    }
+
+    /// A field as `String()` writes it (`undefined` when absent).
+    #[must_use]
+    pub fn js(&self, key: &str) -> String {
+        js::string(self.0.get(key))
+    }
+
+    /// The stable id.
+    #[must_use]
+    pub fn id(&self) -> &str {
+        self.text("stable_id")
+    }
+
+    /// The verdict.
+    #[must_use]
+    pub fn verdict(&self) -> &str {
+        self.text("verdict")
+    }
+
+    /// The row with `key` set as `{ ...row, key: v }` sets it.
+    #[must_use]
+    pub fn with(self, key: &str, v: impl Into<Json>) -> Self {
+        Self(self.0.with(key, v))
+    }
+
     /// A validator's answer read.
     ///
     /// # Errors
-    /// [`TriageError::Answer`] when it is not the validation schema's shape.
-    pub fn read(answer: &Value) -> Result<Self, TriageError> {
-        serde_json::from_value(answer.clone())
-            .map_err(|e| TriageError::answer("a validator's answer", &e))
+    /// [`TriageError::Answer`] when it is no object or lacks a field the validation schema
+    /// requires: its six text fields and a numeric `noise_class`.
+    pub fn validation(answer: &Json) -> Result<Self, TriageError> {
+        let refused = |why: String| TriageError::Answer {
+            what: "a validator's answer".into(),
+            why,
+        };
+        let o = answer
+            .as_object()
+            .ok_or_else(|| refused("no object".into()))?;
+        if let Some(k) = TEXT_FIELDS
+            .iter()
+            .find(|k| o.get(k).and_then(Json::as_str).is_none())
+        {
+            return Err(refused(format!("no text {k}")));
+        }
+        if !matches!(o.get("noise_class"), Some(Json::Number(_))) {
+            return Err(refused("no numeric noise_class".into()));
+        }
+        Ok(Self(o.clone()))
     }
 
     /// A prior ledger's settled row carried: no agent, so no fresh premise check.
     #[must_use]
-    pub fn carried(prior: &LedgerEntry) -> Self {
-        Self {
-            stable_id: prior.stable_id.clone(),
-            verdict: prior.verdict.clone(),
-            reason: format!("carried from prior run: {}", prior.reason),
-            premise_checked: "(carried from prior run — not re-checked)".into(),
-            ..Self::default()
-        }
+    pub fn carried(prior: &Self) -> Self {
+        Self(
+            Obj::new()
+                .with("stable_id", prior.id())
+                .with("verdict", prior.js("verdict"))
+                .with(
+                    "reason",
+                    format!("carried from prior run: {}", prior.js("reason")),
+                )
+                .with("fix_pointer", "")
+                .with(
+                    "premise_checked",
+                    "(carried from prior run — not re-checked)",
+                ),
+        )
     }
 
     /// The verdict of a finding whose validator died: unjudged, so a human looks at it.
     #[must_use]
     pub fn unjudged(id: &str) -> Self {
-        Self {
-            stable_id: id.to_owned(),
-            verdict: "needs-decision".into(),
-            reason: format!(
-                "{UNJUDGED_MARKER} — the validator agent died; this finding was never checked against the code"
-            ),
-            premise_checked: "(validator died — nothing was opened)".into(),
-            ..Self::default()
-        }
+        let reason = format!(
+            "{UNJUDGED_MARKER} — the validator agent died; this finding was never checked against the code"
+        );
+        Self(
+            Obj::new()
+                .with("stable_id", id)
+                .with("verdict", "needs-decision")
+                .with("reason", reason)
+                .with("fix_pointer", "")
+                .with("premise_checked", "(validator died — nothing was opened)"),
+        )
     }
+}
 
-    /// The verdict as a ledger row.
-    #[must_use]
-    pub fn row(&self) -> LedgerEntry {
-        LedgerEntry {
-            stable_id: self.stable_id.clone(),
-            verdict: self.verdict.clone(),
-            reason: self.reason.clone(),
-            action: self.action.clone(),
-            ..LedgerEntry::default()
-        }
+impl From<Row> for Json {
+    fn from(r: Row) -> Self {
+        Self::Object(r.0)
     }
 }
 

@@ -2,14 +2,14 @@ use super::*;
 use crate::finding::id_of;
 
 fn sifted(severity: &str, title: &str, location: &str, thread: &str) -> Sifted {
-    let f = Finding {
-        severity: severity.into(),
-        title: title.into(),
-        location: location.into(),
-        thread_id: thread.into(),
-        source: "review".into(),
-        ..Finding::default()
-    };
+    let f = Finding(
+        Obj::new()
+            .with("severity", severity)
+            .with("title", title)
+            .with("location", location)
+            .with("thread_id", thread)
+            .with("source", "review"),
+    );
     let id = id_of(&f);
     Sifted::new(f, id)
 }
@@ -65,17 +65,23 @@ fn the_most_severe_repeat_is_kept_and_earlier_repeats_follow_it() {
 }
 
 #[test]
-fn a_repeat_row_is_a_sifted_reject_naming_its_twin() {
+fn a_tie_in_severity_keeps_the_finding_already_kept() {
+    let first = sifted("High", "memory leak", "src/a.rs:10", "");
+    let second = sifted("High", "leak of memory", "src/a.rs:11", "");
+    let c = collapse_repeats(vec![first.clone(), second.clone()]);
+    assert_eq!(c.kept, std::slice::from_ref(&first));
+    assert_eq!(c.repeated[0].finding, second);
+}
+
+#[test]
+fn a_repeat_row_is_a_sifted_reject_naming_its_twin_in_the_engines_order() {
     let r = Repeat {
         finding: sifted("Low", "t", "a.rs:1", ""),
         of: "x".into(),
     };
-    let e = repeat_entry(&r);
-    assert_eq!(e.verdict, "reject");
-    assert_eq!(e.sifted, Some(true));
-    assert_eq!(e.repeat_of.as_deref(), Some("x"));
+    let row = serde_json::to_string(&crate::json::Json::from(repeat_entry(&r))).unwrap();
     assert_eq!(
-        e.reason,
-        "SIFTED BEFORE VALIDATION — repeats x in this batch (same site, same title words); judged there"
+        row,
+        r#"{"stable_id":"review::a.rs:1::t","verdict":"reject","sifted":true,"repeat_of":"x","reason":"SIFTED BEFORE VALIDATION — repeats x in this batch (same site, same title words); judged there"}"#
     );
 }

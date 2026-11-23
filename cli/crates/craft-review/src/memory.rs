@@ -35,6 +35,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 pub use asked::{Asked, MatchAsked};
+pub use matching::SURE_WINDOW;
 pub use record::{PriorDecision, RecordKind};
 pub use source::MemorySource;
 

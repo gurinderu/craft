@@ -7,11 +7,14 @@
 //! carried ([`prior`]) and the stand-in for a dead validator ([`ledger`]); the noise classes a
 //! verdict is read back by ([`noise`]) and the issue class 1 files ([`issue`]); the plan's ledger
 //! with the rows this side settled pinned ([`pinned`]); the banners that lead the plan
-//! ([`banner`]); the run record ([`record`]).
+//! ([`banner`]); the run record ([`record`]). Each is the engine's object, its keys in the engine's
+//! order ([`json`]), read as JavaScript reads a value ([`js`]).
 
 pub mod banner;
 pub mod finding;
 pub mod issue;
+pub mod js;
+pub mod json;
 pub mod ledger;
 pub mod noise;
 #[cfg(test)]
@@ -27,13 +30,4 @@ pub enum TriageError {
     /// The answer is not the shape its schema promises.
     #[error("{what} is not the answer its schema promises: {why}")]
     Answer { what: String, why: String },
-}
-
-impl TriageError {
-    fn answer(what: &str, e: &serde_json::Error) -> Self {
-        Self::Answer {
-            what: what.to_owned(),
-            why: e.to_string(),
-        }
-    }
 }

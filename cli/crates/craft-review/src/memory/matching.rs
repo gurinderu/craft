@@ -19,8 +19,9 @@ use crate::tool::{self, finding_lenses, is_tool_finding, is_tool_lens, lens_word
 
 /// How far apart a record's line and a finding's may be and still make the pair a candidate.
 const LINE_WINDOW: u64 = 15;
-/// How far apart they may be, with the same lens, to match outright.
-const SURE_WINDOW: u64 = 3;
+/// How far apart they may be, with the same lens, to match outright (`MATCH_SURE_WINDOW`); the
+/// triage's sift holds two findings within it to one site.
+pub const SURE_WINDOW: u64 = 3;
 /// The title overlap that makes a record a candidate.
 const CANDIDATE_OVERLAP: f64 = 0.3;
 /// The title overlap that matches a candidate by the title rule alone.

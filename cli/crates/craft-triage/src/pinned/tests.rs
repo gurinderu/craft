@@ -1,87 +1,84 @@
 use super::*;
 
-fn row(id: &str, verdict: &str, reason: &str) -> LedgerEntry {
-    LedgerEntry {
-        stable_id: id.into(),
-        verdict: verdict.into(),
-        reason: reason.into(),
-        ..LedgerEntry::default()
-    }
+fn j(s: &str) -> Json {
+    serde_json::from_str(s).unwrap()
 }
 
-fn judged(id: &str, verdict: &str, reason: &str) -> Validation {
-    Validation {
-        stable_id: id.into(),
-        verdict: verdict.into(),
-        reason: reason.into(),
-        ..Validation::default()
-    }
+fn row(s: &str) -> Row {
+    Row(j(s).as_object().unwrap().clone())
 }
 
-fn repeat(id: &str, of: &str) -> LedgerEntry {
-    LedgerEntry {
-        sifted: Some(true),
-        repeat_of: Some(of.into()),
-        ..row(id, "reject", "SIFTED BEFORE VALIDATION — repeats")
-    }
+fn rows(s: &str) -> Vec<Json> {
+    j(s).as_array().unwrap().to_vec()
 }
+
+fn text(v: &[Json]) -> String {
+    serde_json::to_string(v).unwrap()
+}
+
+const REPEAT: &str = r#"{"stable_id":"r","verdict":"reject","sifted":true,"repeat_of":"a","reason":"SIFTED BEFORE VALIDATION — repeats"}"#;
 
 #[test]
 fn with_nothing_pinned_the_plan_ledger_stands() {
-    let planned = [row("a", "accept", "ok")];
-    assert_eq!(
-        pinned_ledger(&planned, &[], &[judged("a", "accept", "ok")]),
-        planned
-    );
+    let planned = rows(r#"[{"stable_id":"a","verdict":"accept","reason":"ok"},null]"#);
+    let judged = row(r#"{"stable_id":"a","verdict":"accept","reason":"ok"}"#);
+    assert_eq!(pinned_ledger(&planned, &[], &[judged]), planned);
 }
 
 #[test]
-fn a_paraphrased_row_is_restored_a_dropped_one_appended_a_kept_one_untouched() {
-    let dead = Validation::unjudged("d");
-    let planned = [
-        row("d", "accept", "looked fine"),
-        row("k", "needs-decision", "x NOT JUDGED y"),
-        row("a", "accept", "ok"),
-    ];
+fn a_paraphrased_row_is_restored_in_place_a_dropped_one_appended_a_kept_one_untouched() {
+    let dead = Row::unjudged("d");
+    let planned = rows(
+        r#"[{"reason":"looked fine","stable_id":"d","verdict":"accept"},
+            {"stable_id":"k","verdict":"needs-decision","reason":"x NOT JUDGED y"},
+            "not a row",
+            {"stable_id":"a","verdict":"accept","reason":"ok"}]"#,
+    );
     let validations = [
         dead.clone(),
-        Validation::unjudged("k"),
-        judged("a", "accept", "ok"),
+        Row::unjudged("k"),
+        row(r#"{"stable_id":"a","verdict":"accept","reason":"ok"}"#),
     ];
-    let got = pinned_ledger(&planned, &[repeat("r", "a")], &validations);
+    let got = pinned_ledger(&planned, &[row(REPEAT)], &validations);
+    let dead_reason = dead.text("reason");
     assert_eq!(
-        got,
-        [
-            dead.row(),
-            row("k", "needs-decision", "x NOT JUDGED y"),
-            row("a", "accept", "ok"),
-            repeat("r", "a"),
-        ]
+        text(&got),
+        format!(
+            r#"[{{"reason":"{dead_reason}","stable_id":"d","verdict":"needs-decision"}},{{"stable_id":"k","verdict":"needs-decision","reason":"x NOT JUDGED y"}},"not a row",{{"stable_id":"a","verdict":"accept","reason":"ok"}},{{"stable_id":"r","verdict":"reject","reason":"SIFTED BEFORE VALIDATION — repeats","sifted":true,"repeat_of":"a"}}]"#
+        )
     );
 }
 
 #[test]
-fn a_sifted_row_the_agent_copied_without_its_fields_is_restored() {
-    let planned = [row("r", "reject", "SIFTED BEFORE VALIDATION — repeats")];
+fn a_sifted_row_missing_either_field_is_restored() {
+    for planned in [
+        r#"[{"stable_id":"r","verdict":"reject","reason":"SIFTED BEFORE VALIDATION — repeats","repeat_of":"a"}]"#,
+        r#"[{"stable_id":"r","verdict":"reject","reason":"SIFTED BEFORE VALIDATION — repeats","sifted":true,"repeat_of":"b"}]"#,
+    ] {
+        let got = pinned_ledger(&rows(planned), &[row(REPEAT)], &[]);
+        assert_eq!(got[0].at("sifted"), &Json::Bool(true), "{planned}");
+        assert_eq!(got[0].at("repeat_of").as_str(), Some("a"), "{planned}");
+    }
+    let kept = format!("[{REPEAT}]");
     assert_eq!(
-        pinned_ledger(&planned, &[repeat("r", "a")], &[]),
-        [repeat("r", "a")]
+        text(&pinned_ledger(&rows(&kept), &[row(REPEAT)], &[])),
+        kept
     );
 }
 
 #[test]
-fn a_class_one_row_carries_the_issue_action() {
-    let issue = Validation {
-        action: Some("issue".into()),
-        ..judged("i", "defer", "not this PR's")
-    };
-    let rows = with_issue_actions(
-        vec![row("i", "defer", "x"), row("o", "accept", "y")],
+fn a_class_one_row_carries_the_issue_action_at_its_end() {
+    let issue =
+        row(r#"{"stable_id":"i","verdict":"defer","reason":"not this PR's","action":"issue"}"#);
+    let got = with_issue_actions(
+        rows(r#"[{"stable_id":"i","verdict":"defer","reason":"x"},{"stable_id":"o"},7]"#),
         std::slice::from_ref(&issue),
     );
-    assert_eq!(rows[0].action.as_deref(), Some("issue"));
-    assert_eq!(rows[1].action, None);
-    let fallback = final_ledger(None, &[repeat("r", "i")], &[issue]);
+    assert_eq!(
+        text(&got),
+        r#"[{"stable_id":"i","verdict":"defer","reason":"x","action":"issue"},{"stable_id":"o"},7]"#
+    );
+    let fallback = final_ledger(None, &[row(REPEAT)], &[issue]);
     assert_eq!(fallback.len(), 2);
-    assert_eq!(fallback[1].action.as_deref(), Some("issue"));
+    assert_eq!(fallback[1].at("action").as_str(), Some("issue"));
 }
