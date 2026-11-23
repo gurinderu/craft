@@ -40,7 +40,7 @@ function publication(step) {
     postedLine(step.prComments),
     ...(held
       ? [
-          `Doubtful: ${held} finding(s) held back from the PR — the report's Doubtful section lists them for the human to choose; post a chosen one only through the craft:addressing-findings posting script.`,
+          `Doubtful: ${held} finding(s) held back from the PR — the report's Doubtful section lists them for the human to choose; post a chosen one only through \`craft review post\` (the craft:addressing-findings skill).`,
         ]
       : []),
   ]

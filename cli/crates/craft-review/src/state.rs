@@ -18,6 +18,9 @@ use crate::rounds::Rounds;
 use crate::units::Units;
 
 pub use craft_step::{MAX_RETRIES, TaskState};
+pub use dirty::dirty_of;
+
+mod dirty;
 
 /// The state file's format; a run written by another format is refused, not misread.
 pub const STATE_VERSION: u32 = 6;
@@ -39,6 +42,8 @@ pub enum StateError {
     },
     #[error("the run state {} is format {found}, this craft reads {STATE_VERSION}", path.display())]
     Version { path: PathBuf, found: u32 },
+    #[error("the run state {} names no diff.dirty", path.display())]
+    NoDirty { path: PathBuf },
     #[error(transparent)]
     Encode(#[from] serde_json::Error),
     #[error("writing {}", path.display())]

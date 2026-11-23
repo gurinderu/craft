@@ -6,6 +6,7 @@
 )]
 
 pub mod cbm;
+pub mod commits;
 pub mod consumers;
 #[path = "../../../../test-support/exe.rs"]
 pub mod exe;
