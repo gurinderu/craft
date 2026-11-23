@@ -219,10 +219,7 @@ fn plan_tracks(run: &mut RunState, profiles: &[Profile]) {
     );
     // A lens that runs over part of the change without its numbers is named, though not a gap.
     if metrics {
-        complexity::note_unmeasured(run, profiles, |t, p| {
-            let plan = t.plan.as_ref();
-            plan.is_some_and(|plan| plan.lenses.iter().any(|l| p.metrics_only(l)))
-        });
+        complexity::note_unmeasured(run, profiles, |_| false);
     }
 }
 

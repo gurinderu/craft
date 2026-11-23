@@ -98,7 +98,7 @@ pub(crate) fn followups(
     run.critic.notes.extend(gaps);
     run.critic.lenses.extend(lenses_run);
     // A metrics lens it admits judges its part as the plan's would, unmeasured files and all.
-    crate::complexity::note_unmeasured(run, profiles, |_, p| {
+    crate::complexity::note_unmeasured(run, profiles, |p| {
         tasks.iter().any(|t| {
             matches!(&t.kind, TaskKind::CriticLens { profile, lens }
                 if *profile == p.id && p.metrics_only(lens))

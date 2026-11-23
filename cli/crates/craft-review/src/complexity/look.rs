@@ -84,6 +84,10 @@ fn listed(items: &[String], sep: &str) -> String {
     text
 }
 
+/// How the note on what a measured lens left unmeasured opens.
+pub(super) const UNMEASURED: &str =
+    "the complexity lens judged part of the change without the code graph's numbers";
+
 /// The degraded note of a measured run whose lens judges part of the change without its numbers:
 /// the `unread` files, then the `cut` functions past the `shown` its table holds; `None` when
 /// neither. Not a gap: what was measured is judged, and the verdict stands.
@@ -100,12 +104,7 @@ pub(super) fn unmeasured(unread: &[String], cut: usize, shown: usize) -> Option<
             "{cut} function(s) past the {shown} its table shows, unjudged"
         ));
     }
-    (!what.is_empty()).then(|| {
-        format!(
-            "the complexity lens judged part of the change without the code graph's numbers — {}",
-            what.join("; ")
-        )
-    })
+    (!what.is_empty()).then(|| format!("{UNMEASURED} — {}", what.join("; ")))
 }
 
 /// The coverage gap `look` files when the lens could not look, as "Not run" names it.

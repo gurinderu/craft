@@ -16,6 +16,8 @@ use crate::prompts::{self, PromptContext};
 
 mod look;
 mod metrics;
+#[cfg(test)]
+mod note_tests;
 mod table;
 
 pub use look::{Look, gap as look_gap, look};
@@ -65,25 +67,31 @@ pub fn note(ctx: &PromptContext, look: Option<&Look>) -> Option<String> {
     })
 }
 
-/// Names in `run`'s degraded notes, once, what the metrics lenses `runs` says run (over a track's
-/// part, of its profile among `profiles`) judge without the graph's numbers ([`unmeasured`]): the
-/// plan's, and those the critic admits.
+/// Names in `run`'s degraded notes, in one note, what the metrics lenses it runs judge without
+/// the graph's numbers ([`unmeasured`]): each a track's plan runs, and each the critic admitted for
+/// a profile among `profiles` (`admitted`). Asked again, it replaces the note it filed before.
 pub fn note_unmeasured(
     run: &mut crate::state::RunState,
     profiles: &[Profile],
-    runs: impl Fn(&crate::state::Track, &Profile) -> bool,
+    admitted: impl Fn(&Profile) -> bool,
 ) {
+    let plans = |t: &crate::state::Track, p: &Profile| {
+        let lenses = t
+            .plan
+            .as_ref()
+            .map_or(&[][..], |plan| plan.lenses.as_slice());
+        lenses.iter().any(|l| p.metrics_only(l))
+    };
     let parts: Vec<(&Profile, &[String])> = run
         .tracks
         .iter()
         .zip(profiles)
-        .filter(|(t, p)| runs(t, p))
+        .filter(|(t, p)| plans(t, p) || admitted(p))
         .map(|(t, p)| (p, t.files.as_slice()))
         .collect();
     let note = unmeasured(&run.context, &parts);
-    if let Some(note) = note.filter(|n| !run.degraded.contains(n)) {
-        run.degraded.push(note);
-    }
+    run.degraded.retain(|d| !d.starts_with(look::UNMEASURED));
+    run.degraded.extend(note);
 }
 
 /// Why the index was not ready to read the numbers from.
