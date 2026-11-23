@@ -6,6 +6,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use craft_store::js::JsStr;
+
 use super::entry::Entry;
 use super::js::{self, Re, compile};
 use super::{Ctx, Harness, iso, key};
@@ -97,7 +99,7 @@ pub fn read(root: &Path, who: Harness) -> Declared {
 
 /// What the hooks speak on, or why they stay silent: `off-env`, `off-line`, `nothing-declared`.
 pub fn decide(declared: &Declared, ctx: &Ctx) -> Result<Vec<String>, &'static str> {
-    let switch = js::trim(ctx.var(SWITCH_ENV)).to_lowercase();
+    let switch = ctx.var(SWITCH_ENV).js_trim().to_lowercase();
     if OFF_VALUES.contains(&switch.as_str()) {
         return Err("off-env");
     }

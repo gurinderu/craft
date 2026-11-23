@@ -1,15 +1,17 @@
-//! Values read as JavaScript reads them, for the rules the JavaScript PR-thread reader and
-//! doubtful-finding poster held
-//! (`content/parity/pr-rejections-cases.json`, `finding-post-cases.json`): `String(v ?? '')`, `.trim()`, `Number(v)`
-//! (a `0x`, `0o` or `0b` string read in its base, as the JavaScript's `Number()` reads it),
-//! `.length` in UTF-16 code units.
+//! A model field or record value (`serde_json::Value`) read as JavaScript reads it — `String(v ??
+//! '')`, `String(v ?? '').trim()`, `Number(v)`, `findingLine`, `.length` and `.slice` in UTF-16
+//! code units, `Math.max` — through the store's JavaScript model (`craft_store::js`), for the rules
+//! ported from the engines: the PR-thread reader (`rejections`), the doubtful-finding poster
+//! (`publish/doubtful`), the finding sort (`publish/sort`), the memory's records, matcher, judge
+//! and rules (`memory`), and the prompt fields (`prompts`); held to them by
+//! `content/parity/pr-rejections-cases.json`, `finding-post-cases.json` and `memory-cases.json`.
 
-use craft_store::js::{Js, JsString};
+use craft_store::js::{Js, JsStr, JsString};
 use serde_json::Value;
 
 // JavaScript's whitespace, `trim`, `String()`, `Number()` and a number's text are the store's
 // (`craft_store::js`), one copy for every crate.
-pub(crate) use craft_store::js::{is_space, number_text, trim};
+pub(crate) use craft_store::js::{is_space, number_text};
 
 /// `s.length`: its UTF-16 code units.
 pub(crate) fn len(s: &str) -> usize {
@@ -31,7 +33,7 @@ pub(crate) fn text(v: Option<&Value>) -> String {
 
 /// `String(v ?? '').trim()`.
 pub(crate) fn str_of(v: Option<&Value>) -> String {
-    trim(&text(v)).to_owned()
+    text(v).js_trim().to_owned()
 }
 
 /// `Number(v ?? fallback)` ([`Js::to_js_number`]), `fallback` standing for an absent value.
@@ -61,5 +63,36 @@ pub(crate) fn max(a: f64, b: f64) -> f64 {
         f64::NAN
     } else {
         a.max(b)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::finding_line;
+
+    /// `findingLine` in `integrations/shared/prior-decision-match.mjs` gives these (computed with
+    /// Node): `Number(line)` when a positive integer, else 0.
+    #[test]
+    fn a_findings_line_is_read_as_finding_line_reads_it() {
+        for (line, want) in [
+            (json!("5.0"), 5),
+            (json!(5.0), 5),
+            (json!("0x10"), 16),
+            (json!(true), 1),
+            (json!(" 7 "), 7),
+            (json!("\u{feff}7"), 7),
+            (json!("\u{85}7"), 0),
+            (json!("1e2"), 100),
+            (json!([4]), 4),
+            (json!(1.5), 0),
+            (json!(-3), 0),
+            (json!(null), 0),
+            (json!(""), 0),
+        ] {
+            assert_eq!(finding_line(Some(&line)), want, "{line}");
+        }
+        assert_eq!(finding_line(None), 0);
     }
 }

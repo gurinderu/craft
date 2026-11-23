@@ -83,11 +83,6 @@ pub(super) fn reraised_by_rank(f: &Value, d: &PriorDecision) -> bool {
     s == "critical" || (s == "high" && !human_decision(d))
 }
 
-/// A finding's line when it is a positive whole number, else 0.
-fn finding_line(f: &Value) -> u64 {
-    crate::js::finding_line(f.get("line"))
-}
-
 /// Whether a tool finding names no rule (`namesNoRule`).
 pub(super) fn names_no_rule(f: &Value) -> bool {
     is_tool_finding(f) && tool::rule_key(f).is_empty()
@@ -144,7 +139,7 @@ struct Anchor {
 }
 
 fn anchor_of(f: &Value, d: &PriorDecision) -> Anchor {
-    let line = finding_line(f);
+    let line = crate::js::finding_line(f.get("line"));
     let file = text(f, "file");
     // A line anchors only inside one file: a directory or `.` scope compares no line.
     let one_file = in_scope(&d.scope, file);
@@ -221,7 +216,8 @@ fn same_title_of(f: &Value, d: &PriorDecision) -> &'static str {
     {
         return "";
     }
-    let compares = d.line > 0 && finding_line(f) > 0 && in_scope(&d.scope, file);
+    let compares =
+        d.line > 0 && crate::js::finding_line(f.get("line")) > 0 && in_scope(&d.scope, file);
     match (compares, anchor_of(f, d).near) {
         (false, _) => BY_SAME_TITLE_IN_SCOPE,
         (true, true) => BY_SAME_TITLE,

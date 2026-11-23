@@ -6,6 +6,7 @@
 
 use std::sync::LazyLock;
 
+use craft_store::js::JsStr;
 use serde_json::Value;
 
 use crate::js::{self, str_of};
@@ -97,8 +98,8 @@ pub(super) fn problem(title: &str, scope: &str, commit: &str, reason: &str) -> O
         return Some("no path or commit to anchor the decision to".into());
     }
     let (path, line) = crate::memory::split_scope_line(scope);
-    if path != js::trim(scope) {
-        let quoted = serde_json::to_string(js::trim(scope)).unwrap_or_default();
+    if path != scope.js_trim() {
+        let quoted = serde_json::to_string(scope.js_trim()).unwrap_or_default();
         return Some(format!(
             "scope {quoted} carries a line: write scope={path}, line={line}"
         ));

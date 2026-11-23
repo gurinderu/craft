@@ -106,3 +106,11 @@ fn a_publication_whose_changed_lines_were_not_read_says_so_beside_the_pr_comment
         "{lines:?}"
     );
 }
+
+#[test]
+fn a_line_is_one_line_of_javascripts_whitespace() {
+    assert_eq!(
+        one_line("\u{feff}a \u{2028} b\u{85}c\u{feff}"),
+        "a b\u{85}c"
+    );
+}

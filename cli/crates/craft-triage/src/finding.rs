@@ -3,7 +3,7 @@
 
 use std::borrow::Cow;
 
-use craft_store::js::{JsString, Obj, trim};
+use craft_store::js::{JsStr, JsString, Obj};
 
 use crate::field;
 
@@ -55,7 +55,7 @@ impl Finding {
 /// a source with an unpaired surrogate, which names no engine).
 #[must_use]
 pub fn report_source(said: Option<&str>) -> String {
-    let said = said.map(trim).unwrap_or_default();
+    let said = said.map(str::js_trim).unwrap_or_default();
     if REPORT_SOURCES.contains(&said) {
         said.to_owned()
     } else {
@@ -83,7 +83,7 @@ pub fn id_of(f: &Finding) -> JsString {
 /// A severity's rank, Critical first, compared without case; an unknown one last.
 #[must_use]
 pub fn severity_rank(s: &str) -> usize {
-    let s = trim(s).to_lowercase();
+    let s = s.js_trim().to_lowercase();
     SEVERITIES
         .iter()
         .position(|x| x.eq_ignore_ascii_case(&s))

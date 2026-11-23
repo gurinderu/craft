@@ -45,16 +45,7 @@ pub(crate) fn sort_tier(f: &Value) -> String {
 
 /// A finding's line when it is a positive whole number, else 0 (`findingLine`).
 pub(super) fn line(f: &Value) -> u32 {
-    let n = crate::js::number(f.get("line"), f64::NAN);
-    if n.fract() == 0.0 && n >= 1.0 && n <= f64::from(u32::MAX) {
-        #[expect(
-            clippy::cast_possible_truncation,
-            clippy::cast_sign_loss,
-            reason = "a whole number between 1 and u32::MAX, checked above"
-        )]
-        return n as u32;
-    }
-    0
+    u32::try_from(crate::js::finding_line(f.get("line"))).unwrap_or(0)
 }
 
 /// Whether the finding's line is one the diff changed: `None` when that cannot be told — the

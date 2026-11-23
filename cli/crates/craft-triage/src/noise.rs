@@ -4,7 +4,7 @@
 //! fork point the triage was given (node #309); "not decidable from the code" (class 5) is a
 //! `needs-decision`.
 
-use craft_store::js::{Js, is_space, trim};
+use craft_store::js::{Js, JsStr, is_space};
 
 use crate::field;
 use crate::ledger::Row;
@@ -40,7 +40,7 @@ pub fn same_commit(a: &str, b: &str) -> bool {
 /// beside the validation pin `base` and different from it; `HEAD` never counts.
 #[must_use]
 pub fn effective_pr_base(pr_base: &str, base: &str) -> String {
-    let (at, pin) = (trim(pr_base), trim(base));
+    let (at, pin) = (pr_base.js_trim(), base.js_trim());
     if at.is_empty() || pin.is_empty() || at == "HEAD" || same_commit(at, pin) {
         String::new()
     } else {
@@ -51,7 +51,7 @@ pub fn effective_pr_base(pr_base: &str, base: &str) -> String {
 /// What the validator is told about where class 1 must be shown.
 #[must_use]
 pub fn class_one_base_line(pr_base: &str) -> String {
-    let at = trim(pr_base);
+    let at = pr_base.js_trim();
     if at.is_empty() {
         return "no prBase (the PR's fork point) was given to this triage, so it cannot be checked here — name the class all the same; a human decides it".into();
     }
@@ -89,7 +89,7 @@ pub fn opened_at(premise: &str, r: &str) -> bool {
 #[must_use]
 pub fn classified_verdict(v: Row, pr_base: &str) -> Row {
     match noise_class_of(&v) {
-        1 => not_this_prs(v, trim(pr_base)),
+        1 => not_this_prs(v, pr_base.js_trim()),
         5 => v.with("verdict", Js::str("needs-decision")),
         _ => v,
     }

@@ -13,9 +13,8 @@ pub fn is_space(c: char) -> bool {
     (c.is_whitespace() && c != '\u{85}') || c == '\u{feff}'
 }
 
-/// `s.trim()`.
-#[must_use]
-pub fn trim(s: &str) -> &str {
+/// `s.trim()`, the one spelling being [`JsStr::js_trim`].
+fn trim(s: &str) -> &str {
     s.trim_matches(is_space)
 }
 
@@ -23,10 +22,13 @@ pub fn trim(s: &str) -> &str {
 /// methods on text, beside Rust's own, which also count U+0085 and not U+FEFF.
 pub trait JsStr {
     /// `s.trim()`.
+    #[must_use]
     fn js_trim(&self) -> &str;
     /// `s.trimStart()`.
+    #[must_use]
     fn js_trim_start(&self) -> &str;
     /// `s.trimEnd()`.
+    #[must_use]
     fn js_trim_end(&self) -> &str;
     /// `s.split(/\s+/).filter(Boolean)`.
     fn js_split_whitespace(&self) -> impl Iterator<Item = &str>;

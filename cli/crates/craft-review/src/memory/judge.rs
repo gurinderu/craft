@@ -41,11 +41,6 @@ pub(super) struct Verdict {
     pub why: String,
 }
 
-/// A value as JavaScript's `String(v ?? '')` writes the scalars a finding carries.
-pub(super) fn plain(v: Option<&Value>) -> String {
-    crate::js::text(v)
-}
-
 /// One line of model or record text, its whitespace collapsed, cut at `max` UTF-16 units as
 /// `clipLine` cuts it.
 pub(super) fn clip(s: &str, max: usize) -> String {
@@ -66,12 +61,7 @@ pub(super) fn clip(s: &str, max: usize) -> String {
 
 /// A finding's field clipped to [`WHY_MAX`].
 pub(super) fn clip_field(f: &Value, k: &str) -> String {
-    clip(&plain(f.get(k)), WHY_MAX)
-}
-
-/// A finding's line when it is a positive whole number, else 0 (`findingLine`).
-pub(super) fn line_of(f: &Value) -> u64 {
-    crate::js::finding_line(f.get("line"))
+    clip(&crate::js::text(f.get(k)), WHY_MAX)
 }
 
 /// The lenses a finding names, each once, in order, joined as the pairs show them.
@@ -88,16 +78,19 @@ pub(super) fn lenses_text(f: &Value) -> String {
 /// A finding's rationale as a pair carries it: its `why`, else its `description`.
 pub(super) fn body_of(f: &Value) -> String {
     let why = f.get("why").filter(|v| !v.is_null());
-    clip(&plain(why.or_else(|| f.get("description"))), BODY_MAX)
+    clip(
+        &crate::js::text(why.or_else(|| f.get("description"))),
+        BODY_MAX,
+    )
 }
 
 /// A finding as a note names it (`ruleFindingName`).
 pub(super) fn finding_name(f: &Value) -> String {
     format!(
         "\"{}\" @ {}:{}",
-        clip(&plain(f.get("title")), 60),
+        clip(&crate::js::text(f.get("title")), 60),
         clip_field(f, "file"),
-        line_of(f)
+        crate::js::finding_line(f.get("line"))
     )
 }
 
@@ -107,7 +100,7 @@ fn verdict(v: &Value, n: usize, key: &str) -> Option<(usize, Verdict)> {
     let i = usize::try_from(i).ok().filter(|i| *i < n)?;
     let same = v.get(key).and_then(Value::as_bool)?;
     let violates = v.get("violates") == Some(&Value::Bool(true));
-    let why = clip(&plain(v.get("why")), WHY_MAX);
+    let why = clip(&crate::js::text(v.get("why")), WHY_MAX);
     let why = if why.is_empty() {
         "no reason given".to_owned()
     } else {

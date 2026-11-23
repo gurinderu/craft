@@ -41,7 +41,7 @@ pub(super) fn read_definitions(dir: &Path) -> Vec<Definition> {
 pub fn parse_definition(text: &str, stem: &str) -> Definition {
     let mut d = Definition::default();
     let mut lines = text.lines();
-    if lines.next().map(str::trim_end) != Some("---") {
+    if lines.next().map(str::js_trim_end) != Some("---") {
         stem.clone_into(&mut d.name);
         return d;
     }
@@ -113,4 +113,17 @@ fn unquote(s: &str) -> String {
         return inner.replace("''", "'");
     }
     s.to_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_definition;
+
+    #[test]
+    fn a_fence_ends_at_javascripts_whitespace_and_next_line_is_none() {
+        let fenced = parse_definition("---\u{feff}\nname: x\n---\u{feff}\nbody", "stem");
+        assert_eq!(fenced.name, "x");
+        let unfenced = parse_definition("---\u{85}\nname: x\n---\nbody", "stem");
+        assert_eq!(unfenced.name, "stem");
+    }
 }

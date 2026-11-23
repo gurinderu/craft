@@ -55,8 +55,8 @@ fn number_reads_what_javascript_reads() {
 fn whitespace_is_javascripts_without_next_line_and_with_the_byte_order_mark() {
     assert!(is_space('\u{feff}') && is_space('\u{2028}') && is_space('\u{a0}') && is_space('\t'));
     assert!(!is_space('\u{85}'));
-    assert_eq!(trim("\u{feff} a \n"), "a");
-    assert_eq!(trim("\u{85}a"), "\u{85}a");
+    assert_eq!("\u{feff} a \n".js_trim(), "a");
+    assert_eq!("\u{85}a".js_trim(), "\u{85}a");
 }
 
 #[test]

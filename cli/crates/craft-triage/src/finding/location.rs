@@ -1,7 +1,7 @@
 //! The file and line a gathered location names, as `locationParts` in
 //! `integrations/shared/triage-sift.mjs` reads them.
 
-use craft_store::js::{is_space, trim};
+use craft_store::js::{JsStr, is_space};
 
 /// `s` as `^(\S+?):(\d+)(?:[-:]\d+)?$` splits it (JavaScript's `\S` and its ASCII `\d`): the
 /// leftmost colon whose rest is digits, then at most one `-` or `:` and digits.
@@ -29,7 +29,7 @@ fn at_line(s: &str) -> Option<(&str, &str)> {
 /// `u64` reads as `u64::MAX`.
 #[must_use]
 pub fn location_parts(location: &str) -> (String, u64) {
-    let s = trim(location);
+    let s = location.js_trim();
     if let Some((file, line)) = at_line(s) {
         return (file.to_owned(), line.parse().unwrap_or(u64::MAX));
     }

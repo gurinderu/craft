@@ -82,4 +82,45 @@ mod tests {
         let id = memory_record_id("decision", "  Unwrap  is\tFINE here ", "./src/");
         assert_eq!(id, "decision-fe3066cfbb");
     }
+
+    /// Ids and scope lines with JavaScript's whitespace — U+FEFF trimmed and collapsed, U+0085
+    /// kept — as `memoryRecordId` and `scopeLine` in `integrations/shared/memory-record-id.mjs`
+    /// give them for the same input (computed with Node).
+    #[test]
+    fn the_id_and_the_scope_line_trim_javascripts_whitespace() {
+        for (kind, title, scope, id) in [
+            (
+                "decision",
+                "\u{feff} Big\u{feff}Bug \u{feff}",
+                "\u{feff}./src/a.rs/\u{feff}",
+                "decision-8c011a60fe",
+            ),
+            (
+                "decision",
+                "Big\u{85}Bug",
+                "src/a.rs",
+                "decision-61b170a6e5",
+            ),
+            (
+                "question",
+                " a \u{85} b ",
+                "\u{85}src/",
+                "question-8424c8c7d2",
+            ),
+        ] {
+            assert_eq!(
+                memory_record_id(kind, title, scope),
+                id,
+                "{title:?} {scope:?}"
+            );
+        }
+        for (given, scope, line) in [
+            ("\u{feff}src/a.rs:12\u{feff}", "src/a.rs", 12),
+            ("\u{85}src/a.rs:12", "\u{85}src/a.rs", 12),
+            ("src/a.rs:12\u{85}", "src/a.rs:12\u{85}", 0),
+            (" src/a.rs:3-9 ", "src/a.rs", 3),
+        ] {
+            assert_eq!(split_scope_line(given), (scope, line), "{given:?}");
+        }
+    }
 }

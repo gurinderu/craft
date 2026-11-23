@@ -74,3 +74,14 @@ pub(super) fn comment(f: &Value, question: bool) -> String {
 pub(super) fn first_line(body: &str) -> &str {
     body.lines().next().unwrap_or("").js_trim()
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn a_value_is_one_line_of_javascripts_whitespace() {
+        assert_eq!(
+            super::one_line("\u{feff}a \n\u{2028} b\u{85}c\u{feff}"),
+            "a b\u{85}c"
+        );
+    }
+}

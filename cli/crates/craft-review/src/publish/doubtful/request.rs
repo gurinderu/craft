@@ -5,6 +5,7 @@
 //! which GitHub refuses beside `line` with 422; realm @nick/craft, node #381), or to its file when
 //! its line is outside the diff or not judged.
 
+use craft_store::js::JsStr;
 use serde_json::Value;
 
 use super::super::body;
@@ -39,7 +40,7 @@ pub(super) fn chosen(
         ));
     };
     let file = match finding.get("file") {
-        Some(Value::String(f)) if !js::trim(f).is_empty() => js::trim(f).to_owned(),
+        Some(Value::String(f)) if !f.js_trim().is_empty() => f.js_trim().to_owned(),
         _ => {
             return Err(format!(
                 "finding {} names no file to anchor a review comment to",

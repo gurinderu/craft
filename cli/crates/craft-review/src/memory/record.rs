@@ -83,11 +83,6 @@ pub(super) fn text(v: Option<&Value>) -> String {
         .unwrap_or_default()
 }
 
-/// A length as JavaScript counts it, in UTF-16 units, so a ceiling refuses what the engines do.
-pub(super) fn js_len(s: &str) -> usize {
-    s.encode_utf16().count()
-}
-
 /// Whether `s` holds a control character, a newline among them.
 pub(super) fn has_control(s: &str) -> bool {
     s.chars().any(|c| u32::from(c) < 32 || u32::from(c) == 127)

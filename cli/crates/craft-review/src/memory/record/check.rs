@@ -6,8 +6,7 @@ use craft_store::js::JsStr;
 use serde_json::{Map, Value};
 
 use super::{
-    PriorDecision, RecordKind, has_control, js_len, json, record_kind, record_line, scope_parts,
-    text,
+    PriorDecision, RecordKind, has_control, json, record_kind, record_line, scope_parts, text,
 };
 
 /// Each field's ceiling, in the order a refusal names the first one over it.
@@ -30,10 +29,10 @@ const KINDS: [&str; 3] = ["decision", "question", "rule"];
 /// What is wrong with a text field of the anchor; '' when it is absent or fit.
 fn anchor_text_problem(o: &Map<String, Value>, k: &str, max: usize) -> String {
     match o.get(k) {
-        Some(Value::String(s)) if js_len(s.js_trim()) > max => {
+        Some(Value::String(s)) if crate::js::len(s.js_trim()) > max => {
             format!(
                 ": {k} is {} chars, over the {max}-char ceiling",
-                js_len(s.js_trim())
+                crate::js::len(s.js_trim())
             )
         }
         Some(Value::String(s)) if has_control(s) => format!(": {k} contains a control character"),
@@ -143,10 +142,13 @@ pub(super) fn problem(o: &Map<String, Value>, d: &PriorDecision) -> String {
     if !missing.is_empty() {
         return missing;
     }
-    if let Some((k, max)) = FIELD_MAX.iter().find(|(k, max)| js_len(field(d, k)) > *max) {
+    if let Some((k, max)) = FIELD_MAX
+        .iter()
+        .find(|(k, max)| crate::js::len(field(d, k)) > *max)
+    {
         return format!(
             ": {k} is {} chars, over the {max}-char ceiling",
-            js_len(field(d, k))
+            crate::js::len(field(d, k))
         );
     }
     let anchor = anchor_field_problem(o);

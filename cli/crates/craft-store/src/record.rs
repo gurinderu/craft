@@ -3,7 +3,7 @@
 
 use std::sync::LazyLock;
 
-use crate::js::{self, Js, JsString, Obj};
+use crate::js::{self, Js, JsStr, JsString, Obj};
 
 /// The logger's engine revision (`ENGINE_REVISION`), stamped on every record and checkpoint.
 pub const ENGINE_REVISION: f64 = 4.0;
@@ -57,7 +57,7 @@ pub fn normalize_symbol(symbol: &str) -> String {
         }
         s = next;
     }
-    js::trim(&s).to_owned()
+    s.js_trim().to_owned()
 }
 
 /// `fingerprint`: djb2 over the finding's file, symbol and rule — or its title's words when it

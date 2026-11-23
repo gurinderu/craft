@@ -6,6 +6,8 @@
 use std::process::Command;
 use std::time::Duration;
 
+use craft_store::js::JsStr;
+
 use super::js::{self, Re, compile};
 use crate::hook::bounded;
 
@@ -58,7 +60,7 @@ fn sandbox_line(probe: &dyn Probe) -> String {
     // Codex may print its own WARNING lines before the sandbox's error.
     let lines: Vec<&str> = stderr
         .split('\n')
-        .map(js::trim)
+        .map(str::js_trim)
         .filter(|l| !l.is_empty())
         .collect();
     let said = lines

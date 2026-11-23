@@ -316,3 +316,22 @@ fn a_partly_failed_recall_of_externals_alone_says_it_read_them() {
         ]
     );
 }
+
+#[test]
+fn a_record_anchors_a_finding_whose_line_javascript_reads_as_its_own() {
+    let same = PriorDecision {
+        tool_rule: "redundant_clone".into(),
+        ..decision("decision-b", "a clone")
+    };
+    let ds = [same];
+    for line in [json!("10.0"), json!(10.0), json!("0xa"), json!(" 11 ")] {
+        let f = json!({"file": "src/lib.rs", "line": line, "title": "needless clone", "source": "clippy", "toolRule": "clippy::redundant_clone"});
+        let m = match_of(&f, &ds, &tried_order(&ds)).unwrap();
+        assert_eq!(m.how, "matched by file:line+lens+toolRule", "{line}");
+    }
+    let unlined = json!({"file": "src/lib.rs", "line": "ten", "title": "needless clone", "source": "clippy", "toolRule": "clippy::redundant_clone"});
+    assert_ne!(
+        match_of(&unlined, &ds, &tried_order(&ds)).map(|m| m.how),
+        Some("matched by file:line+lens+toolRule".into())
+    );
+}

@@ -40,7 +40,7 @@ pub fn compile(pattern: &str) -> Option<Regex> {
 
 // JS's `\s` and `trim` are the store's (`craft_store::js`), one copy for every crate; `SPACE`
 // above spells the same set for a regex class.
-pub use craft_store::js::{is_space, trim};
+pub use craft_store::js::is_space;
 
 /// `text` for a case-insensitive pattern JS reads without the `u` flag: the two letters Unicode
 /// folding takes onto ASCII ones are put out of any ASCII letter's reach.
@@ -84,7 +84,7 @@ mod tests {
         assert!(s.is_match("a\u{FEFF}b"));
         assert!(!s.is_match("a\u{85}b"));
         assert!(!r.is_match(&ascii_case("re\u{17F}view")));
-        assert_eq!(trim("\u{FEFF} x \u{A0}"), "x");
+        assert_eq!(craft_store::js::JsStr::js_trim("\u{FEFF} x \u{A0}"), "x");
         assert_eq!(
             resolve(Path::new("/a/b/../c/./d/")),
             PathBuf::from("/a/c/d")

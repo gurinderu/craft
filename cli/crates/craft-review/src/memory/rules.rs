@@ -39,7 +39,7 @@ use verdicts::read;
 
 /// Whether a finding is Critical, which no rule covers.
 fn is_critical(f: &Value) -> bool {
-    judge::plain(f.get("severity"))
+    crate::js::text(f.get("severity"))
         .js_trim()
         .eq_ignore_ascii_case("critical")
 }
@@ -47,7 +47,7 @@ fn is_critical(f: &Value) -> bool {
 /// Whether rule `r` may cover `f`: its file inside the rule's scope, and, when the rule names a
 /// lens, raised by it (`ruleCandidate`).
 fn candidate(f: &Value, r: &PriorDecision) -> bool {
-    let file = judge::plain(f.get("file"));
+    let file = crate::js::text(f.get("file"));
     if r.kind != RecordKind::Rule || !in_scope(&file, &r.scope) {
         return false;
     }
