@@ -483,10 +483,11 @@ pub(crate) fn submit_step(args: &SubmitArgs) -> Result<Value> {
         abandoned: &args.abandoned,
     };
     let stepped = step::submit_with(&run, given.as_ref(), &said).map_err(|e| {
-        // A refused resume still says what its re-filing of the stopped parts lost. A run another
-        // format wrote goes on no further, so the records it kept or lost are re-filed whatever
-        // the submit asked, and nothing new is filed: the engine's own record of a run the binary
-        // did not finish covers its open segment (realm @nick/craft, node #618).
+        // A refused resume still says what its re-filing of the stopped parts lost. A run an
+        // earlier format wrote goes on no further, so the records it kept or lost are re-filed
+        // whatever the submit asked — a resume did so above — and nothing new is filed: the
+        // engine's own record of a run the binary did not finish covers its open segment. A newer
+        // format's run is left to the craft that wrote it (realm @nick/craft, node #618).
         let mut lost = earlier.clone();
         if !args.resume && !newer && is_state_version_refusal(&e) {
             lost.extend(refile_kept(&run));

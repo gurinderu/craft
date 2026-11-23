@@ -112,6 +112,21 @@ pub fn submit(run: &Path, home: &Path, path: &str, extra: &[&str]) -> std::proce
         .unwrap()
 }
 
+/// `craft review comment` on `run` with `extra` flags.
+pub fn comment(run: &Path, home: &Path, path: &str, extra: &[&str]) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_craft"))
+        .args(["review", "comment", "--run"])
+        .arg(run)
+        .args(extra)
+        .env("PATH", path)
+        .env("HOME", home)
+        .env_remove("CRAFT_ROOT")
+        .env_remove("CLAUDE_PLUGIN_ROOT")
+        .env_remove("CLAUDE_CONFIG_DIR")
+        .output()
+        .unwrap()
+}
+
 /// The records filed under `home`'s run store, as text.
 pub fn records(home: &Path) -> Vec<String> {
     let Ok(dir) = std::fs::read_dir(home.join(".craft/runs")) else {
