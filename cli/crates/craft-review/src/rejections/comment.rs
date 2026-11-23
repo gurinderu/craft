@@ -6,7 +6,7 @@
 use craft_store::js::JsStr;
 
 use crate::js::is_space;
-use crate::publish::body::{LENS, MARKER, RULE, fits};
+use crate::publish::body::{LENS, LENS_PREFIX, MARKER, RULE, RULE_PREFIX, fits};
 
 /// The finding a comment carries.
 pub(super) struct Finding {
@@ -31,8 +31,8 @@ pub(super) fn read(body: &str) -> Option<Finding> {
     }
     Some(Finding {
         title: rest.js_trim().to_owned(),
-        lens: hidden(body, "<!-- craft-lens: ", LENS),
-        tool_rule: hidden(body, "<!-- craft-tool-rule: ", RULE),
+        lens: hidden(body, LENS_PREFIX, LENS),
+        tool_rule: hidden(body, RULE_PREFIX, RULE),
     })
 }
 

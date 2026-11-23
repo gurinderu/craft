@@ -1,6 +1,7 @@
 //! A rejected thread as the memory skill's decision record, the shape both thread readers write
 //! (realm @nick/craft, node #196: a human's call), anchored to the thread's line (node #230).
 
+use craft_store::js::JsStr;
 use serde_json::Value;
 
 use super::Decision;
@@ -49,4 +50,29 @@ pub(super) fn decision(
         lens,
         tool_rule,
     }
+}
+
+const TITLE_MAX: usize = 200;
+const REASON_MAX: usize = 1200;
+
+/// What stops a rejection from becoming a record: no anchor, a scope carrying a line (node #606),
+/// or a field past its bound. `None` when nothing does.
+pub(super) fn problem(title: &str, scope: &str, commit: &str, reason: &str) -> Option<String> {
+    let sha = (7..=40).contains(&commit.len()) && commit.bytes().all(|b| b.is_ascii_hexdigit());
+    if scope.is_empty() || !sha {
+        return Some("no path or commit to anchor the decision to".into());
+    }
+    let (path, line) = crate::memory::split_scope_line(scope);
+    if path != scope.js_trim() {
+        let quoted = serde_json::to_string(scope.js_trim()).unwrap_or_default();
+        return Some(format!(
+            "scope {quoted} carries a line: write scope={path}, line={line}"
+        ));
+    }
+    if js::len(title) > TITLE_MAX {
+        return Some(format!("title over {TITLE_MAX} chars: record it by hand"));
+    }
+    let n = js::len(reason);
+    (n > REASON_MAX)
+        .then(|| format!("reason is {n} chars, over {REASON_MAX}: summarise it and record by hand"))
 }

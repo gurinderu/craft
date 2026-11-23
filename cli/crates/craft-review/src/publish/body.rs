@@ -25,6 +25,11 @@ pub(crate) fn fits(v: &str, max: usize, extra: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || extra.contains(c))
 }
 
+/// How the hidden lens line opens, its value and ` -->` after it — the reader matches the same.
+pub(crate) const LENS_PREFIX: &str = "<!-- craft-lens: ";
+/// How the hidden tool-rule line opens.
+pub(crate) const RULE_PREFIX: &str = "<!-- craft-tool-rule: ";
+
 /// What the hidden lens line admits (`LENS_LINE`): its longest value and the characters beside
 /// letters and digits.
 pub(crate) const LENS: (usize, &str) = (80, "_,:/. -");
@@ -46,12 +51,12 @@ pub(super) fn comment(f: &Value, question: bool) -> String {
     let lens = one_line(&text(f, "source"));
     let rule = one_line(&text(f, "toolRule"));
     let lens = if fits(&lens, LENS.0, LENS.1) {
-        format!("<!-- craft-lens: {lens} -->\n")
+        format!("{LENS_PREFIX}{lens} -->\n")
     } else {
         String::new()
     };
     let rule = if fits(&rule, RULE.0, RULE.1) {
-        format!("<!-- craft-tool-rule: {rule} -->\n")
+        format!("{RULE_PREFIX}{rule} -->\n")
     } else {
         String::new()
     };

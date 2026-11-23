@@ -19,10 +19,13 @@ pub(in crate::publish) struct Pr {
     pub(in crate::publish) head_ref: String,
     /// Its head is in a fork (`isCrossRepository`; false when gh did not say).
     pub(in crate::publish) cross_repository: bool,
+    /// `OPEN`, `CLOSED` or `MERGED`; '' when gh did not say.
+    pub(in crate::publish) state: String,
 }
 
 /// The fields every pull request is read with.
-const FIELDS: &str = "number,url,headRefOid,headRefName,isCrossRepository,headRepositoryOwner";
+const FIELDS: &str =
+    "number,url,headRefOid,headRefName,isCrossRepository,headRepositoryOwner,state";
 
 /// A pull request as gh prints it.
 fn pr_of(v: &Value) -> Result<Pr, String> {
@@ -37,20 +40,22 @@ fn pr_of(v: &Value) -> Result<Pr, String> {
         head: text("headRefOid"),
         head_ref: text("headRefName"),
         cross_repository: v.get("isCrossRepository").and_then(Value::as_bool) == Some(true),
+        state: text("state"),
     })
 }
 
-/// The open pull requests whose head branch is `branch`.
-pub(in crate::publish) fn open_prs(
+/// The pull requests whose head branch is `branch`, in `state` (`open`, or `all`).
+pub(in crate::publish) fn prs(
     runner: &Runner,
     repo: &Path,
     branch: &str,
+    state: &str,
 ) -> Result<Vec<Pr>, String> {
     if branch.starts_with('-') {
         return Err(format!("{branch:?} is no branch name"));
     }
     let args = [
-        "pr", "list", "--head", branch, "--state", "open", "--json", FIELDS,
+        "pr", "list", "--head", branch, "--state", state, "--json", FIELDS,
     ];
     let out = gh(runner, repo, &args)?;
     let v: Value =

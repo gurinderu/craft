@@ -1,6 +1,7 @@
 // The external reviewer's findings read from GitHub's PR comments and reviews (lib/external-findings-parse.mjs).
 import { test } from 'vitest'
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
 import {
   defaultReviewers,
   detectReviewer,
@@ -149,6 +150,12 @@ test('without an id pattern, each root comment is a finding keyed by its own Git
     findings.map(f => f.id),
     ['r1', 'r2', 'r3'],
   )
+})
+
+test('the marker is the one the craft binary posts', () => {
+  const rust = fs.readFileSync(new URL('../../cli/crates/craft-review/src/publish/body.rs', import.meta.url), 'utf8')
+  const posted = /pub\(crate\) const MARKER: &str = "([^"]+)";/.exec(rust)?.[1]
+  assert.equal(FINDING_COMMENT_MARKER, posted)
 })
 
 test("a comment or review carrying craft's finding marker is never the external reviewer's", () => {

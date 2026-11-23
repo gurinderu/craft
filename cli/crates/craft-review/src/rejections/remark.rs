@@ -47,7 +47,7 @@ pub(super) fn title(body: &str) -> String {
 
 /// One thread whose root is not a craft finding as a decision record (`Ok(Some)`), why its
 /// rejection is not recorded (`Err`), or `Ok(None)` when it holds no rejection at all.
-pub(super) fn decision(t: &Value, pr_author: &str) -> Result<Option<Decision>, String> {
+pub(super) fn decision(t: &Value, pr_author: &rule::Author) -> Result<Option<Decision>, String> {
     let (cs, total) = rule::comments(t);
     let Some(root) = cs.first().filter(|r| truthy(r)) else {
         return Ok(None);
@@ -94,7 +94,7 @@ pub(super) fn decision(t: &Value, pr_author: &str) -> Result<Option<Decision>, S
     } else if title.is_empty() {
         Some("the remark has no text to title the decision: record it by hand".into())
     } else {
-        rule::problem(&title, &scope, &commit, &r.reason)
+        super::record::problem(&title, &scope, &commit, &r.reason)
     };
     if let Some(p) = problem {
         return Err(at(p));

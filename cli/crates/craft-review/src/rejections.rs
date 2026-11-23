@@ -61,15 +61,16 @@ pub struct Rejections {
 pub struct NotAnAnswer;
 
 /// The threads of one answer, or of every page of a slurped array of them, how many the PR has,
-/// and its author's login ('' when the answer does not carry it).
-fn threads(answer: &Value) -> Option<(Vec<&Value>, f64, String)> {
+/// and its author: their login ('' when the answer does not carry it) and whether the PR is this
+/// repository's own (`isCrossRepository: false` on a page; a fork's or an untold one is not).
+fn threads(answer: &Value) -> Option<(Vec<&Value>, f64, rule::Author)> {
     let pages = answer
         .as_array()
         .map_or_else(|| vec![answer], |a| a.iter().collect());
     if pages.is_empty() {
         return None;
     }
-    let (mut nodes, mut total, mut author) = (Vec::new(), 0.0, String::new());
+    let (mut nodes, mut total, mut author) = (Vec::new(), 0.0, rule::Author::default());
     for page in pages {
         let pr = ["data", "repository", "pullRequest"]
             .iter()
@@ -77,13 +78,18 @@ fn threads(answer: &Value) -> Option<(Vec<&Value>, f64, String)> {
         let t = pr.get("reviewThreads")?;
         nodes.extend(t.get("nodes")?.as_array()?);
         total = js::max(total, js::number(t.get("totalCount"), 0.0));
-        if author.is_empty()
+        if author.login.is_empty()
             && let Some(login) = pr
                 .get("author")
                 .and_then(|a| a.get("login"))
                 .and_then(Value::as_str)
         {
-            login.js_trim().clone_into(&mut author);
+            login.js_trim().clone_into(&mut author.login);
+        }
+        match pr.get("isCrossRepository").and_then(Value::as_bool) {
+            Some(false) if !author.fork => author.same_repo = true,
+            Some(true) => (author.same_repo, author.fork) = (false, true),
+            _ => {}
         }
     }
     Some((nodes, total, author))
@@ -117,6 +123,10 @@ pub fn from_answer(answer: &Value) -> Result<Rejections, NotAnAnswer> {
         (
             count(rule::NOT_AUTHORIZED),
             "rejection(s) not recorded: the replier is neither the PR author nor OWNER/MEMBER/COLLABORATOR",
+        ),
+        (
+            count(rule::FORK_AUTHOR),
+            "rejection(s) not recorded: the PR author of a PR not known to be this repository's own is not OWNER/MEMBER/COLLABORATOR",
         ),
         (
             count(remark::NOT_A_MAINTAINER),
