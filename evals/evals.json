@@ -93,6 +93,24 @@
     "expected_behavior": ["Selects rust-testing (async tests, integration tests, nextest, CI wiring).", "Covers the runner setup, not just a single test body."]
   },
   {
+    "skills": ["rust-testing"],
+    "query": "Before I hand this branch back, run mutants on the diff against main only and tell me which test fails without which fix. The cargo workspace lives in cli/, not at the repo root.",
+    "expected_behavior": [
+      "Selects rust-testing (mutation testing on a change's diff).",
+      "Writes the branch diff with paths relative to the cargo workspace root to a file and runs cargo mutants --in-diff on it, not the whole crate.",
+      "Checks the diff's paths before reading zero selected mutants as clean.",
+      "Names, for each mutant, the test that caught it; each missed mutant gets a new test or is named as equivalent with why."
+    ]
+  },
+  {
+    "skills": ["rust-review"],
+    "query": "Is this Rust PR's diff mergeable? Flag any changed code its tests would not catch a regression in.",
+    "expected_behavior": [
+      "Selects rust-review, NOT rust-testing: flagging weak or missing tests in a diff is the review's (rust-testing's own boundary).",
+      "Rates a missing test by the defect it would catch, and only flags it, leaving how to write it to rust-testing."
+    ]
+  },
+  {
     "skills": ["rust-performance"],
     "query": "I need a criterion benchmark to measure how fast this hashing function is.",
     "expected_behavior": [
