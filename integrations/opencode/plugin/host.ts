@@ -8,6 +8,8 @@
 export interface ModelRef {
   providerID: string
   modelID: string
+  // 2.x's `#variant` of the model, when one is named.
+  variant?: string
 }
 
 export interface ChildRequest {
@@ -39,6 +41,8 @@ export interface Host extends Workspace {
   runChild(req: ChildRequest): Promise<string>
   // The model a session runs on, as the runtime records it; undefined when it records none (the runtime's default).
   callerModel(sessionID: string): Promise<ModelRef | undefined>
+  // The agents the runtime has, by id, where it lists them (2.x).
+  agents?(): Promise<string[]>
 }
 
 // The tool call as the runtime hands it over: the session that called the tool, the signal that aborts the call, and

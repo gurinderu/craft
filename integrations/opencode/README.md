@@ -102,13 +102,20 @@ opencode. The links point into this checkout, but a checkout does not change wha
 `<checkout>/bin/craft review run --backend opencode --events json`. `bin/craft` runs the binary of this
 plugin's version, downloaded from its GitHub release into `~/.craft/bin/<version>/` the first time
 (`CRAFT_BIN=<path>` runs a local build). The binary decides every step — the gate, the scouts, the
-lenses round after round, verification, the verdict — and runs each task as its own `opencode run`
-process. On 1.x the tool's title follows the run's progress; the answer is the binary's `## Verdict`
+lenses round after round, verification, the verdict. On 1.x it runs each task as its own `opencode run`
+process; on 2.x it hands each task back to the plugin (`--delegate`), which runs it as a child session
+of the calling session, so the tasks show as that session's subagents. On 1.x the tool's title follows the run's progress; the answer is the binary's `## Verdict`
 block and findings, as markdown. On 1.x the tasks' sessions are not archived (1.19.5's `run` takes no
 `--archived`), and a task of a subagent such as `rust-reviewer` runs on `review-task` with that
 agent's prompt (1.x `run` puts a subagent on its default agent, which writes). The binary's 1.19.5
-path was seen reaching the model as `review-task`; the tool itself is covered by tests against a fake
-binary, not yet seen in a real OpenCode session.
+path was seen reaching the model as `review-task`; the tool itself, and its 2.x child sessions, are
+covered by tests against a fake binary and fake host, not yet seen in a real OpenCode session.
+
+On 2.x each child session is bounded by its task's deadline (15 minutes for a scout, 90 for a lens, 30
+for the rest): past it the binary abandons the task and the plugin interrupts its session. A child whose
+run fails is reported by the error OpenCode gives (its type and message, such as `provider.no-route`)
+in the run's log and, when every task of a round fails, in the answer; a usage limit in it stops the
+run INCOMPLETE with how to resume it.
 
 On 2.x the review shows its progress as a line in the TUI's prompt footer of the session that runs it —
 the same line 1.x shows as the tool's title — and on the end clears it and shows the verdict as a toast;
@@ -119,9 +126,10 @@ with no footer line.
 
 On OpenCode 2.x `/rust-audit` and `/triage-findings` refuse up front, INCOMPLETE, and run nothing:
 their child sessions never answered in testing (craft 0.50.0, OpenCode 2.2.7); use OpenCode 1.x,
-Claude Code, Codex or pi for them. `/craft-review` is not refused: its tasks run as `opencode run`
-processes, not child sessions. The refusal itself is tested against fake hosts only, not yet seen in
-a real OpenCode 2.x.
+Claude Code, Codex or pi for them. `/craft-review` is not refused: its child sessions are read by
+the reply reader fixed since (it reads past the session's `idle` entry), which the audit and the
+triage would share, but neither has been run on it yet. The refusal itself is tested against fake
+hosts only, not yet seen in a real OpenCode 2.x.
 
 - Every task is read-only: one that names `rust-reviewer` runs on the hidden `rust-reviewer` agent,
   every other on `review-task` (both have write and edit off), with the matching Claude Code agent's
@@ -139,16 +147,17 @@ a real OpenCode 2.x.
   binary refuses it before anything runs, since that round would review the whole branch.
 - `--pr <n>` from a checkout that lacks the PR's head (the trunk, say) reviews it in craft's own
   detached worktree, `~/.craft/worktrees/<repo>/pr-<n>-<head>`, one per head, shared by runs at once
-  and never moved; your checkout is not touched. Every task — and the agent check before them — runs
-  there, so OpenCode loads the PR head's own `opencode.json`, `.opencode/` plugins, MCP servers and
+  and never moved; your checkout is not touched. On 1.x every task — and the agent check before them —
+  runs there, so OpenCode loads the PR head's own `opencode.json`, `.opencode/` plugins, MCP servers and
   agent overrides: the PR's code runs even with `--no-gate`. Review a PR you do not trust on another
   host, with `--no-gate`. Project-installed craft agents are not in that worktree: install them
-  globally (`install.sh --global`) or, on 2.x, add the package.
+  globally (`install.sh --global`) or, on 2.x, add the package. On 2.x the tasks are child sessions
+  of your session, in your checkout's OpenCode, and read the worktree by its absolute path.
 - A failed task is handed out again by the binary; the first usage-limit error stops new tasks and
   ends the run INCOMPLETE with how to resume it.
 - If this OpenCode has no `review-task` agent (an install from before it), the review refuses to
   start, INCOMPLETE, and says to add the package (2.x) or rerun `install.sh`; it never runs a task on another, writable agent.
-- If this OpenCode has no `rust-reviewer` agent, its tasks run on `review-task` with the
+- On 1.x, if this OpenCode has no `rust-reviewer` agent, its tasks run on `review-task` with the
   rust-reviewer prompt, and the run is reported as degraded.
 
 ## Model strategy
@@ -190,9 +199,10 @@ is silent and the tools still work.
   still resolves them.
 - Workflow determinism rides on opencode's child-session API; the plugin retries sequentially and
   surfaces a clear error if a child session is stuck (opencode #8528 / #6573).
-- **On 2.x the child-session reply is read but not yet seen.** The plugin admits the prompt, waits for
-  the session to go idle and reads its last finished assistant message. Loading, tool registration and
-  a tool run were seen on opencode 2.2.7; a child session answered by a real model was not.
+- **On 2.x the child-session reply is read as a probe saw it, not yet in a review.** The plugin admits
+  the prompt and reads the session's context until it ends with an `idle` entry; the reply is the last
+  assistant message before it, and an `idle` whose outcome is `failed` is the child's error. That shape
+  was seen on opencode 2.2.7 by a probe; a craft review's child sessions have not been seen yet.
 - **`/rust-audit`'s review dimension is single-pass.** The CLI-driven review is `/craft-review` (above); in
   `/rust-audit` the **review** dimension is a single-pass `rust-reviewer` agent — there is no per-crate review
   fan-out and no inter-crate-contract dimension. The other audit dimensions (architecture,

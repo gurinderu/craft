@@ -2,7 +2,9 @@
 // `review` tool (integrations/opencode/plugin/tools.ts): `bin/craft review run --backend <host> --events json` as its
 // own process (realm @nick/craft, nodes #499, #500), its stderr read as the event stream (#506), its stdout as the
 // answer — the `## Verdict` block. What it reports for a view: the progress so far as one line, and the verdict, the
-// report and the findings once it ends.
+// report and the findings once it ends. With `onTask` the run delegates its tasks (`--delegate`): each `task` event is
+// run by the host's tool — OpenCode 2.x's child sessions (realm @nick/craft, nodes #496, #626) — and its reply written to
+// the binary's stdin under the event's key; a `task_cancelled` event aborts that task.
 import { spawn } from 'node:child_process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -13,6 +15,8 @@ export const WRAPPER = path.join(path.resolve(path.dirname(fileURLToPath(import.
 /** @typedef {{ type: string } & Record<string, unknown>} ReviewEvent */
 /** @typedef {{ phase: string, round: number, running: number, done: number, failed: number, line: string }} Progress */
 /** @typedef {{ verdict: string, report: string | null, run: string | null, findings: string[] }} Summary */
+/** @typedef {{ key: number, id: string, label: string, agent: string | null, model: string | null, prompt: string }} DelegatedTask */
+/** @typedef {(task: DelegatedTask, signal: AbortSignal) => Promise<string>} RunTask  the task's reply text; a rejection is its failure, said to the binary */
 /** @typedef {{ code: number, answer: string, result: ReviewEvent | null, said: string[], progress: Progress }} Outcome  said: the stderr lines that were no event (the wrapper's own failure) */
 
 export const START = Object.freeze(/** @type {Progress} */ ({ phase: '', round: 0, running: 0, done: 0, failed: 0, line: '' }))
@@ -61,19 +65,65 @@ function eventOf(line) {
   }
 }
 
+/** @param {unknown} e @returns {string} */
+const messageOf = e => (e instanceof Error ? e.message : String(e))
+
+/**
+ * The delegated tasks of one run: `heard` takes a `task` or `task_cancelled` event, `reply` writes a reply line to the
+ * binary, and `stop` aborts every task still running once the binary is gone.
+ * @param {RunTask} onTask @param {(line: string) => void} reply
+ */
+export function delegation(onTask, reply) {
+  /** @type {Map<number, AbortController>} */
+  const running = new Map()
+  /** @param {ReviewEvent} event */
+  const heard = event => {
+    const key = Number(event['key'])
+    if (event.type === 'task_cancelled') running.get(key)?.abort()
+    if (event.type !== 'task') return
+    const stop = new AbortController()
+    running.set(key, stop)
+    onTask(/** @type {DelegatedTask} */ (/** @type {unknown} */ (event)), stop.signal)
+      .then(
+        text => {
+          reply(JSON.stringify({ key, text }))
+        },
+        (/** @type {unknown} */ e) => {
+          reply(JSON.stringify({ key, error: messageOf(e) }))
+        },
+      )
+      .finally(() => running.delete(key))
+  }
+  const stop = () => {
+    for (const s of running.values()) s.abort()
+  }
+  return { heard, stop }
+}
+
 /**
  * The review run to its end. `onProgress` hears each change; an abort of `signal` stops the process and rejects.
- * @param {{ backend: string, args: string[], cwd: string, env?: NodeJS.ProcessEnv, signal?: AbortSignal, onProgress?: (p: Progress) => void, wrapper?: string }} o
+ * `onTask`, when given, runs each task the binary delegates.
+ * @param {{ backend: string, args: string[], cwd: string, env?: NodeJS.ProcessEnv, signal?: AbortSignal, onProgress?: (p: Progress) => void, onTask?: RunTask, wrapper?: string }} o
  * @returns {Promise<Outcome>}
  */
-export function runReview({ backend, args, cwd, env = process.env, signal, onProgress = () => {}, wrapper = WRAPPER }) {
+export function runReview({ backend, args, cwd, env = process.env, signal, onProgress = () => {}, onTask, wrapper = WRAPPER }) {
   return new Promise((resolve, reject) => {
-    const child = spawn('sh', [wrapper, 'review', 'run', '--backend', backend, '--events', 'json', ...args], {
+    const delegated = onTask ? ['--delegate'] : []
+    const child = spawn('sh', [wrapper, 'review', 'run', '--backend', backend, '--events', 'json', ...delegated, ...args], {
       cwd,
       env,
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: ['pipe', 'pipe', 'pipe'],
       ...(signal ? { signal } : {}),
     })
+    // A reply after the binary is gone is lost with it: the write's error is not the run's. A run that delegates
+    // nothing reads no input: it gets an empty one.
+    child.stdin.on('error', () => undefined)
+    if (!onTask) child.stdin.end()
+    const tasks = onTask
+      ? delegation(onTask, line => {
+          if (child.stdin.writable) child.stdin.write(`${line}\n`)
+        })
+      : null
     /** @type {{ answer: string, rest: string, progress: Progress, result: ReviewEvent | null, said: string[] }} */
     const out = { answer: '', rest: '', progress: START, result: null, said: [] }
     const take = (/** @type {string} */ line) => {
@@ -83,6 +133,7 @@ export function runReview({ backend, args, cwd, env = process.env, signal, onPro
         return
       }
       if (event.type === 'result') out.result = event
+      tasks?.heard(event)
       const next = advance(out.progress, event)
       if (next !== out.progress) onProgress((out.progress = next))
     }
@@ -97,9 +148,13 @@ export function runReview({ backend, args, cwd, env = process.env, signal, onPro
       out.rest = lines.pop() ?? ''
       lines.forEach(take)
     })
-    child.on('error', reject)
+    child.on('error', e => {
+      tasks?.stop()
+      reject(e)
+    })
     child.on('close', code => {
       take(out.rest)
+      tasks?.stop()
       resolve({ code: code ?? 1, answer: out.answer, result: out.result, said: out.said, progress: out.progress })
     })
   })

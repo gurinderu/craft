@@ -1,7 +1,7 @@
 // The 2.x side of the host against a fake `ctx` shaped as opencode-v2.d.ts pins it (observed on 2.2.7).
 import { test } from 'vitest'
 import assert from 'node:assert/strict'
-import { finishedReply, v2Host, v2Setup, v2Tool } from './host-v2.ts'
+import { ChildSessionFailed, finishedReply, v2Host, v2Setup, v2Tool } from './host-v2.ts'
 import { onV2, TOOLS } from './tools.ts'
 
 const assistant = (/** @type {string} */ text) => ({
@@ -12,6 +12,11 @@ const assistant = (/** @type {string} */ text) => ({
     { type: 'text', text },
   ],
 })
+
+// The entry that ends a session's context once its agent loop is done, as 2.2.7 returns it (realm @nick/craft, node #626).
+const IDLE = { type: 'idle', outcome: 'completed' }
+/** A finished child's context: the prompt, the reply, the idle entry. @param {string} text */
+const answered = text => [{ type: 'user' }, assistant(text), IDLE]
 
 /** @param {unknown[][]} contexts what successive `context` reads return */
 function fakeCtx(contexts = []) {
@@ -81,7 +86,7 @@ function fakeCtx(contexts = []) {
 
 test('a child session is created with its agent and model, prompted, and read once it has finished', async () => {
   // The first read finds only the admitted prompt: `wait` can return before the loop starts.
-  const f = fakeCtx([[{ type: 'user' }], [{ type: 'user' }, assistant('VERDICT: APPROVE')]])
+  const f = fakeCtx([[{ type: 'user' }], answered('VERDICT: APPROVE')])
   /** @type {string[]} */
   const named = []
   const text = await v2Host(f.ctx, 0).runChild({
@@ -102,26 +107,59 @@ test('a child session is created with its agent and model, prompted, and read on
 })
 
 test("a child nests under its parent, and the caller's model is the one its session records", async () => {
-  const f = fakeCtx([[assistant('x')]])
+  const f = fakeCtx([answered('x')])
   const host = v2Host(f.ctx, 0)
   await host.runChild({ title: 't', agent: '', prompt: 'p', parentID: 'ses_parent' })
   assert.deepEqual(f.sent[0], ['create', { title: 't', parentID: 'ses_parent' }])
   assert.deepEqual(await host.callerModel('ses_set'), { providerID: 'p', modelID: 'm' })
   assert.equal(await host.callerModel('ses_unset'), undefined, 'a session that set none runs on the runtime default')
+  assert.deepEqual(await host.agents?.(), ['build', 'review-task'], "the runtime's agents by id")
+})
+
+test("a model's variant goes to the session with it", async () => {
+  const f = fakeCtx([answered('x')])
+  await v2Host(f.ctx, 0).runChild({ title: 't', agent: '', prompt: 'p', model: { providerID: 'p', modelID: 'm', variant: 'high' } })
+  assert.deepEqual(f.sent[0], ['create', { title: 't', model: { providerID: 'p', id: 'm', variant: 'high' } }])
 })
 
 test('the default agent and model are left to the session', async () => {
-  const f = fakeCtx([[assistant('x')]])
+  const f = fakeCtx([answered('x')])
   await v2Host(f.ctx, 0).runChild({ title: 't', agent: '', prompt: 'p' })
   assert.deepEqual(f.sent[0], ['create', { title: 't' }])
 })
 
-test('only a finished assistant turn is a reply', () => {
+test('only an idle loop has a reply: the last assistant message before the idle entry', () => {
   assert.equal(finishedReply([]), null)
-  assert.equal(finishedReply([{ type: 'user' }]), null)
-  assert.equal(finishedReply([{ type: 'assistant', content: [{ type: 'text', text: 'half' }] }]), null, 'still streaming')
-  assert.equal(finishedReply([{ type: 'assistant', time: { created: 1, completed: 2 } }]), '', 'finished, said nothing')
-  assert.equal(finishedReply([assistant(' a ')]), 'a')
+  assert.equal(finishedReply([{ type: 'user' }]), null, 'admitted, the loop not started')
+  assert.equal(finishedReply([{ type: 'user' }, assistant('mid-loop')]), null, 'an assistant message ends a step, not the loop')
+  assert.equal(finishedReply(answered(' a ')), 'a', 'the reply sits behind the idle entry')
+  assert.equal(finishedReply([{ type: 'user' }, assistant('first'), { type: 'tool' }, assistant('last'), IDLE]), 'last')
+  assert.equal(finishedReply([{ type: 'user' }, IDLE]), '', 'idle, said nothing')
+})
+
+test('a failed loop throws its error, by type and message', () => {
+  const failed = [{ type: 'user' }, { type: 'idle', outcome: 'failed', error: { type: 'provider.no-route', message: 'no route to model x' } }]
+  assert.throws(
+    () => finishedReply(failed),
+    (/** @type {unknown} */ e) =>
+      e instanceof ChildSessionFailed &&
+      e.type === 'provider.no-route' &&
+      e.detail === 'no route to model x' &&
+      e.message === 'the child session failed (provider.no-route): no route to model x',
+  )
+  assert.throws(() => finishedReply([{ type: 'idle', outcome: 'failed' }]), /the child session failed \(unknown\)$/)
+})
+
+test('a child whose loop failed rejects with that error, not a silent empty reply', async () => {
+  const f = fakeCtx([
+    [{ type: 'user' }],
+    [{ type: 'user' }, { type: 'idle', outcome: 'failed', error: { type: 'provider.usage-limit', message: "You've hit your usage limit" } }],
+  ])
+  await assert.rejects(v2Host(f.ctx, 0).runChild({ title: 't', agent: '', prompt: 'p' }), {
+    name: 'ChildSessionFailed',
+    type: 'provider.usage-limit',
+    message: "the child session failed (provider.usage-limit): You've hit your usage limit",
+  })
 })
 
 test('a tool spec becomes a JSON Schema tool whose result is text content, a titled answer its output', async () => {
@@ -209,7 +247,7 @@ test('a deadline interrupts the session and stops the polling', async () => {
   assert.deepEqual(f.sent.at(-1), ['interrupt', { sessionID: 'ses_1' }])
 })
 
-test('the audit and the triage on the 2.x entry refuse up front and say so; the review runs as it is', async () => {
+test('the audit and the triage on the 2.x entry refuse up front and say so; the review runs its tasks as child sessions', async () => {
   const f = fakeCtx()
   await v2Setup(f.ctx, onV2(TOOLS), { childCreated: () => {}, compacted: async () => {}, message: async () => {} })
   assert.deepEqual(
@@ -218,7 +256,7 @@ test('the audit and the triage on the 2.x entry refuse up front and say so; the 
     'all three stay registered',
   )
   const [review, ...workflows] = [f.tools.find(t => t.name === 'review'), ...f.tools.filter(t => t.name !== 'review')]
-  assert.equal(review?.description, TOOLS.find(t => t.name === 'review')?.description, 'the review goes through opencode run, not child sessions')
+  assert.match(review?.description ?? '', /each task runs as a child session of this session/, 'the review runs child sessions, not opencode run')
   for (const tool of workflows) {
     const out = await tool.execute({ locator: 'x' }, { sessionID: 'ses_set', messageID: 'm', id: 'c', agent: 'build', signal: new AbortController().signal })
     assert.match(
@@ -233,7 +271,7 @@ test('the audit and the triage on the 2.x entry refuse up front and say so; the 
 })
 
 test('the polling leaves no abort listener behind, however many reads it takes', async () => {
-  const f = fakeCtx([[{ type: 'user' }], [{ type: 'user' }], [{ type: 'user' }], [assistant('done')]])
+  const f = fakeCtx([[{ type: 'user' }], [{ type: 'user' }], [{ type: 'user' }], answered('done')])
   const stop = new AbortController()
   let live = 0
   let most = 0

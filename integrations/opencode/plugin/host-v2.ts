@@ -14,16 +14,33 @@ const MAX_POLLS = 3 * 60 * 60 * 2
 
 const pause = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
 
-// The text of the session's last message, when it is a finished assistant turn; null while it is not.
-export function finishedReply(messages: readonly V2Message[]): string | null {
-  const last = messages.at(-1)
-  if (!last || last.type !== 'assistant') return null
-  if (last.finish === undefined && last.time?.completed === undefined) return null
-  return (last.content ?? [])
+/** A child session whose agent loop ended failed: the runtime's error, by its type and message (realm @nick/craft, node #626). */
+export class ChildSessionFailed extends Error {
+  constructor(
+    readonly type: string,
+    readonly detail: string,
+  ) {
+    super(`the child session failed (${type})${detail ? `: ${detail}` : ''}`)
+    this.name = 'ChildSessionFailed'
+  }
+}
+
+const textOf = (message: V2Message | undefined) =>
+  (message?.content ?? [])
     .filter(c => c.type === 'text' && typeof c.text === 'string')
     .map(c => c.text)
     .join('\n')
     .trim()
+
+// The session's reply once its agent loop is idle: the text of the last assistant message before the `idle` entry that
+// ends the context (observed on 2.2.7, realm @nick/craft, node #626), "" when it said nothing; null while that entry is
+// not there, the loop still running. An assistant message alone is no reply: one that ends a step mid-loop looks finished
+// too. A failed loop throws its error.
+export function finishedReply(messages: readonly V2Message[]): string | null {
+  const last = messages.at(-1)
+  if (last?.type !== 'idle') return null
+  if (last.outcome === 'failed') throw new ChildSessionFailed(last.error?.type || 'unknown', last.error?.message ?? '')
+  return textOf([...messages].reverse().find(m => m.type === 'assistant'))
 }
 
 const STOPPED = 'the child session was stopped at its deadline'
@@ -40,8 +57,8 @@ function untilAbort<T>(work: Promise<T>, signal: AbortSignal | undefined): Promi
   return Promise.race([work, aborted]).finally(() => signal.removeEventListener('abort', onAbort))
 }
 
-// `wait` may resolve before the admitted prompt's loop has started, so idle is read as "look again", and
-// only a finished assistant message is an answer (UNOBSERVED with a real model: opencode-v2.d.ts). An abort (the
+// `wait` resolves at once on 2.2.7 (realm @nick/craft, node #626), so the context is read until its `idle` entry says the
+// loop ended; between reads the loop pauses `pollMs`. An abort (the
 // caller's deadline) ends the polling, even mid-`wait`: the session itself is interrupted by `stopOnAbort`.
 async function awaitReply(ctx: V2Context, sessionID: string, pollMs: number, signal?: AbortSignal): Promise<string> {
   for (let i = 0; i < MAX_POLLS; i++) {
@@ -75,7 +92,9 @@ export function v2Host(ctx: V2Context, pollMs = POLL_MS): Host {
       const session = await ctx.session.create({
         title: req.title,
         ...(req.agent ? { agent: req.agent } : {}),
-        ...(req.model ? { model: { providerID: req.model.providerID, id: req.model.modelID } } : {}),
+        ...(req.model
+          ? { model: { providerID: req.model.providerID, id: req.model.modelID, ...(req.model.variant ? { variant: req.model.variant } : {}) } }
+          : {}),
         ...(req.parentID ? { parentID: req.parentID } : {}),
       })
       req.onSession?.(session.id)
@@ -86,6 +105,9 @@ export function v2Host(ctx: V2Context, pollMs = POLL_MS): Host {
       } finally {
         unlisten()
       }
+    },
+    async agents() {
+      return (await ctx.agent.list()).data.map(a => a.id)
     },
     // The session's own model, set at creation or by a switch (observed on opencode 2.2.7); none when it has none.
     async callerModel(sessionID) {
