@@ -38,13 +38,20 @@ pub(super) fn failed_why(why: &str, q: &str, found: bool) -> String {
 }
 
 impl MemorySource {
-    /// Whether the run read none of the store it meant to: its query failed with nothing found,
-    /// its answer was truncated, its agent gave none, or its launcher's recall was degraded.
-    pub(super) fn not_read(&self) -> bool {
-        self.query_error.is_some()
-            || self.truncated.is_some()
+    /// How a recall that found nothing read the store, as its memory line leads: `not read` when
+    /// its query failed, its agent gave none or its launcher's recall was degraded; `partly read`
+    /// when only its answer was truncated; `none` when it read the store whole.
+    pub(super) fn read_lead(&self) -> &'static str {
+        if self.query_error.is_some()
             || self.recall_died.is_some()
             || self.recall_degraded.is_some()
+        {
+            "not read"
+        } else if self.truncated.is_some() {
+            "partly read"
+        } else {
+            "none"
+        }
     }
 
     /// The degraded notes of a recall that may not have read the store: whose backend query may
