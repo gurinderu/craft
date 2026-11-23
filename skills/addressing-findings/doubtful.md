@@ -33,7 +33,8 @@ The sorting changes nothing in the verdict.
    else, for a detached-HEAD review that published nothing, `--pr <number>` of this repository.
    Always only on a same-repository PR that is open and whose head holds the reviewed commit (its
    head fetched from `origin` when missing, within a time limit), and never from a review of
-   uncommitted work.
+   uncommitted work (as the review judged it, read from the run directory its record names — a
+   run directory that is gone tells nothing, and nothing is posted).
    The comment is the one the engine would have posted — first line `[Severity] title`, the hidden
    lens and rule lines, for a question its ask and a hidden `<!-- craft-kind: question -->` line,
    the `<!-- craft-finding -->` marker last — so a later reply in that thread is tied to the
@@ -41,14 +42,17 @@ The sorting changes nothing in the verdict.
    one whose line is outside the diff, or a line GitHub refuses, becomes a file-level comment, since
    GitHub takes no line comment outside the diff — same marker, same thread reading. A comment
    already on the PR for that finding is not posted again — found before the PR's state and head
-   are judged, so a retry records its choice even once the PR closed or its head moved. It is posted on the reviewed commit the
+   are judged on the record's own PR (or on a closed PR of its branch, when none is open), so a
+   retry records its choice even once the PR closed or its head moved; on a PR named with `--pr`
+   a comment counts only once that PR's head holds the reviewed commit. It is posted on the reviewed commit the
    record names: when the PR's head moved since, only if the new commits leave its line alone; a
    record naming no reviewed commit posts nothing. It prints one JSON line — the PR, `posted`,
    `already`, `toFile`, `reason`, and `recorded`: the choice it wrote into the record (step 4 is
    done for it; `null` with a warning on stderr when that write failed). Exit 2 refuses what it
    cannot read or tell — no record, a number the record does not list, a finding without a file,
    no single open same-repository PR of the record's branch, a `--pr` of another branch, a PR
-   whose head does not hold the reviewed commit, a fork's PR, a closed or merged PR, a
+   whose head does not hold the reviewed commit, a fork's PR, a closed or merged PR, a record
+   whose run directory cannot be read, a
    detached-HEAD record with neither a PR of its own nor `--pr`, no `gh` answer about the PR;
    exit 1 is the post failing (`gh` refusing it, the PR's head not fetched from `origin`, a moved
    head over its line, no reviewed commit, a review of uncommitted work), named in one line with

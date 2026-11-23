@@ -42,6 +42,7 @@ pub fn has_commit(repo: &Path, commit: &str) -> bool {
         .arg("-C")
         .arg(repo)
         .args(["cat-file", "-e", &format!("{commit}^{{commit}}")])
+        .stderr(std::process::Stdio::null())
         .status()
         .unwrap()
         .success()

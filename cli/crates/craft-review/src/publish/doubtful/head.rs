@@ -1,4 +1,5 @@
-//! Whether the PR the record names takes the comment now, and on which commit: the PR open, its
+//! Whether the PR the record names holds the finding's comment already, whether it takes the
+//! comment now, and on which commit: the PR open, its
 //! head holding the reviewed commit (fetched from `origin`'s `pull/<n>/head` when this repository
 //! lacks it, bounded and never prompting), and the reviewed commit itself when the head moved past
 //! it without touching the finding's line.
@@ -6,25 +7,50 @@
 use std::path::Path;
 
 use super::super::after::moved_over;
-use super::super::gh::{Moved, read::Pr};
-use super::super::{short, sort};
+use super::super::gh::{Moved, read, read::Pr};
+use super::super::{body, short, sort};
 use super::PostError;
 use super::request::Chosen;
 use crate::cancel::Cancel;
+use crate::gate::runner::Runner;
 
-/// Refuses a PR that is not open, or whose head does not hold `reviewed`.
-pub(super) fn postable(repo: &Path, p: &Pr, reviewed: &str) -> Result<(), PostError> {
-    if p.state != "OPEN" {
-        let state = if p.state.is_empty() {
-            "of no state gh named"
-        } else {
-            &p.state
-        };
-        return Err(PostError::Pr(format!(
-            "PR #{} is {state}, not open: a doubtful finding is posted only on an open PR",
-            p.number
-        )));
+/// Whether the finding's comment is on `p` already: on its line, or on its file (where GitHub put
+/// it when it refused the line).
+pub(super) fn already(
+    runner: &Runner,
+    repo: &Path,
+    p: &Pr,
+    c: &Chosen<'_>,
+) -> Result<bool, PostError> {
+    let seen = read::posted_already(runner, repo, p.number).map_err(|e| {
+        PostError::Gh(format!(
+            "{e} — nothing posted, since what is there already could not be read"
+        ))
+    })?;
+    let first = body::first_line(&c.body).to_owned();
+    let on_line = (c.file.clone(), c.line.map_or(0, u64::from), first.clone());
+    Ok(seen.contains(&(c.file.clone(), 0, first)) || seen.contains(&on_line))
+}
+
+/// Refuses a PR that is not open.
+pub(super) fn open(p: &Pr) -> Result<(), PostError> {
+    if p.state == "OPEN" {
+        return Ok(());
     }
+    let state = if p.state.is_empty() {
+        "of no state gh named"
+    } else {
+        &p.state
+    };
+    Err(PostError::Pr(format!(
+        "PR #{} is {state}, not open: a doubtful finding is posted only on an open PR",
+        p.number
+    )))
+}
+
+/// Refuses a PR whose head does not hold `reviewed`, the head fetched from `origin` first when
+/// this repository lacks it.
+pub(super) fn holding(repo: &Path, p: &Pr, reviewed: &str) -> Result<(), PostError> {
     crate::rereview::branch::fetch_pr_head(repo, p.number, &p.head, &Cancel::default()).map_err(
         |e| {
             PostError::Fetch(format!(

@@ -65,7 +65,8 @@ pub fn gh(bin: &Path, body: &str) {
     std::fs::set_permissions(&gh, std::fs::Permissions::from_mode(0o755)).unwrap();
 }
 
-/// A repository on `feat/x` with one review record carrying doubtful finding 1, and a stand-in
+/// A repository on `feat/x` with one review record carrying doubtful finding 1, its run's state
+/// in `run` (a review of committed work), and a stand-in
 /// `gh` whose PR 5 of `feat/x` sits at the reviewed head — `pr view` answers with `bin/view` when it
 /// exists, and the post fails (HTTP 500) while `bin/fail-post` exists.
 pub struct Posting {
@@ -74,6 +75,8 @@ pub struct Posting {
     pub repo: std::path::PathBuf,
     pub bin: std::path::PathBuf,
     pub record: std::path::PathBuf,
+    /// The record's run directory (`cliRun`), its `state.json` holding the review's `diff.dirty`.
+    pub run: std::path::PathBuf,
     pub head: String,
 }
 
@@ -94,7 +97,10 @@ impl Posting {
             .path()
             .join("2026-11-01T10-00-00Z-workflow-review.json");
         let finding = json!({"n": 1, "severity": "Medium", "title": "t", "file": "a.rs", "line": 3, "why": "w", "fix": "f", "source": "intent", "toolRule": "", "outsideDiff": false});
-        let mut sorted = json!({"project": repo, "branch": "feat/x", "head": head, "sorting": {"defect": 0, "doubtful": 1, "inDiffJudged": true, "findings": [finding]}});
+        let run = dir.path().join("run");
+        std::fs::create_dir_all(&run).unwrap();
+        std::fs::write(run.join("state.json"), r#"{"diff": {"dirty": false}}"#).unwrap();
+        let mut sorted = json!({"project": repo, "branch": "feat/x", "head": head, "cliRun": run, "sorting": {"defect": 0, "doubtful": 1, "inDiffJudged": true, "findings": [finding]}});
         for (k, v) in extra.as_object().unwrap() {
             if k == "sorting" {
                 for (sk, sv) in v.as_object().unwrap() {
@@ -122,6 +128,7 @@ impl Posting {
             repo,
             bin,
             record,
+            run,
             head,
         }
     }

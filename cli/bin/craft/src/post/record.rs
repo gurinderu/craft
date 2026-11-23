@@ -30,7 +30,7 @@ pub(super) struct Record {
     pub(super) branch: Option<String>,
     /// The PR the run published on (`prComments.pr`), when it names one.
     pub(super) pr: Option<u64>,
-    /// The review read uncommitted work (`dirty`).
+    /// The review read uncommitted work: its own `diff.dirty`, from the run's state.
     pub(super) dirty: bool,
 }
 
@@ -55,6 +55,28 @@ pub(super) fn read(file: &Path) -> Result<Record, String> {
             .and_then(|p| p.get("pr"))
             .and_then(Value::as_u64)
             .filter(|&n| n > 0),
-        dirty: r.get("dirty") == Some(&Value::Bool(true)),
+        dirty: reviewed_dirty(text_of("cliRun").as_deref())?,
     })
+}
+
+/// Whether the review read uncommitted work, as the review itself judged it when it started
+/// (`diff.dirty` in the state of the run the record names, `cliRun`: tracked files only) — not the
+/// record's own `dirty`, the filing's look at the checkout, untracked files included. A run that
+/// cannot be read tells nothing, and nothing is posted.
+fn reviewed_dirty(run: Option<&str>) -> Result<bool, String> {
+    let Some(run) = run.filter(|r| !r.is_empty()) else {
+        return Err("the record names no review run directory (cliRun), so whether the review read uncommitted work cannot be told: nothing posted".into());
+    };
+    let state = craft_review::state::state_path(Path::new(run));
+    let gone = |why: String| {
+        format!(
+            "the review's run directory {run} cannot be read ({why}), so whether it read uncommitted work cannot be told: nothing posted"
+        )
+    };
+    let text = std::fs::read_to_string(&state).map_err(|e| gone(e.to_string()))?;
+    let v: Value = serde_json::from_str(&text).map_err(|e| gone(e.to_string()))?;
+    v.get("diff")
+        .and_then(|d| d.get("dirty"))
+        .and_then(Value::as_bool)
+        .ok_or_else(|| gone(format!("{} names no diff.dirty", state.display())))
 }

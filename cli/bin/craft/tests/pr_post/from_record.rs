@@ -1,5 +1,5 @@
 //! `craft review post` reading its run record: the PR the review published on, lines not judged,
-//! the defect chosen, and uncommitted work reviewed.
+//! and the defect chosen.
 
 use serde_json::{Value, json};
 
@@ -53,18 +53,4 @@ fn a_defect_is_posted_without_the_ask_and_recorded_as_a_defect() {
         record(&f)["sorting"]["choices"]["1"]["choice"],
         json!("defect")
     );
-}
-
-#[test]
-fn a_review_of_uncommitted_work_posts_nothing() {
-    let f = Posting::with(&json!({"dirty": true}));
-    let out = f.post(&["--n", "1", "--as", "question"]);
-    assert_eq!(out.status.code(), Some(1), "{}", text(&out.stderr));
-    assert!(
-        text(&out.stderr).contains("uncommitted changes"),
-        "{}",
-        text(&out.stderr)
-    );
-    assert!(!f.bin.join("sent.json").exists(), "nothing posted");
-    assert!(record(&f)["sorting"].get("choices").is_none());
 }

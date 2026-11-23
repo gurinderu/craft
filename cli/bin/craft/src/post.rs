@@ -113,12 +113,11 @@ fn posted(args: &PostArgs) -> Result<Out, Stop> {
     drop(std::fs::remove_dir_all(&scratch));
     let posting = posting.map_err(|e| match e {
         PostError::Finding(why) | PostError::Pr(why) => Stop::Refused(why),
-        other @ (PostError::Gh(_) | PostError::Fetch(_) | PostError::Refused(_)) => {
-            Stop::Failed(anyhow!(
-                "{other} (record {}: a retry names it with --record)",
-                file.display()
-            ))
-        }
+        other @ (PostError::Gh(_) | PostError::Fetch(_)) => Stop::Failed(anyhow!(
+            "{other} (record {}: a retry names it with --record)",
+            file.display()
+        )),
+        other @ PostError::Refused(_) => Stop::Failed(anyhow!(other)),
     })?;
     let choice = if question { "question" } else { "defect" };
     #[expect(
@@ -136,9 +135,10 @@ fn posted(args: &PostArgs) -> Result<Out, Stop> {
         Err(why) => {
             drop(writeln!(
                 std::io::stderr().lock(),
-                "craft review post WARNING: the choice was not recorded: {why} — record it with `craft runs sorting-choice --n {} --choice {choice} --record {}`",
+                "craft review post WARNING: the choice was not recorded: {why} — record it with `craft runs sorting-choice --n {} --choice {choice} --record '{}' --store '{}'`",
                 args.n,
-                file.display()
+                file.display(),
+                store.display()
             ));
             Value::Null
         }

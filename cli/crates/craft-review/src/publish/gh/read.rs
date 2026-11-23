@@ -44,17 +44,18 @@ fn pr_of(v: &Value) -> Result<Pr, String> {
     })
 }
 
-/// The open pull requests whose head branch is `branch`.
-pub(in crate::publish) fn open_prs(
+/// The pull requests whose head branch is `branch`, in `state` (`open`, or `all`).
+pub(in crate::publish) fn prs(
     runner: &Runner,
     repo: &Path,
     branch: &str,
+    state: &str,
 ) -> Result<Vec<Pr>, String> {
     if branch.starts_with('-') {
         return Err(format!("{branch:?} is no branch name"));
     }
     let args = [
-        "pr", "list", "--head", branch, "--state", "open", "--json", FIELDS,
+        "pr", "list", "--head", branch, "--state", state, "--json", FIELDS,
     ];
     let out = gh(runner, repo, &args)?;
     let v: Value =

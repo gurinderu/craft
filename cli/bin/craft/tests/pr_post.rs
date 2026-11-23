@@ -17,3 +17,5 @@ mod posting;
 mod rejections;
 #[path = "pr_post/support.rs"]
 mod support;
+#[path = "pr_post/which_record.rs"]
+mod which_record;

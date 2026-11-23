@@ -17,29 +17,42 @@ pub(super) fn full<'a>(d: &Doubtful<'a>) -> Option<&'a str> {
         .filter(|h| matches!(h.len(), 40 | 64) && request::is_sha(h))
 }
 
+/// The PR the record's review read, and how far it is trusted before its comments are read.
+pub(super) enum Found {
+    /// The record's own: the PR it published on, or the one open PR of its branch — a comment of
+    /// the finding on it is the record's, so a retry finds it first.
+    Own(Pr),
+    /// Named with `--pr`: its head must hold the reviewed commit before a comment on it counts.
+    Named(Pr),
+    /// No open PR of the record's branch: its closed same-repository ones, on which an earlier
+    /// post may sit, and why nothing can be posted otherwise.
+    Closed(Vec<Pr>, String),
+}
+
 /// The pull request the record's review read (realm @nick/craft, node #270: the PR is never
 /// guessed by the branch checked out now), same-repository: the PR the run published on
 /// (`prComments.pr`, the PR a detached `pr=<n>` review was started with); else, for a record of a
 /// branch, `pr` when its head branch is the record's, or without `pr` the one open PR whose head is
 /// that branch — a fork's PR of a branch of the same name is not this record's; else, for a record
 /// of a detached HEAD, `pr`. Whether it is open and its head holds the reviewed commit is
-/// [`super::head::postable`]'s to judge, once its comments are read.
+/// [`super::head`]'s to judge.
 pub(super) fn which_pr(
     runner: &Runner,
     repo: &Path,
     d: &Doubtful<'_>,
     pr: Option<u64>,
-) -> Result<Pr, PostError> {
+) -> Result<Found, PostError> {
     let branch = d.branch.filter(|b| !b.is_empty() && *b != "HEAD");
     match (d.record_pr, pr, branch) {
         (Some(rp), Some(n), _) if rp != n => Err(PostError::Pr(format!(
             "PR #{n} is not PR #{rp}, the one the review published on: drop --pr or name #{rp}"
         ))),
+        (Some(n), _, _) => Ok(Found::Own(same_repo(view(runner, repo, n)?)?)),
         (None, None, Some(b)) => only_pr(runner, repo, b),
         (None, Some(n), Some(b)) => {
             let p = view(runner, repo, n)?;
             if p.head_ref == b {
-                same_repo(p)
+                Ok(Found::Named(same_repo(p)?))
             } else {
                 Err(PostError::Pr(format!(
                     "PR #{n} has head branch {}, not the record's {b}: name the PR of the reviewed branch",
@@ -47,22 +60,33 @@ pub(super) fn which_pr(
                 )))
             }
         }
-        (Some(n), _, _) | (None, Some(n), None) => same_repo(view(runner, repo, n)?),
+        (None, Some(n), None) => Ok(Found::Named(same_repo(view(runner, repo, n)?)?)),
         (None, None, None) => Err(PostError::Pr(
             "the record names no branch and no PR (a review on a detached HEAD that published nothing): name the PR it reviewed with --pr".into(),
         )),
     }
 }
 
-/// The one open same-repository PR whose head branch is `branch`.
-fn only_pr(runner: &Runner, repo: &Path, branch: &str) -> Result<Pr, PostError> {
-    let mut prs = read::open_prs(runner, repo, branch).map_err(PostError::Pr)?;
-    prs.retain(|p| !p.cross_repository);
+/// The one open same-repository PR whose head branch is `branch`; with none, its closed ones.
+fn only_pr(runner: &Runner, repo: &Path, branch: &str) -> Result<Found, PostError> {
+    let ours = |state| -> Result<Vec<Pr>, PostError> {
+        let mut prs = read::prs(runner, repo, branch, state).map_err(PostError::Pr)?;
+        prs.retain(|p| !p.cross_repository);
+        Ok(prs)
+    };
+    let mut prs = ours("open")?;
     match prs.len() {
-        1 => Ok(prs.remove(0)),
-        0 => Err(PostError::Pr(format!(
-            "no open PR of this repository has the record's branch {branch} as its head: name it with --pr"
-        ))),
+        1 => Ok(Found::Own(prs.remove(0))),
+        0 => {
+            let mut closed = ours("all")?;
+            closed.retain(|p| p.state != "OPEN");
+            Ok(Found::Closed(
+                closed,
+                format!(
+                    "no open PR of this repository has the record's branch {branch} as its head: name it with --pr"
+                ),
+            ))
+        }
         k => Err(PostError::Pr(format!(
             "{k} open PRs of this repository have the record's branch {branch} as their head: name one with --pr"
         ))),

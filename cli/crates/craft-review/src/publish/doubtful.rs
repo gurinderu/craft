@@ -11,20 +11,21 @@
 
 use std::path::Path;
 
-use serde::Serialize;
 use serde_json::Value;
 
-use super::gh::read;
 use super::gh::send::To;
-use super::{Defect, PostSetup, body, short};
+use super::{Defect, PostSetup, short};
 use crate::gate::runner::Runner;
+use target::Found;
 
 pub use error::PostError;
+pub use posting::Posting;
 
 mod error;
 mod head;
 #[cfg(test)]
 mod parity;
+mod posting;
 mod request;
 mod target;
 
@@ -46,22 +47,6 @@ pub struct Doubtful<'a> {
     /// The review read uncommitted work (the record's `dirty`): its lines are not the PR's, and
     /// nothing is posted.
     pub dirty: bool,
-}
-
-/// What came of posting it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Posting {
-    pub pr: u64,
-    pub url: String,
-    /// The commit the comment is on.
-    pub commit: String,
-    pub posted: bool,
-    /// Its comment was on the PR already, so nothing was posted.
-    pub already: bool,
-    /// Posted on its file, its line outside the diff or refused by GitHub.
-    pub to_file: bool,
-    pub reason: String,
 }
 
 /// Posts `d` on its branch's pull request (`pr`, checked against it, or the one open
@@ -89,7 +74,31 @@ pub fn post(
     }
     let runner = Runner::new(setup.budget, setup.path.clone(), scratch.to_path_buf());
     let reviewed = target::full(d).ok_or_else(|| PostError::Refused(target::NO_REVIEWED.into()))?;
-    let p = target::which_pr(&runner, repo, d, pr)?;
+    // The record's own PR is read for the finding's comment before its state and head are
+    // judged, so a retry finds what it posted even once the PR closed or its head moved; a PR
+    // named with --pr first shows it holds the reviewed commit.
+    let p = match target::which_pr(&runner, repo, d, pr)? {
+        Found::Own(p) => p,
+        Found::Named(p) => {
+            head::holding(repo, &p, reviewed)?;
+            p
+        }
+        Found::Closed(prs, why) => {
+            for p in prs {
+                if head::already(&runner, repo, &p, &c)?
+                    && head::holding(repo, &p, reviewed).is_ok()
+                {
+                    return Ok(Posting::already(&p, reviewed));
+                }
+            }
+            return Err(PostError::Pr(why));
+        }
+    };
+    if head::already(&runner, repo, &p, &c)? {
+        return Ok(Posting::already(&p, reviewed));
+    }
+    head::open(&p)?;
+    head::holding(repo, &p, reviewed)?;
     let mut out = Posting {
         pr: p.number,
         url: p.url.clone(),
@@ -99,24 +108,6 @@ pub fn post(
         to_file: false,
         reason: String::new(),
     };
-    // Before the PR's state and head are judged: a retry finds the comment it posted already
-    // even once the PR closed or its head moved over the line.
-    let seen = read::posted_already(&runner, repo, p.number).map_err(|e| {
-        PostError::Gh(format!(
-            "{e} — nothing posted, since what is there already could not be read"
-        ))
-    })?;
-    let first = body::first_line(&c.body).to_owned();
-    let on_line = (c.file.clone(), c.line.map_or(0, u64::from), first.clone());
-    if seen.contains(&(c.file.clone(), 0, first)) || seen.contains(&on_line) {
-        out.already = true;
-        out.reason = format!(
-            "its comment is on PR #{} {} already: nothing posted",
-            p.number, p.url
-        );
-        return Ok(out);
-    }
-    head::postable(repo, &p, reviewed)?;
     let note = head::commit_for(repo, &c, reviewed, &p)?;
     let to = To {
         runner: &runner,
