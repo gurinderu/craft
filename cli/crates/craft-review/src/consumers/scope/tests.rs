@@ -129,3 +129,18 @@ fn the_seam_part_is_held_to_its_own_budget_and_names_what_it_shows() {
     assert!(!block.contains("x/u.rs:80: "), "{block}");
     assert!(block.contains("20 more cut by the budget"), "{block}");
 }
+
+#[test]
+fn a_confined_part_names_an_unsearched_symbol_only_when_declared_under_its_units() {
+    let c = Consumers {
+        symbols: vec![
+            symbol("a", "x/lib.rs", vec![]),
+            symbol("b", "y/lib.rs", vec![]),
+        ],
+        unsearched: vec!["a".into(), "b (over 200 lines)".into()],
+        ..two()
+    };
+    let block = confined_block(&c, &["x".into()], "crate").unwrap();
+    assert!(block.contains(": a"), "{block}");
+    assert!(!block.contains("b (over 200 lines)"), "{block}");
+}

@@ -81,6 +81,14 @@ fn a_paged_start_reads_back_page_by_page_as_the_step_it_wrote() {
     let (mut lines, file, mut last) = body(&first);
     assert_eq!(file, run.join("host-step.out").display().to_string());
     let total = std::fs::read_to_string(&file).unwrap().lines().count();
+    // `review page` from line 1 prints the very page the start printed.
+    assert_eq!(
+        craft(
+            &["review", "page", "--file", &file, "--from", "1"],
+            tmp.path()
+        ),
+        first
+    );
     while last < total {
         let from = (last + 1).to_string();
         let (more, _, to) = body(&craft(

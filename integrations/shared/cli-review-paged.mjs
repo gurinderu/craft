@@ -33,7 +33,7 @@ export function pageOf(stdout, from) {
   if (lines.at(-1) === '') lines.pop()
   const frame = frameOf(lines[0] ?? '')
   const tail = /^craft-page (\d+)$/.exec(lines.at(-1) ?? '')
-  if (!frame || !tail || lines.length < 2) return null
+  if (!frame || !tail) return null
   const last = Number(tail[1])
   const body = lines.slice(1, -1)
   return body.length === last - from + 1 ? { ...frame, last, lines: body } : null

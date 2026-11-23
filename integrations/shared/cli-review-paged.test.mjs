@@ -16,6 +16,12 @@ const framed = (lines, total, from) => `craft-out ${FILE} ${String(total)}\n${li
 /** A service answer carrying `stdout`. @param {string} stdout */
 const ran = stdout => ({ exitCode: 0, stdout, stderr: '' })
 
+/** The command output of a read answer, '' when there is none. @param {unknown} got */
+const stdoutOf = got => {
+  const out = commandOutput(got)
+  return 'stdout' in out ? out.stdout : ''
+}
+
 const LINES = ['{"run":"/run",', '"done":false,', '"tasks":[]}']
 
 test('a page is read only with its frame and the count of lines it names', () => {
@@ -42,7 +48,7 @@ test('the pages join into the step, each asked from the line after the last', as
     return ran(framed(LINES.slice(from - 1, from), 3, from))
   })
   assert.deepEqual(asked, [2, 3])
-  assert.deepEqual(JSON.parse(String(commandOutput(got).stdout)), { run: '/run', done: false, tasks: [] })
+  assert.deepEqual(JSON.parse(stdoutOf(got)), { run: '/run', done: false, tasks: [] })
 })
 
 test('a page cut once is asked again; cut twice, the step is said cut, never parsed', async () => {
@@ -51,7 +57,7 @@ test('a page cut once is asked again; cut twice, the step is said cut, never par
     n++ === 0 ? ran('craft-out /run/host-step.out 3\n"tas') : ran(framed(LINES.slice(2), 3, 3)),
   )
   assert.equal(n, 2)
-  assert.deepEqual(JSON.parse(String(commandOutput(once).stdout)), { run: '/run', done: false, tasks: [] })
+  assert.deepEqual(JSON.parse(stdoutOf(once)), { run: '/run', done: false, tasks: [] })
   const twice = await readPaged(ran(framed(LINES.slice(0, 2), 3, 1)), async () => ran('craft-out /run/host-step.out 3\n'))
   assert.deepEqual(commandOutput(twice), { error: `the command's output could not be read whole: its page from line 3 of ${FILE} came back cut twice` })
 })
@@ -64,7 +70,7 @@ test('a first page cut is read again from the file it names', async () => {
     return ran(framed(LINES.slice(from - 1), 3, from))
   })
   assert.deepEqual(asked, [1])
-  assert.deepEqual(JSON.parse(String(commandOutput(got).stdout)), { run: '/run', done: false, tasks: [] })
+  assert.deepEqual(JSON.parse(stdoutOf(got)), { run: '/run', done: false, tasks: [] })
 })
 
 test('a step past the page bound is given up, not read for ever', async () => {
@@ -110,4 +116,16 @@ test('the driver reads a paged submit through `craft review page` and goes on wi
   const pageCall = run.calls.find(c => c.label === 'step:submit:1:page')
   assert.match(String(pageCall?.prompt), new RegExp(`^/opt/craft review page --file '${file}' --from 3$`, 'm'))
   assert.match(run.report, /^## Verdict\n\n⛔ Block/)
+})
+
+test('a frame naming no absolute file, or an empty page, is said cut, not read as an empty step', async () => {
+  const unnamed = await readPaged(ran('craft-out host-step.out 3\n{"run":"/run",\ncraft-page 1\n'), async () => ran(''))
+  assert.deepEqual(commandOutput(unnamed), { error: "the command's output could not be read whole: its first page named no file" })
+  let n = 0
+  const empty = await readPaged(ran(framed(LINES.slice(0, 1), 3, 1)), async () => {
+    n++
+    return ran(`craft-out ${FILE} 3\ncraft-page 1\n`)
+  })
+  assert.equal(n, 2, 'an empty page is asked once more, then given up')
+  assert.deepEqual(commandOutput(empty), { error: `the command's output could not be read whole: its page from line 2 of ${FILE} came back cut twice` })
 })

@@ -87,3 +87,17 @@ fn a_paged_step_is_written_to_its_run_directory() {
     assert_eq!(back, crate::printed::for_host(step));
     assert!(saved.lines().count() > 1, "{saved}");
 }
+
+#[test]
+fn a_page_holds_as_many_whole_lines_as_fit_its_bound() {
+    // Lines of 99 characters, 100 with their newline: a page holds exactly PAGE_CHARS / 100.
+    let text = vec!["y".repeat(99); 200].join("\n");
+    let mut out = Vec::new();
+    page(&mut out, std::path::Path::new("/f"), &text, 1).unwrap();
+    let out = String::from_utf8(out).unwrap();
+    assert!(
+        out.ends_with(&format!("craft-page {}\n", PAGE_CHARS / 100)),
+        "{}",
+        out.lines().last().unwrap()
+    );
+}
