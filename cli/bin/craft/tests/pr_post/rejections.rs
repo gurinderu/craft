@@ -1,4 +1,5 @@
-//! `craft pr rejections`: a PR's threads asked of gh, or read from a saved answer.
+//! `craft pr rejections`: a PR's threads asked of gh — a stand-in that answers only a query asking
+//! whether the PR is a fork's — or read from a saved answer.
 
 use serde_json::{Value, json};
 
@@ -29,7 +30,7 @@ fn a_prs_threads_are_asked_of_gh_and_printed_as_the_javascript_reader_printed_th
     gh(
         &bin,
         &format!(
-            "case \"$1 $2\" in\n  \"repo view\") echo '{{\"owner\":{{\"login\":\"o\"}},\"name\":\"r\"}}' ;;\n  \"pr view\") echo '{{\"number\":9}}' ;;\n  \"api graphql\") cat '{}' ;;\n  *) exit 3 ;;\nesac",
+            "case \"$1 $2\" in\n  \"repo view\") echo '{{\"owner\":{{\"login\":\"o\"}},\"name\":\"r\"}}' ;;\n  \"pr view\") echo '{{\"number\":9}}' ;;\n  \"api graphql\") case \"$*\" in *isCrossRepository*) cat '{}' ;; *) echo 'the query asks no isCrossRepository' >&2; exit 4 ;; esac ;;\n  *) exit 3 ;;\nesac",
             answer.display()
         ),
     );
@@ -106,7 +107,7 @@ fn a_named_pr_and_repository_reach_gh_the_names_as_strings() {
     gh(
         &bin,
         &format!(
-            "case \"$1 $2\" in\n  \"api graphql\") cat '{}' ;;\n  *) exit 3 ;;\nesac",
+            "case \"$1 $2\" in\n  \"api graphql\") case \"$*\" in *isCrossRepository*) cat '{}' ;; *) echo 'the query asks no isCrossRepository' >&2; exit 4 ;; esac ;;\n  *) exit 3 ;;\nesac",
             answer.display()
         ),
     );
