@@ -2,8 +2,9 @@
 
 A runbook is a Markdown file whose steps an operator runs against live systems: shell blocks, or
 numbered steps, that call a cluster, a forge, a cloud, a database or a host (`kubectl`, `gh`,
-`helm`, `terraform`, `curl`, `psql`, `aws`, `nix` and the like). The review takes such a file as a
-procedure, not as prose: its defects are what happens to the system when someone follows it.
+`helm`, `terraform`, `curl` to a URL, `psql`, `aws`, `ssh` and the like; a build or a package
+manager's command, which runs in the checkout, is no such step). The review takes such a file as a
+procedure, not as prose, when its change touches a step: its defects are what happens to the system when someone follows it.
 
 ## Walk it as the operator will
 
@@ -24,6 +25,12 @@ Then ask, step by step:
    that the repository's code, manifests or charts no longer use. Open them.
 5. **Can it run as written?** A missing namespace or context flag, a construct that breaks when
    pasted, a placeholder never named.
+6. **What does it expose or open?** A password, token or key on a command line or in a URL, a
+   secret echoed, a credential fetched from an unpinned URL or piped into a shell, a grant wider
+   than the step needs, a destructive command with no guard (a dry run, a confirmation, a check
+   of the target) before it.
+
+The review reads the procedure; it never runs a step of it.
 
 ## Other systems' behaviour
 
@@ -37,6 +44,7 @@ operator then does (sweeps.md §5).
 ## Severity
 
 Rate by the harm of following the procedure (severity.md): a step that deletes or corrupts what
-cannot be restored is `data-loss` or `irreversible`; one that wedges a system an operator must
-recover by hand is `operator-recovery`; a wrong command that fails loudly and harms nothing is
-optional. Wording, formatting and style are not findings.
+cannot be restored is `data-loss` or `irreversible`; a secret exposed or access widened is
+`security`; one that wedges a system an operator must recover by hand is `operator-recovery`; a
+wrong command that fails loudly and harms nothing is optional. Wording, formatting and style are
+not findings.

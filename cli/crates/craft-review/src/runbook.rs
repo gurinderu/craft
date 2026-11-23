@@ -1,44 +1,47 @@
-//! The runbook signal (realm @nick/craft, node #620): a changed Markdown file that carries operator
-//! steps — a shell block, or a numbered procedure, whose lines run a command against an external
-//! system — goes to the `runbook` profile and its lens instead of being left out as prose. A line
-//! heuristic, not a Markdown parser: it reads the file as the working tree holds it.
+//! The runbook signal (realm @nick/craft, node #620): a changed Markdown file whose changed lines
+//! touch an operator step — a command line inside a shell fence, or a numbered step holding one,
+//! that acts on a system outside the checkout — goes to the `runbook` profile and its lens instead
+//! of being left out as prose. A line heuristic, not a Markdown parser: it reads the file as the
+//! working tree holds it ([`changed`]), the fences by `CommonMark`'s rule ([`fence`]) and a command
+//! line by its words ([`command`]).
 
-use std::path::Path;
+mod changed;
+mod command;
+mod fence;
 
-/// Commands that act on a system outside the checkout: a cluster, a forge, a cloud, a database, a
-/// host. A build or a package manager's command (`cargo`, `npm`) runs in the checkout and is left out.
-#[rustfmt::skip]
-const COMMANDS: &[&str] = &[
-    "kubectl", "helm", "kustomize", "virtctl", "kubeadm", "flux", "argocd", "linstor", "oc",
-    "terraform", "tofu", "pulumi", "ansible", "ansible-playbook", "gh", "glab", "curl", "wget",
-    "psql", "pg_dump", "pg_restore", "mysql", "redis-cli", "mongosh", "etcdctl", "vault", "consul",
-    "aws", "gcloud", "az", "doctl", "nix", "nixos-rebuild", "colmena", "deploy", "docker", "podman",
-    "ssh", "scp", "rsync", "systemctl", "journalctl",
-];
+pub(crate) use changed::taken;
 
-/// The info strings of a fenced block that holds shell; an empty one counts too.
-const SHELLS: &[&str] = &["sh", "bash", "shell", "console", "zsh", "shell-session"];
+use command::runs_command;
+use fence::Fence;
 
-/// Whether `line`, a prompt (`$ `, `# `) and a `sudo` stripped, opens with one of [`COMMANDS`].
-fn runs_command(line: &str) -> bool {
-    let mut line = line.trim_start();
-    for prompt in ["$ ", "# ", "sudo "] {
-        line = line.strip_prefix(prompt).unwrap_or(line).trim_start();
-    }
-    let word = line
-        .split(|c: char| c.is_whitespace() || c == ';')
-        .next()
-        .unwrap_or("");
-    COMMANDS.contains(&word)
+/// One logical command of a shell block: its physical lines (joined by a trailing `\`) and text.
+#[derive(Default)]
+struct Pending {
+    lines: Vec<u32>,
+    text: String,
 }
 
-/// A fence's opening (```` ``` ```` or `~~~`) and its info string's first word, lower-cased.
-fn fence(line: &str) -> Option<(&str, String)> {
-    let t = line.trim_start();
-    let mark = ["```", "~~~"].into_iter().find(|m| t.starts_with(m))?;
-    let info = t.trim_start_matches(mark.chars().next()?).trim();
-    let word = info.split([' ', '{', ',']).next().unwrap_or("");
-    Some((mark, word.to_lowercase()))
+impl Pending {
+    /// Takes line `n` of a shell block into the command; once it ends (no trailing `\`), its lines
+    /// join `out` when it runs a command. A comment line that opens no command is skipped.
+    fn take(&mut self, line: &str, n: u32, out: &mut Vec<u32>) {
+        let t = line.trim();
+        if self.lines.is_empty() && (t.is_empty() || t.starts_with('#')) {
+            return;
+        }
+        self.lines.push(n);
+        let (body, continued) = t.strip_suffix('\\').map_or((t, false), |b| (b, true));
+        self.text.push_str(body);
+        self.text.push(' ');
+        if continued {
+            return;
+        }
+        if runs_command(&self.text) {
+            out.append(&mut self.lines);
+        }
+        self.lines.clear();
+        self.text.clear();
+    }
 }
 
 /// Whether `line` is a numbered step (`1.`, `2)`) holding an inline code span that runs a command.
@@ -52,46 +55,33 @@ fn numbered_step(line: &str) -> bool {
     rest.split('`').skip(1).step_by(2).any(runs_command)
 }
 
-/// Whether Markdown `text` carries operator steps: a fenced block whose info string is a shell or
-/// empty holding a line that runs one of [`COMMANDS`], or a numbered step whose inline code does.
+/// The 1-based lines of Markdown `text` that are steps: each line of a command a shell fence runs
+/// (a fence whose info string is a shell or empty), and each numbered step whose inline code runs
+/// one.
 #[must_use]
-pub(crate) fn carries_steps(text: &str) -> bool {
-    let mut open: Option<(&str, bool)> = None;
-    for line in text.lines() {
-        match open {
-            Some((mark, shell)) => {
-                if line.trim_start().starts_with(mark) {
-                    open = None;
-                } else if shell && runs_command(line) {
-                    return true;
-                }
+pub(crate) fn step_lines(text: &str) -> Vec<u32> {
+    let mut out = Vec::new();
+    let mut open: Option<Fence> = None;
+    let mut pending = Pending::default();
+    for (line, n) in text.lines().zip(1u32..) {
+        match open.as_ref().map(|f| (f.closes(line), f.shell)) {
+            Some((true, _)) => {
+                open = None;
+                pending = Pending::default();
             }
-            None => {
-                if let Some((mark, word)) = fence(line) {
-                    open = Some((mark, word.is_empty() || SHELLS.contains(&word.as_str())));
-                } else if numbered_step(line) {
-                    return true;
-                }
-            }
+            Some((false, true)) => pending.take(line, n, &mut out),
+            Some((false, false)) => {}
+            None if numbered_step(line) => out.push(n),
+            None => open = fence::open(line),
         }
     }
-    false
+    out
 }
 
-/// Whether `file` is Markdown, by its extension.
-#[must_use]
-pub(crate) fn is_markdown(file: &str) -> bool {
-    let lower = file.to_lowercase();
-    lower.ends_with(".md") || lower.ends_with(".markdown")
-}
-
-/// What decides, for a changed file, whether it carries operator steps: a Markdown file under `top`
-/// read from the working tree. A file that is not Markdown or cannot be read (deleted) carries none.
-pub(crate) fn reader(top: &Path) -> impl Fn(&str) -> bool + '_ {
-    move |file: &str| {
-        is_markdown(file)
-            && std::fs::read_to_string(top.join(file)).is_ok_and(|t| carries_steps(&t))
-    }
+/// Whether Markdown `text` carries any step ([`step_lines`]).
+#[cfg(test)]
+pub(crate) fn carries_steps(text: &str) -> bool {
+    !step_lines(text).is_empty()
 }
 
 #[cfg(test)]

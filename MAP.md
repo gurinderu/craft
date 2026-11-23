@@ -260,8 +260,9 @@ protocol; `craft review run --backend codex|pi|opencode`, which drives that prot
 `codex exec`, `pi -p` or `opencode run` process, its progress as lines or `--events json`; `craft review probe`, one agent end to end; `filing_worker.rs` isolates a run-store write in a time-bounded child of the same binary; and `craft runs ls | show | stats | check | retro`, the run store read by streaming its files, a table or NDJSON), `crates/craft-agent` (one agent run through a
 backend — the `claude`, `codex`, `pi` or `opencode` CLI — and many under a concurrency cap), `crates/craft-review` (the steps — each changed file to one profile (Rust, Nix, SQL, or the general lenses for source in
 any other language, `content/profiles/`; a Rust or general file whose changed lines hold a query string also gets the
-`sql-queries` lens, `src/embedded_sql.rs`; a Markdown file whose shell blocks or numbered steps run a command against
-an external system goes to the runbook profile, read from the working tree, `src/runbook.rs`; a part that adds a module, crate, public type or format gets the `design`
+`sql-queries` lens, `src/embedded_sql.rs`; a Markdown file whose changed lines touch a step — a shell block's or a
+numbered step's command against an external system — goes to the runbook profile, read from the working tree,
+`src/runbook.rs` and `src/runbook/`; a part that adds a module, crate, public type or format gets the `design`
 lens, seeded with what it adds and, for Rust, the crate graph's new edges and the dev-dependency cycles they close; first round only, `src/design.rs`), the mechanical gate the binary runs itself before any lens (clippy and semgrep
 for Rust, nix flake check, statix and deadnix for Nix: a red check blocks, a diagnostic on a changed line is a seed the
 lenses and verifiers see, a tool not installed is named), a scout per profile whose answer plans its lenses over its own files, the

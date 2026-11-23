@@ -142,7 +142,7 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
         scope,
         ..PromptContext::default()
     };
-    let (tracks, uncovered) = tracks_of(&cwd, &diff.files, &profiles);
+    let (tracks, uncovered, runbook_notes) = tracks_of(&cwd, &diff, &profiles);
     let (optional, unknown) = crate::optional::request(opts.optional.as_deref(), &profiles);
     let notes =
         crate::optional::unknown_note(opts.optional.as_deref().unwrap_or(""), &unknown, &profiles);
@@ -163,7 +163,7 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
         notes: notes.into_iter().chain(pr_note).collect(),
         not_run: Vec::new(),
         capped: Vec::new(),
-        degraded: Vec::new(),
+        degraded: runbook_notes,
         verdict: None,
         exit: None,
         chain,
@@ -206,22 +206,29 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
     first_step(dir, &mut run)
 }
 
-/// Each profile's part of the changed `files` of the checkout `cwd` is in, and the files no
-/// profile covers that carry something to review. Whether a Markdown file carries operator steps
-/// is read from the working tree ([`crate::runbook`]).
+/// Each profile's part of the changed files of `diff`, made in the checkout `cwd` is in, the files
+/// no profile covers that carry something to review, and what the report says of a Markdown file
+/// whose steps could not be judged. Whether a Markdown file's change touches an operator step is
+/// read from the working tree ([`crate::runbook`]).
 pub(crate) fn tracks_of(
     cwd: &Path,
-    files: &[String],
+    diff: &crate::git::Diff,
     profiles: &[Profile],
-) -> (Vec<Track>, Vec<String>) {
-    let top = crate::git::toplevel(cwd).unwrap_or_else(|_| cwd.to_path_buf());
-    let tracks: Vec<Track> = coverage::assign(files, profiles, &crate::runbook::reader(&top))
+) -> (Vec<Track>, Vec<String>, Vec<String>) {
+    let files = &diff.files;
+    let candidates: Vec<String> = files
+        .iter()
+        .filter(|f| profiles.iter().any(|p| p.detect.steps && p.covers(f)))
+        .cloned()
+        .collect();
+    let runbooks = crate::runbook::taken(cwd, &diff.merge_base, &candidates);
+    let tracks: Vec<Track> = coverage::assign(files, profiles, &|f| runbooks.files.contains(f))
         .into_iter()
         .filter_map(|(i, files)| Some(Track::new(&profiles.get(i)?.id, files)))
         .collect();
     let taken = |f: &str| tracks.iter().any(|t| t.files.iter().any(|x| x == f));
     let uncovered = coverage::uncovered(files, taken);
-    (tracks, uncovered)
+    (tracks, uncovered, runbooks.notes)
 }
 
 /// The new run's first step: its tasks, or, with none to run, the run ended at once (with nothing

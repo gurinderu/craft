@@ -1,13 +1,13 @@
 //! Which profile takes each changed file: the first whose suffixes or names match it, else the one
 //! taking the rest (`general`), so a file is reviewed by one profile only and a mixed diff is
 //! planned per profile over its own files. A profile taking files by their steps (`runbook`) takes
-//! one only when `steps` says it carries them (realm @nick/craft, node #620).
+//! one only when `steps` says its change touches one (realm @nick/craft, node #620).
 
 use crate::profile::Profile;
 
 /// Each profile's part of `files`, in the order of `profiles`, as the profile's index and the
 /// files it takes in diff order; a profile taking none is left out. `steps` says whether a file
-/// carries operator steps ([`crate::runbook::reader`]).
+/// touches an operator step ([`crate::runbook::taken`]).
 #[must_use]
 pub fn assign(
     files: &[String],
@@ -64,7 +64,8 @@ mod tests {
     }
 
     #[test]
-    fn each_file_goes_to_one_profile_and_config_and_prose_without_steps_to_none() {
+    fn each_file_goes_to_one_profile_and_config_and_prose_without_steps_to_none_runbooks_even_under_github()
+     {
         let all = Profile::all().unwrap();
         let files = owned(&[
             "web/app.ts",
@@ -91,7 +92,10 @@ mod tests {
                 ("rust".into(), owned(&["src/lib.rs", "Cargo.toml"])),
                 ("nix".into(), owned(&["flake.nix", "flake.lock"])),
                 ("sql".into(), owned(&["db/migrations/0001_init.sql"])),
-                ("runbook".into(), owned(&["RUNBOOK.md"])),
+                (
+                    "runbook".into(),
+                    owned(&["RUNBOOK.md", ".github/RELEASE.md"])
+                ),
                 ("general".into(), owned(&["web/app.ts", "x.py"])),
             ]
         );

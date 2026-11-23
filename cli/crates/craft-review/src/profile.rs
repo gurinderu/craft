@@ -270,24 +270,26 @@ impl Profile {
         files.iter().any(|f| self.covers(f))
     }
 
-    /// Whether the profile reviews `file`: by its suffixes and names, or, a profile taking the
-    /// rest, when it carries code and is no project configuration. A profile taking files by their
-    /// steps never takes project configuration, and takes the rest of its files only when they
-    /// carry steps, which [`crate::coverage::assign`] reads; which of several profiles takes a
-    /// file is its too.
+    /// Whether the profile may review `file` by its name: by its suffixes and names, or, a profile
+    /// taking the rest, when it carries code and is no project configuration. A profile taking files
+    /// by their steps matches its suffixes whatever their case (`RUNBOOK.MD`), and takes a file only
+    /// when its change touches a step, which [`crate::coverage::assign`] is told; which of several
+    /// profiles takes a file is its too.
     #[must_use]
     pub fn covers(&self, file: &str) -> bool {
         if self.detect.rest {
             return !crate::coverage::is_inert(file) && !crate::coverage::is_project_config(file);
         }
-        if self.detect.steps && crate::coverage::is_project_config(file) {
-            return false;
-        }
         let base = file.rsplit('/').next().unwrap_or(file);
+        let named = if self.detect.steps {
+            file.to_ascii_lowercase()
+        } else {
+            file.to_owned()
+        };
         self.detect
             .suffixes
             .iter()
-            .any(|s| file.ends_with(s.as_str()))
+            .any(|s| named.ends_with(s.as_str()))
             || self.detect.names.iter().any(|n| n == base)
     }
 
