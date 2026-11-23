@@ -22,6 +22,7 @@ pub fn counts(line: &Line, detail: Option<&Detail>, here: &Here, git: &dyn Git) 
         && d.lens_scope.as_deref() != Some("delta")
         && d.depth.as_deref() != Some("light")
         && whole(d.path.as_deref())
+        // Gaps in `capped` hold the verdict at Warning, not out (realm @nick/craft, node #541).
         && d.not_run.as_ref().is_some_and(Vec::is_empty)
         && lenses_ran(line.verdict.as_deref(), d.lens_rounds.as_deref())
         && d.base.as_deref().is_some_and(|b| pr_base(b, here, git))
