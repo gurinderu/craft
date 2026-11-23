@@ -9,8 +9,8 @@ use std::path::Path;
 use super::super::after::moved_over;
 use super::super::gh::{Moved, read, read::Pr};
 use super::super::{body, short, sort};
-use super::PostError;
 use super::request::Chosen;
+use super::{PostError, Posting};
 use crate::cancel::Cancel;
 use crate::gate::runner::Runner;
 
@@ -30,6 +30,38 @@ pub(super) fn already(
     let first = body::first_line(&c.body).to_owned();
     let on_line = (c.file.clone(), c.line.map_or(0, u64::from), first.clone());
     Ok(seen.contains(&(c.file.clone(), 0, first)) || seen.contains(&on_line))
+}
+
+/// A retry's earlier comment on a closed same-repository PR of the record's branch, when none is
+/// open: each PR's head checked to hold the reviewed commit first (a fetch that fails is named);
+/// a PR whose comments cannot be read is passed over and named, since the comment may sit there.
+pub(super) fn on_closed(
+    runner: &Runner,
+    repo: &Path,
+    (prs, why): (&[Pr], &str),
+    c: &Chosen<'_>,
+    reviewed: &str,
+) -> Result<Posting, PostError> {
+    let mut unread = Vec::new();
+    for p in prs {
+        match holding(repo, p, reviewed) {
+            Err(e @ PostError::Fetch(_)) => return Err(e),
+            Err(_) => continue,
+            Ok(()) => {}
+        }
+        match already(runner, repo, p, c) {
+            Ok(true) => return Ok(Posting::already(p, reviewed)),
+            Ok(false) => {}
+            Err(e) => unread.push(format!("PR #{}: {e}", p.number)),
+        }
+    }
+    if unread.is_empty() {
+        return Err(PostError::Pr(why.to_owned()));
+    }
+    Err(PostError::Gh(format!(
+        "{why}; the comments of the closed PR(s) of the branch, where an earlier post may sit, could not all be read — {}",
+        unread.join("; ")
+    )))
 }
 
 /// Refuses a PR that is not open.

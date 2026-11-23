@@ -44,8 +44,8 @@ pub struct Doubtful<'a> {
     pub branch: Option<&'a str>,
     /// The PR the run published on (`prComments.pr`), when it names one.
     pub record_pr: Option<u64>,
-    /// The review read uncommitted work (the record's `dirty`): its lines are not the PR's, and
-    /// nothing is posted.
+    /// The review read uncommitted work (`diff.dirty` of the run's state, as the review judged it):
+    /// its lines are not the PR's, and nothing is posted.
     pub dirty: bool,
 }
 
@@ -76,7 +76,7 @@ pub fn post(
     let reviewed = target::full(d).ok_or_else(|| PostError::Refused(target::NO_REVIEWED.into()))?;
     // The record's own PR is read for the finding's comment before its state and head are
     // judged, so a retry finds what it posted even once the PR closed or its head moved; a PR
-    // named with --pr first shows it holds the reviewed commit.
+    // named with --pr, or a closed one of the branch, first shows it holds the reviewed commit.
     let p = match target::which_pr(&runner, repo, d, pr)? {
         Found::Own(p) => p,
         Found::Named(p) => {
@@ -84,14 +84,7 @@ pub fn post(
             p
         }
         Found::Closed(prs, why) => {
-            for p in prs {
-                if head::already(&runner, repo, &p, &c)?
-                    && head::holding(repo, &p, reviewed).is_ok()
-                {
-                    return Ok(Posting::already(&p, reviewed));
-                }
-            }
-            return Err(PostError::Pr(why));
+            return head::on_closed(&runner, repo, (&prs, &why), &c, reviewed);
         }
     };
     if head::already(&runner, repo, &p, &c)? {

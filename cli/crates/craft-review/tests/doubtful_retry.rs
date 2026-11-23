@@ -1,6 +1,7 @@
 //! What a second post of a doubtful finding trusts: on the record's own PR, its earlier comment
 //! even once the PR closed; on a PR named with `--pr`, a matching comment only when that PR's head
-//! holds the reviewed commit.
+//! holds the reviewed commit; on a closed PR of the branch, the head is checked first, a fetch that
+//! fails is named, and a PR whose comments cannot be read is passed over and named.
 
 mod common;
 
@@ -71,4 +72,37 @@ fn a_named_pr_whose_head_lacks_the_reviewed_commit_is_refused_though_it_holds_th
         "{e}"
     );
     assert_eq!(posted(&gh).len(), 1);
+}
+
+#[test]
+fn a_closed_pr_whose_comments_cannot_be_read_is_passed_over_and_named() {
+    let (repo, out) = (fixture(true), tempfile::tempdir().unwrap());
+    let (gh, h) = (out.path().join("gh"), head(repo.path()));
+    let setup = stand_in(&gh, &h);
+    let at = (repo.path(), out.path());
+    assert!(post(at, &h, None, &setup).unwrap().posted);
+    common::post::closed(&gh, &h, &h);
+    std::fs::write(gh.join("fail-comments-of"), "8").unwrap();
+    let again = post(at, &h, None, &setup).unwrap();
+    assert_eq!((again.pr, again.already), (7, true), "{again:?}");
+    common::post::unpost(&gh);
+    let e = post(at, &h, None, &setup).unwrap_err();
+    assert!(
+        matches!(&e, PostError::Gh(w) if w.contains("no open PR") && w.contains("PR #8: ") && w.contains("HTTP 502")),
+        "{e}"
+    );
+    assert!(posted(&gh).is_empty());
+}
+
+#[test]
+fn a_closed_prs_head_that_cannot_be_fetched_is_named_not_read_as_no_pr() {
+    let (repo, out) = (fixture(true), tempfile::tempdir().unwrap());
+    let (gh, h) = (out.path().join("gh"), head(repo.path()));
+    let setup = stand_in(&gh, &h);
+    common::post::closed(&gh, &"e".repeat(40), &h);
+    let e = post((repo.path(), out.path()), &h, None, &setup).unwrap_err();
+    assert!(
+        matches!(&e, PostError::Fetch(w) if w.contains("PR #8's head") && w.contains("fetching it from origin failed")),
+        "{e}"
+    );
 }

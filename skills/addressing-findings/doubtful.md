@@ -42,9 +42,11 @@ The sorting changes nothing in the verdict.
    one whose line is outside the diff, or a line GitHub refuses, becomes a file-level comment, since
    GitHub takes no line comment outside the diff — same marker, same thread reading. A comment
    already on the PR for that finding is not posted again — found before the PR's state and head
-   are judged on the record's own PR (or on a closed PR of its branch, when none is open), so a
-   retry records its choice even once the PR closed or its head moved; on a PR named with `--pr`
-   a comment counts only once that PR's head holds the reviewed commit. It is posted on the reviewed commit the
+   are judged on the record's own PR, so a retry records its choice even once the PR closed or
+   its head moved; with no PR open for the record's branch, its closed PRs are searched, each one's
+   head checked to hold the reviewed commit before its comments are read (a head that cannot be
+   fetched is named, exit 1; a closed PR whose comments cannot be read is passed over and named);
+   on a PR named with `--pr` a comment counts only once that PR's head holds the reviewed commit. It is posted on the reviewed commit the
    record names: when the PR's head moved since, only if the new commits leave its line alone; a
    record naming no reviewed commit posts nothing. It prints one JSON line — the PR, `posted`,
    `already`, `toFile`, `reason`, and `recorded`: the choice it wrote into the record (step 4 is
