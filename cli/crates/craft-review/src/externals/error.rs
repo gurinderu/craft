@@ -4,11 +4,11 @@ use craft_store::js::JsString;
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// A refused invocation, record, version pattern or file.
-    #[error("{}", String::from_utf16_lossy(&.0.units().collect::<Vec<_>>()))]
+    #[error("{}", .0.to_utf8_lossy())]
     Refused(JsString),
     /// A call into the engine ran past its time or memory budget, or threw: refused for the record
     /// whose `versionMatch` it evaluated, or for the manifest discovery was reading.
-    #[error("{}", String::from_utf16_lossy(&.0.units().collect::<Vec<_>>()))]
+    #[error("{}", .0.to_utf8_lossy())]
     Budget(JsString),
     /// Failure of the embedded ECMAScript runtime, distinct from a refused pattern.
     #[error("ECMAScript regex engine: {0}")]

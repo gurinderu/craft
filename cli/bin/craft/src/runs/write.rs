@@ -2,6 +2,7 @@
 //! after a run, by the launcher or a skill, with the binary's own store writer and no node
 //! (`craft_store::cost`, `sorting`, `develop`; realm @nick/craft, nodes #393, #281, #39).
 
+use craft_store::js::JsStr;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -92,7 +93,7 @@ pub fn sorting_choice(
     project: Option<&Path>,
 ) -> Result<ExitCode> {
     let repo = repo(project)?;
-    let number = n.trim().parse::<f64>().unwrap_or(f64::NAN);
+    let number = craft_store::js::number_of_text(n);
     let record = record.map(repo_relative);
     let req = request(&repo, None);
     let (_, line, warned) =
@@ -117,7 +118,7 @@ pub fn develop_cycle(
     std::io::stdin()
         .read_to_string(&mut text)
         .context("reading the cycle on stdin")?;
-    if text.trim().is_empty() {
+    if text.js_trim().is_empty() {
         bail!("no record on stdin");
     }
     let Js::Obj(cycle) =

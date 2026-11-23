@@ -5,6 +5,7 @@
 //! that names no regression is read as harm level `none`. A missing test keeps the level its lens
 //! named. A test gap's reachability is its regression's, on the production line it breaks.
 
+use craft_store::js::JsStr;
 use serde_json::{Map, Value};
 
 use super::{ceiling, effective_level, severity_rank, text};
@@ -29,7 +30,7 @@ fn gap(f: &Value) -> Option<&str> {
 }
 
 fn regression(f: &Value) -> Option<&str> {
-    text(f, "regression").filter(|r| !r.trim().is_empty())
+    text(f, "regression").filter(|r| !r.js_trim().is_empty())
 }
 
 /// Whether `f` is the tests lens's weak assertion that names no regression: read as level `none`.

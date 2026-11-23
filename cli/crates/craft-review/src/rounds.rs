@@ -5,6 +5,7 @@
 //! finding has its key (file, line and title); a lens dispatch that never returns is a hole the
 //! verdict reads as INCOMPLETE.
 
+use craft_store::js::JsStr;
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
@@ -73,7 +74,10 @@ pub fn key(f: &Value) -> String {
             .to_lowercase()
     };
     let line = f.get("line").and_then(Value::as_i64).unwrap_or(0);
-    let title = s("title").split_whitespace().collect::<Vec<_>>().join(" ");
+    let title = s("title")
+        .js_split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
     format!("{}:{line}:{title}", s("file"))
 }
 

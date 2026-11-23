@@ -1,6 +1,7 @@
 //! A rejected thread as the memory skill's decision record, the shape both thread readers write
 //! (realm @nick/craft, node #196: a human's call), anchored to the thread's line (node #230).
 
+use craft_store::js::JsStr;
 use serde_json::Value;
 
 use super::Decision;
@@ -62,8 +63,8 @@ pub(super) fn problem(title: &str, scope: &str, commit: &str, reason: &str) -> O
         return Some("no path or commit to anchor the decision to".into());
     }
     let (path, line) = crate::memory::split_scope_line(scope);
-    if path != js::trim(scope) {
-        let quoted = serde_json::to_string(js::trim(scope)).unwrap_or_default();
+    if path != scope.js_trim() {
+        let quoted = serde_json::to_string(scope.js_trim()).unwrap_or_default();
         return Some(format!(
             "scope {quoted} carries a line: write scope={path}, line={line}"
         ));

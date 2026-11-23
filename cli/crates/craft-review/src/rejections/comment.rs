@@ -3,7 +3,9 @@
 //! lines when the body holds them (a question's kind line no record carries) (realm @nick/craft, nodes #194, #230, #236, #271). A
 //! comment without them is not craft's, and nothing is recorded from it as a finding.
 
-use crate::js::{space, trim};
+use craft_store::js::JsStr;
+
+use crate::js::is_space;
 use crate::publish::body::{LENS, LENS_PREFIX, MARKER, RULE, RULE_PREFIX, fits};
 
 /// The finding a comment carries.
@@ -20,15 +22,15 @@ pub(super) fn read(body: &str) -> Option<Finding> {
     if !body.contains(MARKER) {
         return None;
     }
-    let first = trim(body.split('\n').next().unwrap_or(""));
+    let first = body.split('\n').next().unwrap_or("").js_trim();
     let (severity, rest) = first.strip_prefix('[')?.split_once("] ")?;
-    let starts = rest.chars().next().is_some_and(|c| !space(c));
+    let starts = rest.chars().next().is_some_and(|c| !is_space(c));
     let one_line = !rest.contains(['\r', '\u{2028}', '\u{2029}']);
     if !SEVERITIES.contains(&severity.to_ascii_lowercase().as_str()) || !starts || !one_line {
         return None;
     }
     Some(Finding {
-        title: trim(rest).to_owned(),
+        title: rest.js_trim().to_owned(),
         lens: hidden(body, LENS_PREFIX, LENS),
         tool_rule: hidden(body, RULE_PREFIX, RULE),
     })
@@ -42,6 +44,6 @@ fn hidden(body: &str, prefix: &str, fit: (usize, &str)) -> Option<String> {
         .split(['\n', '\r', '\u{2028}', '\u{2029}'])
         .filter_map(|l| l.strip_prefix(prefix)?.strip_suffix(" -->"))
         .find(|v| fits(v, fit.0, fit.1))?;
-    let v = trim(value);
+    let v = value.js_trim();
     (!v.is_empty()).then(|| v.to_owned())
 }

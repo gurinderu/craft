@@ -4,6 +4,7 @@
 //! is refused (realm @nick/craft, node #102) — each said in a note as an uncovered surface — and
 //! the rest run.
 
+use craft_store::js::JsStr;
 use serde_json::Value;
 
 use super::{candidates, lens_task, metrics_ready};
@@ -27,7 +28,7 @@ fn named(answer: &Value) -> (Vec<String>, String) {
         .get("notes")
         .and_then(Value::as_str)
         .unwrap_or("")
-        .trim()
+        .js_trim()
         .to_owned();
     (lenses, note)
 }

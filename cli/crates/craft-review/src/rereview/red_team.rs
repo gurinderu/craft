@@ -5,6 +5,7 @@
 //! the finding; a dead red team, or one claiming defeat with no attack, leaves it resolved on the
 //! adjudicator's own attack pass, and says so.
 
+use craft_store::js::JsStr;
 use serde_json::Value;
 
 use super::judge::field;
@@ -22,7 +23,10 @@ fn answered(t: &Task) -> Option<&Value> {
 
 /// Whether a severity is Critical or High, case and spacing aside (`isHighSeverity`).
 fn high(severity: &str) -> bool {
-    matches!(severity.trim().to_lowercase().as_str(), "critical" | "high")
+    matches!(
+        severity.js_trim().to_lowercase().as_str(),
+        "critical" | "high"
+    )
 }
 
 /// One red team per Critical or High prior whose adjudicator among `tasks` answered a clean

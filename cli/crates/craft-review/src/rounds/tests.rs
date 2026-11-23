@@ -267,3 +267,9 @@ fn a_sliced_metrics_lens_that_never_returned_is_held_as_a_coverage_gap() {
     assert_eq!(run.not_run.len(), 1, "{:?}", run.not_run);
     assert!(run.not_run[0].contains("errors: ") && !run.not_run[0].contains("complexity"));
 }
+
+#[test]
+fn a_key_collapses_javascripts_whitespace_in_the_title_and_keeps_next_line() {
+    let f = json!({"file": "src/A.rs", "line": 3, "title": "\u{feff}A\u{feff} b\u{85}c "});
+    assert_eq!(key(&f), "src/a.rs:3:a b\u{85}c");
+}

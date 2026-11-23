@@ -6,6 +6,7 @@
 //! rule, only by the same title — unless the match judge gave that pair a verdict ([`resolve`]).
 //! A record that overrides another is tried before it.
 
+use craft_store::js::JsStr;
 use std::collections::BTreeMap;
 
 use serde_json::Value;
@@ -19,8 +20,9 @@ use crate::tool::{self, finding_lenses, is_tool_finding, is_tool_lens, lens_word
 
 /// How far apart a record's line and a finding's may be and still make the pair a candidate.
 const LINE_WINDOW: u64 = 15;
-/// How far apart they may be, with the same lens, to match outright.
-const SURE_WINDOW: u64 = 3;
+/// How far apart they may be, with the same lens, to match outright (`MATCH_SURE_WINDOW`); the
+/// triage's sift holds two findings within it to one site.
+pub const SURE_WINDOW: u64 = 3;
 /// The title overlap that makes a record a candidate.
 const CANDIDATE_OVERLAP: f64 = 0.3;
 /// The title overlap that matches a candidate by the title rule alone.
@@ -64,7 +66,7 @@ pub(super) fn in_scope(file: &str, scope: &str) -> bool {
 
 /// Whether a severity is Critical or High, which no deferred question holds.
 pub(super) fn reraised_by_severity(f: &Value) -> bool {
-    let s = text(f, "severity").trim().to_lowercase();
+    let s = text(f, "severity").js_trim().to_lowercase();
     s == "critical" || s == "high"
 }
 
@@ -77,17 +79,8 @@ pub(super) fn human_decision(d: &PriorDecision) -> bool {
 /// Whether `f`'s severity alone raises it again whatever record `d` says (`reraisedByRank`; realm
 /// @nick/craft, node #196): a Critical always, a High unless `d` is a human's decision.
 pub(super) fn reraised_by_rank(f: &Value, d: &PriorDecision) -> bool {
-    let s = text(f, "severity").trim().to_lowercase();
+    let s = text(f, "severity").js_trim().to_lowercase();
     s == "critical" || (s == "high" && !human_decision(d))
-}
-
-/// A finding's line when it is a positive whole number, else 0.
-fn finding_line(f: &Value) -> u64 {
-    match f.get("line") {
-        Some(Value::Number(n)) => n.as_u64().unwrap_or(0),
-        Some(Value::String(s)) => s.trim().parse().unwrap_or(0),
-        _ => 0,
-    }
 }
 
 /// Whether a tool finding names no rule (`namesNoRule`).
@@ -146,7 +139,7 @@ struct Anchor {
 }
 
 fn anchor_of(f: &Value, d: &PriorDecision) -> Anchor {
-    let line = finding_line(f);
+    let line = crate::js::finding_line(f.get("line"));
     let file = text(f, "file");
     // A line anchors only inside one file: a directory or `.` scope compares no line.
     let one_file = in_scope(&d.scope, file);
@@ -223,7 +216,8 @@ fn same_title_of(f: &Value, d: &PriorDecision) -> &'static str {
     {
         return "";
     }
-    let compares = d.line > 0 && finding_line(f) > 0 && in_scope(&d.scope, file);
+    let compares =
+        d.line > 0 && crate::js::finding_line(f.get("line")) > 0 && in_scope(&d.scope, file);
     match (compares, anchor_of(f, d).near) {
         (false, _) => BY_SAME_TITLE_IN_SCOPE,
         (true, true) => BY_SAME_TITLE,

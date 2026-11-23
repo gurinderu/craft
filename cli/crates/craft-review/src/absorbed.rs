@@ -4,6 +4,7 @@
 //! discarded: the site rides the prior's `why` into the ledger and is handed to its next
 //! adjudicator, outside the capped rationale.
 
+use craft_store::js::JsStr;
 use serde_json::Value;
 
 use crate::prompts::sanitize;
@@ -32,7 +33,7 @@ const MORE_TAIL: &str = " more report(s) at this site)";
 pub fn base_why(why: &str) -> &str {
     let reopened = why.rfind(" (reopened: ").filter(|at| {
         why.get(*at..)
-            .is_some_and(|t| t.trim_end().ends_with(')') && t.matches(')').count() == 1)
+            .is_some_and(|t| t.js_trim_end().ends_with(')') && t.matches(')').count() == 1)
     });
     let why = reopened.and_then(|at| why.get(..at)).unwrap_or(why);
     let cut = SUFFIXES.iter().filter_map(|m| why.rfind(m)).max();
@@ -107,7 +108,7 @@ fn split(why: &str) -> (String, Vec<String>, usize) {
     let mut parts = head.split(MARK);
     let base = parts.next().unwrap_or("").to_owned();
     let sites = parts
-        .map(|s| s.trim().to_owned())
+        .map(|s| s.js_trim().to_owned())
         .filter(|s| !s.is_empty())
         .collect();
     (base, sites, more)

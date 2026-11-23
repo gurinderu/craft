@@ -4,7 +4,7 @@
 use serde_json::Value;
 
 use super::super::PriorDecision;
-use super::{WHY_MAX, body_of, clip, clip_field, lenses_text, line_of};
+use super::{WHY_MAX, body_of, clip, clip_field, lenses_text};
 
 /// A JSON string, escaped as `JSON.stringify` escapes it.
 fn s(text: &str) -> String {
@@ -25,7 +25,7 @@ fn match_finding(f: &Value) -> String {
     object(&[
         ("title", s(&clip_field(f, "title"))),
         ("file", s(&clip_field(f, "file"))),
-        ("line", line_of(f).to_string()),
+        ("line", crate::js::finding_line(f.get("line")).to_string()),
         ("lens", s(&clip(&lenses_text(f), WHY_MAX))),
         ("toolRule", s(&clip_field(f, "toolRule"))),
         ("body", s(&body_of(f))),
@@ -63,7 +63,7 @@ fn rule_pair(i: usize, r: &PriorDecision, f: &Value) -> String {
         ("severity", s(&clip_field(f, "severity"))),
         ("title", s(&clip_field(f, "title"))),
         ("file", s(&clip_field(f, "file"))),
-        ("line", line_of(f).to_string()),
+        ("line", crate::js::finding_line(f.get("line")).to_string()),
         ("lens", s(&clip(&lenses_text(f), WHY_MAX))),
         ("body", s(&body_of(f))),
     ]);

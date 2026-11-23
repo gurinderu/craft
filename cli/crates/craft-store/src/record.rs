@@ -1,7 +1,9 @@
 //! A record's derived parts as `integrations/shared/run-record.mjs` computes them: a finding's fingerprint, the
 //! findings counted by severity, the record's index line and its file name.
 
-use crate::js::{Js, JsString, Obj};
+use std::sync::LazyLock;
+
+use crate::js::{self, Js, JsStr, JsString, Obj};
 
 /// The logger's engine revision (`ENGINE_REVISION`), stamped on every record and checkpoint.
 pub const ENGINE_REVISION: f64 = 4.0;
@@ -16,11 +18,6 @@ fn or_empty(v: Option<&Js>) -> JsString {
         .unwrap_or_default()
 }
 
-/// JavaScript's `trim`: white space and line terminators, the byte-order mark among them.
-fn js_trim(s: &str) -> &str {
-    s.trim_matches(|c: char| c.is_whitespace() || c == '\u{feff}')
-}
-
 /// `titleShingle`: the title's lower-cased words of letters and digits, sorted.
 #[must_use]
 pub fn title_shingle(title: &str) -> String {
@@ -33,23 +30,34 @@ pub fn title_shingle(title: &str) -> String {
     words.join(" ")
 }
 
+/// A constant pattern compiled once; a pattern that does not compile is a defect of this file,
+/// which its tests reach on their first call.
+#[expect(
+    clippy::expect_used,
+    reason = "the patterns are constants the tests compile"
+)]
+fn compiled(pattern: &str) -> regex::Regex {
+    regex::Regex::new(pattern).expect("a constant pattern compiles")
+}
+
+/// `fn `/`impl ` followed by JavaScript whitespace, at an ASCII word boundary.
+static KEYWORD: LazyLock<regex::Regex> =
+    LazyLock::new(|| compiled(&format!(r"(?-u:\b)(?:fn|impl)[{}]+", js::SPACE_CLASS)));
+/// One generic parameter list with no list inside it.
+static GENERIC: LazyLock<regex::Regex> = LazyLock::new(|| compiled(r"<[^<>]*>"));
+
 /// `normalizeSymbol`: lower-cased, with `fn `/`impl ` and every generic parameter list dropped.
 #[must_use]
 pub fn normalize_symbol(symbol: &str) -> String {
-    let lower = symbol.to_lowercase();
-    let keyword = regex::Regex::new(r"(?-u:\b)(?:fn|impl)[\s\u{feff}]+").ok();
-    let generic = regex::Regex::new(r"<[^<>]*>").ok();
-    let mut s = keyword.map_or(lower.clone(), |re| re.replace_all(&lower, "").into_owned());
-    if let Some(re) = generic {
-        loop {
-            let next = re.replace_all(&s, "").into_owned();
-            if next == s {
-                break;
-            }
-            s = next;
+    let mut s = KEYWORD.replace_all(&symbol.to_lowercase(), "").into_owned();
+    loop {
+        let next = GENERIC.replace_all(&s, "").into_owned();
+        if next == s {
+            break;
         }
+        s = next;
     }
-    js_trim(&s).to_owned()
+    s.js_trim().to_owned()
 }
 
 /// `fingerprint`: djb2 over the finding's file, symbol and rule — or its title's words when it
@@ -137,10 +145,6 @@ fn title_units(s: &JsString) -> String {
     title_shingle(&text)
 }
 
-fn unit_space(u: u16) -> bool {
-    char::from_u32(u32::from(u)).is_some_and(|c| c.is_whitespace() || c == '\u{feff}')
-}
-
 fn unit_word(u: u16) -> bool {
     char::from_u32(u32::from(u)).is_some_and(|c| c.is_ascii_alphanumeric() || c == '_')
 }
@@ -158,11 +162,13 @@ fn normalize_units(s: &JsString) -> JsString {
                 && lower
                     .get(i..i + word.len())
                     .is_some_and(|slice| slice.iter().copied().eq(word.encode_utf16()))
-                && lower.get(i + word.len()).is_some_and(|u| unit_space(*u))
+                && lower
+                    .get(i + word.len())
+                    .is_some_and(|u| js::is_space_unit(*u))
         });
         if let Some(word) = keyword {
             i += word.len();
-            while lower.get(i).is_some_and(|u| unit_space(*u)) {
+            while lower.get(i).is_some_and(|u| js::is_space_unit(*u)) {
                 i += 1;
             }
         } else {
@@ -171,15 +177,7 @@ fn normalize_units(s: &JsString) -> JsString {
         }
     }
     strip_generics(&mut out);
-    let start = out
-        .iter()
-        .position(|u| !unit_space(*u))
-        .unwrap_or(out.len());
-    let end = out
-        .iter()
-        .rposition(|u| !unit_space(*u))
-        .map_or(start, |i| i + 1);
-    JsString::from_utf16(out.get(start..end).unwrap_or_default().to_vec())
+    js::trim_text(&JsString::from_utf16(out))
 }
 
 fn strip_generics(out: &mut Vec<u16>) {

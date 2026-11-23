@@ -1,6 +1,8 @@
 //! An agent file's `name` and `description`, read line by line from its YAML frontmatter, and
 //! whether they make it a reviewer.
 
+use craft_store::js::JsStr;
+
 use super::js::{self, Re, compile};
 
 static BLOCK: Re = Re::new(|| compile(r"(?s)^---\r?\n(.*?)\r?\n---"));
@@ -19,14 +21,14 @@ fn field(lines: &[&str], key: &str) -> String {
     let mut value = lines
         .get(at)
         .and_then(|l| l.get(prefix.len()..))
-        .map_or("", js::trim)
+        .map_or("", str::js_trim)
         .to_owned();
     if value.is_empty() || FOLDED.is_match(&value) {
         value = lines
             .iter()
             .skip(at + 1)
             .take_while(|l| l.starts_with(js::is_space))
-            .map(|l| js::trim(l))
+            .map(|l| l.js_trim())
             .collect::<Vec<_>>()
             .join(" ");
     }

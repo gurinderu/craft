@@ -5,6 +5,7 @@
 //! [`remark`]; the threads come from `gh api graphql` ([`fetch`]). Held to what the JavaScript
 //! reader printed by `content/parity/pr-rejections-cases.json`.
 
+use craft_store::js::JsStr;
 use serde::Serialize;
 use serde_json::Value;
 
@@ -83,7 +84,7 @@ fn threads(answer: &Value) -> Option<(Vec<&Value>, f64, rule::Author)> {
                 .and_then(|a| a.get("login"))
                 .and_then(Value::as_str)
         {
-            js::trim(login).clone_into(&mut author.login);
+            login.js_trim().clone_into(&mut author.login);
         }
         match pr.get("isCrossRepository").and_then(Value::as_bool) {
             Some(false) if !author.fork => author.same_repo = true,

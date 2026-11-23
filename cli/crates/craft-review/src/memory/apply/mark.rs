@@ -1,6 +1,7 @@
 //! What a finding a record answers carries (`priorDecisionMark`, `reraiseReason`, `reraisedNote` in
 //! `integrations/shared/prior-decision-apply.mjs`): set aside, the record's mark; raised again, why.
 
+use craft_store::js::JsStr;
 use serde_json::{Map, Value, json};
 
 use super::{PriorDecision, RecordKind, Scope, matching, or};
@@ -39,7 +40,7 @@ fn severity_reason(f: &Value, d: &PriorDecision) -> String {
     let critical = f
         .get("severity")
         .and_then(Value::as_str)
-        .is_some_and(|s| s.trim().eq_ignore_ascii_case("critical"));
+        .is_some_and(|s| s.js_trim().eq_ignore_ascii_case("critical"));
     if critical {
         let what = if d.kind == RecordKind::Question {
             "deferred question"

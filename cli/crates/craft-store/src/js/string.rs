@@ -46,6 +46,16 @@ impl JsString {
         self.as_str().map(str::to_owned).ok_or(Utf16Error)
     }
 
+    /// Its text as UTF-8, each unpaired surrogate written as U+FFFD — one code unit for one, so
+    /// a position counted in code units holds on either side.
+    #[must_use]
+    pub fn to_utf8_lossy(&self) -> String {
+        self.as_str().map_or_else(
+            || String::from_utf16_lossy(&self.units().collect::<Vec<_>>()),
+            str::to_owned,
+        )
+    }
+
     pub fn units(&self) -> impl Iterator<Item = u16> + '_ {
         let (text, units) = match &self.0 {
             Repr::Utf8(s) => (Some(s.as_str()), None),

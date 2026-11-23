@@ -6,6 +6,7 @@
 //! profile that holds it as optional.
 
 use crate::profile::{Lens, Profile};
+use craft_store::js::JsStr;
 
 /// The values that buy no optional lens, and those that buy the whole set.
 const NONE: [&str; 3] = ["", "false", "none"];
@@ -19,7 +20,7 @@ fn qualified(p: &Profile, l: &Lens) -> String {
 /// What a request buys: the qualified optional lenses it names, and the names that are none.
 #[must_use]
 pub fn request(raw: Option<&str>, profiles: &[Profile]) -> (Vec<String>, Vec<String>) {
-    let raw = raw.unwrap_or("").trim();
+    let raw = raw.unwrap_or("").js_trim();
     let roster: Vec<(String, &str)> = profiles
         .iter()
         .flat_map(|p| {

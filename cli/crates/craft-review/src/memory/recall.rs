@@ -6,6 +6,7 @@
 
 use super::degraded::{bounded, failed_why};
 use super::{MemorySource, oppose};
+use craft_store::js::JsStr;
 use serde_json::{Map, Value};
 
 use super::record::{skill_record_id, text};
@@ -71,7 +72,7 @@ pub(super) struct Recalled {
 /// One line of an answer's text, its whitespace collapsed (`recallText`).
 pub(super) fn one_line(v: Option<&Value>) -> String {
     v.and_then(Value::as_str)
-        .map(|s| s.split_whitespace().collect::<Vec<_>>().join(" "))
+        .map(|s| s.js_split_whitespace().collect::<Vec<_>>().join(" "))
         .unwrap_or_default()
 }
 
@@ -113,7 +114,7 @@ fn with_skill_id(x: Value) -> Value {
     let stored = links.iter().any(|l| {
         let s = text(Some(l));
         s.get(..6).is_some_and(|h| h.eq_ignore_ascii_case("store:"))
-            && s.get(6..).is_some_and(|r| !r.trim_start().is_empty())
+            && s.get(6..).is_some_and(|r| !r.js_trim_start().is_empty())
     });
     let (id, sid) = (text(o.get("id")), skill_record_id(&o));
     if id.is_empty() || sid.is_empty() || sid == id || (!stored && skill_form(&id)) {

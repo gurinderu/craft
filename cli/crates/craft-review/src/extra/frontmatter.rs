@@ -3,6 +3,7 @@
 //! read — a plain or quoted scalar, a folded or literal block, a flow `[a, b]` or block `- a` list
 //! (joined with spaces) — never a full YAML document.
 
+use craft_store::js::JsStr;
 use std::path::Path;
 
 /// One agent definition as discovery reads it; a field it lacks is empty, a name it lacks its file's.
@@ -40,11 +41,11 @@ pub(super) fn read_definitions(dir: &Path) -> Vec<Definition> {
 pub fn parse_definition(text: &str, stem: &str) -> Definition {
     let mut d = Definition::default();
     let mut lines = text.lines();
-    if lines.next().map(str::trim_end) != Some("---") {
+    if lines.next().map(str::js_trim_end) != Some("---") {
         stem.clone_into(&mut d.name);
         return d;
     }
-    let body: Vec<&str> = lines.take_while(|l| l.trim_end() != "---").collect();
+    let body: Vec<&str> = lines.take_while(|l| l.js_trim_end() != "---").collect();
     let mut i = 0;
     while let Some(line) = body.get(i) {
         i += 1;
@@ -54,9 +55,9 @@ pub fn parse_definition(text: &str, stem: &str) -> Definition {
         let Some((key, raw)) = line.split_once(':') else {
             continue;
         };
-        let (value, used) = value(raw.trim(), body.get(i..).unwrap_or_default());
+        let (value, used) = value(raw.js_trim(), body.get(i..).unwrap_or_default());
         i += used;
-        match key.trim() {
+        match key.js_trim() {
             "name" => d.name = value,
             "description" => d.description = value,
             "tools" => d.tools = value,
@@ -64,8 +65,8 @@ pub fn parse_definition(text: &str, stem: &str) -> Definition {
             _ => {}
         }
     }
-    let named = match d.name.trim() {
-        "" => stem.trim(),
+    let named = match d.name.js_trim() {
+        "" => stem.js_trim(),
         name => name,
     }
     .to_owned();
@@ -77,12 +78,12 @@ pub fn parse_definition(text: &str, stem: &str) -> Definition {
 fn value(raw: &str, after: &[&str]) -> (String, usize) {
     let indented = after
         .iter()
-        .take_while(|l| l.trim().is_empty() || l.starts_with([' ', '\t']))
+        .take_while(|l| l.js_trim().is_empty() || l.starts_with([' ', '\t']))
         .count();
     let block: Vec<&str> = after
         .iter()
         .take(indented)
-        .map(|l| l.trim())
+        .map(|l| l.js_trim())
         .filter(|l| !l.is_empty())
         .collect();
     if raw.starts_with(['>', '|']) {
@@ -92,12 +93,12 @@ fn value(raw: &str, after: &[&str]) -> (String, usize) {
     if raw.is_empty() {
         let items: Vec<String> = block
             .iter()
-            .map(|l| unquote(l.strip_prefix('-').unwrap_or(l).trim()))
+            .map(|l| unquote(l.strip_prefix('-').unwrap_or(l).js_trim()))
             .collect();
         return (items.join(" "), indented);
     }
     if let Some(list) = raw.strip_prefix('[').and_then(|r| r.strip_suffix(']')) {
-        let items: Vec<String> = list.split(',').map(|x| unquote(x.trim())).collect();
+        let items: Vec<String> = list.split(',').map(|x| unquote(x.js_trim())).collect();
         return (items.join(" "), 0);
     }
     (unquote(raw), 0)
@@ -112,4 +113,17 @@ fn unquote(s: &str) -> String {
         return inner.replace("''", "'");
     }
     s.to_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_definition;
+
+    #[test]
+    fn a_fence_ends_at_javascripts_whitespace_and_next_line_is_none() {
+        let fenced = parse_definition("---\u{feff}\nname: x\n---\u{feff}\nbody", "stem");
+        assert_eq!(fenced.name, "x");
+        let unfenced = parse_definition("---\u{85}\nname: x\n---\nbody", "stem");
+        assert_eq!(unfenced.name, "stem");
+    }
 }

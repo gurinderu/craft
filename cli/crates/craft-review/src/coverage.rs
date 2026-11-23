@@ -4,6 +4,7 @@
 //! profile takes every other file carrying code) are INCOMPLETE, never an Approve; a diff of
 //! nothing but prose, assets, lockfiles and generated output is an honest green.
 
+use craft_store::js::JsStr;
 use serde::{Deserialize, Serialize};
 
 use crate::git::Diff;
@@ -82,7 +83,7 @@ fn generated_infix(base: &str) -> bool {
 /// Whether two shas name the same commit, as `baseIsHead`.
 fn same_commit(a: &str, b: &str) -> bool {
     let hex = |s: &str| (7..=40).contains(&s.len()) && s.bytes().all(|c| c.is_ascii_hexdigit());
-    let (a, b) = (a.trim().to_lowercase(), b.trim().to_lowercase());
+    let (a, b) = (a.js_trim().to_lowercase(), b.js_trim().to_lowercase());
     hex(&a) && hex(&b) && (a.starts_with(&b) || b.starts_with(&a))
 }
 

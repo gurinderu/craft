@@ -113,7 +113,9 @@ the Rust and Nix profiles `extends`, each lens of their own replacing the genera
 added, `exclude` leaving out those that do not fit, `securityFloor` naming what the security floor adds —
 resolved once at load by
 `cli/crates/craft-review/src/profile/inherit.rs`) — is data under `content/`, compiled into the Rust CLI; the
-templates an engine still renders itself (memory recall among them) are inlined into it by the build.
+templates an engine still renders itself (memory recall among them, and `triage-findings`' gather, validate and plan
+prompts and answer schemas, `content/prompts/triage-*.md` and `content/schemas/triage-*.schema.json`, read through
+`integrations/shared/triage-content.mjs`) are inlined into it by the build.
 
 | Workflow | Composes | Output |
 |---|---|---|
@@ -321,10 +323,14 @@ record, its file and the step the run ended with — for a host that lost the st
 every kind of run shares, review now: the task and its kind, its prompt, schema and answer files, the answer checked against
 its schema and asked for again, the pending step and a task's status line; the review is its first kind, its phases, lenses,
 memory and verification its own), `crates/craft-store` (the run store's writer and its streaming reader, its output held to
-the JavaScript writer's by `content/parity/store-cases.json`) and `crates/craft-tui` (progress as a phases → agents tree
+the JavaScript writer's by `content/parity/store-cases.json`), `crates/craft-triage` (the triage of findings as the binary
+will run it, for now its pure logic only — ids and sites, repeats collapsed, a prior ledger's settled verdicts carried,
+the noise classes and the issue class 1 files, the plan's ledger pinned, the plan's banners and the run record — held
+to `triage-findings` by `content/parity/triage-cases.json`, which `integrations/shared/triage-parity.test.mjs` writes)
+and `crates/craft-tui` (progress as a phases → agents tree
 on a terminal, one line per event otherwise); `test-support/` holds the one copy of a helper every crate's tests
 include by path (an executable a test writes and runs). In `craft-store`, `js/string.rs` holds lossless JavaScript
-strings, `filing.rs` replays pending writes through `filing_io.rs`'s publication primitives, and `lock/turn.rs` coordinates local writers
+strings, `js/coerce.rs` JavaScript's `Number()` and whitespace (the triage reads its values through the same `js`), `filing.rs` replays pending writes through `filing_io.rs`'s publication primitives, and `lock/turn.rs` coordinates local writers
 with `lock/ticket.rs` validating immutable names. The writes made after a run — `craft runs enrich-cost` (`cost/`: the harness's per-agent transcripts counted once per message and sliced per record), `sorting-choice` (`sorting.rs`) and `develop-cycle` (`develop.rs`), answered in `posthoc.rs` and rewritten under the lock by `amend.rs` — are what the skills and engines run through `integrations/shared/craft-cli.sh`; `content/parity/cost-cases.json` and `posthoc-store-cases.json` freeze what the JavaScript enrich-cost, sorting-choice and develop-cycle wrote. `process_identity.rs` and its native modules query boot and process incarnations;
 `bin/craft/src/process_identity.rs` exposes them through the hidden `__craft-process-identity` command.
 The JavaScript counterparts are `integrations/shared/filing-transaction.mjs`, `integrations/shared/index-turn.mjs` and `integrations/shared/process-identity.mjs` (direct Linux reads,

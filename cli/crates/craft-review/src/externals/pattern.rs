@@ -235,7 +235,7 @@ impl Engine {
             .filter(|v| v.is_string())
             .map(Js::to_js_text)
             .unwrap_or_default();
-        let rev = text::trim(&capture);
+        let rev = craft_store::js::trim_text(&capture);
         if rev.is_empty() {
             return Err(Error::refused(
                 "versionMatch found no version in versionFrom",

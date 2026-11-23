@@ -2,6 +2,7 @@
 //! `integrations/shared/prior-decision-apply.mjs`, `priorDecisionsRefusedSection` in `integrations/shared/prior-decisions.mjs`): the
 //! findings set aside, each with its mark and how it was matched, and what was not applied.
 
+use craft_store::js::JsStr;
 use serde_json::Value;
 
 use super::or;
@@ -33,7 +34,7 @@ fn section_line(f: &Value) -> String {
 /// Rejected before, a deferral's under Known and deferred.
 #[must_use]
 pub(in crate::memory) fn section(set_aside: &[Value]) -> String {
-    let high = |f: &&Value| text(f, "severity").trim().eq_ignore_ascii_case("high");
+    let high = |f: &&Value| text(f, "severity").js_trim().eq_ignore_ascii_case("high");
     let of = |kind: &str, want_high: bool| -> Vec<String> {
         set_aside
             .iter()

@@ -2,6 +2,7 @@
 //! render it for an unsliced dispatch, and the ALREADY-FOUND list a later round carries
 //! (`priorFoundSummary` in `integrations/shared/review-coverage.mjs`).
 
+use craft_store::js::JsStr;
 use serde_json::Value;
 
 use super::{
@@ -20,7 +21,7 @@ fn sev_rank(f: &Value) -> usize {
     let sev = f.get("severity").and_then(Value::as_str).unwrap_or("");
     ["critical", "high", "medium", "low", "info"]
         .iter()
-        .position(|s| *s == sev.trim().to_lowercase())
+        .position(|s| *s == sev.js_trim().to_lowercase())
         .unwrap_or(9)
 }
 
@@ -30,7 +31,7 @@ fn one_line(v: Option<&Value>) -> String {
         .filter(|p| !p.is_empty())
         .collect::<Vec<_>>()
         .join(" ")
-        .trim()
+        .js_trim()
         .to_owned()
 }
 
@@ -56,7 +57,7 @@ pub fn prior_found_summary(pool: &[Value]) -> String {
                 "{}:{line} {title}",
                 if file.is_empty() { "?" } else { &file }
             )
-            .trim_end()
+            .js_trim_end()
             .to_owned()
         })
         .collect();
