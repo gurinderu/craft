@@ -52,6 +52,8 @@ fn a_run_that_cannot_tell_uncommitted_work_is_refused_with_2() {
         &f,
         "the review's run state cannot be read (parsing the run state",
     );
+    std::fs::write(f.run.join("state.json"), r#"{"version": 6, "diff": {}}"#).unwrap();
+    refused(&f, "names no diff.dirty");
     std::fs::remove_file(f.run.join("state.json")).unwrap();
     refused(
         &f,
@@ -118,4 +120,20 @@ fn no_record_or_another_branchs_newest_is_refused_with_2() {
         text(&none.stderr)
     );
     assert!(!f.bin.join("sent.json").exists(), "nothing posted");
+}
+
+#[test]
+fn a_run_state_of_another_format_version_still_tells_uncommitted_work() {
+    let f = Posting::new();
+    let path = f.run.join("state.json");
+    let mut state: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    state["version"] = json!(999);
+    std::fs::write(&path, state.to_string()).unwrap();
+    let out = f.post(&["--n", "1", "--as", "question"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    std::fs::remove_file(f.bin.join("sent.json")).unwrap();
+    state["diff"]["dirty"] = json!(true);
+    std::fs::write(&path, state.to_string()).unwrap();
+    let dirty = f.post(&["--n", "1", "--as", "question"]);
+    assert_eq!(dirty.status.code(), Some(1), "{}", text(&dirty.stderr));
 }

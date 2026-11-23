@@ -43,7 +43,7 @@ fn a_retry_whose_pr_closed_names_it_and_finds_its_comment() {
     std::fs::write(gh.join("state"), "MERGED").unwrap();
     let e = post(at, &h, None, &setup).unwrap_err();
     assert!(
-        matches!(&e, PostError::Pr(w) if w.contains("no open PR of this repository") && w.contains("name it with --pr <n> (the first attempt printed it)")),
+        matches!(&e, PostError::Pr(w) if w.contains("no open PR of this repository") && w.contains("name it with --pr <n>")),
         "{e}"
     );
     let e = post(at, &h, Some(7), &setup).unwrap_err();

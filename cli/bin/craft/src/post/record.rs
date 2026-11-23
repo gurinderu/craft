@@ -77,19 +77,25 @@ fn reviewed_dirty(run: Option<&str>) -> Result<bool, String> {
         ));
     };
     let dir = Path::new(run);
-    if !dir.exists() {
-        return Err(format!(
-            "the review's run directory {run} is gone, {UNTOLD}"
-        ));
+    match std::fs::metadata(dir) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Err(format!(
+                "the review's run directory {run} is gone, {UNTOLD}"
+            ));
+        }
+        Err(e) => {
+            return Err(format!(
+                "the review's run directory {run} cannot be read ({e}), {UNTOLD}"
+            ));
+        }
+        Ok(_) => {}
     }
-    craft_review::state::load(dir)
-        .map(|state| state.diff.dirty)
-        .map_err(|e| {
-            format!(
-                "the review's run state cannot be read ({:#}), {UNTOLD}",
-                anyhow::Error::from(e)
-            )
-        })
+    craft_review::state::dirty_of(dir).map_err(|e| {
+        format!(
+            "the review's run state cannot be read ({:#}), {UNTOLD}",
+            anyhow::Error::from(e)
+        )
+    })
 }
 
 /// Records `choice` for finding `n` of `file`: the line it says, or null with a warning on stderr

@@ -20,8 +20,7 @@ pub(super) fn full<'a>(d: &Doubtful<'a>) -> Option<&'a str> {
 /// The tail of the refusal when no `--pr` is given and the record's PR is closed or none of its
 /// branch is open: a retry names its PR, which the first attempt printed and the recorded choice
 /// carries — closed PRs are never searched for it.
-pub(super) const NAME_IT: &str =
-    "the PR is closed or gone: name it with --pr <n> (the first attempt printed it)";
+pub(super) const NAME_IT: &str = "the PR is closed or gone: name it with --pr <n>";
 
 /// The PR the record's review read, and how far it is trusted before its comments are read.
 pub(super) enum Found {
@@ -39,8 +38,8 @@ pub(super) enum Found {
 /// (`prComments.pr`, the PR a detached `pr=<n>` review was started with); else, for a record of a
 /// branch, `pr` when its head branch is the record's, or without `pr` the one open PR whose head is
 /// that branch — a fork's PR of a branch of the same name is not this record's; else, for a record
-/// of a detached HEAD, `pr`. Whether it is open and its head holds the reviewed commit is
-/// [`super::head`]'s to judge.
+/// of a detached HEAD, `pr`. An own PR that is not open is refused by the post before its comments
+/// are read; a named one's head, and every PR's state, are [`super::head`]'s to judge.
 pub(super) fn which_pr(
     runner: &Runner,
     repo: &Path,
@@ -77,7 +76,13 @@ pub(super) fn which_pr(
 /// The one open same-repository PR whose head branch is `branch`. A list gh could not give is a
 /// failure on the way (a retry may get it), not a refusal.
 fn only_pr(runner: &Runner, repo: &Path, branch: &str) -> Result<Found, PostError> {
-    let mut prs = read::prs(runner, repo, branch, "open").map_err(PostError::Gh)?;
+    let mut prs = read::prs(runner, repo, branch, "open").map_err(|e| {
+        if branch.starts_with('-') {
+            PostError::Pr(e)
+        } else {
+            PostError::Gh(e)
+        }
+    })?;
     prs.retain(|p| !p.cross_repository);
     match prs.len() {
         1 => Ok(Found::Own(prs.remove(0))),

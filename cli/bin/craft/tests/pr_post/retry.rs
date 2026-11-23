@@ -92,3 +92,26 @@ fn a_pr_gh_cannot_view_is_a_failure_to_retry() {
         "{err}"
     );
 }
+
+#[test]
+fn naming_the_records_own_pr_takes_the_named_route_and_its_retry_after_a_merge() {
+    let f = Posting::with(&json!({"prComments": {"pr": 5}}));
+    let first = f.post(&["--n", "1", "--as", "question", "--pr", "5"]);
+    assert!(first.status.success(), "{}", text(&first.stderr));
+    let sent = std::fs::read_to_string(f.bin.join("sent.json")).unwrap();
+    merged_with_a_new_pr(&f);
+    let bare = f.post(&["--n", "1", "--as", "question"]);
+    assert!(
+        bare.status.success(),
+        "the recorded PR: {}",
+        text(&bare.stderr)
+    );
+    let named = f.post(&["--n", "1", "--as", "question", "--pr", "5"]);
+    assert!(named.status.success(), "{}", text(&named.stderr));
+    let said: Value = serde_json::from_str(&text(&named.stdout)).unwrap();
+    assert_eq!((&said["pr"], &said["already"]), (&json!(5), &json!(true)));
+    assert_eq!(
+        std::fs::read_to_string(f.bin.join("sent.json")).unwrap(),
+        sent
+    );
+}
