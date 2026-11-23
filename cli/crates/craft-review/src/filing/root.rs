@@ -28,7 +28,11 @@ pub fn found_root(candidates: impl IntoIterator<Item = Option<PathBuf>>) -> Opti
 /// Completes what the run's telemetry, and each stopped part of it still pending, knows of the
 /// run before a write: `root` where it knows none, or one that no longer holds the adapter (an
 /// uninstalled copy); the run's identity, read off its state, where it was kept before it had one.
+/// A run a newer craft wrote is left as that craft kept it ([`crate::state::newer`]).
 pub fn adopt(run: &Path, root: Option<&str>) {
+    if crate::state::newer(run) {
+        return;
+    }
     let Some(mut filing) = load(run) else {
         return;
     };

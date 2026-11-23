@@ -123,8 +123,10 @@ pub(super) fn unfiled(filing: &Filing) -> Option<Value> {
 /// write did; `None` when the run files no telemetry, is not finished — a stopped run is resumed,
 /// not re-filed — or its record is filed.
 pub fn refile(run: &Path, earlier: Vec<String>, w: &dyn Writer) -> Option<Value> {
-    // Read whatever the state's format: an earlier binary's run is filed before it is refused.
-    let done = crate::state::phase_of(run) == Some(crate::state::Phase::Done);
+    // Read whatever the state's format: an earlier binary's run is filed before it is refused; a
+    // newer craft's is that craft's to file.
+    let done =
+        !crate::state::newer(run) && crate::state::phase_of(run) == Some(crate::state::Phase::Done);
     if done {
         file_again(run, earlier, w)
     } else {

@@ -32,13 +32,22 @@ fn store_open(home: &Path, open: bool) {
     std::fs::set_permissions(&runs, std::fs::Permissions::from_mode(mode)).unwrap();
 }
 
-/// Whether a shut store refuses this user's writes: not for root or `CAP_DAC_OVERRIDE`, where the
-/// tests that lose a record by a shut store have nothing to test.
+/// Whether a shut store refuses this user's writes: not for root or `CAP_DAC_OVERRIDE`, where a
+/// test that loses a record by a shut store has nothing to test and says it skipped.
+#[expect(
+    clippy::print_stderr,
+    reason = "a skipped test says so where its runner shows it"
+)]
 fn shut_holds(tmp: &Path) -> bool {
     let probe = tmp.join("probe");
     store_open(&probe, false);
     let refused = std::fs::write(probe.join(".craft/runs/x"), "x").is_err();
     store_open(&probe, true);
+    if !refused {
+        eprintln!(
+            "skipped: a shut store does not refuse this user's writes (root or CAP_DAC_OVERRIDE)"
+        );
+    }
     refused
 }
 
@@ -110,21 +119,7 @@ fn a_stopped_record_that_never_landed_is_filed_once_whatever_the_submit() {
 fn a_stopped_record_that_landed_though_kept_as_failed_is_not_filed_twice() {
     for flags in SUBMITS {
         let tmp = tempfile::tempdir().unwrap();
-        let (run, home, path, out) = started(tmp.path());
-        assert!(out.status.success());
-        assert!(
-            submit(&run, &home, &path, &["--limit", "usage limit"])
-                .status
-                .success()
-        );
-        assert_eq!(records(&home).len(), 1);
-        // Landed, yet the binary did not hear so (its worker timed out): kept as failed.
-        let file = run.join("filing.json");
-        let mut kept: Value = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
-        kept.as_object_mut()
-            .unwrap()
-            .insert("record".into(), json!("failed"));
-        std::fs::write(&file, kept.to_string()).unwrap();
+        let (run, home, path) = landed_kept_failed(tmp.path(), false);
         refused_as_earlier(&run, &home, &path, flags);
         assert_eq!(
             records(&home).len(),
@@ -143,7 +138,7 @@ fn finished_lost(tmp: &Path) -> (PathBuf, PathBuf, String) {
     store_open(&home, true);
     let step: Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(step.get("done"), Some(&json!(true)), "{step}");
-    assert!(records(&home).is_empty());
+    assert_eq!(records(&home), Vec::<String>::new());
     (run, home, path)
 }
 
@@ -175,13 +170,47 @@ fn a_finished_runs_record_that_never_landed_is_filed_once_whatever_the_submit() 
     }
 }
 
-/// `run`, rewritten as format 99 with its plugin root uprooted, put to `craft` with `args`
+/// A run whose record landed, `finished` at its start (a change of documentation alone) or
+/// stopped on the usage limit, though its telemetry keeps the record as failed (its worker timed
+/// out): a submit that wrongly files it again rewrites that telemetry. Run, home, PATH.
+fn landed_kept_failed(tmp: &Path, finished: bool) -> (PathBuf, PathBuf, String) {
+    let (run, home, path, out) = if finished {
+        started_with(tmp, ("notes.md", "n\n"))
+    } else {
+        started(tmp)
+    };
+    assert!(out.status.success());
+    if !finished {
+        assert!(
+            submit(&run, &home, &path, &["--limit", "usage limit"])
+                .status
+                .success()
+        );
+    }
+    assert_eq!(records(&home).len(), 1);
+    let file = run.join("filing.json");
+    let mut kept: Value = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+    kept.as_object_mut()
+        .unwrap()
+        .insert("record".into(), json!("failed"));
+    std::fs::write(&file, kept.to_string()).unwrap();
+    (run, home, path)
+}
+
+/// `run`, rewritten as format 99 with its plugin root uprooted, put to `craft` through `said`
 /// (told of a plugin root it could adopt): refused with the newer craft's words, nothing filed,
 /// its telemetry byte for byte as it was.
 fn untouched_as_newer(run: &Path, home: &Path, said: impl Fn(&[&str]) -> std::process::Output) {
+    assert!(
+        Path::new(ROOT).join(".claude-plugin/plugin.json").is_file(),
+        "{ROOT} is a plugin root a run could adopt"
+    );
     as_format(run, 99);
     uprooted(run);
-    let before = std::fs::read(run.join("filing.json")).unwrap();
+    let (before, filed) = (
+        std::fs::read(run.join("filing.json")).unwrap(),
+        records(home),
+    );
     let out = said(&["--record-root", ROOT]);
     assert!(!out.status.success());
     let err = String::from_utf8_lossy(&out.stderr);
@@ -191,20 +220,17 @@ fn untouched_as_newer(run: &Path, home: &Path, said: impl Fn(&[&str]) -> std::pr
             && !err.contains("craft review start"),
         "{err}"
     );
-    assert!(records(home).is_empty(), "nothing filed");
+    assert_eq!(records(home), filed, "nothing filed");
     assert_eq!(std::fs::read(run.join("filing.json")).unwrap(), before);
 }
 
 #[test]
 fn a_run_a_newer_craft_wrote_is_sent_back_to_it_its_telemetry_untouched() {
     for flags in SUBMITS {
-        for lost in [stopped_lost, finished_lost] {
+        for finished in [false, true] {
             let tmp = tempfile::tempdir().unwrap();
-            if !shut_holds(tmp.path()) {
-                return;
-            }
-            // A lost record it could wrongly file again, and a root it could adopt.
-            let (run, home, path) = lost(tmp.path());
+            // A record it could wrongly file again, and a root it could adopt.
+            let (run, home, path) = landed_kept_failed(tmp.path(), finished);
             untouched_as_newer(&run, &home, |root| {
                 submit(&run, &home, &path, &[flags, root].concat())
             });
@@ -215,9 +241,6 @@ fn a_run_a_newer_craft_wrote_is_sent_back_to_it_its_telemetry_untouched() {
 #[test]
 fn a_comment_on_a_run_a_newer_craft_wrote_leaves_its_telemetry_untouched() {
     let tmp = tempfile::tempdir().unwrap();
-    if !shut_holds(tmp.path()) {
-        return;
-    }
-    let (run, home, path) = finished_lost(tmp.path());
+    let (run, home, path) = landed_kept_failed(tmp.path(), true);
     untouched_as_newer(&run, &home, |root| comment(&run, &home, &path, root));
 }

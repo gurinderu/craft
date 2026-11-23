@@ -37,10 +37,7 @@ pub(crate) fn comment_step(args: &CommentArgs) -> Result<Value> {
     let began = Instant::now();
     let run = std::path::absolute(&args.run)
         .with_context(|| format!("resolving {}", args.run.display()))?;
-    // A run a newer craft wrote keeps its telemetry as that craft left it: refused below, untouched.
-    if !craft_review::state::newer(&run) {
-        filing::adopt(&run, filing_root(args.record_root.as_deref()).as_deref());
-    }
+    filing::adopt(&run, filing_root(args.record_root.as_deref()).as_deref());
     let step = stamped(
         publish::comment(&run, args.pr, &PostSetup::default())?,
         began,

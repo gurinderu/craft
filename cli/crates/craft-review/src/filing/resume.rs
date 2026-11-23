@@ -23,6 +23,10 @@ pub struct Host {
 /// pending ones, and each pending record is filed again, as a retry, kept until it lands. Says what
 /// did not land, and how to file what is still pending.
 pub fn resuming(run: &Path, w: &dyn Writer) -> Vec<String> {
+    // A run a newer craft wrote is that craft's to file.
+    if crate::state::newer(run) {
+        return Vec::new();
+    }
     let Some(mut filing) = load(run) else {
         return Vec::new();
     };
