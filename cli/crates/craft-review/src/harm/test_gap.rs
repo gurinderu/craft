@@ -3,7 +3,10 @@
 //! behaviour. A weak assertion is rated by the harm of the regression it lets through, capped at
 //! should-fix whatever level it names, since the test is the missing guard, not the defect; one
 //! that names no regression is read as harm level `none`. A missing test keeps the level its lens
-//! named. A test gap's reachability is its regression's, on the production line it breaks.
+//! named. A test gap's reachability is its regression's, on the production line it breaks. A test
+//! that passes against an implementation broken exactly the way the change promises not to break is
+//! at least Medium, its harm the unmet promise (realm @nick/craft, node #619): the tests lens's brief
+//! and the verifier both read [`PROMISE_FLOOR`], and the floor below raises it once it names that harm.
 
 use serde_json::{Map, Value};
 
@@ -15,6 +18,8 @@ const TESTS_LENS: &str = "tests";
 const WEAK: &str = "weak-assertion";
 /// The most a weak assertion is allowed: should-fix.
 pub(super) const WEAK_CEILING: &str = "Medium";
+/// The rule both the tests lens's brief (`lens-briefs/general-tests`) and a test gap's verifier read.
+pub(crate) const PROMISE_FLOOR: &str = "A TEST THAT CANNOT FAIL ON THE CHANGE'S OWN PROMISE is at least Medium: when the change's test passes against an implementation broken exactly the way the change promises not to break (it asserts only a message prefix, its fixture derives the expected value the same way the code does, its assertion cannot tell the right answer from a substituted one), it is a weak assertion whose regression is that broken promise and whose harm is intent-unmet, at Medium (should-fix); a plain coverage gap — the change pinned by a test, only not from every side — stays Low.";
 /// The weak-assertion floor's note, after the severity it raised from.
 const NOTE_HEAD: &str = " (raised to Medium from ";
 const NOTE_MARK: &str =
@@ -68,7 +73,8 @@ pub(crate) fn verifier_lines(f: &Value) -> String {
          not on the cited test line — reachable=true when that production line runs in production, \
          so the regression would reach it; reachable=false only when the regression itself cannot \
          reach production (that code is test-, example- or fixture-only). The cited line being \
-         test code is expected here and is NOT reachable=false."
+         test code is expected here and is NOT reachable=false.\
+         \n  SEVERITY OF THIS TEST GAP: {PROMISE_FLOOR}"
     )
 }
 

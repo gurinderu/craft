@@ -18,6 +18,8 @@ mod critic;
 mod design_tests;
 #[cfg(test)]
 mod fixture;
+#[cfg(test)]
+mod floor_tests;
 mod lens;
 #[cfg(test)]
 mod parity;
