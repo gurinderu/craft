@@ -4,7 +4,6 @@
 
 #![expect(
     clippy::unwrap_used,
-    clippy::indexing_slicing,
     reason = "the helpers of these tests fail loudly, like the tests they serve"
 )]
 

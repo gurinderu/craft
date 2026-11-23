@@ -37,7 +37,6 @@ fn dir_in(tmp: &Path, base: &str) -> Result<PathBuf> {
 }
 
 #[cfg(test)]
-#[expect(clippy::unwrap_used, reason = "a failed step fails the test loudly")]
 mod tests {
     use super::dir_in;
 
@@ -47,13 +46,13 @@ mod tests {
         let taken = tmp.path().join("s-0");
         std::fs::create_dir(&taken).unwrap();
         std::fs::write(taken.join("theirs"), "x").unwrap();
-        let made = dir_in(tmp.path(), "s").unwrap();
-        assert_eq!(made, tmp.path().join("s-1"));
-        assert!(std::fs::read_dir(&made).unwrap().next().is_none(), "empty");
+        let fresh = dir_in(tmp.path(), "s").unwrap();
+        assert_eq!(fresh, tmp.path().join("s-1"));
+        assert!(std::fs::read_dir(&fresh).unwrap().next().is_none(), "empty");
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let mode = std::fs::metadata(&made).unwrap().permissions().mode();
+            let mode = std::fs::metadata(&fresh).unwrap().permissions().mode();
             assert_eq!(mode & 0o777, 0o700);
         }
         for i in 2..8 {

@@ -4,7 +4,6 @@
 //! refute every metric finding, and its stored tasks ask for tools the lean task agent lacks.
 #![expect(
     clippy::unwrap_used,
-    clippy::indexing_slicing,
     reason = "the fixture's files are the test's own: a missing one fails it loudly"
 )]
 
@@ -77,5 +76,5 @@ fn an_earlier_binarys_run_whose_plan_runs_no_metrics_lens_goes_on() {
     let out = tempfile::tempdir().unwrap();
     let (run, _repo) = laid(out.path(), |_| {});
     std::fs::write(run.join("answers/lens-rust-errors-r1.json"), "{}").unwrap();
-    assert!(step::submit(&run, None).is_ok());
+    step::submit(&run, None).unwrap();
 }

@@ -99,7 +99,7 @@ pub fn finished_over(
     step::start(&o).unwrap();
     let run = out.path().join("run");
     let mut s = submit(&run, json!({"scout-general": scout("medium", picks)}));
-    while s["done"] == json!(false) {
+    while s.get("done") == Some(&json!(false)) {
         let answers: serde_json::Map<String, Value> = ids(&s)
             .into_iter()
             .map(|id| {

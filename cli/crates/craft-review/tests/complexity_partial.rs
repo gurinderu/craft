@@ -2,12 +2,6 @@
 //! answer did not wholly give, functions past what its table shows — is named in the run's
 //! degraded notes: not a coverage gap, since what was measured is judged and the verdict stands.
 
-#![expect(
-    clippy::unwrap_used,
-    clippy::indexing_slicing,
-    reason = "the helpers of these tests fail loudly, like the tests they serve"
-)]
-
 mod common;
 
 use serde_json::json;

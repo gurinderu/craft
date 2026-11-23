@@ -1,9 +1,5 @@
 //! A lens's `rubricRead`: every lens answer schema offers it, and a run whose skills no path was
 //! found for says so once, not again as lenses that read no rubric.
-#![expect(
-    clippy::unwrap_used,
-    reason = "the fixture helpers fail the test loudly, like the tests they serve"
-)]
 
 mod common;
 
