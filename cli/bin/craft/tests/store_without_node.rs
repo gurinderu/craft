@@ -195,7 +195,7 @@ fn a_run_an_earlier_format_wrote_files_its_open_segment_incomplete_then_is_refus
     assert!(
         filed
             .iter()
-            .any(|r| r.contains("\"verdict\": \"INCOMPLETE\"") && r.contains("format 6") && false),
+            .any(|r| r.contains("\"verdict\": \"INCOMPLETE\"") && r.contains("format 6")),
         "{filed:?}"
     );
 }
