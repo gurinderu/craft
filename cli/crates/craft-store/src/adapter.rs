@@ -221,7 +221,8 @@ fn record_inner(req: &Obj, env: &Env) -> Result<Obj, Utf16Error> {
         Ok((_, stats)) => stats,
         Err(e) => return Err(e),
     };
-    let mut rec = cli_record(step, stats, &at);
+    let first = cli_record(step, stats, &at);
+    let mut rec = first.clone();
     if let Some(k) = &kept {
         rec.spread(&k.fields);
     }
@@ -236,6 +237,7 @@ fn record_inner(req: &Obj, env: &Env) -> Result<Obj, Utf16Error> {
         dir: &dir,
         rejoin: req.get("rejoin") == Some(&Js::Bool(true)),
         retry,
+        first: (retry && kept.is_some()).then_some(&first),
     };
     let mut said = Said::default();
     let done = finalize(&rec, &w, asked, &mut said);

@@ -1,8 +1,15 @@
 use serde_json::json;
 
-use super::{Look, indexed, look, look_gap};
+use super::{Look, look, look_gap, note, ready as lenses_run};
 use crate::consumers::Measured;
 use crate::prompts::PromptContext;
+
+/// Whether the lenses run and the note when they do not, as the plan reads them; `None` when no
+/// profile taking part wants them.
+fn indexed(ctx: &PromptContext, wanted: bool) -> Option<(bool, Option<String>)> {
+    let l = look(ctx);
+    wanted.then(|| (lenses_run(l.as_ref()), note(ctx, l.as_ref())))
+}
 
 /// A function of `file` the graph measured.
 pub(crate) fn measured(file: &str, function: &str) -> Measured {

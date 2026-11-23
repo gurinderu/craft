@@ -121,6 +121,7 @@ fn rust_replays_every_javascript_process_crash_window_twice() {
                     dir: dir.to_str().unwrap(),
                     retry: true,
                     rejoin: false,
+                    first: None,
                 },
                 &mut said,
             )

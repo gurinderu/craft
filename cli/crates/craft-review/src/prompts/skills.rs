@@ -31,10 +31,11 @@ fn mentioned(prompt: &str) -> Vec<String> {
     out
 }
 
-/// Whether `prompt` names any skill to load.
+/// Whether `prompt` names a skill whose file the run found, so its SKILL FILES block points the
+/// agent at it; a skill named without one is the report's [`unresolved`] note instead.
 #[must_use]
-pub fn names_skill(prompt: &str) -> bool {
-    !mentioned(prompt).is_empty()
+pub fn names_found_skill(ctx: &PromptContext, prompt: &str) -> bool {
+    !resolve(ctx, prompt).0.is_empty()
 }
 
 /// The plugin root the run knows, `None` when it knows none.
@@ -112,6 +113,16 @@ pub fn unresolved(ctx: &PromptContext, tasks: &[Task]) -> Vec<String> {
         }
     }
     out
+}
+
+/// Keeps in `run` the skills its current tasks named that no path was found for, beside those
+/// earlier steps' tasks named: the report names each once, whatever phase the run ends in.
+pub fn keep_unresolved(run: &mut crate::state::RunState) {
+    for name in unresolved(&run.context, &run.tasks) {
+        if !run.skills_unresolved.contains(&name) {
+            run.skills_unresolved.push(name);
+        }
+    }
 }
 
 #[cfg(test)]

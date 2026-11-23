@@ -4,7 +4,10 @@ use std::path::{Path, PathBuf};
 
 use craft_review::project::{self, CodeGraph, ProjectProfile};
 use craft_review::sources::{Git, SourcesSetup};
-use craft_review::step::StartOptions;
+use craft_review::step::{self, StartOptions};
+use serde_json::{Value, json};
+
+use super::{fixture, git, ids, lens, opts, scout, submit};
 
 /// `opts`, its profiles under `out/projects`; with `tool`, the profile records it as the code
 /// graph (indexing a project of the reviewer's own, `theirs`); `probe` the program a review asks
@@ -68,4 +71,73 @@ pub fn stand_in_answering(
     );
     super::exe::write_executable(&tool, &script).unwrap();
     (tool, log)
+}
+
+/// A run over a change adding `files` (path, text) to the fixture, whose code graph answers the
+/// metrics question over `web/app.ts` with `metrics` and its probe with `probe` (shell; `None`:
+/// one function's numbers, one function found), past its scout sized `size` and picking `picks`:
+/// its run directory, the step, and the directories the caller keeps while it reads them.
+pub fn scouted_over(
+    files: &[(&str, &str)],
+    (metrics, probe): (Option<&str>, Option<&str>),
+    (size, picks): (&str, &[&str]),
+) -> (PathBuf, Value, [tempfile::TempDir; 3]) {
+    let repo = fixture(false);
+    let d = repo.path();
+    for (file, text) in files {
+        let path = d.join(file);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, text).unwrap();
+    }
+    git(d, &["add", "."]);
+    git(d, &["commit", "-qm", "feat: f"]);
+    let out = tempfile::tempdir().unwrap();
+    let graphs = tempfile::tempdir().unwrap();
+    let (tool, _) = stand_in_answering(graphs.path(), d, (metrics, probe));
+    let unused = out.path().join("unused");
+    let o = with_profile(opts(d, out.path()), out.path(), (Some(&tool), &unused));
+    step::start(&o).unwrap();
+    let run = out.path().join("run");
+    let s = submit(&run, json!({"scout-general": scout(size, picks)}));
+    (run, s, [repo, out, graphs])
+}
+
+/// The run in `run` driven from step `s` until done, each pending task answered by `answer` of its
+/// id; a run still going after a dozen steps fails the test.
+pub fn drive(run: &Path, mut s: Value, answer: impl Fn(&str) -> Value) -> Value {
+    for _ in 0..12 {
+        if s.get("done") != Some(&json!(false)) {
+            break;
+        }
+        let answers: serde_json::Map<String, Value> = ids(&s)
+            .into_iter()
+            .map(|id| (answer(&id), id))
+            .map(|(a, id)| (id, a))
+            .collect();
+        s = submit(run, Value::Object(answers));
+    }
+    assert!(
+        s.get("done") != Some(&json!(false)),
+        "the run did not finish: {s}"
+    );
+    s
+}
+
+/// The lens answer of task `id`, finding nothing.
+pub fn quiet(id: &str) -> Value {
+    let name = id.strip_prefix("lens-general-").unwrap();
+    lens(name.split('-').next().unwrap(), &[])
+}
+
+/// [`scouted_over`], a medium scout, driven to its end with every lens finding nothing; the run's
+/// directories stay on disk, so the step's report can be read.
+pub fn finished_over(
+    files: &[(&str, &str)],
+    graph: (Option<&str>, Option<&str>),
+    picks: &[&str],
+) -> Value {
+    let (run, s, [repo, out, graphs]) = scouted_over(files, graph, ("medium", picks));
+    let s = drive(&run, s, quiet);
+    let _keep = (out.keep(), graphs.keep(), repo);
+    s
 }

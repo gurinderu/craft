@@ -286,6 +286,21 @@ fn a_dead_recall_agent_is_named_apart_from_a_failed_query() {
 }
 
 #[test]
+fn an_empty_recall_truncated_and_failed_at_once_still_reads_as_not_read() {
+    let answer = json!({
+        "backend": "kg", "why": "w", "decisions": [], "questions": [], "rules": [],
+        "queryError": "kg_search(rule) refused", "truncated": "0 of 5 shown"
+    });
+    let r = super::recall::read(Some(&answer), 0, 0);
+    assert!(
+        r.source.line().starts_with("memory: not read — "),
+        "{}",
+        r.source.line()
+    );
+    assert_eq!(r.source.degraded_notes().len(), 2);
+}
+
+#[test]
 fn a_note_of_exactly_the_bound_is_kept_whole_and_one_past_it_is_cut_to_it() {
     let max = super::degraded::RECALL_NOTE_MAX;
     let exact = "e".repeat(max);

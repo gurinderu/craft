@@ -76,6 +76,7 @@ mod corrupt_rejoin_test {
             dir: path,
             rejoin: true,
             retry: false,
+            first: None,
         };
         let error = finalize(&Obj::new(), &w, asked, &mut Said::default()).unwrap_err();
         assert!(error.to_string().contains("01-bad.json"));
@@ -116,6 +117,7 @@ mod corrupt_rejoin_test {
                 dir: dir.to_str().unwrap(),
                 rejoin: false,
                 retry: false,
+                first: None,
             },
             &mut said,
         )
@@ -133,6 +135,7 @@ mod corrupt_rejoin_test {
                 dir: dir.to_str().unwrap(),
                 rejoin: false,
                 retry: true,
+                first: None,
             },
             &mut retry,
         )
@@ -149,6 +152,10 @@ pub struct Asked<'a> {
     pub dir: &'a str,
     pub rejoin: bool,
     pub retry: bool,
+    /// A re-file's record as its first filing sent it, before the identity the binary kept was
+    /// stamped on it: that filing's proof is found under it, so a record that landed is not filed
+    /// twice.
+    pub first: Option<&'a Obj>,
 }
 
 /// What a finalize did, and the lines it says: stdout's, then stderr's.
@@ -201,7 +208,7 @@ fn file_finalized(
         dir: asked.dir,
         project: &w.project,
     };
-    if say_proven(raw, at, asked.retry, said) {
+    if already_filed(raw, at, asked, said) {
         return Ok(());
     }
     let partial = w.store.join(crate::checkpoint::PARTIAL_DIR);
@@ -294,6 +301,15 @@ fn file_finalized(
     }
     proof::leave(raw, at, &file, &said.err)?;
     Ok(())
+}
+
+/// Whether a proof shows `raw` filed already — under it, or under the record a re-file's first
+/// filing sent (`asked.first`) — said when it does.
+fn already_filed(raw: &Obj, at: ProofAt<'_>, asked: Asked<'_>, said: &mut Said) -> bool {
+    say_proven(raw, at, asked.retry, said)
+        || asked
+            .first
+            .is_some_and(|first| say_proven(first, at, asked.retry, said))
 }
 
 fn say_proven(raw: &Obj, at: ProofAt<'_>, retry: bool, said: &mut Said) -> bool {

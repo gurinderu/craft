@@ -1,103 +1,12 @@
 //! A run's telemetry lands with no node on the PATH and no plugin root: the binary writes the run
 //! store itself (realm @nick/craft, node #539).
 #![cfg(unix)]
-#![expect(
-    clippy::unwrap_used,
-    reason = "the fixture fails the test loudly, like the test it serves"
-)]
+
+mod store_fixture;
 
 use std::path::Path;
-use std::process::Command;
 
-fn git(dir: &Path, args: &[&str]) {
-    let ok = Command::new("git")
-        .arg("-C")
-        .arg(dir)
-        .args([
-            "-c",
-            "user.name=t",
-            "-c",
-            "user.email=t@t",
-            "-c",
-            "commit.gpgsign=false",
-        ])
-        .args(args)
-        .status()
-        .unwrap();
-    assert!(ok.success(), "git {args:?}");
-}
-
-/// A directory holding only `git`, for a PATH with no node on it.
-fn path_with_git_alone(dir: &Path) -> String {
-    let which = Command::new("sh")
-        .args(["-c", "command -v git"])
-        .output()
-        .unwrap();
-    let real = String::from_utf8(which.stdout).unwrap();
-    std::fs::create_dir_all(dir).unwrap();
-    std::os::unix::fs::symlink(real.trim(), dir.join("git")).unwrap();
-    dir.display().to_string()
-}
-
-/// A run started in a fresh repository under `tmp`, with no node on the PATH and no plugin root:
-/// its run directory, HOME, PATH and the start's output.
-fn started(
-    tmp: &Path,
-) -> (
-    std::path::PathBuf,
-    std::path::PathBuf,
-    String,
-    std::process::Output,
-) {
-    let (code, run, home) = (tmp.join("repo"), tmp.join("run"), tmp.join("home"));
-    std::fs::create_dir_all(&code).unwrap();
-    git(&code, &["init", "-q", "-b", "main"]);
-    std::fs::write(code.join("README.md"), "x\n").unwrap();
-    git(&code, &["add", "."]);
-    git(&code, &["commit", "-qm", "init"]);
-    git(&code, &["update-ref", "refs/remotes/origin/main", "HEAD"]);
-    std::fs::write(code.join("lib.rs"), "pub fn f() {}\n").unwrap();
-    git(&code, &["add", "."]);
-    git(&code, &["commit", "-qm", "f"]);
-    let path = path_with_git_alone(&tmp.join("bin"));
-    let out = Command::new(env!("CARGO_BIN_EXE_craft"))
-        .args([
-            "review",
-            "start",
-            "--no-recall",
-            "--no-gate",
-            "--record",
-            "9.9.9",
-            "--cwd",
-        ])
-        .arg(&code)
-        .arg("--run-dir")
-        .arg(&run)
-        .env("PATH", &path)
-        .env("HOME", &home)
-        .env_remove("CRAFT_ROOT")
-        .env_remove("CLAUDE_PLUGIN_ROOT")
-        .env_remove("CLAUDE_CONFIG_DIR")
-        .output()
-        .unwrap();
-    (run, home, path, out)
-}
-
-/// `craft review submit` on `run` with `extra` flags, as the engine sends it.
-fn submit(run: &Path, home: &Path, path: &str, extra: &[&str]) -> std::process::Output {
-    Command::new(env!("CARGO_BIN_EXE_craft"))
-        .args(["review", "submit", "--run"])
-        .arg(run)
-        .args(["--agents", "1"])
-        .args(extra)
-        .env("PATH", path)
-        .env("HOME", home)
-        .env_remove("CRAFT_ROOT")
-        .env_remove("CLAUDE_PLUGIN_ROOT")
-        .env_remove("CLAUDE_CONFIG_DIR")
-        .output()
-        .unwrap()
-}
+use store_fixture::{started, submit};
 
 #[test]
 fn a_run_started_with_no_node_and_no_plugin_root_files_its_start_checkpoint() {
