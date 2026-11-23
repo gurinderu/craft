@@ -97,8 +97,12 @@ fn review_post_refuses_what_it_cannot_tell_with_2_and_fails_a_post_with_1() {
     );
     assert!(!f.bin.join("sent.json").exists(), "nothing posted");
     let r: Value = serde_json::from_str(&std::fs::read_to_string(&f.record).unwrap()).unwrap();
-    assert!(
-        r["sorting"].get("choices").is_none(),
-        "no choice recorded for a post that failed"
+    assert_eq!(
+        (
+            r["sorting"]["choices"]["1"].get("choice"),
+            &r["sorting"]["choices"]["1"]["pr"]
+        ),
+        (None, &json!(5)),
+        "no choice recorded for a post that failed, only the PR it was posting on"
     );
 }

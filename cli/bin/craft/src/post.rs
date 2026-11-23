@@ -99,8 +99,14 @@ fn posted(args: &PostArgs) -> Result<Out, Stop> {
     let named = args.record.as_deref().map(write::repo_relative);
     let req = write::request(&repo, None);
     let file = record::file(named.as_deref(), &req, &env)?;
-    let rec = record::read(&file).map_err(Stop::Refused)?;
+    let rec = record::read(&file, args.n).map_err(Stop::Refused)?;
     let question = args.kind == As::Question;
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "a finding's number, far below 2^53"
+    )]
+    let remember =
+        |pr: u64| craft_store::sorting::posting::mark(&store, &file, args.n as f64, pr, env.now);
     let d = Doubtful {
         findings: &rec.findings,
         n: args.n,
@@ -110,42 +116,25 @@ fn posted(args: &PostArgs) -> Result<Out, Stop> {
         branch: rec.branch.as_deref(),
         record_pr: rec.pr,
         dirty: rec.dirty,
+        before_post: Some(&remember),
     };
+    // A retry with no --pr names the PR an earlier post chose, whatever its state now.
+    let pr = args.pr.or(rec.posted_on);
     let scratch = crate::scratch::dir("craft-post")?;
-    let posting = publish::post_doubtful(&repo, &d, args.pr, &PostSetup::default(), &scratch);
+    let posting = publish::post_doubtful(&repo, &d, pr, &PostSetup::default(), &scratch);
     drop(std::fs::remove_dir_all(&scratch));
     let posting = posting.map_err(|e| match e {
         PostError::Finding(why) | PostError::Pr(why) => Stop::Refused(why),
-        other @ (PostError::Gh(_) | PostError::Fetch(_)) => Stop::Failed(anyhow!(
-            "{other} (record {}: a retry names it with --record)",
-            file.display()
-        )),
+        other @ (PostError::Gh(_) | PostError::Fetch(_) | PostError::Remember(_)) => {
+            Stop::Failed(anyhow!(
+                "{other} (record {}: a retry names it with --record)",
+                file.display()
+            ))
+        }
         other @ PostError::Refused(_) => Stop::Failed(anyhow!(other)),
     })?;
     let choice = if question { "question" } else { "defect" };
-    #[expect(
-        clippy::cast_precision_loss,
-        reason = "a finding's number, far below 2^53"
-    )]
-    let recorded = match craft_store::sorting::record_choice(
-        &store,
-        &file,
-        args.n as f64,
-        choice,
-        env.now,
-    ) {
-        Ok((line, _)) => Value::from(line),
-        Err(why) => {
-            drop(writeln!(
-                std::io::stderr().lock(),
-                "craft review post WARNING: the choice was not recorded: {why} — record it with `craft runs sorting-choice --n {} --choice {choice} --record '{}' --store '{}'`",
-                args.n,
-                file.display(),
-                store.display()
-            ));
-            Value::Null
-        }
-    };
+    let recorded = record::choose(&store, &file, (args.n, choice), env.now);
     Ok(Out {
         posting,
         recorded,

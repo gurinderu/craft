@@ -1,5 +1,6 @@
 //! The review run's record a doubtful finding is posted from: which record, and what it says.
 
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use anyhow::anyhow;
@@ -32,9 +33,11 @@ pub(super) struct Record {
     pub(super) pr: Option<u64>,
     /// The review read uncommitted work: its own `diff.dirty`, from the run's state.
     pub(super) dirty: bool,
+    /// The PR an earlier post of finding `n` chose (`sorting.choices[n].pr`): a retry's PR.
+    pub(super) posted_on: Option<u64>,
 }
 
-pub(super) fn read(file: &Path) -> Result<Record, String> {
+pub(super) fn read(file: &Path, n: u64) -> Result<Record, String> {
     let text =
         std::fs::read_to_string(file).map_err(|e| format!("reading {}: {e}", file.display()))?;
     let r: Value = serde_json::from_str(&text).map_err(|e| format!("{}: {e}", file.display()))?;
@@ -56,6 +59,7 @@ pub(super) fn read(file: &Path) -> Result<Record, String> {
             .and_then(Value::as_u64)
             .filter(|&n| n > 0),
         dirty: reviewed_dirty(text_of("cliRun").as_deref())?,
+        posted_on: craft_store::sorting::posting::recorded_pr(&r, n),
     })
 }
 
@@ -86,4 +90,25 @@ fn reviewed_dirty(run: Option<&str>) -> Result<bool, String> {
                 anyhow::Error::from(e)
             )
         })
+}
+
+/// Records `choice` for finding `n` of `file`: the line it says, or null with a warning on stderr
+/// naming the command that records it by hand.
+pub(super) fn choose(store: &Path, file: &Path, (n, choice): (u64, &str), now: i64) -> Value {
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "a finding's number, far below 2^53"
+    )]
+    match craft_store::sorting::record_choice(store, file, n as f64, choice, now) {
+        Ok((line, _)) => Value::from(line),
+        Err(why) => {
+            drop(writeln!(
+                std::io::stderr().lock(),
+                "craft review post WARNING: the choice was not recorded: {why} — record it with `craft runs sorting-choice --n {n} --choice {choice} --record '{}' --store '{}'`",
+                file.display(),
+                store.display()
+            ));
+            Value::Null
+        }
+    }
 }

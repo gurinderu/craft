@@ -62,3 +62,28 @@ fn an_unknown_choice_a_missing_finding_or_no_sorting_is_refused_by_name() {
             .starts_with("the record carries no sorting")
     );
 }
+
+#[test]
+fn the_pr_a_post_is_marked_with_stays_with_the_choice_that_completes_it() {
+    let marked = posting::apply(&record(), 2.0, 7, "T").unwrap();
+    let choices = |r: &Obj| {
+        r.get("sorting")
+            .and_then(Js::as_obj)
+            .and_then(|s| s.get("choices"))
+            .unwrap()
+            .compact()
+    };
+    assert_eq!(
+        choices(&marked),
+        r#"{"1":"old","2":{"pr":7,"posting":true,"at":"T"}}"#
+    );
+    let (done, _) = apply_choice(&marked, 2.0, "question", "U").unwrap();
+    assert_eq!(
+        choices(&done),
+        r#"{"1":"old","2":{"choice":"question","at":"U","pr":7}}"#
+    );
+    let json: serde_json::Value = serde_json::from_str(&Js::Obj(done).compact()).unwrap();
+    assert_eq!(posting::recorded_pr(&json, 2), Some(7));
+    assert_eq!(posting::recorded_pr(&json, 1), None);
+    posting::apply(&record(), 9.0, 7, "T").unwrap_err();
+}

@@ -50,6 +50,7 @@ fn post_to(
         branch,
         record_pr: None,
         dirty: false,
+        before_post: None,
     };
     publish::post_doubtful(repo, &d, pr, setup, scratch)
 }
@@ -297,6 +298,7 @@ fn post_detached(
         branch: Some("HEAD"),
         record_pr,
         dirty: false,
+        before_post: None,
     };
     publish::post_doubtful(repo, &d, pr, setup, scratch)
 }

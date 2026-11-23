@@ -24,7 +24,8 @@ pub(super) fn already(
 ) -> Result<bool, PostError> {
     let seen = read::posted_already(runner, repo, p.number).map_err(|e| {
         PostError::Gh(format!(
-            "{e} — nothing posted, since what is there already could not be read"
+            "PR #{}: {e} — nothing posted, since what is there already could not be read",
+            p.number
         ))
     })?;
     let first = body::first_line(&c.body).to_owned();

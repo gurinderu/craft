@@ -48,6 +48,9 @@ pub struct Doubtful<'a> {
     /// The review read uncommitted work (`diff.dirty` of the run's state, as the review judged it):
     /// its lines are not the PR's, and nothing is posted.
     pub dirty: bool,
+    /// Called with the PR right before the comment is posted, so a retry can name it; its failure
+    /// posts nothing.
+    pub before_post: Option<&'a dyn Fn(u64) -> Result<(), String>>,
 }
 
 /// Posts `d` on its branch's pull request (`pr`, checked against it, or the one open
@@ -121,9 +124,17 @@ pub fn post(
         file: c.file.clone(),
         line: c.line,
     };
+    if let Some(remember) = d.before_post {
+        remember(p.number).map_err(|e| {
+            PostError::Remember(format!(
+                "PR #{} could not be noted in the record before posting: {e} — nothing posted",
+                p.number
+            ))
+        })?;
+    }
     let refused = to
         .defect(usize::try_from(d.n).unwrap_or(0), &defect, &c.body)
-        .map_err(PostError::Gh)?;
+        .map_err(|e| PostError::Gh(format!("PR #{}: {e}", p.number)))?;
     (out.posted, out.to_file) = (true, refused || c.line.is_none());
     out.reason = format!(
         "posted on PR #{} {} at {}{note}",

@@ -90,8 +90,17 @@ fn only_pr(runner: &Runner, repo: &Path, branch: &str) -> Result<Found, PostErro
     }
 }
 
+/// PR `n` as gh names it: a PR gh says does not exist is refused; any other failure (a 5xx, a
+/// timeout, no gh) is a failure on the way, which a retry may get past.
 fn view(runner: &Runner, repo: &Path, n: u64) -> Result<Pr, PostError> {
-    read::pull_request(runner, repo, Some(&n.to_string())).map_err(PostError::Pr)
+    read::pull_request(runner, repo, Some(&n.to_string())).map_err(|e| {
+        if e.contains("Could not resolve to a PullRequest") || e.contains("no pull requests found")
+        {
+            PostError::Pr(format!("PR #{n}: {e}"))
+        } else {
+            PostError::Gh(format!("PR #{n}: {e}"))
+        }
+    })
 }
 
 /// `p`, refused when its head is a fork's.

@@ -37,6 +37,7 @@ fn post(
         branch: Some("main"),
         record_pr: None,
         dirty,
+        before_post: None,
     };
     publish::post_doubtful(repo, &d, pr, setup, scratch)
 }

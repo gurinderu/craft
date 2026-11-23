@@ -13,6 +13,9 @@ pub enum PostError {
     /// gh failed, or the PR names no commit to post on.
     #[error("{0}")]
     Gh(String),
+    /// The PR could not be noted in the record before the post.
+    #[error("{0}")]
+    Remember(String),
     /// The PR's head, missing here, could not be fetched from `origin` in time.
     #[error("{0}")]
     Fetch(String),

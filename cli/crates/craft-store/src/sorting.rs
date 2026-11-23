@@ -116,10 +116,19 @@ pub fn apply_choice(record: &Obj, n: f64, choice: &str, at: &str) -> Result<(Obj
         }
         _ => Obj::new(),
     };
-    let mine = Obj::new()
+    let mut mine = Obj::new()
         .with("choice", Js::str(choice))
         .with("at", Js::str(at));
-    choices.set(JsString::from(crate::js::number_text(n)), Js::Obj(mine));
+    // The PR `craft review post` chose before posting ([`posting::mark`]) stays with the choice.
+    let key = JsString::from(crate::js::number_text(n));
+    if let Some(pr) = choices
+        .get(&key)
+        .and_then(Js::as_obj)
+        .and_then(|c| c.get("pr"))
+    {
+        mine.set("pr", pr.clone());
+    }
+    choices.set(key, Js::Obj(mine));
     let mut sorting = sorting.clone();
     sorting.set("choices", Js::Obj(choices));
     let mut out = record.clone();
@@ -156,5 +165,6 @@ pub fn record_choice(
     Ok((line, warned))
 }
 
+pub mod posting;
 #[cfg(test)]
 mod tests;

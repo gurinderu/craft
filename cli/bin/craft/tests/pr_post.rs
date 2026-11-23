@@ -15,6 +15,8 @@ mod from_record;
 mod posting;
 #[path = "pr_post/rejections.rs"]
 mod rejections;
+#[path = "pr_post/retry.rs"]
+mod retry;
 #[path = "pr_post/support.rs"]
 mod support;
 #[path = "pr_post/which_record.rs"]

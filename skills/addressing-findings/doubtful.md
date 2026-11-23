@@ -43,9 +43,12 @@ The sorting changes nothing in the verdict.
    GitHub takes no line comment outside the diff — same marker, same thread reading. A comment
    already on the PR for that finding is not posted again — on the record's own open PR found
    before its head is judged, so a retry records its choice even once the head moved. **A retry
-   names its PR**: when the record's PR is closed, or its branch has no open PR, and no `--pr` is
-   given, it is refused (exit 2) — pass `--pr <n>` with the PR the first attempt printed (its
-   JSON line's `pr`); closed PRs are never searched. On a PR named with `--pr`,
+   names its PR**: right before the comment is posted, the PR it goes on is written into the
+   finding's choice in the record (`{ pr, posting: true }`, kept once the choice lands), and a
+   retry with no `--pr` takes that PR, whatever its state now — never another open PR of the
+   branch. Every `gh` and fetch failure names the PR. With no PR recorded, the record's PR is
+   closed, or its branch has no open PR, and no `--pr` is given, it is refused (exit 2) — pass
+   `--pr <n>`; closed PRs are never searched. On a PR named with `--pr` or recorded so,
    closed or not, its head is checked to hold the reviewed commit first, then a comment there
    counts as posted already; a closed PR takes no new comment. It is posted on the reviewed commit the
    record names: when the PR's head moved since, only if the new commits leave its line alone; a
@@ -56,8 +59,9 @@ The sorting changes nothing in the verdict.
    no single open same-repository PR of the record's branch, a `--pr` of another branch, a PR
    whose head does not hold the reviewed commit, a fork's PR, a closed or merged PR, a record
    that names no run directory or whose run directory is gone or its state unreadable, a
-   detached-HEAD record with neither a PR of its own nor `--pr`, no `gh` answer about a named
-   PR; exit 1 is the post failing — `gh` failing (its list of the branch's PRs, the post) or the
+   detached-HEAD record with neither a PR of its own nor `--pr`, a PR gh says does not
+   exist; exit 1 is the post failing — `gh` failing (viewing the PR, listing the branch's PRs,
+   reading its comments, the post), the PR not noted in the record before the post, or the
    PR's head not fetched from `origin`, each named in one line with the record to retry with; a
    moved head over its line, no reviewed commit, a review of uncommitted work — nothing posted. A file the PR does not touch takes no review
    comment at all: GitHub refuses it; say so to the human and leave that finding to a word with the
