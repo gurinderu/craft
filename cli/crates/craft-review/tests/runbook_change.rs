@@ -5,7 +5,7 @@
 mod common;
 
 use common::markdown::repo;
-use common::{ids, opts};
+use common::{git, ids, opts, prompt_of};
 use craft_review::step;
 use serde_json::{Value, json};
 
@@ -73,11 +73,23 @@ fn a_deleted_runbook_is_taken() {
 }
 
 #[test]
-fn a_step_removed_in_a_rename_is_matched_under_the_old_path() {
+fn a_step_removed_in_a_rename_is_matched_under_the_old_path_whatever_diff_renames_says() {
     let moved = DRAIN.replace("    kubectl cordon $N\n", "");
-    let s = first_step_over(
+    let repo = repo(
         &[("docs/drain.md", DRAIN)],
         &[("docs/drain.md", ""), ("docs/ops/drain.md", &moved)],
     );
+    git(repo.path(), &["config", "diff.renames", "false"]);
+    let out = tempfile::tempdir().unwrap();
+    let s = step::start(&opts(repo.path(), out.path())).unwrap();
     assert_eq!(ids(&s), ["scout-runbook"], "{s}");
+    let p = prompt_of(&s["tasks"][0]);
+    assert!(
+        p.contains("':(literal)docs/ops/drain.md'"),
+        "the new path: {p}"
+    );
+    assert!(
+        !p.contains("':(literal)docs/drain.md'"),
+        "not the old one: {p}"
+    );
 }

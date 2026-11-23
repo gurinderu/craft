@@ -126,10 +126,17 @@ pub(crate) fn taken(cwd: &Path, merge_base: &str, candidates: &[String]) -> Take
                     out.files.insert(f.clone());
                 }
             }
-            (Err(e), _) | (_, Err(e)) => out.notes.push(format!(
-                "{f} could not be read ({e}): whether its change touches a runbook step is unknown, \
-                 and it was NOT reviewed by the runbook lens"
-            )),
+            (Err(e), _) | (_, Err(e)) => {
+                let named = if was == f {
+                    f.clone()
+                } else {
+                    format!("{f} (at the base {was})")
+                };
+                out.notes.push(format!(
+                    "{named} could not be read ({e}): whether its change touches a runbook step is \
+                     unknown, and it was NOT reviewed by the runbook lens"
+                ));
+            }
         }
     }
     out

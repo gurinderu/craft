@@ -1,15 +1,13 @@
 //! Whether a shell command line acts on a system outside the checkout (realm @nick/craft, node
-//! #620): each command of the line — split at pipes, `&&`, `||`, `;`, `$(…)` and backticks — read
-//! past a prompt, environment assignments and wrappers, each with its own options (`sudo -n`,
-//! `sudo -u postgres`, `watch -n 5`, `timeout 30`, `xargs -I {}`), to its program, and past the
-//! program's global options to its subcommand (`docker --context prod exec`). A build or a package
+//! #620). No option is parsed — enumerating every tool's flags does not converge. The line is cut
+//! into words at whitespace and shell punctuation, each word stripped of its quotes, a leading
+//! `$`/`#` and a directory, and the line is a step when any word is a known command anywhere on it
+//! (`sudo -iu postgres psql`, `watch 'kubectl get pods'`, `sh -c 'systemctl restart x'`), when a
+//! tool whose subcommand matters is followed anywhere later by one of its listed subcommands
+//! (`nix --substituters https://x copy`), or when a fetcher names a URL. A false positive only runs
+//! the lens once more; a false negative would skip a procedure silently. A build or a package
 //! manager's command, which runs in the checkout (`cargo`, `npm`, `nix build`, `docker build`), is
 //! no such step, nor is `git push` (a contributing guide's, not an operator's).
-
-use std::iter::Peekable;
-use std::str::SplitWhitespace;
-
-use super::options::{SUBCOMMANDS, WRAPPERS, Wrapper, values};
 
 /// Programs whose every use acts on a cluster, a forge, a cloud, a database or a host.
 #[rustfmt::skip]
@@ -21,80 +19,34 @@ const COMMANDS: &[&str] = &[
     "journalctl",
 ];
 
-/// Programs that act outside only when the command names a URL.
+/// Tools that act outside the checkout only through these subcommands.
+const SUBCOMMANDS: &[(&str, &[&str])] = &[
+    ("docker", &["push", "login", "exec"]),
+    ("podman", &["push", "login", "exec"]),
+    ("nix", &["copy"]),
+];
+
+/// Programs that act outside only when the line names a URL.
 const FETCHERS: &[&str] = &["curl", "wget"];
 
-type Words<'a> = Peekable<SplitWhitespace<'a>>;
+/// The words of `line`, each as a program would be named: quotes, a leading `$` or `#` and a
+/// directory taken off.
+fn words(line: &str) -> Vec<&str> {
+    line.split(|c: char| c.is_whitespace() || matches!(c, '|' | '&' | ';' | '(' | ')' | '`'))
+        .map(|w| w.trim_matches(['"', '\'']).trim_start_matches(['$', '#']))
+        .map(|w| w.rsplit('/').next().unwrap_or(w))
+        .filter(|w| !w.is_empty())
+        .collect()
+}
 
 /// Whether `line` holds a command acting on a system outside the checkout.
 pub(super) fn runs_command(line: &str) -> bool {
-    line.split(['|', '&', ';', '(', ')', '`']).any(acts_outside)
-}
-
-fn is_assignment(word: &str) -> bool {
-    word.split_once('=').is_some_and(|(name, _)| {
-        !name.is_empty() && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+    let words = words(line);
+    words.iter().enumerate().any(|(at, w)| {
+        COMMANDS.contains(w)
+            || (FETCHERS.contains(w) && line.contains("://"))
+            || SUBCOMMANDS.iter().any(|(tool, subs)| {
+                tool == w && words.iter().skip(at + 1).any(|later| subs.contains(later))
+            })
     })
-}
-
-/// A `user@host:~$` or `host#` prompt word.
-fn is_prompt(word: &str) -> bool {
-    word.ends_with('$') || (word.ends_with('#') && word.contains('@'))
-}
-
-/// Takes `wrapper`'s options (a bare `-` among them, `env`'s) and positional words off `words`.
-fn skip_wrapper(wrapper: &Wrapper, words: &mut Words<'_>) {
-    let mut positional = wrapper.positional;
-    while let Some(next) = words.peek().copied() {
-        if next.starts_with('-') {
-            words.next();
-            let n = values(next, |o| wrapper.valued.contains(&o).then_some(1));
-            for _ in 0..n {
-                words.next();
-            }
-        } else if positional > 0 {
-            positional -= 1;
-            words.next();
-        } else {
-            break;
-        }
-    }
-}
-
-/// Whether the program of one command, past its wrappers, acts outside the checkout.
-fn acts_outside(segment: &str) -> bool {
-    let mut words: Words<'_> = segment.split_whitespace().peekable();
-    while let Some(w) = words.next() {
-        if is_assignment(w) || is_prompt(w) {
-            continue;
-        }
-        if let Some(wrapper) = WRAPPERS.iter().find(|x| x.name == w) {
-            skip_wrapper(wrapper, &mut words);
-            continue;
-        }
-        let program = w.rsplit('/').next().unwrap_or(w);
-        return COMMANDS.contains(&program)
-            || subcommand(program, &mut words)
-            || (FETCHERS.contains(&program) && segment.contains("://"));
-    }
-    false
-}
-
-/// Whether `program`'s subcommand, past its global options, is one acting outside the checkout.
-fn subcommand(program: &str, words: &mut Words<'_>) -> bool {
-    let Some(p) = SUBCOMMANDS.iter().find(|x| x.program == program) else {
-        return false;
-    };
-    while let Some(w) = words.next() {
-        if !w.starts_with('-') {
-            return p.subs.contains(&w);
-        }
-        let n = values(w, |o| {
-            p.globals.iter().find(|(g, _)| *g == o).map(|(_, n)| *n)
-        });
-        for _ in 0..n {
-            words.next();
-        }
-    }
-    false
 }

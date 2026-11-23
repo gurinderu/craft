@@ -8,7 +8,6 @@
 mod changed;
 mod command;
 mod markdown;
-mod options;
 mod renamed;
 
 pub(crate) use changed::taken;

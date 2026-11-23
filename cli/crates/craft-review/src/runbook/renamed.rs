@@ -33,7 +33,9 @@ mod tests {
 
     #[test]
     fn a_rename_maps_the_new_path_to_the_old_and_a_plain_change_maps_nothing() {
-        let diff = "diff --git a/docs/drain.md b/docs/ops/drain.md\nsimilarity index 90%\nrename from docs/drain.md\nrename to docs/ops/drain.md\n--- a/docs/drain.md\n+++ b/docs/ops/drain.md\n@@ -6 +5,0 @@\n---- a/x\n+++ b/y\ndiff --git a/a.md b/a.md\n--- a/a.md\n+++ b/a.md\n@@ -1 +1 @@\n-x\n+y\n";
+        // A removed `-- a/fake.md` and an added `++ b/other.md` print as header lookalikes inside a
+        // hunk: the in-header guard must not read them as a rename.
+        let diff = "diff --git a/a.md b/a.md\n--- a/a.md\n+++ b/a.md\n@@ -1 +1 @@\n--- a/fake.md\n+++ b/other.md\ndiff --git a/docs/drain.md b/docs/ops/drain.md\nsimilarity index 90%\nrename from docs/drain.md\nrename to docs/ops/drain.md\n--- a/docs/drain.md\n+++ b/docs/ops/drain.md\n@@ -6 +5,0 @@\n-    kubectl cordon $N\n";
         let got = renames(diff);
         assert_eq!(got.len(), 1, "{got:?}");
         assert_eq!(
