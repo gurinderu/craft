@@ -240,3 +240,14 @@ fn a_promised_weak_assertion_s_verifier_is_shown_intent_unmet_as_a_listed_level(
     let raised = verifier_lines(&gap(&json!({"severity": "Medium"})));
     assert!(!raised.contains("intent-unmet"), "{raised}");
 }
+
+#[test]
+fn a_verified_harm_that_is_not_must_fix_raises_nothing() {
+    for f in [
+        gap(&json!({"source": "errors", "harmLevel": "operator-recovery"})),
+        gap(&json!({"harmLevel": "operator-recovery"})),
+    ] {
+        let settled = finalize(&confirmed(&f, "operator-recovery"));
+        assert_eq!(settled["severity"], "Low", "{settled}");
+    }
+}

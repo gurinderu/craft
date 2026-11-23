@@ -169,7 +169,8 @@ pub(crate) fn raise(f: &Value, level: &str) -> Value {
     let to = match severity.as_str() {
         _ if !must_fix(&claim) => None,
         "Medium" | "Low" | "Info" if !held => Some("High"),
-        "Low" | "Info" if held => Some(super::test_gap::WEAK_CEILING),
+        // Past the arm above, a Low or Info is a held weak assertion.
+        "Low" | "Info" => Some(super::test_gap::WEAK_CEILING),
         _ => None,
     };
     if let Some(to) = to {
