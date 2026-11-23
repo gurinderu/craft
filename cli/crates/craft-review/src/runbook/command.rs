@@ -1,6 +1,6 @@
 //! Whether a shell command line acts on a system outside the checkout (realm @nick/craft, node
 //! #620). No option is parsed — enumerating every tool's flags does not converge. The line is cut
-//! into words at whitespace and shell punctuation, each word stripped of its quotes, a leading
+//! into words at whitespace and shell punctuation (redirections too: `psql<<EOF`), each word stripped of its quotes, a leading
 //! `$`/`#` and a directory, and the line is a step when any word is a known command anywhere on it
 //! (`sudo -iu postgres psql`, `watch 'kubectl get pods'`, `sh -c 'systemctl restart x'`), when a
 //! tool whose subcommand matters is followed anywhere later by one of its listed subcommands
@@ -32,11 +32,13 @@ const FETCHERS: &[&str] = &["curl", "wget"];
 /// The words of `line`, each as a program would be named: quotes, a leading `$` or `#` and a
 /// directory taken off.
 fn words(line: &str) -> Vec<&str> {
-    line.split(|c: char| c.is_whitespace() || matches!(c, '|' | '&' | ';' | '(' | ')' | '`'))
-        .map(|w| w.trim_matches(['"', '\'']).trim_start_matches(['$', '#']))
-        .map(|w| w.rsplit('/').next().unwrap_or(w))
-        .filter(|w| !w.is_empty())
-        .collect()
+    line.split(|c: char| {
+        c.is_whitespace() || matches!(c, '|' | '&' | ';' | '(' | ')' | '`' | '<' | '>')
+    })
+    .map(|w| w.trim_matches(['"', '\'']).trim_start_matches(['$', '#']))
+    .map(|w| w.rsplit('/').next().unwrap_or(w))
+    .filter(|w| !w.is_empty())
+    .collect()
 }
 
 /// Whether `line` holds a command acting on a system outside the checkout.
@@ -50,3 +52,7 @@ pub(super) fn runs_command(line: &str) -> bool {
             })
     })
 }
+
+#[cfg(test)]
+#[path = "command_tests.rs"]
+mod tests;

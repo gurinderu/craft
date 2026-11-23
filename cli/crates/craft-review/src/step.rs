@@ -225,6 +225,17 @@ pub(crate) fn tracks_of(
     let tracks: Vec<Track> = coverage::assign(files, profiles, &|f| runbooks.files.contains(f))
         .into_iter()
         .filter_map(|(i, files)| Some(Track::new(&profiles.get(i)?.id, files)))
+        .map(|mut t| {
+            // A renamed runbook is read at both its paths, so its lens sees the rename and the
+            // steps it removed, not a file wholly added.
+            let old = t
+                .files
+                .iter()
+                .filter_map(|f| runbooks.renamed.get(f).cloned());
+            let old: Vec<String> = old.collect();
+            t.files.extend(old);
+            t
+        })
         .collect();
     let taken = |f: &str| tracks.iter().any(|t| t.files.iter().any(|x| x == f));
     let uncovered = coverage::uncovered(files, taken);

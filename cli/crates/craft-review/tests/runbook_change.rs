@@ -5,7 +5,7 @@
 mod common;
 
 use common::markdown::repo;
-use common::{git, ids, opts, prompt_of};
+use common::{git, ids, opts, prompt_of, scout, submit};
 use craft_review::step;
 use serde_json::{Value, json};
 
@@ -83,13 +83,16 @@ fn a_step_removed_in_a_rename_is_matched_under_the_old_path_whatever_diff_rename
     let out = tempfile::tempdir().unwrap();
     let s = step::start(&opts(repo.path(), out.path())).unwrap();
     assert_eq!(ids(&s), ["scout-runbook"], "{s}");
+    let s = submit(
+        &out.path().join("run"),
+        json!({"scout-runbook": scout("small", &[])}),
+    );
+    assert_eq!(ids(&s), ["lens-runbook-runbook-r1"], "{s}");
     let p = prompt_of(&s["tasks"][0]);
+    // The lens's own diff names both paths, so git shows the rename and the removed step.
     assert!(
-        p.contains("':(literal)docs/ops/drain.md'"),
-        "the new path: {p}"
+        p.contains("-- ':(literal)docs/ops/drain.md' ':(literal)docs/drain.md'"),
+        "both paths: {p}"
     );
-    assert!(
-        !p.contains("':(literal)docs/drain.md'"),
-        "not the old one: {p}"
-    );
+    assert!(p.contains("git diff -M"), "{p}");
 }

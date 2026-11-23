@@ -23,6 +23,8 @@ const BASE_MAX: u64 = 4 << 20;
 #[derive(Debug, Default)]
 pub(crate) struct Taken {
     pub files: BTreeSet<String>,
+    /// The old path of each taken file the change renamed, by its new path: the lens reads both.
+    pub renamed: BTreeMap<String, String>,
     pub notes: Vec<String>,
 }
 
@@ -124,6 +126,9 @@ pub(crate) fn taken(cwd: &Path, merge_base: &str, candidates: &[String]) -> Take
             (Ok(new), Ok(old)) => {
                 if touches(change.as_ref(), (f, was), (new.as_deref(), old.as_deref())) {
                     out.files.insert(f.clone());
+                    if was != f {
+                        out.renamed.insert(f.clone(), was.to_owned());
+                    }
                 }
             }
             (Err(e), _) | (_, Err(e)) => {
