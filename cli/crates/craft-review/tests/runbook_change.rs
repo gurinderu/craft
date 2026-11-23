@@ -1,6 +1,7 @@
 //! Which change to a runbook buys the runbook lens: a step changed, replaced, disabled or deleted,
-//! a shell block's info string flipped, a block nested in a list item — and not a removed line of
-//! prose that happens to open with a command.
+//! a shell block's info string flipped, a block nested in a list item, a here-document body or a
+//! quoted argument spanning lines — and not a removed line of prose that happens to open with a
+//! command.
 
 mod common;
 
@@ -70,4 +71,23 @@ fn prose_and_a_removed_prose_line_opening_with_a_command_are_not() {
 #[test]
 fn a_deleted_runbook_is_taken() {
     assert!(taken(DRAIN, ""), "every command line removed");
+}
+
+#[test]
+fn a_change_inside_a_here_document_or_a_quoted_argument_is_taken() {
+    let heredoc =
+        "# Purge\n\n```sh\npsql \"$DB\" <<EOF\nDELETE FROM users WHERE stale;\nEOF\n```\n";
+    let widened = heredoc.replace(" WHERE stale", "");
+    assert!(taken(heredoc, &widened), "a heredoc body");
+    let manifest = "# Scale\n\n```sh\nkubectl apply -f - <<'EOF'\nspec:\n  replicas: 3\nEOF\n```\n";
+    assert!(
+        taken(manifest, &manifest.replace("replicas: 3", "replicas: 0")),
+        "a manifest fed on stdin"
+    );
+    let quoted =
+        "# Stop\n\n```sh\nssh db-1 '\n  systemctl stop app\n  rm -rf /var/lib/app/cache\n'\n```\n";
+    assert!(
+        taken(quoted, &quoted.replace("/cache", "")),
+        "a multi-line quoted argument"
+    );
 }

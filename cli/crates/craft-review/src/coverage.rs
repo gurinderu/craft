@@ -94,6 +94,25 @@ pub const NOTHING_TO_REVIEW: &str = "Approve (nothing to review)";
 const NO_CHANGED_FILES: &str = "NOTHING WAS REVIEWED — the diff came back EMPTY: no changed file was detected against the resolved base. Either there is genuinely nothing to review here (an already-merged branch, or a `path` scope that matches nothing) or the base/scope is wrong and detection failed. No lens ran, so this is not an approval — check the base and re-run.";
 const ON_TRUNK: &str = "NOTHING WAS REVIEWED — HEAD IS the resolved base: this checkout has no commit of its own beyond the trunk (the review ran on the trunk itself, or on a branch not yet ahead of it), so the diff against the trunk is empty by construction. Re-run it from the branch's own checkout or worktree, or pass `base` naming what to compare against. No lens ran, so this is not an approval.";
 
+/// `exit` held at Warning when it would approve a change with nothing to review while `gaps` —
+/// changed files the review could not read, such as a runbook the runbook signal could not — is
+/// not empty: no lens ran, and what went unread is no approval. Any other exit stands.
+#[must_use]
+pub fn held(exit: Option<Exit>, gaps: &[String]) -> Option<Exit> {
+    match exit {
+        Some(e) if e.verdict == NOTHING_TO_REVIEW && !gaps.is_empty() => Some(Exit {
+            verdict: "Warning".into(),
+            line: format!(
+                "⚠️ Warning — no lens ran, and a coverage gap holds it at Warning, never Approve: {}",
+                gaps.join(" · ")
+            ),
+            not_run: None,
+            listed: e.listed,
+        }),
+        e => e,
+    }
+}
+
 /// The exit `diff` takes when no profile covers any of its files, `None` when one covers one.
 /// `lang` names what the profiles review ([`supported`]). `explicit_base`: the caller named the
 /// base, so HEAD at it is their choice, not a launch on the trunk.
@@ -140,7 +159,36 @@ pub fn exit(diff: &Diff, covered: usize, lang: &str, explicit_base: bool) -> Opt
 
 #[cfg(test)]
 mod tests {
-    use super::is_inert;
+    use super::{Exit, NOTHING_TO_REVIEW, held, is_inert};
+
+    fn exit(verdict: &str) -> Exit {
+        Exit {
+            verdict: verdict.into(),
+            line: "l".into(),
+            not_run: None,
+            listed: Some("listed".into()),
+        }
+    }
+
+    #[test]
+    fn only_a_nothing_to_review_exit_with_a_gap_is_held_at_warning() {
+        let gap = ["ops.md could not be read".to_owned()];
+        let got = held(Some(exit(NOTHING_TO_REVIEW)), &gap).unwrap();
+        assert_eq!(got.verdict, "Warning");
+        assert!(
+            got.line.contains("ops.md could not be read"),
+            "{}",
+            got.line
+        );
+        assert_eq!(got.listed.as_deref(), Some("listed"));
+        assert_eq!(
+            held(Some(exit(NOTHING_TO_REVIEW)), &[]).unwrap().verdict,
+            NOTHING_TO_REVIEW
+        );
+        let other = held(Some(exit("INCOMPLETE (empty diff)")), &gap).unwrap();
+        assert_eq!(other.verdict, "INCOMPLETE (empty diff)");
+        assert!(held(None, &gap).is_none());
+    }
 
     #[test]
     fn inert_files_are_named_narrowly() {

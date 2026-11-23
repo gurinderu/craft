@@ -1,0 +1,68 @@
+//! What a shell line leaves open past its end, so the lines that follow are read as part of the
+//! command that opened them (realm @nick/craft, node #620): a quoted argument spanning lines
+//! (`ssh host '…'`), and the here-documents it opened (`psql <<EOF`, `kubectl apply -f - <<'EOF'`),
+//! whose bodies run through that command. Read as the shell reads them, without parsing further:
+//! quotes and `\` escapes, a `#` comment opening a word, a `<<` or `<<-` with its delimiter word,
+//! a `<<<` here-string opening nothing.
+
+/// What one line left open: the quote still open at its end, and the here-document delimiters it
+/// opened, in order.
+#[derive(Debug, PartialEq, Eq, Default)]
+pub(super) struct Opened {
+    pub quote: Option<char>,
+    pub heredocs: Vec<String>,
+}
+
+/// Whether `c` ends an unquoted word.
+fn ends_word(c: char) -> bool {
+    c.is_whitespace() || matches!(c, ';' | '|' | '&' | '<' | '>' | '(' | ')')
+}
+
+/// The delimiter word of a here-document whose `<<` `chars` stood just past: its `-`, the blanks
+/// before it and its quotes taken off; `None` when no word follows.
+fn delimiter(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> Option<String> {
+    chars.next_if_eq(&'-');
+    while chars.next_if(|c| *c == ' ' || *c == '\t').is_some() {}
+    let mut word = String::new();
+    let mut quote = None;
+    while let Some(c) = chars.next_if(|c| quote.is_some() || !ends_word(*c)) {
+        match (quote, c) {
+            (None, '\'' | '"') => quote = Some(c),
+            (Some(q), _) if c == q => quote = None,
+            (None, '\\') => word.extend(chars.next()),
+            _ => word.push(c),
+        }
+    }
+    (!word.is_empty()).then_some(word)
+}
+
+/// Reads `line`, begun inside `quote` (the quote a former line left open, if any).
+pub(super) fn scan(line: &str, quote: Option<char>) -> Opened {
+    let mut out = Opened {
+        quote,
+        heredocs: Vec::new(),
+    };
+    let mut chars = line.chars().peekable();
+    let mut word_start = true;
+    while let Some(c) = chars.next() {
+        match (out.quote, c) {
+            (Some('\''), '\'') | (Some('"'), '"') => out.quote = None,
+            (Some('"') | None, '\\') => {
+                chars.next();
+            }
+            (None, '\'' | '"') => out.quote = Some(c),
+            (None, '#') if word_start => break,
+            // `<<` opens a here-document; `<<<` is a here-string, which opens none.
+            (None, '<') if chars.next_if_eq(&'<').is_some() && chars.next_if_eq(&'<').is_none() => {
+                out.heredocs.extend(delimiter(&mut chars));
+            }
+            _ => {}
+        }
+        word_start = out.quote.is_none() && ends_word(c);
+    }
+    out
+}
+
+#[cfg(test)]
+#[path = "shell_tests.rs"]
+mod tests;

@@ -5,7 +5,8 @@
 //! its old path. The working tree's version is read as a changed file is read elsewhere: a regular
 //! file of bounded size reached through no link ([`crate::consumers::source`]); the base's from
 //! git, under the same size cap. A file that cannot be read, or a change whose lines cannot be
-//! read, is said in a note, never dropped silently.
+//! read, is said in a note, never dropped silently; a file that cannot be read is a coverage gap
+//! ([`Taken::unread`]), which holds the verdict at Warning.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -25,7 +26,10 @@ pub(crate) struct Taken {
     pub files: BTreeSet<String>,
     /// The old path of each taken file the change renamed, by its new path: the lens reads both.
     pub renamed: BTreeMap<String, String>,
+    /// How the signal read the files weaker than asked, each still judged: degraded notes.
     pub notes: Vec<String>,
+    /// The files it could not read at all, each a coverage gap ([`crate::gaps::runbook_unread`]).
+    pub unread: Vec<String>,
 }
 
 /// The change's lines on both sides: the new side's added or changed, the old side's changed or
@@ -137,10 +141,7 @@ pub(crate) fn taken(cwd: &Path, merge_base: &str, candidates: &[String]) -> Take
                 } else {
                     format!("{f} (at the base {was})")
                 };
-                out.notes.push(format!(
-                    "{named} could not be read ({e}): whether its change touches a runbook step is \
-                     unknown, and it was NOT reviewed by the runbook lens"
-                ));
+                out.unread.push(crate::gaps::runbook_unread(&named, &e));
             }
         }
     }

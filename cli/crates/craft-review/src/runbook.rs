@@ -9,26 +9,39 @@ mod changed;
 mod command;
 mod markdown;
 mod renamed;
+mod shell;
 
-pub(crate) use changed::taken;
+pub(crate) use changed::{Taken, taken};
 
 use std::collections::BTreeSet;
 
 use command::runs_command;
 use markdown::ShellBlock;
 
-/// One logical command of a shell block: its physical lines (joined by a trailing `\`) and text.
+/// One logical command of a shell block: its physical lines and text — lines joined by a trailing
+/// `\`, by a quote left open, and the bodies of the here-documents it opened ([`shell`]).
 #[derive(Default)]
 struct Pending {
     lines: Vec<u32>,
     text: String,
+    /// The quote a line left open.
+    quote: Option<char>,
+    /// The delimiters of the here-documents opened and not yet closed, the next body's first.
+    heredocs: std::collections::VecDeque<String>,
+    /// Whether the command line ended and its here-document bodies are being read.
+    in_body: bool,
 }
 
 impl Pending {
-    /// Takes line `n` of a shell block into the command; once it ends (no trailing `\`), its lines
-    /// join `out` when it runs a command. A `#` line is a comment, except `# ` in a session block
-    /// (`console`, `shell-session`), where it is a root prompt.
+    /// Takes line `n` of a shell block into the command; once it ends (no trailing `\`, no quote
+    /// left open, every here-document closed), its lines join `out` when it runs a command. A `#`
+    /// line is a comment, except `# ` in a session block (`console`, `shell-session`), where it is
+    /// a root prompt.
     fn take(&mut self, line: &str, (n, root_prompt): (u32, bool), out: &mut BTreeSet<u32>) {
+        if self.in_body {
+            self.body(line, n, out);
+            return;
+        }
         let mut t = line.trim();
         if self.lines.is_empty() {
             match t.strip_prefix("# ") {
@@ -38,22 +51,52 @@ impl Pending {
             }
         }
         self.lines.push(n);
-        let (body, continued) = t.strip_suffix('\\').map_or((t, false), |b| (b, true));
+        let opened = shell::scan(t, self.quote);
+        self.quote = opened.quote;
+        self.heredocs.extend(opened.heredocs);
+        let escaped = self.quote.is_none() && t.ends_with('\\');
+        let body = if escaped {
+            t.strip_suffix('\\').unwrap_or(t)
+        } else {
+            t
+        };
         self.text.push_str(body);
         self.text.push(' ');
-        if !continued {
+        if escaped || self.quote.is_some() {
+            return;
+        }
+        if self.heredocs.is_empty() {
             self.finish(out);
+        } else {
+            self.in_body = true;
         }
     }
 
-    /// Ends the command — at its last line, or at the block's end while a `\` left it open —
-    /// its lines joining `out` when it runs a command.
+    /// Takes line `n` of a here-document body; its delimiter line closes it, and the last one closed
+    /// ends the command.
+    fn body(&mut self, line: &str, n: u32, out: &mut BTreeSet<u32>) {
+        self.lines.push(n);
+        self.text.push_str(line);
+        self.text.push(' ');
+        if self
+            .heredocs
+            .front()
+            .is_some_and(|d| d.as_str() == line.trim())
+        {
+            self.heredocs.pop_front();
+            if self.heredocs.is_empty() {
+                self.finish(out);
+            }
+        }
+    }
+
+    /// Ends the command — at its last line, or at the block's end while it is still open — its
+    /// lines joining `out` when it runs a command.
     fn finish(&mut self, out: &mut BTreeSet<u32>) {
         if runs_command(&self.text) {
             out.extend(self.lines.drain(..));
         }
-        self.lines.clear();
-        self.text.clear();
+        *self = Self::default();
     }
 }
 
