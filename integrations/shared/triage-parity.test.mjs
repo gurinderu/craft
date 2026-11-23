@@ -70,7 +70,9 @@ test('triage-cases.json is what the engine dispatches, files and returns', async
   /** @type {unknown[]} */
   const cases = []
   for (const c of inputs) cases.push({ ...c, expected: await expectedOf(c) })
-  const now = JSON.parse(JSON.stringify({ schemas: await schemasOf(inputs.find(c => c.name === 'class 1 with a prBase') ?? inputs[0]), cases }))
+  const now = JSON.parse(
+    JSON.stringify({ schemas: await schemasOf(inputs.find(c => c.name === 'class 1 with a prBase') ?? { name: '', args: {}, answers: {} }), cases }),
+  )
   if (process.env['UPDATE_TRIAGE_PARITY']) writeFileSync(FILE, `${JSON.stringify(now, null, 2)}\n`)
   assert.deepEqual(file.schemas, now.schemas, 'the answer schemas')
   assert.deepEqual(file.cases, now.cases, 'regenerate with UPDATE_TRIAGE_PARITY=1 after a change the port must follow')
