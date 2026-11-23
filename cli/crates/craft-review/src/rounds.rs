@@ -122,8 +122,11 @@ pub fn tasks(
             prior: &prior,
         };
         // A lens that judges the change as a whole (`WHOLE_DIFF_LENSES` in integrations/shared/lens-scope.mjs, the
-        // profile's `wholeDiff`) or reads metrics is never sliced.
-        let whole = profile.lens(lens).is_none_or(|l| l.metrics || l.whole_diff);
+        // profile's `wholeDiff`), one marked `unsliced` (the runbook lens) or one reading metrics is
+        // never sliced.
+        let whole = profile
+            .lens(lens)
+            .is_none_or(|l| l.metrics || l.whole_diff || l.unsliced);
         if slices.is_empty() || whole {
             out.push(lens_task(ctx, &at, rounds.round, None)?);
             continue;

@@ -8,6 +8,8 @@ pub(crate) mod raise;
 mod test_gap;
 
 pub(crate) use floor::{floor_note, raise_path_floor};
+#[cfg(test)]
+pub(crate) use test_gap::PROMISE_FLOOR;
 pub(crate) use test_gap::{raise_weak_floor, reach_is_regression, verifier_lines, weak_floor_note};
 
 use craft_store::js::JsStr;

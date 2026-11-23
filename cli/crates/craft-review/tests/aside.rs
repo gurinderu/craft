@@ -4,7 +4,9 @@
 mod common;
 
 use common::{fixture, ids, opts, prompt_of, write_answer};
-use craft_review::{state, status, step};
+#[cfg(unix)]
+use craft_review::status;
+use craft_review::{state, step};
 
 const SCOUT: &str = "scout-rust";
 

@@ -24,6 +24,8 @@ jsonschema = { version = "0.58", default-features = false }
 regex = "1.13"
 # ECMAScript RegExp only (realm @nick/craft, node #574).
 rquickjs = { version = "=0.14.0", default-features = false, features = ["std"] }
+# CommonMark, to find a runbook's shell blocks and numbered steps (realm @nick/craft, node #620).
+pulldown-cmark = { version = "0.13", default-features = false }
 nix = { version = "0.31", default-features = false, features = ["process", "signal", "user"] }
 ratatui = "0.30"
 serde = { version = "1.0", features = ["derive"] }

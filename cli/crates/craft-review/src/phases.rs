@@ -237,7 +237,7 @@ fn next_round(dir: &Path, run: &mut RunState, profiles: &[Profile]) -> Result<()
         tasks.extend(rounds::tasks(
             &run.context,
             (p, plan),
-            &track.files,
+            &track.read_paths(),
             slices,
             &run.rounds,
         )?);

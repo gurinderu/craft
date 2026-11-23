@@ -10,16 +10,20 @@ use crate::agent::{AgentKind, Model};
 use crate::content::{self, ContentError};
 
 /// The profiles a run may review with, in the order a changed file is offered to them.
-pub const IDS: [&str; 4] = ["rust", "nix", "sql", "general"];
+pub const IDS: [&str; 5] = ["rust", "nix", "sql", "runbook", "general"];
 
 /// What files a profile reviews: a changed path ending in one of `suffixes` or named one of `names`;
-/// with `rest`, every file carrying code no other profile takes, project configuration aside.
+/// with `rest`, every file carrying code no other profile takes, project configuration aside; with
+/// `steps`, only those of its files that carry operator steps ([`crate::runbook`]), which the
+/// working tree decides, not the name ([`crate::coverage::assign`]).
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Detect {
     pub suffixes: Vec<String>,
     pub names: Vec<String>,
     #[serde(default)]
     pub rest: bool,
+    #[serde(default)]
+    pub steps: bool,
 }
 
 /// What the negative-space lens of a profile inventories as new surface, and the uses of it it
@@ -71,6 +75,10 @@ pub struct Lens {
     /// Reviews the whole diff: a light pass skips it unless the diff calls for it.
     #[serde(default)]
     pub whole_diff: bool,
+    /// Never sliced, though a light pass keeps it: the runbook lens, whose renamed files' old
+    /// paths no directory slice holds (realm @nick/craft, node #620).
+    #[serde(default)]
+    pub unsliced: bool,
     /// The scout surface that, said absent, drops it.
     #[serde(default)]
     pub surface: Option<String>,
@@ -266,19 +274,26 @@ impl Profile {
         files.iter().any(|f| self.covers(f))
     }
 
-    /// Whether the profile reviews `file`: by its suffixes and names, or, a profile taking the
-    /// rest, when it carries code and is no project configuration. Which of several profiles takes
-    /// a file is [`crate::coverage::assign`]'s.
+    /// Whether the profile may review `file` by its name: by its suffixes and names, or, a profile
+    /// taking the rest, when it carries code and is no project configuration. A profile taking files
+    /// by their steps matches its suffixes whatever their case (`RUNBOOK.MD`), and takes a file only
+    /// when its change touches a step, which [`crate::coverage::assign`] is told; which of several
+    /// profiles takes a file is its too.
     #[must_use]
     pub fn covers(&self, file: &str) -> bool {
         if self.detect.rest {
             return !crate::coverage::is_inert(file) && !crate::coverage::is_project_config(file);
         }
         let base = file.rsplit('/').next().unwrap_or(file);
+        let named = if self.detect.steps {
+            file.to_ascii_lowercase()
+        } else {
+            file.to_owned()
+        };
         self.detect
             .suffixes
             .iter()
-            .any(|s| file.ends_with(s.as_str()))
+            .any(|s| named.ends_with(s.as_str()))
             || self.detect.names.iter().any(|n| n == base)
     }
 

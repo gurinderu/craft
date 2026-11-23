@@ -201,7 +201,9 @@ with the pi backend. It has been observed from a checkout, not yet as an install
 
 `integrations/claude-code/workflows/review.js` is the diff review for any language. It drives the `craft` binary (the Rust
 CLI in `cli/`, fetched from this version's GitHub release unless `craftBin` names a local build), which
-decides every step: each changed file goes to its profile — Rust, Nix, SQL, or the general lenses for
+decides every step: each changed file goes to its profile — Rust, Nix, SQL, a Markdown runbook (a file whose
+changed lines touch a shell block's or numbered step's command against an external system, walked step by step
+as a procedure by the `runbook` lens; not yet observed live), or the general lenses for
 source in any other language (correctness, security, money, concurrency, errors, performance, intent,
 tests, maintainability, compat, invariants, negative-space, design and, behind a code-metrics index,
 complexity — `design` judges the decisions a change makes (a new abstraction, source of truth,

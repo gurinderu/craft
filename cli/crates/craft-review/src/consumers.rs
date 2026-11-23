@@ -23,7 +23,7 @@ mod order;
 mod removed;
 mod save;
 mod section;
-mod source;
+pub(crate) mod source;
 mod symbols;
 #[cfg(test)]
 mod tests;

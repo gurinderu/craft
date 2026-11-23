@@ -9,8 +9,14 @@ use super::{Prepared, Sources};
 /// The lenses that judge another system's behaviour — lifecycle, compatibility and races
 /// (`EXTERNAL_LENSES`); the general profile (the retired adversarial-review engine's catalogue) has races, what a
 /// failed call leaves behind (`ADVERSARIAL_EXTERNAL_LENSES`) and, since it holds one, compatibility (realm @nick/craft,
-/// node #552).
-const EXTERNAL_LENSES: [&str; 4] = ["reconciler", "compat", "concurrency", "failure-windows"];
+/// node #552). The runbook lens judges each step against the system it acts on (node #620).
+const EXTERNAL_LENSES: [&str; 5] = [
+    "reconciler",
+    "compat",
+    "concurrency",
+    "failure-windows",
+    "runbook",
+];
 const GENERAL_EXTERNAL_LENSES: [&str; 3] = ["concurrency", "errors", "compat"];
 
 /// Whether `profile`'s lens `lens` reads the external sources.

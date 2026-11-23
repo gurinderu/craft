@@ -179,7 +179,8 @@ pub fn unchanged_since(cwd: &Path, commit: &str, scope: &str) -> bool {
 
 /// The change against `base` with no context lines, from the merge-base to the working tree, as
 /// `git diff -U0 --merge-base <base>` prints it from the top level with its paths unquoted and
-/// prefixed `a/` and `b/` whatever `diff.noprefix` or `diff.mnemonicPrefix` says.
+/// prefixed `a/` and `b/` whatever `diff.noprefix` or `diff.mnemonicPrefix` says, renames found
+/// whatever `diff.renames` says (`-M`), as the changed files are listed.
 ///
 /// # Errors
 /// When `cwd` is not in a working tree or `git` fails.
@@ -231,6 +232,7 @@ fn diff_u0(cwd: &Path, revs: &[&str]) -> Result<String, GitError> {
         "--no-ext-diff",
         "--src-prefix=a/",
         "--dst-prefix=b/",
+        "-M",
     ];
     args.extend_from_slice(revs);
     git(&top, &args)
@@ -344,17 +346,20 @@ pub fn read_diff(cwd: &Path, base: Option<&str>, scope: Option<&str>) -> Result<
     };
     // `-z`: each path as it is, unquoted, so it is spelled as the zero-context diff's headers
     // read it. A path that is not UTF-8 lists the change as git quotes it, as before `-z`; full
-    // support is issue #414.
-    let files = match limited(&["diff", "--name-only", "-z", "--merge-base", &base]) {
+    // support is issue #414. `-M`: a renamed file is listed once, at its new path, whatever
+    // `diff.renames` says, as the zero-context diff names it.
+    let files = match limited(&["diff", "--name-only", "-z", "-M", "--merge-base", &base]) {
         Ok(z) => z
             .split('\0')
             .filter(|f| !f.is_empty())
             .map(str::to_owned)
             .collect(),
-        Err(GitError::NotUtf8(_)) => limited(&["diff", "--name-only", "--merge-base", &base])?
-            .lines()
-            .map(str::to_owned)
-            .collect(),
+        Err(GitError::NotUtf8(_)) => {
+            limited(&["diff", "--name-only", "-M", "--merge-base", &base])?
+                .lines()
+                .map(str::to_owned)
+                .collect()
+        }
         Err(e) => return Err(e),
     };
     let stat = limited(&["diff", "--stat", "--merge-base", &base])?;

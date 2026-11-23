@@ -1,0 +1,1 @@
+These files are Markdown runbooks: procedures an operator runs against live systems. The one lens is 'runbook', added by the engine whatever you pick; choose it and nothing else. Size by the steps the diff adds or changes, not by its prose: a few steps → small, a whole new procedure → medium, several procedures or a rewrite → large.

@@ -9,7 +9,7 @@ const READ_MAX: u64 = 4 << 20;
 
 /// Why a changed file's text was not read.
 #[derive(Debug, thiserror::Error)]
-pub(super) enum Unreadable {
+pub(crate) enum Unreadable {
     #[error("not a regular file")]
     NotRegular,
     #[error("outside the repository")]
@@ -29,7 +29,7 @@ pub(super) enum Unreadable {
 /// # Errors
 /// When it is not a regular file (a link, a device, a FIFO), is larger, is not UTF-8 or cannot be
 /// read.
-pub(super) fn read(path: &Path) -> Result<String, Unreadable> {
+pub(crate) fn read(path: &Path) -> Result<String, Unreadable> {
     if !std::fs::symlink_metadata(path)?.file_type().is_file() {
         return Err(Unreadable::NotRegular);
     }
@@ -48,7 +48,7 @@ pub(super) fn read(path: &Path) -> Result<String, Unreadable> {
 ///
 /// # Errors
 /// As [`read`], and when `rel` leaves `top` or passes through a link.
-pub(super) fn read_within(top: &Path, rel: &str) -> Result<Option<String>, Unreadable> {
+pub(crate) fn read_within(top: &Path, rel: &str) -> Result<Option<String>, Unreadable> {
     let path = Path::new(rel);
     let mut at = top.to_path_buf();
     for c in path.components() {

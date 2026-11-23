@@ -74,6 +74,15 @@ Two refinements:
   defect — so it is not optional by default and goes to a verifier. It names the production line
   the regression breaks, and its reachability is judged there, not at the test. A regression of text or style
   only stays optional; a weak assertion that names no regression is read as `none`.
+- **A test that cannot fail on the change's own promise is at least should-fix.** When the
+  change's test passes against an implementation broken exactly the way the change promises not
+  to break — it asserts only a message prefix, its fixture derives the expected value the same
+  way the code does, its assertion cannot tell the right answer from a substituted one — the
+  suite reports that regression as green CI, the silent degradation the change was meant to rule
+  out. Report it as a weak assertion whose regression is the broken promise and whose harm is
+  `intent-unmet`, at Medium (should-fix) whatever lower severity the regression alone would take,
+  so it is verified in a light pass too. A plain coverage gap — the change is pinned by a test,
+  only not from every side — stays Low.
 
 ## Borderline findings stay in
 

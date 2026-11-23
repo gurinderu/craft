@@ -19,10 +19,14 @@ mod critic;
 mod design_tests;
 #[cfg(test)]
 mod fixture;
+#[cfg(test)]
+mod floor_tests;
 mod lens;
 #[cfg(test)]
 mod parity;
 mod red_team;
+#[cfg(test)]
+mod runbook_tests;
 mod scout;
 mod seam;
 pub mod skills;
