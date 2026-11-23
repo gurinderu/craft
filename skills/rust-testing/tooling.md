@@ -120,14 +120,23 @@ To check a change rather than the crate, mutate only the code its diff touches �
 <FILE>` ("Include only mutants in code touched by this diff"; observed in cargo-mutants 27.1.0):
 
 ```bash
-git diff origin/main...HEAD > /tmp/change.diff   # the branch's change against trunk
-cargo mutants --in-diff /tmp/change.diff --list  # which mutants the diff selects
-cargo mutants --in-diff /tmp/change.diff         # run them
+cd <the cargo workspace root>                               # where you run cargo mutants
+git diff --relative origin/main...HEAD > /tmp/change.diff   # paths relative to this directory
+cargo mutants --in-diff /tmp/change.diff --list             # which mutants the diff selects
+cargo mutants --in-diff /tmp/change.diff                    # run them
 ```
 
+- **The diff's paths must be relative to the cargo workspace root**, not the git root. When the
+  workspace sits in a subdirectory of the repository (`cli/`, say), a plain `git diff` writes
+  `cli/src/…` paths and cargo-mutants selects nothing: observed in 27.1.0, a repo-root diff of a
+  Rust change selected no mutants ("No mutants to filter", exit 0) while the same range with
+  `git diff --relative` from the workspace root selected 14. Where the workspace is the git root,
+  both are the same.
+- **Zero selected mutants on a diff that touches Rust means the paths are wrong, not that the
+  change is covered** — cargo-mutants exits 0 either way. Check the `--list` count before reading
+  a run as clean.
 - The argument is a file: in 27.1.0 `--in-diff -` is read as a file named `-`, not stdin.
-- Write the diff from the checkout you run in, at the commit you test: the diff's paths and lines
-  must match the tree.
+- Write the diff at the commit you test: its lines must match the tree.
 - The selection is by touched lines, so a one-line function next to a changed line can come along.
 - Each **missed** mutant is a test the change lacks: write the test that fails on it, or name the
   mutant as equivalent (it changes no observable behaviour) with why. The report of the check names

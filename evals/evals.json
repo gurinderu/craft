@@ -94,11 +94,20 @@
   },
   {
     "skills": ["rust-testing"],
-    "query": "Before I hand this branch back, run cargo-mutants only on what my diff against main changed and tell me which test fails without which fix.",
+    "query": "Before I hand this Rust branch back, run mutants on the diff against main only and tell me which test fails without which fix.",
     "expected_behavior": [
       "Selects rust-testing (mutation testing on a change's diff).",
-      "Writes the branch diff to a file and runs cargo mutants --in-diff on it, not the whole crate.",
-      "Names, for each mutant, the test that caught it, and treats each missed mutant as a missing test."
+      "Writes the branch diff with paths relative to the cargo workspace root to a file and runs cargo mutants --in-diff on it, not the whole crate.",
+      "Reads zero selected mutants on a diff that touches Rust as wrong paths, not as covered.",
+      "Names, for each mutant, the test that caught it; each missed mutant gets a new test or is named as equivalent with why."
+    ]
+  },
+  {
+    "skills": ["rust-review"],
+    "query": "Is this Rust PR's diff mergeable? Flag any changed code its tests would not catch a regression in.",
+    "expected_behavior": [
+      "Selects rust-review, NOT rust-testing: flagging weak or missing tests in a diff is the review's (rust-testing's own boundary).",
+      "Does not run cargo mutants over the diff as the review itself."
     ]
   },
   {
