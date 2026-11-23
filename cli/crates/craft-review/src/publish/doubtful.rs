@@ -48,6 +48,8 @@ pub struct Doubtful<'a> {
     /// The review read uncommitted work (`diff.dirty` of the run's state, as the review judged it):
     /// its lines are not the PR's, and nothing is posted.
     pub dirty: bool,
+    /// The PR an earlier post of this finding chose (its choice's `pr`), when it recorded one.
+    pub posted_on: Option<u64>,
     /// Called with the PR right before the comment is posted, so a retry can name it; its failure
     /// posts nothing.
     pub before_post: Option<&'a dyn Fn(u64) -> Result<(), String>>,
@@ -78,20 +80,11 @@ pub fn post(
     }
     let runner = Runner::new(setup.budget, setup.path.clone(), scratch.to_path_buf());
     let reviewed = target::full(d).ok_or_else(|| PostError::Refused(target::NO_REVIEWED.into()))?;
-    // The record's own PR, no --pr given, must be open; its comments are read before its head is
-    // judged, so a retry finds what it posted even once the head moved. A PR named with --pr,
-    // closed or not, first shows it holds the reviewed commit.
+    // A PR the record recorded is read for the finding's comment first, so a retry finds what
+    // it posted even once the PR closed or its head moved or was force-pushed; another PR named
+    // with --pr first shows it holds the reviewed commit. The head is judged before any post.
     let p = match target::which_pr(&runner, repo, d, pr)? {
-        Found::Own(p) => {
-            if p.state != "OPEN" {
-                return Err(PostError::Pr(format!(
-                    "PR #{} is not open: {}",
-                    p.number,
-                    target::NAME_IT
-                )));
-            }
-            p
-        }
+        Found::Own(p) => p,
         Found::Named(p) => {
             head::holding(repo, &p, reviewed)?;
             p

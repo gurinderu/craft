@@ -38,6 +38,7 @@ fn post(
         record_pr: None,
         dirty,
         before_post: None,
+        posted_on: None,
     };
     publish::post_doubtful(repo, &d, pr, setup, scratch)
 }

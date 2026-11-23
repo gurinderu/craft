@@ -41,16 +41,17 @@ The sorting changes nothing in the verdict.
    finding (→ [pr-rejections.md](pr-rejections.md)). A finding on a changed line is anchored to it;
    one whose line is outside the diff, or a line GitHub refuses, becomes a file-level comment, since
    GitHub takes no line comment outside the diff — same marker, same thread reading. A comment
-   already on the PR for that finding is not posted again — on the record's own open PR found
-   before its head is judged, so a retry records its choice even once the head moved. **A retry
-   names its PR**: right before the comment is posted, the PR it goes on is written into the
-   finding's choice in the record (`{ pr, posting: true }`, kept once the choice lands), and a
-   retry with no `--pr` takes that PR, whatever its state now — never another open PR of the
-   branch. Every `gh` and fetch failure names the PR. With no PR recorded, the record's PR is
-   closed, or its branch has no open PR, and no `--pr` is given, it is refused (exit 2) — pass
-   `--pr <n>`; closed PRs are never searched. On a PR named with `--pr` or recorded so,
-   closed or not, its head is checked to hold the reviewed commit first, then a comment there
-   counts as posted already; a closed PR takes no new comment. It is posted on the reviewed commit the
+   already on the PR for that finding is not posted again. **A retry names its PR**: right before
+   the comment is posted, the PR it goes on is written into the finding's choice in the record
+   (`{ pr, posting: true }`, merged into what the entry held and kept once the choice lands), and
+   a retry with no `--pr` takes that PR, whatever its state now — never another open PR of the
+   branch. On a PR the record recorded (that mark, or the PR the run published on) the comments
+   are read first: a match is posted already, even once the PR closed or its head moved or was
+   force-pushed; the PR's state and head are judged only before an actual post. On another PR
+   named with `--pr`, its head is checked to hold the reviewed commit before a comment counts.
+   A closed PR takes no new comment. With nothing recorded, no `--pr` and no open PR of the
+   record's branch, it is refused (exit 2) — pass `--pr <n>`; closed PRs are never searched.
+   Every `gh` and fetch failure names the PR. It is posted on the reviewed commit the
    record names: when the PR's head moved since, only if the new commits leave its line alone; a
    record naming no reviewed commit posts nothing. It prints one JSON line — the PR, `posted`,
    `already`, `toFile`, `reason`, and `recorded`: the choice it wrote into the record (step 4 is

@@ -18,7 +18,7 @@ use super::{lens, opts, scout, titled, verdict};
 
 /// A stand-in `gh` in `dir`: it logs each call, answers `pr view` and `pr list` with PR 7 at the
 /// head in `dir/head` on the branch in `dir/branch` in the state in `dir/state` (OPEN when absent;
-/// `pr view` a fork's while `dir/fork` exists, `pr list` with `dir/prs` when it exists, else
+/// `pr view` a fork's while `dir/fork` exists (no such PR while `dir/no-such-pr` does), `pr list` with `dir/prs` when it exists, else
 /// with nothing for `--state open` while the PR is not open) — only
 /// with the fields its `--json` asks for, as gh prints them —,
 /// lists the comments it was asked to post (the request files it kept), keeps each
@@ -45,7 +45,8 @@ only() {{ out=$(cat)
 state=OPEN; [ -f "$S/state" ] && state=$(cat "$S/state")
 want=; prev=; for a in "$@"; do [ "$prev" = --state ] && want=$a; prev=$a; done
 case "$1 $2" in
-  "pr view") fork=false; [ -f "$S/fork" ] && fork=true
+  "pr view") if [ -f "$S/no-such-pr" ]; then echo "GraphQL: Could not resolve to a PullRequest with the number of 7. (repository.pullRequest)" >&2; exit 1; fi
+    fork=false; [ -f "$S/fork" ] && fork=true
     printf '{{"number":7,"url":"https://github.com/o/r/pull/7","headRefOid":"%s","headRefName":"%s","isCrossRepository":%s,"state":"%s"}}\n' "$(cat "$S/head")" "$(cat "$S/branch")" "$fork" "$state" | only ;;
   "pr list") if [ -f "$S/prs" ]; then only < "$S/prs"; elif [ "$want" = open ] && [ "$state" != OPEN ]; then echo '[]'; else printf '[{{"number":7,"url":"https://github.com/o/r/pull/7","headRefOid":"%s","headRefName":"%s","isCrossRepository":false,"state":"%s"}}]\n' "$(cat "$S/head")" "$(cat "$S/branch")" "$state" | only; fi ;;
   "api --paginate") if [ -f "$S/fail-comments" ]; then echo "HTTP 502: Bad Gateway" >&2; exit 1; fi

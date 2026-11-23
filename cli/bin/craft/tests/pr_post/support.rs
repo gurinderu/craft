@@ -70,7 +70,8 @@ pub fn gh(bin: &Path, body: &str) {
 /// `gh` whose PR 5 of `feat/x` sits at the reviewed head — `pr view` answers with `bin/view` when it
 /// exists (it fails with HTTP 503 while `bin/fail-view` does), `pr list` answers with `bin/list`
 /// when it exists (it fails with HTTP 502 while `bin/fail-list` does), the PR's comments are the
-/// one posted (`bin/sent.json`), and the post fails (HTTP 500) while `bin/fail-post` exists.
+/// one posted (`bin/sent.json`), and the post fails (HTTP 500) while `bin/fail-post` exists — or
+/// lands and then fails (HTTP 504) while `bin/fail-after-post` does.
 pub struct Posting {
     _dir: tempfile::TempDir,
     pub store: tempfile::TempDir,
@@ -125,7 +126,7 @@ impl Posting {
         gh(
             &bin,
             &format!(
-                "case \"$1 $2\" in\n  \"pr view\") [ -f '{b}/fail-view' ] && {{ echo 'gh: Server Error (HTTP 503)' >&2; exit 1; }}; if [ -f '{b}/view' ]; then cat '{b}/view'; else echo '{pr}'; fi ;;\n  \"pr list\") [ -f '{b}/fail-list' ] && {{ echo 'gh: Bad Gateway (HTTP 502)' >&2; exit 1; }}; if [ -f '{b}/list' ]; then cat '{b}/list'; else echo '[{pr}]'; fi ;;\n  \"api --paginate\") if [ -f '{b}/sent.json' ]; then printf '['; cat '{b}/sent.json'; printf ']'; else echo '[]'; fi ;;\n  \"api --method\") [ -f '{b}/fail-post' ] && {{ echo 'gh: Server Error (HTTP 500)' >&2; exit 1; }}; while [ $# -gt 0 ]; do [ \"$1\" = --input ] && cp \"$2\" '{b}/sent.json'; shift; done ;;\n  *) exit 3 ;;\nesac"
+                "case \"$1 $2\" in\n  \"pr view\") [ -f '{b}/fail-view' ] && {{ echo 'gh: Server Error (HTTP 503)' >&2; exit 1; }}; if [ -f '{b}/view' ]; then cat '{b}/view'; else echo '{pr}'; fi ;;\n  \"pr list\") [ -f '{b}/fail-list' ] && {{ echo 'gh: Bad Gateway (HTTP 502)' >&2; exit 1; }}; if [ -f '{b}/list' ]; then cat '{b}/list'; else echo '[{pr}]'; fi ;;\n  \"api --paginate\") if [ -f '{b}/sent.json' ]; then printf '['; cat '{b}/sent.json'; printf ']'; else echo '[]'; fi ;;\n  \"api --method\") [ -f '{b}/fail-post' ] && {{ echo 'gh: Server Error (HTTP 500)' >&2; exit 1; }}; while [ $# -gt 0 ]; do [ \"$1\" = --input ] && cp \"$2\" '{b}/sent.json'; shift; done; [ -f '{b}/fail-after-post' ] && {{ echo 'gh: Gateway Timeout (HTTP 504)' >&2; exit 1; }}; true ;;\n  *) exit 3 ;;\nesac"
             ),
         );
         let f = Self {

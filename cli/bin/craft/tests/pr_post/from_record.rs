@@ -56,15 +56,14 @@ fn a_defect_is_posted_without_the_ask_and_recorded_as_a_defect() {
 }
 
 #[test]
-fn a_closed_pr_without_pr_is_refused_and_a_failed_list_is_a_failure_to_retry() {
+fn the_records_closed_pr_takes_no_post_and_a_failed_list_is_a_failure_to_retry() {
     let f = Posting::with(&json!({"prComments": {"pr": 5}}));
     let merged = r#"{"number":5,"url":"u","headRefOid":"0","headRefName":"feat/x","isCrossRepository":false,"state":"MERGED"}"#;
     std::fs::write(f.bin.join("view"), merged).unwrap();
     let closed = f.post(&["--n", "1", "--as", "question"]);
     assert_eq!(closed.status.code(), Some(2), "{}", text(&closed.stderr));
     assert!(
-        text(&closed.stderr)
-            .contains("PR #5 is not open: the PR is closed or gone: name it with --pr <n>"),
+        text(&closed.stderr).contains("PR #5 is MERGED, not open"),
         "{}",
         text(&closed.stderr)
     );

@@ -115,3 +115,35 @@ fn naming_the_records_own_pr_takes_the_named_route_and_its_retry_after_a_merge()
         sent
     );
 }
+
+#[test]
+fn a_post_that_landed_and_timed_out_is_found_after_a_force_push() {
+    for named in [false, true] {
+        let f = Posting::new();
+        std::fs::write(f.bin.join("fail-after-post"), "").unwrap();
+        let first = f.post(&["--n", "1", "--as", "question"]);
+        assert_eq!(first.status.code(), Some(1), "{}", text(&first.stderr));
+        std::fs::remove_file(f.bin.join("fail-after-post")).unwrap();
+        assert_eq!(choice(&f).get("choice"), None, "no choice yet");
+        // Force-pushed: the PR's head no longer holds the reviewed commit, nor is it here.
+        let pushed = format!(
+            r#"{{"number":5,"url":"https://github.com/o/r/pull/5","headRefOid":"{}","headRefName":"feat/x","isCrossRepository":false,"state":"OPEN"}}"#,
+            "e".repeat(40)
+        );
+        std::fs::write(f.bin.join("view"), &pushed).unwrap();
+        std::fs::write(f.bin.join("list"), format!("[{pushed}]")).unwrap();
+        let args: &[&str] = if named {
+            &["--n", "1", "--as", "question", "--pr", "5"]
+        } else {
+            &["--n", "1", "--as", "question"]
+        };
+        let retry = f.post(args);
+        assert!(retry.status.success(), "{}", text(&retry.stderr));
+        let said: Value = serde_json::from_str(&text(&retry.stdout)).unwrap();
+        assert_eq!((&said["pr"], &said["already"]), (&json!(5), &json!(true)));
+        assert_eq!(
+            (&choice(&f)["choice"], &choice(&f)["pr"]),
+            (&json!("question"), &json!(5))
+        );
+    }
+}

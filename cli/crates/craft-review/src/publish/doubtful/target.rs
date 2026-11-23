@@ -17,19 +17,18 @@ pub(super) fn full<'a>(d: &Doubtful<'a>) -> Option<&'a str> {
         .filter(|h| matches!(h.len(), 40 | 64) && request::is_sha(h))
 }
 
-/// The tail of the refusal when no `--pr` is given and the record's PR is closed or none of its
-/// branch is open: a retry names its PR, which the first attempt printed and the recorded choice
-/// carries — closed PRs are never searched for it.
+/// The tail of the refusal when no `--pr` is given, no PR is recorded for the finding, and none of
+/// the record's branch is open: closed PRs are never searched.
 pub(super) const NAME_IT: &str = "the PR is closed or gone: name it with --pr <n>";
 
 /// The PR the record's review read, and how far it is trusted before its comments are read.
 pub(super) enum Found {
-    /// The record's own, no `--pr` given: the PR it published on, or the one open PR of its
-    /// branch — open, or refused; a comment of the finding on it is the record's, so a retry
-    /// finds it before the head is judged.
+    /// A PR this record already recorded — the one its finding's post chose (the posting mark), or
+    /// the one the run published on — or the one open PR of its branch: a comment of the finding
+    /// on it is the record's, so it is read before the PR's state and head are judged.
     Own(Pr),
-    /// Named with `--pr`, closed or not: its head must hold the reviewed commit before a comment
-    /// on it counts.
+    /// Named with `--pr`, another than any the record recorded: its head must hold the reviewed
+    /// commit before a comment on it counts.
     Named(Pr),
 }
 
@@ -38,9 +37,26 @@ pub(super) enum Found {
 /// (`prComments.pr`, the PR a detached `pr=<n>` review was started with); else, for a record of a
 /// branch, `pr` when its head branch is the record's, or without `pr` the one open PR whose head is
 /// that branch — a fork's PR of a branch of the same name is not this record's; else, for a record
-/// of a detached HEAD, `pr`. An own PR that is not open is refused by the post before its comments
-/// are read; a named one's head, and every PR's state, are [`super::head`]'s to judge.
+/// of a detached HEAD, `pr`. Before all of them, with no `pr`, the PR the finding's earlier post
+/// recorded, whatever its state. Its head and state are [`super::head`]'s to judge.
 pub(super) fn which_pr(
+    runner: &Runner,
+    repo: &Path,
+    d: &Doubtful<'_>,
+    pr: Option<u64>,
+) -> Result<Found, PostError> {
+    if let (Some(r), None) = (d.posted_on, pr) {
+        return Ok(Found::Own(same_repo(view(runner, repo, r)?)?));
+    }
+    let found = chosen(runner, repo, d, pr)?;
+    Ok(match found {
+        Found::Named(p) if [d.posted_on, d.record_pr].contains(&Some(p.number)) => Found::Own(p),
+        other @ (Found::Own(_) | Found::Named(_)) => other,
+    })
+}
+
+/// The PR [`which_pr`] takes when the finding's post recorded none, or `pr` names one.
+fn chosen(
     runner: &Runner,
     repo: &Path,
     d: &Doubtful<'_>,

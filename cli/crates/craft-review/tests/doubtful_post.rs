@@ -51,6 +51,7 @@ fn post_to(
         record_pr: None,
         dirty: false,
         before_post: None,
+        posted_on: None,
     };
     publish::post_doubtful(repo, &d, pr, setup, scratch)
 }
@@ -299,6 +300,7 @@ fn post_detached(
         record_pr,
         dirty: false,
         before_post: None,
+        posted_on: None,
     };
     publish::post_doubtful(repo, &d, pr, setup, scratch)
 }

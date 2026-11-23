@@ -116,12 +116,11 @@ fn posted(args: &PostArgs) -> Result<Out, Stop> {
         branch: rec.branch.as_deref(),
         record_pr: rec.pr,
         dirty: rec.dirty,
+        posted_on: rec.posted_on,
         before_post: Some(&remember),
     };
-    // A retry with no --pr names the PR an earlier post chose, whatever its state now.
-    let pr = args.pr.or(rec.posted_on);
     let scratch = crate::scratch::dir("craft-post")?;
-    let posting = publish::post_doubtful(&repo, &d, pr, &PostSetup::default(), &scratch);
+    let posting = publish::post_doubtful(&repo, &d, args.pr, &PostSetup::default(), &scratch);
     drop(std::fs::remove_dir_all(&scratch));
     let posting = posting.map_err(|e| match e {
         PostError::Finding(why) | PostError::Pr(why) => Stop::Refused(why),

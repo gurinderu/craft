@@ -87,3 +87,19 @@ fn the_pr_a_post_is_marked_with_stays_with_the_choice_that_completes_it() {
     assert_eq!(posting::recorded_pr(&json, 1), None);
     posting::apply(&record(), 9.0, 7, "T").unwrap_err();
 }
+
+#[test]
+fn a_post_mark_keeps_a_choice_made_before() {
+    let (dropped, _) = apply_choice(&record(), 2.0, "dropped", "T").unwrap();
+    let marked = posting::apply(&dropped, 2.0, 7, "U").unwrap();
+    let choices = marked
+        .get("sorting")
+        .and_then(Js::as_obj)
+        .and_then(|s| s.get("choices"))
+        .unwrap()
+        .compact();
+    assert_eq!(
+        choices,
+        r#"{"1":"old","2":{"choice":"dropped","at":"U","pr":7,"posting":true}}"#
+    );
+}

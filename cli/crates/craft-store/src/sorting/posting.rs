@@ -7,7 +7,8 @@ use std::path::Path;
 
 use crate::js::{Js, JsString, Obj};
 
-/// The record with doubtful finding `n`'s choice set to the PR `pr` it is being posted on at `at`.
+/// The record with doubtful finding `n`'s choice marked as being posted on the PR `pr` at `at`, over
+/// what the entry held.
 ///
 /// # Errors
 /// When the record carries no sorting or lists no finding numbered `n`.
@@ -28,12 +29,18 @@ pub fn apply(record: &Obj, n: f64, pr: u64, at: &str) -> Result<Obj, String> {
         Some(Js::Obj(o)) => o.clone(),
         _ => Obj::new(),
     };
+    // Merged into the finding's entry: a choice made before (a drop, an earlier question)
+    // survives a post that then fails.
+    let key = JsString::from(crate::js::number_text(n));
+    let mut mine = match choices.get(&key) {
+        Some(Js::Obj(o)) => o.clone(),
+        _ => Obj::new(),
+    };
     #[expect(clippy::cast_precision_loss, reason = "a PR number, far below 2^53")]
-    let mine = Obj::new()
-        .with("pr", Js::Num(pr as f64))
-        .with("posting", Js::Bool(true))
-        .with("at", Js::str(at));
-    choices.set(JsString::from(crate::js::number_text(n)), Js::Obj(mine));
+    mine.set("pr", Js::Num(pr as f64));
+    mine.set("posting", Js::Bool(true));
+    mine.set("at", Js::str(at));
+    choices.set(key, Js::Obj(mine));
     let mut sorting = sorting.clone();
     sorting.set("choices", Js::Obj(choices));
     let mut out = record.clone();

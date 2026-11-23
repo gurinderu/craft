@@ -48,6 +48,7 @@ fn a_pr_head_missing_here_is_fetched_from_origin_and_posted_to() {
         record_pr: None,
         dirty: false,
         before_post: None,
+        posted_on: None,
     };
     let p = publish::post_doubtful(repo.path(), &d, Some(7), &setup, out.path()).unwrap();
     assert!(p.posted, "{p:?}");
