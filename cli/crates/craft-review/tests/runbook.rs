@@ -7,8 +7,10 @@ mod common;
 
 use std::path::Path;
 
+#[cfg(unix)]
+use common::git;
 use common::markdown::repo;
-use common::{git, ids, opts, prompt_of, scout, submit};
+use common::{ids, opts, prompt_of, scout, submit};
 use craft_review::step;
 use serde_json::{Value, json};
 
@@ -22,6 +24,7 @@ fn start(cwd: &Path, out: &Path) -> Value {
     step::start(&opts(cwd, out)).unwrap()
 }
 
+#[cfg(unix)]
 fn report(s: &Value) -> String {
     std::fs::read_to_string(s["report"].as_str().unwrap_or_default()).unwrap_or_default()
 }
@@ -94,6 +97,7 @@ fn a_change_that_touches_no_step_buys_no_lens() {
     assert_eq!(ids(&start(step.path(), out.path())), ["scout-runbook"]);
 }
 
+#[cfg(unix)]
 #[test]
 fn a_markdown_file_that_cannot_be_read_safely_is_named_not_dropped() {
     let linked = repo(&[], &[("CHANGELOG.md", "x\n")]);
