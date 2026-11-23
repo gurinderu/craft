@@ -1,0 +1,54 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "source",
+    "findings"
+  ],
+  "properties": {
+    "source": {
+      "type": "string",
+      "description": "review | adversarial-review | rust-audit | rust-reviewer | nix-review | report | github-pr"
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "severity",
+          "title",
+          "location",
+          "detail",
+          "proposed_fix",
+          "thread_id"
+        ],
+        "properties": {
+          "severity": {
+            "type": "string",
+            "description": "Critical | High | Medium | Low | Info"
+          },
+          "title": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string",
+            "description": "file:line, crate/module, PR-level, or empty if none"
+          },
+          "detail": {
+            "type": "string",
+            "description": "why it is a problem"
+          },
+          "proposed_fix": {
+            "type": "string",
+            "description": "fix direction from the source, empty if none"
+          },
+          "thread_id": {
+            "type": "string",
+            "description": "GitHub review thread id, empty if not from a PR"
+          }
+        }
+      }
+    }
+  }
+}

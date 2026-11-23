@@ -8,6 +8,7 @@
 //! engine asks an agent for them. A run already finished is published the same way after the fact
 //! ([`comment`]).
 
+use craft_store::js::JsStr;
 use std::path::Path;
 
 use serde_json::{Value, json};
@@ -93,7 +94,7 @@ fn sort_into(run: &mut RunState, found: &[Value], changed: Result<&Lines, &Strin
         .iter()
         .map(|f| Defect {
             finding: f.clone(),
-            file: sort::text(f, "file").trim().to_owned(),
+            file: sort::text(f, "file").js_trim().to_owned(),
             line: sort::in_diff(changed, f)
                 .filter(|&inside| inside)
                 .map(|_| sort::line(f)),

@@ -7,7 +7,7 @@
 use serde_json::{Value, json};
 
 use super::super::PriorDecision;
-use super::{WHY_MAX, clip, line_of, plain};
+use super::{WHY_MAX, clip};
 use crate::gate::lines::Lines;
 use crate::publish::doubt_reasons;
 
@@ -38,7 +38,7 @@ pub(in crate::memory) fn mark_contradicting(
 pub(crate) fn contradiction_of(f: &Value) -> Option<(String, String, String)> {
     let m = f.get("memoryContradicts")?.as_object()?;
     let id = m.get("id")?.as_str().filter(|s| !s.is_empty())?;
-    let text = |k: &str| plain(m.get(k));
+    let text = |k: &str| crate::js::text(m.get(k));
     Some((id.to_owned(), text("kind"), text("why")))
 }
 
@@ -59,13 +59,13 @@ pub(in crate::memory) fn contradiction_section(findings: &[Value]) -> String {
             } else {
                 format!(" · not confirmed ({tier})")
             };
-            let file = plain(f.get("file"));
+            let file = crate::js::text(f.get("file"));
             Some(format!(
                 "- {} · `{}:{}` · {} · goes against {} {id}: {why}{tier}",
                 f.get("severity").and_then(Value::as_str).unwrap_or("?"),
                 if file.is_empty() { "?" } else { &file },
-                line_of(f),
-                plain(f.get("title")),
+                crate::js::finding_line(f.get("line")),
+                crate::js::text(f.get("title")),
                 if kind.is_empty() { "record" } else { &kind },
             ))
         })
@@ -93,11 +93,11 @@ pub(crate) fn contradiction_record(
         .iter()
         .filter_map(|f| {
             let (id, kind, _) = contradiction_of(f)?;
-            let text = |k: &str| plain(f.get(k));
+            let text = |k: &str| crate::js::text(f.get(k));
             Some(json!({
                 "key": {"file": text("file"), "symbol": text("symbol"), "ruleId": text("ruleId"), "title": text("title")},
                 "record": id, "kind": kind, "severity": text("severity"), "title": clip(&text("title"), WHY_MAX),
-                "file": text("file"), "line": line_of(f), "doubtSigns": doubt_reasons(f, changed), "toPr": to_pr(f),
+                "file": text("file"), "line": crate::js::finding_line(f.get("line")), "doubtSigns": doubt_reasons(f, changed), "toPr": to_pr(f),
             }))
         })
         .collect();

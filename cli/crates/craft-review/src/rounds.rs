@@ -5,6 +5,7 @@
 //! finding has its key (file, line and title); a lens dispatch that never returns is a hole the
 //! verdict reads as INCOMPLETE.
 
+use craft_store::js::JsStr;
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
@@ -73,7 +74,10 @@ pub fn key(f: &Value) -> String {
             .to_lowercase()
     };
     let line = f.get("line").and_then(Value::as_i64).unwrap_or(0);
-    let title = s("title").split_whitespace().collect::<Vec<_>>().join(" ");
+    let title = s("title")
+        .js_split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
     format!("{}:{line}:{title}", s("file"))
 }
 
@@ -134,6 +138,26 @@ pub fn tasks(
     Ok(out)
 }
 
+/// The answer schema of `profile`'s `lens`, for a round's dispatch and one the critic admits: a
+/// metrics-or-nothing lens's findings carry the numbers they rest on; a lens confined to a unit
+/// batch (`units`) answers with its questions about other units beside its findings.
+///
+/// # Errors
+/// When the schema is missing.
+pub(crate) fn answer_schema(
+    profile: &Profile,
+    lens: &str,
+    units: bool,
+) -> Result<Value, ContentError> {
+    if profile.metrics_only(lens) {
+        crate::complexity::findings_schema()
+    } else if units {
+        content::schema("unit-findings")
+    } else {
+        content::schema("findings")
+    }
+}
+
 /// One lens dispatch: over its profile's whole part, or over the `i`-th slice.
 fn lens_task(
     ctx: &PromptContext,
@@ -144,15 +168,8 @@ fn lens_task(
     let (profile, lens) = (at.profile, at.lens);
     let spec = profile.lens(lens);
     let model = spec.map_or(Model::Opus, |l| l.model);
-    // A metrics-or-nothing lens's findings carry the numbers they rest on; a lens confined to a
-    // unit batch answers with its questions about other units beside its findings.
-    let schema = if spec.is_some_and(|l| l.metrics) {
-        crate::complexity::findings_schema()?
-    } else if slice.is_some_and(|(_, s)| !s.units.is_empty()) {
-        content::schema("unit-findings")?
-    } else {
-        content::schema("findings")?
-    };
+    let units = slice.is_some_and(|(_, s)| !s.units.is_empty());
+    let schema = answer_schema(profile, lens, units)?;
     let (id, label, prompt) = match slice {
         None => (String::new(), String::new(), prompts::lens_prompt(ctx, at)?),
         Some((i, s)) => (

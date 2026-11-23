@@ -5,6 +5,7 @@
 //! as written (node #606): `split_scope_line` splits it for matching only, so two ranges of one title
 //! stay two records.
 
+use craft_store::js::JsStr;
 use sha2::{Digest, Sha256};
 
 /// A scope split from the line it carries, as `scopeLine` in `integrations/shared/memory-record-id.mjs`:
@@ -13,7 +14,7 @@ use sha2::{Digest, Sha256};
 /// them — as it is, trimmed, with line 0. Held to the JS by `content/parity/scope-line-cases.json`.
 #[must_use]
 pub(crate) fn split_scope_line(scope: &str) -> (&str, u64) {
-    let s = scope.trim();
+    let s = scope.js_trim();
     if super::record::has_control(scope) {
         return (s, 0);
     }
@@ -35,11 +36,11 @@ pub(crate) fn split_scope_line(scope: &str) -> (&str, u64) {
 #[must_use]
 pub(crate) fn memory_record_id(kind: &str, title: &str, scope: &str) -> String {
     let t = title
-        .split_whitespace()
+        .js_split_whitespace()
         .collect::<Vec<_>>()
         .join(" ")
         .to_lowercase();
-    let s = scope.trim();
+    let s = scope.js_trim();
     let s = s.strip_prefix("./").unwrap_or(s).trim_end_matches('/');
     let digest = Sha256::digest(format!("{kind}\n{t}\n{s}").as_bytes());
     let hex: String = digest.iter().map(|b| format!("{b:02x}")).collect();
@@ -80,5 +81,46 @@ mod tests {
         // sha256("decision\nunwrap is fine here\nsrc"), as sha256sum prints it, starts fe3066cfbb.
         let id = memory_record_id("decision", "  Unwrap  is\tFINE here ", "./src/");
         assert_eq!(id, "decision-fe3066cfbb");
+    }
+
+    /// Ids and scope lines with JavaScript's whitespace — U+FEFF trimmed and collapsed, U+0085
+    /// kept — as `memoryRecordId` and `scopeLine` in `integrations/shared/memory-record-id.mjs`
+    /// give them for the same input (computed with Node).
+    #[test]
+    fn the_id_and_the_scope_line_trim_javascripts_whitespace() {
+        for (kind, title, scope, id) in [
+            (
+                "decision",
+                "\u{feff} Big\u{feff}Bug \u{feff}",
+                "\u{feff}./src/a.rs/\u{feff}",
+                "decision-8c011a60fe",
+            ),
+            (
+                "decision",
+                "Big\u{85}Bug",
+                "src/a.rs",
+                "decision-61b170a6e5",
+            ),
+            (
+                "question",
+                " a \u{85} b ",
+                "\u{85}src/",
+                "question-8424c8c7d2",
+            ),
+        ] {
+            assert_eq!(
+                memory_record_id(kind, title, scope),
+                id,
+                "{title:?} {scope:?}"
+            );
+        }
+        for (given, scope, line) in [
+            ("\u{feff}src/a.rs:12\u{feff}", "src/a.rs", 12),
+            ("\u{85}src/a.rs:12", "\u{85}src/a.rs", 12),
+            ("src/a.rs:12\u{85}", "src/a.rs:12\u{85}", 0),
+            (" src/a.rs:3-9 ", "src/a.rs", 3),
+        ] {
+            assert_eq!(split_scope_line(given), (scope, line), "{given:?}");
+        }
     }
 }

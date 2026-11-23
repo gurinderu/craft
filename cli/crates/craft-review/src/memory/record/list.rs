@@ -7,7 +7,7 @@
 use serde_json::Value;
 
 use super::super::bounds::kept_records;
-use super::{PriorDecision, has_control, js_len, read, record_id, record_kind};
+use super::{PriorDecision, has_control, read, record_id, record_kind};
 
 /// The most records one run applies, recalled and passed together — and, apart, the most project
 /// rules: a project holds few, and the decisions piled up on its paths must not push them out.
@@ -31,7 +31,7 @@ pub(in crate::memory) fn plain_label(i: usize) -> String {
 /// The record's id when it is fit to print, else ''.
 fn printable_id(item: &Value) -> String {
     let id = item.as_object().map(record_id).unwrap_or_default();
-    if js_len(&id) <= 80 && !has_control(&id) {
+    if crate::js::len(&id) <= 80 && !has_control(&id) {
         id
     } else {
         String::new()

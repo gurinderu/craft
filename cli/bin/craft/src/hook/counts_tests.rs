@@ -164,3 +164,9 @@ fn a_full_review_with_nothing_to_review_counts_and_a_red_gate_does_not() {
         assert!(!judge(&l, &d), "{verdict}");
     }
 }
+
+#[test]
+fn a_verdict_of_javascripts_whitespace_alone_is_no_verdict() {
+    assert!(!super::clean(Some("\u{feff} \u{2028}")));
+    assert!(super::clean(Some("\u{85}")));
+}

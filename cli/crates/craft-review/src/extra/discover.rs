@@ -5,6 +5,7 @@
 //! says they review or audit, names no editing duty, they are not craft's own, and they hold no
 //! edit tool. Only on that project: a reviewed repository of another git common dir runs none.
 
+use craft_store::js::JsStr;
 use std::path::{Path, PathBuf};
 
 use super::agent_type_form;
@@ -133,7 +134,7 @@ fn negates(lower: &str, at: usize) -> bool {
         return false;
     }
     let rest = lower.get(at + 3..).unwrap_or("");
-    let next = rest.trim_start();
+    let next = rest.js_trim_start();
     if next.len() == rest.len() {
         return false;
     }

@@ -45,7 +45,12 @@ test('run= with comment=true publishes the finished run through the binary and f
   assert.match(comment?.prompt ?? '', new RegExp(`^/opt/craft review comment --run '${RUN}' --record-root '/plugin'$`, 'm'))
   assert.match(run.report, /^## Verdict\n\n⛔ Block — 1 High/)
   assert.match(run.report, /PR comments: 1 of 1 defect\(s\) posted, 0 already on the PR — PR #7 https:\/\/github\.com\/o\/r\/pull\/7\./)
-  assert.match(run.report, /Doubtful: 1 finding\(s\) held back from the PR/)
+  assert.ok(
+    run.report.includes(
+      "Doubtful: 1 finding(s) held back from the PR — the report's Doubtful section lists them for the human to choose; post a chosen one only through `craft review post` (the craft:addressing-findings skill runs it).",
+    ),
+    run.report,
+  )
   assert.match(run.report, /- \[High\] src\/lib\.rs:1 — f returns the wrong value \(confirmed\)/)
   assert.deepEqual(
     run.calls.map(c => c.label),

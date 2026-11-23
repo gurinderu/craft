@@ -1,9 +1,11 @@
 //! Whether a run counts as a full craft review of the pull request's whole change on its head
 //! (realm @nick/craft, node #541): silence must mean exactly that, so every field a record carries
-//! that narrows what it reviewed takes it out, and a record that lacks the field to tell is out too.
+//! that narrows what it reviewed takes it out, and a record that lacks the field to tell is out too
+//! — but its coverage gaps (`capped`), which hold its verdict at Warning instead.
 //! Only a `craft:review` run counts (`review`, or the CLI's interim `cli-review`).
 
 use craft_review::coverage;
+use craft_store::js::JsStr;
 use serde_json::Value;
 
 use super::record::{Detail, Line};
@@ -22,6 +24,7 @@ pub fn counts(line: &Line, detail: Option<&Detail>, here: &Here, git: &dyn Git) 
         && d.lens_scope.as_deref() != Some("delta")
         && d.depth.as_deref() != Some("light")
         && whole(d.path.as_deref())
+        // Gaps in `capped` hold the verdict at Warning, not out (realm @nick/craft, node #541).
         && d.not_run.as_ref().is_some_and(Vec::is_empty)
         && lenses_ran(line.verdict.as_deref(), d.lens_rounds.as_deref())
         && d.base.as_deref().is_some_and(|b| pr_base(b, here, git))
@@ -41,7 +44,7 @@ fn lenses_ran(verdict: Option<&str>, rounds: Option<&[Value]>) -> bool {
 /// (`report::verdict`, `verdictSuffix` in `integrations/shared/review-coverage.mjs`).
 fn clean(verdict: Option<&str>) -> bool {
     let v = verdict.unwrap_or_default().to_ascii_uppercase();
-    !v.trim().is_empty() && !v.contains("INCOMPLETE") && !v.contains("PARTIAL COVERAGE")
+    !v.js_trim().is_empty() && !v.contains("INCOMPLETE") && !v.contains("PARTIAL COVERAGE")
 }
 
 /// Whether a review over `base` reviewed the PR's whole change: `base` is `origin/<the PR's base>`,

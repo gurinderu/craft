@@ -1,5 +1,6 @@
 //! What a finished run says: the run's verdict from its settled findings, and the Markdown report.
 
+use craft_store::js::JsStr;
 use serde_json::Value;
 
 use crate::coverage;
@@ -435,7 +436,7 @@ pub fn degraded_notes(state: &RunState) -> Vec<String> {
         consumer_lines::all(state)
             .into_iter()
             .filter(|(_, degraded)| *degraded)
-            .map(|(line, _)| line.trim_start_matches("- ").trim_end().to_owned()),
+            .map(|(line, _)| line.trim_start_matches("- ").js_trim_end().to_owned()),
     );
     notes
 }
@@ -443,7 +444,12 @@ pub fn degraded_notes(state: &RunState) -> Vec<String> {
 /// The rubric skills the tasks were told to load that no absolute path was found for: an agent
 /// without a Skill tool may have judged without them, which the report says rather than reading clean.
 fn skills_note(state: &RunState) -> Option<String> {
-    let names = crate::prompts::skills::unresolved(&state.context, &state.tasks);
+    let mut names = state.skills_unresolved.clone();
+    for name in crate::prompts::skills::unresolved(&state.context, &state.tasks) {
+        if !names.contains(&name) {
+            names.push(name);
+        }
+    }
     (!names.is_empty()).then(|| {
         format!(
             "the skill(s) {} the tasks were told to load could not be named by an absolute path (craft's plugin root is unknown to this run, or holds no such skill): a task agent without a Skill tool may have judged without its rubric.",

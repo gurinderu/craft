@@ -8,6 +8,7 @@
 //! at least Medium, its harm the unmet promise (realm @nick/craft, node #619): the tests lens's brief
 //! and the verifier both read [`PROMISE_FLOOR`], and the floor below raises it once it names that harm.
 
+use craft_store::js::JsStr;
 use serde_json::{Map, Value};
 
 use super::{ceiling, effective_level, severity_rank, text};
@@ -34,7 +35,7 @@ fn gap(f: &Value) -> Option<&str> {
 }
 
 fn regression(f: &Value) -> Option<&str> {
-    text(f, "regression").filter(|r| !r.trim().is_empty())
+    text(f, "regression").filter(|r| !r.js_trim().is_empty())
 }
 
 /// Whether `f` is the tests lens's weak assertion that names no regression: read as level `none`.

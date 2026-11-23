@@ -35,7 +35,7 @@ fn lexical(path: &Path) -> PathBuf {
 }
 
 pub(super) fn read(root: &Path, rel: &JsString, max: u64, label: &str) -> Result<String, Error> {
-    let absolute = lexical(&normal(&root.join(text::lossy(rel))));
+    let absolute = lexical(&normal(&root.join(rel.to_utf8_lossy())));
     let outside = || Error::refused(format!("{label} resolves outside the repository"));
     if !absolute.starts_with(root) {
         return Err(outside());

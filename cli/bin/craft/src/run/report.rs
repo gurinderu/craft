@@ -4,6 +4,7 @@
 //! it; the report's memory part verbatim; and a `## Findings` list, one line each. A parent reads
 //! the stop by `stopped: usage limit reached (<text>)` (realm @nick/craft, nodes #298, #453).
 
+use craft_store::js::JsStr;
 use std::collections::HashMap;
 
 use serde_json::Value;
@@ -20,7 +21,7 @@ fn tally(v: Option<&Value>) -> u64 {
 
 /// Whitespace runs as one space, trimmed.
 fn one_line(s: &str) -> String {
-    s.split_whitespace().collect::<Vec<_>>().join(" ")
+    s.js_split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// The line with its verdict's glyph, unless it opens with one already.
@@ -90,7 +91,7 @@ fn publication(step: &Value) -> Vec<String> {
     }
     let held = tally(step.get("sorting").and_then(|s| s.get("doubtful")));
     if held > 0 {
-        out.push(format!("Doubtful: {held} finding(s) held back from the PR — the report's Doubtful section lists them for the human to choose; post a chosen one only through the craft:addressing-findings posting script."));
+        out.push(format!("Doubtful: {held} finding(s) held back from the PR — the report's Doubtful section lists them for the human to choose; post a chosen one only through `craft review post` (the craft:addressing-findings skill runs it)."));
     }
     out
 }
@@ -148,7 +149,7 @@ pub(crate) fn finished_answer(step: &Value, again: &str) -> String {
     if step.get("stopped").is_some_and(Value::is_object) {
         rest.push(resume_hint(run, again));
     }
-    let memory = text(step, "memorySections").trim();
+    let memory = text(step, "memorySections").js_trim();
     let memory = if memory.is_empty() {
         String::new()
     } else {
@@ -197,7 +198,7 @@ pub(crate) fn cut_short(verdict: &str) -> bool {
         "INCOMPLETE (empty diff)",
         "INCOMPLETE (no language profile)",
     ];
-    verdict.contains("INCOMPLETE") && !NOTHING.contains(&verdict.trim())
+    verdict.contains("INCOMPLETE") && !NOTHING.contains(&verdict.js_trim())
 }
 
 /// How many distinct error lines the section names.

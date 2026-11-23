@@ -13,6 +13,7 @@
 //! tasks are held as they were first handed out, and the next `submit` without `--limit` hands them
 //! out again.
 
+use craft_store::js::JsStr;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
@@ -112,7 +113,7 @@ pub(crate) fn round_died(run: &RunState) -> Option<String> {
 /// The host's limit text as one line, capped.
 #[must_use]
 pub fn limit(text: &str) -> Stop {
-    let one = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let one = text.js_split_whitespace().collect::<Vec<_>>().join(" ");
     Stop {
         cause: Cause::Limit,
         text: one.chars().take(LIMIT_TEXT_MAX).collect(),

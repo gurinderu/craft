@@ -3,6 +3,7 @@
 //! required lenses, the rigor floors, the surface gate and the light pass, in that order.
 //! `content/parity/plan-cases.json` holds both ports to the same plans.
 
+use craft_store::js::JsStr;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -156,7 +157,7 @@ fn repo_rule_paths(raw: &[String]) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     let mut chars = 0;
     for p in raw {
-        let s = p.trim();
+        let s = p.js_trim();
         let s = s.strip_prefix("./").unwrap_or(s);
         if !safe(s) || out.iter().any(|o| o == s) || chars + s.len() > REPO_RULES_MAX_CHARS {
             continue;

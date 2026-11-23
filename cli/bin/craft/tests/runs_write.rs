@@ -185,6 +185,38 @@ fn a_reviewers_choice_lands_in_the_newest_sorted_record_of_the_branch() {
         "{}",
         text(&none.stderr)
     );
+    // `--n` is read as JavaScript's `Number()` reads it: U+FEFF trimmed, a radix literal read in
+    // its base, U+0085 no whitespace.
+    for n in ["\u{feff}1\u{feff}", "0x1"] {
+        let again = craft(
+            store.path(),
+            &[
+                "sorting-choice",
+                "--n",
+                n,
+                "--choice",
+                "defect",
+                "--project",
+                project,
+            ],
+            "",
+        );
+        assert!(again.status.success(), "{n:?}: {}", text(&again.stderr));
+    }
+    let next_line = craft(
+        store.path(),
+        &[
+            "sorting-choice",
+            "--n",
+            "\u{85}1",
+            "--choice",
+            "defect",
+            "--project",
+            project,
+        ],
+        "",
+    );
+    assert_eq!(next_line.status.code(), Some(1));
 }
 
 #[test]

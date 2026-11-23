@@ -8,6 +8,7 @@
 //! got no verdict stays, and the section says why. One the judge says goes against a rule is
 //! marked with it, unless a decision marked it first.
 
+use craft_store::js::JsStr;
 use std::collections::BTreeSet;
 
 use serde_json::Value;
@@ -38,15 +39,15 @@ use verdicts::read;
 
 /// Whether a finding is Critical, which no rule covers.
 fn is_critical(f: &Value) -> bool {
-    judge::plain(f.get("severity"))
-        .trim()
+    crate::js::text(f.get("severity"))
+        .js_trim()
         .eq_ignore_ascii_case("critical")
 }
 
 /// Whether rule `r` may cover `f`: its file inside the rule's scope, and, when the rule names a
 /// lens, raised by it (`ruleCandidate`).
 fn candidate(f: &Value, r: &PriorDecision) -> bool {
-    let file = judge::plain(f.get("file"));
+    let file = crate::js::text(f.get("file"));
     if r.kind != RecordKind::Rule || !in_scope(&file, &r.scope) {
         return false;
     }

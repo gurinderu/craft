@@ -47,7 +47,7 @@ fn a_stopped_degraded_published_run_says_each_and_how_to_resume() {
         ),
         "{got}"
     );
-    assert!(got.contains("Doubtful: 2 finding(s)"), "{got}");
+    assert!(got.contains("Doubtful: 2 finding(s) held back from the PR — the report's Doubtful section lists them for the human to choose; post a chosen one only through `craft review post` (the craft:addressing-findings skill runs it)."), "{got}");
     assert!(got.contains("⚠️ Degraded: part of this review ran weaker than asked — the report's Degraded section says how.\n- ran without its agent"), "{got}");
     assert!(
         got.contains("stopped: usage limit reached (You've hit your usage limit)."),
@@ -104,5 +104,13 @@ fn a_publication_whose_changed_lines_were_not_read_says_so_beside_the_pr_comment
             "⚠️ git could not list the lines the diff changed, so whether a line is inside the diff was not judged (git printed non-UTF-8 output): each defect is posted on its file, not on a line."
         ),
         "{lines:?}"
+    );
+}
+
+#[test]
+fn a_line_is_one_line_of_javascripts_whitespace() {
+    assert_eq!(
+        one_line("\u{feff}a \u{2028} b\u{85}c\u{feff}"),
+        "a b\u{85}c"
     );
 }

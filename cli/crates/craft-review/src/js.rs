@@ -1,19 +1,17 @@
-//! Values read as JavaScript reads them, for the rules the JavaScript PR-thread reader and
-//! doubtful-finding poster held
-//! (`content/parity/pr-rejections-cases.json`, `finding-post-cases.json`): `String(v ?? '')`, `.trim()`, `Number(v)`,
-//! `.length` in UTF-16 code units.
+//! A model field or record value (`serde_json::Value`) read as JavaScript reads it — `String(v ??
+//! '')`, `String(v ?? '').trim()`, `Number(v)`, `findingLine`, `.length` and `.slice` in UTF-16
+//! code units, `Math.max` — through the store's JavaScript model (`craft_store::js`), for the rules
+//! ported from the engines: the PR-thread reader (`rejections`), the doubtful-finding poster
+//! (`publish/doubtful`), the finding sort (`publish/sort`), the memory's records, matcher, judge
+//! and rules (`memory`), and the prompt fields (`prompts`); held to them by
+//! `content/parity/pr-rejections-cases.json`, `finding-post-cases.json` and `memory-cases.json`.
 
+use craft_store::js::{Js, JsStr, JsString};
 use serde_json::Value;
 
-/// A character in JavaScript's `\s`, the set `trim` drops.
-pub(crate) fn space(c: char) -> bool {
-    (c.is_whitespace() && c != '\u{85}') || c == '\u{feff}'
-}
-
-/// `s.trim()`.
-pub(crate) fn trim(s: &str) -> &str {
-    s.trim_matches(space)
-}
+// JavaScript's whitespace, `trim`, `String()`, `Number()` and a number's text are the store's
+// (`craft_store::js`), one copy for every crate.
+pub(crate) use craft_store::js::{is_space, number_text};
 
 /// `s.length`: its UTF-16 code units.
 pub(crate) fn len(s: &str) -> usize {
@@ -22,83 +20,40 @@ pub(crate) fn len(s: &str) -> usize {
 
 /// The first `n` UTF-16 code units of `s`, as `s.slice(0, n)` keeps them.
 pub(crate) fn head(s: &str, n: usize) -> String {
-    let units: Vec<u16> = s.encode_utf16().take(n).collect();
-    String::from_utf16_lossy(&units)
+    JsString::from_utf16(s.encode_utf16().take(n).collect()).to_utf8_lossy()
 }
 
-/// A number as JavaScript prints it in a template literal, for the counts and bounds said.
-pub(crate) fn number_text(n: f64) -> String {
-    if n.is_finite() && n.fract() == 0.0 && n.abs() < 1e21 {
-        #[expect(
-            clippy::cast_possible_truncation,
-            reason = "a whole number under 1e21, which i128 holds"
-        )]
-        let whole = n as i128;
-        whole.to_string()
-    } else if n.is_nan() {
-        "NaN".into()
-    } else {
-        n.to_string()
-    }
-}
-
-/// `String(v ?? '')`.
+/// `String(v ?? '')` ([`Js::to_js_text`]).
 pub(crate) fn text(v: Option<&Value>) -> String {
     match v {
         None | Some(Value::Null) => String::new(),
-        Some(Value::String(s)) => s.clone(),
-        Some(Value::Bool(b)) => b.to_string(),
-        Some(Value::Number(n)) => n.as_f64().map_or_else(|| n.to_string(), number_text),
-        Some(Value::Array(a)) => a
-            .iter()
-            .map(|x| text(Some(x)))
-            .collect::<Vec<_>>()
-            .join(","),
-        Some(Value::Object(_)) => "[object Object]".into(),
+        Some(v) => Js::from(v).to_js_text().to_utf8_lossy(),
     }
 }
 
 /// `String(v ?? '').trim()`.
 pub(crate) fn str_of(v: Option<&Value>) -> String {
-    trim(&text(v)).to_owned()
+    text(v).js_trim().to_owned()
 }
 
-/// `Number(v ?? fallback)`, `fallback` standing for an absent value.
+/// `Number(v ?? fallback)` ([`Js::to_js_number`]), `fallback` standing for an absent value.
 pub(crate) fn number(v: Option<&Value>, fallback: f64) -> f64 {
-    match v {
-        None => fallback,
-        Some(Value::Null) => 0.0,
-        Some(Value::Bool(b)) => f64::from(u8::from(*b)),
-        Some(Value::Number(n)) => n.as_f64().unwrap_or(f64::NAN),
-        Some(Value::String(s)) => number_of_text(s),
-        Some(Value::Array(a)) if a.len() <= 1 => {
-            a.first().map_or(0.0, |x| number_of_text(&text(Some(x))))
-        }
-        Some(_) => f64::NAN,
-    }
+    v.map_or(fallback, |v| Js::from(v).to_js_number())
 }
 
-/// `Number(s)` of a string: blank is 0, decimal notation and `Infinity` read, anything else NaN.
-fn number_of_text(s: &str) -> f64 {
-    let t = trim(s);
-    if t.is_empty() {
-        return 0.0;
-    }
-    let unsigned = t.strip_prefix(['+', '-']).unwrap_or(t);
-    if unsigned == "Infinity" {
-        return if t.starts_with('-') {
-            f64::NEG_INFINITY
-        } else {
-            f64::INFINITY
-        };
-    }
-    if unsigned
-        .chars()
-        .all(|c| c.is_ascii_digit() || matches!(c, '.' | 'e' | 'E' | '+' | '-'))
-    {
-        t.parse().unwrap_or(f64::NAN)
+/// `findingLine`: `Number(v)` when it is a positive integer, else 0.
+pub(crate) fn finding_line(v: Option<&Value>) -> u64 {
+    let n = number(v, f64::NAN);
+    if n.is_finite() && n >= 1.0 && n.trunc().to_bits() == n.to_bits() {
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "a positive whole double, saturating past u64 as a line never is"
+        )]
+        let line = n as u64;
+        line
     } else {
-        f64::NAN
+        0
     }
 }
 
@@ -108,5 +63,36 @@ pub(crate) fn max(a: f64, b: f64) -> f64 {
         f64::NAN
     } else {
         a.max(b)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::finding_line;
+
+    /// `findingLine` in `integrations/shared/prior-decision-match.mjs` gives these (computed with
+    /// Node): `Number(line)` when a positive integer, else 0.
+    #[test]
+    fn a_findings_line_is_read_as_finding_line_reads_it() {
+        for (line, want) in [
+            (json!("5.0"), 5),
+            (json!(5.0), 5),
+            (json!("0x10"), 16),
+            (json!(true), 1),
+            (json!(" 7 "), 7),
+            (json!("\u{feff}7"), 7),
+            (json!("\u{85}7"), 0),
+            (json!("1e2"), 100),
+            (json!([4]), 4),
+            (json!(1.5), 0),
+            (json!(-3), 0),
+            (json!(null), 0),
+            (json!(""), 0),
+        ] {
+            assert_eq!(finding_line(Some(&line)), want, "{line}");
+        }
+        assert_eq!(finding_line(None), 0);
     }
 }

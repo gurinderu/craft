@@ -3,6 +3,7 @@
 //! its rationale sanitized as `sanitizeAttack` sanitizes it, and the sites of later findings
 //! absorbed into it handed over on lines of their own.
 
+use craft_store::js::JsStr;
 use serde_json::Value;
 
 use super::{PromptContext, flatten, repo_directive, shq};
@@ -85,7 +86,7 @@ pub fn sanitize(text: &str) -> String {
         .collect::<Vec<_>>()
         .join(" ");
     let bare: String = one.chars().filter(|c| !"#`*_[]<>|".contains(*c)).collect();
-    let flat = collapse_markers(&bare).trim().to_owned();
+    let flat = collapse_markers(&bare).js_trim().to_owned();
     if flat.chars().count() > ATTACK_MAX {
         format!("{}…", flat.chars().take(ATTACK_MAX).collect::<String>())
     } else {

@@ -2,6 +2,7 @@
 //! reads `extraLenses`.
 
 use super::{Extra, Failed, How};
+use craft_store::js::JsStr;
 
 /// An agent type as a harness names one: `reviewer`, `code-critic`, `team.security-v2`.
 #[must_use]
@@ -25,10 +26,10 @@ pub fn request(raw: Option<&str>, light: bool) -> Extra {
         };
     };
     let names: Vec<&str> = raw
-        .split(|c: char| c == ',' || c.is_whitespace())
+        .split(|c: char| c == ',' || craft_store::js::is_space(c))
         .filter(|s| !s.is_empty())
         .collect();
-    if names.is_empty() || matches!(raw.trim(), "off" | "none" | "false") {
+    if names.is_empty() || matches!(raw.js_trim(), "off" | "none" | "false") {
         return Extra::default();
     }
     let mut extra = Extra {

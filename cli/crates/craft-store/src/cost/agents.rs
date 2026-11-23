@@ -3,6 +3,7 @@
 //! `agent-*.jsonl` transcripts (their lines' shape: realm @nick/craft, node #98) and
 //! `agent-*.meta.json` (`description`, `workflowPhase`: node #367), harness contracts pinned there.
 
+use crate::js::JsStr;
 use std::path::Path;
 use std::sync::LazyLock;
 
@@ -163,7 +164,7 @@ pub fn read_agent(run_dir: &Path, name: &str) -> RunAgent {
         .unwrap_or_default();
     let lines: Vec<Option<Js>> = text
         .split('\n')
-        .filter(|l| !l.trim().is_empty())
+        .filter(|l| !l.js_trim().is_empty())
         .map(|l| parse(l).ok())
         .collect();
     let stamped = lines.iter().find_map(|r| {

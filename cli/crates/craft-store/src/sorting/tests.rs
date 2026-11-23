@@ -62,3 +62,71 @@ fn an_unknown_choice_a_missing_finding_or_no_sorting_is_refused_by_name() {
             .starts_with("the record carries no sorting")
     );
 }
+
+#[test]
+fn the_pr_a_post_is_marked_with_stays_with_the_choice_that_completes_it() {
+    let marked = posting::apply(&record(), 2.0, 7, "T").unwrap();
+    let choices = |r: &Obj| {
+        r.get("sorting")
+            .and_then(Js::as_obj)
+            .and_then(|s| s.get("choices"))
+            .unwrap()
+            .compact()
+    };
+    assert_eq!(
+        choices(&marked),
+        r#"{"1":"old","2":{"pr":7,"posting":true,"at":"T"}}"#
+    );
+    let (done, _) = apply_choice(&marked, 2.0, "question", "U").unwrap();
+    assert_eq!(
+        choices(&done),
+        r#"{"1":"old","2":{"choice":"question","at":"U","pr":7}}"#
+    );
+    let json: serde_json::Value = serde_json::from_str(&Js::Obj(done).compact()).unwrap();
+    assert_eq!(posting::recorded_pr(&json, 2), Some(7));
+    assert_eq!(posting::recorded_pr(&json, 1), None);
+    posting::apply(&record(), 9.0, 7, "T").unwrap_err();
+}
+
+#[test]
+fn a_post_mark_keeps_a_choice_made_before() {
+    let (dropped, _) = apply_choice(&record(), 2.0, "dropped", "T").unwrap();
+    let marked = posting::apply(&dropped, 2.0, 7, "U").unwrap();
+    let choices = marked
+        .get("sorting")
+        .and_then(Js::as_obj)
+        .and_then(|s| s.get("choices"))
+        .unwrap()
+        .compact();
+    assert_eq!(
+        choices,
+        r#"{"1":"old","2":{"choice":"dropped","at":"U","pr":7,"posting":true}}"#
+    );
+}
+
+#[test]
+fn a_post_mark_replaces_the_pr_a_choice_named_and_keeps_an_array_of_choices() {
+    let (asked, _) = apply_choice(&record(), 2.0, "question", "T").unwrap();
+    let on7 = posting::apply(&asked, 2.0, 7, "U").unwrap();
+    let on9 = posting::apply(&on7, 2.0, 9, "V").unwrap();
+    let choices = |r: &Obj| {
+        r.get("sorting")
+            .and_then(Js::as_obj)
+            .and_then(|s| s.get("choices"))
+            .unwrap()
+            .compact()
+    };
+    assert_eq!(
+        choices(&on9),
+        r#"{"1":"old","2":{"choice":"question","at":"V","pr":9,"posting":true}}"#
+    );
+    let mut arrayed = record();
+    let sorting = arrayed.get("sorting").and_then(Js::as_obj).unwrap().clone();
+    let sorting = sorting.with("choices", Js::Arr(vec![Js::str("zero"), Js::str("one")]));
+    arrayed.set("sorting", Js::Obj(sorting));
+    let marked = posting::apply(&arrayed, 2.0, 7, "T").unwrap();
+    assert_eq!(
+        choices(&marked),
+        r#"{"0":"zero","1":"one","2":{"pr":7,"posting":true,"at":"T"}}"#
+    );
+}

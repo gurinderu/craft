@@ -1,0 +1,44 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "plan_markdown",
+    "ledger",
+    "summary"
+  ],
+  "properties": {
+    "plan_markdown": {
+      "type": "string",
+      "description": "the fix plan in checkbox-task markdown format (accepted findings only)"
+    },
+    "ledger": {
+      "type": "array",
+      "description": "every finding keyed by stable_id with its final verdict",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "stable_id",
+          "verdict",
+          "reason"
+        ],
+        "properties": {
+          "stable_id": {
+            "type": "string"
+          },
+          "verdict": {
+            "type": "string",
+            "description": "accept | reject | defer | needs-decision | conflict"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "summary": {
+      "type": "string",
+      "description": "human-readable rundown of reject/defer/needs-decision/conflict"
+    }
+  }
+}

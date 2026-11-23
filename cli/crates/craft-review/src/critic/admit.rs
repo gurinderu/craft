@@ -4,6 +4,7 @@
 //! is refused (realm @nick/craft, node #102) — each said in a note as an uncovered surface — and
 //! the rest run.
 
+use craft_store::js::JsStr;
 use serde_json::Value;
 
 use super::{candidates, lens_task, metrics_ready};
@@ -27,7 +28,7 @@ fn named(answer: &Value) -> (Vec<String>, String) {
         .get("notes")
         .and_then(Value::as_str)
         .unwrap_or("")
-        .trim()
+        .js_trim()
         .to_owned();
     (lenses, note)
 }
@@ -97,6 +98,13 @@ pub(crate) fn followups(
     }
     run.critic.notes.extend(gaps);
     run.critic.lenses.extend(lenses_run);
+    // A metrics lens it admits judges its part as the plan's would, unmeasured files and all.
+    crate::complexity::note_unmeasured(run, profiles, |p| {
+        tasks.iter().any(|t| {
+            matches!(&t.kind, TaskKind::CriticLens { profile, lens }
+                if *profile == p.id && p.metrics_only(lens))
+        })
+    });
     if !run.critic.lenses.is_empty() {
         notes.push(format!(
             "completeness critic → follow-up lenses: {}",

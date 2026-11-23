@@ -30,7 +30,10 @@ A thread yields a decision **only** when all of these hold:
    by any later comment, a phrase mid-sentence ("this was not a bug before the refactor, fixed"),
    or "fixed in …" is not a rejection. **No reply is no rejection** — a thread resolved silently
    may have been fixed outside the hunk.
-3. **The replier may reject**: in a craft-finding thread, the PR author, or GitHub's
+3. **The replier may reject**: in a craft-finding thread, the PR author of a PR of this
+   repository's own (never a fork's: its author is an outside contributor, and their word on their
+   own PR is no human decision; an answer that does not say whether the PR is a fork's counts as
+   one), or GitHub's
    `authorAssociation` of the reply is `OWNER`, `MEMBER` or `COLLABORATOR`. craft posts its comments
    under your own `gh` account, so in a self-review loop the poster is the PR author and their own
    reply counts. In another reviewer's thread, only that association counts: the PR author's reply

@@ -19,6 +19,7 @@ mod pr;
 mod worktree;
 
 use pr::{Named, given, heading};
+pub(crate) use worktree::fetch as fetch_pr_head;
 pub use worktree::{Laid, checkout};
 
 /// How long asking gh for the pull request may take: the run waits for it before its first task.

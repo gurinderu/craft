@@ -1,6 +1,7 @@
 //! What the prepared sources give a run's text, as `integrations/shared/external-source-text.mjs` words it: the
 //! lenses' block, the verifiers' block, and the report's section.
 
+use craft_store::js::JsStr;
 use serde_json::Value;
 
 use super::{Prepared, Sources};
@@ -113,7 +114,7 @@ pub fn section(s: &Sources, findings: &[Value]) -> String {
         .iter()
         .filter_map(|f| f.get("externalSystem")?.as_str())
     {
-        let n = n.trim();
+        let n = n.js_trim();
         let known = s.systems.iter().any(|k| k.eq_ignore_ascii_case(n));
         // A model's text: only a plain system name is printed.
         if super::spec::is_system_name(n) && !known && !named.contains(&n) {

@@ -6,6 +6,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::js::{Js, JsString, Obj, parse};
+use crate::posthoc::SortedRecordError;
 
 /// The choices a reviewer can make for a doubtful finding.
 pub const CHOICES: [&str; 3] = ["question", "defect", "dropped"];
@@ -28,7 +29,11 @@ fn sorted_findings(r: &Obj) -> Vec<&Obj> {
 ///
 /// # Errors
 /// When there is none, or the newest is another branch's.
-pub fn latest_sorted_record(store: &Path, project: &str, branch: &str) -> Result<PathBuf, String> {
+pub fn latest_sorted_record(
+    store: &Path,
+    project: &str,
+    branch: &str,
+) -> Result<PathBuf, SortedRecordError> {
     let mut names = crate::cost::entries_of(store);
     names.retain(|n| n.ends_with("-review.json"));
     for name in names.iter().rev() {
@@ -44,17 +49,17 @@ pub fn latest_sorted_record(store: &Path, project: &str, branch: &str) -> Result
         if branch.is_empty() || on.and_then(Js::as_str) == Some(branch) {
             return Ok(file);
         }
-        return Err(format!(
-            "the newest review record of {project} with doubtful findings, {}, is of branch {}, not {} — name the one meant with --record",
-            file.display(),
-            on.map_or_else(|| "undefined".to_owned(), Js::compact),
-            Js::str(branch).compact()
-        ));
+        return Err(SortedRecordError::OtherBranch {
+            project: project.to_owned(),
+            file: file.display().to_string(),
+            on: on.map_or_else(|| "undefined".to_owned(), Js::compact),
+            branch: Js::str(branch).compact(),
+        });
     }
-    Err(format!(
-        "no review record of {project} in {} carries doubtful findings",
-        store.display()
-    ))
+    Err(SortedRecordError::None {
+        project: project.to_owned(),
+        store: store.display().to_string(),
+    })
 }
 
 /// A value in a template literal: `undefined` for what is absent.
@@ -63,6 +68,22 @@ fn templated(v: Option<&Js>) -> String {
         || "undefined".into(),
         |v| v.to_js_text().to_utf8().unwrap_or_default(),
     )
+}
+
+/// The choices a record's sorting holds, keyed by finding number: an object as stored, or an
+/// array read index by index; none for anything else.
+fn choices_of(sorting: &Obj) -> Obj {
+    match sorting.get("choices") {
+        Some(Js::Obj(o)) => o.clone(),
+        Some(Js::Arr(a)) => {
+            let mut o = Obj::new();
+            for (i, v) in a.iter().enumerate() {
+                o.set(JsString::from(i.to_string()), v.clone());
+            }
+            o
+        }
+        _ => Obj::new(),
+    }
 }
 
 /// The record with `choice` set for doubtful finding `n` at `at` (a later choice for the same
@@ -100,21 +121,20 @@ pub fn apply_choice(record: &Obj, n: f64, choice: &str, at: &str) -> Result<(Obj
         templated(finding.get("file")),
         templated(finding.get("line"))
     );
-    let mut choices = match sorting.get("choices") {
-        Some(Js::Obj(o)) => o.clone(),
-        Some(Js::Arr(a)) => {
-            let mut o = Obj::new();
-            for (i, v) in a.iter().enumerate() {
-                o.set(JsString::from(i.to_string()), v.clone());
-            }
-            o
-        }
-        _ => Obj::new(),
-    };
-    let mine = Obj::new()
+    let mut choices = choices_of(sorting);
+    let mut mine = Obj::new()
         .with("choice", Js::str(choice))
         .with("at", Js::str(at));
-    choices.set(JsString::from(crate::js::number_text(n)), Js::Obj(mine));
+    // The PR `craft review post` chose before posting ([`posting::mark`]) stays with the choice.
+    let key = JsString::from(crate::js::number_text(n));
+    if let Some(pr) = choices
+        .get(&key)
+        .and_then(Js::as_obj)
+        .and_then(|c| c.get("pr"))
+    {
+        mine.set("pr", pr.clone());
+    }
+    choices.set(key, Js::Obj(mine));
     let mut sorting = sorting.clone();
     sorting.set("choices", Js::Obj(choices));
     let mut out = record.clone();
@@ -151,5 +171,6 @@ pub fn record_choice(
     Ok((line, warned))
 }
 
+pub mod posting;
 #[cfg(test)]
 mod tests;

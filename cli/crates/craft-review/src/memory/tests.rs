@@ -286,6 +286,21 @@ fn a_dead_recall_agent_is_named_apart_from_a_failed_query() {
 }
 
 #[test]
+fn an_empty_recall_truncated_and_failed_at_once_still_reads_as_not_read() {
+    let answer = json!({
+        "backend": "kg", "why": "w", "decisions": [], "questions": [], "rules": [],
+        "queryError": "kg_search(rule) refused", "truncated": "0 of 5 shown"
+    });
+    let r = super::recall::read(Some(&answer), 0, 0);
+    assert!(
+        r.source.line().starts_with("memory: not read — "),
+        "{}",
+        r.source.line()
+    );
+    assert_eq!(r.source.degraded_notes().len(), 2);
+}
+
+#[test]
 fn a_note_of_exactly_the_bound_is_kept_whole_and_one_past_it_is_cut_to_it() {
     let max = super::degraded::RECALL_NOTE_MAX;
     let exact = "e".repeat(max);
@@ -314,5 +329,43 @@ fn a_partly_failed_recall_of_externals_alone_says_it_read_them() {
             "memory: recall partly failed — backend query may have failed: kg_search(rule) refused; the 1 external system(s) it returned were read, others may be missing",
             "memory: recall read only part of the backend's answer (3 of 5 shown): the records past it were not applied",
         ]
+    );
+}
+
+#[test]
+fn a_record_anchors_a_finding_whose_line_javascript_reads_as_its_own() {
+    let same = PriorDecision {
+        tool_rule: "redundant_clone".into(),
+        ..decision("decision-b", "a clone")
+    };
+    let ds = [same];
+    for line in [json!("10.0"), json!(10.0), json!("0xa"), json!(" 11 ")] {
+        let f = json!({"file": "src/lib.rs", "line": line, "title": "needless clone", "source": "clippy", "toolRule": "clippy::redundant_clone"});
+        let m = match_of(&f, &ds, &tried_order(&ds)).unwrap();
+        assert_eq!(m.how, "matched by file:line+lens+toolRule", "{line}");
+    }
+    let unlined = json!({"file": "src/lib.rs", "line": "ten", "title": "needless clone", "source": "clippy", "toolRule": "clippy::redundant_clone"});
+    assert_ne!(
+        match_of(&unlined, &ds, &tried_order(&ds)).map(|m| m.how),
+        Some("matched by file:line+lens+toolRule".into())
+    );
+}
+
+#[test]
+fn a_tool_finding_naming_no_rule_meets_its_same_title_at_the_line_javascript_reads() {
+    let ds = [decision("decision-t", "needless clone")];
+    let how = |line: serde_json::Value| {
+        let f = json!({"file": "src/lib.rs", "line": line, "title": "needless clone", "source": "clippy"});
+        match_of(&f, &ds, &tried_order(&ds)).map(|m| m.how)
+    };
+    let near = "matched by the same title near its line (the judge gave no verdict)";
+    for line in [json!("10.0"), json!("0xa"), json!(" 11 ")] {
+        assert_eq!(how(line.clone()).as_deref(), Some(near), "{line}");
+    }
+    // 0x1f is line 31, far from the record's 10: no match; a line no reader reads compares none.
+    assert_eq!(how(json!("0x1f")), None);
+    assert_eq!(
+        how(json!("ten")).as_deref(),
+        Some("matched by the same title in scope, no line to compare (the judge gave no verdict)")
     );
 }

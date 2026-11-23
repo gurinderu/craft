@@ -164,6 +164,7 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
         not_run: Vec::new(),
         capped: Vec::new(),
         degraded: runbook_notes,
+        skills_unresolved: Vec::new(),
         verdict: None,
         exit: None,
         chain,
@@ -177,10 +178,9 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
         publish: Publish::asked(opts.comment),
         telemetry: crate::telemetry::Tally::default(),
     };
-    run.exit = coverage::exit(
-        &run.diff,
-        run.tracks.len(),
-        &coverage::supported(&profiles),
+    run.exit = coverage_exit(
+        &run,
+        &profiles,
         opts.base.is_some() || re_review != ReScope::First,
     );
     // The prior round's open findings are adjudicated beside the scouts: neither waits on the other.
@@ -204,6 +204,17 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
     }
     run.tasks.extend(adjudicators);
     first_step(dir, &mut run)
+}
+
+/// The coverage exit of a new `run` over `profiles`, `based` when its base was given or it
+/// re-reviews.
+fn coverage_exit(run: &RunState, profiles: &[Profile], based: bool) -> Option<coverage::Exit> {
+    coverage::exit(
+        &run.diff,
+        run.tracks.len(),
+        &coverage::supported(profiles),
+        based,
+    )
 }
 
 /// Each profile's part of the changed files of `diff`, made in the checkout `cwd` is in, the files
@@ -368,6 +379,7 @@ fn save_and_next_with(
     save: Save<'_>,
 ) -> Result<Value, Error> {
     let setup = said.post.cloned().unwrap_or_default();
+    crate::prompts::skills::keep_unresolved(run);
     publish::deliver(dir, run, &setup)?;
     handoff::write_pending(dir, run)?;
     save(dir, run)?;

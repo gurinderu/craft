@@ -14,7 +14,7 @@ test('cli/Cargo.toml and the workspace packages in cli/Cargo.lock are at the plu
   const local = read('cli/Cargo.lock')
     .split('[[package]]')
     .filter(p => /^name = "craft/m.test(p) && !/^source = /m.test(p))
-  assert.equal(local.length, 6, 'craft, craft-agent, craft-review, craft-step, craft-store, craft-tui')
+  assert.equal(local.length, 7, 'craft, craft-agent, craft-review, craft-step, craft-store, craft-triage, craft-tui')
   assert.deepEqual(
     local.map(p => /^version = "([^"]+)"/m.exec(p)?.[1]),
     local.map(() => version),

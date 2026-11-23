@@ -12,6 +12,7 @@ pub(crate) use floor::{floor_note, raise_path_floor};
 pub(crate) use test_gap::PROMISE_FLOOR;
 pub(crate) use test_gap::{raise_weak_floor, reach_is_regression, verifier_lines, weak_floor_note};
 
+use craft_store::js::JsStr;
 use serde_json::{Map, Value};
 
 /// Every level, worst first, with the highest severity it allows.
@@ -70,7 +71,7 @@ fn truthy(v: Option<&Value>) -> bool {
 fn rule_cited(rule: Option<&Value>) -> bool {
     let filled = |k| {
         rule.and_then(|r| text(r, k))
-            .is_some_and(|s| !s.trim().is_empty())
+            .is_some_and(|s| !s.js_trim().is_empty())
     };
     filled("file") && filled("text")
 }

@@ -6,7 +6,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::adapter::{Env, writing};
-use crate::js::{Js, Obj};
+use crate::js::{Js, Obj, Utf16Error};
 
 /// How a write ended: its file and what it said, or why it did not land.
 pub type Said = Result<(PathBuf, String, Vec<String>), String>;
@@ -50,21 +50,48 @@ pub fn sorting_choice(n: f64, choice: &str, record: Option<&Path>, req: &Obj, en
                 .into(),
         );
     }
-    let file = sorted_record(record, req, env)?;
+    let file = sorted_record(record, req, env).map_err(|e| e.to_string())?;
     let (line, warned) = crate::sorting::record_choice(&env.store, &file, n, choice, env.now)?;
     Ok((file, line, warned))
 }
 
+/// Why no review record holding doubtful findings was found.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum SortedRecordError {
+    /// The request's repository cannot be read as text.
+    #[error(transparent)]
+    Request(#[from] Utf16Error),
+    /// No review record of the project carries doubtful findings.
+    #[error("no review record of {project} in {store} carries doubtful findings")]
+    None { project: String, store: String },
+    /// The newest one that does is another branch's.
+    #[error(
+        "the newest review record of {project} with doubtful findings, {file}, is of branch {on}, not {branch} — name the one meant with --record"
+    )]
+    OtherBranch {
+        project: String,
+        file: String,
+        /// Its branch, as JavaScript printed it (`undefined` when it names none).
+        on: String,
+        /// The branch asked for, quoted.
+        branch: String,
+    },
+}
+
 /// The review record holding the doubtful findings: `record` when named, else the newest of the
-/// repository's branch carrying them.
+/// repository carrying them, when it is the repository's branch's.
 ///
 /// # Errors
 /// When none is named or found, or the newest is another branch's.
-pub fn sorted_record(record: Option<&Path>, req: &Obj, env: &Env) -> Result<PathBuf, String> {
+pub fn sorted_record(
+    record: Option<&Path>,
+    req: &Obj,
+    env: &Env,
+) -> Result<PathBuf, SortedRecordError> {
     if let Some(f) = record {
         return Ok(f.to_path_buf());
     }
-    let w = writing(req, env, None).map_err(|e| e.to_string())?;
+    let w = writing(req, env, None)?;
     crate::sorting::latest_sorted_record(&env.store, &w.project, &w.git_id.branch)
 }
 

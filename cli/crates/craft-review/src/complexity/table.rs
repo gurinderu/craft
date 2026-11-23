@@ -5,6 +5,7 @@ use serde_json::Value;
 
 use crate::consumers::{Consumers, Measured};
 use crate::profile::{Profile, literal_pathspec};
+use crate::prompts::PromptContext;
 
 /// How many functions one lens's table shows.
 const SHOWN: usize = 200;
@@ -40,15 +41,61 @@ fn in_part(profile: &Profile, pathspec: &str, file: &str) -> bool {
     }
 }
 
+/// The measured functions in the part of the change `pathspec` names for `profile`.
+fn mine<'c>(c: &'c Consumers, profile: &Profile, pathspec: &str) -> Vec<&'c Measured> {
+    c.metrics
+        .iter()
+        .filter(|m| in_part(profile, pathspec, &m.file))
+        .collect()
+}
+
+/// The degraded note of a run whose metrics lenses, one over each of `parts` (a profile and its
+/// files), judge part of the change without its numbers: the files not wholly read, and the
+/// functions past the [`SHOWN`] a lens's table holds; `None` when every function touched is shown.
+#[must_use]
+pub fn unmeasured(ctx: &PromptContext, parts: &[(&Profile, &[String])]) -> Option<String> {
+    if parts.is_empty() {
+        return None;
+    }
+    let c = &ctx.consumers;
+    let specs: Vec<(&Profile, String)> = parts
+        .iter()
+        .map(|(p, files)| (*p, ctx.pathspec(p, files)))
+        .collect();
+    let cut = specs
+        .iter()
+        .map(|(p, spec)| {
+            let n = c
+                .metrics
+                .iter()
+                .filter(|m| in_part(p, spec, &m.file))
+                .count();
+            n.saturating_sub(SHOWN)
+        })
+        .sum();
+    // Only the unread files of the parts a metrics lens runs over, as its table names them.
+    let unread: Vec<String> = c
+        .metrics_unread
+        .iter()
+        .filter(|u| {
+            let file = unread_file(u);
+            specs.iter().any(|(p, spec)| in_part(p, spec, file))
+        })
+        .cloned()
+        .collect();
+    super::look::unmeasured(&unread, cut, SHOWN)
+}
+
+/// The file an entry of `metrics_unread` (`file (why)`) names.
+fn unread_file(u: &str) -> &str {
+    u.split(" (").next().unwrap_or(u)
+}
+
 /// The table of a metrics lens of `profile` over the part `pathspec` names: each measured
 /// function there, at most [`SHOWN`], then the files whose functions were not read.
 #[must_use]
 pub fn lens_table(c: &Consumers, profile: &Profile, pathspec: &str) -> String {
-    let mine: Vec<&Measured> = c
-        .metrics
-        .iter()
-        .filter(|m| in_part(profile, pathspec, &m.file))
-        .collect();
+    let mine = mine(c, profile, pathspec);
     let mut out: Vec<String> = mine.iter().take(SHOWN).map(|m| line(m)).collect();
     if mine.len() > SHOWN {
         out.push(format!(
@@ -64,7 +111,7 @@ pub fn lens_table(c: &Consumers, profile: &Profile, pathspec: &str) -> String {
     let unread: Vec<String> = c
         .metrics_unread
         .iter()
-        .filter(|u| in_part(profile, pathspec, u.split(" (").next().unwrap_or(u)))
+        .filter(|u| in_part(profile, pathspec, unread_file(u)))
         .map(|u| plain(u))
         .collect();
     if !unread.is_empty() {

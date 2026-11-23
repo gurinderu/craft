@@ -3,7 +3,7 @@
 
 use serde_json::Value;
 
-use super::super::judge::{WHY_MAX, clip, plain};
+use super::super::judge::{WHY_MAX, clip};
 
 /// One covered finding as its section lists it.
 fn line(f: &Value) -> String {
@@ -14,8 +14,8 @@ fn line(f: &Value) -> String {
         Some(Value::Bool(true)) => "true".to_owned(),
         _ => "0".to_owned(),
     };
-    let file = plain(f.get("file"));
-    let severity = plain(f.get("severity"));
+    let file = crate::js::text(f.get("file"));
+    let severity = crate::js::text(f.get("severity"));
     format!(
         "- {} · `{}:{at}` · {} · rule {} \"{}\" · {}",
         if f.get("severity").is_some_and(|v| !v.is_null()) {
@@ -24,11 +24,11 @@ fn line(f: &Value) -> String {
             "?"
         },
         if file.is_empty() { "?" } else { &file },
-        plain(f.get("title")),
+        crate::js::text(f.get("title")),
         f.get("priorDecision")
-            .map_or_else(|| "?".to_owned(), |v| plain(Some(v))),
-        clip(&plain(f.get("ruleTitle")), WHY_MAX),
-        plain(f.get("priorMatch")),
+            .map_or_else(|| "?".to_owned(), |v| crate::js::text(Some(v))),
+        clip(&crate::js::text(f.get("ruleTitle")), WHY_MAX),
+        crate::js::text(f.get("priorMatch")),
     )
 }
 

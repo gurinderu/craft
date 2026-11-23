@@ -4,6 +4,7 @@
 //! judges' pairs ranked so the reviewed paths, then every finding's best candidate, come first.
 //! Under its bound each list is left exactly as it was.
 
+use craft_store::js::JsStr;
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -109,7 +110,7 @@ pub(super) fn kept_records(list: &[Value], paths: &[String], max: usize) -> Vec<
 /// A finding's severity as a rank, Critical first.
 fn severity_rank(f: &Value) -> u8 {
     let s = f.get("severity").and_then(Value::as_str).unwrap_or("");
-    match s.trim().to_lowercase().as_str() {
+    match s.js_trim().to_lowercase().as_str() {
         "critical" => 0,
         "high" => 1,
         "medium" => 2,

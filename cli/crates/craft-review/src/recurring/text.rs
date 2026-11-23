@@ -3,21 +3,7 @@
 use craft_store::js::{JsString, Obj};
 
 pub(super) fn text(o: &Obj, key: &str) -> JsString {
-    let units: Vec<_> = o.text_units(key).units().collect();
-    let start = units
-        .iter()
-        .position(|u| !js_space(*u))
-        .unwrap_or(units.len());
-    let end = units
-        .iter()
-        .rposition(|u| !js_space(*u))
-        .map_or(0, |i| i + 1);
-    JsString::from_utf16(units.get(start..end).unwrap_or_default().to_vec())
-}
-
-// ECMAScript WhiteSpace + LineTerminator, not Rust's Unicode White_Space (U+0085).
-fn js_space(u: u16) -> bool {
-    matches!(u, 0x0009..=0x000d | 0x0020 | 0x00a0 | 0x1680 | 0x2000..=0x200a | 0x2028 | 0x2029 | 0x202f | 0x205f | 0x3000 | 0xfeff)
+    craft_store::js::trim_text(&o.text_units(key))
 }
 
 pub(super) fn parts(s: &JsString) -> Vec<JsString> {

@@ -2,6 +2,7 @@
 //! the shape `toLedgerEntry` in `integrations/shared/review-ledger-entry.mjs` writes it (the fingerprint aside,
 //! which the record's writer computes), and the identities a re-review matches findings by.
 
+use craft_store::js::JsStr;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -124,7 +125,8 @@ fn shingle(title: &str) -> Vec<String> {
 }
 
 /// How much two titles share, as `shingleOverlap`: common words over the larger set.
-pub(crate) fn overlap(a: &str, b: &str) -> f64 {
+#[must_use]
+pub fn overlap(a: &str, b: &str) -> f64 {
     let (mut sa, mut sb) = (shingle(a), shingle(b));
     sa.dedup();
     sb.dedup();
@@ -152,8 +154,8 @@ pub fn matches_prior(cur: &Value, prior: &Value) -> bool {
 /// rule, folded; empty when either is missing.
 #[must_use]
 pub fn carried_key(f: &Value) -> String {
-    let file = text(f, "file").trim().to_lowercase();
-    let rule = text(f, "ruleId").trim().to_lowercase();
+    let file = text(f, "file").js_trim().to_lowercase();
+    let rule = text(f, "ruleId").js_trim().to_lowercase();
     if file.is_empty() || rule.is_empty() {
         String::new()
     } else {
@@ -210,7 +212,7 @@ fn fold_symbol(symbol: &str) -> String {
         };
         s.replace_range(open..=open + close, "");
     }
-    s.trim().to_owned()
+    s.js_trim().to_owned()
 }
 
 /// Whether `f` is the defect the tombstone `t` closed, as `flagReturningDefects` matches it: the

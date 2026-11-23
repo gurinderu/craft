@@ -1,4 +1,4 @@
-use super::super::{Error, pattern::Engine, text};
+use super::super::{Error, pattern::Engine};
 
 const QUOTED: &str = r#"^(["'])(.*)\1$"#;
 const UNREAD: &str = r#"^[{}[\]|>&*!`$\s"']|\{\{|\$\{|\s"#;
@@ -9,7 +9,7 @@ fn uncommented(raw: &str) -> &str {
     });
     raw.get(..comment.map_or(raw.len(), |(i, _)| i))
         .unwrap_or("")
-        .trim_matches(text::whitespace)
+        .trim_matches(craft_store::js::is_space)
 }
 
 /// Each raw value's plain scalar, or "" when it is not one; a batch is matched in two calls.

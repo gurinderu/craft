@@ -10,8 +10,9 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
-/// The members of JS's `\s`, for use inside a character class.
-const SPACE: &str = r"\t\n\x0B\x0C\r \x{A0}\x{1680}\x{2000}-\x{200A}\x{2028}\x{2029}\x{202F}\x{205F}\x{3000}\x{FEFF}";
+// The members of JS's `\s`, for use inside a character class: the store's, held equal to
+// `is_space` by its tests.
+use craft_store::js::SPACE_CLASS as SPACE;
 /// JS's `\b`: a boundary between `[A-Za-z0-9_]` and anything else.
 const BOUNDARY: &str = r"(?-u:\b)";
 
@@ -37,25 +38,9 @@ pub fn compile(pattern: &str) -> Option<Regex> {
     Regex::new(&pattern.replace("{S}", SPACE).replace("{B}", BOUNDARY)).ok()
 }
 
-/// Whether `c` is in JS's `\s`.
-pub fn is_space(c: char) -> bool {
-    matches!(
-        c,
-        '\t' | '\n' | '\u{0B}' | '\u{0C}' | '\r' | ' ' | '\u{A0}' | '\u{1680}' | '\u{2000}'
-            ..='\u{200A}'
-                | '\u{2028}'
-                | '\u{2029}'
-                | '\u{202F}'
-                | '\u{205F}'
-                | '\u{3000}'
-                | '\u{FEFF}'
-    )
-}
-
-/// JS's `String.prototype.trim`.
-pub fn trim(s: &str) -> &str {
-    s.trim_matches(is_space)
-}
+// JS's `\s` is the store's (`craft_store::js::is_space`; its `trim` is `JsStr::js_trim`), one
+// copy for every crate; `SPACE` above is the store's same set spelled for a regex class.
+pub use craft_store::js::is_space;
 
 /// `text` for a case-insensitive pattern JS reads without the `u` flag: the two letters Unicode
 /// folding takes onto ASCII ones are put out of any ASCII letter's reach.
@@ -99,7 +84,7 @@ mod tests {
         assert!(s.is_match("a\u{FEFF}b"));
         assert!(!s.is_match("a\u{85}b"));
         assert!(!r.is_match(&ascii_case("re\u{17F}view")));
-        assert_eq!(trim("\u{FEFF} x \u{A0}"), "x");
+        assert_eq!(craft_store::js::JsStr::js_trim("\u{FEFF} x \u{A0}"), "x");
         assert_eq!(
             resolve(Path::new("/a/b/../c/./d/")),
             PathBuf::from("/a/c/d")

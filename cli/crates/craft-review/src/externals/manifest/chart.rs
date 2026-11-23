@@ -1,4 +1,4 @@
-use super::super::{Error, pattern::Engine, text};
+use super::super::{Error, pattern::Engine};
 use super::{Raw, lines::Document, patterns};
 
 fn top<'a>(doc: &'a Document<'_>, key: &str) -> &'a str {
@@ -26,7 +26,7 @@ fn section(doc: &Document<'_>, key: &str) -> std::ops::Range<usize> {
             l.raw
                 .chars()
                 .next()
-                .is_some_and(|c| !text::whitespace(c) && c != '-')
+                .is_some_and(|c| !craft_store::js::is_space(c) && c != '-')
         })
         .map_or(doc.lines.len(), |(i, _)| i);
     at + 1..end

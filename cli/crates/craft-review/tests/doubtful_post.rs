@@ -10,7 +10,7 @@ mod common;
 use std::path::Path;
 
 use common::fixture;
-use common::post::{head, posted, stand_in};
+use common::post::{head, posted, stand_in, unpost};
 use craft_review::publish::{self, Doubtful, PostError, PostSetup, Posting};
 use serde_json::{Value, json};
 
@@ -49,6 +49,9 @@ fn post_to(
         reviewed,
         branch,
         record_pr: None,
+        dirty: false,
+        before_post: None,
+        posted_on: None,
     };
     publish::post_doubtful(repo, &d, pr, setup, scratch)
 }
@@ -124,6 +127,8 @@ fn a_moved_head_takes_the_reviewed_commit_unless_it_rewrote_the_line() {
     std::fs::write(repo.path().join("src/lib.rs"), "pub fn f() -> u8 { 2 }\n").unwrap();
     common::git(repo.path(), &["commit", "-qam", "fix: f"]);
     std::fs::write(gh.join("head"), head(repo.path())).unwrap();
+    // Not on the PR yet: a comment there would be found first (`doubtful_gates.rs`).
+    unpost(&gh);
     let e = post((repo.path(), out.path()), 1, true, Some(&reviewed), &setup)
         .unwrap_err()
         .to_string();
@@ -131,7 +136,7 @@ fn a_moved_head_takes_the_reviewed_commit_unless_it_rewrote_the_line() {
         e.contains("`src/lib.rs:1` old replicas drop the field"),
         "{e}"
     );
-    assert_eq!(posted(&gh).len(), 1, "nothing more posted");
+    assert!(posted(&gh).is_empty(), "nothing posted");
 }
 
 #[test]
@@ -149,8 +154,8 @@ fn a_number_the_record_lacks_is_refused_before_gh_and_a_gh_failure_is_named() {
     let h = head(repo.path());
     let e = post((repo.path(), out.path()), 1, true, Some(&h), &setup).unwrap_err();
     assert!(
-        matches!(&e, PostError::Pr(w) if w.contains("HTTP 401")),
-        "{e}"
+        matches!(&e, PostError::Gh(w) if w.starts_with("gh pr list failed") && w.contains("HTTP 401")),
+        "a list gh could not give is a failure on the way, not a refusal: {e}"
     );
 }
 
@@ -172,7 +177,7 @@ fn without_pr_only_the_one_open_pr_of_the_records_branch_is_posted_to() {
         "{e}"
     );
     let two = format!(
-        r#"[{{"number":7,"url":"u","headRefOid":"{h}","headRefName":"main"}},{{"number":8,"url":"u","headRefOid":"{h}","headRefName":"main"}}]"#
+        r#"[{{"number":7,"url":"u","headRefOid":"{h}","headRefName":"main","state":"OPEN"}},{{"number":8,"url":"u","headRefOid":"{h}","headRefName":"main","state":"OPEN"}}]"#
     );
     std::fs::write(gh.join("prs"), two).unwrap();
     let e = post(at, 1, true, Some(&h), &setup).unwrap_err();
@@ -214,7 +219,7 @@ fn a_fork_pr_of_a_same_named_branch_is_not_the_records() {
     let at = (repo.path(), out.path());
     let pr = |n: u64, fork: bool| {
         format!(
-            r#"{{"number":{n},"url":"u{n}","headRefOid":"{h}","headRefName":"main","isCrossRepository":{fork},"headRepositoryOwner":{{"login":"x"}}}}"#
+            r#"{{"number":{n},"url":"u{n}","headRefOid":"{h}","headRefName":"main","isCrossRepository":{fork},"state":"OPEN","headRepositoryOwner":{{"login":"x"}}}}"#
         )
     };
     std::fs::write(gh.join("prs"), format!("[{}]", pr(9, true))).unwrap();
@@ -241,7 +246,10 @@ fn a_pr_whose_head_does_not_hold_the_reviewed_commit_is_refused() {
     let (repo, out) = (fixture(true), tempfile::tempdir().unwrap());
     let gh = out.path().join("gh");
     let reviewed = head(repo.path());
-    let setup = stand_in(&gh, &"e".repeat(40));
+    // A sibling of the reviewed commit: in this repository, not on its history.
+    let tree = common::commits::tree_of(repo.path(), "HEAD~1");
+    let sibling = common::commits::commit_tree(repo.path(), &tree, "HEAD~1");
+    let setup = stand_in(&gh, &sibling);
     for pr in [None, Some(7)] {
         let e = post_to(
             (repo.path(), out.path()),
@@ -290,6 +298,9 @@ fn post_detached(
         reviewed: Some(reviewed),
         branch: Some("HEAD"),
         record_pr,
+        dirty: false,
+        before_post: None,
+        posted_on: None,
     };
     publish::post_doubtful(repo, &d, pr, setup, scratch)
 }
@@ -329,6 +340,7 @@ fn a_detached_run_that_published_nothing_takes_a_named_same_repo_pr_holding_its_
     );
     let p = post_detached(at, &h, (None, Some(7)), &setup).unwrap();
     assert!(p.posted);
+    unpost(&gh);
     std::fs::write(gh.join("fork"), "").unwrap();
     let e = post_detached(at, &h, (None, Some(7)), &setup).unwrap_err();
     assert!(
@@ -344,7 +356,7 @@ fn a_detached_run_that_published_nothing_takes_a_named_same_repo_pr_holding_its_
     std::fs::write(gh.join("head"), "e".repeat(40)).unwrap();
     let e = post_detached(at, &h, (None, Some(7)), &setup).unwrap_err();
     assert!(
-        matches!(&e, PostError::Pr(w) if w.contains("does not hold the reviewed commit")),
+        matches!(&e, PostError::Fetch(w) if w.contains("fetching it from origin failed")),
         "{e}"
     );
 }

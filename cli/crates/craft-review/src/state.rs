@@ -18,9 +18,33 @@ use crate::rounds::Rounds;
 use crate::units::Units;
 
 pub use craft_step::{MAX_RETRIES, TaskState};
+pub use dirty::dirty_of;
 
-/// The state file's format; a run written by another format is refused, not misread.
-pub const STATE_VERSION: u32 = 6;
+mod dirty;
+
+/// The state file's format; a run written by another format is refused, not misread. Format 7
+/// came with 0.59.0, whose metrics lenses and their verifier judge from the graph's numbers the
+/// binary read at the start, which no run of format 6 holds (realm @nick/craft, node #618).
+pub const STATE_VERSION: u32 = 7;
+
+/// Why the run state at `path`, of format `found`, is refused, and what to do: a run an earlier
+/// craft wrote cannot go on, so a new review is started; one a newer craft wrote goes on under it.
+fn refusal(path: &Path, found: u32) -> String {
+    let path = path.display();
+    if found < STATE_VERSION {
+        format!(
+            "the run state {path} was written by a craft before 0.59.0 (format {found}); this \
+             craft reads format {STATE_VERSION} only and cannot go on with it: start a new review \
+             — `craft review start`, or a new launch of the review workflow"
+        )
+    } else {
+        format!(
+            "the run state {path} was written by a newer craft (format {found}); this craft reads \
+             format {STATE_VERSION} only: go on with the run under the craft that started it, or \
+             update this one"
+        )
+    }
+}
 
 /// Why a run's state could not be read or written.
 #[derive(Debug, thiserror::Error)]
@@ -37,8 +61,10 @@ pub enum StateError {
         #[source]
         source: serde_json::Error,
     },
-    #[error("the run state {} is format {found}, this craft reads {STATE_VERSION}", path.display())]
+    #[error("{}", refusal(path, *found))]
     Version { path: PathBuf, found: u32 },
+    #[error("the run state {} names no diff.dirty", path.display())]
+    NoDirty { path: PathBuf },
     #[error(transparent)]
     Encode(#[from] serde_json::Error),
     #[error("writing {}", path.display())]
@@ -269,6 +295,11 @@ pub struct RunState {
     /// a state written before it reads as before and the format keeps its version.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub degraded: Vec<String>,
+    /// The skills the tasks of any step so far were told to load that no absolute path was found
+    /// for, each once ([`crate::prompts::skills::keep_unresolved`]): a later phase's tasks replace
+    /// the lenses that named them, so the report reads them here. Optional, as `degraded`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skills_unresolved: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub verdict: Option<String>,
     /// Where the run stands in its branch's chain of review rounds. Optional, so a state written
@@ -368,6 +399,32 @@ pub fn load(dir: &Path) -> Result<RunState, StateError> {
         });
     }
     Ok(state)
+}
+
+/// Whether the state in `dir` was written by a newer craft, in a format past [`STATE_VERSION`]:
+/// its telemetry is that craft's to read and write, so this one touches none of it.
+#[must_use]
+pub fn newer(dir: &Path) -> bool {
+    #[derive(Deserialize)]
+    struct Only {
+        version: u32,
+    }
+    std::fs::read_to_string(state_path(dir))
+        .ok()
+        .and_then(|t| serde_json::from_str::<Only>(&t).ok())
+        .is_some_and(|o| o.version > STATE_VERSION)
+}
+
+/// The phase the state in `dir` records, whatever its format: what the run's telemetry needs to
+/// file an earlier binary's run before [`load`] refuses it; `None` when it cannot be read.
+#[must_use]
+pub fn phase_of(dir: &Path) -> Option<Phase> {
+    #[derive(Deserialize)]
+    struct Only {
+        phase: Phase,
+    }
+    let text = std::fs::read_to_string(state_path(dir)).ok()?;
+    serde_json::from_str::<Only>(&text).ok().map(|o| o.phase)
 }
 
 /// Writes the run's state into `dir`, whole or not at all.

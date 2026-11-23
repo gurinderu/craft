@@ -82,7 +82,7 @@ fn split_url(url: &str) -> Option<(&str, &str)> {
 /// # Errors
 /// Why it is refused, as a line of the report.
 pub fn repo_parts(url: &str) -> Result<RepoParts, String> {
-    if url.is_empty() || url.starts_with('-') || url.chars().any(char::is_whitespace) {
+    if url.is_empty() || url.starts_with('-') || url.chars().any(craft_store::js::is_space) {
         return Err("repo is empty, starts with \"-\" or holds whitespace".into());
     }
     let (host, path) = split_url(url)
