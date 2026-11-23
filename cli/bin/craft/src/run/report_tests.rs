@@ -47,7 +47,7 @@ fn a_stopped_degraded_published_run_says_each_and_how_to_resume() {
         ),
         "{got}"
     );
-    assert!(got.contains("Doubtful: 2 finding(s)"), "{got}");
+    assert!(got.contains("Doubtful: 2 finding(s) held back from the PR — the report's Doubtful section lists them for the human to choose; post a chosen one only through `craft review post` (the craft:addressing-findings skill runs it)."), "{got}");
     assert!(got.contains("⚠️ Degraded: part of this review ran weaker than asked — the report's Degraded section says how.\n- ran without its agent"), "{got}");
     assert!(
         got.contains("stopped: usage limit reached (You've hit your usage limit)."),

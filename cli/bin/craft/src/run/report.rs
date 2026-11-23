@@ -91,7 +91,7 @@ fn publication(step: &Value) -> Vec<String> {
     }
     let held = tally(step.get("sorting").and_then(|s| s.get("doubtful")));
     if held > 0 {
-        out.push(format!("Doubtful: {held} finding(s) held back from the PR — the report's Doubtful section lists them for the human to choose; post a chosen one only through `craft review post` (the craft:addressing-findings skill)."));
+        out.push(format!("Doubtful: {held} finding(s) held back from the PR — the report's Doubtful section lists them for the human to choose; post a chosen one only through `craft review post` (the craft:addressing-findings skill runs it)."));
     }
     out
 }

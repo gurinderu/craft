@@ -22,6 +22,8 @@ mod admit;
 #[cfg(test)]
 mod marks_tests;
 #[cfg(test)]
+mod metrics_tests;
+#[cfg(test)]
 mod tests;
 
 pub(crate) use admit::followups;
@@ -77,7 +79,7 @@ pub(crate) fn candidates(profile: &Profile, plan: &Plan, metrics: bool) -> Vec<S
 
 /// Whether the run's code-metrics index is ready, as the plan judged it ([`crate::complexity`]).
 pub(crate) fn metrics_ready(run: &RunState) -> bool {
-    crate::complexity::indexed(&run.context, true).is_some_and(|(ready, _)| ready)
+    crate::complexity::ready(crate::complexity::look(&run.context).as_ref())
 }
 
 /// One critic per profile whose plan calls for it and has a lens left to name; none on a light pass.
@@ -89,11 +91,12 @@ pub(crate) fn tasks(run: &RunState, profiles: &[Profile]) -> Result<Vec<Task>, C
         return Ok(Vec::new());
     }
     let mut out = Vec::new();
+    let metrics = metrics_ready(run);
     for (track, p) in run.tracks.iter().zip(profiles) {
         let Some(plan) = track.plan.as_ref().filter(|plan| in_scope(plan)) else {
             continue;
         };
-        let candidates = candidates(p, plan, metrics_ready(run));
+        let candidates = candidates(p, plan, metrics);
         if candidates.is_empty() {
             continue;
         }
@@ -148,7 +151,7 @@ fn lens_task(run: &RunState, p: &Profile, plan: &Plan, lens: &str) -> Result<Tas
         format!("lens:{}:{lens} (critic)", p.id),
         prompts::lens_prompt(&run.context, &at)?,
         p.lens(lens).map_or(Model::Opus, |l| l.model),
-        content::schema("findings")?,
+        crate::rounds::answer_schema(p, lens, false)?,
         TaskKind::CriticLens {
             profile: p.id.clone(),
             lens: lens.to_owned(),

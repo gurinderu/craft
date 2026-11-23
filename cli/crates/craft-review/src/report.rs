@@ -444,7 +444,12 @@ pub fn degraded_notes(state: &RunState) -> Vec<String> {
 /// The rubric skills the tasks were told to load that no absolute path was found for: an agent
 /// without a Skill tool may have judged without them, which the report says rather than reading clean.
 fn skills_note(state: &RunState) -> Option<String> {
-    let names = crate::prompts::skills::unresolved(&state.context, &state.tasks);
+    let mut names = state.skills_unresolved.clone();
+    for name in crate::prompts::skills::unresolved(&state.context, &state.tasks) {
+        if !names.contains(&name) {
+            names.push(name);
+        }
+    }
     (!names.is_empty()).then(|| {
         format!(
             "the skill(s) {} the tasks were told to load could not be named by an absolute path (craft's plugin root is unknown to this run, or holds no such skill): a task agent without a Skill tool may have judged without its rubric.",

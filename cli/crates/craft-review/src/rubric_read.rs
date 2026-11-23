@@ -1,12 +1,15 @@
 //! Whether each judging lens read its rubric: a lens answers `rubricRead`, the files it read whole
-//! with the Read tool. One whose prompt names a skill and whose answer names no `SKILL.md` may have
-//! judged without its rubric — a partial `head` or no read at all — and the report names it as
-//! degraded; the verdict stands, since what it found is still verified. A metrics lens judges from
-//! the graph's numbers alone and is not asked.
+//! with the Read tool. One whose prompt points it at a skill file and whose answer names no
+//! `SKILL.md` may have judged without its rubric — a partial `head` or no read at all — and the
+//! report names it as degraded; the verdict stands, since what it found is still verified. A metrics
+//! lens judges from the graph's numbers alone and is not asked, and a lens shown no skill file —
+//! the plugin root unknown — is named once, by the report's note on the skills no path was found
+//! for, not again here.
 
 use serde_json::Value;
 
 use crate::profile::Profile;
+use crate::prompts::PromptContext;
 use crate::state::{Task, TaskKind, TaskState};
 
 /// The answer's field.
@@ -27,7 +30,7 @@ fn read_one(answer: &Value) -> bool {
 /// The degraded note naming the answered lenses among `tasks` that read no rubric file whole;
 /// `None` when each did.
 #[must_use]
-pub fn unread(tasks: &[Task], profiles: &[Profile]) -> Option<String> {
+pub fn unread(ctx: &PromptContext, tasks: &[Task], profiles: &[Profile]) -> Option<String> {
     let mut names = Vec::new();
     for t in tasks.iter().filter(|t| t.state == TaskState::Answered) {
         let (TaskKind::Lens { profile, lens, .. } | TaskKind::CriticLens { profile, lens }) =
@@ -35,11 +38,10 @@ pub fn unread(tasks: &[Task], profiles: &[Profile]) -> Option<String> {
         else {
             continue;
         };
-        let spec = profiles
+        let metrics = profiles
             .iter()
-            .find(|p| &p.id == profile)
-            .and_then(|p| p.lens(lens));
-        if spec.is_some_and(|l| l.metrics) || !crate::prompts::skills::names_skill(&t.prompt) {
+            .any(|p| &p.id == profile && p.metrics_only(lens));
+        if metrics || !crate::prompts::skills::names_found_skill(ctx, &t.prompt) {
             continue;
         }
         if !t.answer.as_ref().is_some_and(read_one) {
