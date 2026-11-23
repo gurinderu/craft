@@ -3,14 +3,17 @@
 //! written into that record (`craft runs sorting-choice`'s write) once it is on the PR.
 
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::ExitCode;
 
 use anyhow::{Result, anyhow};
-use craft_review::publish::{self, Doubtful, PostError, PostSetup};
-use serde_json::{Value, json};
+use craft_review::publish::{self, Doubtful, PostError, PostSetup, Posting};
+use serde::Serialize;
+use serde_json::Value;
 
 use crate::runs::write;
+
+mod record;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum As {
@@ -30,8 +33,9 @@ pub struct PostArgs {
     /// The pull request, by number; the checked-out branch's when absent.
     #[arg(long)]
     pub pr: Option<u64>,
-    /// The review run's record; the newest of this repository's branch carrying doubtful findings
-    /// when absent.
+    /// The review run's record; when absent, the newest review record of this repository carrying
+    /// doubtful findings, refused when it is another branch's. A retry names the record the first
+    /// try printed, so a newer review of the branch is not taken in its place.
     #[arg(long)]
     pub record: Option<PathBuf>,
     /// The run store; `~/.craft/runs` when absent.
@@ -43,8 +47,11 @@ pub struct PostArgs {
 }
 
 /// Why nothing was posted: what was asked cannot be read or told — no record, no such finding,
-/// no PR of the record's branch, no working directory — (exit 2, as the JavaScript poster
-/// refused), or a failure on the way: gh refusing the post, a moved head (exit 1).
+/// no run state to tell uncommitted work by, no open PR of the record's branch (or the record's PR
+/// closed) without `--pr`, no working directory — (exit 2, as the JavaScript poster refused), or a
+/// failure on the way: gh failing (its list of the branch's PRs, the post), the PR's head not
+/// fetched (both with the record to retry with), a review of uncommitted work, a moved head over
+/// the finding's line (exit 1).
 enum Stop {
     Refused(String),
     Failed(anyhow::Error),
@@ -56,45 +63,10 @@ impl From<anyhow::Error> for Stop {
     }
 }
 
-/// What the record says of its doubtful findings and the review that held them back.
-struct Record {
-    findings: Vec<Value>,
-    /// `sorting.inDiffJudged` is not false.
-    judged: bool,
-    head: Option<String>,
-    branch: Option<String>,
-    /// The PR the run published on (`prComments.pr`), when it names one.
-    pr: Option<u64>,
-}
-
-fn read_record(file: &Path) -> Result<Record, String> {
-    let text =
-        std::fs::read_to_string(file).map_err(|e| format!("reading {}: {e}", file.display()))?;
-    let r: Value = serde_json::from_str(&text).map_err(|e| format!("{}: {e}", file.display()))?;
-    let sorting = r.get("sorting").filter(|s| s.is_object());
-    let findings = sorting
-        .and_then(|s| s.get("findings"))
-        .and_then(Value::as_array)
-        .map(|a| a.iter().filter(|f| f.is_object()).cloned().collect())
-        .unwrap_or_default();
-    let text_of = |k: &str| r.get(k).and_then(Value::as_str).map(str::to_owned);
-    Ok(Record {
-        findings,
-        judged: sorting.and_then(|s| s.get("inDiffJudged")) != Some(&Value::Bool(false)),
-        head: text_of("head"),
-        branch: text_of("branch"),
-        pr: r
-            .get("prComments")
-            .and_then(|p| p.get("pr"))
-            .and_then(Value::as_u64)
-            .filter(|&n| n > 0),
-    })
-}
-
 pub fn post(args: &PostArgs) -> Result<ExitCode> {
     match posted(args) {
         Ok(out) => {
-            writeln!(std::io::stdout().lock(), "{out}")?;
+            writeln!(std::io::stdout().lock(), "{}", serde_json::to_string(&out)?)?;
             Ok(ExitCode::SUCCESS)
         }
         Err(Stop::Refused(why)) => {
@@ -110,7 +82,15 @@ pub fn post(args: &PostArgs) -> Result<ExitCode> {
 
 /// What `post` prints: the posting, the choice recorded (null when its write failed, said on
 /// stderr) and the record.
-fn posted(args: &PostArgs) -> Result<Value, Stop> {
+#[derive(Serialize)]
+struct Out {
+    #[serde(flatten)]
+    posting: Posting,
+    recorded: Value,
+    record: String,
+}
+
+fn posted(args: &PostArgs) -> Result<Out, Stop> {
     let store = args.store.clone().or_else(craft_store::read::home_store).ok_or_else(|| {
         Stop::Refused("neither HOME nor the passwd entry names a home, so there is no ~/.craft/runs; pass --store".into())
     })?;
@@ -118,10 +98,15 @@ fn posted(args: &PostArgs) -> Result<Value, Stop> {
     let env = write::env(&store);
     let named = args.record.as_deref().map(write::repo_relative);
     let req = write::request(&repo, None);
-    let file =
-        craft_store::posthoc::sorted_record(named.as_deref(), &req, &env).map_err(Stop::Refused)?;
-    let rec = read_record(&file).map_err(Stop::Refused)?;
+    let file = record::file(named.as_deref(), &req, &env)?;
+    let rec = record::read(&file, args.n).map_err(Stop::Refused)?;
     let question = args.kind == As::Question;
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "a finding's number, far below 2^53"
+    )]
+    let remember =
+        |pr: u64| craft_store::sorting::posting::mark(&store, &file, args.n as f64, pr, env.now);
     let d = Doubtful {
         findings: &rec.findings,
         n: args.n,
@@ -130,34 +115,28 @@ fn posted(args: &PostArgs) -> Result<Value, Stop> {
         reviewed: rec.head.as_deref(),
         branch: rec.branch.as_deref(),
         record_pr: rec.pr,
+        dirty: rec.dirty,
+        posted_on: rec.posted_on,
+        before_post: Some(&remember),
     };
     let scratch = crate::scratch::dir("craft-post")?;
     let posting = publish::post_doubtful(&repo, &d, args.pr, &PostSetup::default(), &scratch);
     drop(std::fs::remove_dir_all(&scratch));
     let posting = posting.map_err(|e| match e {
         PostError::Finding(why) | PostError::Pr(why) => Stop::Refused(why),
-        other @ (PostError::Gh(_) | PostError::Refused(_)) => Stop::Failed(anyhow!(other)),
+        other @ (PostError::Gh(_) | PostError::Fetch(_) | PostError::Remember(_)) => {
+            Stop::Failed(anyhow!(
+                "{other} (record {}: a retry names it with --record)",
+                file.display()
+            ))
+        }
+        other @ PostError::Refused(_) => Stop::Failed(anyhow!(other)),
     })?;
     let choice = if question { "question" } else { "defect" };
-    #[expect(
-        clippy::cast_precision_loss,
-        reason = "a finding's number, far below 2^53"
-    )]
-    let recorded =
-        match craft_store::sorting::record_choice(&store, &file, args.n as f64, choice, env.now) {
-            Ok((line, _)) => Value::from(line),
-            Err(why) => {
-                drop(writeln!(
-                    std::io::stderr().lock(),
-                    "craft review post WARNING: the choice was not recorded: {why}"
-                ));
-                Value::Null
-            }
-        };
-    let mut out = serde_json::to_value(&posting).map_err(anyhow::Error::from)?;
-    if let Some(o) = out.as_object_mut() {
-        o.insert("recorded".into(), recorded);
-        o.insert("record".into(), json!(file.display().to_string()));
-    }
-    Ok(out)
+    let recorded = record::choose(&store, &file, (args.n, choice), env.now);
+    Ok(Out {
+        posting,
+        recorded,
+        record: file.display().to_string(),
+    })
 }

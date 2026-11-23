@@ -14,7 +14,7 @@ pub(super) const NOT_CRAFT_ROOT: &str =
 
 /// One thread as a decision record (`Ok(Some)`), why it is not one (`Err`), or `Ok(None)` when its
 /// root is not a craft finding at all.
-pub(super) fn decision(t: &Value, pr_author: &str) -> Result<Option<Decision>, String> {
+pub(super) fn decision(t: &Value, pr_author: &rule::Author) -> Result<Option<Decision>, String> {
     let (cs, total) = rule::comments(t);
     let Some(root) = cs.first().filter(|r| truthy(r)) else {
         return Ok(None);
@@ -53,7 +53,7 @@ pub(super) fn decision(t: &Value, pr_author: &str) -> Result<Option<Decision>, S
     }
     let r = rule::rejection(cs, pr_author).map_err(at)?;
     let commit = field(root.get("originalCommit").unwrap_or(&Value::Null), "oid");
-    if let Some(p) = rule::problem(&finding.title, &scope, &commit, &r.reason) {
+    if let Some(p) = super::record::problem(&finding.title, &scope, &commit, &r.reason) {
         return Err(at(p));
     }
     Ok(Some(super::record::decision(

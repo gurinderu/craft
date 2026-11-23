@@ -1,7 +1,7 @@
 //! A pull request's review threads, read with `gh`: which PR (the number given, else the checked-out
 //! branch's), which repository (the one given, else the checkout's), and every page of its
 //! `reviewThreads` through `gh api graphql --paginate --slurp` — the fields the thread rules read,
-//! `authorAssociation` and `pullRequest.author` among them.
+//! `authorAssociation`, `pullRequest.author` and `pullRequest.isCrossRepository` among them.
 
 use std::path::Path;
 
@@ -11,12 +11,13 @@ use crate::gate::runner::Runner;
 use crate::gh::gh;
 use crate::publish::PostSetup;
 
-/// The query: the PR's author and, a hundred threads a page, each thread's path, lines and its
+/// The query: the PR's author, whether its head is a fork's, and, a hundred threads a page, each thread's path, lines and its
 /// first fifty comments.
 const QUERY: &str = "query($owner:String!, $name:String!, $pr:Int!, $endCursor:String) {
   repository(owner:$owner, name:$name) {
     pullRequest(number:$pr) {
       author { login }
+      isCrossRepository
       reviewThreads(first:100, after:$endCursor) {
         pageInfo { hasNextPage endCursor }
         totalCount
@@ -135,9 +136,10 @@ pub fn answer(
         "--slurp",
         "-f",
         &q,
-        "-F",
+        // Raw (`-f`): `-F` sends an all-digit name as a number and reads `@…` as a file.
+        "-f",
         &o,
-        "-F",
+        "-f",
         &n,
         "-F",
         &p,

@@ -18,6 +18,9 @@ use crate::rounds::Rounds;
 use crate::units::Units;
 
 pub use craft_step::{MAX_RETRIES, TaskState};
+pub use dirty::dirty_of;
+
+mod dirty;
 
 /// The state file's format; a run written by another format is refused, not misread. Format 7
 /// came with 0.59.0, whose metrics lenses and their verifier judge from the graph's numbers the
@@ -60,6 +63,8 @@ pub enum StateError {
     },
     #[error("{}", refusal(path, *found))]
     Version { path: PathBuf, found: u32 },
+    #[error("the run state {} names no diff.dirty", path.display())]
+    NoDirty { path: PathBuf },
     #[error(transparent)]
     Encode(#[from] serde_json::Error),
     #[error("writing {}", path.display())]
