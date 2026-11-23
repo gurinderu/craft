@@ -2,6 +2,7 @@
 //! pooled findings an open cross-unit question named, what the coordinator did with each, and the
 //! report's list of what it set aside — a finding never leaves a review silently.
 
+use craft_store::js::JsStr;
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
@@ -41,7 +42,7 @@ pub fn dependent_key(lens: &str, file: &str, title: &str) -> String {
     if t.is_empty() {
         return String::new();
     }
-    format!("{lens}|{}|{t}", file.trim().to_lowercase())
+    format!("{lens}|{}|{t}", file.js_trim().to_lowercase())
 }
 
 /// The key of the finding a question or disposition names.

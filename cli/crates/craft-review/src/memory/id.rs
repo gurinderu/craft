@@ -5,6 +5,7 @@
 //! as written (node #606): `split_scope_line` splits it for matching only, so two ranges of one title
 //! stay two records.
 
+use craft_store::js::JsStr;
 use sha2::{Digest, Sha256};
 
 /// A scope split from the line it carries, as `scopeLine` in `integrations/shared/memory-record-id.mjs`:
@@ -13,7 +14,7 @@ use sha2::{Digest, Sha256};
 /// them — as it is, trimmed, with line 0. Held to the JS by `content/parity/scope-line-cases.json`.
 #[must_use]
 pub(crate) fn split_scope_line(scope: &str) -> (&str, u64) {
-    let s = scope.trim();
+    let s = scope.js_trim();
     if super::record::has_control(scope) {
         return (s, 0);
     }
@@ -35,11 +36,11 @@ pub(crate) fn split_scope_line(scope: &str) -> (&str, u64) {
 #[must_use]
 pub(crate) fn memory_record_id(kind: &str, title: &str, scope: &str) -> String {
     let t = title
-        .split_whitespace()
+        .js_split_whitespace()
         .collect::<Vec<_>>()
         .join(" ")
         .to_lowercase();
-    let s = scope.trim();
+    let s = scope.js_trim();
     let s = s.strip_prefix("./").unwrap_or(s).trim_end_matches('/');
     let digest = Sha256::digest(format!("{kind}\n{t}\n{s}").as_bytes());
     let hex: String = digest.iter().map(|b| format!("{b:02x}")).collect();

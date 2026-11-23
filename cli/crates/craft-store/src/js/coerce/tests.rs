@@ -100,3 +100,15 @@ fn trim_over_code_units_keeps_an_unpaired_surrogate() {
     assert_eq!(trim_text(&JsString::from(" \u{a0}")), "");
     assert_eq!(s.to_utf8_lossy(), " \u{fffd}a\u{feff}\u{85}");
 }
+
+#[test]
+fn the_text_methods_are_javascripts() {
+    let s = "\u{feff} a\u{85} b \u{2028}";
+    assert_eq!(s.js_trim(), "a\u{85} b");
+    assert_eq!(s.js_trim_start(), "a\u{85} b \u{2028}");
+    assert_eq!(s.js_trim_end(), "\u{feff} a\u{85} b");
+    assert_eq!(
+        s.js_split_whitespace().collect::<Vec<_>>(),
+        ["a\u{85}", "b"]
+    );
+}

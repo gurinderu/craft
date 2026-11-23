@@ -14,7 +14,7 @@ struct Record {
 
 impl Record {
     fn new(value: &Js) -> Self {
-        let field = |key| text::trim(&text::field(value, key));
+        let field = |key| craft_store::js::trim_text(&text::field(value, key));
         let (from, pattern) = (field("versionFrom"), field("versionMatch"));
         let version = if from.is_empty() && pattern.is_empty() {
             field("version")
@@ -101,9 +101,12 @@ fn select(list: &[Js]) -> (Vec<Record>, Vec<Js>) {
     let (mut records, mut refused) = (Vec::new(), Vec::new());
     for (i, v) in list.iter().filter(|v| relevant(v)).enumerate() {
         let record = Record::new(v);
-        if let Some(why) = record.fault(&text::trim(&text::field(v, "status")), &records) {
+        if let Some(why) = record.fault(
+            &craft_store::js::trim_text(&text::field(v, "status")),
+            &records,
+        ) {
             let name = if record.named() {
-                format!(" ({})", text::lossy(&record.system))
+                format!(" ({})", record.system.to_utf8_lossy())
             } else {
                 String::new()
             };

@@ -1,6 +1,8 @@
 //! A record's derived parts as `integrations/shared/run-record.mjs` computes them: a finding's fingerprint, the
 //! findings counted by severity, the record's index line and its file name.
 
+use std::sync::LazyLock;
+
 use crate::js::{self, Js, JsString, Obj};
 
 /// The logger's engine revision (`ENGINE_REVISION`), stamped on every record and checkpoint.
@@ -28,21 +30,32 @@ pub fn title_shingle(title: &str) -> String {
     words.join(" ")
 }
 
+/// A constant pattern compiled once; a pattern that does not compile is a defect of this file,
+/// which its tests reach on their first call.
+#[expect(
+    clippy::expect_used,
+    reason = "the patterns are constants the tests compile"
+)]
+fn compiled(pattern: &str) -> regex::Regex {
+    regex::Regex::new(pattern).expect("a constant pattern compiles")
+}
+
+/// `fn `/`impl ` followed by JavaScript whitespace, at an ASCII word boundary.
+static KEYWORD: LazyLock<regex::Regex> =
+    LazyLock::new(|| compiled(&format!(r"(?-u:\b)(?:fn|impl)[{}]+", js::SPACE_CLASS)));
+/// One generic parameter list with no list inside it.
+static GENERIC: LazyLock<regex::Regex> = LazyLock::new(|| compiled(r"<[^<>]*>"));
+
 /// `normalizeSymbol`: lower-cased, with `fn `/`impl ` and every generic parameter list dropped.
 #[must_use]
 pub fn normalize_symbol(symbol: &str) -> String {
-    let lower = symbol.to_lowercase();
-    let keyword = regex::Regex::new(&format!(r"(?-u:\b)(?:fn|impl)[{}]+", js::SPACE_CLASS)).ok();
-    let generic = regex::Regex::new(r"<[^<>]*>").ok();
-    let mut s = keyword.map_or(lower.clone(), |re| re.replace_all(&lower, "").into_owned());
-    if let Some(re) = generic {
-        loop {
-            let next = re.replace_all(&s, "").into_owned();
-            if next == s {
-                break;
-            }
-            s = next;
+    let mut s = KEYWORD.replace_all(&symbol.to_lowercase(), "").into_owned();
+    loop {
+        let next = GENERIC.replace_all(&s, "").into_owned();
+        if next == s {
+            break;
         }
+        s = next;
     }
     js::trim(&s).to_owned()
 }

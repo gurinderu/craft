@@ -7,6 +7,8 @@ use serde_json::Value;
 
 use super::Decision;
 use super::rule::{self, ASSOCIATIONS, THREAD_COMMENTS_MAX, field, truthy};
+use craft_store::js::JsString;
+
 use crate::js::{self, is_space, number_text};
 
 /// A remark has no title line: its first line, cut at a word, stands in for one.
@@ -38,7 +40,8 @@ pub(super) fn title(body: &str) -> String {
         .iter()
         .rposition(|&u| u == u16::from(b' '))
         .filter(|&a| a > TITLE_MAX / 2);
-    let kept = String::from_utf16_lossy(at.and_then(|a| cut.get(..a)).unwrap_or(cut));
+    let kept =
+        JsString::from_utf16(at.and_then(|a| cut.get(..a)).unwrap_or(cut).to_vec()).to_utf8_lossy();
     format!("{}…", kept.trim_end_matches(is_space))
 }
 

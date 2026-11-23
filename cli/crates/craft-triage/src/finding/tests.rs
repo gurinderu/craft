@@ -105,6 +105,7 @@ fn a_gathered_answer_missing_what_the_schema_requires_is_refused() {
         r#"{"source":"r","findings":[1]}"#,
         r#"{"source":"r","findings":[{"title":"t"}]}"#,
         r#"{"source":1,"findings":[]}"#,
+        r#"{"source":"r","findings":[{"severity":"Low","title":5,"location":"","detail":"d","proposed_fix":"","thread_id":""}]}"#,
         r#"[{"source":"r","findings":[]}]"#,
         r#""report""#,
         r#"{"source":"r","findings":[{"severity":"Low","title":"t","location":"","detail":"d","proposed_fix":""}]}"#,

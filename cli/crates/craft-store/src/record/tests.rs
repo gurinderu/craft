@@ -71,3 +71,17 @@ fn a_symbol_normalizes_alike_by_either_path_with_next_line_no_space() {
     assert_eq!(normalize_symbol("\u{85}Foo\u{85}"), "\u{85}foo\u{85}");
     assert_eq!(normalize_symbol("impl\u{2028}Bar<T>"), "bar");
 }
+
+#[test]
+fn the_unpaired_surrogate_path_trims_javascript_whitespace_around_the_symbol() {
+    let units: Vec<u16> = " \u{2028}\u{feff}Foo"
+        .encode_utf16()
+        .chain([0xd800])
+        .chain("\u{a0} \t".encode_utf16())
+        .collect();
+    let got: Vec<u16> = normalize_units(&JsString::from_utf16(units))
+        .units()
+        .collect();
+    let want: Vec<u16> = "foo".encode_utf16().chain([0xd800]).collect();
+    assert_eq!(got, want);
+}

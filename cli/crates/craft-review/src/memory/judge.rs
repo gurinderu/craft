@@ -5,6 +5,7 @@
 //! finding shows the code going against the record (`violates`). A pair with no verdict decides
 //! nothing on the judge's word.
 
+use craft_store::js::JsStr;
 use std::collections::BTreeMap;
 
 use serde_json::Value;
@@ -42,17 +43,13 @@ pub(super) struct Verdict {
 
 /// A value as JavaScript's `String(v ?? '')` writes the scalars a finding carries.
 pub(super) fn plain(v: Option<&Value>) -> String {
-    match v {
-        None | Some(Value::Null) => String::new(),
-        Some(Value::String(s)) => s.clone(),
-        Some(other) => other.to_string(),
-    }
+    crate::js::text(v)
 }
 
 /// One line of model or record text, its whitespace collapsed, cut at `max` UTF-16 units as
 /// `clipLine` cuts it.
 pub(super) fn clip(s: &str, max: usize) -> String {
-    let one = s.split_whitespace().collect::<Vec<_>>().join(" ");
+    let one = s.js_split_whitespace().collect::<Vec<_>>().join(" ");
     if one.encode_utf16().count() <= max {
         return one;
     }
@@ -74,11 +71,7 @@ pub(super) fn clip_field(f: &Value, k: &str) -> String {
 
 /// A finding's line when it is a positive whole number, else 0 (`findingLine`).
 pub(super) fn line_of(f: &Value) -> u64 {
-    match f.get("line") {
-        Some(Value::Number(n)) => n.as_u64().unwrap_or(0),
-        Some(Value::String(s)) => s.trim().parse().unwrap_or(0),
-        _ => 0,
-    }
+    crate::js::finding_line(f.get("line"))
 }
 
 /// The lenses a finding names, each once, in order, joined as the pairs show them.

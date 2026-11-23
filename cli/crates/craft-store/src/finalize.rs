@@ -7,6 +7,7 @@
 //! record is lost. The record parts and ledger shards the Workflow engine may send are not read
 //! here: the binary sends its record whole.
 
+use crate::js::JsStr;
 use std::path::{Path, PathBuf};
 
 use crate::StoreError;
@@ -164,8 +165,7 @@ pub(crate) fn safe_path(p: &str) -> String {
         .filter(|s| !s.is_empty())
         .collect::<Vec<_>>()
         .join(" ");
-    let units: Vec<u16> = one.encode_utf16().take(200).collect();
-    String::from_utf16_lossy(&units)
+    JsString::from_utf16(one.encode_utf16().take(200).collect()).to_utf8_lossy()
 }
 
 /// Files `raw`: the record a finalize files, its lines said into `said`. A pending intent retained
@@ -404,7 +404,7 @@ fn display_identity(value: &JsString) -> String {
 fn kept_record_file(mine: bool, dir: Option<&Path>) -> Option<PathBuf> {
     let dir = dir.filter(|_| mine)?;
     let named = std::fs::read_to_string(dir.join(KEPT_LIVE_MARKER)).ok()?;
-    let named = named.trim();
+    let named = named.js_trim();
     (!named.is_empty()).then(|| PathBuf::from(named))
 }
 

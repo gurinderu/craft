@@ -6,6 +6,7 @@
 //! rule, only by the same title — unless the match judge gave that pair a verdict ([`resolve`]).
 //! A record that overrides another is tried before it.
 
+use craft_store::js::JsStr;
 use std::collections::BTreeMap;
 
 use serde_json::Value;
@@ -65,7 +66,7 @@ pub(super) fn in_scope(file: &str, scope: &str) -> bool {
 
 /// Whether a severity is Critical or High, which no deferred question holds.
 pub(super) fn reraised_by_severity(f: &Value) -> bool {
-    let s = text(f, "severity").trim().to_lowercase();
+    let s = text(f, "severity").js_trim().to_lowercase();
     s == "critical" || s == "high"
 }
 
@@ -78,17 +79,13 @@ pub(super) fn human_decision(d: &PriorDecision) -> bool {
 /// Whether `f`'s severity alone raises it again whatever record `d` says (`reraisedByRank`; realm
 /// @nick/craft, node #196): a Critical always, a High unless `d` is a human's decision.
 pub(super) fn reraised_by_rank(f: &Value, d: &PriorDecision) -> bool {
-    let s = text(f, "severity").trim().to_lowercase();
+    let s = text(f, "severity").js_trim().to_lowercase();
     s == "critical" || (s == "high" && !human_decision(d))
 }
 
 /// A finding's line when it is a positive whole number, else 0.
 fn finding_line(f: &Value) -> u64 {
-    match f.get("line") {
-        Some(Value::Number(n)) => n.as_u64().unwrap_or(0),
-        Some(Value::String(s)) => s.trim().parse().unwrap_or(0),
-        _ => 0,
-    }
+    crate::js::finding_line(f.get("line"))
 }
 
 /// Whether a tool finding names no rule (`namesNoRule`).

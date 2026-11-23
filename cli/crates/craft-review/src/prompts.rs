@@ -3,6 +3,7 @@
 //! and `integrations/shared/review-verify.mjs` compute for the same template — what is chosen or joined is chosen
 //! here and passed in.
 
+use craft_store::js::JsStr;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -130,17 +131,13 @@ fn shq(s: &str) -> String {
 
 /// A model-authored field as one prompt line: newlines flattened, trimmed, capped.
 pub(crate) fn flatten(v: Option<&Value>) -> String {
-    let s = match v {
-        Some(Value::String(s)) => s.clone(),
-        Some(Value::Null) | None => String::new(),
-        Some(other) => other.to_string(),
-    };
+    let s = crate::js::text(v);
     let one: String = s
         .split(['\r', '\n'])
         .filter(|p| !p.is_empty())
         .collect::<Vec<_>>()
         .join(" ");
-    one.trim().chars().take(FIELD_MAX).collect()
+    one.js_trim().chars().take(FIELD_MAX).collect()
 }
 
 /// The places a file inside craft may live, in the order an agent tries them, each in backticks.

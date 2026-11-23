@@ -44,7 +44,7 @@ fn read(root: &Path) -> Option<String> {
         .ok()?
         .ok()?;
     let raw = String::from_utf8_lossy(&bytes);
-    let value = raw.trim_matches(super::super::text::whitespace);
+    let value = raw.trim_matches(craft_store::js::is_space);
     let rest = value.strip_prefix("https://");
     if let Some((auth, path)) = rest
         .and_then(|r| r.split_once('@'))

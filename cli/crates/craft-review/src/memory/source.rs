@@ -186,7 +186,10 @@ impl MemorySource {
             let units: Vec<u16> = t.encode_utf16().collect();
             match units.get(..DERIVED_TITLE_MAX) {
                 Some(head) if units.len() > DERIVED_TITLE_MAX => {
-                    format!("{}…", String::from_utf16_lossy(head))
+                    format!(
+                        "{}…",
+                        craft_store::js::JsString::from_utf16(head.to_vec()).to_utf8_lossy()
+                    )
                 }
                 _ => t.to_owned(),
             }

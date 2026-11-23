@@ -8,6 +8,7 @@
 //! got no verdict stays, and the section says why. One the judge says goes against a rule is
 //! marked with it, unless a decision marked it first.
 
+use craft_store::js::JsStr;
 use std::collections::BTreeSet;
 
 use serde_json::Value;
@@ -39,7 +40,7 @@ use verdicts::read;
 /// Whether a finding is Critical, which no rule covers.
 fn is_critical(f: &Value) -> bool {
     judge::plain(f.get("severity"))
-        .trim()
+        .js_trim()
         .eq_ignore_ascii_case("critical")
 }
 

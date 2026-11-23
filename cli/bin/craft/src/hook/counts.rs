@@ -4,6 +4,7 @@
 //! Only a `craft:review` run counts (`review`, or the CLI's interim `cli-review`).
 
 use craft_review::coverage;
+use craft_store::js::JsStr;
 use serde_json::Value;
 
 use super::record::{Detail, Line};
@@ -41,7 +42,7 @@ fn lenses_ran(verdict: Option<&str>, rounds: Option<&[Value]>) -> bool {
 /// (`report::verdict`, `verdictSuffix` in `integrations/shared/review-coverage.mjs`).
 fn clean(verdict: Option<&str>) -> bool {
     let v = verdict.unwrap_or_default().to_ascii_uppercase();
-    !v.trim().is_empty() && !v.contains("INCOMPLETE") && !v.contains("PARTIAL COVERAGE")
+    !v.js_trim().is_empty() && !v.contains("INCOMPLETE") && !v.contains("PARTIAL COVERAGE")
 }
 
 /// Whether a review over `base` reviewed the PR's whole change: `base` is `origin/<the PR's base>`,

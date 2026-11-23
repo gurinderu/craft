@@ -8,6 +8,7 @@
 //! never "looked with a simpler tool" — an answer with empty findings and `couldNotLook` false,
 //! null or absent stays a clean one.
 
+use craft_store::js::JsStr;
 use serde_json::Value;
 
 use crate::content::{self, ContentError};
@@ -36,7 +37,7 @@ pub fn reason(answer: &Value) -> Option<String> {
         .get(WHAT)
         .and_then(Value::as_str)
         .unwrap_or_default()
-        .split_whitespace()
+        .js_split_whitespace()
         .collect::<Vec<_>>()
         .join(" ");
     Some(if line.is_empty() {

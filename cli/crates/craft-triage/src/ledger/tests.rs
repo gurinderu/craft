@@ -65,6 +65,8 @@ fn a_validator_answer_is_read_as_it_came_or_refused() {
         r#"{"verdict":"accept"}"#.to_owned(),
         full.replace(r#""noise_class":6"#, r#""noise_class":"6""#),
         full.replace(r#""noise_class":6"#, r#""noise_class":1.5"#),
+        full.replace(r#""reason":"r""#, r#""reason":5"#),
+        full.replace(r#""severity":"Low""#, r#""severity":null"#),
         "[]".to_owned(),
     ] {
         let read = Row::validation(&parse(&bad).unwrap());

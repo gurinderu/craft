@@ -1,8 +1,5 @@
 use craft_store::js::{Js, JsString};
 
-// JavaScript's whitespace and `trim` over code units are the store's (`craft_store::js`).
-pub(super) use craft_store::js::{is_space as whitespace, trim_text as trim};
-
 pub(super) fn field(v: &Js, key: &str) -> JsString {
     v.as_obj().map(|o| o.text_units(key)).unwrap_or_default()
 }
@@ -15,10 +12,6 @@ pub(super) fn slice(s: &JsString, len: usize) -> JsString {
     JsString::from_utf16(s.units().take(len).collect())
 }
 
-pub(super) fn lossy(s: &JsString) -> String {
-    s.to_utf8_lossy()
-}
-
 pub(super) fn ref_fault(s: &JsString) -> Option<String> {
     if s.units().count() > 128 {
         return Some("revision over 128 characters".into());
@@ -28,5 +21,5 @@ pub(super) fn ref_fault(s: &JsString) -> Option<String> {
             "revision outside [A-Za-z0-9._+/-] or starting with a non-alphanumeric".into(),
         );
     }
-    crate::sources::spec::ref_fault(&lossy(s))
+    crate::sources::spec::ref_fault(&s.to_utf8_lossy())
 }

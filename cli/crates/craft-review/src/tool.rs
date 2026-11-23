@@ -2,6 +2,7 @@
 //! (`isToolFinding`, `ruleKey`, `titleKey`, `toolDistinct`; realm @nick/craft, nodes #236, #238):
 //! two findings a tool tells apart are never one finding, whatever key they share.
 
+use craft_store::js::JsStr;
 use serde_json::Value;
 
 /// The sources a gate tool's seed carries, as `TOOL_LENSES`.
@@ -28,7 +29,7 @@ fn words(v: Option<&Value>) -> Vec<String> {
 pub(crate) fn lens_words(s: &str) -> Vec<String> {
     s.to_lowercase()
         .split([',', ';', '|'])
-        .map(|w| w.trim().to_owned())
+        .map(|w| w.js_trim().to_owned())
         .filter(|w| !w.is_empty())
         .collect()
 }
@@ -59,11 +60,11 @@ pub(crate) fn rule_key(f: &Value) -> String {
 
 /// A `toolRule` as compared, as `ruleKey`: folded, a leading `<tool>::` naming a gate tool dropped.
 pub(crate) fn rule_key_of(rule: &str) -> String {
-    let s = rule.trim().to_lowercase();
+    let s = rule.js_trim().to_lowercase();
     let Some((tool, rule)) = s.split_once("::") else {
         return s;
     };
-    let (tool, rule) = (tool.trim(), rule.trim());
+    let (tool, rule) = (tool.js_trim(), rule.js_trim());
     let named = !tool.is_empty()
         && tool
             .bytes()
@@ -86,7 +87,7 @@ fn title_key(f: &Value) -> String {
 /// A title as compared, as `titleKey`: folded, whitespace collapsed.
 pub(crate) fn title_key_of(t: &str) -> String {
     t.to_lowercase()
-        .split_whitespace()
+        .js_split_whitespace()
         .collect::<Vec<_>>()
         .join(" ")
 }
@@ -130,7 +131,7 @@ pub(crate) fn titles_section(findings: &[Value]) -> String {
         let row = format!(
             "- `{}:{line}` · {}",
             file.unwrap_or("?"),
-            title.split_whitespace().collect::<Vec<_>>().join(" ")
+            title.js_split_whitespace().collect::<Vec<_>>().join(" ")
         );
         if !rows.contains(&row) {
             rows.push(row);

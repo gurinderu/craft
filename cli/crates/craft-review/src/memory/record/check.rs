@@ -2,6 +2,7 @@
 //! does not apply, a status other than active, a missing field, a field past its ceiling, or an
 //! anchor unfit for the git line its scope check runs.
 
+use craft_store::js::JsStr;
 use serde_json::{Map, Value};
 
 use super::{
@@ -29,10 +30,10 @@ const KINDS: [&str; 3] = ["decision", "question", "rule"];
 /// What is wrong with a text field of the anchor; '' when it is absent or fit.
 fn anchor_text_problem(o: &Map<String, Value>, k: &str, max: usize) -> String {
     match o.get(k) {
-        Some(Value::String(s)) if js_len(s.trim()) > max => {
+        Some(Value::String(s)) if js_len(s.js_trim()) > max => {
             format!(
                 ": {k} is {} chars, over the {max}-char ceiling",
-                js_len(s.trim())
+                js_len(s.js_trim())
             )
         }
         Some(Value::String(s)) if has_control(s) => format!(": {k} contains a control character"),

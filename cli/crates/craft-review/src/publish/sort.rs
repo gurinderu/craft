@@ -6,6 +6,7 @@
 //! confirmed finding going against a memory record is a defect whatever the other signs say; an
 //! unconfirmed one is doubtful, the record named first.
 
+use craft_store::js::JsStr;
 use std::sync::LazyLock;
 
 use serde_json::{Value, json};
@@ -30,11 +31,7 @@ static DOUBT_WORDS: LazyLock<Option<regex::Regex>> = LazyLock::new(|| {
 
 /// A field as `String(v ?? '')` reads it.
 pub(super) fn text(f: &Value, k: &str) -> String {
-    match f.get(k) {
-        None | Some(Value::Null) => String::new(),
-        Some(Value::String(s)) => s.clone(),
-        Some(other) => other.to_string(),
-    }
+    crate::js::text(f.get(k))
 }
 
 /// The finding's tier, lower-cased; none — confirmed (`sortTier`).
@@ -48,11 +45,7 @@ pub(crate) fn sort_tier(f: &Value) -> String {
 
 /// A finding's line when it is a positive whole number, else 0 (`findingLine`).
 pub(super) fn line(f: &Value) -> u32 {
-    let n = match f.get("line") {
-        Some(Value::Number(n)) => n.as_f64().unwrap_or(0.0),
-        Some(Value::String(s)) => s.trim().parse().unwrap_or(0.0),
-        _ => 0.0,
-    };
+    let n = crate::js::number(f.get("line"), f64::NAN);
     if n.fract() == 0.0 && n >= 1.0 && n <= f64::from(u32::MAX) {
         #[expect(
             clippy::cast_possible_truncation,
@@ -116,7 +109,7 @@ fn design_question(f: &Value) -> bool {
     let harm = text(f, "harmLevel");
     !lenses.is_empty()
         && lenses.iter().all(|l| l == crate::design::LENS)
-        && matches!(harm.trim(), "" | "none")
+        && matches!(harm.js_trim(), "" | "none")
 }
 
 /// The findings split for publication (`sortFindings`): the defects, and the doubtful ones each

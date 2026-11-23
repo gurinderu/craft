@@ -19,6 +19,34 @@ pub fn trim(s: &str) -> &str {
     s.trim_matches(is_space)
 }
 
+/// JavaScript's `trim`, `trimStart`, `trimEnd` and `split(/\s+/)` (empty pieces dropped) as
+/// methods on text, beside Rust's own, which also count U+0085 and not U+FEFF.
+pub trait JsStr {
+    /// `s.trim()`.
+    fn js_trim(&self) -> &str;
+    /// `s.trimStart()`.
+    fn js_trim_start(&self) -> &str;
+    /// `s.trimEnd()`.
+    fn js_trim_end(&self) -> &str;
+    /// `s.split(/\s+/).filter(Boolean)`.
+    fn js_split_whitespace(&self) -> impl Iterator<Item = &str>;
+}
+
+impl JsStr for str {
+    fn js_trim(&self) -> &str {
+        trim(self)
+    }
+    fn js_trim_start(&self) -> &str {
+        self.trim_start_matches(is_space)
+    }
+    fn js_trim_end(&self) -> &str {
+        self.trim_end_matches(is_space)
+    }
+    fn js_split_whitespace(&self) -> impl Iterator<Item = &str> {
+        self.split(is_space).filter(|w| !w.is_empty())
+    }
+}
+
 /// Whether the code unit `u` is whitespace to JavaScript (a surrogate never is).
 #[must_use]
 pub fn is_space_unit(u: u16) -> bool {

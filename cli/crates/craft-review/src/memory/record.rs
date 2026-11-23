@@ -4,6 +4,7 @@
 //! (a deferred finding) or a project rule, its fields as trimmed strings, refused by name when a
 //! field is missing, past its ceiling, or unfit for the git line its scope check runs.
 
+use craft_store::js::JsStr;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
@@ -78,7 +79,7 @@ pub struct PriorDecision {
 /// A string field trimmed, '' when it is no string (`decisionText`).
 pub(super) fn text(v: Option<&Value>) -> String {
     v.and_then(Value::as_str)
-        .map(|s| s.trim().to_owned())
+        .map(|s| s.js_trim().to_owned())
         .unwrap_or_default()
 }
 
@@ -111,7 +112,7 @@ fn record_line(v: Option<&Value>) -> i64 {
         None | Some(Value::Null) => 0,
         Some(Value::String(s)) if s.is_empty() => 0,
         Some(Value::String(s)) => {
-            let t = s.trim();
+            let t = s.js_trim();
             let digits = (1..=9).contains(&t.len()) && t.bytes().all(|b| b.is_ascii_digit());
             if digits { t.parse().unwrap_or(-1) } else { -1 }
         }
@@ -172,9 +173,10 @@ pub(super) fn linked_ids(links: &[Value], prefixes: &[&str]) -> Vec<String> {
         .filter_map(|l| {
             let s = text(Some(l));
             let (head, rest) = s.split_once(':')?;
-            let id = rest.trim_start();
+            let id = rest.js_trim_start();
             let named = prefixes.iter().any(|p| head.eq_ignore_ascii_case(p));
-            (named && !id.is_empty() && !id.contains(char::is_whitespace)).then(|| id.to_owned())
+            (named && !id.is_empty() && !id.contains(craft_store::js::is_space))
+                .then(|| id.to_owned())
         })
         .collect()
 }

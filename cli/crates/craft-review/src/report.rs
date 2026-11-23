@@ -1,5 +1,6 @@
 //! What a finished run says: the run's verdict from its settled findings, and the Markdown report.
 
+use craft_store::js::JsStr;
 use serde_json::Value;
 
 use crate::coverage;
@@ -435,7 +436,7 @@ pub fn degraded_notes(state: &RunState) -> Vec<String> {
         consumer_lines::all(state)
             .into_iter()
             .filter(|(_, degraded)| *degraded)
-            .map(|(line, _)| line.trim_start_matches("- ").trim_end().to_owned()),
+            .map(|(line, _)| line.trim_start_matches("- ").js_trim_end().to_owned()),
     );
     notes
 }

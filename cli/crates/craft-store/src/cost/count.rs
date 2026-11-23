@@ -5,6 +5,7 @@
 //! with no id counts alone and names the per-line rule. A blank, cut or usage-less line is passed
 //! over, never allowed to abort the sum.
 
+use crate::js::JsStr;
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -74,7 +75,7 @@ fn key(id: Option<&Js>, line: usize) -> Key {
 
 /// The usage of one line and its message id, when it is an assistant line carrying one.
 fn assistant_usage(line: &str) -> Option<(Option<Js>, Js)> {
-    if line.trim().is_empty() {
+    if line.js_trim().is_empty() {
         return None;
     }
     let Ok(Js::Obj(rec)) = parse(line) else {

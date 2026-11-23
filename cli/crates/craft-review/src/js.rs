@@ -4,7 +4,7 @@
 //! (a `0x`, `0o` or `0b` string read in its base, as the JavaScript's `Number()` reads it),
 //! `.length` in UTF-16 code units.
 
-use craft_store::js::Js;
+use craft_store::js::{Js, JsString};
 use serde_json::Value;
 
 // JavaScript's whitespace, `trim`, `String()`, `Number()` and a number's text are the store's
@@ -18,8 +18,7 @@ pub(crate) fn len(s: &str) -> usize {
 
 /// The first `n` UTF-16 code units of `s`, as `s.slice(0, n)` keeps them.
 pub(crate) fn head(s: &str, n: usize) -> String {
-    let units: Vec<u16> = s.encode_utf16().take(n).collect();
-    String::from_utf16_lossy(&units)
+    JsString::from_utf16(s.encode_utf16().take(n).collect()).to_utf8_lossy()
 }
 
 /// `String(v ?? '')` ([`Js::to_js_text`]).
@@ -38,6 +37,22 @@ pub(crate) fn str_of(v: Option<&Value>) -> String {
 /// `Number(v ?? fallback)` ([`Js::to_js_number`]), `fallback` standing for an absent value.
 pub(crate) fn number(v: Option<&Value>, fallback: f64) -> f64 {
     v.map_or(fallback, |v| Js::from(v).to_js_number())
+}
+
+/// `findingLine`: `Number(v)` when it is a positive integer, else 0.
+pub(crate) fn finding_line(v: Option<&Value>) -> u64 {
+    let n = number(v, f64::NAN);
+    if n.is_finite() && n >= 1.0 && n.trunc().to_bits() == n.to_bits() {
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "a positive whole double, saturating past u64 as a line never is"
+        )]
+        let line = n as u64;
+        line
+    } else {
+        0
+    }
 }
 
 /// `Math.max(a, b)`: NaN when either is.

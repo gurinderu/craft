@@ -4,6 +4,7 @@
 //! #230, #236, #271) — what lets a later
 //! session tie a reply in the thread to its finding, and a later run see it is posted already.
 
+use craft_store::js::JsStr;
 use serde_json::Value;
 
 use super::sort::text;
@@ -13,7 +14,7 @@ pub(crate) const MARKER: &str = "<!-- craft-finding -->";
 
 /// A value as one line (`commentLine`).
 fn one_line(s: &str) -> String {
-    s.split_whitespace().collect::<Vec<_>>().join(" ")
+    s.js_split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// Whether `v` is 1 to `max` characters, each a letter, a digit or one of `extra` — what the
@@ -63,13 +64,13 @@ pub(super) fn comment(f: &Value, question: bool) -> String {
         "[{}] {}\n\n{ask}{} — {}\n\n{lens}{rule}{kind}{MARKER}",
         one_line(&text(f, "severity")),
         one_line(&text(f, "title")),
-        text(f, "why").trim(),
-        text(f, "fix").trim()
+        text(f, "why").js_trim(),
+        text(f, "fix").js_trim()
     )
 }
 
 /// The first line of a comment body: what, beside its file, tells one finding's comment from
 /// another's.
 pub(super) fn first_line(body: &str) -> &str {
-    body.lines().next().unwrap_or("").trim()
+    body.lines().next().unwrap_or("").js_trim()
 }
