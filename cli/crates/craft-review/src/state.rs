@@ -381,6 +381,20 @@ pub fn load(dir: &Path) -> Result<RunState, StateError> {
     Ok(state)
 }
 
+/// Whether the state in `dir` was written by a newer craft, in a format past [`STATE_VERSION`]:
+/// its telemetry is that craft's to read and write, so this one touches none of it.
+#[must_use]
+pub fn newer(dir: &Path) -> bool {
+    #[derive(Deserialize)]
+    struct Only {
+        version: u32,
+    }
+    std::fs::read_to_string(state_path(dir))
+        .ok()
+        .and_then(|t| serde_json::from_str::<Only>(&t).ok())
+        .is_some_and(|o| o.version > STATE_VERSION)
+}
+
 /// The phase the state in `dir` records, whatever its format: what the run's telemetry needs to
 /// file an earlier binary's run before [`load`] refuses it; `None` when it cannot be read.
 #[must_use]

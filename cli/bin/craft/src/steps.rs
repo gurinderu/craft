@@ -452,18 +452,23 @@ pub(crate) fn submit_step(args: &SubmitArgs) -> Result<Value> {
     let given = args.answers.as_deref().map(given_answers).transpose()?;
     let run = std::path::absolute(&args.run)
         .with_context(|| format!("resolving {}", args.run.display()))?;
+    // A run a newer craft wrote keeps its telemetry as that craft left it: refused below, untouched.
+    let newer = craft_review::state::newer(&run);
     // A run started with no plugin root known, or whose own was uninstalled, files through one
     // found now, kept for every later write: a resume re-files a lost record through it.
-    filing::adopt(&run, filing_root(args.record_root.as_deref()).as_deref());
+    if !newer {
+        filing::adopt(&run, filing_root(args.record_root.as_deref()).as_deref());
+    }
     // Before anything else a resume does — even one refused below — the records of the run's
     // stopped parts that did not land are filed again; a finished run whose own record did not land
     // is filed again rather than refused.
-    let earlier = if args.resume {
+    let earlier = if args.resume && !newer {
         filing::resuming(&run, &crate::filing_worker::BoundedWriter)
     } else {
         Vec::new()
     };
     if args.resume
+        && !newer
         && let Some(step) =
             filing::refile(&run, earlier.clone(), &crate::filing_worker::BoundedWriter)
     {
@@ -483,7 +488,7 @@ pub(crate) fn submit_step(args: &SubmitArgs) -> Result<Value> {
         // the submit asked, and nothing new is filed: the engine's own record of a run the binary
         // did not finish covers its open segment (realm @nick/craft, node #618).
         let mut lost = earlier.clone();
-        if !args.resume && is_format(&e) {
+        if !args.resume && !newer && is_state_version_refusal(&e) {
             lost.extend(refile_kept(&run));
         }
         let told = if lost.is_empty() {
@@ -516,7 +521,7 @@ pub(crate) fn submit_step(args: &SubmitArgs) -> Result<Value> {
 }
 
 /// Whether `e` refuses a run whose state another format wrote.
-fn is_format(e: &craft_review::Error) -> bool {
+fn is_state_version_refusal(e: &craft_review::Error) -> bool {
     matches!(
         e,
         craft_review::Error::State(craft_review::state::StateError::Version { .. })
