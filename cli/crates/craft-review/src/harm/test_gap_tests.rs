@@ -196,3 +196,47 @@ fn only_the_tests_lens_alone_is_read_for_a_test_gap() {
     let merged = gap(&json!({"severity": "High", "sources": ["tests", "errors"]}));
     assert_eq!(cap(&merged)["severity"], "High");
 }
+
+#[test]
+fn a_low_weak_assertion_whose_verifier_confirms_the_unmet_promise_is_raised_to_medium() {
+    let low = gap(&json!({"harmLevel": "text"}));
+    let promise = vote(true, "intent-unmet");
+    let settled = through_the_panel(&low, &[Some(promise.clone()), Some(promise)]);
+    assert_eq!(settled["harmVerified"], "intent-unmet", "{settled}");
+    assert_eq!(settled["severity"], "Medium", "{settled}");
+    assert_eq!(settled["harmLevel"], "intent-unmet", "{settled}");
+    assert!(
+        settled["why"]
+            .as_str()
+            .unwrap()
+            .contains("raised to Medium from Low"),
+        "{settled}"
+    );
+    let mut intended = vote(true, "intent-unmet");
+    intended["behaviourIntended"] = json!(true);
+    let kept = through_the_panel(&low, &[Some(intended.clone()), Some(intended)]);
+    assert_eq!(
+        kept["severity"], "Low",
+        "intended behaviour confirms no promise: {kept}"
+    );
+    let unpromised = gap(&json!({"harmLevel": "text", "testGap": "missing"}));
+    let missing = through_the_panel(
+        &unpromised,
+        &[
+            Some(vote(true, "intent-unmet")),
+            Some(vote(true, "intent-unmet")),
+        ],
+    );
+    assert_eq!(
+        missing["severity"], "Low",
+        "only a weak assertion: {missing}"
+    );
+}
+
+#[test]
+fn a_promised_weak_assertion_s_verifier_is_shown_intent_unmet_as_a_listed_level() {
+    let lines = verifier_lines(&gap(&json!({"harmLevel": "text"})));
+    assert!(lines.contains("(a listed level): intent-unmet"), "{lines}");
+    let raised = verifier_lines(&gap(&json!({"severity": "Medium"})));
+    assert!(!raised.contains("intent-unmet"), "{raised}");
+}

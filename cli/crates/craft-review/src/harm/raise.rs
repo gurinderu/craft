@@ -14,6 +14,21 @@ struct Claim {
     repo_rule: Option<Value>,
 }
 
+/// The harms a verifier may confirm on `f`: those it [`claims`], and `intent-unmet` for a weak
+/// assertion the test-promise rule was read for (realm @nick/craft, node #619).
+fn verifiable(f: &Value) -> Vec<Claim> {
+    let mut cs = claims(f);
+    if super::test_gap::promised(f) && !cs.iter().any(|c| c.level == INTENT_UNMET) {
+        cs.push(Claim {
+            level: INTENT_UNMET.to_owned(),
+            harm: Some(super::test_gap::PROMISE_HARM.to_owned()),
+            repo_rule: None,
+        });
+        cs.sort_by_key(|c| level_rank(&c.level));
+    }
+    cs
+}
+
 /// The harms `f` claims, worst first, one per known level: its `harmClaims`, or its own.
 fn claims(f: &Value) -> Vec<Claim> {
     let own = [f.clone()];
@@ -104,7 +119,7 @@ const INTENT_UNMET: &str = "intent-unmet";
 /// that says the behaviour is intended (`behaviourIntended`) backs no `intent-unmet`, every other
 /// level as it names (realm @nick/craft, node #407).
 pub(crate) fn panel_harm(f: &Value, votes: &[&Value]) -> Option<String> {
-    let cs = claims(f);
+    let cs = verifiable(f);
     if cs.is_empty() || votes.is_empty() {
         return None;
     }
@@ -133,10 +148,10 @@ pub(crate) fn panel_harm(f: &Value, votes: &[&Value]) -> Option<String> {
 }
 
 /// A confirmed `f` after its harm `level` was verified: it shows that claim, and goes to High
-/// from Medium or below when that harm is must-fix — but a weak assertion, held to should-fix
-/// (realm @nick/craft, node #527).
+/// from Medium or below when that harm is must-fix — but a weak assertion, held to should-fix,
+/// goes to Medium from Low or Info (realm @nick/craft, nodes #527, #619).
 pub(crate) fn raise(f: &Value, level: &str) -> Value {
-    let Some(claim) = claims(f).into_iter().find(|c| c.level == level) else {
+    let Some(claim) = verifiable(f).into_iter().find(|c| c.level == level) else {
         return f.clone();
     };
     let mut out = f.as_object().cloned().unwrap_or_default();
@@ -151,12 +166,23 @@ pub(crate) fn raise(f: &Value, level: &str) -> Value {
     }
     let severity = text(f, "severity").unwrap_or("").to_owned();
     let held = super::test_gap::is_weak(f);
-    if must_fix(&claim) && !held && matches!(severity.as_str(), "Medium" | "Low" | "Info") {
-        out.insert("severity".into(), Value::String("High".into()));
+    let to = match severity.as_str() {
+        _ if !must_fix(&claim) => None,
+        "Medium" | "Low" | "Info" if !held => Some("High"),
+        "Low" | "Info" if held => Some(super::test_gap::WEAK_CEILING),
+        _ => None,
+    };
+    if let Some(to) = to {
+        out.insert("severity".into(), Value::String(to.into()));
+        let held = if held {
+            ", a weak assertion held to should-fix"
+        } else {
+            ""
+        };
         note(
             &mut out,
             &format!(
-                "raised to High from {severity}: verified harm — a verifier confirmed the {level} harm, which is must-fix"
+                "raised to {to} from {severity}: verified harm — a verifier confirmed the {level} harm, which is must-fix{held}"
             ),
         );
     }
