@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::process::Command;
 
-use super::taken;
+use super::{BASE_MAX, fits, taken};
 
 fn git(d: &Path, args: &[&str]) {
     let ok = Command::new("git")
@@ -43,4 +43,14 @@ fn a_change_whose_lines_cannot_be_read_takes_any_file_with_a_step_and_says_so() 
         "{:?}",
         got.notes
     );
+}
+
+#[test]
+fn a_base_size_is_checked_against_the_cap_and_an_unreadable_one_is_said_as_such() {
+    assert_eq!(fits("12\n"), Ok(()));
+    assert_eq!(fits(&BASE_MAX.to_string()), Ok(()));
+    let over = fits(&(BASE_MAX + 1).to_string()).unwrap_err();
+    assert!(over.contains("larger than"), "{over}");
+    let odd = fits("fatal: odd\n").unwrap_err();
+    assert!(odd.contains("no size") && !odd.contains("larger"), "{odd}");
 }

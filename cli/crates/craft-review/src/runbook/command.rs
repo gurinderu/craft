@@ -9,6 +9,8 @@
 use std::iter::Peekable;
 use std::str::SplitWhitespace;
 
+use super::options::{SUBCOMMANDS, WRAPPERS, Wrapper, values};
+
 /// Programs whose every use acts on a cluster, a forge, a cloud, a database or a host.
 #[rustfmt::skip]
 const COMMANDS: &[&str] = &[
@@ -19,57 +21,8 @@ const COMMANDS: &[&str] = &[
     "journalctl",
 ];
 
-/// A program's global options that take values (with how many), and the subcommands through which
-/// alone it acts outside the checkout.
-type Subcommands = (
-    &'static str,
-    &'static [(&'static str, usize)],
-    &'static [&'static str],
-);
-
-const DOCKER_GLOBALS: &[(&str, usize)] = &[
-    ("--context", 1),
-    ("-c", 1),
-    ("--host", 1),
-    ("-H", 1),
-    ("--config", 1),
-    ("--log-level", 1),
-];
-const SUBCOMMANDS: &[Subcommands] = &[
-    ("docker", DOCKER_GLOBALS, &["push", "login", "exec"]),
-    ("podman", DOCKER_GLOBALS, &["push", "login", "exec"]),
-    (
-        "nix",
-        &[
-            ("--extra-experimental-features", 1),
-            ("--experimental-features", 1),
-            ("--store", 1),
-            ("--option", 2),
-        ],
-        &["copy"],
-    ),
-];
-
 /// Programs that act outside only when the command names a URL.
 const FETCHERS: &[&str] = &["curl", "wget"];
-
-/// A word that runs the command after it: its options that take a value, and how many positional
-/// words it takes before that command (`timeout`'s duration).
-type Wrapper = (&'static str, &'static [&'static str], usize);
-
-#[rustfmt::skip]
-const WRAPPERS: &[Wrapper] = &[
-    ("sudo", &["-u", "-g", "-h", "-p", "-C", "-U", "-D", "-r", "-t", "-T"], 0),
-    ("env", &["-u", "-C", "-S"], 0),
-    ("watch", &["-n", "-d"], 0),
-    ("timeout", &["-s", "-k"], 1),
-    ("xargs", &["-I", "-n", "-L", "-P", "-d", "-E", "-s", "-a"], 0),
-    ("nice", &["-n"], 0),
-    ("time", &[], 0), ("nohup", &[], 0), ("exec", &[], 0), ("command", &[], 0),
-    // Shell syntax and a prompt, which open a command and take no option.
-    ("$", &[], 0), ("do", &[], 0), ("then", &[], 0), ("else", &[], 0), ("if", &[], 0),
-    ("while", &[], 0), ("until", &[], 0), ("!", &[], 0), ("{", &[], 0),
-];
 
 type Words<'a> = Peekable<SplitWhitespace<'a>>;
 
@@ -89,13 +42,14 @@ fn is_prompt(word: &str) -> bool {
     word.ends_with('$') || (word.ends_with('#') && word.contains('@'))
 }
 
-/// Takes `wrapper`'s options and positional words off `words`.
-fn skip_wrapper((_, valued, positional): &Wrapper, words: &mut Words<'_>) {
-    let mut positional = *positional;
+/// Takes `wrapper`'s options (a bare `-` among them, `env`'s) and positional words off `words`.
+fn skip_wrapper(wrapper: &Wrapper, words: &mut Words<'_>) {
+    let mut positional = wrapper.positional;
     while let Some(next) = words.peek().copied() {
-        if next.starts_with('-') && next != "-" {
+        if next.starts_with('-') {
             words.next();
-            if valued.contains(&next) {
+            let n = values(next, |o| wrapper.valued.contains(&o).then_some(1));
+            for _ in 0..n {
                 words.next();
             }
         } else if positional > 0 {
@@ -114,7 +68,7 @@ fn acts_outside(segment: &str) -> bool {
         if is_assignment(w) || is_prompt(w) {
             continue;
         }
-        if let Some(wrapper) = WRAPPERS.iter().find(|(name, ..)| *name == w) {
+        if let Some(wrapper) = WRAPPERS.iter().find(|x| x.name == w) {
             skip_wrapper(wrapper, &mut words);
             continue;
         }
@@ -128,15 +82,17 @@ fn acts_outside(segment: &str) -> bool {
 
 /// Whether `program`'s subcommand, past its global options, is one acting outside the checkout.
 fn subcommand(program: &str, words: &mut Words<'_>) -> bool {
-    let Some((_, globals, subs)) = SUBCOMMANDS.iter().find(|(p, ..)| *p == program) else {
+    let Some(p) = SUBCOMMANDS.iter().find(|x| x.program == program) else {
         return false;
     };
     while let Some(w) = words.next() {
         if !w.starts_with('-') {
-            return subs.contains(&w);
+            return p.subs.contains(&w);
         }
-        let takes = globals.iter().find(|(g, _)| *g == w).map_or(0, |(_, n)| *n);
-        for _ in 0..takes {
+        let n = values(w, |o| {
+            p.globals.iter().find(|(g, _)| *g == o).map(|(_, n)| *n)
+        });
+        for _ in 0..n {
             words.next();
         }
     }

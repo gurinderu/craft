@@ -12,12 +12,16 @@ use serde_json::{Value, json};
 const DRAIN: &str =
     "# Drain\n\n1. Cordon the node:\n\n    ```sh\n    kubectl cordon $N\n    ```\n\n2. Wait.\n";
 
+fn first_step(before: &str, after: &str) -> Value {
+    first_step_over(&[("docs/drain.md", before)], &[("docs/drain.md", after)])
+}
+
 #[expect(
     clippy::unwrap_used,
     reason = "a step of the tests, failing loudly like them"
 )]
-fn first_step(before: &str, after: &str) -> Value {
-    let repo = repo(&[("docs/drain.md", before)], &[("docs/drain.md", after)]);
+fn first_step_over(before: &[(&str, &str)], after: &[(&str, &str)]) -> Value {
+    let repo = repo(before, after);
     let out = tempfile::tempdir().unwrap();
     step::start(&opts(repo.path(), out.path())).unwrap()
 }
@@ -66,4 +70,14 @@ fn prose_and_a_removed_prose_line_opening_with_a_command_are_not() {
 #[test]
 fn a_deleted_runbook_is_taken() {
     assert!(taken(DRAIN, ""), "every command line removed");
+}
+
+#[test]
+fn a_step_removed_in_a_rename_is_matched_under_the_old_path() {
+    let moved = DRAIN.replace("    kubectl cordon $N\n", "");
+    let s = first_step_over(
+        &[("docs/drain.md", DRAIN)],
+        &[("docs/drain.md", ""), ("docs/ops/drain.md", &moved)],
+    );
+    assert_eq!(ids(&s), ["scout-runbook"], "{s}");
 }

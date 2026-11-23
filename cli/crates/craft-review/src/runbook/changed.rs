@@ -1,14 +1,16 @@
 //! Which changed Markdown files the runbook profile takes (realm @nick/craft, node #620): those
 //! whose change touches a step on either side — an added or changed line on a step of the working
 //! tree's version, or a changed or removed line on a step of the base's (a step replaced, disabled
-//! or deleted, a shell block's info string flipped). The working tree's version is read as a
-//! changed file is read elsewhere: a regular file of bounded size reached through no link
-//! ([`crate::consumers::source`]); the base's from git, under the same size cap. A file that cannot
-//! be read, or a change whose lines cannot be read, is said in a note, never dropped silently.
+//! or deleted, a shell block's info string flipped), a renamed file's base read and matched under
+//! its old path. The working tree's version is read as a changed file is read elsewhere: a regular
+//! file of bounded size reached through no link ([`crate::consumers::source`]); the base's from
+//! git, under the same size cap. A file that cannot be read, or a change whose lines cannot be
+//! read, is said in a note, never dropped silently.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
+use super::renamed::renames;
 use super::step_lines;
 use crate::consumers::source::read_within;
 use crate::gate::lines::Lines;
@@ -29,6 +31,8 @@ pub(crate) struct Taken {
 struct Changed {
     new: Lines,
     old: Lines,
+    /// Each renamed file's old path, by its new one.
+    renamed: BTreeMap<String, String>,
 }
 
 fn changed(cwd: &Path, merge_base: &str) -> Result<Changed, GitError> {
@@ -36,6 +40,7 @@ fn changed(cwd: &Path, merge_base: &str) -> Result<Changed, GitError> {
     Ok(Changed {
         new: Lines::parse(&diff),
         old: Lines::parse_old(&diff),
+        renamed: renames(&diff),
     })
 }
 
@@ -48,24 +53,38 @@ fn at_base(cwd: &Path, rev: &str, path: &str) -> Result<Option<String>, String> 
         return Ok(None);
     }
     let size = git::git(cwd, &["cat-file", "-s", &spec]).map_err(|e| e.to_string())?;
+    fits(&size)?;
+    git::git(cwd, &["cat-file", "blob", &spec])
+        .map(Some)
+        .map_err(|e| e.to_string())
+}
+
+/// Whether a blob of the size `git cat-file -s` printed is within [`BASE_MAX`].
+fn fits(size: &str) -> Result<(), String> {
     match size.trim().parse::<u64>() {
-        Ok(n) if n <= BASE_MAX => git::git(cwd, &["cat-file", "blob", &spec])
-            .map(Some)
-            .map_err(|e| e.to_string()),
-        _ => Err(format!("larger than {BASE_MAX} bytes at the base")),
+        Ok(n) if n <= BASE_MAX => Ok(()),
+        Ok(_) => Err(format!("larger than {BASE_MAX} bytes at the base")),
+        Err(_) => Err(format!(
+            "git printed no size for it at the base: {:?}",
+            size.trim()
+        )),
     }
 }
 
 /// Whether `file`'s change touches a step of either version: `new` the working tree's text,
-/// `old` the base's (each `None` when that side holds no file).
-fn touches(change: Option<&Changed>, file: &str, (new, old): (Option<&str>, Option<&str>)) -> bool {
+/// `old` the base's, held at `was` (each `None` when that side holds no file).
+fn touches(
+    change: Option<&Changed>,
+    (file, was): (&str, &str),
+    (new, old): (Option<&str>, Option<&str>),
+) -> bool {
     let new_steps = new.map(step_lines).unwrap_or_default();
     let Some(c) = change else {
         return !new_steps.is_empty();
     };
     let old_steps = old.map(step_lines).unwrap_or_default();
     new_steps.iter().any(|n| c.new.touches(file, *n))
-        || old_steps.iter().any(|n| c.old.touches(file, *n))
+        || old_steps.iter().any(|n| c.old.touches(was, *n))
 }
 
 /// Of `candidates`, the Markdown files the runbook profile may take by name, those whose change in
@@ -93,13 +112,17 @@ pub(crate) fn taken(cwd: &Path, merge_base: &str, candidates: &[String]) -> Take
     for f in candidates {
         let new = read_within(&top, f).map_err(|e| e.to_string());
         // Without the change's lines the base is not needed: any step of the file buys the lens.
+        let was = change
+            .as_ref()
+            .and_then(|c| c.renamed.get(f))
+            .map_or(f.as_str(), String::as_str);
         let old = match change {
-            Some(_) => at_base(&top, merge_base, f),
+            Some(_) => at_base(&top, merge_base, was),
             None => Ok(None),
         };
         match (new, old) {
             (Ok(new), Ok(old)) => {
-                if touches(change.as_ref(), f, (new.as_deref(), old.as_deref())) {
+                if touches(change.as_ref(), (f, was), (new.as_deref(), old.as_deref())) {
                     out.files.insert(f.clone());
                 }
             }

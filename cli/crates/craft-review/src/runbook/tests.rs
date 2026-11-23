@@ -35,6 +35,19 @@ fn a_command_against_an_external_system_is_a_step_wherever_it_sits_on_its_line()
         "docker --context prod exec app sh",
         "nix --extra-experimental-features nix-command copy --to ssh://h ./r",
         "deploy .#host",
+        "watch -d kubectl get pods",
+        "watch --differences=permanent -n 2 kubectl get pods",
+        "sudo --user postgres psql",
+        "sudo --user=postgres psql",
+        "sudo --group ops --chdir /tmp kubectl get pods",
+        "timeout --signal KILL 30 kubectl get pods",
+        "env - kubectl get pods",
+        "xargs --replace={} kubectl delete pod {}",
+        "docker -l debug exec app sh",
+        "podman --connection prod exec app sh",
+        "podman --url ssh://h/run/podman.sock --identity k exec app sh",
+        "nix -I nixpkgs=x copy --to ssh://h ./r",
+        "nix --log-format bar -j 4 --option a b copy --to ssh://h ./r",
     ] {
         assert!(carries_steps(&sh(line)), "{line}");
     }
@@ -52,6 +65,8 @@ fn a_command_that_runs_in_the_checkout_is_no_step() {
         "git commit -m x",
         "git push --force origin main",
         "docker --context prod build .",
+        "podman --connection prod build .",
+        "nix --option a b build .#x",
         "echo kubectl",
         "# kubectl delete pod p  (a comment)",
     ] {
