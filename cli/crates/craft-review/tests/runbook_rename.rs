@@ -52,8 +52,9 @@ fn a_step_removed_in_a_rename_reaches_the_lens_at_both_paths_and_counts_once() {
 
 #[test]
 fn twenty_renamed_runbooks_across_directories_reach_one_unsliced_lens_holding_their_old_paths() {
-    // More renamed runbooks than the slicing threshold (12 owned files across directories), so a
-    // change of that threshold cannot leave this test unsliced and vacuous.
+    // Twenty renamed runbooks in two directories: the run slices this change (asserted below, so
+    // the test cannot go vacuous if the slicing threshold moves), and the unsliced lens still runs
+    // once over the whole runbook part.
     let texts: Vec<(String, String, String, String)> = (0..20)
         .map(|i| {
             let dir = if i % 2 == 0 { "a" } else { "b" };
@@ -73,10 +74,16 @@ fn twenty_renamed_runbooks_across_directories_reach_one_unsliced_lens_holding_th
     let out = tempfile::tempdir().unwrap();
     let s = step::start(&opts(repo.path(), out.path())).unwrap();
     assert_eq!(ids(&s), ["scout-runbook"], "{s}");
-    let s = submit(
-        &out.path().join("run"),
-        json!({"scout-runbook": scout("medium", &[])}),
-    );
+    let run = out.path().join("run");
+    let slices: Vec<String> = craft_review::state::load(&run)
+        .unwrap()
+        .units
+        .slices("runbook")
+        .iter()
+        .map(|sl| sl.key.clone())
+        .collect();
+    assert!(slices.len() >= 2, "the change is sliced: {slices:?}");
+    let s = submit(&run, json!({"scout-runbook": scout("medium", &[])}));
     assert_eq!(
         ids(&s),
         ["lens-runbook-runbook-r1"],
