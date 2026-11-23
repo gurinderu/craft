@@ -16,11 +16,13 @@ use crate::prompts::{self, PromptContext};
 
 mod look;
 mod metrics;
+mod resume;
 mod table;
 
 pub use look::{Look, gap as look_gap, look};
 pub(crate) use metrics::{COUNTS, FLAGS};
 pub use metrics::{findings_schema, sift, values};
+pub use resume::predates_table;
 pub use table::{lens_table, rows_of, unmeasured};
 
 /// Whether `profile` has a lens that needs the index.
