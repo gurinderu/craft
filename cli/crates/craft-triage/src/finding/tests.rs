@@ -1,4 +1,6 @@
-use craft_store::js::parse;
+use craft_store::js::{Js, parse};
+
+use crate::TriageError;
 
 use super::*;
 
