@@ -262,7 +262,7 @@ test("a caller whose model cannot be read is said in the answer; the review runs
   assert.ok(typeof answer === 'object')
   assert.match(
     answer.output,
-    /Note: the calling session's model could not be read \(session gone\); a task the flags or CRAFT_OPENCODE_MODELS named no model for ran on OpenCode's default model\.$/,
+    /Note: the calling session's model could not be read \(session gone\); a task the flags or CRAFT_OPENCODE_MODELS named no model for ran on whatever model OpenCode gives a child session with none\.$/,
   )
 })
 
