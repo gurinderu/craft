@@ -80,7 +80,7 @@ test('path= reaches the binary as --path; a path that is no string is refused be
     args: { ...args, path: 'crates/a' },
     script: { 'step:start': finished('Approve', 'Approve') },
   })
-  assert.match(promptOf(run, 'step:start'), /\/opt\/craft review start --cwd '\/work\/repo' --path 'crates\/a' --record '[^']+'$/m)
+  assert.match(promptOf(run, 'step:start'), /\/opt\/craft review start --cwd '\/work\/repo' --path 'crates\/a' --record '[^']+' --paged$/m)
   const refused = await runEngine('review', { args: { ...args, path: ['crates/a'] }, script: { 'log-run': { ok: true, output: ['wrote /store/r.json'] } } })
   assert.match(refused.report, /INCOMPLETE — review: path=\["crates\/a"\] is not a path\. Nothing ran\./)
   assert.deepEqual(
@@ -105,7 +105,7 @@ test('limit text from a task stops the run at once: the submit says --limit, and
   assert.match(
     String(submit),
     new RegExp(
-      `^/opt/craft review submit --run '${RUN}' --limit 'You'\\\\''ve hit your limit · resets 3am \\(Europe/Berlin\\)' --agents 2 --output-tokens \\d+ --output-tokens-scope turn-delta$`,
+      `^/opt/craft review submit --run '${RUN}' --limit 'You'\\\\''ve hit your limit · resets 3am \\(Europe/Berlin\\)' --agents 2 --output-tokens \\d+ --output-tokens-scope turn-delta --paged$`,
     ),
   )
   assert.ok(
@@ -212,7 +212,7 @@ test('a resumed run is resumed with --resume, and the record of a resume the bin
   })
   assert.match(
     promptOf(run, 'step:resume'),
-    / --resume --agents 0 --output-tokens \d+ --output-tokens-scope turn-delta$/m,
+    / --resume --agents 0 --output-tokens \d+ --output-tokens-scope turn-delta --paged$/m,
     "a new segment of the binary's telemetry, counted from nothing",
   )
   assert.doesNotMatch(promptOf(run, 'step:submit:1'), /--resume/, 'only the resuming submit is marked')
@@ -288,7 +288,7 @@ test('a run stopped on the limit, resumed through the driver with run=, reaches 
   assert.equal(promptOf(resumed, 'step:start'), '', 'no new run is started')
   assert.match(
     String(promptOf(resumed, 'step:resume').split('\n\n')[1]),
-    new RegExp(`^/opt/craft review submit --run '${RUN}' --resume --agents 0 --output-tokens \\d+ --output-tokens-scope turn-delta$`),
+    new RegExp(`^/opt/craft review submit --run '${RUN}' --resume --agents 0 --output-tokens \\d+ --output-tokens-scope turn-delta --paged$`),
   )
   assert.equal(resumed.calls.filter(c => c.label === 'lens:errors').length, 1, 'the held task handed out again')
   assert.match(resumed.report, /^## Verdict\n\n✅ Approve\n/)

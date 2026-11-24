@@ -41,12 +41,21 @@ const reviewFlags = o =>
  */
 export function startCommand(o, { bin, root, recordRoot }, version) {
   const record = `${recordRoot ? ` --record-root ${shq(recordRoot)}` : ''} --record ${shq(version)}${o.via ? ` --via ${shq(o.via)}` : ''}`
-  return `${bin} review start --cwd ${o.repo ? shq(o.repo) : '.'}${o.base ? ` --base ${shq(o.base)}` : ''}${o.depth ? ` --depth ${o.depth}` : ''}${reviewFlags(o)}${root ? ` --craft-root ${shq(root)}` : ''}${record}`
+  return `${bin} review start --cwd ${o.repo ? shq(o.repo) : '.'}${o.base ? ` --base ${shq(o.base)}` : ''}${o.depth ? ` --depth ${o.depth}` : ''}${reviewFlags(o)}${root ? ` --craft-root ${shq(root)}` : ''}${record}${PAGED}`
 }
 
+// Each command whose step can be large prints it in pages (integrations/shared/cli-review-paged.mjs; realm @nick/craft,
+// node #625); the brief status is bounded, and prints whole.
+const PAGED = ' --paged'
+
+const reviewSteps = stepCommands('review')
 // `craft review submit`, `craft review status` and its `--brief` (realm @nick/craft, node #522), as every kind spells
 // them (integrations/shared/cli-step-commands.mjs).
-export const { submit: submitCommand, status: statusCommand, briefStatus: briefStatusCommand } = stepCommands('review')
+export const briefStatusCommand = reviewSteps.briefStatus
+/** @type {typeof reviewSteps.submit} */
+export const submitCommand = (...a) => `${reviewSteps.submit(...a)}${PAGED}`
+/** @type {typeof reviewSteps.status} */
+export const statusCommand = (...a) => `${reviewSteps.status(...a)}${PAGED}`
 
 /**
  * `craft review comment` over the run, with the pull request named and the plugin root the record is amended through.
@@ -54,5 +63,5 @@ export const { submit: submitCommand, status: statusCommand, briefStatus: briefS
  */
 export function commentCommand(where, o) {
   const recordRoot = where.recordRoot || where.root
-  return `${where.bin} review comment --run ${shq(o.run)}${o.pr ? ` --pr ${o.pr}` : ''}${recordRoot ? ` --record-root ${shq(recordRoot)}` : ''}`
+  return `${where.bin} review comment --run ${shq(o.run)}${o.pr ? ` --pr ${o.pr}` : ''}${recordRoot ? ` --record-root ${shq(recordRoot)}` : ''}${PAGED}`
 }

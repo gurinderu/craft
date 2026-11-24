@@ -34,7 +34,6 @@ fn a_list_that_cannot_be_saved_leaves_a_note_no_path_and_says_so_to_the_lenses()
         "{note}"
     );
     assert!(lens.file.is_empty(), "{}", lens.file);
-    assert_eq!(lens.cut, 2);
     let block = lens_block(&lens).unwrap();
     assert!(
         block.contains("; 2 more cut by the budget (the whole list could not be saved)"),

@@ -116,7 +116,7 @@ fn a_confined_lens_gets_its_crates_lines_and_hands_the_rest_to_the_seam() {
     assert!(!got.contains("crates/c/src/y.rs"), "{got}");
     assert!(
         got.contains(
-            "1 more line(s) name these symbols in other crates: the seam pass checks them, not you."
+            "1 more line(s) name these symbols in other crates: not yours — the seam pass starts from them, to its own budget."
         ),
         "{got}"
     );
@@ -125,4 +125,36 @@ fn a_confined_lens_gets_its_crates_lines_and_hands_the_rest_to_the_seam() {
     let seam = seam_prompt(&ctx, &rust, words, &batch.units, &[], &[]).unwrap();
     assert!(seam.contains("- crates/c/src/y.rs:22: call_22()"), "{seam}");
     assert!(!seam.contains("CONSUMERS: the"), "{seam}");
+}
+
+#[test]
+fn a_directory_slice_carries_its_own_symbols_and_no_commit_log_the_whole_diff_keeps_it() {
+    let ctx = ctx();
+    let rust = Profile::load("rust").unwrap();
+    let plan = Plan {
+        spec: "feat: the commit log".into(),
+        ..plan()
+    };
+    let at = LensIn {
+        profile: &rust,
+        lens: "errors",
+        plan: &plan,
+        pathspec: "",
+        prior: "",
+    };
+    let slice = |file: &str| Slice {
+        key: "crates".into(),
+        files: vec![file.into()],
+        units: Vec::new(),
+    };
+    let mine = slice_lens_prompt(&ctx, &at, &slice("crates/a/src/lib.rs")).unwrap();
+    assert!(mine.contains("- crates/c/src/y.rs:22: call_22()"), "{mine}");
+    assert!(!mine.contains("feat: the commit log"), "{mine}");
+    let other = slice_lens_prompt(&ctx, &at, &slice("crates/b/src/lib.rs")).unwrap();
+    assert!(!other.contains("CONSUMERS"), "{other}");
+    assert!(
+        lens_prompt(&ctx, &at)
+            .unwrap()
+            .contains("feat: the commit log")
+    );
 }

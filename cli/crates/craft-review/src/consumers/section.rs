@@ -20,9 +20,6 @@ pub fn section(c: &Consumers) -> String {
             c.lines(),
             c.symbols.len()
         ));
-        if c.cut > 0 {
-            out.push_str(&format!("; {} more cut by the budget", c.cut));
-        }
         out.push_str(".\n");
     }
     if c.capped > 0 {

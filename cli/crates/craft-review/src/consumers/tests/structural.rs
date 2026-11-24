@@ -64,8 +64,11 @@ fn the_structural_lines_are_held_to_the_list_s_budget() {
     let full = build(&repo, &diff_of(&repo), no_graph());
     assert_eq!(sites(&full, "new").len(), 15);
     let (c, _) = keep(&t.path().join("none"), full);
-    assert_eq!(sites(&c, "new").len(), order::PER_SYMBOL);
-    assert_eq!(c.cut, 15 - order::PER_SYMBOL);
+    assert_eq!(sites(&c, "new").len(), 15);
+    let block = crate::consumers::lens_block(&c).unwrap();
+    let shown = block.lines().filter(|l| l.starts_with("- ")).count();
+    assert_eq!(shown, order::PER_SYMBOL, "{block}");
+    assert!(block.contains("5 more cut by the budget"), "{block}");
 }
 
 #[test]

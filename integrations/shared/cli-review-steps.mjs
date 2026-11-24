@@ -24,6 +24,7 @@ import { briefOf, endedOf, standingOf, statusUnreadable } from './cli-review-end
 import { harnessRefused, harnessStop } from './cli-review-refusal.mjs'
 import { gateAnswer, gateCommand, gateShell } from './cli-review-gate.mjs'
 import { stepRounds } from './cli-step-loop.mjs'
+import { pageCommand, readPaged, unreadRun } from './cli-review-paged.mjs'
 import { telemetryLostSection } from './review-coverage.mjs'
 import { argumentRefusal } from './run-record.mjs'
 import { normalizeArgs } from './workflow-args.mjs'
@@ -191,10 +192,11 @@ function checkedRoot(got) {
  */
 function startPrompt(o, where, version) {
   const cmd = startCommand(o, where, version)
-  if (!o.priorDecisions) return servicePrompt(`Run exactly this one command, ${START_TIMEOUT}:\n\n${cmd}`)
+  if (!o.priorDecisions) return servicePrompt(`Run exactly this one command, ${START_TIMEOUT}:\n\n${cmd}`, STEP)
   // One line of JSON (JSON.stringify escapes every newline), so no line of it can be the quoted heredoc's delimiter.
   return servicePrompt(
     `Run exactly this one command, ${START_TIMEOUT}, the line between the heredoc's markers copied character for character:\n\n${cmd} --prior-decisions - <<'${PRIOR_DECISIONS_EOF}'\n${o.priorDecisions}\n${PRIOR_DECISIONS_EOF}`,
+    STEP,
   )
 }
 
@@ -213,7 +215,7 @@ function startIssued(o, where, version) {
  * (`run=`) an answer still missing is handed out again, not counted as a failed attempt; an `--abandoned` task the
  * binary fails at once. @param {string} cmd @returns {string}
  */
-const submitPrompt = cmd => servicePrompt(`Run exactly this one command, ${SUBMIT_TIMEOUT}:\n\n${cmd}`)
+const submitPrompt = cmd => servicePrompt(`Run exactly this one command, ${SUBMIT_TIMEOUT}:\n\n${cmd}`, STEP)
 
 /**
  * A service step: `sent` is the one command its prompt asks run ('' for a script), which names the refused command when
@@ -227,7 +229,28 @@ const submitPrompt = cmd => servicePrompt(`Run exactly this one command, ${SUBMI
  */
 function submitStep(serve, label, title, ...parts) {
   const cmd = submitCommand(...parts)
-  return serve(label, title, submitPrompt(cmd), cmd)
+  return paged(serve, label, title, parts[0], serve(label, title, submitPrompt(cmd), cmd))
+}
+
+/** A page's lines, as the service agent is told them. */
+const PAGE_LINES =
+  "exactly three lines: the craft-out line, the page's one body line copied whole, character for character, never split, wrapped or trimmed however long it is, and the craft-page line"
+/** What a paged command prints: its step whole on one line, or its first page, framed (integrations/shared/cli-review-paged.mjs). */
+const STEP = `either one line of JSON or, when the step is paged, ${PAGE_LINES} —`
+/** What a page step prints (integrations/shared/cli-review-paged.mjs). */
+const PAGE = `${PAGE_LINES} —`
+
+/**
+ * A paged command's step read whole: its answer `got`, then the rest of its step a page at a time, each page its own
+ * step running `craft review page` (integrations/shared/cli-review-paged.mjs; realm @nick/craft, node #625).
+ * @param {Serve} serve @param {string} label @param {string} title @param {string} bin @param {Promise<unknown>} got
+ * @returns {Promise<unknown>}
+ */
+async function paged(serve, label, title, bin, got) {
+  return readPaged(await got, (run, from) => {
+    const cmd = pageCommand(bin, run, from)
+    return serve(`${label}:page`, title, servicePrompt(`Run exactly this one command:\n\n${cmd}`, PAGE), cmd)
+  })
 }
 
 /**
@@ -437,8 +460,10 @@ async function publishAfter(sb, o, craftVersion, serve) {
   if ('incomplete' in where) return stoppedAnswer(where.incomplete)
   if (where.note) sb.log(where.note)
   const comment = commentCommand(where, o)
-  const read = resumed(o.run, await serve('step:comment', 'Submit', submitPrompt(comment), comment), 'published on its PR')
-  if ('error' in read) return unpublished(o.run, read, where.bin)
+  const got = await paged(serve, 'step:comment', 'Submit', where.bin, serve('step:comment', 'Submit', submitPrompt(comment), comment))
+  const read = resumed(o.run, got, 'published on its PR')
+  // The comment ran when only a page step of its step stopped — a refusal there included: what it posted is unknown.
+  if ('error' in read) return unreadRun(got) === null ? unpublished(o.run, read, where.bin) : unknownPublication(o.run, read.error)
   if (!read.step.done) return unknownPublication(o.run, `the binary answered with no finished run: ${JSON.stringify(read.step).slice(0, 200)}`)
   const lost = read.step.filing?.lost ?? []
   for (const line of lost) sb.log(`⚠️ telemetry: ${line}`)
@@ -466,8 +491,9 @@ const notFinishedHint = (run, error) =>
     : ''
 
 /**
- * A publication whose step was lost — cut off, its agent dead, its output unreadable — after the binary may have posted:
- * no refusal, so the outcome is said unknown, with where to read it.
+ * A publication whose step was lost — cut off, its agent dead, its output unreadable, or a page of its step stopped,
+ * the harness's refusal of a page step included — after the binary may have posted: the outcome is said unknown, with
+ * why and where to read it.
  * @param {string} run @param {string} error @returns {string}
  */
 const unknownPublication = (run, error) =>
@@ -530,7 +556,7 @@ async function drive(sb, o, craftVersion, service, recorder) {
   const filedThrough = filedRoot(sb, where, recorder)
   const started = await opening(sb, o, craftVersion, serve, { ...where, filedThrough })
   if ('argument' in started) return { refused: started.argument }
-  if ('error' in started) return { stopped: stoppedAt('', started, 'refused' in started ? '' : o.run, where.bin) }
+  if ('error' in started) return { stopped: stoppedAt('', started, runOfStop(started, o), where.bin) }
   // The record is keyed to the repository the run reviews, which the binary names: a resumed run's, and a start's that
   // reviews elsewhere than the checkout given — craft's own worktree of the PR given (realm @nick/craft, node #517).
   const reviews = started.step.repo
@@ -541,18 +567,35 @@ async function drive(sb, o, craftVersion, service, recorder) {
 }
 
 /**
+ * The run directory a stopped opening names: none for a run the binary refused to resume; a start's that made its run
+ * though its step was not read; else the one given.
+ * @param {{ refused?: true, run?: string }} started @param {Options} o @returns {string}
+ */
+const runOfStop = (started, o) => (started.refused ? '' : (started.run ?? o.run))
+
+/**
  * The run's first step: a resume's (`resumed`), or a start's — or why its binary refused an argument before any work
  * (`argument`).
  * @param {Watched} sb @param {Options} o @param {string} craftVersion @param {Serve} serve
  * @param {{ bin: string, root: string, filedThrough: string }} where
- * @returns {Promise<{ step: Step } | { error: string, harness?: string, refused?: true } | { argument: string }>}
+ * @returns {Promise<{ step: Step } | { error: string, harness?: string, refused?: true, run?: string } | { argument: string }>}
  */
 async function opening(sb, o, craftVersion, serve, where) {
   if (o.run)
     return resumed(o.run, await submitStep(serve, 'step:resume', 'Start', where.bin, o.run, { resume: true, recordRoot: where.filedThrough }, spentSoFar(sb)))
-  const got = await serve('step:start', 'Start', startPrompt(o, where, craftVersion), startIssued(o, where, craftVersion))
+  const got = await paged(
+    serve,
+    'step:start',
+    'Start',
+    where.bin,
+    serve('step:start', 'Start', startPrompt(o, where, craftVersion), startIssued(o, where, craftVersion)),
+  )
   const argument = argumentRefused(got)
-  return argument ? { argument } : readStep(got)
+  if (argument) return { argument }
+  const read = readStep(got)
+  // A start whose step was paged but not read whole still made its run.
+  const run = unreadRun(got)
+  return 'error' in read && run !== null ? { ...read, run } : read
 }
 
 /**
@@ -627,7 +670,7 @@ async function rounds(sb, bin, first, serve, recorder) {
  * @returns {Promise<{ finished: Finished } | { unrecorded: string } | { standing: string } | { unread: Brief }>}
  */
 async function recovered(sb, bin, run, serve, recorder) {
-  const said = await serve('step:status', 'Submit', statusPrompt(bin, run), statusCommand(bin, run))
+  const said = await paged(serve, 'step:status', 'Submit', bin, serve('step:status', 'Submit', statusPrompt(bin, run), statusCommand(bin, run)))
   if (statusUnreadable(said)) return briefly(sb, bin, run, serve, recorder)
   const truth = endedOf(said)
   if (!truth) return { standing: standingOf(said) }
@@ -676,4 +719,4 @@ async function briefly(sb, bin, run, serve, recorder) {
 }
 
 /** The step that asks the binary where the run stands. @param {string} bin @param {string} run @returns {string} */
-const statusPrompt = (bin, run) => servicePrompt(`Run exactly this one command:\n\n${statusCommand(bin, run)}`)
+const statusPrompt = (bin, run) => servicePrompt(`Run exactly this one command:\n\n${statusCommand(bin, run)}`, STEP)

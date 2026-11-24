@@ -149,7 +149,7 @@ test('the answer opens with a verdict block the report readers parse, naming why
 
 test("the caller's depth reaches `craft review start`; without one the binary's default stands", async () => {
   const light = await cliRun({ args: { depth: 'light' } })
-  assert.match(startOf(light.engine), /review start --cwd '[^']+' --depth light --record-root '\/opt\/plugin' --record '[^']+'$/m)
+  assert.match(startOf(light.engine), /review start --cwd '[^']+' --depth light --record-root '\/opt\/plugin' --record '[^']+' --paged$/m)
   const none = await cliRun()
   assert.doesNotMatch(startOf(none.engine), /--depth/)
   const file = fs.readdirSync(none.store).find(f => f.endsWith('.json'))
@@ -261,7 +261,7 @@ test('a round over the fix commits alone files lensScope delta, which the extern
 
 test('fresh, delta and fullEvery reach `craft review start`; the binary picks the round to build on; a bad one runs nothing', async () => {
   const chained = await cliRun({ args: { fresh: true, fullEvery: 0 } })
-  assert.match(startOf(chained.engine), /review start --cwd '[^']+' --fresh --full-every 0 --record-root '\/opt\/plugin' --record '[^']+'$/m)
+  assert.match(startOf(chained.engine), /review start --cwd '[^']+' --fresh --full-every 0 --record-root '\/opt\/plugin' --record '[^']+' --paged$/m)
   // addressing-findings' re-review of the fix commits says it is a delta, so the binary never approves it.
   const delta = await cliRun({ args: { fresh: true, fullEvery: 0, delta: true } })
   assert.match(startOf(delta.engine), /review start --cwd '[^']+' --fresh --delta --full-every 0 --record-root/m)
@@ -291,7 +291,7 @@ test("strict and the launcher's priorDecisions reach `craft review start`, the l
   const prompt = startOf(run.engine)
   assert.match(
     prompt,
-    /review start --cwd '[^']+' --strict --record-root '\/opt\/plugin' --record '[^']+' --prior-decisions - <<'CRAFT_PRIOR_DECISIONS'\n.*\nCRAFT_PRIOR_DECISIONS$/m,
+    /review start --cwd '[^']+' --strict --record-root '\/opt\/plugin' --record '[^']+' --paged --prior-decisions - <<'CRAFT_PRIOR_DECISIONS'\n.*\nCRAFT_PRIOR_DECISIONS$/m,
   )
   assert.deepEqual(JSON.parse(String(/<<'CRAFT_PRIOR_DECISIONS'\n(.*)\n/.exec(prompt)?.[1])), rejected, 'the list reaches the binary whole, one line of JSON')
   const file = fs.readdirSync(run.store).find(f => f.endsWith('.json'))
@@ -308,7 +308,7 @@ test("strict and the launcher's priorDecisions reach `craft review start`, the l
 
 test('unitScope reaches `craft review start` as --unit-scope only when true; anything but a boolean is refused', async () => {
   const on = await cliRun({ args: { unitScope: true } })
-  assert.match(startOf(on.engine), /review start --cwd '[^']+' --unit-scope --record-root '\/opt\/plugin' --record '[^']+'$/m)
+  assert.match(startOf(on.engine), /review start --cwd '[^']+' --unit-scope --record-root '\/opt\/plugin' --record '[^']+' --paged$/m)
   const off = await cliRun({ args: { unitScope: false } })
   assert.doesNotMatch(startOf(off.engine), /--unit-scope/)
   const bad = await runEngine('review', {
@@ -320,10 +320,10 @@ test('unitScope reaches `craft review start` as --unit-scope only when true; any
 
 test('extraLenses reaches `craft review start` as --extra-lenses: a list joined, false or [] as off, absent as nothing', async () => {
   const named = await cliRun({ args: { extraLenses: ['reviewer', "it's"] } })
-  assert.match(startOf(named.engine), /review start --cwd '[^']+' --extra-lenses 'reviewer,it'\\''s' --record-root '\/opt\/plugin' --record '[^']+'$/m)
+  assert.match(startOf(named.engine), /review start --cwd '[^']+' --extra-lenses 'reviewer,it'\\''s' --record-root '\/opt\/plugin' --record '[^']+' --paged$/m)
   for (const off of [false, []]) {
     const run = await cliRun({ args: { extraLenses: off } })
-    assert.match(startOf(run.engine), /review start --cwd '[^']+' --extra-lenses 'off' --record-root '\/opt\/plugin' --record '[^']+'$/m)
+    assert.match(startOf(run.engine), /review start --cwd '[^']+' --extra-lenses 'off' --record-root '\/opt\/plugin' --record '[^']+' --paged$/m)
   }
   const plain = await cliRun()
   assert.doesNotMatch(startOf(plain.engine), /--extra-lenses/, 'absent: the binary decides, discovering on a light pass')
@@ -336,7 +336,7 @@ test('extraLenses reaches `craft review start` as --extra-lenses: a list joined,
 
 test('gate=false starts the binary with --no-gate, so no tool builds the branch; any other value is refused', async () => {
   const off = await cliRun({ args: { gate: false } })
-  assert.match(startOf(off.engine), /review start --cwd '[^']+' --no-gate --record-root '\/opt\/plugin' --record '[^']+'$/m)
+  assert.match(startOf(off.engine), /review start --cwd '[^']+' --no-gate --record-root '\/opt\/plugin' --record '[^']+' --paged$/m)
   const on = await cliRun({ args: { gate: true } })
   assert.doesNotMatch(startOf(on.engine), /--no-gate/)
   const bad = await runEngine('review', { args: { craftBin: '/opt/craft', gate: 'off' }, script: { 'log-run': { ok: true, output: ['wrote /store/r.json'] } } })
@@ -365,7 +365,7 @@ test('comment reaches `craft review start` as --comment; the record keeps the so
     error: 'gh pr view failed: HTTP 401',
   }
   const run = await cliRun({ args: { comment: true }, over: { sorting, memoryContradictions, prComments } })
-  assert.match(startOf(run.engine), /review start --cwd '[^']+' --comment --record-root '\/opt\/plugin' --record '[^']+'$/m)
+  assert.match(startOf(run.engine), /review start --cwd '[^']+' --comment --record-root '\/opt\/plugin' --record '[^']+' --paged$/m)
   const file = fs.readdirSync(run.store).find(f => f.endsWith('.json'))
   const rec = JSON.parse(fs.readFileSync(path.join(run.store, String(file)), 'utf8'))
   assert.deepEqual([rec.sorting, rec.prComments], [sorting, prComments])
@@ -435,7 +435,7 @@ test('a lost submit whose run the binary finished and filed ends as the binary l
     ['step:locate', 'step:start', 'lens:a', 'step:submit:1', 'step:status'],
     'no record filed by the driver',
   )
-  assert.match(String(run.calls.at(-1)?.prompt), /\/opt\/craft review status --run '\/tmp\/run-x'$/m)
+  assert.match(String(run.calls.at(-1)?.prompt), /\/opt\/craft review status --run '\/tmp\/run-x' --paged$/m)
   assert.equal(verdictLine(run.report), '⛔ Block')
   assert.doesNotMatch(run.report, /Telemetry lost|stopped at round/)
 })
@@ -535,6 +535,23 @@ test('a finished run whose step and status are too large to copy files no INCOMP
   assert.match(run.report, /The report is \/tmp\/run-x\/report\.md/)
   assert.match(run.report, /could not be read back/)
   assert.doesNotMatch(run.report, /did not finish the run|None reported/)
+})
+
+test('a paged status whose pages could not all be read falls back to the brief status, as a status too large to copy does', async () => {
+  const whole = statusSays({ record: 'filed' }, true).stdout
+  const page = `craft-out /tmp/run-x ${String(whole.length)} 0 10\n${whole.slice(0, 10)}\ncraft-page 10\n`
+  const run = await lostSubmit({
+    'step:status': { exitCode: 0, stderr: '', stdout: page },
+    'step:status:page': { exitCode: 0, stderr: '', stdout: 'craft-out /tmp/run-x' },
+    'step:brief': briefSays('filed'),
+  })
+  assert.deepEqual(
+    run.calls.map(c => c.label),
+    ['step:locate', 'step:start', 'lens:a', 'step:submit:1', 'step:status', 'step:status:page', 'step:status:page', 'step:brief'],
+    'the page asked twice, then the brief status; no INCOMPLETE record',
+  )
+  assert.equal(verdictLine(run.report), '⛔ Block — 1 High')
+  assert.doesNotMatch(run.report, /did not finish the run/)
 })
 
 test('a finished run read only briefly, whose record did not land, has it filed again and confirmed by the brief status', async () => {

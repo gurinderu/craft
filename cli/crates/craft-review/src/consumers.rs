@@ -4,8 +4,9 @@
 //! file and line, within a per-symbol and a per-run budget. It unions the code graph's callers,
 //! when the reviewer's profile says the graph answers and its index is not older than the base,
 //! with a name search, always run, because the graph loses edges, and, for a name too common to
-//! search by text, a structural search of the paths that reach it. Each lens gets the list and
-//! marks every line; the report says which sources built it. Rust symbols only.
+//! search by text, a structural search of the paths that reach it. The run keeps the whole list;
+//! each lens task gets its scope's part of it, cut to a budget, and marks every line it is shown
+//! (realm `@nick/craft`, node #625); the report says which sources built it. Rust symbols only.
 
 use serde::{Deserialize, Serialize};
 
@@ -22,6 +23,7 @@ mod names;
 mod order;
 mod removed;
 mod save;
+mod scope;
 mod section;
 pub(crate) mod source;
 mod symbols;
@@ -33,7 +35,7 @@ pub use graph::{GraphError, Measured, craft_project, graph_found, graph_of};
 pub use make::{build, build_for_metrics, of_checkout};
 pub use save::{keep, prepare};
 pub use section::{gap_line, section};
-pub use text::{confined_block, lens_block, seam_block};
+pub use text::{confined_block, lens_block, seam_block, seam_sites, slice_block};
 
 /// The name search's name in the report and on a site.
 pub const NAME_SEARCH: &str = "name search";
@@ -139,9 +141,6 @@ pub struct Consumers {
     /// How many lines past the whole list's hard cap no file holds.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub capped: usize,
-    /// How many lines the lenses' budget left out of their part.
-    #[serde(default, skip_serializing_if = "is_zero")]
-    pub cut: usize,
     /// Where the whole list is written.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub file: String,

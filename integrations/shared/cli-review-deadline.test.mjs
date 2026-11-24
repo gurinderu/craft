@@ -75,7 +75,7 @@ test("a task agent that never answers is abandoned at its kind's deadline, never
   const submit = String(run.calls.find(c => c.label === 'step:submit:1')?.prompt)
   assert.match(
     submit,
-    /review submit --run '[^']+' --abandoned 'verify' --abandoned 'lens' --agents 3 --output-tokens \d+ --output-tokens-scope turn-delta$/m,
+    /review submit --run '[^']+' --abandoned 'verify' --abandoned 'lens' --agents 3 --output-tokens \d+ --output-tokens-scope turn-delta --paged$/m,
     'the binary is told which tasks were abandoned, so it fails them and never hands them out again',
   )
   const fired = run.logs.filter(l => l.startsWith('⏱️'))
@@ -141,7 +141,7 @@ test('a typed task and its re-run on the default type share one budget: the re-r
   assert.ok(waited >= 89 && waited <= 91, `cut at the task's 90 minutes, not 80 + 90 (${waited})`)
   assert.match(
     String(run.calls.find(c => c.label === 'step:submit:1')?.prompt),
-    /--abandoned 'lens' --agents 2 --output-tokens \d+ --output-tokens-scope turn-delta$/m,
+    /--abandoned 'lens' --agents 2 --output-tokens \d+ --output-tokens-scope turn-delta --paged$/m,
   )
 })
 

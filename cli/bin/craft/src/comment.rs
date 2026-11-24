@@ -11,7 +11,7 @@ use craft_review::filing;
 use craft_review::publish::{self, PostSetup};
 use serde_json::Value;
 
-use crate::steps::{filing_root, print, stamped};
+use crate::steps::{filing_root, stamped};
 
 #[derive(Debug, clap::Args)]
 pub struct CommentArgs {
@@ -26,10 +26,12 @@ pub struct CommentArgs {
     /// none, as `submit --record-root`.
     #[arg(long)]
     pub record_root: Option<PathBuf>,
+    #[command(flatten)]
+    pub paging: crate::paged::Paging,
 }
 
 pub fn comment(args: &CommentArgs) -> Result<ExitCode> {
-    print(&comment_step(args)?)
+    crate::paged::print(&comment_step(args)?, &args.paging)
 }
 
 /// The finished step `comment` prints, with what amending its record did.

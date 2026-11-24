@@ -8,8 +8,14 @@ use super::{Listed, Site};
 
 /// How many lines one symbol keeps.
 pub(super) const PER_SYMBOL: usize = 10;
-/// How many lines the whole list keeps.
-pub(super) const RUN_MAX: usize = 80;
+/// How many lines one lens task's prompt carries (realm `@nick/craft`, node #625): its scope's
+/// part of the list, the rest left in the saved file. Over the run store's runs (180 lens scopes
+/// with consumers), a scope held 25 lines at the median under [`PER_SYMBOL`] and 46 at the 75th
+/// percentile, and lenses marked 79% of the lines they were shown not relevant; 30 keeps 59% of
+/// scopes whole at about 3 KB of prompt, where 80 cost about 10 KB in every task.
+pub(super) const LENS_MAX: usize = 30;
+/// How many lines the seam pass's part keeps.
+pub(super) const SEAM_MAX: usize = 80;
 /// How many lines the saved list holds at most.
 pub(super) const FILE_MAX: usize = 1000;
 

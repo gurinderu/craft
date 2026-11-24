@@ -115,7 +115,7 @@ fn the_name_search_finds_a_function_passed_as_a_value_and_skips_changed_lines() 
 }
 
 #[test]
-fn the_budget_keeps_ten_lines_a_symbol_and_counts_the_rest() {
+fn the_lens_budget_keeps_ten_lines_a_symbol_and_counts_the_rest() {
     let t = tempfile::tempdir().unwrap();
     let calls: String = (0..15)
         .map(|i| format!("fn c{i}() {{ k8s_rule_to_api(1); }}\n"))
@@ -124,13 +124,13 @@ fn the_budget_keeps_ten_lines_a_symbol_and_counts_the_rest() {
     let full = build(&repo, &diff_of(&repo), no_graph());
     assert_eq!(sites(&full, "k8s_rule_to_api").len(), 17);
     let (c, _) = super::keep(&t.path().join("none"), full);
-    assert_eq!(sites(&c, "k8s_rule_to_api").len(), super::order::PER_SYMBOL);
-    assert_eq!(c.cut, 17 - super::order::PER_SYMBOL);
+    // The run keeps every line; each lens task cuts its own part.
+    assert_eq!(sites(&c, "k8s_rule_to_api").len(), 17);
     assert!(lens_block(&c).unwrap().contains("7 more cut by the budget"));
 }
 
 #[test]
-fn the_run_budget_takes_each_symbol_in_turn() {
+fn the_lens_budget_takes_each_symbol_in_turn() {
     let listed = |n: usize| super::Listed {
         name: format!("s{n}"),
         file: String::new(),
@@ -146,10 +146,10 @@ fn the_run_budget_takes_each_symbol_in_turn() {
             .collect(),
     };
     let mut all: Vec<_> = (0..9).map(listed).collect();
-    let cut = super::order::budget(&mut all, super::order::PER_SYMBOL, super::order::RUN_MAX);
-    assert_eq!(cut, 90 - super::order::RUN_MAX);
+    let cut = super::order::budget(&mut all, super::order::PER_SYMBOL, super::order::LENS_MAX);
+    assert_eq!(cut, 90 - super::order::LENS_MAX);
     let kept: Vec<usize> = all.iter().map(|s| s.sites.len()).collect();
-    assert_eq!(kept, vec![9, 9, 9, 9, 9, 9, 9, 9, 8]);
+    assert_eq!(kept, vec![4, 4, 4, 3, 3, 3, 3, 3, 3]);
 }
 
 /// A stand-in code graph: `index_status` answers `indexed_at`, `query_graph` one caller of

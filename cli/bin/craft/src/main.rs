@@ -5,6 +5,7 @@ mod filing_worker;
 mod hook;
 mod init;
 mod memory;
+mod paged;
 mod post;
 mod pr;
 mod printed;
@@ -83,7 +84,7 @@ enum HookCommand {
 #[derive(Subcommand)]
 enum ReviewCommand {
     /// Open a run: compute the diff and print the first tasks.
-    Start(Box<steps::StartArgs>),
+    Start(Box<steps::StartCommand>),
     /// Hand in the answers to a run's pending tasks and print what comes next.
     Submit(steps::SubmitArgs),
     /// Print where a run stands.
@@ -103,6 +104,9 @@ enum ReviewCommand {
     /// Run the whole review in one command: the binary drives its steps itself, each task run as
     /// its own process of the host's CLI (`codex exec`, `pi -p`, `opencode run`), and prints the verdict.
     Run(Box<run::RunArgs>),
+    /// Print the page of a step `--paged` wrote, from an offset in UTF-16 code units on: the
+    /// Claude Code driver reads a large step this way, a page at a time.
+    Page(paged::PageArgs),
 }
 
 /// Which way an agent is run.
@@ -160,6 +164,7 @@ async fn dispatch() -> anyhow::Result<ExitCode> {
         Command::Review(ReviewCommand::Comment(args)) => comment::comment(&args),
         Command::Review(ReviewCommand::Post(args)) => post::post(&args),
         Command::Review(ReviewCommand::Gate(args)) => steps::gate(&args),
+        Command::Review(ReviewCommand::Page(args)) => paged::page_of(&args),
         Command::Review(ReviewCommand::Run(args)) => run::run(*args).await,
         Command::Init(args) => init::init(&args),
         Command::Hook(HookCommand::PrOpened(args)) => hook::pr_opened(&args),

@@ -45,14 +45,13 @@ fn the_whole_list_is_saved_and_the_lenses_get_the_budgeted_part() {
     let saved: Consumers =
         serde_json::from_str(&std::fs::read_to_string(dir.join(FILE)).unwrap()).unwrap();
     assert_eq!(saved.lines(), 17);
-    assert_eq!(lens.lines(), order::PER_SYMBOL);
-    assert_eq!(lens.cut, 7);
+    assert_eq!(lens.lines(), 17);
     let path = dir.join(FILE).display().to_string();
     assert_eq!(lens.file, path);
     assert!(
         lens_block(&lens)
             .unwrap()
-            .contains(&format!("7 more cut by the budget, all in `{path}`"))
+            .contains(&format!("7 more cut by the budget to keep this prompt small, not yours to mark: the whole list is `{path}`"))
     );
 }
 
@@ -77,7 +76,6 @@ fn the_hard_cap_counts_what_no_file_holds() {
     let c = Consumers {
         sources: vec!["name search".into()],
         symbols: all,
-        cut: 3,
         capped: 200,
         file: "/run/consumers.json".into(),
         ..Consumers::default()

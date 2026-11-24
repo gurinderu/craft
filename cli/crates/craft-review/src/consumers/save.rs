@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use super::{Consumers, FILE, order};
+use super::{Consumers, FILE};
 
 /// The list a thread built for the run in `dir`, kept as [`keep`] keeps it; a list saying the build
 /// stopped when its thread panicked (realm @nick/craft, node #529).
@@ -13,8 +13,9 @@ pub fn prepare(dir: &Path, built: std::thread::Result<Consumers>) -> (Consumers,
     keep(dir, full)
 }
 
-/// Saves `full` as `dir`/[`FILE`] and gives the lenses' part of it, cut to the budgets, with the
-/// file's path; a note when the file could not be written, its path then left empty.
+/// Saves `full` as `dir`/[`FILE`] and gives it back with the file's path, each lens task cutting
+/// its own part ([`super::text`]); a note when the file could not be written, its path then left
+/// empty.
 #[must_use]
 pub fn keep(dir: &Path, full: Consumers) -> (Consumers, Option<String>) {
     let mut lens = full;
@@ -24,7 +25,6 @@ pub fn keep(dir: &Path, full: Consumers) -> (Consumers, Option<String>) {
     if note.is_some() {
         lens.file.clear();
     }
-    lens.cut = order::budget(&mut lens.symbols, order::PER_SYMBOL, order::RUN_MAX);
     (lens, note)
 }
 

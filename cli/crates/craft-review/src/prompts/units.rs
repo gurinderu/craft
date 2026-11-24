@@ -13,6 +13,7 @@
 use super::lens::{common_vars, lens_prompt_in, lens_spec, rust_only};
 use super::{LensIn, PromptContext, repo_directive, shq};
 use crate::content::{self, ContentError, vars};
+use crate::plan::Plan;
 use crate::profile::UnitWords;
 use crate::units::Slice;
 
@@ -81,8 +82,15 @@ pub fn slice_lens_prompt(
     slice: &Slice,
 ) -> Result<String, ContentError> {
     let pathspec = slice_pathspec(slice);
+    // A slice's lens judges its files, not the change's stated intent: the commit log stays with
+    // the whole-diff lenses (realm `@nick/craft`, node #625).
+    let plan = Plan {
+        spec: String::new(),
+        ..at.plan.clone()
+    };
     let at = LensIn {
         pathspec: &pathspec,
+        plan: &plan,
         ..*at
     };
     let count = slice.files.len().to_string();
@@ -96,7 +104,10 @@ pub fn slice_lens_prompt(
             "lens-slice",
             &vars([("key", slice.key.clone()), ("count", count)]),
         )?;
-        return lens_prompt_in(ctx, &at, block);
+        let consumers = rust_only(at.profile, || {
+            crate::consumers::slice_block(&ctx.consumers, &slice.files)
+        })?;
+        return lens_prompt_in(ctx, &at, block, Some(consumers));
     };
     let mut v = common_vars(ctx, &at, lens_spec(&at)?)?;
     v.extend(vars([

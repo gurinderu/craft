@@ -333,11 +333,13 @@ dependencies = [
  "craft-store",
  "craft-tui",
  "jsonschema",
+ "nix 0.31.3",
  "regex",
  "serde",
  "serde_json",
  "tempfile",
  "tokio",
+ "windows-sys",
 ]
 
 [[package]]
