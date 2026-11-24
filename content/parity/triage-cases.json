@@ -164,7 +164,7 @@
         "record": {
           "schemaVersion": 1,
           "runtime": "claude-code",
-          "craftVersion": "0.58.0",
+          "craftVersion": "0.59.0",
           "kind": "workflow",
           "name": "triage-findings",
           "verdict": "",
@@ -319,7 +319,7 @@
         "record": {
           "schemaVersion": 1,
           "runtime": "claude-code",
-          "craftVersion": "0.58.0",
+          "craftVersion": "0.59.0",
           "kind": "workflow",
           "name": "triage-findings",
           "verdict": "",
@@ -491,7 +491,7 @@
         "record": {
           "schemaVersion": 1,
           "runtime": "claude-code",
-          "craftVersion": "0.58.0",
+          "craftVersion": "0.59.0",
           "kind": "workflow",
           "name": "triage-findings",
           "verdict": "",
@@ -704,7 +704,7 @@
         "record": {
           "schemaVersion": 1,
           "runtime": "claude-code",
-          "craftVersion": "0.58.0",
+          "craftVersion": "0.59.0",
           "kind": "workflow",
           "name": "triage-findings",
           "verdict": "",
@@ -871,7 +871,7 @@
         "record": {
           "schemaVersion": 1,
           "runtime": "claude-code",
-          "craftVersion": "0.58.0",
+          "craftVersion": "0.59.0",
           "kind": "workflow",
           "name": "triage-findings",
           "verdict": "",
@@ -1006,7 +1006,7 @@
         "record": {
           "schemaVersion": 1,
           "runtime": "claude-code",
-          "craftVersion": "0.58.0",
+          "craftVersion": "0.59.0",
           "kind": "workflow",
           "name": "triage-findings",
           "verdict": "",
@@ -1159,7 +1159,7 @@
         "record": {
           "schemaVersion": 1,
           "runtime": "claude-code",
-          "craftVersion": "0.58.0",
+          "craftVersion": "0.59.0",
           "kind": "workflow",
           "name": "triage-findings",
           "verdict": "",
@@ -1463,7 +1463,7 @@
         "record": {
           "schemaVersion": 1,
           "runtime": "claude-code",
-          "craftVersion": "0.58.0",
+          "craftVersion": "0.59.0",
           "kind": "workflow",
           "name": "triage-findings",
           "verdict": "",
