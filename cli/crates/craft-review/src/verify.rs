@@ -55,8 +55,9 @@ const FAILURE_PATH_RULES: [&str; 3] = ["REC-", "CON-", "ERR-"];
 
 /// The route `f` takes: Critical and High alone, Medium batched, a Low on a failure path batched
 /// when a harm it claims could make it must-fix — only a verified harm can raise it, so another
-/// buys no verifier (realm @nick/craft, node #407) — other Lows and Info skipped unless they cite
-/// a rule that blocks on sight.
+/// buys no verifier (realm @nick/craft, node #407) — a weak assertion still at Low or Info batched,
+/// its verifier asked whether the change's promise is unmet (node #619), other Lows and Info
+/// skipped unless they cite a rule that blocks on sight.
 pub(crate) fn route(f: &Value) -> Route {
     let sev = f.get("severity").and_then(Value::as_str).unwrap_or("");
     let rule = f.get("ruleId").and_then(Value::as_str).unwrap_or("");
@@ -65,6 +66,7 @@ pub(crate) fn route(f: &Value) -> Route {
         "Medium" => Route::Batch,
         _ if CRITICAL_TIER_RULES.contains(&rule) => Route::Individual,
         "Low" if on_failure_path(f) && harm::raise::may_be_must_fix(f) => Route::Batch,
+        _ if harm::promised(f) => Route::Batch,
         _ => Route::Skip,
     }
 }
@@ -102,11 +104,14 @@ fn lens_agreed(f: &Value) -> bool {
 }
 
 /// The route `f` takes in a run, as `routeOf` in `integrations/shared/review-verify-pool.mjs`: a light pass
-/// verifies only Medium and above (`depthVerifyTier`), and two or more lenses on one defect buy a
-/// verifier when the harm it names could make it must-fix (realm @nick/craft, node #407).
+/// verifies only Medium and above (`depthVerifyTier`) — but a weak assertion still at Low or Info,
+/// whose only way to its Medium floor is a verifier confirming the change's unmet promise (realm
+/// @nick/craft, node #619) — and two or more lenses on one defect buy a verifier when the harm it
+/// names could make it must-fix (node #407).
 pub(crate) fn route_in(f: &Value, light: bool) -> Route {
     let sev = f.get("severity").and_then(Value::as_str).unwrap_or("");
-    let tier = if light && !matches!(sev, "Critical" | "High" | "Medium") {
+    let verified = matches!(sev, "Critical" | "High" | "Medium") || harm::promised(f);
+    let tier = if light && !verified {
         Route::Skip
     } else if crate::complexity::is_metric(f) {
         // One verifier re-reads its metrics, whatever its severity, as `buildVerifyJobs` sends it.

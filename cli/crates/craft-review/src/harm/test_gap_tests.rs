@@ -6,7 +6,7 @@ use serde_json::{Value, json};
 use super::{raise_weak_floor, verifier_lines};
 use crate::harm::cap;
 use crate::settle::{finalize, tier_from_votes};
-use crate::verify::{Route, route};
+use crate::verify::{Route, route, route_in};
 
 fn gap(extra: &Value) -> Value {
     let mut f = json!({"severity": "Low", "title": "t", "file": "src/a.rs", "line": 3, "why": "w",
@@ -46,11 +46,12 @@ fn a_weak_assertion_is_held_to_should_fix() {
 }
 
 #[test]
-fn a_weak_assertion_of_text_or_self_healing_stays_low() {
+fn a_weak_assertion_of_text_or_self_healing_stays_low_and_goes_to_a_verifier_for_its_promise() {
     for level in ["text", "self-healing", "none"] {
         let f = gap(&json!({"harmLevel": level}));
         assert_eq!(raise_weak_floor(&f), f, "{level}");
-        assert_eq!(route(&f), Route::Skip, "{level}");
+        // Its verifier may confirm the change's unmet promise (realm @nick/craft, node #619).
+        assert_eq!(route(&f), Route::Batch, "{level}");
     }
     let op = raise_weak_floor(&gap(&json!({"harmLevel": "operator-recovery"})));
     assert_eq!(op["severity"], "Medium");
@@ -249,5 +250,22 @@ fn a_verified_harm_that_is_not_must_fix_raises_nothing() {
     ] {
         let settled = finalize(&confirmed(&f, "operator-recovery"));
         assert_eq!(settled["severity"], "Low", "{settled}");
+    }
+}
+
+#[test]
+fn a_low_weak_assertion_is_routed_even_on_a_light_pass_and_raised_by_its_confirmed_promise() {
+    let f = &crate::dedup::prepare(&[gap(&json!({"harmLevel": "text"}))], &[])[0];
+    assert_eq!(f["severity"], "Low", "the floor did not raise it: {f}");
+    for light in [true, false] {
+        assert_eq!(route_in(f, light), Route::Batch, "light {light}");
+    }
+    let promise = vote(true, "intent-unmet");
+    let settled = finalize(&tier_from_votes(f, &[Some(promise.clone()), Some(promise)]));
+    assert_eq!(settled["severity"], "Medium", "{settled}");
+    // A weak assertion naming no regression carries no promise of the change: Low, unrouted.
+    let unnamed = gap(&json!({"harmLevel": "text", "regression": ""}));
+    for light in [true, false] {
+        assert_eq!(route_in(&unnamed, light), Route::Skip, "light {light}");
     }
 }
