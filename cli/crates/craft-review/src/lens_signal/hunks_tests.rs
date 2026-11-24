@@ -97,3 +97,21 @@ diff --git a/x.sh b/x.sh
 ";
     assert_eq!(text(&parse(diff)["x.sh"]), ["-- a/y", "+++ b/z"]);
 }
+
+#[test]
+fn added_branch_lines_are_counted_per_file() {
+    let diff = "\
+diff --git a/src/b.rs b/src/b.rs
+--- a/src/b.rs
++++ b/src/b.rs
+@@ -1,1 +1,6 @@
+ fn f() {
++    if a {
++    } else {
++    match x {
+ };
+";
+    let b = &parse(diff)["src/b.rs"];
+    assert_eq!(b.added, 3);
+    assert_eq!(b.branches, 3, "if, else and match");
+}

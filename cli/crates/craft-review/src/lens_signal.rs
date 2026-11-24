@@ -3,10 +3,12 @@
 //! from the function-context diff of the part's source files — the lines the change added, those
 //! it removed and the function around them ([`hunks`]), so an edit inside an existing money path,
 //! or a deleted guard, shows it; a data file ([`crate::coverage::is_data`]) shows none:
-//! - `money`: an identifier naming money (amount, price, balance, ledger, charge, total, cents…);
-//! - `loop-io`: an allocation or an I/O call in the first lines of a loop — a hot loop is not
-//!   visible in a diff, what a loop pays per turn is;
-//! - `new-or-large-file`: a source file the change adds, or one it adds [`LARGE`] lines or more to.
+//! - `money`: an identifier naming money (amount, price, balance, ledger, charge, total, cents,
+//!   checkout, cart, purchase, orders, subscription, donation…);
+//! - `loop-io`: an allocation or an I/O call in the body of a loop or an iterator chain — a hot
+//!   loop is not visible in a diff, what a loop pays per turn is;
+//! - `new-or-large-file`: a source file the change adds, one it adds [`LARGE`] lines or more to, or
+//!   one it adds [`BRANCH_MIN`] or more branch-introducing lines to.
 //!
 //! Not gated: Rust's safety lens, whose subject (reachable panics, build-profile arithmetic, a
 //! load-bearing `debug_assert!`) has no word to see; the concurrency lenses, whose subject takes
@@ -35,18 +37,30 @@ pub(crate) const SIGNALS: [&str; 3] = ["money", "loop-io", "new-or-large-file"];
 /// Added lines in one file from which on the change is large for `new-or-large-file`.
 pub(crate) const LARGE: usize = 150;
 
+/// How many added lines that introduce a branch make a small change count for `new-or-large-file`
+/// even when it is not new and not large: a change that grows control flow is what to maintain.
+pub(crate) const BRANCH_MIN: usize = 4;
+
 /// Past this many bytes of diff text the signals are not read, and so unknown.
 const DIFF_MAX: usize = 64 << 20;
 
 /// The signals one source file's change shows: its hunks' `lines` with their positions, how many
-/// lines it `added`, and whether it is `new`.
-pub(crate) fn of_file(lines: &[(u32, String)], added: usize, new: bool) -> Vec<&'static str> {
+/// lines it `added`, how many of those `branches` introduce control flow, and whether it is `new`.
+pub(crate) fn of_file(
+    lines: &[(u32, String)],
+    added: usize,
+    new: bool,
+    branches: usize,
+) -> Vec<&'static str> {
     let any = |f: fn(&str) -> bool| lines.iter().any(|(_, l)| f(l));
     let mut out = Vec::new();
     for (on, s) in [
         (any(words::is_money), "money"),
         (loop_io(lines), "loop-io"),
-        (new || added >= LARGE, "new-or-large-file"),
+        (
+            new || added >= LARGE || branches >= BRANCH_MIN,
+            "new-or-large-file",
+        ),
     ] {
         if on {
             out.push(s);
@@ -80,7 +94,7 @@ pub(crate) fn of_part(
         let change = changes(f)?;
         let lines = change.lines?;
         let test = is_test_path(f);
-        for s in of_file(&lines, change.added, change.new) {
+        for s in of_file(&lines, change.added, change.new, change.branches) {
             if !(test && s == "new-or-large-file") {
                 seen.push(s);
             }
