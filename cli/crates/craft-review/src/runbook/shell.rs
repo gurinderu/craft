@@ -29,12 +29,38 @@ impl Heredoc {
     }
 }
 
+/// What a command's lines leave open from one to the next: a quote, and the parentheses and
+/// arithmetic `((` a `\` continuation carries on.
+#[derive(Debug, PartialEq, Eq, Default)]
+pub(super) struct Open {
+    pub quote: Option<char>,
+    /// The parentheses open.
+    depth: usize,
+    /// The depth each open arithmetic `((` was opened at.
+    arithmetic: Vec<usize>,
+}
+
 /// What one line left open: the quote still open at its end, and the here-documents it opened, in
 /// order.
+#[cfg(test)]
 #[derive(Debug, PartialEq, Eq, Default)]
 pub(super) struct Opened {
     pub quote: Option<char>,
     pub heredocs: Vec<Heredoc>,
+}
+
+/// [`read`] of one line begun inside `quote`, nothing else open.
+#[cfg(test)]
+pub(super) fn scan(line: &str, quote: Option<char>) -> Opened {
+    let mut open = Open {
+        quote,
+        ..Open::default()
+    };
+    let heredocs = read(line, &mut open);
+    Opened {
+        quote: open.quote,
+        heredocs,
+    }
 }
 
 /// Whether `c` ends an unquoted word.
@@ -63,34 +89,35 @@ fn heredoc(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> Option<Hered
     })
 }
 
-/// Reads `line`, begun inside `quote` (the quote a former line left open, if any).
-pub(super) fn scan(line: &str, quote: Option<char>) -> Opened {
-    let mut out = Opened {
+/// Reads `line` of a command, begun with what its former lines left `open`, which it updates: the
+/// here-documents it opens, in order.
+pub(super) fn read(line: &str, open: &mut Open) -> Vec<Heredoc> {
+    let mut heredocs = Vec::new();
+    let Open {
         quote,
-        heredocs: Vec::new(),
-    };
-    // The parentheses open, and the depth each open arithmetic `((` was opened at.
-    let (mut depth, mut arithmetic) = (0usize, Vec::new());
+        depth,
+        arithmetic,
+    } = open;
     let mut chars = line.chars().peekable();
     let mut word_start = true;
     while let Some(c) = chars.next() {
-        match (out.quote, c) {
-            (Some('\''), '\'') | (Some('"'), '"') => out.quote = None,
+        match (*quote, c) {
+            (Some('\''), '\'') | (Some('"'), '"') => *quote = None,
             (Some('"') | None, '\\') => {
                 chars.next();
             }
-            (None, '\'' | '"') => out.quote = Some(c),
+            (None, '\'' | '"') => *quote = Some(c),
             (None, '#') if word_start => break,
             (None, '(') => {
                 if chars.next_if_eq(&'(').is_some() {
-                    arithmetic.push(depth);
-                    depth += 1;
+                    arithmetic.push(*depth);
+                    *depth += 1;
                 }
-                depth += 1;
+                *depth += 1;
             }
             (None, ')') => {
-                depth = depth.saturating_sub(1);
-                if arithmetic.last().is_some_and(|at| depth <= *at) {
+                *depth = depth.saturating_sub(1);
+                if arithmetic.last().is_some_and(|at| *depth <= *at) {
                     arithmetic.pop();
                 }
             }
@@ -100,13 +127,13 @@ pub(super) fn scan(line: &str, quote: Option<char>) -> Opened {
                     && chars.next_if_eq(&'<').is_none()
                     && arithmetic.is_empty() =>
             {
-                out.heredocs.extend(heredoc(&mut chars));
+                heredocs.extend(heredoc(&mut chars));
             }
             _ => {}
         }
-        word_start = out.quote.is_none() && ends_word(c);
+        word_start = quote.is_none() && ends_word(c);
     }
-    out
+    heredocs
 }
 
 #[cfg(test)]

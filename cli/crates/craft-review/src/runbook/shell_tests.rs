@@ -113,3 +113,8 @@ fn an_arithmetic_shift_opens_no_here_document() {
         opened(None, &["EOF"])
     );
 }
+
+#[test]
+fn a_here_document_inside_a_command_substitution_still_opens() {
+    assert_eq!(scan("ROWS=$(psql <<SQL", None), opened(None, &["SQL"]));
+}

@@ -158,3 +158,11 @@ fn an_indented_delimiter_closes_only_a_dashed_here_document() {
     let dashed = "```sh\ncat <<-EOF > x\n\tEOF\nkubectl delete pod p\n```\n";
     assert_eq!(lines(dashed), [1, 4]);
 }
+
+#[test]
+fn shell_arithmetic_is_carried_across_a_continued_line() {
+    // `<< 2` on the continued line is the shift of the `$((` above it, opening no here-document,
+    // so the kubectl line after it is a command of its own.
+    let text = "```sh\necho $(( 1 \\\n  << 2 ))\nkubectl get pods\n```\n";
+    assert_eq!(lines(text), [1, 4]);
+}

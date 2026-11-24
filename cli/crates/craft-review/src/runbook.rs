@@ -24,8 +24,8 @@ use markdown::ShellBlock;
 struct Pending {
     lines: Vec<u32>,
     text: String,
-    /// The quote a line left open.
-    quote: Option<char>,
+    /// What a line left open: a quote, the parentheses and arithmetic a `\` carries on.
+    open: shell::Open,
     /// The delimiters of the here-documents opened and not yet closed, the next body's first.
     heredocs: std::collections::VecDeque<shell::Heredoc>,
     /// Whether the command line ended and its here-document bodies are being read.
@@ -51,10 +51,8 @@ impl Pending {
             }
         }
         self.lines.push(n);
-        let opened = shell::scan(t, self.quote);
-        self.quote = opened.quote;
-        self.heredocs.extend(opened.heredocs);
-        let escaped = self.quote.is_none() && t.ends_with('\\');
+        self.heredocs.extend(shell::read(t, &mut self.open));
+        let escaped = self.open.quote.is_none() && t.ends_with('\\');
         let body = if escaped {
             t.strip_suffix('\\').unwrap_or(t)
         } else {
@@ -62,7 +60,7 @@ impl Pending {
         };
         self.text.push_str(body);
         self.text.push(' ');
-        if escaped || self.quote.is_some() {
+        if escaped || self.open.quote.is_some() {
             return;
         }
         if self.heredocs.is_empty() {
