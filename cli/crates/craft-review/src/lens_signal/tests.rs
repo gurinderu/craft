@@ -28,6 +28,12 @@ fn money_words_fire_whole_never_inside_another_word() {
         "    fn debit(&mut self, cost: u64) {",
         "    let sats = to_btc(gwei);",
         "    if paid { withdraw(subtotal - discount) }",
+        "    let USDAmount = bill(payer, payee);",
+        "    let GBPValue = x;",
+        "    let rateInUSD = x;",
+        "    let v2Amount = x;",
+        "    settle(revenue, salary, gbp, jpy, eth, usdc);",
+        "    let x = transferred + invoiced + priced;",
     ] {
         assert_eq!(fires(l), ["money"], "{l}");
     }
@@ -37,35 +43,7 @@ fn money_words_fire_whole_never_inside_another_word() {
         "    let amountless = 1;",
         "    let feeling = 2;",
         "    let weighted = paint();",
-    ] {
-        assert!(fires(l).is_empty(), "{l}");
-    }
-}
-
-#[test]
-fn threads_spawns_awaits_locks_atomics_and_channels_fire_the_concurrency_signal() {
-    for l in [
-        "    std::thread::spawn(move || run());",
-        "    tokio::spawn(async move { x });",
-        "    let m = Mutex::new(0);",
-        "    let g = a.lock().unwrap();",
-        "    let shared: Arc<State> = s;",
-        "    let v = fetch_it().await;",
-        "    pub async fn run() {",
-        "    rt.block_on(work());",
-        "    std::thread::sleep(d);",
-        "    tokio::join!(a, b);",
-        "    let n = AtomicUsize::new(0);",
-        "    let (tx, rx) = mpsc::channel();",
-        "    await Promise.all(jobs);",
-        "    go func() { done <- true }()",
-    ] {
-        assert_eq!(fires(l), ["concurrency"], "{l}");
-    }
-    for l in [
-        "    a.cmp(&b) == std::cmp::Ordering::Less",
-        "    let child = spawn(\"git\");",
-        "    let clock = locked_until(x);",
+        "    let USDCASE = 1;",
     ] {
         assert!(fires(l).is_empty(), "{l}");
     }
@@ -138,8 +116,12 @@ fn a_part_reads_its_source_files_each_signal_once_in_order_and_skips_data_and_te
         move |f: &str| match f {
             "src/pay.rs" => Some(known(&["let amount = 1;"], 1, f == fresh)),
             "src/pool.rs" => Some(known(
-                &["let m = Mutex::new(0);", "let price = 2;"],
-                2,
+                &[
+                    "for x in xs {",
+                    "    out.push(x.clone());",
+                    "let price = 2;",
+                ],
+                3,
                 false,
             )),
             "tests/new_test.rs" => Some(known(&["fn t() {}"], LARGE, true)),
@@ -148,12 +130,12 @@ fn a_part_reads_its_source_files_each_signal_once_in_order_and_skips_data_and_te
     };
     assert_eq!(
         of_part(&files, &changes("")),
-        Some(vec!["money".to_owned(), "concurrency".to_owned()]),
+        Some(vec!["money".to_owned(), "loop-io".to_owned()]),
         "a data file is never asked for; a test file grown new and large maintains nothing"
     );
     assert_eq!(
         of_part(&files, &changes("src/pay.rs")).unwrap(),
-        ["money", "concurrency", "new-or-large-file"]
+        ["money", "loop-io", "new-or-large-file"]
     );
 }
 
@@ -188,19 +170,19 @@ fn a_source_file_with_no_text_or_missing_from_the_diff_leaves_its_part_unknown()
 #[test]
 fn a_real_change_marks_each_track_from_its_context_and_removals() {
     let t = tempfile::tempdir().unwrap();
-    let locked = "fn a(m: &Mutex<u8>) {\n    let g = m.lock().unwrap();\n    let x = 1;\n}\n";
-    let guarded = "export function pay(balance: number) {\n  if (balance < 0) {\n    throw new Error();\n  }\n  return 1;\n}\n";
+    let looped = "fn a(xs: &[u8]) {\n    for x in xs {\n        let v = x.clone();\n        use_it(v);\n    }\n}\n";
+    let guarded = "export function f(n: number) {\n  if (balance < 0) {\n    throw new Error();\n  }\n  return n;\n}\n";
     let diff = change(
         t.path(),
-        &[("src/lib.rs", locked), ("web/app.ts", guarded)],
+        &[("src/lib.rs", looped), ("web/app.ts", guarded)],
         &[
             (
                 "src/lib.rs",
-                "fn a(m: &Mutex<u8>) {\n    let g = m.lock().unwrap();\n    let x = 2;\n}\n",
+                "fn a(xs: &[u8]) {\n    for x in xs {\n        let v = x.clone();\n        use_it(v, 1);\n    }\n}\n",
             ),
             (
                 "web/app.ts",
-                "export function pay(n: number) {\n  return 1;\n}\n",
+                "export function f(n: number) {\n  return n;\n}\n",
             ),
         ],
     );
@@ -211,13 +193,13 @@ fn a_real_change_marks_each_track_from_its_context_and_removals() {
     assert_eq!(mark(t.path(), &diff, &mut tracks), None);
     assert_eq!(
         tracks[0].signals.as_deref(),
-        Some(&["concurrency".to_owned()][..]),
-        "an edit inside an existing lock region"
+        Some(&["loop-io".to_owned()][..]),
+        "an edit inside an existing loop that allocates: the loop and the clone are context"
     );
     assert_eq!(
         tracks[1].signals.as_deref(),
         Some(&["money".to_owned()][..]),
-        "a removed balance guard"
+        "a removed balance guard: no added or context line names money"
     );
 }
 

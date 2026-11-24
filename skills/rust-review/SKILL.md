@@ -257,14 +257,14 @@ lenses are the general ones — the Rust brief replacing the general one where b
 (`errors`, `concurrency`, `performance`, `maintainability`, `intent`, `negative-space`) — then
 Rust's own. The two files are the authoritative lens set. On a security-sensitive or large plan, or one the scout gave no
 pick for, the security floor adds only the profile's `securityFloor` lenses — for Rust security,
-safety, correctness, errors, compat and invariants — beside the always set; `tests` still joins on
-any change to production code, and `complexity` stays the scout's pick. `money`, `concurrency`,
+safety, correctness, errors, concurrency, compat and invariants — beside the always set; `tests`
+still joins on any change to production code, and `complexity` stays the scout's pick. `money`,
 `performance` and `maintainability` run on a signal the binary reads in the diff, hunks with their
-function around them — a money-like name; a thread, spawn, await, lock or atomic; an allocation or
-I/O call in a loop; a new file or one gaining 150 lines or more — whoever picked them, and only
-the completeness critic of a full review may name one the signal held back (not yet observed live).
-`safety` is not gated: reachable panics, build-profile arithmetic and a load-bearing
-`debug_assert!` have no word to see.
+function around them — a money-like name; an allocation or I/O call in a loop; a new file or one
+gaining 150 lines or more — whoever picked them, and only the completeness critic of a full review
+may name one the signal held back (not yet observed live). `safety` and `concurrency` are not
+gated: reachable panics, build-profile arithmetic, a load-bearing `debug_assert!`, `Send`/`Sync`
+and the many forms of async and locking have no word list to see them.
 
 **The optional pass — off by default.** Two lenses are not part of the standard fan-out, because
 on the measured run they returned no High findings at all while producing the bulk of the

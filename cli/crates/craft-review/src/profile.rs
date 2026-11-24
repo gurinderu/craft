@@ -323,6 +323,14 @@ impl Profile {
             .collect()
     }
 
+    /// Whether its lens `lens` would read nothing of the part `files` holds ([`Self::reads`]): no
+    /// task of it is rendered then, whose empty pathspec would read the whole change (realm
+    /// @nick/craft, node #625).
+    #[must_use]
+    pub fn reads_nothing(&self, lens: &str, files: &[String]) -> bool {
+        !files.is_empty() && self.reads(lens, files).is_empty()
+    }
+
     /// What a `git diff` of this profile's part of a change names: its globs, or, a profile
     /// without any, the files it took, each a literal pathspec.
     #[must_use]

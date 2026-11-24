@@ -36,7 +36,6 @@
         "lightSkipped": [],
         "signalSkipped": [
           "money",
-          "concurrency",
           "performance",
           "maintainability"
         ],
@@ -81,7 +80,6 @@
         "lightSkipped": [],
         "signalSkipped": [
           "money",
-          "concurrency",
           "performance",
           "maintainability"
         ],
@@ -100,6 +98,7 @@
         "lenses": [
           "correctness",
           "security",
+          "concurrency",
           "errors",
           "compat",
           "invariants",
@@ -120,7 +119,6 @@
         "lightSkipped": [],
         "signalSkipped": [
           "money",
-          "concurrency",
           "performance",
           "maintainability"
         ],
@@ -153,6 +151,7 @@
           "tests",
           "correctness",
           "security",
+          "concurrency",
           "compat",
           "invariants",
           "safety",
@@ -170,7 +169,6 @@
         "lightSkipped": [],
         "signalSkipped": [
           "money",
-          "concurrency",
           "performance",
           "maintainability"
         ],
@@ -204,6 +202,7 @@
         "lenses": [
           "safety",
           "errors",
+          "concurrency",
           "invariants",
           "intent",
           "tests",
@@ -224,7 +223,6 @@
         "lightSkipped": [],
         "signalSkipped": [
           "money",
-          "concurrency",
           "performance",
           "maintainability"
         ],
@@ -271,7 +269,6 @@
         "lightSkipped": [],
         "signalSkipped": [
           "money",
-          "concurrency",
           "performance",
           "maintainability"
         ],
@@ -319,7 +316,6 @@
         "lightSkipped": [],
         "signalSkipped": [
           "money",
-          "concurrency",
           "performance",
           "maintainability"
         ],
@@ -359,6 +355,7 @@
           "tests",
           "correctness",
           "security",
+          "concurrency",
           "safety"
         ],
         "maxRounds": 3,
@@ -377,7 +374,6 @@
         "lightSkipped": [],
         "signalSkipped": [
           "money",
-          "concurrency",
           "performance",
           "maintainability"
         ],
@@ -427,7 +423,6 @@
         "lightSkipped": [],
         "signalSkipped": [
           "money",
-          "concurrency",
           "performance",
           "maintainability"
         ],
@@ -484,7 +479,6 @@
         "lightSkipped": [],
         "signalSkipped": [
           "money",
-          "concurrency",
           "performance",
           "maintainability"
         ],
@@ -521,7 +515,8 @@
           "intent",
           "tests",
           "correctness",
-          "security"
+          "security",
+          "concurrency"
         ],
         "maxRounds": 1,
         "verifyVotes": 3,
@@ -539,7 +534,6 @@
         ],
         "signalSkipped": [
           "money",
-          "concurrency",
           "performance",
           "maintainability"
         ],
@@ -585,7 +579,6 @@
         "lightSkipped": [],
         "signalSkipped": [
           "money",
-          "concurrency",
           "performance",
           "maintainability"
         ],
@@ -630,7 +623,6 @@
         "lightSkipped": [],
         "signalSkipped": [
           "money",
-          "concurrency",
           "performance",
           "maintainability"
         ],
@@ -661,6 +653,7 @@
         "lenses": [
           "correctness",
           "security",
+          "concurrency",
           "errors",
           "tests",
           "complexity",
@@ -682,7 +675,6 @@
         ],
         "signalSkipped": [
           "money",
-          "concurrency",
           "performance",
           "maintainability"
         ],
@@ -991,7 +983,6 @@
         "lightSkipped": [],
         "signalSkipped": [
           "money",
-          "concurrency",
           "performance"
         ],
         "dataFiles": [],
@@ -1037,7 +1028,6 @@
         "lightSkipped": [],
         "signalSkipped": [
           "money",
-          "concurrency",
           "performance",
           "maintainability"
         ],
@@ -1083,7 +1073,6 @@
         "lensModel": "opus",
         "signalSkipped": [
           "money",
-          "concurrency",
           "performance",
           "maintainability"
         ],
@@ -1123,6 +1112,7 @@
           "correctness",
           "intent",
           "security",
+          "concurrency",
           "errors",
           "negative-space"
         ],
@@ -1136,7 +1126,6 @@
         "lensModel": "opus",
         "signalSkipped": [
           "money",
-          "concurrency",
           "performance",
           "maintainability"
         ],
@@ -1158,6 +1147,7 @@
         "lenses": [
           "correctness",
           "security",
+          "concurrency",
           "errors",
           "compat",
           "invariants",
@@ -1175,7 +1165,6 @@
         "lensModel": "opus",
         "signalSkipped": [
           "money",
-          "concurrency",
           "performance",
           "maintainability"
         ],
@@ -1223,12 +1212,11 @@
       }
     },
     {
-      "name": "signals: a Rust diff showing concurrency and a loop's I/O takes those two gated lenses only",
+      "name": "signals: a Rust diff showing a loop's I/O takes the performance lens, the other gated ones held back",
       "changedFiles": [
         "src/pool.rs"
       ],
       "signals": [
-        "concurrency",
         "loop-io"
       ],
       "scout": {
@@ -1255,7 +1243,6 @@
           "errors",
           "intent",
           "tests",
-          "concurrency",
           "performance"
         ],
         "lightSkipped": [],
@@ -1303,6 +1290,7 @@
         "isLibrary": false,
         "lenses": [
           "security",
+          "concurrency",
           "correctness",
           "intent",
           "tests",
@@ -1314,7 +1302,6 @@
         "repoRules": [],
         "securitySensitive": false,
         "signalSkipped": [
-          "concurrency",
           "performance"
         ],
         "sizeBucket": "small",
@@ -1350,7 +1337,8 @@
         "dataFiles": [],
         "dataSkipped": [
           "correctness",
-          "errors"
+          "errors",
+          "concurrency"
         ],
         "intent": "adds f",
         "isLibrary": false,
@@ -1367,7 +1355,6 @@
         "securitySensitive": true,
         "signalSkipped": [
           "money",
-          "concurrency",
           "performance",
           "maintainability"
         ],

@@ -395,3 +395,29 @@ fn a_query_string_on_a_changed_rust_line_adds_the_queries_lens() {
     let s = submit(&run, json!({"scout-rust": scout("small", &["errors"])}));
     assert!(!ids(&s).iter().any(|i| i.contains("sql")), "{:?}", ids(&s));
 }
+
+/// A profile whose lens only repeated, in the same round, what another profile's lens found first
+/// added nothing new: it goes dry though its lens is marked to run again (realm @nick/craft, node
+/// #625).
+#[test]
+fn a_profile_that_only_repeated_another_profiles_finding_goes_dry() {
+    let repo = repo_with(&["src/lib.rs", "web/app.ts"]);
+    let out = tempfile::tempdir().unwrap();
+    let (run, _) = start(repo.path(), out.path());
+    let s = submit(
+        &run,
+        json!({"scout-rust": scout("medium", &["errors"]), "scout-general": scout("medium", &["security"])}),
+    );
+    let same = |id: &str| match id {
+        "lens-rust-errors-r1" | "lens-general-correctness-r1" => {
+            vec![titled("High", 1, "f returns 1")]
+        }
+        _ => Vec::new(),
+    };
+    let s = submit(&run, round(&s, &same));
+    assert_eq!(
+        ids(&s),
+        ["lens-rust-errors-r2"],
+        "the general profile found nothing new to it: no round 2 of its own"
+    );
+}

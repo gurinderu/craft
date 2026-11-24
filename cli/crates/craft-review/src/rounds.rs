@@ -1,10 +1,10 @@
-//! The lens rounds (`lensRoundsPhase` in `integrations/shared/review-lens-rounds.mjs`): every planned lens over
-//! its profile's part of the diff in the first round, then, round after round, only the
-//! dispatches whose last answer found something new or that gave none (realm @nick/craft, node
-//! #625), each told what the pool already holds, until a round adds nothing new to its profile,
-//! none of its lenses may run again, or the profile's plan's rounds are spent (loop until dry). The profiles of a run share each round and the pool. A finding is new when no pooled
-//! finding has its key (file, line and title); a lens dispatch that never returns is a hole the
-//! verdict reads as INCOMPLETE.
+//! The lens rounds (`lensRoundsPhase` in `integrations/shared/review-lens-rounds.mjs`): every
+//! planned lens over its profile's part of the diff in the first round, then, round after round,
+//! only the dispatches whose last answer found something new, and once more those that gave none
+//! (realm @nick/craft, node #625), each told what the pool already holds, until no lens of the
+//! profile may run again or the profile's plan's rounds are spent (loop until dry). The profiles of
+//! a run share each round and the pool. A finding is new when no pooled finding has its key (file,
+//! line and title); a lens dispatch that never returns is a hole the verdict reads as INCOMPLETE.
 
 use craft_store::js::JsStr;
 use std::collections::{BTreeMap, BTreeSet};
@@ -62,13 +62,16 @@ pub struct Rounds {
     /// The CONSUMERS lines shown to a lens task that did not answer: died, failed or still out.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub consumers_unanswered: Vec<String>,
-    /// The dispatches of the last round, each as `profile:lens` with its slice's key, that the
-    /// next one sends again ([`rerun`]): those whose answer held a finding the pool lacked when the
-    /// round began, and those that gave no answer, whose hole another round may still close (realm
-    /// @nick/craft, node #625); `None` before the first round's answers, and in a state written
-    /// before it was kept, which reruns every lens.
+    /// The dispatches of the last round, each as `profile:lens` with its slice's key, whose answer
+    /// held a finding the pool lacked when the round began: the next round sends them again
+    /// ([`rerun`]; realm @nick/craft, node #625); `None` before the first round's answers, and in a
+    /// state written before it was kept, which reruns every lens.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rerun: Option<Vec<String>>,
+    /// The dispatches of the last round that gave no answer and were not themselves a retry: the
+    /// next round sends each once more, a first-round-only lens's too, whatever that round found.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub retry: Vec<String>,
 }
 
 /// The exact key of a finding: its file and title folded, and its line, as `key` in
@@ -116,11 +119,7 @@ pub fn tasks(
     let (profile, plan) = at;
     let prior = prompts::prior_found_summary(&rounds.pool);
     let mut out = Vec::new();
-    let lenses = plan
-        .lenses
-        .iter()
-        .filter(|l| rounds.round <= 1 || !rerun::first_only(profile, l));
-    for lens in lenses {
+    for lens in &plan.lenses {
         // A lens that judges the change as a whole (`WHOLE_DIFF_LENSES` in integrations/shared/lens-scope.mjs, the
         // profile's `wholeDiff`), one marked `unsliced` (the runbook lens) or one reading metrics is
         // never sliced.
@@ -128,10 +127,10 @@ pub fn tasks(
             .lens(lens)
             .is_none_or(|l| l.metrics || l.whole_diff || l.unsliced);
         // A per-file lens of the general profile reads no data file (realm @nick/craft, node #625).
-        let own = profile.reads(lens, files);
-        if own.is_empty() && !files.is_empty() {
+        if profile.reads_nothing(lens, files) {
             continue;
         }
+        let own = profile.reads(lens, files);
         let pathspec = ctx.pathspec(profile, &own);
         let at = LensIn {
             profile,
@@ -140,16 +139,30 @@ pub fn tasks(
             pathspec: &pathspec,
             prior: &prior,
         };
-        let again = |slice: Option<&Slice>| rounds.reruns(&dispatch_key(&profile.id, lens, slice));
+        let again = |slice: Option<&Slice>| {
+            rounds.sends(profile, lens, &dispatch_key(&profile.id, lens, slice))
+        };
         if slices.is_empty() || whole {
             if again(None) {
                 out.push(lens_task(ctx, &at, rounds.round, None)?);
             }
             continue;
         }
+        // No slice of a profile taking the rest carries its data; the security lens reads all of it
+        // beside each slice (realm @nick/craft, node #625).
+        let data: Vec<&String> = own
+            .iter()
+            .filter(|f| profile.detect.rest && crate::coverage::is_data(f))
+            .collect();
         for (i, slice) in slices.iter().enumerate() {
             if again(Some(slice)) {
-                out.push(lens_task(ctx, &at, rounds.round, Some((i, slice)))?);
+                let mut slice = slice.clone();
+                for f in &data {
+                    if !slice.files.contains(f) {
+                        slice.files.push((*f).clone());
+                    }
+                }
+                out.push(lens_task(ctx, &at, rounds.round, Some((i, &slice)))?);
             }
         }
     }
@@ -273,6 +286,7 @@ impl Rounds {
         let mut added: BTreeMap<String, usize> = BTreeMap::new();
         let before: BTreeSet<String> = self.pool.iter().map(key).collect();
         let mut again: Vec<String> = Vec::new();
+        let retried = std::mem::take(&mut self.retry);
         let (mut returned, mut raw) = (0, 0);
         for t in tasks {
             let TaskKind::Lens {
@@ -290,8 +304,14 @@ impl Rounds {
                 k = format!("{k}{SLICE_SEP}{s}");
             }
             let answer = self.answered(t, &k);
-            if answer.is_none_or(|a| rerun::found_new(a, &before)) && !again.contains(&k) {
-                again.push(k.clone());
+            match answer {
+                None if !retried.contains(&k) && !self.retry.contains(&k) => {
+                    self.retry.push(k.clone());
+                }
+                Some(a) if rerun::found_new(a, &before) && !again.contains(&k) => {
+                    again.push(k.clone());
+                }
+                _ => {}
             }
             self.note_lines(t, answer.is_some());
             let Some(answer) = answer else {

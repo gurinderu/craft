@@ -28,7 +28,7 @@ fn owned(s: &[&str]) -> Vec<String> {
     s.iter().map(|x| (*x).to_owned()).collect()
 }
 
-const GATED: [&str; 4] = ["money", "concurrency", "performance", "maintainability"];
+const GATED: [&str; 3] = ["money", "performance", "maintainability"];
 
 #[test]
 fn a_gated_lens_runs_on_its_signal_and_on_no_pick_without_it() {
@@ -55,7 +55,6 @@ fn gated_on_its_signal(p: &Profile, file: &str) {
     assert_eq!(none.signal_skipped, GATED, "named, in roster order");
     for (signal, lens) in [
         ("money", "money"),
-        ("concurrency", "concurrency"),
         ("loop-io", "performance"),
         ("new-or-large-file", "maintainability"),
     ] {
@@ -110,7 +109,7 @@ fn a_held_lens_stays_a_candidate_the_full_review_critic_may_name() {
         scout: Some(&scout),
         ..input(&p, &files, Some(&[]))
     });
-    let open = crate::critic::candidates(&p, &got, false);
+    let open = crate::critic::candidates(&p, &got, false, &files);
     for l in GATED {
         assert!(open.iter().any(|x| x == l), "{l}: {open:?}");
     }
@@ -138,7 +137,7 @@ fn a_general_part_of_only_data_is_read_by_its_whole_diff_lenses_and_security() {
     }
     assert_eq!(
         got.data_skipped,
-        ["correctness", "errors"],
+        ["correctness", "errors", "concurrency"],
         "named, with their reason"
     );
     assert!(
@@ -147,10 +146,18 @@ fn a_general_part_of_only_data_is_read_by_its_whole_diff_lenses_and_security() {
             .all(|l| GATED.contains(&l.as_str()))
     );
     assert!(got.data_files.is_empty(), "no source to keep them from");
-    let open = crate::critic::candidates(&p, &got, false);
+    let open = crate::critic::candidates(&p, &got, false, &files);
     assert!(
-        !open.iter().any(|l| l == "correctness"),
-        "a per-file lens over nothing but data is no critic candidate: {open:?}"
+        !open
+            .iter()
+            .any(|l| l == "correctness" || GATED.contains(&l.as_str())),
+        "a per-file lens over nothing but data, signal-gated or not, is no critic candidate: \
+         {open:?}"
+    );
+    let empty = plan(input(&p, &[], Some(&[])));
+    assert!(
+        empty.data_skipped.is_empty() && empty.data_files.is_empty(),
+        "an empty part is no data-only one"
     );
     assert!(
         !got.lenses.iter().any(|l| l == "tests"),

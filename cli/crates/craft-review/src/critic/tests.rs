@@ -198,3 +198,44 @@ fn a_metrics_lens_is_no_candidate_without_an_index() {
         asked[0].prompt
     );
 }
+
+/// A lens that reads nothing of its part — a per-file lens over a general part of nothing but data
+/// — is no critic candidate, and one the critic names anyway is refused, never rendered with an
+/// empty pathspec that would read the whole change (realm @nick/craft, node #625).
+#[test]
+fn the_critic_never_admits_a_lens_with_nothing_to_read() {
+    let profiles = vec![Profile::load("general").unwrap()];
+    let mut run = run_with(&plan("large", true, &["intent", "security"], &[]));
+    run.tracks[0].profile = "general".into();
+    run.tracks[0].files = vec!["api/rows.csv".into(), "api/sample.json".into()];
+    let asked = tasks(&run, &profiles).unwrap();
+    let prompt = &asked[0].prompt;
+    for absent in ["\"correctness\"", "\"money\"", "\"errors\""] {
+        assert!(!prompt.contains(absent), "{absent}: {prompt}");
+    }
+    assert!(prompt.contains("\"compat\""), "{prompt}");
+    let mut critic = Task::new(
+        "critic-general".into(),
+        "critic:general".into(),
+        String::new(),
+        crate::agent::Model::Opus,
+        json!({}),
+        TaskKind::Critic {
+            profile: "general".into(),
+        },
+    );
+    critic.state = TaskState::Answered;
+    critic.answer = Some(json!({"missingLenses": ["money", "compat"], "notes": "n"}));
+    run.tasks = vec![critic];
+    let lenses = followups(&mut run, &profiles).unwrap();
+    let ids: Vec<&str> = lenses.iter().map(|t| t.id.as_str()).collect();
+    assert_eq!(ids, ["critic-lens-general-compat"]);
+    assert!(lenses[0].prompt.contains("api/rows.csv"));
+    assert!(
+        run.notes
+            .iter()
+            .any(|n| n.contains("named the lens money, which reads nothing of this part")),
+        "{:?}",
+        run.notes
+    );
+}

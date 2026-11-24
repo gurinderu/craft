@@ -142,10 +142,18 @@ fn the_security_floor_adds_only_the_profiles_security_lenses() {
         "safety",
         "correctness",
         "errors",
+        "concurrency",
         "compat",
         "invariants",
     ];
-    let general_floor = ["security", "correctness", "errors", "compat", "invariants"];
+    let general_floor = [
+        "security",
+        "correctness",
+        "errors",
+        "concurrency",
+        "compat",
+        "invariants",
+    ];
     let scout_picked = ["money", "maintainability", "complexity", "performance"];
     for (id, file, floor) in [
         ("rust", "src/lib.rs", rust_floor.as_slice()),

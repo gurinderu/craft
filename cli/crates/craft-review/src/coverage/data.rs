@@ -12,6 +12,8 @@
 const DATA_EXT: &[&str] = &[
     "json", "jsonc", "json5", "jsonl", "ndjson", "geojson", "har", "csv", "tsv", "lock", "snap",
 ];
+/// Lockfiles whose extension says nothing of it.
+const LOCK_NAMES: &[&str] = &["pnpm-lock.yaml", "go.sum", "go.work.sum"];
 /// Directories whose files are data a test reads, whatever their extension.
 const FIXTURE_DIRS: &[&str] = &[
     "fixtures",
@@ -29,7 +31,9 @@ pub fn is_data(f: &str) -> bool {
     let mut segs: Vec<&str> = lower.split('/').collect();
     let base = segs.pop().unwrap_or("");
     let ext = base.rsplit_once('.').map_or("", |(_, e)| e);
-    DATA_EXT.contains(&ext) || segs.iter().any(|d| FIXTURE_DIRS.contains(d))
+    DATA_EXT.contains(&ext)
+        || LOCK_NAMES.contains(&base)
+        || segs.iter().any(|d| FIXTURE_DIRS.contains(d))
 }
 
 #[cfg(test)]
@@ -42,6 +46,10 @@ mod tests {
             "content/parity/plan-cases.json",
             "data/rows.csv",
             "Cargo.lock",
+            "web/pnpm-lock.yaml",
+            "yarn.lock",
+            "package-lock.json",
+            "go.sum",
             "web/__snapshots__/app.test.ts.snap",
             "tests/fixtures/bad.js",
             "pkg/testdata/input.go",
@@ -58,6 +66,8 @@ mod tests {
             "Makefile",
             "fixtures.py",
             "config/app.YAML",
+            "pnpm-workspace.yaml",
+            "go.mod",
             ".github/workflows/ci.yml",
             "settings.toml",
             ".env",

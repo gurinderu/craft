@@ -76,7 +76,7 @@ fn sent(tasks: &[Task]) -> Vec<String> {
 }
 
 #[test]
-fn a_dispatch_runs_again_on_a_finding_the_pool_lacked_when_the_round_began_or_on_no_answer() {
+fn a_dispatch_runs_again_on_a_finding_the_pool_lacked_or_once_more_on_no_answer() {
     let mut r = Rounds {
         round: 1,
         ..Rounds::default()
@@ -88,25 +88,36 @@ fn a_dispatch_runs_again_on_a_finding_the_pool_lacked_when_the_round_began_or_on
         dispatch("tests", 1, None, &[]),
         dispatch("errors", 1, Some("src"), &["b"]),
         dead("compat", 1),
+        dead("design", 1),
     ]);
-    let y = |v: &[&str]| Some(v.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>());
+    let y = |v: &[&str]| v.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
     assert_eq!(
         r.rerun,
-        y(&[
-            "rust:errors",
-            "rust:intent",
-            "rust:errors :: src",
-            "rust:compat"
-        ]),
-        "a copy raised in the same round is new to the pool it began with, and a dispatch that \
-         died is sent again, its hole still open"
+        Some(y(&["rust:errors", "rust:intent", "rust:errors :: src"])),
+        "a copy raised in the same round is new to the pool it began with"
+    );
+    assert_eq!(
+        r.retry,
+        y(&["rust:compat", "rust:design"]),
+        "its hole still open"
     );
     r.round = 2;
     r.absorb(&[
         dispatch("errors", 2, None, &["a"]),
         dispatch("intent", 2, None, &["a", "c"]),
+        dead("compat", 2),
+        dead("tests", 2),
     ]);
-    assert_eq!(r.rerun, y(&["rust:intent"]), "a pooled finding is not new");
+    assert_eq!(
+        r.rerun,
+        Some(y(&["rust:intent"])),
+        "a pooled finding is not new"
+    );
+    assert_eq!(
+        r.retry,
+        y(&["rust:tests"]),
+        "a retry that died again is not retried a second time"
+    );
 }
 
 #[test]
@@ -139,30 +150,68 @@ fn a_later_round_sends_only_the_dispatches_that_yielded_slice_by_slice() {
         sent(&tasks(&ctx, (&rust, &plan), &files, &slices, &r).unwrap()),
         ["errors b", "intent"]
     );
+    r.retry = vec!["rust:tests :: a".into()];
+    assert_eq!(
+        sent(&tasks(&ctx, (&rust, &plan), &files, &slices, &r).unwrap()),
+        ["errors b", "intent", "tests a"],
+        "and once more the slice that gave no answer"
+    );
     r.rerun = None;
     assert_eq!(
         sent(&tasks(&ctx, (&rust, &plan), &files, &slices, &r).unwrap()),
         all,
         "a state written before it reruns every lens"
     );
+    let design = plan_of(&["errors", "design"]);
+    r.rerun = Some(vec!["rust:design".into()]);
+    r.retry = Vec::new();
+    assert!(
+        sent(&tasks(&ctx, (&rust, &design), &files, &[], &r).unwrap()).is_empty(),
+        "a first-round-only lens that found something does not run again"
+    );
+    r.retry = vec!["rust:design".into()];
+    assert_eq!(
+        sent(&tasks(&ctx, (&rust, &design), &files, &[], &r).unwrap()),
+        ["design"],
+        "but one that gave no answer does, once"
+    );
 }
 
 #[test]
-fn a_profile_reruns_only_while_a_lens_that_may_run_again_yielded() {
+fn a_profile_goes_on_while_a_lens_gave_no_answer_or_found_something_and_may_run_again() {
     let rust = Profile::load("rust").unwrap();
     let plan = plan_of(&["errors", "design", "intent"]);
     let mut r = Rounds::default();
-    assert!(r.reruns_any(&rust, &plan), "unknown: every lens may");
+    assert!(r.goes_on(&rust, &plan, true), "unknown: every lens may");
+    assert!(
+        !r.goes_on(&rust, &plan, false),
+        "nothing new, nothing to retry"
+    );
     r.rerun = Some(vec!["rust:design".into()]);
-    assert!(!r.reruns_any(&rust, &plan), "design runs in the first only");
+    assert!(
+        !r.goes_on(&rust, &plan, true),
+        "design runs in the first only"
+    );
     r.rerun = Some(vec!["rust:errors :: src".into()]);
-    assert!(r.reruns_any(&rust, &plan), "a slice of a planned lens");
+    assert!(r.goes_on(&rust, &plan, true), "a slice of a planned lens");
     r.rerun = Some(vec!["rust:intent".into()]);
-    assert!(r.reruns_any(&rust, &plan));
+    assert!(r.goes_on(&rust, &plan, true));
     r.rerun = Some(vec!["rust:errorsx".into(), "general:errors".into()]);
-    assert!(!r.reruns_any(&rust, &plan), "another lens or profile's");
+    assert!(!r.goes_on(&rust, &plan, true), "another lens or profile's");
     r.rerun = Some(vec!["rust:money".into()]);
-    assert!(!r.reruns_any(&rust, &plan), "a lens not in the plan");
+    assert!(!r.goes_on(&rust, &plan, true), "a lens not in the plan");
+    r.retry = vec!["rust:design".into()];
+    assert!(
+        r.goes_on(&rust, &plan, false),
+        "a dispatch that gave no answer, first-round-only or not, though nothing was new"
+    );
+    r.retry = vec!["rust:intent :: src".into(), "general:design".into()];
+    assert!(r.goes_on(&rust, &plan, false), "a slice of one");
+    r.retry = vec!["general:design".into(), "rust:money".into()];
+    assert!(
+        !r.goes_on(&rust, &plan, false),
+        "not another profile's or plan's"
+    );
 }
 
 #[test]
@@ -200,4 +249,37 @@ fn a_general_per_file_lens_reads_no_data_file_and_a_whole_diff_lens_reads_all() 
         ["errors"],
         "the Rust profile keeps its manifest"
     );
+}
+
+/// In a sliced general part, the security lens reads every data file beside each slice; a per-file
+/// lens reads its slice alone (realm @nick/craft, node #625).
+#[test]
+fn the_security_lens_of_a_sliced_general_part_reads_its_data_beside_each_slice() {
+    let ctx = PromptContext::fixture("/work/repo", "main");
+    let general = Profile::load("general").unwrap();
+    let plan = plan_of(&["errors", "security"]);
+    let r = Rounds {
+        round: 1,
+        ..Rounds::default()
+    };
+    let slices = [
+        Slice::loose("a".into(), vec!["a/x.ts".into()]),
+        Slice::loose("b".into(), vec!["b/y.ts".into()]),
+    ];
+    let files: Vec<String> = ["a/x.ts", "b/y.ts", "fixtures/rows.csv"]
+        .iter()
+        .map(|f| (*f).to_owned())
+        .collect();
+    let got = tasks(&ctx, (&general, &plan), &files, &slices, &r).unwrap();
+    assert_eq!(
+        sent(&got),
+        ["errors a", "errors b", "security a", "security b"]
+    );
+    for t in &got[..2] {
+        assert!(!t.prompt.contains("fixtures/rows.csv"), "{}", t.prompt);
+    }
+    for t in &got[2..] {
+        assert!(t.prompt.contains("fixtures/rows.csv"), "{}", t.prompt);
+    }
+    assert!(!got[2].prompt.contains("b/y.ts") && got[2].prompt.contains("a/x.ts"));
 }

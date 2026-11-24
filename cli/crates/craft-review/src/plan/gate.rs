@@ -1,7 +1,8 @@
 //! The plan's last say on what yields (realm @nick/craft, node #625): a signal-gated lens runs
 //! when, and only when, its profile's part shows its signal; a part of nothing but data is read by
-//! the whole-diff lenses and the security lens alone. What either holds back stays a candidate the completeness critic of
-//! a full review may name ([`crate::critic::candidates`]): gated, never dropped.
+//! the whole-diff lenses and the security lens alone. A lens held back for want of its signal stays
+//! a candidate the completeness critic of a full review may name ([`crate::critic::candidates`]):
+//! gated, never dropped; one that would read nothing of its part is none.
 
 use super::{Plan, push_missing};
 use crate::profile::Profile;
@@ -30,7 +31,8 @@ pub(super) fn signals(p: &Profile, (fired, strict): (Option<&[String]>, bool), p
 }
 
 /// The data in the part `own` of a profile taking the rest ([`crate::coverage::is_data`]): a part
-/// with source beside it keeps it from its per-file lenses, named in `data_files`; a part of
+/// with source beside it keeps it from its per-file lenses, named in `data_files`; an empty part is
+/// no data-only one; a part of
 /// nothing but data keeps only the lenses that read it ([`Profile::reads`]), its always ones that
 /// do when it had none, the others named in `data_skipped`.
 pub(super) fn data(p: &Profile, own: &[String], plan: &mut Plan) {
@@ -42,7 +44,7 @@ pub(super) fn data(p: &Profile, own: &[String], plan: &mut Plan) {
         .filter(|f| crate::coverage::is_data(f))
         .cloned()
         .collect();
-    if data.len() < own.len() {
+    if own.is_empty() || data.len() < own.len() {
         plan.data_files = data;
         return;
     }

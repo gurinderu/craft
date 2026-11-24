@@ -11,7 +11,7 @@
   "usesLibrary": true,
   "alwaysLenses": ["intent"],
   "safetyLens": "safety",
-  "securityFloor": ["security", "safety", "correctness", "errors", "compat", "invariants"],
+  "securityFloor": ["security", "safety", "correctness", "errors", "concurrency", "compat", "invariants"],
   "scoutRules": "scout-rules-rust",
   "scoutModel": "haiku",
   "dedupModel": "haiku",
@@ -27,7 +27,7 @@
   "lenses": [
     { "id": "safety", "brief": "lens-briefs/rust-safety", "model": "opus" },
     { "id": "errors", "brief": "lens-briefs/rust-errors", "model": "opus" },
-    { "id": "concurrency", "brief": "lens-briefs/rust-concurrency", "model": "opus", "conditional": true, "signal": "concurrency" },
+    { "id": "concurrency", "brief": "lens-briefs/rust-concurrency", "model": "opus" },
     { "id": "performance", "brief": "lens-briefs/rust-performance", "model": "opus", "conditional": true, "signal": "loop-io" },
     { "id": "api-idioms", "brief": "lens-briefs/rust-api-idioms", "model": "opus", "optional": true },
     { "id": "api-boundary", "brief": "lens-briefs/rust-api-boundary", "model": "opus", "optional": true },

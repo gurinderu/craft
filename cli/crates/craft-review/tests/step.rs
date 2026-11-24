@@ -42,7 +42,7 @@ fn start_renders_the_scout_over_the_diff() {
         "You are scouting a Rust diff",
         "git diff --stat 'origin/main'...HEAD -- '*.rs'",
         r#"choose from ["correctness","security","money","concurrency","errors","performance","intent","tests","maintainability","compat","invariants","design","sql-queries","complexity","safety","api-idioms","api-boundary","reconciler","failure-windows"]"#,
-        r#"EXCEPT ["money","concurrency","performance","maintainability","design","sql-queries","failure-windows"]"#,
+        r#"EXCEPT ["money","performance","maintainability","design","sql-queries","failure-windows"]"#,
         "Decide what is \"in play\" from the diff",
         "Return repo-relative paths, at most 5",
     ] {
@@ -209,7 +209,7 @@ fn a_full_run_goes_scout_lenses_two_rounds_dedup_verify_done() {
             "Plan: medium diff, full review, at most 2 round(s). Lenses planned: errors, intent, tests; ran: errors, intent, tests.",
             "- Round 1: 3 lens(es) dispatched, 3 returned, 4 new finding(s).",
             "- Round 2: 2 lens(es) dispatched, 2 returned, 0 new finding(s).",
-            "Held back, no diff signal for them: money, concurrency, performance, maintainability.",
+            "Held back, no diff signal for them: money, performance, maintainability.",
             "## Confirmed findings\n\n- **High** `src/lib.rs:1` — f returns 1 where 0 is claimed (errors, intent)",
             "(same defect also reported by: intent)",
             "## Unverified findings\n\n- **Low** `src/lib.rs:1` — naming (intent)",
@@ -372,7 +372,7 @@ fn a_scout_that_never_answers_runs_the_conservative_plan_and_says_so() {
     let lenses = ids(&s);
     assert_eq!(
         lenses.len(),
-        9,
+        10,
         "the security floor, the always set, tests and negative-space: {lenses:?}"
     );
     let ns = s["tasks"]
@@ -529,6 +529,7 @@ fn a_light_pass_runs_one_round_of_the_scoped_lenses() {
             "lens-rust-tests-r1",
             "lens-rust-correctness-r1",
             "lens-rust-security-r1",
+            "lens-rust-concurrency-r1",
             "lens-rust-safety-r1"
         ],
         "the security floor's diff-scoped lenses too, a large plan; no signal buys a gated one"
@@ -541,7 +542,7 @@ fn a_light_pass_runs_one_round_of_the_scoped_lenses() {
     assert_eq!(st["profiles"][0]["plan"]["maxRounds"], json!(1));
     let low = titled("Low", 2, "naming");
     let mut answers = round1(&[low]);
-    for l in ["correctness", "security", "safety"] {
+    for l in ["correctness", "security", "concurrency", "safety"] {
         answers[format!("lens-rust-{l}-r1")] = lens(l, &[]);
     }
     let s = submit(&run, answers);
@@ -616,5 +617,78 @@ fn a_profile_whose_only_yield_was_a_first_round_lens_runs_no_second_round() {
             .unwrap()
             .len(),
         1
+    );
+}
+
+/// A large Rust run over a change adding a file, its scout answered: the run and its first lens
+/// step.
+#[expect(
+    clippy::unwrap_used,
+    reason = "a step of the test below, failing loudly like it"
+)]
+fn new_file_run(out: &std::path::Path) -> (tempfile::TempDir, std::path::PathBuf, Value) {
+    let repo = fixture(true);
+    std::fs::write(repo.path().join("src/more.rs"), "pub fn g() {}\n").unwrap();
+    common::git(repo.path(), &["add", "."]);
+    common::git(repo.path(), &["commit", "-qm", "feat: add g"]);
+    let run = out.join("run");
+    step::start(&opts(repo.path(), out)).unwrap();
+    let s = submit(&run, json!({"scout-rust": scout("large", &["errors"])}));
+    (repo, run, s)
+}
+
+/// Answers every lens task of `s` with no finding but `dead`'s, which keeps answering off its
+/// schema until it dies; the step after the round.
+fn round_with_a_death(run: &std::path::Path, s: &Value, dead: &str) -> Value {
+    let mut answers = Map::new();
+    for id in ids(s) {
+        let name = id.trim_start_matches("lens-rust-");
+        let name = name.rsplit_once("-r").map_or(name, |(n, _)| n);
+        answers.insert(id.clone(), lens(name, &[]));
+    }
+    answers.insert(dead.to_owned(), json!("not json"));
+    let mut s = submit(run, Value::Object(answers));
+    for _ in 0..5 {
+        if !ids(&s).contains(&dead.to_owned()) {
+            break;
+        }
+        s = submit(run, json!({ dead: "not json" }));
+    }
+    s
+}
+
+/// A dispatch that gave no answer runs once more in the next round though that round found nothing
+/// new and the lens runs in the first round only; one that dies on its retry too is not retried
+/// again, though the plan allows a third round (realm @nick/craft, node #625).
+#[test]
+fn a_dead_dispatch_runs_once_more_even_a_first_round_lens_and_no_more() {
+    let out = tempfile::tempdir().unwrap();
+    let (_repo, run, s) = new_file_run(out.path());
+    assert!(ids(&s).contains(&"lens-rust-design-r1".to_owned()), "{s}");
+    let s = round_with_a_death(&run, &s, "lens-rust-design-r1");
+    assert_eq!(ids(&s), ["lens-rust-design-r2"], "its retry alone");
+    let s = round_with_a_death(&run, &s, "lens-rust-design-r2");
+    assert!(
+        !ids(&s).iter().any(|id| id.starts_with("lens-rust-")),
+        "no third round: {:?}",
+        ids(&s)
+    );
+    assert_eq!(
+        status::status(&run).unwrap()["rounds"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+
+    let out = tempfile::tempdir().unwrap();
+    let (_repo, run, s) = new_file_run(out.path());
+    round_with_a_death(&run, &s, "lens-rust-design-r1");
+    submit(&run, json!({"lens-rust-design-r2": lens("design", &[])}));
+    let st = status::status(&run).unwrap();
+    let ran = st["profiles"][0]["plan"]["ran"].as_array().unwrap();
+    assert!(
+        ran.contains(&json!("design")),
+        "its retry closed the hole: {st}"
     );
 }

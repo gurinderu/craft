@@ -64,3 +64,30 @@ fn code_no_profile_took_still_marks_the_verdict_partial_coverage() {
         "one profile, no name"
     );
 }
+
+/// What a plan held back is named with its reason, and nothing for what it did not (realm
+/// @nick/craft, node #625).
+#[test]
+fn the_report_names_the_lenses_and_files_held_back_with_their_reasons() {
+    let mut held = plan(&["intent", "security"]);
+    held["signalSkipped"] = json!(["money"]);
+    held["dataSkipped"] = json!(["correctness", "errors"]);
+    let mut mixed = plan(&["correctness"]);
+    mixed["dataFiles"] = json!(["web/rows.csv"]);
+    let s = state(
+        &json!([
+            {"profile": "rust", "files": ["src/lib.rs"], "plan": held},
+            {"profile": "general", "files": ["app.py"], "plan": mixed},
+        ]),
+        &[],
+    );
+    let report = markdown(&s, &verdict(&s));
+    for want in [
+        "Held back, no diff signal for them (rust): money.\n",
+        "Held back, the part is data only (read by the whole-diff lenses and security) (rust): correctness, errors.\n",
+        "Kept from the per-file lenses (data, read by the whole-diff lenses and security) (general): web/rows.csv.\n",
+    ] {
+        assert!(report.contains(want), "{want}: {report}");
+    }
+    assert_eq!(report.matches("Held back").count(), 2, "{report}");
+}

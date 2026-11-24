@@ -1,19 +1,18 @@
 //! The diff signals that admit the low-yield lenses (realm @nick/craft, node #625): a lens whose
 //! profile entry names a `signal` runs only when its profile's part of the change shows it. Read
 //! from the function-context diff of the part's source files — the lines the change added, those
-//! it removed and the function around them ([`hunks`]), so an edit inside an existing lock region
-//! or money path, or a deleted guard, shows it; a data file ([`crate::coverage::is_data`]) shows
-//! none:
+//! it removed and the function around them ([`hunks`]), so an edit inside an existing money path,
+//! or a deleted guard, shows it; a data file ([`crate::coverage::is_data`]) shows none:
 //! - `money`: an identifier naming money (amount, price, balance, ledger, charge, total, cents…);
-//! - `concurrency`: threads, async spawns and awaits, locks and their acquisition, atomics,
-//!   channels;
 //! - `loop-io`: an allocation or an I/O call in the first lines of a loop — a hot loop is not
 //!   visible in a diff, what a loop pays per turn is;
 //! - `new-or-large-file`: a source file the change adds, or one it adds [`LARGE`] lines or more to.
 //!
-//! Rust's safety lens is no gated one: what it reviews (reachable panics, build-profile arithmetic,
-//! a load-bearing `debug_assert!`) has no word to see. Nix's maintainability lens is not gated
-//! either: its yield was not measured (realm @nick/craft, node #625).
+//! Not gated: Rust's safety lens, whose subject (reachable panics, build-profile arithmetic, a
+//! load-bearing `debug_assert!`) has no word to see; the concurrency lenses, whose subject takes
+//! more forms across languages than a word list holds — async and channels in every language,
+//! `Send`/`Sync`, `static mut`, scoped spawns — and whose misses cost the most; and Nix's
+//! maintainability lens, whose yield was not measured.
 //!
 //! Unknown is not none: a change that cannot be read, or a changed source file it shows no text of
 //! (a binary file), leaves its part's signals unknown, and an unknown signal admits its lens — a
@@ -31,7 +30,7 @@ mod words;
 use hunks::FileChange;
 
 /// The signals a lens may name.
-pub(crate) const SIGNALS: [&str; 4] = ["money", "concurrency", "loop-io", "new-or-large-file"];
+pub(crate) const SIGNALS: [&str; 3] = ["money", "loop-io", "new-or-large-file"];
 
 /// Added lines in one file from which on the change is large for `new-or-large-file`.
 pub(crate) const LARGE: usize = 150;
@@ -46,7 +45,6 @@ pub(crate) fn of_file(lines: &[(u32, String)], added: usize, new: bool) -> Vec<&
     let mut out = Vec::new();
     for (on, s) in [
         (any(words::is_money), "money"),
-        (any(words::is_concurrency), "concurrency"),
         (loop_io(lines), "loop-io"),
         (new || added >= LARGE, "new-or-large-file"),
     ] {

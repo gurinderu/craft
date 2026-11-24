@@ -117,13 +117,13 @@ pub(crate) fn advance(dir: &Path, run: &mut RunState) -> Result<(), Error> {
                 .filter(|(t, _)| t.live())
             {
                 t.rounds += 1;
-                // Dry too when no lens that found something may run again (realm @nick/craft,
-                // node #625): the next round would dispatch none of its lenses.
-                let again = t
+                // Dry when the next round would dispatch none of its lenses: none gave no answer,
+                // and none that found something new may run again (realm @nick/craft, node #625).
+                let found_new = added.get(&t.profile).copied().unwrap_or(0) > 0;
+                t.dry = !t
                     .plan
                     .as_ref()
-                    .is_some_and(|plan| run.rounds.reruns_any(p, plan));
-                t.dry = added.get(&t.profile).copied().unwrap_or(0) == 0 || !again;
+                    .is_some_and(|plan| run.rounds.goes_on(p, plan, found_new));
             }
             next_round(dir, run, &profiles)
         }
