@@ -3,7 +3,7 @@
 import type { Host, ModelRef, ToolAnswer, ToolCall, ToolSpec } from './host.ts'
 import { spawn } from 'node:child_process'
 import path from 'node:path'
-import { childTasks, taskAgents } from './review-children.ts'
+import { childCap, childTasks, taskAgents } from './review-children.ts'
 import { runRustAudit } from './rust-audit.ts'
 import { runTriageFindings } from './triage-findings.ts'
 
@@ -86,13 +86,23 @@ function withCallerModel(forwarded: string[], caller: ModelRef | undefined): str
   return caller && !mapped ? [...forwarded, '--models', modelName(caller)] : forwarded
 }
 
-/** The calling session's model, undefined when there is no caller or it records none. */
-const callerOf = (host: Host, sessionID: string | undefined) => (sessionID ? host.callerModel(sessionID).catch(() => undefined) : Promise.resolve(undefined))
+/** The calling session's model — none when there is no caller or it records none — or why it could not be read. */
+async function callerOf(host: Host, sessionID: string | undefined): Promise<{ model?: ModelRef; note?: string }> {
+  if (!sessionID) return {}
+  try {
+    const model = await host.callerModel(sessionID)
+    return model ? { model } : {}
+  } catch (e) {
+    return {
+      note: `Note: the calling session's model could not be read (${e instanceof Error ? e.message : String(e)}); the review's tasks ran on OpenCode's default model.`,
+    }
+  }
+}
 
 /** What a 2.x run adds: the agents listed, for the binary, and the runner of the tasks it hands back; nothing on 1.x. */
-function delegation(host: Host, call: ToolCall, agents: string[] | undefined, caller: ModelRef | undefined) {
+function delegation(host: Host, call: ToolCall, agents: string[] | undefined, caller: ModelRef | undefined, words: string[]) {
   if (!agents) return { flags: [] }
-  return { flags: ['--agents', agents.join(',')], onTask: childTasks(host, call.sessionID, caller) }
+  return { flags: ['--agents', agents.join(',')], onTask: childTasks(host, call.sessionID, caller, childCap(words)) }
 }
 
 async function runReview(host: Host, args: string, call: ToolCall, children = false): Promise<ToolAnswer> {
@@ -103,16 +113,17 @@ async function runReview(host: Host, args: string, call: ToolCall, children = fa
   const why = skip || resumed ? undefined : await profilePreflight(review.WRAPPER, cwd, call.signal)
   if (why) return { title: 'craft review: profile', output: why }
   const caller = await callerOf(host, call.sessionID)
-  const { flags, onTask } = delegation(host, call, listed.agents, caller)
+  const { flags, onTask } = delegation(host, call, listed.agents, caller.model, forwarded)
   const outcome = await review.runReview({
     backend: 'opencode',
-    args: [...withCallerModel(forwarded, caller), ...flags],
+    args: [...withCallerModel(forwarded, caller.model), ...flags],
     cwd: host.directory,
     ...(call.signal ? { signal: call.signal } : {}),
     onProgress: p => call.progress?.(review.progressLine(p)),
     ...(onTask ? { onTask } : {}),
   })
-  return { title: `craft review: ${review.summaryOf(outcome).verdict}`, output: review.answerText(outcome) }
+  const answer = review.answerText(outcome)
+  return { title: `craft review: ${review.summaryOf(outcome).verdict}`, output: caller.note ? `${answer}\n\n${caller.note}` : answer }
 }
 
 // What the audit and the triage answer on OpenCode 2.x, before any child session. Built here, without

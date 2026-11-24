@@ -680,3 +680,30 @@ async fn a_delegated_round_hands_each_task_out_in_the_worktree_and_reads_its_rep
         fake.submits.borrow()
     );
 }
+
+#[tokio::test]
+async fn a_delegate_that_stopped_answering_stops_the_run_resumable_before_the_submit() {
+    let mut bench = Bench::new(HostKind::OpenCode);
+    bench.agents = Some(vec!["review-task".into()]);
+    // Its task events cannot be written: no task could ever answer.
+    bench.delegate = Some(super::delegate::Delegate::new(|_| false, |_| {}));
+    let fake = bench.fake(vec![Spec("a", "do a", None), Spec("b", "do b", None)]);
+    let answer = bench.drive(&fake).await;
+    assert!(!answer.finished);
+    assert!(
+        fake.submits.borrow().is_empty(),
+        "no task is failed to be handed out again"
+    );
+    assert!(
+        answer.text.contains(
+            "the process that runs the tasks stopped answering: a task could not be handed to it"
+        ),
+        "{}",
+        answer.text
+    );
+    assert!(answer.text.contains("--run '"), "{}", answer.text);
+    assert_eq!(
+        *fake.filed.borrow(),
+        ["the craft binary did not finish the run"]
+    );
+}

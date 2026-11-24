@@ -307,3 +307,34 @@ test("the caller's abort while a task runs stops the run and aborts the task", a
   await assert.rejects(running, /abort/i)
   assert.equal(signals[0]?.aborted, true)
 })
+
+test('a task event with no number key is said and passed over; a reply that cannot be written is no unhandled rejection', async () => {
+  /** @type {string[]} */
+  const warned = []
+  const d = delegation(
+    () => Promise.resolve('x'),
+    () => {
+      throw new Error('stdin gone')
+    },
+    line => warned.push(line),
+  )
+  d.heard({ ...TASK, key: '3' })
+  d.heard({ type: 'task_cancelled', key: null })
+  d.heard({ type: 'log', line: 'not a task' })
+  assert.deepEqual(warned, [
+    'craft review: a task event with no number key was passed over',
+    'craft review: a task_cancelled event with no number key was passed over',
+  ])
+  /** @type {unknown[]} */
+  const unhandled = []
+  const note = (/** @type {unknown} */ e) => unhandled.push(e)
+  process.on('unhandledRejection', note)
+  try {
+    d.heard(TASK)
+    await tick()
+    await tick()
+  } finally {
+    process.off('unhandledRejection', note)
+  }
+  assert.deepEqual(unhandled, [])
+})

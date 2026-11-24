@@ -20,6 +20,8 @@ pub(crate) enum Outcome {
     Limit(String),
     /// Why the host is not logged in, and how to log in.
     Login(String),
+    /// Why the process a delegated run hands its tasks to stopped answering (delegate.rs).
+    Gone(String),
     /// `said`: the last line the process wrote on stderr, when it wrote one.
     Unanswered {
         why: String,
@@ -40,6 +42,7 @@ impl Outcome {
             Self::Abandoned => Some("abandoned — past its deadline".into()),
             Self::Limit(t) => Some(format!("limit — {t}")),
             Self::Login(t) => Some(format!("login — {t}")),
+            Self::Gone(t) => Some(format!("stopped — {t}")),
             Self::Unanswered { why, .. } => Some(format!("unanswered — {why}")),
             Self::Blocked(why) => Some(blocked::failure(why)),
         }
@@ -72,6 +75,7 @@ pub(crate) fn stops(host: &Host, e: &AgentError) -> bool {
         }
         // A delegated task's failure, in the words the delegating process gave (delegate.rs).
         AgentError::Failed { subtype } => usage_limit_text(subtype).is_some(),
+        AgentError::HostGone(_) => true,
         AgentError::Spawn { .. }
         | AgentError::Io(_)
         | AgentError::TimedOut(_)
@@ -110,6 +114,8 @@ pub(crate) fn outcome_of(
     match reply {
         Ok(r) => write_answer(task, &r),
         Err(AgentError::NotStarted) => Outcome::NotStarted,
+        // No later task can answer: the run stops as on a missing login, to be resumed (round.rs).
+        Err(e @ AgentError::HostGone(_)) => Outcome::Gone(e.to_string()),
         Err(AgentError::TimedOut(_)) => Outcome::Abandoned,
         Err(AgentError::Quit {
             code,

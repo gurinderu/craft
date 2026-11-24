@@ -8,7 +8,7 @@
 //! a failed exit's are, so it stops the run as there. A dispatch dropped before its reply — past
 //! its deadline, or its round stopped — is said with a `task_cancelled` event, for the plugin to
 //! stop that child. A dispatch whose event could not be written, or made once the input closed,
-//! fails at once.
+//! stops the run, resumable: no later task could answer either.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -51,10 +51,15 @@ impl std::fmt::Debug for Delegate {
     }
 }
 
-/// Why a dispatch has no reply: the delegating process closed its input first.
-const CLOSED: &str = "the process that delegates the tasks closed its input";
+/// Why a dispatch has no reply: the delegating process's input ended, or could not be read.
+const CLOSED: &str = "its input to craft ended";
 /// Why a dispatch failed before any reply could come: its event was not written.
-const UNSENT: &str = "the task could not be handed to the process that delegates the tasks";
+const UNSENT: &str = "a task could not be handed to it";
+
+/// The run stops on either: no later task could answer (`AgentError::HostGone`, outcome.rs).
+fn gone(why: &str) -> AgentError {
+    AgentError::HostGone(why.to_owned())
+}
 
 impl Delegate {
     /// A delegate whose events go to `emit`, which says whether it wrote one, and whose passed-over
@@ -152,7 +157,7 @@ impl AgentBackend for Delegate {
         // Checked after the insert: a close between the two has cleared it, or is seen here.
         if self.0.closed.load(Ordering::SeqCst) {
             self.pending().remove(&key);
-            return reply_of(Err(CLOSED.to_owned()));
+            return Err(gone(CLOSED));
         }
         let waiting = Waiting {
             delegate: self,
@@ -169,11 +174,11 @@ impl AgentBackend for Delegate {
         });
         if !sent {
             self.pending().remove(&key);
-            return reply_of(Err(UNSENT.to_owned()));
+            return Err(gone(UNSENT));
         }
         let said = rx.await;
         drop(waiting);
-        reply_of(said.unwrap_or_else(|_closed| Err(CLOSED.to_owned())))
+        said.map_err(|_closed| gone(CLOSED)).and_then(reply_of)
     }
 }
 

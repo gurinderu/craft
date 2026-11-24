@@ -84,16 +84,19 @@ export function taskOf(e) {
 
 /**
  * The delegated tasks of one run: `heard` takes a `task` or `task_cancelled` event, `reply` writes a reply line to the
- * binary, and `stop` aborts every task still running once the binary is gone.
- * @param {RunTask} onTask @param {(line: string) => void} reply
+ * binary, `warn` hears an event it passes over, and `stop` aborts every task still running once the binary is gone.
+ * @param {RunTask} onTask @param {(line: string) => void} reply @param {(line: string) => void} [warn]
  */
-export function delegation(onTask, reply) {
+export function delegation(onTask, reply, warn = () => {}) {
   /** @type {Map<number, AbortController>} */
   const running = new Map()
   /** @param {ReviewEvent} event */
   const heard = event => {
     const key = event['key']
-    if (typeof key !== 'number') return
+    if (typeof key !== 'number') {
+      if (event.type === 'task' || event.type === 'task_cancelled') warn(`craft review: a ${event.type} event with no number key was passed over`)
+      return
+    }
     if (event.type === 'task_cancelled') running.get(key)?.abort()
     if (event.type !== 'task') return
     const task = taskOf(event)
@@ -115,6 +118,9 @@ export function delegation(onTask, reply) {
         },
       )
       .finally(() => running.delete(key))
+      // A reply that cannot be written is lost with the binary (its stdin's error is handled there): never an
+      // unhandled rejection in the host.
+      .catch(() => undefined)
   }
   const stop = () => {
     for (const s of running.values()) s.abort()
@@ -141,13 +147,17 @@ export function runReview({ backend, args, cwd, env = process.env, signal, onPro
     // nothing reads no input: it gets an empty one.
     child.stdin.on('error', () => undefined)
     if (!onTask) child.stdin.end()
-    const tasks = onTask
-      ? delegation(onTask, line => {
-          if (child.stdin.writable) child.stdin.write(`${line}\n`)
-        })
-      : null
     /** @type {{ answer: string, rest: string, progress: Progress, result: ReviewEvent | null, said: string[] }} */
     const out = { answer: '', rest: '', progress: START, result: null, said: [] }
+    const tasks = onTask
+      ? delegation(
+          onTask,
+          line => {
+            if (child.stdin.writable) child.stdin.write(`${line}\n`)
+          },
+          line => out.said.push(line),
+        )
+      : null
     const take = (/** @type {string} */ line) => {
       const event = eventOf(line)
       if (!event) {

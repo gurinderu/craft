@@ -2,6 +2,8 @@
 description: Expert Rust code reviewer. Runs the cargo quality gate, reviews the diff (changed .rs files) against the rust-review severity rubric, and returns an Approve/Warning/Block verdict — at most Warning when the mechanical gate could not be established, never Approve; INCOMPLETE only when no diff could be read. Use to review a Rust change before commit or merge. For whole-project structural audits (not a diff), use rust-architecture-reviewer instead.
 mode: subagent
 hidden: true
+permission:
+  external_directory: allow
 tools:
   write: false
   edit: false

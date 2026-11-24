@@ -8,11 +8,11 @@
 //     default.
 //   • A child is made where its parent is (opencode-v2.d.ts), so the repository the task reviews — craft's worktree of a
 //     PR, say — is named at the head of its prompt.
-//   • At most `childCap()` children run at once, and a child that gave nothing back, or broke before its loop ended, is
-//     tried once more alone (child-run.ts, `solo`): the plugin's own fan-out's mitigation of opencode's concurrent-child
-//     bugs.
+//   • At most the cap of children run at once (`--concurrency`, else `CRAFT_OPENCODE_CONCURRENCY`, else 4), and a child
+//     that gave nothing back, or broke before its loop ended, is tried once more alone — no other child of this review
+//     running beside it: the plugin's own fan-out's mitigation of opencode's concurrent-child bugs (child-run.ts).
 import type { DelegatedTask } from '../../shared/craft-review-run.mjs'
-import { runChildSession, solo } from './child-run.ts'
+import { runChildSession } from './child-run.ts'
 import type { Host, ModelRef } from './host.ts'
 import { ChildSessionFailed } from './host-v2.ts'
 
@@ -51,42 +51,116 @@ export async function taskAgents(host: Host): Promise<{ agents: string[] } | { r
   }
 }
 
-/** The children run at once: `CRAFT_OPENCODE_CONCURRENCY` (1 to 16), as the binary reads it, else 4. */
-export function childCap(env: NodeJS.ProcessEnv = process.env): number {
-  const n = Number(env['CRAFT_OPENCODE_CONCURRENCY'])
-  return Number.isInteger(n) && n >= 1 && n <= 16 ? n : 4
+/** A cap from 1 to 16, or undefined. */
+const capOf = (text: string | undefined) => {
+  const n = Number(text)
+  return text !== undefined && Number.isInteger(n) && n >= 1 && n <= 16 ? n : undefined
 }
 
-/** At most `n` works at once, the rest waiting in turn. */
-export function slots(n: number): <T>(work: () => Promise<T>) => Promise<T> {
-  let free = n
-  const waiting: (() => void)[] = []
-  return async work => {
-    if (free > 0) free--
-    else await new Promise<void>(resolve => waiting.push(resolve))
-    try {
-      return await work()
-    } finally {
-      const next = waiting.shift()
-      if (next) next()
-      else free++
+/**
+ * The children run at once, as the binary takes its own: the review's `--concurrency`, else `CRAFT_OPENCODE_CONCURRENCY`
+ * (1 to 16), else 4.
+ */
+export function childCap(words: readonly string[] = [], env: NodeJS.ProcessEnv = process.env): number {
+  const at = words.indexOf('--concurrency')
+  const flag = at >= 0 ? words[at + 1] : words.find(w => w.startsWith('--concurrency='))?.slice('--concurrency='.length)
+  return capOf(flag) ?? capOf(env['CRAFT_OPENCODE_CONCURRENCY']) ?? 4
+}
+
+/** Why a task's child never started: it was given up — cancelled, past its deadline, or its run gone — while it waited. */
+export const GIVEN_UP = 'the task was given up before its child session started'
+
+/** How a review's children take their turns: `shared` up to the cap at once, `alone` with no other running. */
+export interface Turns {
+  shared<T>(work: () => Promise<T>, signal: AbortSignal): Promise<T>
+  alone<T>(work: () => Promise<T>, signal: AbortSignal): Promise<T>
+}
+
+/**
+ * The turns of one review's children: at most `cap` shared works at once, and an `alone` work only once none runs, none
+ * starting beside it; each in the order it asked. A wait ends when its signal aborts, so a task's turn is bounded by
+ * its deadline.
+ */
+export function turns(cap: number): Turns {
+  let active = 0
+  let exclusive = false
+  const queue: { alone: boolean; go: () => void }[] = []
+  const pump = () => {
+    for (let head = queue[0]; head && !exclusive && (head.alone ? active === 0 : active < cap); head = queue[0]) {
+      queue.shift()
+      active++
+      exclusive = head.alone
+      head.go()
     }
   }
+  const enter = (alone: boolean, signal: AbortSignal) =>
+    new Promise<void>((resolve, reject) => {
+      if (signal.aborted) {
+        reject(new Error(GIVEN_UP))
+        return
+      }
+      const onAbort = () => {
+        queue.splice(queue.indexOf(entry), 1)
+        reject(new Error(GIVEN_UP))
+        pump()
+      }
+      const entry = {
+        alone,
+        go: () => {
+          signal.removeEventListener('abort', onAbort)
+          resolve()
+        },
+      }
+      signal.addEventListener('abort', onAbort, { once: true })
+      queue.push(entry)
+      pump()
+    })
+  const within =
+    (alone: boolean) =>
+    async <T>(work: () => Promise<T>, signal: AbortSignal): Promise<T> => {
+      await enter(alone, signal)
+      try {
+        return await work()
+      } finally {
+        active--
+        if (alone) exclusive = false
+        pump()
+      }
+    }
+  return { shared: within(false), alone: within(true) }
 }
 
-/** The task's prompt headed by the repository it reviews: a child session starts where its parent is. */
+/**
+ * The task's prompt headed by the repository it reviews, by its absolute path quoted as a JSON string: a child session
+ * starts where its parent is (opencode-v2.d.ts), and is asked to use absolute paths under it rather than to `cd`.
+ */
 export const inRepository = (cwd: string, prompt: string) =>
-  `WORKING DIRECTORY: this task reviews the repository at ${cwd} — run every command there (\`cd ${cwd}\` first) and read every path relative to it, not the directory this session starts in.\n\n${prompt}`
+  `WORKING DIRECTORY: this task reviews the repository at the absolute path ${JSON.stringify(cwd)}, not the directory this session starts in. Read every file and run every command by absolute paths under it (for git, \`git -C\` with that path).\n\n${prompt}`
 
-/** `run`, and once more alone when it gave nothing back or broke before its loop ended; never once given up. */
-async function retriedAlone(run: () => Promise<string>, signal: AbortSignal): Promise<string> {
+const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e))
+
+/**
+ * `run` in a shared turn, and once more alone — no other child of this review running — when it gave nothing back or
+ * broke before its loop ended (the plugin's own fan-out's mitigation of opencode's concurrent-child bugs, child-run.ts).
+ * Never once the task is given up, nor after a loop that failed: that error is the answer. A broken first attempt's
+ * session was interrupted before it threw (host-v2.ts), so no orphan runs beside the retry. When the retry fails too, the
+ * first error is kept, the retry's beside it.
+ */
+async function retriedAlone(run: () => Promise<string>, turn: Turns, signal: AbortSignal): Promise<string> {
+  let first: unknown
   try {
-    const text = await run()
+    const text = await turn.shared(run, signal)
     if (text || signal.aborted) return text
   } catch (e) {
     if (signal.aborted || e instanceof ChildSessionFailed) throw e
+    first = e
   }
-  return solo(run)
+  try {
+    return await turn.alone(run, signal)
+  } catch (e) {
+    if (first === undefined) throw e
+    throw new Error(`${messageOf(first)} (tried once more alone: ${messageOf(e)})`, { cause: first })
+  }
 }
 
 /**
@@ -94,7 +168,7 @@ async function retriedAlone(run: () => Promise<string>, signal: AbortSignal): Pr
  * names none, `fallback` — the calling session's own, its variant kept.
  */
 export function childTasks(host: Host, parent: string | undefined, fallback?: ModelRef, cap = childCap()) {
-  const slot = slots(cap)
+  const turn = turns(cap)
   return (task: DelegatedTask, signal: AbortSignal): Promise<string> => {
     const model = modelRef(task.model) ?? fallback
     const run = () =>
@@ -106,6 +180,6 @@ export function childTasks(host: Host, parent: string | undefined, fallback?: Mo
         ...(model ? { model } : {}),
         ...(parent ? { parentID: parent } : {}),
       })
-    return retriedAlone(() => slot(run), signal)
+    return retriedAlone(run, turn, signal)
   }
 }

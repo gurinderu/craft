@@ -212,7 +212,7 @@ test('on 2.x the review hands the binary the agents listed and runs each task as
   assert.ok(child)
   assert.equal(child.parentID, 'ses_caller')
   assert.equal(child.agent, 'review-task')
-  assert.match(child.prompt, /^WORKING DIRECTORY: this task reviews the repository at \/wt /)
+  assert.match(child.prompt, /^WORKING DIRECTORY: this task reviews the repository at the absolute path "\/wt"/)
   assert.deepEqual(child.model, { providerID: 'p', modelID: 'm', variant: 'high' }, "a task naming no model runs on the caller's")
   assert.equal(fs.readFileSync(path.join(path.dirname(argv), 'reply'), 'utf8').trim(), JSON.stringify({ key: 1, text: 'done' }))
   const v1 = TOOLS.find(t => t.name === 'review')
@@ -250,4 +250,46 @@ test('the 2.x audit and triage say they are not yet enabled, and why', async () 
     assert.match(answer, /is not yet enabled in OpenCode 2\.x: .*has not been run on the child-session reader `\/craft-review` now uses/)
     assert.doesNotMatch(answer, /opencode run/)
   }
+})
+
+test("a caller whose model cannot be read is said in the answer; the review runs on OpenCode's default", async () => {
+  const argv = fakeBinary()
+  const review = TOOLS.find(t => t.name === 'review')
+  assert.ok(review)
+  const host = { ...fakeHost(), callerModel: () => Promise.reject(new Error('session gone')) }
+  const answer = await review.run(host, { args: '--base main' }, { sessionID: 'ses_caller' })
+  assert.equal(fs.readFileSync(argv, 'utf8').trim(), 'review run --backend opencode --events json --base main')
+  assert.ok(typeof answer === 'object')
+  assert.match(answer.output, /Note: the calling session's model could not be read \(session gone\); the review's tasks ran on OpenCode's default model\.$/)
+})
+
+test("on 2.x the review's --concurrency caps its children too", async () => {
+  fakeBinary()
+  const bin = process.env['CRAFT_BIN']
+  assert.ok(bin)
+  const task = (/** @type {number} */ key) =>
+    JSON.stringify({ type: 'task', key, id: `t${key}`, label: `l${key}`, agent: 'review-task', model: null, cwd: '/wt', prompt: 'go' })
+  writeExecutable(
+    bin,
+    `#!/bin/sh\nif [ "$1" = init ]; then printf '{"exists":true}\\n'; exit 0; fi\necho '${task(1)}' >&2\necho '${task(2)}' >&2\nread -r a; read -r b\nprintf '## Verdict\\n\\nApprove\\n'\n`,
+  )
+  const review = onV2(TOOLS).find(t => t.name === 'review')
+  assert.ok(review)
+  const most = async (/** @type {string} */ args) => {
+    let live = 0
+    let peak = 0
+    const host = {
+      ...listing(['review-task']),
+      runChild: async () => {
+        peak = Math.max(peak, ++live)
+        await new Promise(resolve => setTimeout(resolve, 30))
+        live--
+        return 'ok'
+      },
+    }
+    await review.run(host, { args }, { sessionID: 'ses_caller' })
+    return peak
+  }
+  assert.equal(await most('--concurrency 1'), 1)
+  assert.equal(await most(''), 2, 'without the flag both run at once')
 })

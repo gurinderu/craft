@@ -373,3 +373,17 @@ test("setup carries a tool's progress to the craft.review channel and disposes i
   await dispose()
   assert.equal(rpcDisposed, 1)
 })
+
+test('a child that broke after its session was made is interrupted before the error reaches the caller', async () => {
+  const f = fakeCtx()
+  f.ctx.session.context = () => Promise.reject(new Error('context unreadable'))
+  await assert.rejects(v2Host(f.ctx, 0).runChild({ title: 't', agent: '', prompt: 'p' }), /context unreadable/)
+  assert.deepEqual(f.sent.at(-1), ['interrupt', { sessionID: 'ses_1' }])
+  const failed = fakeCtx([[{ type: 'user' }, { type: 'idle', outcome: 'failed', error: { type: 'x', message: 'y' } }]])
+  await assert.rejects(v2Host(failed.ctx, 0).runChild({ title: 't', agent: '', prompt: 'p' }), ChildSessionFailed)
+  assert.equal(
+    failed.sent.some(e => /** @type {unknown[]} */ (e)[0] === 'interrupt'),
+    false,
+    'a loop that ended failed needs no stop',
+  )
+})

@@ -91,7 +91,8 @@ opencode. The links point into this checkout, but a checkout does not change wha
   `review-task` exists only for `/craft-review`'s tasks: hidden too, but `mode: all`, because the binary
   starts it with `opencode run --agent review-task`, which opencode 1.19.5 refuses for a subagent
   (it falls back to the default agent); `hidden` keeps it out of the agent picker. It may read
-  outside the reviewed repository (`external_directory: allow`): its task's prompt file is in the
+  outside the reviewed repository (`external_directory: allow`, as `rust-reviewer` may too, for a `--pr`
+  review's worktree): its task's prompt file is in the
   run directory under `~/.craft`, and 1.19.5's `run` stops on the permission question otherwise.
 - **Workflows** — `/rust-audit [base-ref]`, `/triage-findings <locator>` and `/craft-review [flags ...]`.
   Each workflow's child sessions nest under the session that called it.
@@ -113,8 +114,11 @@ covered by tests against a fake binary and fake host, not yet seen in a real Ope
 
 On 2.x each child session is bounded by its task's deadline (15 minutes for a scout, 90 for a lens, 30
 for the rest): past it the binary abandons the task and the plugin interrupts its session. At most
-`CRAFT_OPENCODE_CONCURRENCY` children (default 4) run at once, and a child that gave nothing back is
-tried once more alone. Only a child whose run succeeded gives a reply: one that failed is reported by
+`--concurrency` children run at once (else `CRAFT_OPENCODE_CONCURRENCY`, else 4), and a child that gave
+nothing back, or broke before its run ended, is stopped and tried once more alone: no other child of the
+review runs beside the retry, which is given up with its task's deadline. If the plugin stops answering
+the binary — its input ends, or a task cannot be handed to it — the run stops INCOMPLETE with how to
+resume it. Only a child whose run succeeded gives a reply: one that failed is reported by
 the error OpenCode gives (its type and message, such as `provider.no-route`), one interrupted by that
 outcome, in the run's log and, when every task of a round fails, in the answer; a usage limit in it
 stops the run INCOMPLETE with how to resume it. The plugin hands the binary the agents OpenCode lists:
@@ -122,7 +126,8 @@ when they cannot be listed or `review-task` is not among them, the review refuse
 a task whose own agent is missing runs on `review-task`, and the report says the run was degraded.
 A child session is made where its parent is (OpenCode 2.x gives a child no directory of its own), so
 each task's prompt names the repository it reviews by its absolute path — with `--pr`, craft's own
-worktree of the PR.
+worktree of the PR — and asks the agent to use absolute paths under it. That is an instruction to the
+model, not an enforced directory.
 
 On 2.x the review shows its progress as a line in the TUI's prompt footer of the session that runs it —
 the same line 1.x shows as the tool's title — and on the end clears it and shows the verdict as a toast;

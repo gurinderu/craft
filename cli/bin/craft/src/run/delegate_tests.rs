@@ -253,9 +253,12 @@ async fn once_the_input_ends_every_waiting_dispatch_fails_and_every_later_one_at
     // The reader at the input's end, as `on_stdin`'s thread reaches it.
     d.read_replies(std::io::Cursor::new(Vec::new()));
     let error = bounded(running).await.unwrap().unwrap_err();
-    assert!(error.to_string().contains("closed its input"), "{error}");
+    assert!(
+        matches!(&error, AgentError::HostGone(why) if why == "its input to craft ended"),
+        "{error}"
+    );
     let later = bounded(d.run(&request("t2"))).await.unwrap_err();
-    assert!(later.to_string().contains("closed its input"), "{later}");
+    assert!(matches!(later, AgentError::HostGone(_)), "{later}");
     assert_eq!(
         events.lock().unwrap().len(),
         1,
@@ -268,7 +271,7 @@ async fn a_task_event_that_could_not_be_written_fails_its_dispatch_at_once() {
     let (d, _, _) = kept_logged(false);
     let error = bounded(d.run(&request("t1"))).await.unwrap_err();
     assert!(
-        error.to_string().contains("could not be handed to"),
+        matches!(&error, AgentError::HostGone(why) if why == "a task could not be handed to it"),
         "{error}"
     );
 }
@@ -413,5 +416,113 @@ fn delegate_is_opencode_s_with_the_event_stream_and_the_agents_listed_and_runs_n
         .unwrap_err()
         .contains("could not run"),
         "without --delegate opencode is asked first"
+    );
+}
+
+/// A dispatch of `d` running, and its key once its event is out.
+async fn dispatched(
+    d: &Delegate,
+    events: &Mutex<Vec<Event>>,
+    n: usize,
+    id: &'static str,
+) -> (
+    tokio::task::JoinHandle<Result<craft_agent::AgentReply, AgentError>>,
+    u64,
+) {
+    let running = tokio::spawn({
+        let d = d.clone();
+        async move { d.run(&request(id)).await }
+    });
+    (running, key_of(events, n).await)
+}
+
+#[tokio::test]
+async fn a_bad_reply_line_for_a_waiting_key_fails_that_dispatch_at_once_and_the_reader_goes_on() {
+    let (d, events, lines) = kept_logged(true);
+    let (over, k1) = dispatched(&d, &events, 1, "t1").await;
+    let (bytes, k2) = dispatched(&d, &events, 2, "t2").await;
+    let (json, k3) = dispatched(&d, &events, 3, "t3").await;
+    let (fine, k4) = dispatched(&d, &events, 4, "t4").await;
+    let mut input = format!("{{\"key\":{k1},\"text\":\"").into_bytes();
+    input.resize(input.len() + super::read::MAX_LINE, b'x');
+    input.extend_from_slice(b"\"}\n");
+    input.extend_from_slice(format!("{{\"key\":{k2},\"text\":\"").as_bytes());
+    input.extend_from_slice(b"\xff\"}\n");
+    input.extend_from_slice(format!("{{\"key\":{k3},\"text\":\n").as_bytes());
+    input.extend_from_slice(
+        format!(
+            "{}\n",
+            json!({"key": k4, "text": "```craft-answer\n{}\n```"})
+        )
+        .as_bytes(),
+    );
+    d.read_replies(std::io::Cursor::new(input));
+    let why = |r: Result<craft_agent::AgentReply, AgentError>| match r {
+        Err(AgentError::Failed { subtype }) => subtype,
+        other => panic!("{other:?}"),
+    };
+    assert!(why(bounded(over).await.unwrap()).contains("its reply could not be read: it is over"));
+    assert!(why(bounded(bytes).await.unwrap()).ends_with("it is not UTF-8"));
+    assert!(why(bounded(json).await.unwrap()).contains("it is not a reply"));
+    assert!(
+        bounded(fine)
+            .await
+            .unwrap()
+            .is_ok_and(|r| r.structured.is_some()),
+        "a good line after them is still read"
+    );
+    assert_eq!(lines.lock().unwrap().len(), 3);
+}
+
+/// Input that is interrupted once, then fails.
+struct Flaky(u8);
+
+impl std::io::Read for Flaky {
+    fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
+        self.0 += 1;
+        let kind = if self.0 == 1 {
+            std::io::ErrorKind::Interrupted
+        } else {
+            std::io::ErrorKind::BrokenPipe
+        };
+        Err(std::io::Error::new(kind, "flaky"))
+    }
+}
+
+#[tokio::test]
+async fn an_interrupted_read_is_tried_again_and_a_read_error_is_said_and_closes_the_delegate() {
+    let (d, _, lines) = kept_logged(true);
+    let mut input = std::io::BufReader::new(Flaky(0));
+    d.read_replies(&mut input);
+    assert_eq!(input.get_ref().0, 2, "the interrupted read was tried again");
+    let lines = lines.lock().unwrap().clone();
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    assert!(
+        lines[0].contains("the reply input could not be read (flaky)"),
+        "{lines:?}"
+    );
+    let later = bounded(d.run(&request("t1"))).await.unwrap_err();
+    assert!(matches!(later, AgentError::HostGone(_)), "{later}");
+}
+
+#[test]
+fn a_host_that_stopped_answering_stops_the_run_and_is_logged_as_a_stop() {
+    let host = super::super::host::Host {
+        kind: super::super::HostKind::OpenCode,
+        models: super::super::models::ModelTable::default(),
+        thinking: super::super::models::ThinkingTable::default(),
+        command: "opencode".into(),
+        agents: None,
+        archived: true,
+        delegate: None,
+    };
+    let gone = AgentError::HostGone("its input to craft ended".into());
+    assert!(stops(&host, &gone));
+    let outcome = outcome_of(&task("t", "t"), Err(gone), &host);
+    assert_eq!(
+        outcome.log_line().as_deref(),
+        Some(
+            "stopped — the process that runs the tasks stopped answering: its input to craft ended"
+        )
     );
 }

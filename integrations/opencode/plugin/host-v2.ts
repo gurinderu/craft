@@ -1,8 +1,8 @@
 // The 2.x side of the host (host.ts), on the surface opencode-v2.d.ts pins: `ctx.session` runs child sessions,
 // `ctx.tool` registers the tools with a JSON Schema input (no Effect, no zod: 2.2.7 accepts plain JSON Schema),
 // and the session `prompt` hook plus `ctx.event` feed the work hook.
-import { stringArgs, type Host, type ToolSpec, type WorkHook } from './host.ts'
-import type { V2Context, V2Event, V2Message, V2ToolDefinition } from './opencode-v2.js'
+import { stringArgs, type ChildRequest, type Host, type ModelRef, type ToolSpec, type WorkHook } from './host.ts'
+import type { V2Context, V2Event, V2Message, V2ModelRef, V2ToolDefinition } from './opencode-v2.js'
 import { shellIn } from './shell.mjs'
 import { progressChannel, withProgress, type Say } from './progress-rpc.ts'
 
@@ -90,6 +90,17 @@ function stopOnAbort(ctx: V2Context, sessionID: string, signal: AbortSignal | un
   return () => signal?.removeEventListener('abort', stop)
 }
 
+/** A model as 2.x names it, its variant kept. */
+const v2Model = (m: ModelRef): V2ModelRef => ({ providerID: m.providerID, id: m.modelID, ...(m.variant ? { variant: m.variant } : {}) })
+
+/** What `session.create` is given for a child: only what the request names. */
+const createInput = (req: ChildRequest) => ({
+  title: req.title,
+  ...(req.agent ? { agent: req.agent } : {}),
+  ...(req.model ? { model: v2Model(req.model) } : {}),
+  ...(req.parentID ? { parentID: req.parentID } : {}),
+})
+
 export function v2Host(ctx: V2Context, pollMs = POLL_MS): Host {
   const directory = ctx.location.directory
   return {
@@ -99,20 +110,17 @@ export function v2Host(ctx: V2Context, pollMs = POLL_MS): Host {
     async runChild(req) {
       // A task already given up is never started; one given up while its session was made is never prompted.
       if (req.signal?.aborted) throw new Error(STOPPED)
-      const session = await ctx.session.create({
-        title: req.title,
-        ...(req.agent ? { agent: req.agent } : {}),
-        ...(req.model
-          ? { model: { providerID: req.model.providerID, id: req.model.modelID, ...(req.model.variant ? { variant: req.model.variant } : {}) } }
-          : {}),
-        ...(req.parentID ? { parentID: req.parentID } : {}),
-      })
+      const session = await ctx.session.create(createInput(req))
       req.onSession?.(session.id)
       if (req.signal?.aborted) throw new Error(STOPPED)
       const unlisten = stopOnAbort(ctx, session.id, req.signal)
       try {
         await ctx.session.prompt({ sessionID: session.id, text: req.prompt })
         return await awaitReply(ctx, session.id, pollMs, req.signal)
+      } catch (e) {
+        // A loop that ended failed needs no stop; any other break leaves no child running behind the caller's retry.
+        if (!(e instanceof ChildSessionFailed)) await ctx.session.interrupt({ sessionID: session.id }).catch(() => undefined)
+        throw e
       } finally {
         unlisten()
       }

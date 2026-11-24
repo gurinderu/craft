@@ -131,7 +131,7 @@ fn refused(sink: Sink, why: &str) -> Result<ExitCode> {
 }
 
 /// The host and what it runs with, or why it cannot be used: opencode is asked first which
-/// agents it has.
+/// agents it has — or, with `--delegate`, takes those `--agents` names and runs no opencode.
 fn ready(args: &RunArgs, repo: &Path, sink: Sink) -> Result<(NonZeroUsize, Host, PathBuf), String> {
     let (concurrency, mut host, root) =
         concurrency_of(args).and_then(|c| Ok((c, host_of(args)?, root_of(args)?)))?;
