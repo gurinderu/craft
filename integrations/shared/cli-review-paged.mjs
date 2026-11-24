@@ -97,20 +97,33 @@ async function stepOf(stdout, frame, ask) {
  * @returns {Promise<Page | { cut: string } | { stop: Record<string, unknown> }>}
  */
 async function twice(ask, frame, from) {
-  let why = 'came back cut'
+  /** @type {string[]} */
+  const whys = []
   for (let tries = 0; tries < 2; tries++) {
     const got = await ask(frame.run, from)
     if (isObject(got) && (typeof got['limit'] === 'string' || harnessRefusal(got) !== null)) return { stop: got }
-    const page = isObject(got) && typeof got['stdout'] === 'string' ? pageOf(got['stdout'], from) : null
-    if (page && ofStep(page, frame)) return page
-    why = failure(got) ?? 'came back cut'
+    const page = pageIn(got, frame, from)
+    if (page) return page
+    whys.push(whyUnread(got))
   }
-  return { cut: `its page from offset ${String(from)} of ${frame.run} was not read twice: the last ${why}` }
+  const [first = '', last = ''] = whys
+  const said = first === last ? `both ${first}` : `first ${first}, then ${last}`
+  return { cut: `its page from offset ${String(from)} of ${frame.run} was not read twice: ${said}` }
 }
 
-/** What a page command that ran and failed said: its exit and stderr; null for one that did not fail. @param {unknown} got */
-function failure(got) {
-  if (!isObject(got) || typeof got['exitCode'] !== 'number' || got['exitCode'] === 0) return null
+/** The page of `frame`'s step from `from` that `got` carries, null when it carries none. @param {unknown} got @param {Frame} frame @param {number} from */
+function pageIn(got, frame, from) {
+  const page = isObject(got) && typeof got['stdout'] === 'string' ? pageOf(got['stdout'], from) : null
+  return page && ofStep(page, frame) ? page : null
+}
+
+/**
+ * Why a page step's answer is no page: its service agent returned nothing, its command ran and failed (its exit and
+ * stderr), or what it copied came back cut. @param {unknown} got @returns {string}
+ */
+function whyUnread(got) {
+  if (got == null) return 'went unanswered'
+  if (!isObject(got) || typeof got['exitCode'] !== 'number' || got['exitCode'] === 0) return 'came back cut'
   const stderr = String(got['stderr'] ?? '')
     .trim()
     .slice(0, 400)

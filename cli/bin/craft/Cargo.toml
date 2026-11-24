@@ -21,6 +21,9 @@ tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "
 [target.'cfg(unix)'.dependencies]
 nix = { workspace = true, features = ["fs"] }
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = ["Win32_Storage_FileSystem"] }
+
 [dev-dependencies]
 jsonschema.workspace = true
 tempfile.workspace = true

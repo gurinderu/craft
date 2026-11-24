@@ -9,6 +9,9 @@ use anyhow::{Context, Result};
 
 use super::FILE;
 
+#[cfg(windows)]
+mod links;
+
 /// The text of the step the run in `run` wrote: its [`FILE`], a regular file with one link,
 /// itself no symlink or reparse point, in a directory that holds the run's state.
 pub(super) fn read_step(run: &Path) -> Result<String> {
@@ -24,13 +27,15 @@ pub(super) fn read_step(run: &Path) -> Result<String> {
     std::io::read_to_string(file).with_context(|| format!("reading {}", path.display()))
 }
 
-/// `path` opened for reading, a symlink in its last component refused by the open itself.
+/// `path` opened for reading, a symlink in its last component refused by the open itself, and a
+/// FIFO opened without waiting for a writer, so the regular-file check refuses it.
 #[cfg(unix)]
 fn open(path: &Path) -> std::io::Result<File> {
+    use nix::fcntl::OFlag;
     use std::os::unix::fs::OpenOptionsExt;
     OpenOptions::new()
         .read(true)
-        .custom_flags(nix::fcntl::OFlag::O_NOFOLLOW.bits())
+        .custom_flags((OFlag::O_NOFOLLOW | OFlag::O_NONBLOCK).bits())
         .open(path)
 }
 
@@ -51,7 +56,7 @@ fn open(path: &Path) -> std::io::Result<File> {
     File::open(path)
 }
 
-/// That the handle opened is a plain file: a regular file, on unix with no second link to it, on
+/// That the handle opened is a plain file: a regular file with no second link to it, and on
 /// Windows no reparse point.
 fn plain(file: &File) -> Result<()> {
     let meta = file.metadata()?;
@@ -70,6 +75,8 @@ fn plain(file: &File) -> Result<()> {
             meta.file_attributes() & REPARSE_POINT == 0,
             "a reparse point"
         );
+        let links = links::of(file)?;
+        anyhow::ensure!(links == 1, "the file has {links} links");
     }
     Ok(())
 }

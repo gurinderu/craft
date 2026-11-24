@@ -5,7 +5,8 @@
 //! the next. The step is the one JSON line `printed` would print, cut by characters: a page is a
 //! `craft-out <run> <total> <from> <count>` line naming the run directory, the page's `count` characters of the step from
 //! offset `from` on one line, and a `craft-page <end>` line — offsets and counts in UTF-16 code
-//! units, as the driver's strings count them, and never splitting a character. The driver joins
+//! units, as the driver's strings count them, never splitting a character, and not next to
+//! whitespace or U+FEFF where the page has another place to end ([`cut::page`]). The driver joins
 //! the pages with no separator and checks every count, so a page cut in a copy is seen and asked
 //! again, and the command is never run twice.
 
@@ -53,7 +54,7 @@ pub(crate) fn print(value: &Value, paging: &Paging) -> Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
-/// [`print`] to `out`, the note of a step file that could not be written to `err`.
+/// [`print()`] to `out`, the note of a step file that could not be written to `err`.
 fn step_to(
     out: &mut impl Write,
     err: &mut impl Write,
@@ -97,7 +98,8 @@ pub fn page_of(args: &PageArgs) -> Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
-/// The page of `text` from offset `from`, framed, written to `out`.
+/// The page of `text` from offset `from`, framed, written to `out`: cut as [`cut::page`] cuts,
+/// on a character boundary and not next to whitespace or U+FEFF unless it has no other place.
 fn page(out: &mut impl Write, run: &Path, text: &str, from: usize) -> Result<()> {
     let total = cut::units(text);
     let start = cut::byte_at(text, from)

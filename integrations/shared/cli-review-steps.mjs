@@ -247,8 +247,8 @@ const PAGE = `${PAGE_LINES} —`
  * @returns {Promise<unknown>}
  */
 async function paged(serve, label, title, bin, got) {
-  return readPaged(await got, (file, from) => {
-    const cmd = pageCommand(bin, file, from)
+  return readPaged(await got, (run, from) => {
+    const cmd = pageCommand(bin, run, from)
     return serve(`${label}:page`, title, servicePrompt(`Run exactly this one command:\n\n${cmd}`, PAGE), cmd)
   })
 }
@@ -460,12 +460,10 @@ async function publishAfter(sb, o, craftVersion, serve) {
   if ('incomplete' in where) return stoppedAnswer(where.incomplete)
   if (where.note) sb.log(where.note)
   const comment = commentCommand(where, o)
-  const read = resumed(
-    o.run,
-    await paged(serve, 'step:comment', 'Submit', where.bin, serve('step:comment', 'Submit', submitPrompt(comment), comment)),
-    'published on its PR',
-  )
-  if ('error' in read) return unpublished(o.run, read, where.bin)
+  const got = await paged(serve, 'step:comment', 'Submit', where.bin, serve('step:comment', 'Submit', submitPrompt(comment), comment))
+  const read = resumed(o.run, got, 'published on its PR')
+  // The comment ran when only a page step of its step stopped — a refusal there included: what it posted is unknown.
+  if ('error' in read) return unreadRun(got) === null ? unpublished(o.run, read, where.bin) : unknownPublication(o.run, read.error)
   if (!read.step.done) return unknownPublication(o.run, `the binary answered with no finished run: ${JSON.stringify(read.step).slice(0, 200)}`)
   const lost = read.step.filing?.lost ?? []
   for (const line of lost) sb.log(`⚠️ telemetry: ${line}`)

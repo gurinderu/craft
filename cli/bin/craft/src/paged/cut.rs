@@ -29,8 +29,8 @@ fn trimmed(c: char) -> bool {
 }
 
 /// The page `rest` starts with: all of it when it fits, else at most [`PAGE_UNITS`] whole
-/// characters, ended where neither side of the cut is whitespace — a copy that trims a line's
-/// ends would lose it — unless no such place is left, when the bound itself.
+/// characters, ended where neither side of the cut is whitespace or U+FEFF — a copy that trims a
+/// line's ends would lose it — unless the page has no such place, when it ends at the bound.
 pub(super) fn page(rest: &str) -> &str {
     let mut ends = Vec::new();
     let mut used = 0;

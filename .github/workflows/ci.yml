@@ -178,8 +178,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: cli
-      - name: Native process identity and writer interoperability
-        run: cargo test -p craft --locked --test process_identity
+      - name: Native process identity, writer interoperability and the paged step file
+        run: cargo test -p craft --locked --test process_identity --test paged
 
   # Static analysis with semgrep's public registry rule sets, plus craft's own shell-command rule, over
   # integrations/shared/, integrations/opencode/plugin/ and integrations/claude-code/workflows/ (not integrations/opencode/install.sh or

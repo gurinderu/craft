@@ -1,6 +1,7 @@
 //! `--paged` from the command line: each step command a driver pages — `start`, `submit`, `status`
 //! and `comment` — takes it; a paged step goes to the run directory and its first page is printed
-//! framed; `review page` prints a page of it, and reads no other file; a brief status prints whole.
+//! framed; `review page --run` prints a page of it, and reads nothing but that run's plain step
+//! file; a brief status prints whole. CI runs this file on macOS and Windows too (`store-native`).
 #![expect(
     clippy::unwrap_used,
     clippy::indexing_slicing,
@@ -177,19 +178,82 @@ fn review_page_reads_only_a_run_directory_s_own_plain_step_file() {
         err.contains("reading ") && err.contains("No such file"),
         "{err}"
     );
+    let step = run.join("host-step.out");
+    // A symlink in the step file's place: refused by the open on unix, as a reparse point on
+    // Windows, where making one may need a privilege the runner lacks.
     #[cfg(unix)]
-    {
-        // A symlink in the step file's place is refused by the open itself.
-        std::os::unix::fs::symlink(&secret, run.join("host-step.out")).unwrap();
+    let linked = std::os::unix::fs::symlink(&secret, &step)
+        .map(|()| true)
+        .unwrap();
+    #[cfg(windows)]
+    let linked = match std::os::windows::fs::symlink_file(&secret, &step) {
+        Ok(()) => true,
+        Err(e) => {
+            println!("skipped the symlink case: no symlink could be made here ({e})");
+            false
+        }
+    };
+    #[cfg(any(unix, windows))]
+    if linked {
         let (code, err) = page_of(&run, tmp.path());
         assert_eq!(code, Some(1));
         assert!(!err.contains("secret"), "{err}");
         assert!(err.contains("reading "), "{err}");
-        // A hard link to another file is refused by its link count.
-        std::fs::remove_file(run.join("host-step.out")).unwrap();
-        std::fs::hard_link(&secret, run.join("host-step.out")).unwrap();
-        let (code, err) = page_of(&run, tmp.path());
-        assert_eq!(code, Some(1));
-        assert!(err.contains("the file has 2 links"), "{err}");
+        std::fs::remove_file(&step).unwrap();
     }
+    // A hard link to another file is refused by its link count.
+    std::fs::hard_link(&secret, &step).unwrap();
+    let (code, err) = page_of(&run, tmp.path());
+    assert_eq!(code, Some(1));
+    assert!(err.contains("the file has 2 links"), "{err}");
+    std::fs::remove_file(&step).unwrap();
+    // A FIFO in the step file's place is refused at once, not waited on for a writer.
+    #[cfg(unix)]
+    {
+        let made = Command::new("mkfifo").arg(&step).status().unwrap();
+        assert!(made.success());
+        let (code, err) = page_within(&run, tmp.path(), std::time::Duration::from_secs(20));
+        assert_eq!(code, Some(1));
+        assert!(err.contains("not a regular file"), "{err}");
+    }
+}
+
+/// [`page_of`], the process killed and the test failed when it is still running after `limit`.
+#[cfg(unix)]
+fn page_within(run: &Path, home: &Path, limit: std::time::Duration) -> (Option<i32>, String) {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_craft"))
+        .env("CRAFT_CODE_GRAPH", "")
+        .env("HOME", home)
+        .args([
+            "review",
+            "page",
+            "--run",
+            run.to_str().unwrap(),
+            "--from",
+            "0",
+        ])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let began = std::time::Instant::now();
+    let mut blocked = false;
+    while child.try_wait().unwrap().is_none() {
+        if began.elapsed() > limit {
+            child.kill().unwrap();
+            blocked = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    assert!(
+        !blocked,
+        "review page blocked on the step file for {limit:?}"
+    );
+    let out = child.wait_with_output().unwrap();
+    assert!(out.stdout.is_empty(), "{out:?}");
+    (
+        out.status.code(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+    )
 }

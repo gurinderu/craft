@@ -57,10 +57,13 @@ test('the driver reads a paged start and a paged submit through `craft review pa
     String(pageCall?.prompt),
     /stdout is exactly three lines: the craft-out line, the page's one body line copied whole, character for character, never split, wrapped or trimmed/,
   )
-  assert.match(
-    String(run.calls.find(c => c.label === 'step:start')?.prompt),
-    /stdout is either one line of JSON or, when the step is paged, exactly three lines/,
-  )
+  for (const label of ['step:start', 'step:submit:1']) {
+    assert.match(
+      String(run.calls.find(c => c.label === label)?.prompt),
+      /stdout is either one line of JSON or, when the step is paged, exactly three lines/,
+      label,
+    )
+  }
   assert.match(run.report, /^## Verdict\n\n⛔ Block/)
 })
 
@@ -137,6 +140,35 @@ test('a status whose page step fails falls back to the brief status, and files n
     run.calls.map(c => c.label),
     ['step:root', 'step:start', 'lens:a', 'step:submit:1', 'step:status', 'step:status:page', 'step:status:page', 'step:brief'],
   )
+  assert.match(
+    String(run.calls.find(c => c.label === 'step:status')?.prompt),
+    /stdout is either one line of JSON or, when the step is paged, exactly three lines/,
+  )
   assert.match(run.report, /Block — 1 High/)
   assert.doesNotMatch(run.report, /did not finish the run/)
+})
+
+test('a publication whose page step the harness refused says its outcome is unknown: the comment itself ran', async () => {
+  const step = JSON.stringify({ run: RUN, done: true, report: `${RUN}/report.md`, verdict: 'Block' })
+  const refused = {
+    exitCode: 1,
+    stdout: '',
+    stderr: `Permission for this action was denied by the Claude Code auto mode classifier. The command was not run. Denied command: /opt/craft review page --run '${RUN}' --from 5 (timeout 120000 ms).`,
+  }
+  const run = await runEngine('review', {
+    args: { ...ARGS, run: RUN, comment: true },
+    script: { ...BASE(), 'step:comment': page(step, 0, 5), 'step:comment:page': refused },
+  })
+  assert.match(run.report, /whether anything was posted on the PR is unknown/)
+  assert.doesNotMatch(run.report, /Nothing was posted/)
+})
+
+test('a comment command the harness refused itself posted nothing, and says so', async () => {
+  const refused = {
+    exitCode: 1,
+    stdout: '',
+    stderr: `Permission for this action was denied by the Claude Code auto mode classifier. The command was not run. Denied command: /opt/craft review comment --run '${RUN}' (timeout 420000 ms).`,
+  }
+  const run = await runEngine('review', { args: { ...ARGS, run: RUN, comment: true }, script: { ...BASE(), 'step:comment': refused } })
+  assert.match(run.report, /Nothing was posted on the PR — the harness's permission check refused the command/)
 })
