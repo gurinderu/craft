@@ -491,8 +491,9 @@ const notFinishedHint = (run, error) =>
     : ''
 
 /**
- * A publication whose step was lost — cut off, its agent dead, its output unreadable — after the binary may have posted:
- * no refusal, so the outcome is said unknown, with where to read it.
+ * A publication whose step was lost — cut off, its agent dead, its output unreadable, or a page of its step stopped,
+ * the harness's refusal of a page step included — after the binary may have posted: the outcome is said unknown, with
+ * why and where to read it.
  * @param {string} run @param {string} error @returns {string}
  */
 const unknownPublication = (run, error) =>

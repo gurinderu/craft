@@ -104,10 +104,10 @@ async function twice(ask, frame, from) {
     if (isObject(got) && (typeof got['limit'] === 'string' || harnessRefusal(got) !== null)) return { stop: got }
     const page = pageIn(got, frame, from)
     if (page) return page
-    whys.push(whyUnread(got))
+    whys.push(whyUnread(got, frame, from))
   }
   const [first = '', last = ''] = whys
-  const said = first === last ? `both ${first}` : `first ${first}, then ${last}`
+  const said = first === last ? `both tries: it ${first}` : `the first try: it ${first}; the second: it ${last}`
   return { cut: `its page from offset ${String(from)} of ${frame.run} was not read twice: ${said}` }
 }
 
@@ -118,16 +118,32 @@ function pageIn(got, frame, from) {
 }
 
 /**
- * Why a page step's answer is no page: its service agent returned nothing, its command ran and failed (its exit and
- * stderr), or what it copied came back cut. @param {unknown} got @returns {string}
+ * Why a page step's answer is no page of `frame`'s step from `from`: its service agent returned nothing or no command
+ * output, its command ran and failed (its exit and stderr), its page belongs to another run or step or moves on
+ * nothing, or what it copied came back cut.
+ * @param {unknown} got @param {Frame} frame @param {number} from @returns {string}
  */
-function whyUnread(got) {
+function whyUnread(got, frame, from) {
   if (got == null) return 'went unanswered'
-  if (!isObject(got) || typeof got['exitCode'] !== 'number' || got['exitCode'] === 0) return 'came back cut'
-  const stderr = String(got['stderr'] ?? '')
+  if (!isObject(got) || typeof got['stdout'] !== 'string') return 'answered with no command output'
+  if (typeof got['exitCode'] === 'number' && got['exitCode'] !== 0) return exited(got['exitCode'], got['stderr'])
+  const page = pageOf(got['stdout'], from)
+  return page ? misfit(page, frame) : 'came back cut'
+}
+
+/** A failed command's exit and its stderr, trimmed and capped. @param {number} code @param {unknown} stderr */
+function exited(code, stderr) {
+  const said = String(stderr ?? '')
     .trim()
     .slice(0, 400)
-  return `exited ${String(got['exitCode'])}${stderr ? `: ${stderr}` : ''}`
+  return `exited ${String(code)}${said ? `: ${said}` : ''}`
+}
+
+/** Why a whole page is not one of `frame`'s step. @param {Page} page @param {Frame} frame */
+function misfit(page, frame) {
+  if (page.run !== frame.run) return `was a page of another run (${page.run})`
+  if (page.total !== frame.total) return `was a page of another step (${String(page.total)} characters, not ${String(frame.total)})`
+  return 'moved on no character'
 }
 
 /**

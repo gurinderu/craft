@@ -106,6 +106,7 @@ test('a publication whose page step fails says its outcome is unknown, never tha
     script: { ...BASE(), 'step:comment': page(step, 0, 5), 'step:comment:page': failed(1) },
   })
   assert.match(run.report, /whether anything was posted on the PR is unknown/)
+  assert.ok(run.report.includes('it exited 1: craft: the page failed with 1'), run.report)
   assert.doesNotMatch(run.report, /Nothing was posted/)
 })
 
@@ -160,6 +161,7 @@ test('a publication whose page step the harness refused says its outcome is unkn
     script: { ...BASE(), 'step:comment': page(step, 0, 5), 'step:comment:page': refused },
   })
   assert.match(run.report, /whether anything was posted on the PR is unknown/)
+  assert.ok(run.report.includes("the harness's permission check refused the command"), run.report)
   assert.doesNotMatch(run.report, /Nothing was posted/)
 })
 

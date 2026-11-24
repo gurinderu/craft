@@ -175,7 +175,7 @@ fn review_page_reads_only_a_run_directory_s_own_plain_step_file() {
     let (code, err) = page_of(&run, tmp.path());
     assert_eq!(code, Some(1));
     assert!(
-        err.contains("reading ") && err.contains("No such file"),
+        err.contains("reading ") && err.contains("os error 2"),
         "{err}"
     );
     let step = run.join("host-step.out");
@@ -185,11 +185,17 @@ fn review_page_reads_only_a_run_directory_s_own_plain_step_file() {
     let linked = std::os::unix::fs::symlink(&secret, &step)
         .map(|()| true)
         .unwrap();
+    // Only the missing privilege to make one (ERROR_PRIVILEGE_NOT_HELD) skips the case.
     #[cfg(windows)]
     let linked = match std::os::windows::fs::symlink_file(&secret, &step) {
         Ok(()) => true,
         Err(e) => {
-            println!("skipped the symlink case: no symlink could be made here ({e})");
+            assert_eq!(
+                e.raw_os_error(),
+                Some(1314),
+                "a symlink could not be made: {e}"
+            );
+            println!("skipped the symlink case: this runner may not make a symlink ({e})");
             false
         }
     };
@@ -199,6 +205,8 @@ fn review_page_reads_only_a_run_directory_s_own_plain_step_file() {
         assert_eq!(code, Some(1));
         assert!(!err.contains("secret"), "{err}");
         assert!(err.contains("reading "), "{err}");
+        #[cfg(windows)]
+        assert!(err.contains("a reparse point, not a plain file"), "{err}");
         std::fs::remove_file(&step).unwrap();
     }
     // A hard link to another file is refused by its link count.
@@ -236,6 +244,28 @@ fn page_within(run: &Path, home: &Path, limit: std::time::Duration) -> (Option<i
         .stderr(std::process::Stdio::piped())
         .spawn()
         .unwrap();
+    // Both pipes drained as the child writes, so a full one cannot stall it.
+    let drain = |pipe: Option<Box<dyn std::io::Read + Send>>| {
+        std::thread::spawn(move || {
+            let mut text = String::new();
+            if let Some(mut pipe) = pipe {
+                std::io::Read::read_to_string(&mut pipe, &mut text).unwrap();
+            }
+            text
+        })
+    };
+    let out = drain(
+        child
+            .stdout
+            .take()
+            .map(|p| Box::new(p) as Box<dyn std::io::Read + Send>),
+    );
+    let err = drain(
+        child
+            .stderr
+            .take()
+            .map(|p| Box::new(p) as Box<dyn std::io::Read + Send>),
+    );
     let began = std::time::Instant::now();
     let mut blocked = false;
     while child.try_wait().unwrap().is_none() {
@@ -250,10 +280,8 @@ fn page_within(run: &Path, home: &Path, limit: std::time::Duration) -> (Option<i
         !blocked,
         "review page blocked on the step file for {limit:?}"
     );
-    let out = child.wait_with_output().unwrap();
-    assert!(out.stdout.is_empty(), "{out:?}");
-    (
-        out.status.code(),
-        String::from_utf8_lossy(&out.stderr).into_owned(),
-    )
+    let status = child.wait().unwrap();
+    let (out, err) = (out.join().unwrap(), err.join().unwrap());
+    assert!(out.is_empty(), "{out}");
+    (status.code(), err)
 }

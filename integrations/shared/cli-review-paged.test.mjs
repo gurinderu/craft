@@ -72,14 +72,21 @@ test('a page cut once is asked again; cut twice, the step is said cut, never par
   assert.equal(n, 2)
   assert.equal(stdoutOf(once), STEP)
   const twice = await readPaged(ran(page(STEP, 0, 20)), async () => ran(`craft-out ${DIR} ${String(STEP.length)}`))
-  assert.equal(errorOf(twice), `the command's output could not be read whole: its page from offset 20 of ${DIR} was not read twice: both came back cut`)
+  assert.equal(
+    errorOf(twice),
+    `the command's output could not be read whole: its page from offset 20 of ${DIR} was not read twice: both tries: it came back cut`,
+  )
 })
 
-test('a page of another step — another run or length — is no page of this one', async () => {
+test('a page of another step — another run or length — is no page of this one, and is said so', async () => {
   const other = `${STEP}x`
-  for (const ask of [async () => ran(page(STEP, 20, STEP.length - 20, '/elsewhere')), async () => ran(page(other, 20, other.length - 20))]) {
-    assert.match(errorOf(await readPaged(ran(page(STEP, 0, 20)), ask)), /was not read twice: both came back cut$/)
-  }
+  const run = await readPaged(ran(page(STEP, 0, 20)), async () => ran(page(STEP, 20, STEP.length - 20, '/elsewhere')))
+  assert.match(errorOf(run), /was not read twice: both tries: it was a page of another run \(\/elsewhere\)$/)
+  const step = await readPaged(ran(page(STEP, 0, 20)), async () => ran(page(other, 20, other.length - 20)))
+  assert.match(
+    errorOf(step),
+    new RegExp(`was not read twice: both tries: it was a page of another step \\(${String(other.length)} characters, not ${String(STEP.length)}\\)$`),
+  )
 })
 
 test('a first page cut is read again from the run it names', async () => {
@@ -101,7 +108,7 @@ test('a frame naming no absolute run directory, or a page that moves nothing, is
     return ran(page(STEP, from, 0))
   })
   assert.equal(n, 2, 'an empty page is asked once more, then given up')
-  assert.match(errorOf(empty), /its page from offset 9 of \/run was not read twice: both came back cut$/)
+  assert.match(errorOf(empty), /its page from offset 9 of \/run was not read twice: both tries: it moved on no character$/)
 })
 
 test('a step past the page bound is given up, not read for ever', async () => {
@@ -138,7 +145,7 @@ test('a page step stopped by the usage limit or refused by the harness is passed
     exitCode: 0,
     stderr: '',
     run: '/run',
-    cut: 'its page from offset 9 of /run was not read twice: both exited 1: craft: offset 9 is no character boundary of the 70',
+    cut: 'its page from offset 9 of /run was not read twice: both tries: it exited 1: craft: offset 9 is no character boundary of the 70',
   })
 })
 
@@ -158,8 +165,13 @@ test("a page step's two failures are both said: not answered, cut, or the comman
   const capped = long.trim().slice(0, 400)
   assert.equal(
     said,
-    `the command's output could not be read whole: its page from offset 9 of /run was not read twice: first went unanswered, then exited 1: ${capped}`,
+    `the command's output could not be read whole: its page from offset 9 of /run was not read twice: the first try: it went unanswered; the second: it exited 1: ${capped}`,
   )
   const unanswered = await readPaged(ran(page(STEP, 0, 9)), async () => undefined)
-  assert.match(errorOf(unanswered), /was not read twice: both went unanswered$/)
+  assert.match(errorOf(unanswered), /was not read twice: both tries: it went unanswered$/)
+})
+
+test('a page step that answered no command output is said so', async () => {
+  const got = await readPaged(ran(page(STEP, 0, 9)), async () => ({ text: 'done' }))
+  assert.match(errorOf(got), /both tries: it answered with no command output$/)
 })

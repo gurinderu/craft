@@ -60,23 +60,26 @@ fn open(path: &Path) -> std::io::Result<File> {
 /// Windows no reparse point.
 fn plain(file: &File) -> Result<()> {
     let meta = file.metadata()?;
-    anyhow::ensure!(meta.is_file(), "not a regular file");
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        anyhow::ensure!(meta.nlink() == 1, "the file has {} links", meta.nlink());
-    }
     #[cfg(windows)]
     {
         use std::os::windows::fs::MetadataExt;
         /// `FILE_ATTRIBUTE_REPARSE_POINT` (Win32 `winnt.h`).
         const REPARSE_POINT: u32 = 0x400;
+        // Before the file type: a symlink opened as itself would read as no regular file.
         anyhow::ensure!(
             meta.file_attributes() & REPARSE_POINT == 0,
-            "a reparse point"
+            "a reparse point, not a plain file"
         );
-        let links = links::of(file)?;
-        anyhow::ensure!(links == 1, "the file has {links} links");
     }
+    anyhow::ensure!(meta.is_file(), "not a regular file");
+    #[cfg(unix)]
+    let links = {
+        use std::os::unix::fs::MetadataExt;
+        meta.nlink()
+    };
+    #[cfg(windows)]
+    let links = u64::from(links::of(file)?);
+    #[cfg(any(unix, windows))]
+    anyhow::ensure!(links == 1, "the file has {links} links");
     Ok(())
 }
