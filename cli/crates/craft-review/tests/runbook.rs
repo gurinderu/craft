@@ -120,7 +120,7 @@ fn a_markdown_file_that_cannot_be_read_safely_is_named_not_dropped() {
     );
     assert!(r.contains("NOT reviewed by the runbook lens"), "{r}");
     // A runbook-only change the signal could not read is no approval: no lens ran.
-    assert_eq!(s["verdict"], json!("Warning"), "{s}");
+    assert_eq!(s["verdict"], json!("Warning (nothing to review)"), "{s}");
     assert!(
         s["capped"].to_string().contains("ops.md could not be read"),
         "a coverage gap, not a degraded note: {s}"

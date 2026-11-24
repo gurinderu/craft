@@ -91,6 +91,10 @@ fn same_commit(a: &str, b: &str) -> bool {
 /// had anything to look at. The pre-PR check reads it as a full review (`bin/craft`'s `hook`).
 pub const NOTHING_TO_REVIEW: &str = "Approve (nothing to review)";
 
+/// [`NOTHING_TO_REVIEW`] held at Warning by a coverage gap ([`held`]): still a run with nothing a
+/// lens could look at, which the pre-PR check reads as a full review, its gap holding the verdict.
+pub const NOTHING_TO_REVIEW_HELD: &str = "Warning (nothing to review)";
+
 const NO_CHANGED_FILES: &str = "NOTHING WAS REVIEWED — the diff came back EMPTY: no changed file was detected against the resolved base. Either there is genuinely nothing to review here (an already-merged branch, or a `path` scope that matches nothing) or the base/scope is wrong and detection failed. No lens ran, so this is not an approval — check the base and re-run.";
 const ON_TRUNK: &str = "NOTHING WAS REVIEWED — HEAD IS the resolved base: this checkout has no commit of its own beyond the trunk (the review ran on the trunk itself, or on a branch not yet ahead of it), so the diff against the trunk is empty by construction. Re-run it from the branch's own checkout or worktree, or pass `base` naming what to compare against. No lens ran, so this is not an approval.";
 
@@ -101,13 +105,16 @@ const ON_TRUNK: &str = "NOTHING WAS REVIEWED — HEAD IS the resolved base: this
 pub fn held(exit: Option<Exit>, gaps: &[String]) -> Option<Exit> {
     match exit {
         Some(e) if e.verdict == NOTHING_TO_REVIEW && !gaps.is_empty() => Some(Exit {
-            verdict: "Warning".into(),
+            verdict: NOTHING_TO_REVIEW_HELD.into(),
             line: format!(
-                "⚠️ Warning — no lens ran, and a coverage gap holds it at Warning, never Approve: {}",
+                "⚠️ Warning (NOTHING TO REVIEW) — no lens ran, and a coverage gap holds it at Warning, never Approve: {}",
                 gaps.join(" · ")
             ),
             not_run: None,
-            listed: e.listed,
+            listed: Some(
+                "Not reviewed (no code in them; the files named under Not run could not be read)"
+                    .into(),
+            ),
         }),
         e => e,
     }
@@ -159,7 +166,7 @@ pub fn exit(diff: &Diff, covered: usize, lang: &str, explicit_base: bool) -> Opt
 
 #[cfg(test)]
 mod tests {
-    use super::{Exit, NOTHING_TO_REVIEW, held, is_inert};
+    use super::{Exit, NOTHING_TO_REVIEW, NOTHING_TO_REVIEW_HELD, held, is_inert};
 
     fn exit(verdict: &str) -> Exit {
         Exit {
@@ -174,13 +181,15 @@ mod tests {
     fn only_a_nothing_to_review_exit_with_a_gap_is_held_at_warning() {
         let gap = ["ops.md could not be read".to_owned()];
         let got = held(Some(exit(NOTHING_TO_REVIEW)), &gap).unwrap();
-        assert_eq!(got.verdict, "Warning");
+        assert_eq!(got.verdict, NOTHING_TO_REVIEW_HELD);
         assert!(
             got.line.contains("ops.md could not be read"),
             "{}",
             got.line
         );
-        assert_eq!(got.listed.as_deref(), Some("listed"));
+        let listed = got.listed.unwrap_or_default();
+        assert!(!listed.contains("nothing reviewable"), "{listed}");
+        assert!(listed.contains("could not be read"), "{listed}");
         assert_eq!(
             held(Some(exit(NOTHING_TO_REVIEW)), &[]).unwrap().verdict,
             NOTHING_TO_REVIEW
