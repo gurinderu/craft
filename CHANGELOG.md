@@ -5,14 +5,9 @@
 
 ### Features
 
-* a test that cannot fail on the change's own promise is at least Medium ([7b609e2](https://github.com/gurinderu/craft/commit/7b609e2bf5aba813b4ae9868176ac1b7680000c5))
-* craft-triage, the triage's pure logic in Rust, held to triage-findings by triage-cases.json ([f61c133](https://github.com/gurinderu/craft/commit/f61c13376a02a7a8aa707caf38b77dbdc4bc64fb))
 * post a chosen finding and read PR rejections from the binary ([153b1a6](https://github.com/gurinderu/craft/commit/153b1a692d69ef149fb6099d1f6df06ca9674476))
-* post a chosen finding and read PR rejections from the binary ([d740f52](https://github.com/gurinderu/craft/commit/d740f527a5e929b902e1bca992d1afed69404e72))
-* review a Markdown runbook as a procedure with the runbook lens ([77e44bb](https://github.com/gurinderu/craft/commit/77e44bbf7e778fda591d2013e03edf12dcdb3f99))
 * review a Markdown runbook as a procedure, and rate a test that passes on a broken implementation at least Medium ([6437416](https://github.com/gurinderu/craft/commit/643741653188314db87a76efb905aa892f8a56ac))
 * run cargo-mutants on a change's diff ([51ae32d](https://github.com/gurinderu/craft/commit/51ae32d8b1dcdf3ce8bfd5b54b36a0c70b593bdf))
-* run cargo-mutants on a change's diff ([d2c19f3](https://github.com/gurinderu/craft/commit/d2c19f3476dc758b12b627a69cbf434348601117))
 * triage's content and pure logic in the Rust CLI ([6a9b50b](https://github.com/gurinderu/craft/commit/6a9b50b10d285ad9d47c81b2096794c923fcb73c))
 
 
