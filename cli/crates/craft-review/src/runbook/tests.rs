@@ -149,3 +149,12 @@ fn a_quoted_argument_spanning_lines_is_part_of_its_command() {
     let sql = "```sh\npsql -c \"\nDELETE FROM users;\n\"\n```\n";
     assert_eq!(lines(sql), [1, 2, 3, 4]);
 }
+
+#[test]
+fn an_indented_delimiter_closes_only_a_dashed_here_document() {
+    // Under a plain `<<`, an indented EOF is body: the command runs on to the real one.
+    let plain = "```sh\ncat <<EOF > x\n  EOF\nkubectl delete pod p\nEOF\n```\n";
+    assert_eq!(lines(plain), [1, 2, 3, 4, 5]);
+    let dashed = "```sh\ncat <<-EOF > x\n\tEOF\nkubectl delete pod p\n```\n";
+    assert_eq!(lines(dashed), [1, 4]);
+}

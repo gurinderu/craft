@@ -27,7 +27,7 @@ struct Pending {
     /// The quote a line left open.
     quote: Option<char>,
     /// The delimiters of the here-documents opened and not yet closed, the next body's first.
-    heredocs: std::collections::VecDeque<String>,
+    heredocs: std::collections::VecDeque<shell::Heredoc>,
     /// Whether the command line ended and its here-document bodies are being read.
     in_body: bool,
 }
@@ -72,17 +72,13 @@ impl Pending {
         }
     }
 
-    /// Takes line `n` of a here-document body; its delimiter line closes it, and the last one closed
-    /// ends the command.
+    /// Takes line `n` of a here-document body; its delimiter line closes it — the delimiter exactly,
+    /// its leading tabs stripped only after `<<-` — and the last one closed ends the command.
     fn body(&mut self, line: &str, n: u32, out: &mut BTreeSet<u32>) {
         self.lines.push(n);
         self.text.push_str(line);
         self.text.push(' ');
-        if self
-            .heredocs
-            .front()
-            .is_some_and(|d| d.as_str() == line.trim())
-        {
+        if self.heredocs.front().is_some_and(|d| d.closed_by(line)) {
             self.heredocs.pop_front();
             if self.heredocs.is_empty() {
                 self.finish(out);
