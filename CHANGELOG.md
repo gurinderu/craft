@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.60.0](https://github.com/gurinderu/craft/compare/v0.59.0...v0.60.0) (2026-11-24)
+
+
+### Features
+
+* cut what each lens re-reads and read a large step in pages ([cf000d6](https://github.com/gurinderu/craft/commit/cf000d69d693f83ccd2e481b0a78180306585ddd))
+* run OpenCode 2.x review tasks as child sessions of the calling session ([e7bbb1c](https://github.com/gurinderu/craft/commit/e7bbb1c6b9a90873eb370a7a5d2613a05131b5b1))
+* spend review tokens only where a lens yields ([ce4c2d2](https://github.com/gurinderu/craft/commit/ce4c2d298394765deccceefdb77e2f6a1f873b23))
+
+
+### Bug Fixes
+
+* a lens dispatch that dies in any round is a hole ([eb237c4](https://github.com/gurinderu/craft/commit/eb237c4be0065bcbedec732569a54a86c74b3174))
+* drop the cross-round retry, read a sliced part's data in one security dispatch ([3456a9f](https://github.com/gurinderu/craft/commit/3456a9f92373031c22bbd47aa463dbab6e2917dc))
+* drop the over-wide money words and join the branch signal end to end ([08421a9](https://github.com/gurinderu/craft/commit/08421a9f4e983d97030e8d48a3f382029d1c1455))
+* hold the paged step file's refusals to every host's own error text and name why a page step was not read ([3e96f2b](https://github.com/gurinderu/craft/commit/3e96f2bbb1fdcc73ca572430b3971a3382b95ae0))
+* keep a refused page read's publication unknown and refuse a FIFO or a second link on every host ([50a1590](https://github.com/gurinderu/craft/commit/50a1590b1d4037055fe9731026eaf41f3c6dac49))
+* read a step's page only from its own run and treat any failed page as unread ([ee3eea4](https://github.com/gurinderu/craft/commit/ee3eea448e41c8c39158df87fd81d9929a39fec6))
+* widen the lens-gating signals so the low-yield lenses are not silently dropped ([6249e30](https://github.com/gurinderu/craft/commit/6249e30041082e3018f55dd939c8742aff211832))
+* widen the lens-gating signals so the low-yield lenses are not silently dropped ([c3c7693](https://github.com/gurinderu/craft/commit/c3c769334cef05d2d2b9e7925a34139a6805c5be))
+
 ## [0.59.0](https://github.com/gurinderu/craft/compare/v0.58.0...v0.59.0) (2026-11-24)
 
 
