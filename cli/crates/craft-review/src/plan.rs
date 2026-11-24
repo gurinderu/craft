@@ -74,6 +74,10 @@ pub struct PlanInput<'a> {
     /// The files of the change this profile was assigned ([`crate::coverage::assign`]): what it
     /// reads as its production code.
     pub profile_files: &'a [String],
+    /// The paths its lenses read ([`crate::state::Track::read_paths`]): its files and the old paths
+    /// of those renamed. The part is data only when every one of them is data, as the rounds and
+    /// the critic judge what a lens reads (realm @nick/craft, node #625).
+    pub read_paths: &'a [String],
     pub spec: &'a str,
     pub light: bool,
     /// Strict mode: the plan carries `maintainability` whatever the scout picked.
@@ -276,7 +280,7 @@ pub fn plan(input: PlanInput<'_>) -> Plan {
         );
     }
     gate::signals(p, (input.signals, input.strict), &mut plan);
-    gate::data(p, input.profile_files, &mut plan);
+    gate::data(p, input.read_paths, &mut plan);
     plan
 }
 

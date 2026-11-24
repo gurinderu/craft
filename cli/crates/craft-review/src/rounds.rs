@@ -1,8 +1,8 @@
 //! The lens rounds (`lensRoundsPhase` in `integrations/shared/review-lens-rounds.mjs`): every
 //! planned lens over its profile's part of the diff in the first round, then, round after round,
-//! only the dispatches whose last answer found something new, and once more those that gave none
-//! (realm @nick/craft, node #625), each told what the pool already holds, until no lens of the
-//! profile may run again or the profile's plan's rounds are spent (loop until dry). The profiles of
+//! only the dispatches whose last answer found something new (realm @nick/craft, node #625), each
+//! told what the pool already holds, until a round adds nothing new to the profile, no lens that
+//! found something may run again, or the profile's plan's rounds are spent (loop until dry). The profiles of
 //! a run share each round and the pool. A finding is new when no pooled finding has its key (file,
 //! line and title); a lens dispatch that never returns is a hole the verdict reads as INCOMPLETE.
 
@@ -68,10 +68,6 @@ pub struct Rounds {
     /// state written before it was kept, which reruns every lens.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rerun: Option<Vec<String>>,
-    /// The dispatches of the last round that gave no answer and were not themselves a retry: the
-    /// next round sends each once more, a first-round-only lens's too, whatever that round found.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub retry: Vec<String>,
 }
 
 /// The exact key of a finding: its file and title folded, and its line, as `key` in
@@ -102,10 +98,14 @@ fn lens_key(profile: &str, lens: &str) -> String {
     format!("{profile}:{lens}")
 }
 
-/// One task per planned lens of `profile` for `round`, over the profile's part `files`, each told
-/// what the pool holds and run on the profile's lens agent; a metrics-or-nothing lens in the first
-/// round only. A sliceable lens runs once per slice of `slices` instead: the unit batches under unit
-/// mode, else the normal mode's directory slices.
+/// One task per planned lens of `profile` for `round`, over what it reads of the profile's part
+/// `files` ([`Profile::reads`]; none for a lens that reads nothing of it), each told what the pool
+/// holds and run on the profile's lens agent. A sliceable lens runs once per slice of `slices`
+/// instead — the unit batches under unit mode, else the normal mode's directory slices —, the
+/// security lens of a profile taking the rest once more over the part's data, which no slice
+/// carries. From the second round, only the dispatches whose last answer found something new run
+/// again ([`rerun`]), a first-round-only lens (metrics, design) never (realm @nick/craft, node
+/// #625).
 ///
 /// # Errors
 /// When a prompt cannot be rendered or the findings schema read.
@@ -148,25 +148,32 @@ pub fn tasks(
             }
             continue;
         }
-        // No slice of a profile taking the rest carries its data; the security lens reads all of it
-        // beside each slice (realm @nick/craft, node #625).
-        let data: Vec<&String> = own
-            .iter()
-            .filter(|f| profile.detect.rest && crate::coverage::is_data(f))
-            .collect();
-        for (i, slice) in slices.iter().enumerate() {
+        for (i, slice) in &with_data(profile, &own, slices) {
             if again(Some(slice)) {
-                let mut slice = slice.clone();
-                for f in &data {
-                    if !slice.files.contains(f) {
-                        slice.files.push((*f).clone());
-                    }
-                }
-                out.push(lens_task(ctx, &at, rounds.round, Some((i, &slice)))?);
+                out.push(lens_task(ctx, &at, rounds.round, Some((*i, slice)))?);
             }
         }
     }
     Ok(out)
+}
+
+/// The key of the dispatch over a sliced part's data.
+const DATA_SLICE: &str = "data files";
+
+/// The slices a lens reading `own` runs over: `slices`, and, as no slice of a profile taking the
+/// rest carries its data, one more over the data `own` holds — the security lens's, read once, not
+/// beside every slice (realm @nick/craft, node #625).
+fn with_data(profile: &Profile, own: &[String], slices: &[Slice]) -> Vec<(usize, Slice)> {
+    let mut out: Vec<(usize, Slice)> = slices.iter().cloned().enumerate().collect();
+    let data: Vec<String> = own
+        .iter()
+        .filter(|f| profile.detect.rest && crate::coverage::is_data(f))
+        .cloned()
+        .collect();
+    if !data.is_empty() {
+        out.push((slices.len(), Slice::loose(DATA_SLICE.into(), data)));
+    }
+    out
 }
 
 /// A dispatch's key: its lens's, and its slice's when sliced.
@@ -286,7 +293,6 @@ impl Rounds {
         let mut added: BTreeMap<String, usize> = BTreeMap::new();
         let before: BTreeSet<String> = self.pool.iter().map(key).collect();
         let mut again: Vec<String> = Vec::new();
-        let retried = std::mem::take(&mut self.retry);
         let (mut returned, mut raw) = (0, 0);
         for t in tasks {
             let TaskKind::Lens {
@@ -304,14 +310,8 @@ impl Rounds {
                 k = format!("{k}{SLICE_SEP}{s}");
             }
             let answer = self.answered(t, &k);
-            match answer {
-                None if !retried.contains(&k) && !self.retry.contains(&k) => {
-                    self.retry.push(k.clone());
-                }
-                Some(a) if rerun::found_new(a, &before) && !again.contains(&k) => {
-                    again.push(k.clone());
-                }
-                _ => {}
+            if answer.is_some_and(|a| rerun::found_new(a, &before)) && !again.contains(&k) {
+                again.push(k.clone());
             }
             self.note_lines(t, answer.is_some());
             let Some(answer) = answer else {

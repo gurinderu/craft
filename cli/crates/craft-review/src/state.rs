@@ -189,9 +189,8 @@ pub struct Track {
     /// The lens rounds it has run.
     #[serde(default)]
     pub rounds: u32,
-    /// Its last round added nothing new, or none of its lenses may run again: none that found
-    /// something new, nor one that gave no answer, outside the first-round-only ones (realm
-    /// @nick/craft, node #625).
+    /// Its last round added nothing new, or no lens that found something may run again — none
+    /// outside the first-round-only ones (realm @nick/craft, node #625).
     #[serde(default)]
     pub dry: bool,
     /// Its changed lines hold a query string ([`crate::embedded_sql`]), so its plan takes the

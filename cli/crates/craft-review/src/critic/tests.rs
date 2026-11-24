@@ -225,17 +225,17 @@ fn the_critic_never_admits_a_lens_with_nothing_to_read() {
         },
     );
     critic.state = TaskState::Answered;
-    critic.answer = Some(json!({"missingLenses": ["money", "compat"], "notes": "n"}));
+    critic.answer =
+        Some(json!({"missingLenses": ["money", "compat", "money", "nonsense"], "notes": "n"}));
     run.tasks = vec![critic];
     let lenses = followups(&mut run, &profiles).unwrap();
     let ids: Vec<&str> = lenses.iter().map(|t| t.id.as_str()).collect();
     assert_eq!(ids, ["critic-lens-general-compat"]);
     assert!(lenses[0].prompt.contains("api/rows.csv"));
-    assert!(
-        run.notes
-            .iter()
-            .any(|n| n.contains("named the lens money, which reads nothing of this part")),
-        "{:?}",
-        run.notes
+    let refused = |n: &&String| n.contains("which reads nothing of this part");
+    assert_eq!(
+        run.notes.iter().filter(refused).collect::<Vec<_>>(),
+        [&"[general] the completeness critic named the lens money, which reads nothing of this part (data only, read by the whole-diff lenses and security) — NOT dispatched".to_owned()],
+        "once, and nothing for a name that is no lens"
     );
 }

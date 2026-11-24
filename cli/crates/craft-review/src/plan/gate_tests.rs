@@ -13,6 +13,7 @@ fn input<'a>(p: &'a Profile, files: &'a [String], signals: Option<&'a [String]>)
         scout: None,
         changed_files: files,
         profile_files: files,
+        read_paths: files,
         spec: "feat: x",
         light: false,
         strict: false,

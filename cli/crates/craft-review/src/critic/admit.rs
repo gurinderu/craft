@@ -56,15 +56,28 @@ fn admitted(
     out
 }
 
-/// Whether `lens`, named by `p`'s critic, reads nothing of the part `files` and is refused, said in
-/// `notes`: its task would render an empty pathspec, the whole change (realm @nick/craft, node
-/// #625).
-fn refused_empty(p: &Profile, lens: &str, files: &[String], notes: &mut Vec<String>) -> bool {
-    let refused = p.reads_nothing(lens, files);
-    if refused {
-        notes.push(format!("[{}] the completeness critic named the lens {lens}, which reads nothing of this part (data only, read by the whole-diff lenses and security) — NOT dispatched", p.id));
+/// The lenses `p`'s critic named that are candidates (`open`, over the part `files`), each once; a
+/// named one that is a candidate but for reading nothing of the part is refused, said in `notes`:
+/// its task would render an empty pathspec, the whole change (realm @nick/craft, node #625).
+fn open_named(
+    (p, plan, metrics): (&Profile, &crate::plan::Plan, bool),
+    files: &[String],
+    named: Vec<String>,
+    notes: &mut Vec<String>,
+) -> Vec<String> {
+    let open = candidates(p, plan, metrics, files);
+    let unread = candidates(p, plan, metrics, &[]);
+    let mut out: Vec<String> = Vec::new();
+    let mut refused: Vec<String> = Vec::new();
+    for l in named {
+        if open.contains(&l) && !out.contains(&l) {
+            out.push(l);
+        } else if !open.contains(&l) && unread.contains(&l) && !refused.contains(&l) {
+            notes.push(format!("[{}] the completeness critic named the lens {l}, which reads nothing of this part (data only, read by the whole-diff lenses and security) — NOT dispatched", p.id));
+            refused.push(l);
+        }
     }
-    refused
+    out
 }
 
 /// The lenses every critic of the run admitted, as tasks; its notes kept for the report and the
@@ -104,11 +117,7 @@ pub(crate) fn followups(
             .track(profile)
             .map(Track::read_paths)
             .unwrap_or_default();
-        let open = candidates(p, plan, metrics, &files);
-        let named: Vec<String> = lenses
-            .into_iter()
-            .filter(|l| !refused_empty(p, l, &files, &mut notes) && open.contains(l))
-            .collect();
+        let named = open_named((p, plan, metrics), &files, lenses, &mut notes);
         for lens in admitted(p, &plan.surface_dropped, &named, &mut notes) {
             tasks.push(lens_task(run, p, plan, &lens)?);
             lenses_run.push(format!("{profile}:{lens}"));

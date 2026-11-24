@@ -117,8 +117,9 @@ pub(crate) fn advance(dir: &Path, run: &mut RunState) -> Result<(), Error> {
                 .filter(|(t, _)| t.live())
             {
                 t.rounds += 1;
-                // Dry when the next round would dispatch none of its lenses: none gave no answer,
-                // and none that found something new may run again (realm @nick/craft, node #625).
+                // Dry when the next round would dispatch none of its lenses: it found nothing new,
+                // or no lens that did may run again (realm @nick/craft, node #625). A dispatch that
+                // died is a hole, never sent again.
                 let found_new = added.get(&t.profile).copied().unwrap_or(0) > 0;
                 t.dry = !t
                     .plan
@@ -207,6 +208,7 @@ fn plan_tracks(run: &mut RunState, profiles: &[Profile]) {
             scout,
             changed_files: &run.diff.files,
             profile_files: &track.files,
+            read_paths: &track.read_paths(),
             spec: &run.context.spec,
             light: run.light,
             strict: run.context.strict,

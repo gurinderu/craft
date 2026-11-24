@@ -657,38 +657,53 @@ fn round_with_a_death(run: &std::path::Path, s: &Value, dead: &str) -> Value {
     s
 }
 
-/// A dispatch that gave no answer runs once more in the next round though that round found nothing
-/// new and the lens runs in the first round only; one that dies on its retry too is not retried
-/// again, though the plan allows a third round (realm @nick/craft, node #625).
+/// A dispatch that died after its retries within its round is a hole the verdict reads as
+/// INCOMPLETE, never sent again: a later round sends only what found something new, and a profile
+/// whose dispatches died or found nothing starts no round at all — none that could die whole and
+/// read as the usage limit (realm @nick/craft, node #625).
 #[test]
-fn a_dead_dispatch_runs_once_more_even_a_first_round_lens_and_no_more() {
+fn a_dead_dispatch_is_a_hole_and_never_runs_again() {
     let out = tempfile::tempdir().unwrap();
     let (_repo, run, s) = new_file_run(out.path());
     assert!(ids(&s).contains(&"lens-rust-design-r1".to_owned()), "{s}");
     let s = round_with_a_death(&run, &s, "lens-rust-design-r1");
-    assert_eq!(ids(&s), ["lens-rust-design-r2"], "its retry alone");
-    let s = round_with_a_death(&run, &s, "lens-rust-design-r2");
     assert!(
         !ids(&s).iter().any(|id| id.starts_with("lens-rust-")),
-        "no third round: {:?}",
+        "nothing new and the dead dispatch not sent again: no round 2: {:?}",
         ids(&s)
     );
+    assert!(s.get("stopped").is_none(), "{s}");
     assert_eq!(
         status::status(&run).unwrap()["rounds"]
             .as_array()
             .unwrap()
             .len(),
-        2
+        1
     );
 
     let out = tempfile::tempdir().unwrap();
     let (_repo, run, s) = new_file_run(out.path());
-    round_with_a_death(&run, &s, "lens-rust-design-r1");
-    submit(&run, json!({"lens-rust-design-r2": lens("design", &[])}));
-    let st = status::status(&run).unwrap();
-    let ran = st["profiles"][0]["plan"]["ran"].as_array().unwrap();
-    assert!(
-        ran.contains(&json!("design")),
-        "its retry closed the hole: {st}"
+    let mut answers = Map::new();
+    for id in ids(&s) {
+        let name = id.trim_start_matches("lens-rust-").trim_end_matches("-r1");
+        let found = if name == "errors" {
+            vec![titled("Medium", 1, "f returns 1")]
+        } else {
+            Vec::new()
+        };
+        answers.insert(id.clone(), lens(name, &found));
+    }
+    answers.insert("lens-rust-design-r1".into(), json!("not json"));
+    let mut s = submit(&run, Value::Object(answers));
+    for _ in 0..5 {
+        if !ids(&s).contains(&"lens-rust-design-r1".to_owned()) {
+            break;
+        }
+        s = submit(&run, json!({"lens-rust-design-r1": "not json"}));
+    }
+    assert_eq!(
+        ids(&s),
+        ["lens-rust-errors-r2"],
+        "round 2 sends what found something new, not the dead dispatch"
     );
 }

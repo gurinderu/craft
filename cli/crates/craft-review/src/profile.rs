@@ -311,16 +311,22 @@ impl Profile {
     /// whole-diff lenses and its security lens read them (realm @nick/craft, node #625).
     #[must_use]
     pub fn reads(&self, lens: &str, files: &[String]) -> Vec<String> {
-        let all = !self.detect.rest
+        files
+            .iter()
+            .filter(|f| self.reads_file(lens, f))
+            .cloned()
+            .collect()
+    }
+
+    /// Whether its lens `lens` reads `file`: any file, but for a per-file lens of a profile taking
+    /// the rest, which reads no data file.
+    fn reads_file(&self, lens: &str, file: &str) -> bool {
+        !self.detect.rest
             || lens == SECURITY
             || self
                 .lens(lens)
-                .is_none_or(|l| l.whole_diff || l.metrics || l.unsliced);
-        files
-            .iter()
-            .filter(|f| all || !crate::coverage::is_data(f))
-            .cloned()
-            .collect()
+                .is_none_or(|l| l.whole_diff || l.metrics || l.unsliced)
+            || !crate::coverage::is_data(file)
     }
 
     /// Whether its lens `lens` would read nothing of the part `files` holds ([`Self::reads`]): no
@@ -328,7 +334,7 @@ impl Profile {
     /// @nick/craft, node #625).
     #[must_use]
     pub fn reads_nothing(&self, lens: &str, files: &[String]) -> bool {
-        !files.is_empty() && self.reads(lens, files).is_empty()
+        !files.is_empty() && !files.iter().any(|f| self.reads_file(lens, f))
     }
 
     /// What a `git diff` of this profile's part of a change names: its globs, or, a profile

@@ -50,6 +50,7 @@ mod tests {
             "yarn.lock",
             "package-lock.json",
             "go.sum",
+            "go.work.sum",
             "web/__snapshots__/app.test.ts.snap",
             "tests/fixtures/bad.js",
             "pkg/testdata/input.go",

@@ -12,6 +12,7 @@ fn input<'a>(p: &'a Profile, files: &'a [String], embedded_sql: bool) -> PlanInp
         scout: None,
         changed_files: files,
         profile_files: files,
+        read_paths: files,
         spec: "feat: x",
         light: false,
         strict: false,
@@ -259,6 +260,7 @@ fn a_general_plan_counts_only_its_own_files_as_production() {
     let got = plan(PlanInput {
         scout: Some(&scout),
         profile_files: &own,
+        read_paths: &own,
         ..input(&p, &change, false)
     });
     assert!(
