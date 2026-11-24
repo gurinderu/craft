@@ -104,14 +104,46 @@ mutant that *survives* (tests still pass) is a hole in your assertions.
 ```bash
 cargo install cargo-mutants
 cargo mutants                       # mutate the whole crate, report survivors
-cargo mutants --in-diff git.diff    # only lines changed in a diff (fast, CI-friendly)
 cargo mutants -f src/parser.rs      # scope to one file
+cargo mutants -p my-crate           # only mutants from this workspace package
+cargo mutants --list                # list the mutants, run nothing
 ```
 
 Each mutant lands in a bucket: **caught** (a test failed — good), **missed** (survived — write a
 test that kills it), **unviable** (didn't compile), or **timeout**. Aim it at critical logic, not
 the whole tree — it rebuilds per mutant, so it's much slower than coverage. Run `--help` for
 baseline and CI options.
+
+### Mutants on a change's diff
+
+To check a change rather than the crate, mutate only the code its diff touches — `-D, --in-diff
+<FILE>` ("Include only mutants in code touched by this diff"; observed in cargo-mutants 27.1.0):
+
+```bash
+cd <the cargo workspace root>                               # where you run cargo mutants
+git diff --relative origin/main...HEAD > /tmp/change.diff   # paths relative to this directory
+cargo mutants --in-diff /tmp/change.diff --list             # which mutants the diff selects
+cargo mutants --in-diff /tmp/change.diff                    # run them
+```
+
+- **The diff's paths must be relative to the cargo workspace root**, not the git root. When the
+  workspace sits in a subdirectory of the repository (`cli/`, say), a plain `git diff` writes
+  `cli/src/…` paths and cargo-mutants selects nothing: observed in 27.1.0, a repo-root diff of a
+  Rust change selected no mutants ("No mutants to filter", exit 0) while the same range with
+  `git diff --relative` from the workspace root selected 14. Where the workspace is the git root,
+  both are the same.
+- **Check the paths before reading zero selected mutants as clean** — cargo-mutants exits 0
+  whether the paths missed or the diff truly holds nothing to mutate (it touches only tests,
+  comments or attributes, or only deletes lines). Read the `--list` count and the diff's paths
+  before reading a run as covered.
+- The argument is a file: in 27.1.0 `--in-diff -` is read as a file named `-`, not stdin.
+- Write the diff at the commit you test: its lines must match the tree.
+- The selection is by touched lines, so a one-line function next to a changed line can come along.
+- Each **missed** mutant is a test the change lacks: write the test that fails on it, or name the
+  mutant as equivalent (it changes no observable behaviour) with why. The report of the check names
+  which test fails without which change.
+- This is a check of the change, run while developing it — not a step of the project's gate: a
+  whole-tree run per push costs a rebuild per mutant.
 
 ## CI (GitHub Actions)
 

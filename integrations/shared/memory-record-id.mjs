@@ -4,7 +4,7 @@
 // without one (realm @nick/craft, node #222), so sha256 is computed here in plain JS: the Workflow
 // sandbox has no crypto, no TextEncoder and no Node API. Tested against node:crypto.
 // Imported by integrations/claude-code/src/rust-audit.js and integrations/claude-code/src/triage-findings.js;
-// integrations/shared/pr-thread-rule.mjs uses the same rule.
+// the craft binary computes the same (cli/crates/craft-review/src/memory/id.rs).
 import { utf8Bytes } from './lens-scope.mjs'
 
 export const SHA256_K = [
@@ -86,15 +86,6 @@ export function scopeLine(scope) {
   const control = Array.from(scope).some(c => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127)
   const m = control ? null : SCOPE_LINE.exec(scope.trim())
   return m ? { scope: String(m[1]), line: Number(m[2]) } : { scope: scope.trim(), line: 0 }
-}
-
-/**
- * What refuses writing a record whose scope carries a line, with the corrected form; '' when it carries
- * none. A writer refuses it, a reader takes it (scopeLine). @param {string} scope @returns {string}
- */
-export function scopeLineProblem(scope) {
-  const { scope: path, line } = scopeLine(scope)
-  return path === scope.trim() ? '' : `scope ${JSON.stringify(scope.trim())} carries a line: write scope=${path}, line=${line}`
 }
 
 /**

@@ -1,16 +1,18 @@
 import { normalizeArgs, unknownOptionsRefusal, UNKNOWN_OPTION_CLASS } from '../../shared/workflow-args.mjs'
+import { runBudget } from '../../shared/run-budget.mjs'
 import { readRepoArg, repoDirective, REPO_REFUSED_CLASS } from '../../shared/repo-arg.mjs'
 import { summarizeFindings, tallyVerdicts, argumentRefusal } from '../../shared/run-record.mjs'
 import { quietly, makeRunLogger, telemetryLossNoter } from '../../shared/run-logging.mjs'
-import { DEPENDENCY_SOURCE_HOW } from '../../shared/dependency-source.mjs'
 import { telemetryLostSection } from '../../shared/review-coverage.mjs'
 import { parsePriorDecisions } from '../../shared/prior-decisions.mjs'
+import { memoryDegradedNotes } from '../../shared/recall-degraded.mjs'
 import { MEMORY_RECALL_SCHEMA, memoryRecord, mergeRecall, readLaunch, memoryLine, recallDecisions } from '../../shared/memory-recall.mjs'
 import { MATCH_JUDGE_SCHEMA } from '../../shared/prior-decision-match.mjs'
 import { SCOPE_CHECK_SCHEMA, scopeCheckPrompt } from '../../shared/prior-decision-scope.mjs'
 import { RULE_JUDGE_SCHEMA } from '../../shared/project-rule-judge.mjs'
 import { SIFT_MARK, siftFinding, collapseRepeats, repeatEntry, siftByMemory } from '../../shared/triage-sift.mjs'
-import { effectivePrBase, classOneBaseLine, classifiedVerdict, issueOf } from '../../shared/triage-noise-class.mjs'
+import { effectivePrBase, classOneBaseLine, classifiedVerdict, issueOf, settledByClass } from '../../shared/triage-noise-class.mjs'
+import { RAW_SCHEMA, VALIDATION_SCHEMA, PLAN_SCHEMA, gatherReportPrompt, gatherPrPrompt, validatePrompt, planPrompt } from '../../shared/triage-content.mjs'
 
 export const meta = {
   name: 'triage-findings',
@@ -25,6 +27,8 @@ export const meta = {
 }
 
 export async function __run() {
+// The turn's shared pool as it grows while this engine runs, read before anything is dispatched (integrations/shared/run-budget.mjs).
+const pool = runBudget(budget, log)
 // Locator args (not payload): pr (GitHub PR number), report (path to a report file from any review engine
 // or a saved verdict), base (ref to pin validation against), prBase (the commit the PR forks from — the merge-base
 // of trunk and the reviewed head — where "not this PR's" must be shown, realm @nick/craft, node #309), priorLedger (array of prior {stable_id, verdict,
@@ -79,71 +83,10 @@ const priorLedger = Array.isArray(argv['priorLedger']) ? /** @type {unknown[]} *
 // against the triaged repo — where the script is not. Pass craftRoot then.
 const craftRootArg = textArg('craftRoot')
 
-const RAW_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['source', 'findings'],
-  properties: {
-    source: { type: 'string', description: 'review | adversarial-review | rust-audit | rust-reviewer | nix-review | report | github-pr' },
-    findings: {
-      type: 'array',
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['severity', 'title', 'location', 'detail', 'proposed_fix', 'thread_id'],
-        properties: {
-          severity: { type: 'string', description: 'Critical | High | Medium | Low | Info' },
-          title: { type: 'string' },
-          location: { type: 'string', description: 'file:line, crate/module, PR-level, or empty if none' },
-          detail: { type: 'string', description: 'why it is a problem' },
-          proposed_fix: { type: 'string', description: 'fix direction from the source, empty if none' },
-          thread_id: { type: 'string', description: 'GitHub review thread id, empty if not from a PR' },
-        },
-      },
-    },
-  },
-}
+// The answer schemas and the prompts are content (content/schemas/triage-*.schema.json, content/prompts/triage-*.md;
+// integrations/shared/triage-content.mjs), so the craft binary asks for the same answers (realm @nick/craft, node #616).
 
-const VALIDATION_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['stable_id', 'verdict', 'reason', 'fix_pointer', 'premise_checked', 'noise_class', 'severity'],
-  properties: {
-    stable_id: { type: 'string', description: 'composite identity: source::location::title' },
-    verdict: { type: 'string', description: 'accept | reject | defer | needs-decision' },
-    noise_class: { type: 'integer', description: 'the noise class the finding falls in, 1..6 as the prompt lists them; 0 when none — a defect of this change' },
-    severity: { type: 'string', description: 'the severity the code supports: Critical | High | Medium | Low | Info — lowered from the source\'s when its harm is unreachable or heals itself' },
-    reason: { type: 'string', description: 'one line justifying the verdict against the code' },
-    premise_checked: { type: 'string', description: 'the file:line you actually opened to settle the verdict\'s load-bearing premise when it lives outside the cited location — a dependency\'s behaviour, reachability, what a caller or sibling does. Applies to reject exactly as much as to accept. Empty string only when the cited location alone settled it' },
-    fix_pointer: { type: 'string', description: 'owning craft skill + one-line fix direction; empty unless accept' },
-  },
-}
-
-const PLAN_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['plan_markdown', 'ledger', 'summary'],
-  properties: {
-    plan_markdown: { type: 'string', description: 'the fix plan in checkbox-task markdown format (accepted findings only)' },
-    ledger: {
-      type: 'array',
-      description: 'every finding keyed by stable_id with its final verdict',
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['stable_id', 'verdict', 'reason'],
-        properties: {
-          stable_id: { type: 'string' },
-          verdict: { type: 'string', description: 'accept | reject | defer | needs-decision | conflict' },
-          reason: { type: 'string' },
-        },
-      },
-    },
-    summary: { type: 'string', description: 'human-readable rundown of reject/defer/needs-decision/conflict' },
-  },
-}
-
-// The shapes the three schemas above promise. `agent()` returns them only when it ran: a skipped
+// The shapes the three schemas promise. `agent()` returns them only when it ran: a skipped
 // or dead agent yields `null`, so every call site casts to `T | null` and handles the null.
 /** @typedef {{ severity: string, title: string, location: string, detail: string, proposed_fix: string, thread_id: string }} RawFinding */
 /** @typedef {{ source: string, findings: RawFinding[] }} RawResult */
@@ -153,13 +96,13 @@ const PLAN_SCHEMA = {
 /** @typedef {{ stable_id: string, verdict: string, reason: string, sifted?: boolean, action?: string, repeat_of?: string }} LedgerEntry */
 /** @typedef {{ plan_markdown: string, ledger: LedgerEntry[], summary: string }} PlanResult */
 // What this script adds to the plan before returning it — not part of PLAN_SCHEMA.
-/** @typedef {PlanResult & { notRun?: string[], telemetryLost?: string[], issues?: Array<{ stable_id: string, title: string, body: string }>, memory?: string, priorDecisionsNotApplied?: string[], ruleNotices?: string[] }} TriagePlan */
+/** @typedef {PlanResult & { notRun?: string[], telemetryLost?: string[], issues?: Array<{ stable_id: string, title: string, body: string }>, memory?: string, memoryDegraded?: string[], priorDecisionsNotApplied?: string[], ruleNotices?: string[] }} TriagePlan */
 
 // The craft release that produced a run. Recorded on the run record and index line so an
 // aggregate can be filtered to ONE engine version: without it, runs from every rubric the store
 // has ever seen blend together. MUST match `.claude-plugin/plugin.json` — `integrations/shared/check-workflows.mjs`
 // fails the build if it drifts. The build lifts this line verbatim into the engine's banner.
-const CRAFT_VERSION = '0.58.0' // x-release-please-version
+const CRAFT_VERSION = '0.59.0' // x-release-please-version
 
 // Imported from integrations/shared/: the one write path (shared with every other record-filing engine); how to find a
 // pinned dependency's source; the banner that leads the plan when a write did not land, the same one
@@ -185,7 +128,7 @@ async function refuseArgument() {
   // Every refusal at once, so a caller fixing one does not meet the next on the re-launch.
   const both = [[unknownRefused, UNKNOWN_OPTION_CLASS], [repoRefused, REPO_REFUSED_CLASS]].filter(([why]) => why)
   if (!both.length) return ''
-  const refused = argumentRefusal({ engine: 'triage-findings', why: both.map(([why]) => why).join(' '), notRun: both.map(([, cls]) => String(cls)), craftVersion: CRAFT_VERSION, outputTokens: budget.spent() })
+  const refused = argumentRefusal({ engine: 'triage-findings', why: both.map(([why]) => why).join(' '), notRun: both.map(([, cls]) => String(cls)), craftVersion: CRAFT_VERSION, outputTokens: pool.spent() })
   await logRun(refused.record)
   return refused.report
 }
@@ -212,14 +155,14 @@ function gatherPlan() {
     // The one agent NOT pointed at `repo`: it reads only the caller's report file, whose path is the caller's
     // (the session's), not a path inside the triaged checkout.
     tasks.push(() => /** @type {Promise<RawResult | null>} */ (agent(
-      `Read the review report at \`${report}\`. Extract every finding into the schema. Set source to the engine that wrote the report, as the report names it: "review" (craft:review), "adversarial-review", "rust-audit", "rust-reviewer" (a single reviewer verdict) or "nix-review"; "report" when the report does not say. Copy severity/title/location/detail verbatim; leave proposed_fix and thread_id empty unless present. The report's \`## Tool finding titles (verbatim)\` section (also nested under \`## Prior decisions in the nested reviews (verbatim)\`) lists titles, not findings: never extract its rows as findings. For a finding at a \`file:line\` it lists, take the title from it — the listed title equal to the finding's line; or the only one listed there, but only when the report prints a single finding at that \`file:line\` (the section lists gate-tool findings only, so a lens finding at the same site is printed beside the tool's and must not take its title). When several findings are printed there, or several titles are listed and none is equal, keep the finding's own line, never a guess between them.`,
+      gatherReportPrompt(report),
       { label: 'gather:report', phase: 'Gather', schema: RAW_SCHEMA, model: 'sonnet', effort: 'low' },
     )))
   }
   if (pr) {
     locators.push('pr')
     tasks.push(() => /** @type {Promise<RawResult | null>} */ (work(
-      `Gather inline review comments from GitHub PR #${pr}. Resolve the repo with \`gh repo view --json owner,name\`, then \`gh api repos/{owner}/{repo}/pulls/${pr}/comments --paginate\`. For each UNRESOLVED, non-outdated review comment make one finding: title = short summary, location = \`<path>:<line>\` (path + line/original_line), detail = the comment body, thread_id = the comment/thread id, severity = your best estimate (Critical|High|Medium|Low|Info), proposed_fix = empty. Set source = "github-pr".`,
+      gatherPrPrompt(pr),
       { label: 'gather:pr', phase: 'Gather', schema: RAW_SCHEMA, model: 'sonnet', effort: 'low' },
     )))
   }
@@ -353,35 +296,7 @@ function validateOne(f) {
     return Promise.resolve({ stable_id: id, verdict: prior.verdict, reason: `carried from prior run: ${prior.reason}`, fix_pointer: '', premise_checked: '(carried from prior run — not re-checked)' })
   }
   return /** @type {Promise<Validation | null>} */ (work(
-    `Judge ONE review finding against the actual code. ${pin}
-
-Finding (source: ${f.source}):
-- severity: ${f.severity}
-- location: ${f.location || '(none given)'}
-- what: ${f.title}
-- why: ${f.detail}
-${f.proposed_fix ? `- proposed fix: ${f.proposed_fix}` : ''}
-${memoryNote ? `- project memory: ${memoryNote} — a record matched it but does not settle it; judge it on the code` : ''}
-
-Read the cited code, then decide ONE verdict:
-- accept — a real, in-scope problem. fix_pointer = owning craft skill (rust-errors/rust-ownership/rust-concurrency/rust-security/rust-performance/rust-idioms/rust-testing/rust-unsafe) + a one-line fix direction.
-- reject — not a real problem / wrong; explain why (this becomes reviewer pushback).
-- defer — real but out of scope now; say why.
-- needs-decision — valid but needs a product/spec decision, OR the finding has no resolvable location; say what is needed.
-
-PREMISE DISCIPLINE: name the ONE claim your verdict rests on. If it lives outside the cited location — the dependency behaves this way, this is reachable from untrusted input, a caller already guards it, the sibling path does X — OPEN that code (dependency sources included) and record the file:line in premise_checked. This binds **reject** exactly as much as accept: "a caller must already validate this" waved through without opening the caller is the same unfounded claim as the finding it dismisses, and it silently discards a real bug. If you cannot open it, do not guess — verdict needs-decision, saying which premise is unverified. ${DEPENDENCY_SOURCE_HOW}
-
-NOISE CLASSES (noise_class; 0 when none applies — a defect of this change). They are judged on the code, never on the source's own label:
-1 — not this change's: the problem already stands at the PR's base (the diff did not bring it) or lies outside the change's task. Check it AT THE BASE, not by the reviewer's word ("pre-existing", "out of scope"): ${classOneBase}. Verdict defer when the problem is real — the triage carries it to an issue; reject when it is not (no issue is filed).
-2 — inflated severity: the claimed harm is unreachable or heals itself (a default requeue, only a metric). Judge the verdict on the merits and lower severity to what the code supports.
-3 — a repeat of a finding already decided — reject, naming it.
-4 — a deliberate trade-off written in the project's docs or rules — reject, naming where it is written.
-5 — not decidable from the code (a rollout step, a version you cannot verify) — needs-decision, not a fix.
-6 — an optional nicety in tests or comments — accept only when worth doing; it is planned apart from the defects.
-severity: the source's severity unless the code supports another.
-
-stable_id MUST be exactly: ${id}
-Keep reason to one line. fix_pointer empty unless verdict is accept.`,
+    validatePrompt(f, { id, pin, classOneBase, memoryNote }),
     { label: `validate:${(f.location || f.title).slice(0, 40)}`, phase: 'Validate', schema: VALIDATION_SCHEMA, model: 'opus' },
   )).then(v => {
     // A dead validator used to be dropped by `filter(Boolean)`, which removed the finding from the
@@ -407,22 +322,7 @@ const rawById = new Map(raw.map(f => [idOf(f), f]))
 const acceptedEnriched = accepted.map(v => ({ ...v, finding: rawById.get(v.stable_id) || null }))
 
 const plan = /** @type {TriagePlan | null} */ (await work(
-  `Turn validated review findings into ONE fix plan. Do not invent findings; only organise what is given. Ignore any ACCEPTED entry whose \`finding\` is null (a data glitch) — leave it out of the plan and note it in the summary.
-
-1. Dedup by stable_id (merge findings at the same location with the same fix).
-2. Detect conflicts — two findings demanding opposite changes. Mark each such finding verdict "conflict" in the ledger, DO NOT put it in the plan, and surface both in the summary for a human to decide.
-3. Group the remaining accepted findings by file; order groups blocking (Critical/High) → simple → complex, by the validator's \`severity\` (it may be lower than the source's). Accepted findings with noise_class 6 (optional, in tests or comments) go apart: one last task headed "Optional (tests and comments)", never mixed into the defect groups.
-4. Render plan_markdown as a checkbox-task plan: one task per file-group, bite-sized checkbox steps, each step naming the file and the owning craft skill; a bug fix starts with a RED→GREEN regression test. Mark independent file-groups as parallelisable (one subagent per group).
-5. ledger = EVERY finding (accept/reject/defer/needs-decision/conflict) keyed by stable_id with verdict + one-line reason — the SETTLED BEFORE VALIDATION rows below included, as given. Any reason containing "${UNJUDGED_MARKER}" or "${SIFT_MARK}" must be copied VERBATIM, marker included — that string is what tells a later re-run how this finding was settled; paraphrasing it makes the finding look judged on the code when it was not. summary = human-readable rundown of everything not in the plan; a deferral with action "issue" is named there as going to an issue on the forge (it is not this change's).
-
-ACCEPTED (with their findings):
-${JSON.stringify(acceptedEnriched, null, 2)}
-
-ALL VERDICTS (include reject/defer/needs-decision in the ledger):
-${JSON.stringify(validations, null, 2)}
-
-SETTLED BEFORE VALIDATION (repeats in this batch, and what the project memory already answered — final; into the ledger as given, never into the plan):
-${JSON.stringify(sifted, null, 2)}`,
+  planPrompt({ accepted: acceptedEnriched, validations, sifted, unjudgedMarker: UNJUDGED_MARKER, siftMark: SIFT_MARK }),
   { label: 'plan', phase: 'Plan', schema: PLAN_SCHEMA, model: 'opus' },
 ))
 
@@ -446,7 +346,9 @@ function finalLedger(planIn) {
   return finalRows
 }
 /**
- * The plan's ledger with every row this script settled itself restored: an unjudged one and a sifted one.
+ * The plan's ledger with every row this script settled itself restored: an unjudged one, a sifted one and
+ * one whose verdict its noise class settled (`settledByClass`: class 5, and a class-1 verdict the class
+ * turned — never one it left alone; realm @nick/craft, node #303).
  * @param {LedgerEntry[]} planLedger @returns {LedgerEntry[]}
  */
 function pinnedLedger(planLedger) {
@@ -460,8 +362,9 @@ function pinnedLedger(planLedger) {
   // what each finding's verdict actually was, so a marked reason is restored (and a dropped entry
   // re-added) regardless of what the agent returned. The prompt instruction stays as belt and braces.
   // A row the sift settled is restored the same way: no validator judged it, and its mark says so.
+  // So is a verdict a noise class settled here: dropped, a needs-decision would reach no human.
   /** @type {Map<string, LedgerEntry>} */
-  const pinned = new Map([...sifted, ...validations.filter(v => String(v.reason || '').includes(UNJUDGED_MARKER))].map(v => [v.stable_id, v]))
+  const pinned = new Map([...sifted, ...validations.filter(v => String(v.reason || '').includes(UNJUDGED_MARKER) || settledByClass(v))].map(v => [v.stable_id, v]))
   if (!pinned.size) return planLedger
   /** @type {Set<string>} */
   const seen = new Set()
@@ -469,7 +372,8 @@ function pinnedLedger(planLedger) {
     const v = e && pinned.get(e.stable_id)
     if (!v) return e
     seen.add(e.stable_id)
-    const mark = v.reason.includes(UNJUDGED_MARKER) ? UNJUDGED_MARKER : SIFT_MARK
+    // A verdict its class settled carries no mark: its reason may be paraphrased, its verdict not.
+    const mark = v.reason.includes(UNJUDGED_MARKER) ? UNJUDGED_MARKER : settledByClass(v) ? '' : SIFT_MARK
     const kept = String(e.reason || '').includes(mark) && e.verdict === v.verdict && e.sifted === v.sifted && e.repeat_of === v.repeat_of
     return kept ? e : restored(e, v)
   })
@@ -505,8 +409,18 @@ await logRun({
 
 if (!plan) return `${telemetryLostSection(telemetryLost)}Triage failed: the Plan-phase agent returned no result. Re-run, or triage the findings manually.`
 
+/** A recall that may not have read the store leads the plan: its sift ran without the project's records. @param {TriagePlan} planIn */
+function memoryBanner(planIn) {
+  const notes = memoryDegradedNotes(memory)
+  if (!notes.length) return
+  planIn.memoryDegraded = notes
+  planIn.plan_markdown = `${["> **MEMORY DEGRADED** — the sift may have run without some or all of the project's records:", ...notes.map(l => `> - ${l}`), ''].join('\n')}\n${planIn.plan_markdown ?? ''}`
+}
+
 /** The plan as its reader gets it: led by what did not run and by a write that did not land. @param {TriagePlan} planIn @returns {TriagePlan} */
 function bannered(planIn) {
+  // Prepended first, so the INCOMPLETE and lost-record banners below stay above it.
+  memoryBanner(planIn)
   // What did not run has to reach the READER of the plan, not just the run record. A dead `gather:pr`
   // agent means the plan covers fewer sources than were asked for, and a plan that says nothing about
   // it is indistinguishable from one that covered everything.

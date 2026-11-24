@@ -32,6 +32,7 @@ const TAKEN = [
   'optional',
   '_via',
   '_recalled',
+  '_recallDegraded',
   'gateOnly',
   'gateFrom',
   'pr',
@@ -88,6 +89,7 @@ const START_ONLY = [
   'comment',
   'optional',
   '_recalled',
+  '_recallDegraded',
   'gateFrom',
 ]
 
@@ -189,8 +191,9 @@ function optionalOption(v) {
 /**
  * The launch options beside the review's own: the optional pass, the parent engine that launched this run (`_via`, the
  * record then filed nested under it) and whether that launcher recalled the project's memory itself (`_recalled`,
- * the binary's `--no-recall`).
- * @param {Record<string, unknown>} a @returns {{ optional: string, via: string, recalled: boolean } | { refused: string }}
+ * the binary's `--no-recall`), with why that recall may not have read the whole store (`_recallDegraded`, the binary's
+ * `--recall-degraded`, taken only beside `_recalled=true`).
+ * @param {Record<string, unknown>} a @returns {{ optional: string, via: string, recalled: boolean, recallDegraded: string } | { refused: string }}
  */
 export function launchOptions(a) {
   const opt = optionalOption(a['optional'])
@@ -199,13 +202,30 @@ export function launchOptions(a) {
   if (via === null) return { refused: `_via=${JSON.stringify(a['_via'])} is not an engine name` }
   const recalled = a['_recalled'] ?? false
   if (recalled !== true && recalled !== false) return { refused: `_recalled=${JSON.stringify(recalled)} is not true or false` }
-  return { ...opt, via, recalled }
+  const degraded = recallDegradedOption(a['_recallDegraded'], recalled)
+  if (typeof degraded !== 'string') return degraded
+  return { ...opt, via, recalled, recallDegraded: degraded }
+}
+
+/**
+ * Why the launcher's recall may not have read the whole store (`_recallDegraded`): one non-blank line of text beside
+ * `_recalled=true`; '' when not given.
+ * @param {unknown} v @param {boolean} recalled @returns {string | { refused: string }}
+ */
+function recallDegradedOption(v, recalled) {
+  if (v == null) return ''
+  if (typeof v !== 'string' || hasControl(v) || !v.trim()) return { refused: `_recallDegraded=${JSON.stringify(v)} is not one non-blank line of text` }
+  if (!recalled) return { refused: '_recallDegraded is taken only beside _recalled=true' }
+  return v.trim()
 }
 
 /**
  * The start's flags for the launch options: `--optional` with its text, `--no-recall` when the launcher recalled, and
  * `--nested` under a parent engine, so the run builds on no round of the branch's chain and files none, as the engine
  * keeps a nested review out of it (selectPriorRounds, integrations/shared/run-record.mjs).
- * @param {{ optional: string, recalled: boolean, via: string }} o @returns {string}
+ * `--recall-degraded=<text>` with why the launcher's recall may not have read the whole store (one argument, so a text
+ * that starts with `-` is not read as a flag).
+ * @param {{ optional: string, recalled: boolean, recallDegraded?: string, via: string }} o @returns {string}
  */
-export const launchFlags = o => `${o.optional ? ` --optional ${shq(o.optional)}` : ''}${o.recalled ? ' --no-recall' : ''}${o.via ? ' --nested' : ''}`
+export const launchFlags = o =>
+  `${o.optional ? ` --optional ${shq(o.optional)}` : ''}${o.recalled ? ' --no-recall' : ''}${o.recalled && o.recallDegraded ? ` --recall-degraded=${shq(o.recallDegraded)}` : ''}${o.via ? ' --nested' : ''}`

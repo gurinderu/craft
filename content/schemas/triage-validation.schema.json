@@ -1,0 +1,43 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "stable_id",
+    "verdict",
+    "reason",
+    "fix_pointer",
+    "premise_checked",
+    "noise_class",
+    "severity"
+  ],
+  "properties": {
+    "stable_id": {
+      "type": "string",
+      "description": "composite identity: source::location::title"
+    },
+    "verdict": {
+      "type": "string",
+      "description": "accept | reject | defer | needs-decision"
+    },
+    "noise_class": {
+      "type": "integer",
+      "description": "the noise class the finding falls in, 1..6 as the prompt lists them; 0 when none — a defect of this change"
+    },
+    "severity": {
+      "type": "string",
+      "description": "the severity the code supports: Critical | High | Medium | Low | Info — lowered from the source's when its harm is unreachable or heals itself"
+    },
+    "reason": {
+      "type": "string",
+      "description": "one line justifying the verdict against the code"
+    },
+    "premise_checked": {
+      "type": "string",
+      "description": "the file:line you actually opened to settle the verdict's load-bearing premise when it lives outside the cited location — a dependency's behaviour, reachability, what a caller or sibling does. Applies to reject exactly as much as to accept. Empty string only when the cited location alone settled it"
+    },
+    "fix_pointer": {
+      "type": "string",
+      "description": "owning craft skill + one-line fix direction; empty unless accept"
+    }
+  }
+}

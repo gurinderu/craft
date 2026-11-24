@@ -15,12 +15,12 @@
 // binary counted them, and what the run cost as the driver observed it (`runtimeStats`, integrations/shared/cli-review-clock.mjs).
 import { makeRunLogger, quietly, telemetryLossNoter } from './run-logging.mjs'
 import { telemetryLostSection } from './review-coverage.mjs'
-import { fingerprint, summarizeFindings } from './run-record.mjs'
+import { fingerprint, summarizeFindings, scopedTokens, tokensScope } from './run-record.mjs'
 import { resumeHint } from './cli-review-verdict.mjs'
 
 /** @typedef {{ severity: string, file: string, line: number, title: string, ruleId: string, tier: string }} Finding  as the finished step names it */
 /** @typedef {{ file: string, line: number, symbol: string, severity: string, tier: string, disposition: string, source: string, ruleId: string, title: string, why: string, toolRule?: string, sources?: unknown[], deferral?: Record<string, unknown> }} LedgerRow  as the finished step names it */
-/** @typedef {{ verdict: string, run?: string, base?: string, path?: string, findings?: Finding[], uncovered?: string[], notRun?: string[], round?: number, lensScope?: 'delta' | 'full', ledger?: LedgerRow[] | null, reReview?: Record<string, unknown> | null, memory?: Record<string, unknown> | null, sorting?: Record<string, unknown> | null, memoryContradictions?: Record<string, unknown> | null, prComments?: Record<string, unknown> | null, dimensions?: Record<string, unknown>[], verification?: Record<string, unknown> | null, lensRounds?: Record<string, unknown>[] | null, seedYield?: Record<string, unknown> | null, unattributedYield?: Record<string, unknown> | null, unattributedConfirmed?: number | null, runtimeStats?: import('./cli-review-clock.mjs').RuntimeStats | null }} Outcome */
+/** @typedef {{ verdict: string, run?: string, base?: string, path?: string, findings?: Finding[], uncovered?: string[], notRun?: string[], capped?: string[], round?: number, lensScope?: 'delta' | 'full', ledger?: LedgerRow[] | null, reReview?: Record<string, unknown> | null, memory?: Record<string, unknown> | null, sorting?: Record<string, unknown> | null, memoryContradictions?: Record<string, unknown> | null, prComments?: Record<string, unknown> | null, dimensions?: Record<string, unknown>[], verification?: Record<string, unknown> | null, lensRounds?: Record<string, unknown>[] | null, seedYield?: Record<string, unknown> | null, unattributedYield?: Record<string, unknown> | null, unattributedConfirmed?: number | null, runtimeStats?: import('./cli-review-clock.mjs').RuntimeStats | null }} Outcome */
 /** @typedef {(prompt: string, opts: Record<string, unknown>) => Promise<unknown>} Call */
 /** @typedef {{ run: Call, route: (opts: Record<string, unknown>) => Record<string, unknown> }} Service  integrations/shared/service-agent.mjs */
 
@@ -88,6 +88,18 @@ export const publicationKept = o => ({
 })
 
 /**
+ * What the run left unreviewed: the files no profile covered, what did not run, and the coverage gaps apart from it,
+ * which no reader takes for INCOMPLETE — only when there are any (cli/crates/craft-review/src/report/gap_cap.rs; realm
+ * @nick/craft, node #541).
+ * @param {Outcome} o
+ */
+const holesKept = o => ({
+  uncoveredFiles: o.uncovered ?? [],
+  notRun: o.notRun ?? [],
+  ...(o.capped?.length ? { capped: o.capped } : {}),
+})
+
+/**
  * Each lens's yield and the verification as the engine's record writes them (integrations/shared/review-ledger.mjs), counted by the
  * binary — `[]` and null when it never got that far — and the cost the driver observed.
  * @param {Outcome} o
@@ -117,10 +129,11 @@ const hostOf = r => r || 'claude-code'
  * the record's. A run a parent engine launched (`_via`, as rust-audit launches its per-crate reviews) is filed nested,
  * naming the parent. Its `runtime` is the host its tasks ran in: `craft review run`'s backend (codex, pi, opencode),
  * else Claude Code, whose engine drives the binary itself.
- * @param {Outcome} o @param {{ craftVersion: string, depth: string, strict: boolean, via: string | null, outputTokens: number | null, runtime?: string }} at
+ * @param {Outcome} o @param {{ craftVersion: string, depth: string, strict: boolean, via: string | null, outputTokens: number | null, outputTokensScope?: string, runtime?: string }} at
+ *   outputTokensScope: what outputTokens counts (`turn-delta`), on the record only when named
  * @returns {Record<string, unknown>}
  */
-export function cliRecord(o, { craftVersion, depth, strict, via, outputTokens, runtime }) {
+export function cliRecord(o, { craftVersion, depth, strict, via, outputTokens, outputTokensScope, runtime }) {
   const findings = o.findings ?? []
   return {
     schemaVersion: 1,
@@ -147,8 +160,7 @@ export function cliRecord(o, { craftVersion, depth, strict, via, outputTokens, r
     reReview: o.reReview ?? null,
     findings: summarizeFindings(findings),
     ledger: o.ledger ? o.ledger.map(keptRow) : findings.map(ledgerRow),
-    uncoveredFiles: o.uncovered ?? [],
-    notRun: o.notRun ?? [],
+    ...holesKept(o),
     ...telemetryKept(o),
     // Where the project memory the run applied came from, as the engine's record keeps it (integrations/shared/review-record.mjs; realm
     // @nick/craft, node #250): null when the binary never finished; and whether strict mode raised the maintainability bar.
@@ -156,6 +168,7 @@ export function cliRecord(o, { craftVersion, depth, strict, via, outputTokens, r
     strict,
     ...publicationKept(o),
     outputTokens,
+    ...tokensScope(outputTokens, outputTokensScope),
   }
 }
 
@@ -201,7 +214,7 @@ export function settledNotes(finished, lost, noteLoss, driver) {
  * not file; `missing(why)` those of a run whose record no one can file; `file(outcome)` files the record of a run the binary never finished into the directory its checkpoints
  * went to, `refusal(record)` a refused argument's record as it stands, and `notes()` the telemetry section the answer
  * carries when a write did not land. A lost write never fails the run.
- * @param {{ agent: Call, log: (line: string) => void, budget?: { spent: () => number } }} sb
+ * @param {{ agent: Call, log: (line: string) => void, budget?: { spent: () => number | null } }} sb
  * @param {{ craftVersion: string, repo: string, run?: string, depth: string, strict: boolean, via?: string, service: Service }} o  run: the run directory a resume names
  */
 export function cliRecorder(sb, { craftVersion, repo: given, run = '', depth, strict, via = '', service }) {
@@ -240,7 +253,7 @@ export function cliRecorder(sb, { craftVersion, repo: given, run = '', depth, st
   }
   /** @param {Outcome} outcome */
   const file = outcome =>
-    logRun(cliRecord({ ...seen, ...outcome }, { craftVersion, depth, strict, via: via || null, outputTokens: sb.budget?.spent() ?? null }))
+    logRun(cliRecord({ ...seen, ...outcome }, { craftVersion, depth, strict, via: via || null, ...scopedTokens(sb.budget?.spent() ?? null) }))
   // keyTo: the repository the run reviews, when the binary names it (a resumed run, `run=`), over the one given;
   // keyed: whether the record has a repository of its own, given or named.
   return {

@@ -1,8 +1,8 @@
 // Records of ONE run counted once (realm @nick/craft, node #249).
 //
 // Resuming a workflow with a changed argument (posting findings to the PR, say) re-runs every step
-// whose prompt changed, and `finalize` files a second record of the same run: the same findings, a
-// cumulative `outputTokens`. Counted twice, every rate and the cost are skewed. A record carries no
+// whose prompt changed, and `finalize` files a second record of the same run: the same findings, its
+// own indicative `outputTokens` (the turn's shared pool, never summed). Counted twice, every rate and the cost are skewed. A record carries no
 // run id, so identity is everything a resume keeps and a separate run would not: the engine build,
 // project, head, the digest of the changed-file set (`filesDigest` — names, not content), round and why
 // it has that number (a `fresh` round 1 is a new run), the run's own settings (base, path, strict, dirty, scope, intent and spec digests, unitScope) and its findings by

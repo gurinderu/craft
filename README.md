@@ -54,8 +54,8 @@ cross-linking is the collection's cohesion.
 | skill | `craft:addressing-findings` | The fix loop for review findings — gather, sift, triage, fix, verify and re-review; the main session uses the `triage-findings` workflow where available, otherwise sifts and validates itself |
 | skill | `craft:codex-review` | Codex review through the craft CLI's Codex backend |
 | skill | `craft:develop` | The development cycle up to a PR with craft's own tools — the project's declared roles and rules take any phase they cover; recall project memory, make the change, review → triage → fix — the first round over the branch diff, each next over the delta the fixes changed — until a round brings no open Medium+ finding (at most 4 rounds, then stop and tell the human), one full review, one record of the cycle in the run store, then the PR; runs in the main session |
-| agent | `rust-reviewer` | Per-lens worker for the `review` workflow's rust profile; run directly for an ad-hoc whole-diff Rust review (runs the gate itself — a CI check only informs — and returns a verdict, at most Warning when the gate could not be established) |
-| agent | `nix-reviewer` | Per-lens worker for the `review` workflow's nix profile; run directly for an ad-hoc whole-diff Nix review (nix flake check / statix / deadnix gate + verdict) |
+| agent | `rust-reviewer` | A Rust review by hand (the `review` workflow runs its Rust lenses on its own task agent): an ad-hoc whole-diff Rust review (runs the gate itself — a CI check only informs — and returns a verdict, at most Warning when the gate could not be established) |
+| agent | `nix-reviewer` | A Nix review by hand (the `review` workflow runs its Nix lenses on its own task agent): an ad-hoc whole-diff Nix review (nix flake check / statix / deadnix gate + verdict) |
 | agent | `rust-security-scanner` | Runs the security toolchain, consolidates findings, returns a verdict |
 | agent | `rust-miri` | Runs unsafe code under Miri to detect undefined behavior |
 | agent | `engine-service` | Runs the engines' service steps (the review's `craft review` calls, checkpoints, the run record) exactly as their prompts say; defined with `omitClaudeMd: true`, so that it is not handed the project's instructions; launched by the engines, not by hand |
@@ -132,7 +132,7 @@ Install on OpenCode 2.x:
 
 <!-- x-release-please-start-version -->
 ```bash
-opencode plugin add git+https://github.com/gurinderu/craft#opencode-v0.58.0
+opencode plugin add git+https://github.com/gurinderu/craft#opencode-v0.59.0
 ```
 <!-- x-release-please-end -->
 
@@ -148,7 +148,7 @@ root (see `integrations/codex/README.md`).
 
 <!-- x-release-please-start-version -->
 ```
-codex plugin marketplace add gurinderu/craft --ref v0.58.0
+codex plugin marketplace add gurinderu/craft --ref v0.59.0
 codex plugin add craft@craft
 ```
 <!-- x-release-please-end -->
@@ -163,7 +163,7 @@ upgrade craft` only refreshes the ref already pinned. Then add it at the new tag
 <!-- x-release-please-start-version -->
 ```
 codex plugin marketplace remove craft
-codex plugin marketplace add gurinderu/craft --ref v0.58.0
+codex plugin marketplace add gurinderu/craft --ref v0.59.0
 codex plugin add craft@craft
 ```
 <!-- x-release-please-end -->
@@ -190,7 +190,7 @@ Install the package at a release tag:
 
 <!-- x-release-please-start-version -->
 ```sh
-pi install git:github.com/gurinderu/craft@v0.58.0
+pi install git:github.com/gurinderu/craft@v0.59.0
 ```
 <!-- x-release-please-end -->
 
@@ -201,7 +201,9 @@ with the pi backend. It has been observed from a checkout, not yet as an install
 
 `integrations/claude-code/workflows/review.js` is the diff review for any language. It drives the `craft` binary (the Rust
 CLI in `cli/`, fetched from this version's GitHub release unless `craftBin` names a local build), which
-decides every step: each changed file goes to its profile — Rust, Nix, SQL, or the general lenses for
+decides every step: each changed file goes to its profile — Rust, Nix, SQL, a Markdown runbook (a file whose
+changed lines touch a shell block's or numbered step's command against an external system, walked step by step
+as a procedure by the `runbook` lens; not yet observed live), or the general lenses for
 source in any other language (correctness, security, money, concurrency, errors, performance, intent,
 tests, maintainability, compat, invariants, negative-space, design and, behind a code-metrics index,
 complexity — `design` judges the decisions a change makes (a new abstraction, source of truth,

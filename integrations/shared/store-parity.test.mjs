@@ -39,6 +39,7 @@ const STEP = {
   ],
   uncovered: ['flake.nix', 7],
   notRun: ['the tests lens'],
+  capped: ['general metrics-only lenses that never returned — complexity: died', 3],
   round: 2,
   lensScope: 'delta',
   ledger: [
@@ -119,6 +120,7 @@ const CASES = [
           strict: true,
           via: 'rust-audit',
           outputTokens: 1234,
+          outputTokensScope: 'turn-delta',
           runtime: 'codex',
           session: 's-1',
         },
@@ -129,8 +131,9 @@ const CASES = [
     name: 'a record sent again as a retry is answered already filed',
     repo: 'git',
     calls: [
-      ['finalize', { step: { ...STEP, ledger: undefined, sorting: null }, steps: STEPS.slice(3), retry: false }],
-      ['finalize', { step: { ...STEP, ledger: undefined, sorting: null }, steps: STEPS.slice(3), retry: true }],
+      // No coverage gap: the record leaves `capped` out.
+      ['finalize', { step: { ...STEP, ledger: undefined, sorting: null, capped: [] }, steps: STEPS.slice(3), retry: false }],
+      ['finalize', { step: { ...STEP, ledger: undefined, sorting: null, capped: [] }, steps: STEPS.slice(3), retry: true }],
     ],
   },
   {

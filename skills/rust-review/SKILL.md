@@ -10,8 +10,8 @@ The rubric for reviewing Rust changes: run the mechanical gate first, then read 
 
 **The review entry point is the `craft:review` workflow** (the craft CLI's review, driven from Claude Code): it
 sends each changed Rust file to the Rust profile, scout-scales depth to the diff, fans out the lenses below,
-grounds findings in tool output, and verifies each one. This skill is the rubric its Rust lenses and the
-`rust-reviewer` lens worker apply.
+grounds findings in tool output, and verifies each one. This skill is the rubric its Rust lenses (on the review's task agent) and the
+`craft:rust-reviewer` agent, run by hand, apply.
 
 The workflow recalls the project's active decisions, open questions and project rules for the diff's paths
 itself, on every launch; `priorDecisions` (the object argument, never a string, each record with

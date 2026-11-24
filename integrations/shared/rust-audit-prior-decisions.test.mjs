@@ -102,7 +102,7 @@ test('rust-audit (realm #203, #218): ONE recall at audit level, forwarded to eve
     )
     assert.doesNotMatch(absent.report, /memory: recalled/)
     const dead = await audit({}, synthesis, null)
-    assert.match(dead.report, /## Memory\n- memory: none — the recall agent died/)
+    assert.match(dead.report, /## Memory\n- memory: not read — the recall agent died/)
     for (const c of reviews(dead.calls)) {
       assert.deepEqual(/** @type {any[]} */ (c.argv)[1].priorDecisions, [], 'a dead recall forwards an empty list, so no nested review recalls again')
     }

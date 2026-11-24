@@ -10,8 +10,9 @@ import { shq } from './plugin-script.mjs'
 // A task names its agent and model in host-neutral tokens (the binary's `AgentKind` and `Model`,
 // cli/crates/craft-review/src/agent.rs); this driver maps each to Claude Code's name. The plugin registers its agents
 // only under its prefix (integrations/shared/launch-names.mjs), so `rust-reviewer` is `craft:rust-reviewer` and `nix-reviewer` is
-// `craft:nix-reviewer`, the agents the engine's Rust and Nix lenses run on (integrations/shared/review-profiles.mjs; realm @nick/craft,
-// node #465); the model tokens are Claude Code's own names.
+// `craft:nix-reviewer`, for a profile that names a lens agent (realm @nick/craft, node #465); no shipped profile names
+// one now: their lenses run on the lean task agent below, so they start without the consumer's CLAUDE.md; the model
+// tokens are Claude Code's own names.
 const TASK_AGENTS = new Map([
   ['rust-reviewer', { agentType: 'craft:rust-reviewer' }],
   ['nix-reviewer', { agentType: 'craft:nix-reviewer' }],
@@ -21,11 +22,11 @@ const TASK_AGENTS = new Map([
 // listing, with no MCP tool no deferred-tool list, and it starts without the consumer's CLAUDE.md, which the
 // default `workflow-subagent` type loads into every agent (Claude Code 2.1.319, read in its installed package).
 // Not for a task whose prompt needs more: the memory's recall (the Skill tool, MCP servers, the harness's memory)
-// and a task that asks for the code graph's MCP tools (`graph`, the binary's wire) keep the default type.
+// keeps the default type.
 const REVIEW_TASK_AGENT = 'craft:review-task'
 const DEFAULT_TYPE_KINDS = new Set(['recall', 'warmup'])
 /** Whether an untyped task runs on the lean task agent. @param {Task} t @returns {boolean} */
-const onTaskAgent = t => t.graph !== true && t.kind !== undefined && !DEFAULT_TYPE_KINDS.has(t.kind)
+const onTaskAgent = t => t.kind !== undefined && !DEFAULT_TYPE_KINDS.has(t.kind)
 const LEAN = { agentType: REVIEW_TASK_AGENT }
 
 const TASK_MODELS = new Map([
@@ -119,9 +120,7 @@ export function taskRunner(sb, stopped = () => false) {
     // generic agent is not the consumer's reviewer; a dead one leaves no answer, which the binary names.
     if (t.consumerAgent !== undefined) return runConsumer(t, t.consumerAgent, cut)
     const opts = { label: t.label, phase: 'Agents', model: TASK_MODELS.get(t.model), cut }
-    // A task asking for the code graph's MCP tools goes to the default type even when it names an agent: no agent
-    // this plugin ships has them.
-    if (t.agentType === undefined || t.graph === true)
+    if (t.agentType === undefined)
       return onTaskAgent(t) ? fallbackOf(LEAN).run(taskPrompt(t), { ...opts, agentType: LEAN.agentType }) : settle(await dispatch(taskPrompt(t), opts))
     const mapped = TASK_AGENTS.get(t.agentType)
     if (!mapped) {

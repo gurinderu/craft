@@ -7,8 +7,6 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { runEngine } from './engine-harness.mjs'
-import profile from '../../content/profiles/rust.json' with { type: 'json' }
-import nixProfile from '../../content/profiles/nix.json' with { type: 'json' }
 
 let RUN = ''
 beforeEach(() => {
@@ -88,13 +86,13 @@ function assertFellBack(run, why) {
   assert.match(run.report, /^## Verdict\n\n✅ Approve\n.*\n\n⚠️ Degraded: part of this review ran weaker than asked/s, "the driver's answer says so too")
 }
 
-test("the profile's lens agent, named without a prefix, launches as the plugin agent the engine's Rust lenses run on", async () => {
+test('a task naming a reviewer agent without a prefix launches as that plugin agent', async () => {
   const run = await runEngine('review', {
     args: { craftBin: '/opt/craft' },
-    script: { 'step:start': pending([task('a', profile.lensAgent), task('v')]), 'lens:a': writes, 'lens:v': writes, 'step:submit:1': done() },
+    script: { 'step:start': pending([task('a', 'rust-reviewer'), task('v')]), 'lens:a': writes, 'lens:v': writes, 'step:submit:1': done() },
   })
   const byLabel = Object.fromEntries(run.calls.map(c => [c.label, c.opts.agentType]))
-  assert.equal(byLabel['lens:a'], 'craft:rust-reviewer', "the Rust lens runs on the plugin's Rust reviewer agent")
+  assert.equal(byLabel['lens:a'], 'craft:rust-reviewer', 'a task naming rust-reviewer runs on the plugin agent')
   assert.equal(byLabel['lens:a'], 'craft:rust-reviewer')
   assert.equal(byLabel['lens:v'], undefined, 'a task naming no agent runs on the default type')
   assert.ok(
@@ -137,11 +135,11 @@ test("an extra lens runs on the reviewed repository's own agent, by its own name
   assert.match(thrown.report, /Approve/, "the run goes on to the binary's next step")
 })
 
-test("the Nix profile's lens agent launches as the plugin agent the engine's Nix lenses run on", async () => {
+test('a task naming nix-reviewer launches as that plugin agent', async () => {
   const run = await runEngine('review', {
     args: { craftBin: '/opt/craft' },
     script: {
-      'step:start': pending([task('n', nixProfile.lensAgent), task('r', profile.lensAgent)]),
+      'step:start': pending([task('n', 'nix-reviewer'), task('r', 'rust-reviewer')]),
       'lens:n': writes,
       'lens:r': writes,
       'step:submit:1': done(),

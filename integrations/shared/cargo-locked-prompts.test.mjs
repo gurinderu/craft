@@ -25,6 +25,8 @@ const FILES = [
   'integrations/claude-code/src/review.js',
   'integrations/claude-code/src/rust-audit.js',
   'integrations/claude-code/src/triage-findings.js',
+  // triage-findings' prompts as content (integrations/shared/triage-content.mjs).
+  ...listed('content/prompts', /^triage-.*\.md$/),
   'integrations/shared/dependency-source.mjs',
   'skills/rust-review/SKILL.md',
   'skills/rust-architecture-review/SKILL.md',

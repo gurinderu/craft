@@ -1,14 +1,15 @@
 ---
 name: review-rules
 description: >-
-  Language-independent code-review rules, read alongside a language rubric (rust-review, nix-review, sql-review) by every review lens and verifier — severity capped by the harm a finding names (who is hurt, how they recover; must-fix only for data loss, security, outage, an irreversible effect, an unmet intent or a broken repo rule), the finding classes (CONV, LIFE, RECOV, EXT, WIRE, RACE, FAIL, TEST, DOCS, MAINT) and how to pick one, the search sweeps a lens runs (sibling sweep, early-exit diff, attribution check, context before judgment, consequence of a false claim), and the exclusions that drop a finding in any language. Use when reviewing a diff in any language, rating a finding's severity, or deciding whether a rejection holds. Triggers: how severe is this, is this must-fix, harm, finding class, same class elsewhere, sibling instance, early return skips, false positive. Not for a language's own rules (rust-review, nix-review), controller races (distributed-races) or backward compatibility (compatibility).
+  Language-independent code-review rules, read alongside a language rubric (rust-review, nix-review, sql-review) by every review lens and verifier — severity capped by the harm a finding names (who is hurt, how they recover; must-fix only for data loss, security, outage, an irreversible effect, an unmet intent or a broken repo rule), the finding classes (CONV, LIFE, RECOV, EXT, WIRE, RACE, FAIL, TEST, DOCS, MAINT) and how to pick one, the search sweeps a lens runs (sibling sweep, early-exit diff and three more), a Markdown runbook walked as a procedure, and the exclusions that drop a finding in any language. Use when reviewing a diff in any language, rating a finding's severity, or deciding whether a rejection holds. Triggers: how severe is this, is this must-fix, runbook, harm, finding class, same class elsewhere, sibling instance, early return skips, false positive. Not for a language's own rules (rust-review, nix-review), controller races (distributed-races) or backward compatibility (compatibility).
 ---
 
 # Review rules — what holds in every language
 
 A language rubric says what a defect looks like in that language. These files say what holds
 whatever the language: how bad a finding is, what kind it is, where to look for its siblings, and
-when it may be dropped. A review lens reads them together with its language's rubric; when the two
+when it may be dropped. The `runbook` lens reads them over a changed Markdown file whose shell
+blocks or numbered steps run commands against external systems, with runbooks.md beside them. A review lens reads them together with its language's rubric; when the two
 disagree on severity, the harm cap here wins.
 
 The general lenses — correctness, security, money, concurrency, errors, performance, intent, tests,
@@ -27,6 +28,7 @@ the author, listed as doubtful.
 | [severity.md](severity.md) | Severity from the harm a finding names: effect, who is affected, recovery. The cap each kind of harm allows, and the rule that a verdict refuses a severity above it. |
 | [classes.md](classes.md) | The finding classes CONV, LIFE, RECOV, EXT, WIRE, RACE, FAIL, TEST, DOCS, MAINT, and the rule for choosing one: the class whose fix removes the defect. |
 | [sweeps.md](sweeps.md) | Five search moves a lens runs before it stops: sibling sweep, early-exit diff, attribution check, context before judgment, consequence of a false claim. |
+| [runbooks.md](runbooks.md) | A Markdown runbook as the `runbook` lens reads it: the steps walked in order, the state each assumes and does not check, races between steps, what is irreversible and what stops it, drift from the code beside it. |
 | [fp-rules.md](fp-rules.md) | Exclusions that drop a finding in any language, and the tempting non-reasons that never do. The language rubric's own exclusion file carries the rest under the same ID space. |
 
 ## Order of work

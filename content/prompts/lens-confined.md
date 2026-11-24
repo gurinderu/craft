@@ -11,6 +11,7 @@ EFFICIENCY: pull your slice's diff ONCE, in one command.
 {{reReview}}
 {{plan}}
 
+RUBRIC (required): before judging, read each rubric file the SKILL FILES block below names WHOLE with the Read tool — never `head`, `sed -n`, `cat | cut` or a partial range — and from its directory the files it names that your lens needs, whole too. Set `rubricRead` to the absolute path of every file you read whole; a lens whose `rubricRead` names no SKILL.md is reported as having judged without its rubric.
 CONFIDENCE: report everything you suspect, located. Do NOT self-censor borderline findings — verification happens downstream; each still names its harm, and its severity is the one that harm allows. Each finding needs file:line (use file:"" line:0 only when truly not locatable).
 RULE ID (required field): set `ruleId` to the matching catalog ID from the {{rubricSkill}} skill's rules.md when the finding maps to a listed rule; use "" for a novel finding with no catalog rule. Do not force a bad fit.
 {{mutants}}
