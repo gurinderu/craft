@@ -278,7 +278,7 @@ one itself). Only a **lesson** waits for the author's yes (below).
   (the component, or `.`, for a locationless finding), body = the reason, author = who decided
   (the user, or the PR author whose reply it was), decidedBy = `"human"` only when a human made or
   confirmed the call (the user's own reject or justification, a PR-thread rejection by the PR author
-  or a maintainer — `pr-rejections.mjs` writes it so), `"agent"` for a validator's reject recorded
+  or a maintainer — `craft pr rejections` writes it so), `"agent"` for a validator's reject recorded
   without the human's word — only a `"human"` decision sets a High aside in the next review, commit = `git rev-parse HEAD` at triage, line =
   the finding's line, lens = the lens that raised it (the review ledger row's `source` / `sources` — the engine's lens names; the record's `lens` comes from the finding's lens, never from the normalized finding's `source`, which names only where it came from: `review`, `adversarial-review`, `rust-audit`, `rust-reviewer`, `nix-review`, `report` or `github-pr`; or
   adversarial-review's `lens`; leave either out when the finding has none), toolRule = the gate
@@ -291,7 +291,7 @@ one itself). Only a **lesson** waits for the author's yes (below).
   the review printed without a `tool:` rule — is told apart by its title alone: copy the title exactly
   as that source carries it, never reworded, since only the same title sets it aside when the judge
   gives no verdict (deadnix names the binding there)), links = PR / thread / commit. Triggered by triage `reject` and a finding kept but `justified` in the PR
-  body — written right then, without asking. The PR-thread rejections `pr-rejections.mjs` prints
+  body — written right then, without asking. The PR-thread rejections `craft pr rejections` prints
   (→ pr-rejections.md) are written the same way, each as it is.
 - **A stance is a project rule, not a decision** — when the reason for a reject is a stance of the
   whole project rather than "this is not a bug here" ("we do not support rollback", "a new API
@@ -463,7 +463,7 @@ Which agents to re-dispatch, the fix-to-skill routing, and the "what proves what
 
 A review run with `comment` posts only defects; its **Doubtful — for the reviewer, not posted**
 list goes to the human, who chooses for each: ask the author, post it as a defect, or do not post
-it. A chosen one is posted only through `integrations/shared/finding-post.mjs`, with the marker; a "do not post" is
+it. A chosen one is posted only through `craft review post`, with the marker; a "do not post" is
 written to memory at once (a decision, or a project rule when the reason is a stance); the author's
 answer on a question thread is read by the thread rules → [doubtful.md](doubtful.md).
 
@@ -483,7 +483,7 @@ out. Conservative: only when that explicit reply is the last word, from an owner
 collaborator of the repository — or, in a craft finding's thread only, from the PR author; in
 another reviewer's thread a PR author without that association never settles the remark. A thread
 resolved without a reply is never a rejection.
-The rule, the `gh` query and the script → [pr-rejections.md](pr-rejections.md).
+The rule and the command → [pr-rejections.md](pr-rejections.md).
 
 ## Closing the loop on GitHub
 

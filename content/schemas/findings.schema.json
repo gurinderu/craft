@@ -9,6 +9,13 @@
     "lens": {
       "type": "string"
     },
+    "rubricRead": {
+      "type": "array",
+      "description": "the absolute path of each rubric file (each SKILL.md the SKILL FILES block names, and the files beside it you used) that you read WHOLE with the Read tool before judging; empty when you read none",
+      "items": {
+        "type": "string"
+      }
+    },
     "findings": {
       "type": "array",
       "items": {
