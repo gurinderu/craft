@@ -1,12 +1,14 @@
-//! The lens rounds (`lensRoundsPhase` in `integrations/shared/review-lens-rounds.mjs`): every planned lens over
-//! its profile's part of the diff, round after round, each told what the pool already holds, until
-//! a round adds nothing new to its profile or the profile's plan's rounds are spent (loop until
-//! dry). The profiles of a run share each round and the pool. A finding is new when no pooled
-//! finding has its key (file, line and title); a lens dispatch that never returns is a hole the
-//! verdict reads as INCOMPLETE.
+//! The lens rounds (`lensRoundsPhase` in `integrations/shared/review-lens-rounds.mjs`): every
+//! planned lens over its profile's part of the diff in the first round, then, round after round,
+//! only the dispatches whose last answer found something new (realm @nick/craft, node #625), each
+//! told what the pool already holds, until a round adds nothing new to the profile, no lens that
+//! found something may run again, or the profile's plan's rounds are spent (loop until dry). The
+//! profiles of a run share each round and the pool. A finding is new when no pooled finding has
+//! its key (file, line and title); a lens dispatch that dies, in any round, is a hole the verdict
+//! reads as INCOMPLETE.
 
 use craft_store::js::JsStr;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -61,6 +63,12 @@ pub struct Rounds {
     /// The CONSUMERS lines shown to a lens task that did not answer: died, failed or still out.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub consumers_unanswered: Vec<String>,
+    /// The dispatches of the last round, each as `profile:lens` with its slice's key, whose answer
+    /// held a finding the pool lacked when the round began: the next round sends them again
+    /// ([`rerun`]; realm @nick/craft, node #625); `None` before the first round's answers, and in a
+    /// state written before it was kept, which reruns every lens.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rerun: Option<Vec<String>>,
 }
 
 /// The exact key of a finding: its file and title folded, and its line, as `key` in
@@ -91,10 +99,10 @@ fn lens_key(profile: &str, lens: &str) -> String {
     format!("{profile}:{lens}")
 }
 
-/// One task per planned lens of `profile` for `round`, over the profile's part `files`, each told
-/// what the pool holds and run on the profile's lens agent; a metrics-or-nothing lens in the first
-/// round only. A sliceable lens runs once per slice of `slices` instead: the unit batches under unit
-/// mode, else the normal mode's directory slices.
+/// One task per planned lens of `profile` for `round`, over what it reads of the part `files`
+/// ([`Profile::reads`]), told what the pool holds; a sliceable lens once per slice of `slices`
+/// ([`with_data`]). Later rounds send only what [`Rounds::sends`] allows (realm @nick/craft, node
+/// #625).
 ///
 /// # Errors
 /// When a prompt cannot be rendered or the findings schema read.
@@ -107,13 +115,20 @@ pub fn tasks(
 ) -> Result<Vec<Task>, ContentError> {
     let (profile, plan) = at;
     let prior = prompts::prior_found_summary(&rounds.pool);
-    let pathspec = ctx.pathspec(profile, files);
     let mut out = Vec::new();
-    // A metrics lens reads numbers another round would not change, and the design lens decisions
-    // another round would not change (realm @nick/craft, node #534): each runs in the first only.
-    let once = |l: &str| l == crate::design::LENS || profile.lens(l).is_some_and(|x| x.metrics);
-    let lenses = plan.lenses.iter().filter(|l| rounds.round <= 1 || !once(l));
-    for lens in lenses {
+    for lens in &plan.lenses {
+        // A lens that judges the change as a whole (`WHOLE_DIFF_LENSES` in integrations/shared/lens-scope.mjs, the
+        // profile's `wholeDiff`), one marked `unsliced` (the runbook lens) or one reading metrics is
+        // never sliced.
+        let whole = profile
+            .lens(lens)
+            .is_none_or(|l| l.metrics || l.whole_diff || l.unsliced);
+        // A per-file lens of the general profile reads no data file (realm @nick/craft, node #625).
+        if profile.reads_nothing(lens, files) {
+            continue;
+        }
+        let own = profile.reads(lens, files);
+        let pathspec = ctx.pathspec(profile, &own);
         let at = LensIn {
             profile,
             lens,
@@ -121,21 +136,51 @@ pub fn tasks(
             pathspec: &pathspec,
             prior: &prior,
         };
-        // A lens that judges the change as a whole (`WHOLE_DIFF_LENSES` in integrations/shared/lens-scope.mjs, the
-        // profile's `wholeDiff`), one marked `unsliced` (the runbook lens) or one reading metrics is
-        // never sliced.
-        let whole = profile
-            .lens(lens)
-            .is_none_or(|l| l.metrics || l.whole_diff || l.unsliced);
+        let again = |slice: Option<&Slice>| {
+            rounds.sends(profile, lens, &dispatch_key(&profile.id, lens, slice))
+        };
         if slices.is_empty() || whole {
-            out.push(lens_task(ctx, &at, rounds.round, None)?);
+            if again(None) {
+                out.push(lens_task(ctx, &at, rounds.round, None)?);
+            }
             continue;
         }
-        for (i, slice) in slices.iter().enumerate() {
-            out.push(lens_task(ctx, &at, rounds.round, Some((i, slice)))?);
+        for (i, slice) in &with_data(profile, &own, slices) {
+            if again(Some(slice)) {
+                out.push(lens_task(ctx, &at, rounds.round, Some((*i, slice)))?);
+            }
         }
     }
     Ok(out)
+}
+
+/// The key of the dispatch over a sliced part's data.
+/// It opens with `/`, which no directory or unit slice key does: both are repository-relative.
+pub(crate) const DATA_SLICE: &str = "/data files";
+
+/// The slices a lens reading `own` runs over: `slices`, and, as no slice of a profile taking the
+/// rest carries its data, one more over the data `own` holds — the security lens's, read once, not
+/// beside every slice (realm @nick/craft, node #625).
+fn with_data(profile: &Profile, own: &[String], slices: &[Slice]) -> Vec<(usize, Slice)> {
+    let mut out: Vec<(usize, Slice)> = slices.iter().cloned().enumerate().collect();
+    let data: Vec<String> = own
+        .iter()
+        .filter(|f| profile.detect.rest && crate::coverage::is_data(f))
+        .cloned()
+        .collect();
+    if !data.is_empty() {
+        out.push((slices.len(), Slice::loose(DATA_SLICE.into(), data)));
+    }
+    out
+}
+
+/// A dispatch's key: its lens's, and its slice's when sliced.
+fn dispatch_key(profile: &str, lens: &str, slice: Option<&Slice>) -> String {
+    let k = lens_key(profile, lens);
+    match slice {
+        Some(s) => format!("{k}{SLICE_SEP}{}", s.key),
+        None => k,
+    }
 }
 
 /// The answer schema of `profile`'s `lens`, for a round's dispatch and one the critic admits: a
@@ -244,6 +289,8 @@ impl Rounds {
     pub fn absorb(&mut self, tasks: &[Task]) -> BTreeMap<String, usize> {
         let mut fresh: Vec<Value> = Vec::new();
         let mut added: BTreeMap<String, usize> = BTreeMap::new();
+        let before: BTreeSet<String> = self.pool.iter().map(key).collect();
+        let mut again: Vec<String> = Vec::new();
         let (mut returned, mut raw) = (0, 0);
         for t in tasks {
             let TaskKind::Lens {
@@ -261,6 +308,9 @@ impl Rounds {
                 k = format!("{k}{SLICE_SEP}{s}");
             }
             let answer = self.answered(t, &k);
+            if answer.is_some_and(|a| rerun::found_new(a, &before)) && !again.contains(&k) {
+                again.push(k.clone());
+            }
             self.note_lines(t, answer.is_some());
             let Some(answer) = answer else {
                 continue;
@@ -296,6 +346,7 @@ impl Rounds {
             raw: Some(raw),
         });
         self.pool.extend(fresh);
+        self.rerun = Some(again);
         added
     }
 
@@ -371,6 +422,10 @@ impl Rounds {
                 .clone()
                 .unwrap_or_else(|| "returned no result (skipped or died without an error)".into());
             self.failures.insert(k.to_owned(), why);
+            // A dispatch that dies is a hole whatever an earlier round's answer was: a later round
+            // reruns one only on what it found, so the answer it owed is lost (realm @nick/craft,
+            // node #625).
+            self.returned.retain(|r| r != k);
             return None;
         };
         if !self.returned.iter().any(|r| r == k) {
@@ -379,7 +434,8 @@ impl Rounds {
         Some(answer)
     }
 
-    /// The lenses of `profile` that never answered in any round, each with why.
+    /// The lenses of `profile` whose last dispatch gave no answer — never answered, or died in a
+    /// later round after answering in an earlier one —, each with why.
     #[must_use]
     pub fn holes(&self, profile: &str) -> Vec<String> {
         self.holes_of(profile).into_iter().map(|(_, h)| h).collect()
@@ -424,6 +480,9 @@ impl Rounds {
     }
 }
 
+mod rerun;
+#[cfg(test)]
+mod rerun_tests;
 #[cfg(test)]
 mod shown_tests;
 #[cfg(test)]

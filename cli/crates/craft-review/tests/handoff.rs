@@ -24,11 +24,6 @@ fn a_full_loop_reads_every_answer_from_its_file() {
         &lens("errors", &[finding("High", 1), medium]).to_string(),
     );
     write_answer(&s, "lens-rust-intent-r1", &lens("intent", &[]).to_string());
-    write_answer(
-        &s,
-        "lens-rust-performance-r1",
-        &lens("performance", &[]).to_string(),
-    );
     write_answer(&s, "lens-rust-tests-r1", &lens("tests", &[]).to_string());
     let s = step::submit(&run, None).unwrap();
     assert_eq!(ids(&s), ["dedup-rust"]);
@@ -169,7 +164,7 @@ fn answers_given_by_the_host_override_the_files() {
     let (_, s) = small_run(repo.path(), out.path());
     write_answer(&s, "lens-rust-errors-r1", "not json");
     let empty = json!({
-        "lens-rust-errors-r1": lens("errors", &[]), "lens-rust-intent-r1": lens("intent", &[]), "lens-rust-performance-r1": lens("performance", &[]), "lens-rust-tests-r1": lens("tests", &[]),
+        "lens-rust-errors-r1": lens("errors", &[]), "lens-rust-intent-r1": lens("intent", &[]), "lens-rust-tests-r1": lens("tests", &[]),
     });
     let s = step::submit(&run, Some(&answers(empty))).unwrap();
     assert_eq!(s["verdict"], json!("Approve"));

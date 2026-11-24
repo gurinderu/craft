@@ -39,6 +39,17 @@ pub struct Plan {
     /// state written before it reads as a plan that dropped none.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub metrics_dropped: Vec<String>,
+    /// The signal-gated lenses of the roster held back for want of their diff signal (realm
+    /// @nick/craft, node #625). Optional, as the two below, so a state written before it reads as a
+    /// plan that held none back.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub signal_skipped: Vec<String>,
+    /// The per-file lenses held back from a part of nothing but data.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub data_skipped: Vec<String>,
+    /// The data files of a part with source beside them, which its per-file lenses do not read.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub data_files: Vec<String>,
 }
 
 impl Plan {
@@ -63,6 +74,10 @@ pub struct PlanInput<'a> {
     /// The files of the change this profile was assigned ([`crate::coverage::assign`]): what it
     /// reads as its production code.
     pub profile_files: &'a [String],
+    /// The paths its lenses read ([`crate::state::Track::read_paths`]): its files and the old paths
+    /// of those renamed. The part is data only when every one of them is data, as the rounds and
+    /// the critic judge what a lens reads (realm @nick/craft, node #625).
+    pub read_paths: &'a [String],
     pub spec: &'a str,
     pub light: bool,
     /// Strict mode: the plan carries `maintainability` whatever the scout picked.
@@ -80,6 +95,9 @@ pub struct PlanInput<'a> {
     /// ([`crate::design`]): the signal that adds the `design` lens, optional otherwise (realm
     /// @nick/craft, node #534).
     pub design: bool,
+    /// The lens signals the profile's part shows ([`crate::lens_signal`]); `None` when unknown,
+    /// which admits every signal-gated lens.
+    pub signals: Option<&'a [String]>,
 }
 
 /// Rounds and verifier votes by size, as `RIGOR_BY_SIZE`.
@@ -118,11 +136,13 @@ fn security_floor(p: &Profile, optional: &[String]) -> Vec<String> {
 }
 
 /// Whether `own`, the files `p` was assigned, change its production code: by its globs, or, a
-/// profile taking the rest with none, any of them that is no test — what it was assigned already
-/// leaves out prose, project configuration, vendored or generated output and other profiles' files.
+/// profile taking the rest with none, any of them that is neither test nor data — what it was
+/// assigned already leaves out prose, project configuration, vendored or generated output and other
+/// profiles' files.
 fn production(p: &Profile, own: &[String]) -> bool {
     if p.diff_globs.is_empty() {
-        own.iter().any(|f| !is_test_path(f))
+        own.iter()
+            .any(|f| !is_test_path(f) && !crate::coverage::is_data(f))
     } else {
         changes_production_code(own, &p.diff_globs)
     }
@@ -226,6 +246,9 @@ pub fn plan(input: PlanInput<'_>) -> Plan {
         surface_dropped: Vec::new(),
         light_skipped: Vec::new(),
         metrics_dropped: Vec::new(),
+        signal_skipped: Vec::new(),
+        data_skipped: Vec::new(),
+        data_files: Vec::new(),
     };
     required(
         p,
@@ -256,6 +279,8 @@ pub fn plan(input: PlanInput<'_>) -> Plan {
             &mut plan,
         );
     }
+    gate::signals(p, (input.signals, input.strict), &mut plan);
+    gate::data(p, (input.profile_files, input.read_paths), &mut plan);
     plan
 }
 
@@ -372,6 +397,9 @@ fn light(
     plan.max_rounds = 1;
 }
 
+mod gate;
+#[cfg(test)]
+mod gate_tests;
 #[cfg(test)]
 mod parity;
 #[cfg(test)]

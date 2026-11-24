@@ -94,7 +94,8 @@ fn a_typescript_only_diff_is_reviewed_by_the_general_lenses() {
             "lens-general-correctness-r1",
             "lens-general-intent-r1",
             "lens-general-tests-r1",
-            "lens-general-design-r1"
+            "lens-general-design-r1",
+            "lens-general-maintainability-r1"
         ]
     );
     assert!(
@@ -124,7 +125,7 @@ fn a_typescript_only_diff_is_reviewed_by_the_general_lenses() {
         &run,
         json!({"lens-general-security-r1": lens("security", &[f]), "lens-general-correctness-r1": lens("correctness", &[]),
                "lens-general-intent-r1": lens("intent", &[]), "lens-general-tests-r1": lens("tests", &[]),
-               "lens-general-design-r1": lens("design", &[])}),
+               "lens-general-design-r1": lens("design", &[]), "lens-general-maintainability-r1": lens("maintainability", &[])}),
     );
     assert_eq!(ids(&s), ["verify-0-v0", "verify-0-v1"]);
     let v = prompt_of(task(&s, "verify-0-v0"));
@@ -254,9 +255,9 @@ fn a_mixed_diff_plans_each_profile_over_its_own_files_and_settles_one_pool() {
         [
             "lens-rust-errors-r1",
             "lens-rust-intent-r1",
-            "lens-rust-performance-r1",
             "lens-rust-tests-r1",
             "lens-rust-design-r1",
+            "lens-rust-maintainability-r1",
             "lens-nix-purity-r1",
             "lens-nix-intent-r1",
             "lens-nix-design-r1",
@@ -264,19 +265,16 @@ fn a_mixed_diff_plans_each_profile_over_its_own_files_and_settles_one_pool() {
             "lens-general-correctness-r1",
             "lens-general-intent-r1",
             "lens-general-tests-r1",
-            "lens-general-design-r1"
+            "lens-general-design-r1",
+            "lens-general-maintainability-r1"
         ]
     );
     let s = submit(&run, round(&s, &mixed_found));
     assert_eq!(
         ids(&s),
-        [
-            "lens-rust-errors-r2",
-            "lens-rust-intent-r2",
-            "lens-rust-performance-r2",
-            "lens-rust-tests-r2"
-        ],
-        "only the profile with rounds left and new findings runs again"
+        ["lens-rust-errors-r2"],
+        "only the profile with rounds left and new findings runs again, and of it only the lens \
+         that found something"
     );
     let s = submit(&run, round(&s, &|_| Vec::new()));
     assert_eq!(
@@ -396,4 +394,30 @@ fn a_query_string_on_a_changed_rust_line_adds_the_queries_lens() {
     let (run, _) = start(plain.path(), out.path());
     let s = submit(&run, json!({"scout-rust": scout("small", &["errors"])}));
     assert!(!ids(&s).iter().any(|i| i.contains("sql")), "{:?}", ids(&s));
+}
+
+/// A profile whose lens only repeated, in the same round, what another profile's lens found first
+/// added nothing new: it goes dry though its lens is marked to run again (realm @nick/craft, node
+/// #625).
+#[test]
+fn a_profile_that_only_repeated_another_profiles_finding_goes_dry() {
+    let repo = repo_with(&["src/lib.rs", "web/app.ts"]);
+    let out = tempfile::tempdir().unwrap();
+    let (run, _) = start(repo.path(), out.path());
+    let s = submit(
+        &run,
+        json!({"scout-rust": scout("medium", &["errors"]), "scout-general": scout("medium", &["security"])}),
+    );
+    let same = |id: &str| match id {
+        "lens-rust-errors-r1" | "lens-general-correctness-r1" => {
+            vec![titled("High", 1, "f returns 1")]
+        }
+        _ => Vec::new(),
+    };
+    let s = submit(&run, round(&s, &same));
+    assert_eq!(
+        ids(&s),
+        ["lens-rust-errors-r2"],
+        "the general profile found nothing new to it: no round 2 of its own"
+    );
 }

@@ -32,9 +32,9 @@ fn a_requested_optional_lens_runs_and_an_unrequested_one_does_not() {
         !without.iter().any(|id| id.contains("api-boundary")),
         "{without:?}"
     );
-    // The performance lens is no optional one: it runs in every Rust review, unasked.
+    // The intent lens is no optional one: it runs in every Rust review, unasked.
     assert!(
-        without.contains(&"lens-rust-performance-r1".to_owned()),
+        without.contains(&"lens-rust-intent-r1".to_owned()),
         "{without:?}"
     );
     let (with, _r, _o) = first_round(Some("rust-api-boundary"));

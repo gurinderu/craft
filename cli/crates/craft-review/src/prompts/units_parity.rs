@@ -44,6 +44,9 @@ fn unit_mode_prompts_render_as_the_engine_renders_them() {
         surface_dropped: Vec::new(),
         light_skipped: Vec::new(),
         metrics_dropped: Vec::new(),
+        signal_skipped: Vec::new(),
+        data_skipped: Vec::new(),
+        data_files: Vec::new(),
     };
     let rust = Profile::load("rust").unwrap();
     let words = rust.units.as_ref().unwrap();

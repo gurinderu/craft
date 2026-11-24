@@ -34,6 +34,7 @@ pub mod handoff;
 mod harm;
 mod js;
 pub mod ledger;
+mod lens_signal;
 pub mod memory;
 pub mod optional;
 #[cfg(test)]

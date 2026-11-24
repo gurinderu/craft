@@ -12,6 +12,7 @@ fn input<'a>(p: &'a Profile, files: &'a [String], embedded_sql: bool) -> PlanInp
         scout: None,
         changed_files: files,
         profile_files: files,
+        read_paths: files,
         spec: "feat: x",
         light: false,
         strict: false,
@@ -19,6 +20,7 @@ fn input<'a>(p: &'a Profile, files: &'a [String], embedded_sql: bool) -> PlanInp
         optional: &[],
         embedded_sql,
         design: false,
+        signals: Some(&[]),
     }
 }
 
@@ -88,9 +90,11 @@ fn a_rust_diff_can_plan_the_general_lenses_complexity_behind_its_index() {
     let files = ["src/billing.rs".to_owned()];
     let scout = json!({"sizeBucket": "medium", "securitySensitive": false,
         "lenses": ["correctness", "security", "money", "complexity"]});
+    let money = ["money".to_owned()];
     let with = plan(PlanInput {
         scout: Some(&scout),
         metrics: true,
+        signals: Some(&money),
         ..input(&p, &files, false)
     });
     for l in ["correctness", "security", "money", "complexity"] {
@@ -110,8 +114,10 @@ fn a_general_diff_can_plan_the_lenses_it_gained() {
     let files = ["web/app.ts".to_owned()];
     let gained = ["tests", "maintainability", "compat", "invariants"];
     let scout = json!({"sizeBucket": "large", "securitySensitive": false, "lenses": gained});
+    let fired = ["new-or-large-file".to_owned()];
     let got = plan(PlanInput {
         scout: Some(&scout),
+        signals: Some(&fired),
         ..input(&p, &files, false)
     });
     for l in gained
@@ -254,6 +260,7 @@ fn a_general_plan_counts_only_its_own_files_as_production() {
     let got = plan(PlanInput {
         scout: Some(&scout),
         profile_files: &own,
+        read_paths: &own,
         ..input(&p, &change, false)
     });
     assert!(

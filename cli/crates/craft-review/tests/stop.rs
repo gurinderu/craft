@@ -8,10 +8,9 @@ use craft_review::status;
 use craft_review::step::{self, Said};
 use serde_json::json;
 
-const LENSES: [&str; 4] = [
+const LENSES: [&str; 3] = [
     "lens-rust-errors-r1",
     "lens-rust-intent-r1",
-    "lens-rust-performance-r1",
     "lens-rust-tests-r1",
 ];
 
@@ -91,11 +90,7 @@ fn limit_text_stops_at_once_keeping_the_answers_that_came_in() {
     let s = step::submit(&run, None).unwrap();
     assert_eq!(
         ids(&s),
-        [
-            "lens-rust-intent-r1",
-            "lens-rust-performance-r1",
-            "lens-rust-tests-r1"
-        ],
+        ["lens-rust-intent-r1", "lens-rust-tests-r1"],
         "the answer that came in is kept"
     );
     let st = status::status(&run).unwrap();
@@ -114,7 +109,7 @@ fn a_transient_429_does_not_stop_the_run() {
     // Rate-limited and dead with no answer, while the rest of its round answered.
     let s = submit(
         &run,
-        json!({"lens-rust-intent-r1": lens("intent", &[]), "lens-rust-performance-r1": lens("performance", &[]), "lens-rust-tests-r1": lens("tests", &[])}),
+        json!({"lens-rust-intent-r1": lens("intent", &[]), "lens-rust-tests-r1": lens("tests", &[])}),
     );
     assert_eq!(s["done"], json!(false), "{s}");
     assert_eq!(ids(&s), ["lens-rust-errors-r1"], "asked again");
@@ -149,11 +144,7 @@ fn a_resume_holds_the_answers_still_missing_rather_than_failing_them() {
     assert!(s.get("stopped").is_none(), "no dead round read: {s}");
     assert_eq!(
         ids(&s),
-        [
-            "lens-rust-intent-r1",
-            "lens-rust-performance-r1",
-            "lens-rust-tests-r1"
-        ],
+        ["lens-rust-intent-r1", "lens-rust-tests-r1"],
         "the answer that came in is kept, the missing ones handed out again"
     );
     assert!(!prompt_of(&s["tasks"][0]).contains("previous answer was invalid"));
@@ -167,11 +158,7 @@ fn a_resume_holds_the_answers_still_missing_rather_than_failing_them() {
         s["repo"],
         json!(repo.path().canonicalize().unwrap().display().to_string())
     );
-    for id in [
-        "lens-rust-intent-r1",
-        "lens-rust-performance-r1",
-        "lens-rust-tests-r1",
-    ] {
+    for id in ["lens-rust-intent-r1", "lens-rust-tests-r1"] {
         let name = id.split('-').nth(2).unwrap();
         write_answer(&s, id, &lens(name, &[]).to_string());
     }
@@ -189,11 +176,6 @@ fn a_task_abandoned_at_its_deadline_fails_at_once_and_its_late_answer_is_not_rea
     let out = tempfile::tempdir().unwrap();
     let (run, s) = small_run(repo.path(), out.path());
     write_answer(&s, "lens-rust-intent-r1", &lens("intent", &[]).to_string());
-    write_answer(
-        &s,
-        "lens-rust-performance-r1",
-        &lens("performance", &[]).to_string(),
-    );
     write_answer(&s, "lens-rust-tests-r1", &lens("tests", &[]).to_string());
     // The abandoned agent answers after all, once the host stopped waiting.
     let late = lens(
@@ -230,11 +212,6 @@ fn a_round_of_abandoned_tasks_is_no_limit_stop_the_run_goes_on_without_them() {
     let found = lens("errors", &[titled("Medium", 1, "no doc")]);
     write_answer(&s, "lens-rust-errors-r1", &found.to_string());
     write_answer(&s, "lens-rust-intent-r1", &lens("intent", &[]).to_string());
-    write_answer(
-        &s,
-        "lens-rust-performance-r1",
-        &lens("performance", &[]).to_string(),
-    );
     write_answer(&s, "lens-rust-tests-r1", &lens("tests", &[]).to_string());
     let s = step::submit(&run, None).unwrap();
     let verifiers = ids(&s);
@@ -262,11 +239,6 @@ fn a_resume_after_a_limit_stop_does_not_hand_an_abandoned_task_out_again() {
     let out = tempfile::tempdir().unwrap();
     let (run, s) = small_run(repo.path(), out.path());
     write_answer(&s, "lens-rust-intent-r1", &lens("intent", &[]).to_string());
-    write_answer(
-        &s,
-        "lens-rust-performance-r1",
-        &lens("performance", &[]).to_string(),
-    );
     let abandoned = ["lens-rust-errors-r1".to_owned()];
     let stopped = Said {
         abandoned: &abandoned,
@@ -309,17 +281,10 @@ fn a_round_with_one_abandoned_task_and_the_rest_dead_is_no_limit_stop() {
         abandoned: &abandoned,
         ..Said::default()
     };
-    // The errors lens abandoned at its deadline; intent, performance and tests die through their retries.
+    // The errors lens abandoned at its deadline; intent and tests die through their retries.
     let mut s = step::submit_with(&run, None, &said).unwrap();
     for _ in 0..2 {
-        assert_eq!(
-            ids(&s),
-            [
-                "lens-rust-intent-r1",
-                "lens-rust-performance-r1",
-                "lens-rust-tests-r1"
-            ]
-        );
+        assert_eq!(ids(&s), ["lens-rust-intent-r1", "lens-rust-tests-r1"]);
         s = step::submit(&run, None).unwrap();
     }
     assert!(
@@ -348,11 +313,6 @@ fn a_limit_stop_in_verification_reports_every_finding_under_its_honest_tier() {
     );
     write_answer(&s, "lens-rust-errors-r1", &found.to_string());
     write_answer(&s, "lens-rust-intent-r1", &lens("intent", &[]).to_string());
-    write_answer(
-        &s,
-        "lens-rust-performance-r1",
-        &lens("performance", &[]).to_string(),
-    );
     write_answer(&s, "lens-rust-tests-r1", &lens("tests", &[]).to_string());
     let s = step::submit(&run, None).unwrap();
     assert_eq!(ids(&s), ["dedup-rust"]);

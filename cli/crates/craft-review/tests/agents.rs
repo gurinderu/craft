@@ -33,7 +33,7 @@ fn no_task_names_an_agent_so_every_one_runs_on_the_hosts_task_agent() {
     let (run, s) = small_run(repo.path(), out.path());
     assert_eq!(
         agent_types(&s),
-        [None; 4],
+        [None; 3],
         "a Rust lens names no agent: the host's lean task agent runs it, the rubric read from \
          the SKILL FILES its prompt names, and craft:rust-reviewer stays for a review by hand"
     );
@@ -54,7 +54,6 @@ fn no_task_names_an_agent_so_every_one_runs_on_the_hosts_task_agent() {
     let round1 = json!({
         "lens-rust-errors-r1": lens("errors", &[finding("High", 1), medium]),
         "lens-rust-intent-r1": lens("intent", &[]),
-        "lens-rust-performance-r1": lens("performance", &[]),
         "lens-rust-tests-r1": lens("tests", &[]),
     });
     let s = step::submit(&run, Some(&answers(round1))).unwrap();
@@ -83,7 +82,7 @@ fn a_degraded_note_reaches_the_report_and_the_finished_step_once() {
     let (run, _) = small_run(repo.path(), out.path());
     let note = "round 1: 3 task(s) on `craft:rust-reviewer` ran on the default agent type instead";
     let empty = json!({
-        "lens-rust-errors-r1": lens("errors", &[]), "lens-rust-intent-r1": lens("intent", &[]), "lens-rust-performance-r1": lens("performance", &[]), "lens-rust-tests-r1": lens("tests", &[]),
+        "lens-rust-errors-r1": lens("errors", &[]), "lens-rust-intent-r1": lens("intent", &[]), "lens-rust-tests-r1": lens("tests", &[]),
     });
     let notes = [note.to_owned(), format!("  {note}\n"), String::new()];
     let s = step::submit_noting(&run, Some(&answers(empty)), &notes).unwrap();
@@ -111,7 +110,7 @@ fn a_run_with_no_degraded_note_says_nothing_of_it() {
     let out = tempfile::tempdir().unwrap();
     let (run, _) = small_run(repo.path(), out.path());
     let empty = json!({
-        "lens-rust-errors-r1": lens("errors", &[]), "lens-rust-intent-r1": lens("intent", &[]), "lens-rust-performance-r1": lens("performance", &[]), "lens-rust-tests-r1": lens("tests", &[]),
+        "lens-rust-errors-r1": lens("errors", &[]), "lens-rust-intent-r1": lens("intent", &[]), "lens-rust-tests-r1": lens("tests", &[]),
     });
     let s = step::submit(&run, Some(&answers(empty))).unwrap();
     assert!(s.get("degraded").is_none(), "{s}");
@@ -150,7 +149,7 @@ fn a_lens_that_read_no_rubric_file_whole_is_named_as_degraded() {
     let mut silent = lens("intent", &[]);
     silent.as_object_mut().unwrap().remove("rubricRead");
     let round = json!({
-        "lens-rust-errors-r1": skimmed, "lens-rust-intent-r1": silent, "lens-rust-performance-r1": lens("performance", &[]), "lens-rust-tests-r1": lens("tests", &[]),
+        "lens-rust-errors-r1": skimmed, "lens-rust-intent-r1": silent, "lens-rust-tests-r1": lens("tests", &[]),
     });
     let s = step::submit(&run, Some(&answers(round))).unwrap();
     assert_eq!(s["verdict"], json!("Approve"), "the verdict stands: {s}");

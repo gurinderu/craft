@@ -71,7 +71,6 @@ fn lenses_that_could_not_look_fail_with_their_reason_and_make_the_verdict_incomp
         json!({
             "lens-rust-errors-r1": blocked("errors", &[titled("High", 1, "a guess from the diff alone")]),
             "lens-rust-intent-r1": blocked("intent", &[]),
-            "lens-rust-performance-r1": blocked("performance", &[]),
             "lens-rust-tests-r1": blocked("tests", &[]),
         }),
     );
@@ -82,7 +81,7 @@ fn lenses_that_could_not_look_fail_with_their_reason_and_make_the_verdict_incomp
     );
     let r = report(&s);
     for want in [
-        "- Round 1: 4 lens(es) dispatched, 0 returned, 0 new finding(s).",
+        "- Round 1: 3 lens(es) dispatched, 0 returned, 0 new finding(s).",
         "## Not run\n\n- rust lenses that never returned — errors: could not review: bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted · intent: could not review: bwrap",
         "## Confirmed findings\n\nNone.",
     ] {
@@ -104,7 +103,6 @@ fn one_lens_that_could_not_look_holds_an_otherwise_clean_review_incomplete() {
         json!({
             "lens-rust-errors-r1": lens("errors", &[]),
             "lens-rust-intent-r1": lens("intent", &[]),
-            "lens-rust-performance-r1": lens("performance", &[]),
             "lens-rust-tests-r1": blocked("tests", &[]),
         }),
     );
@@ -131,7 +129,6 @@ fn empty_findings_without_blocked_stay_clean() {
         json!({
             "lens-rust-errors-r1": lens("errors", &[]),
             "lens-rust-intent-r1": bare,
-            "lens-rust-performance-r1": lens("performance", &[]),
             "lens-rust-tests-r1": quiet,
         }),
     );
@@ -149,7 +146,6 @@ fn a_lens_that_could_not_look_keeps_its_reason_though_its_answer_is_off_its_sche
         json!({
             "lens-rust-errors-r1": lens("errors", &[]),
             "lens-rust-intent-r1": lens("intent", &[]),
-            "lens-rust-performance-r1": lens("performance", &[]),
             "lens-rust-tests-r1": {"blocked": {"couldNotLook": true, "what": SANDBOX}},
         }),
     );

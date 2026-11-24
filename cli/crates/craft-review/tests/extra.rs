@@ -99,7 +99,7 @@ fn a_role_lens_the_repository_declares_runs_on_a_light_pass() {
     for want in [
         "f claims 0 and returns 1 (extra:reviewer)",
         "## Extra lenses\nChosen: discovered among the session project's agents.\nRan: reviewer. Their findings were verified under the rust profile's rubric",
-        "- Round 1: 4 lens(es) dispatched",
+        "- Round 1: 3 lens(es) dispatched",
     ] {
         assert!(r.contains(want), "{want}: {r}");
     }

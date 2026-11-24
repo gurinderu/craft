@@ -110,9 +110,21 @@ pub(crate) fn advance(dir: &Path, run: &mut RunState) -> Result<(), Error> {
             extra::take(&mut run.extra, &run.tasks, first.as_deref().unwrap_or(""));
             units::keep_questions(run);
             let added = run.rounds.absorb(&run.tasks);
-            for t in run.tracks.iter_mut().filter(|t| t.live()) {
+            for (t, p) in run
+                .tracks
+                .iter_mut()
+                .zip(&profiles)
+                .filter(|(t, _)| t.live())
+            {
                 t.rounds += 1;
-                t.dry = added.get(&t.profile).copied().unwrap_or(0) == 0;
+                // Dry when the next round would dispatch none of its lenses: it found nothing new,
+                // or no lens that did may run again (realm @nick/craft, node #625). A dispatch that
+                // died is a hole, never sent again.
+                let found_new = added.get(&t.profile).copied().unwrap_or(0) > 0;
+                t.dry = !t
+                    .plan
+                    .as_ref()
+                    .is_some_and(|plan| run.rounds.goes_on(p, plan, found_new));
             }
             next_round(dir, run, &profiles)
         }
@@ -196,6 +208,7 @@ fn plan_tracks(run: &mut RunState, profiles: &[Profile]) {
             scout,
             changed_files: &run.diff.files,
             profile_files: &track.files,
+            read_paths: &track.read_paths(),
             spec: &run.context.spec,
             light: run.light,
             strict: run.context.strict,
@@ -203,6 +216,7 @@ fn plan_tracks(run: &mut RunState, profiles: &[Profile]) {
             optional: &run.optional,
             embedded_sql: track.embedded_sql,
             design: track.design,
+            signals: track.signals.as_deref(),
         }));
     }
     // A lens the plan would run that could not look is a coverage gap, named once, under Not run;

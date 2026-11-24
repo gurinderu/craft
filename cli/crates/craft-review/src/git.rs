@@ -222,12 +222,28 @@ fn not_an_option(cwd: &Path, revs: &[&str]) -> Result<(), GitError> {
 
 /// `git diff -U0` over `revs`, from the top level.
 fn diff_u0(cwd: &Path, revs: &[&str]) -> Result<String, GitError> {
+    diff_with(cwd, "-U0", revs)
+}
+
+/// The change since the merge-base of HEAD and `base`, working tree included, each hunk widened to
+/// the whole function around it (`-W`), headers as [`zero_context_diff`] prints them: what the lens
+/// signals read, so an edit inside an existing lock region or money path shows it (realm
+/// @nick/craft, node #625).
+///
+/// # Errors
+/// When `cwd` is not in a working tree or `git` fails.
+pub fn function_context_diff(cwd: &Path, base: &str) -> Result<String, GitError> {
+    not_an_option(cwd, &[base])?;
+    diff_with(cwd, "-W", &["--merge-base", base])
+}
+
+fn diff_with(cwd: &Path, context: &str, revs: &[&str]) -> Result<String, GitError> {
     let top = toplevel(cwd)?;
     let mut args = vec![
         "-c",
         "core.quotePath=false",
         "diff",
-        "-U0",
+        context,
         "--no-color",
         "--no-ext-diff",
         "--src-prefix=a/",

@@ -133,7 +133,7 @@ mod tests {
         assert!(!admitted(p, "api-idioms", &[]));
         assert!(admitted(p, "api-idioms", &["rust-api-idioms".into()]));
         assert!(admitted(p, "safety", &[]));
-        // The Rust performance lens runs in every Rust review, not in the optional pass.
+        // The Rust performance lens is gated on its diff signal, not on the optional pass.
         assert!(admitted(p, "performance", &[]));
         // The general profile's performance lens is no optional one: a request does not touch it.
         assert!(admitted(&ps[1], "performance", &[]));

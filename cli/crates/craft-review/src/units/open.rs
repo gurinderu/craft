@@ -47,7 +47,15 @@ pub fn open(
         // takes the rest carries no shared rider beyond its own part: project configuration stays
         // out of every code lens, as coverage keeps it, and another profile's manifest is not its
         // to read; the Rust and Nix profiles keep their manifests riding on every slice.
-        let riders = if p.detect.rest { &track.files } else { files };
+        // Nor does it slice over data: its per-file lenses read no data file (realm @nick/craft,
+        // node #625).
+        let source: Vec<String> = track
+            .files
+            .iter()
+            .filter(|f| !crate::coverage::is_data(f))
+            .cloned()
+            .collect();
+        let riders = if p.detect.rest { &source } else { files };
         let slices = dirs::slice_diff(riders, UNIT_MIN_FILES, MAX_SLICES, &owns);
         if !slices.is_empty() {
             units.directory.insert(p.id.clone(), slices);

@@ -189,7 +189,8 @@ pub struct Track {
     /// The lens rounds it has run.
     #[serde(default)]
     pub rounds: u32,
-    /// Its last round added nothing new.
+    /// Its last round added nothing new, or no lens that found something may run again — none
+    /// outside the first-round-only ones (realm @nick/craft, node #625).
     #[serde(default)]
     pub dry: bool,
     /// Its changed lines hold a query string ([`crate::embedded_sql`]), so its plan takes the
@@ -204,6 +205,11 @@ pub struct Track {
     /// its scout and lenses, so git shows each rename, but not counted among its files.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub renamed_from: Vec<String>,
+    /// The lens signals its part shows ([`crate::lens_signal`]); `None` — unknown, which admits
+    /// every signal-gated lens — until they are read, when they could not be, and in a state
+    /// written before they were.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signals: Option<Vec<String>>,
 }
 
 impl Track {
@@ -218,6 +224,7 @@ impl Track {
             embedded_sql: false,
             design: false,
             renamed_from: Vec::new(),
+            signals: None,
         }
     }
 
