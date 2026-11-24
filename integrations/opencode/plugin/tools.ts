@@ -94,7 +94,7 @@ async function callerOf(host: Host, sessionID: string | undefined): Promise<{ mo
     return model ? { model } : {}
   } catch (e) {
     return {
-      note: `Note: the calling session's model could not be read (${e instanceof Error ? e.message : String(e)}); the review's tasks ran on OpenCode's default model.`,
+      note: `Note: the calling session's model could not be read (${e instanceof Error ? e.message : String(e)}); a task the flags or CRAFT_OPENCODE_MODELS named no model for ran on OpenCode's default model.`,
     }
   }
 }

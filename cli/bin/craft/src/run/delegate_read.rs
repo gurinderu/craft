@@ -191,6 +191,18 @@ mod tests {
     }
 
     #[test]
+    fn an_overlong_line_holds_no_more_than_the_bound_and_keeps_only_its_head() {
+        // Ten thousand bytes over a bound of a hundred, fed ten at a time: what is held never grows past the bound.
+        let mut long = vec![b'x'; 10_000];
+        long.push(b'\n');
+        let mut input = std::io::BufReader::with_capacity(10, Cursor::new(long));
+        let mut line = Vec::new();
+        assert_eq!(next_line(&mut input, 100, &mut line).unwrap(), Some(false));
+        assert_eq!(line.len(), super::HEAD);
+        assert!(line.capacity() < 1000, "held {} bytes", line.capacity());
+    }
+
+    #[test]
     fn a_reply_of_a_few_mebibytes_is_read_whole() {
         let big = vec![b'x'; 2 * 1024 * 1024];
         let mut input = Cursor::new([big.as_slice(), b"\n"].concat());

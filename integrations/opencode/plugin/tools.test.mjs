@@ -260,7 +260,10 @@ test("a caller whose model cannot be read is said in the answer; the review runs
   const answer = await review.run(host, { args: '--base main' }, { sessionID: 'ses_caller' })
   assert.equal(fs.readFileSync(argv, 'utf8').trim(), 'review run --backend opencode --events json --base main')
   assert.ok(typeof answer === 'object')
-  assert.match(answer.output, /Note: the calling session's model could not be read \(session gone\); the review's tasks ran on OpenCode's default model\.$/)
+  assert.match(
+    answer.output,
+    /Note: the calling session's model could not be read \(session gone\); a task the flags or CRAFT_OPENCODE_MODELS named no model for ran on OpenCode's default model\.$/,
+  )
 })
 
 test("on 2.x the review's --concurrency caps its children too", async () => {

@@ -1,6 +1,7 @@
 //! What came of one task's process, by the one rule both hosts follow (realm @nick/craft, node
 //! #453): an answer is written to the task's answer file; past the deadline the task is abandoned;
-//! a failure that says the account's usage limit, or that the host is not logged in, stops the run;
+//! a failure that says the account's usage limit, that the host is not logged in, or — in a delegated
+//! run — that the process running the tasks stopped answering (`AgentError::HostGone`), stops the run;
 //! any other failure, and a process that gave no answer, is left unanswered — the binary hands it
 //! out again.
 

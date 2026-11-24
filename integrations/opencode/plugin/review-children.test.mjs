@@ -245,3 +245,18 @@ test('the agents listing fails closed', async () => {
     assert.match(got.refused, /^⚠️ INCOMPLETE — .*Nothing ran\.$/)
   }
 })
+
+test('the shared turns queued behind a given-up alone retry still run', async () => {
+  const turn = turns(1)
+  const signal = new AbortController().signal
+  const hold = manual()
+  const busy = turn.shared(() => hold.promise, signal)
+  const stop = new AbortController()
+  const alone = turn.alone(() => Promise.resolve('never'), stop.signal)
+  const behind = turn.shared(() => Promise.resolve('behind'), signal)
+  await tick()
+  stop.abort()
+  await assert.rejects(alone, new RegExp(GIVEN_UP))
+  hold.resolve('busy')
+  assert.deepEqual(await Promise.all([busy, behind]), ['busy', 'behind'])
+})

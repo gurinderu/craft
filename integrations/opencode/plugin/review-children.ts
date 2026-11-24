@@ -142,9 +142,10 @@ const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e))
 /**
  * `run` in a shared turn, and once more alone — no other child of this review running — when it gave nothing back or
  * broke before its loop ended (the plugin's own fan-out's mitigation of opencode's concurrent-child bugs, child-run.ts).
- * Never once the task is given up, nor after a loop that failed: that error is the answer. A broken first attempt's
- * session was interrupted before it threw (host-v2.ts), so no orphan runs beside the retry. When the retry fails too, the
- * first error is kept, the retry's beside it.
+ * Never once the task is given up, nor after a loop that failed: that error is the answer. Before a broken or abandoned
+ * first attempt throws or returns, its session is asked to stop and the stop awaited for a bounded time (host-v2.ts); a
+ * stop OpenCode fails or does not confirm in that time is logged, and that child may then run beside the retry. When the
+ * retry fails too, the first error is kept, the retry's beside it.
  */
 async function retriedAlone(run: () => Promise<string>, turn: Turns, signal: AbortSignal): Promise<string> {
   let first: unknown

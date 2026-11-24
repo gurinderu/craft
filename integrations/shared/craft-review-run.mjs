@@ -118,9 +118,11 @@ export function delegation(onTask, reply, warn = () => {}) {
         },
       )
       .finally(() => running.delete(key))
-      // A reply that cannot be written is lost with the binary (its stdin's error is handled there): never an
+      // A reply that cannot be written is lost with the binary (its stdin's error is handled there): said, never an
       // unhandled rejection in the host.
-      .catch(() => undefined)
+      .catch((/** @type {unknown} */ e) => {
+        warn(`craft review: the reply to task ${String(key)} could not be written: ${messageOf(e)}`)
+      })
   }
   const stop = () => {
     for (const s of running.values()) s.abort()

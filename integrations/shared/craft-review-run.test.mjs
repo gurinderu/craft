@@ -337,4 +337,5 @@ test('a task event with no number key is said and passed over; a reply that cann
     process.off('unhandledRejection', note)
   }
   assert.deepEqual(unhandled, [])
+  assert.equal(warned[2], 'craft review: the reply to task 3 could not be written: stdin gone', 'the lost reply is said')
 })

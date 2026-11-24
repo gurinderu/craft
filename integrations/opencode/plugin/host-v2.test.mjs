@@ -387,3 +387,25 @@ test('a child that broke after its session was made is interrupted before the er
     'a loop that ended failed needs no stop',
   )
 })
+
+test('a stop OpenCode fails or does not confirm in time is logged, and the error still reaches the caller', async () => {
+  /** @type {string[]} */
+  const logged = []
+  const log = (/** @type {string} */ l) => logged.push(l)
+  const refused = fakeCtx()
+  refused.ctx.session.context = () => Promise.reject(new Error('context unreadable'))
+  refused.ctx.session.interrupt = () => Promise.reject(new Error('no such session'))
+  await assert.rejects(v2Host(refused.ctx, 0, { log }).runChild({ title: 't', agent: '', prompt: 'p' }), /context unreadable/)
+  assert.deepEqual(logged, ['craft: child session ses_1 could not be stopped (no such session); it may still be running'])
+  const silent = fakeCtx()
+  silent.ctx.session.context = () => Promise.reject(new Error('context unreadable'))
+  silent.ctx.session.interrupt = () => new Promise(() => {})
+  await assert.rejects(v2Host(silent.ctx, 0, { log, interruptMs: 5 }).runChild({ title: 't', agent: '', prompt: 'p' }), /context unreadable/)
+  assert.equal(logged[1], 'craft: child session ses_1 did not confirm its stop within 5 ms; it may still be running')
+})
+
+test('polling given up after its last read stops the session before it returns nothing', async () => {
+  const f = fakeCtx([[{ type: 'user' }], [{ type: 'user' }]])
+  assert.equal(await v2Host(f.ctx, 0, { maxPolls: 2 }).runChild({ title: 't', agent: '', prompt: 'p' }), '')
+  assert.deepEqual(f.sent.at(-1), ['interrupt', { sessionID: 'ses_1' }])
+})

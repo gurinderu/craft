@@ -65,18 +65,50 @@ function untilAbort<T>(work: Promise<T>, signal: AbortSignal | undefined): Promi
   return Promise.race([work, aborted]).finally(() => signal.removeEventListener('abort', onAbort))
 }
 
+/** How a child is polled and stopped: tests shorten the bounds and hear the log. */
+export interface Polling {
+  pollMs: number
+  maxPolls: number
+  // How long a stop is waited for before it is said unconfirmed.
+  interruptMs: number
+  log: (line: string) => void
+}
+
+const POLLING: Polling = { pollMs: POLL_MS, maxPolls: MAX_POLLS, interruptMs: 10_000, log: line => console.error(line) }
+
+/**
+ * The session's agent loop stopped, waited for at most `interruptMs`: a stop that failed or was not confirmed in time is
+ * logged, never thrown — the child may then still be running.
+ */
+async function interrupted(ctx: V2Context, sessionID: string, p: Polling): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const late = new Promise<'late'>(resolve => {
+    timer = setTimeout(() => resolve('late'), p.interruptMs)
+  })
+  try {
+    const got = await Promise.race([ctx.session.interrupt({ sessionID }).then(() => 'done' as const), late])
+    if (got === 'late') p.log(`craft: child session ${sessionID} did not confirm its stop within ${String(p.interruptMs)} ms; it may still be running`)
+  } catch (e) {
+    p.log(`craft: child session ${sessionID} could not be stopped (${e instanceof Error ? e.message : String(e)}); it may still be running`)
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 // `wait` resolves at once on 2.2.7 (realm @nick/craft, node #626), so the context is read until its `idle` entry says the
-// loop ended; between reads the loop pauses `pollMs`. An abort (the
-// caller's deadline) ends the polling, even mid-`wait`: the session itself is interrupted by `stopOnAbort`.
-async function awaitReply(ctx: V2Context, sessionID: string, pollMs: number, signal?: AbortSignal): Promise<string> {
-  for (let i = 0; i < MAX_POLLS; i++) {
+// loop ended; between reads the loop pauses `pollMs`. An abort (the caller's deadline) ends the polling, even mid-`wait`:
+// the session itself is interrupted by `stopOnAbort`. Polling given up after `maxPolls` stops the session first, so no
+// loop outlives its reader.
+async function awaitReply(ctx: V2Context, sessionID: string, p: Polling, signal?: AbortSignal): Promise<string> {
+  for (let i = 0; i < p.maxPolls; i++) {
     if (signal?.aborted) throw new Error(STOPPED)
     await untilAbort(ctx.session.wait({ sessionID }), signal)
     if (signal?.aborted) throw new Error(STOPPED)
     const reply = finishedReply(await ctx.session.context({ sessionID }))
     if (reply !== null) return reply
-    await pause(pollMs)
+    await pause(p.pollMs)
   }
+  await interrupted(ctx, sessionID, p)
   return ''
 }
 
@@ -101,7 +133,8 @@ const createInput = (req: ChildRequest) => ({
   ...(req.parentID ? { parentID: req.parentID } : {}),
 })
 
-export function v2Host(ctx: V2Context, pollMs = POLL_MS): Host {
+export function v2Host(ctx: V2Context, pollMs = POLL_MS, polling: Partial<Omit<Polling, 'pollMs'>> = {}): Host {
+  const p: Polling = { ...POLLING, ...polling, pollMs }
   const directory = ctx.location.directory
   return {
     directory,
@@ -116,10 +149,10 @@ export function v2Host(ctx: V2Context, pollMs = POLL_MS): Host {
       const unlisten = stopOnAbort(ctx, session.id, req.signal)
       try {
         await ctx.session.prompt({ sessionID: session.id, text: req.prompt })
-        return await awaitReply(ctx, session.id, pollMs, req.signal)
+        return await awaitReply(ctx, session.id, p, req.signal)
       } catch (e) {
-        // A loop that ended failed needs no stop; any other break leaves no child running behind the caller's retry.
-        if (!(e instanceof ChildSessionFailed)) await ctx.session.interrupt({ sessionID: session.id }).catch(() => undefined)
+        // A loop that ended failed needs no stop; any other break stops the child before the caller may retry it.
+        if (!(e instanceof ChildSessionFailed)) await interrupted(ctx, session.id, p)
         throw e
       } finally {
         unlisten()
