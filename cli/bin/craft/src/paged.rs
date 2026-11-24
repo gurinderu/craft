@@ -43,48 +43,98 @@ pub struct PageArgs {
 /// its run directory. A step whose file cannot be written is printed whole: the step has been
 /// taken, so it is never lost for want of its file.
 pub(crate) fn print(value: &Value, paging: &Paging) -> Result<ExitCode> {
-    step_to(&mut std::io::stdout().lock(), value, paging)?;
+    step_to(
+        &mut std::io::stdout().lock(),
+        &mut std::io::stderr().lock(),
+        value,
+        paging,
+    )?;
     Ok(ExitCode::SUCCESS)
 }
 
-/// [`print`] to `out`.
-fn step_to(out: &mut impl Write, value: &Value, paging: &Paging) -> Result<()> {
+/// [`print`] to `out`, the note of a step file that could not be written to `err`.
+fn step_to(
+    out: &mut impl Write,
+    err: &mut impl Write,
+    value: &Value,
+    paging: &Paging,
+) -> Result<()> {
     let run = value.get("run").and_then(Value::as_str);
     let (true, Some(run)) = (paging.paged, run) else {
         return crate::printed::write_line(out, value);
     };
     let text = serde_json::to_string(&crate::printed::for_host(value.clone()))?;
     let file = Path::new(run).join(FILE);
-    if write(&file, &text).is_err() {
+    if let Err(e) = write(&file, &text) {
+        writeln!(
+            err,
+            "craft: {} could not be written ({e}): the step is printed whole",
+            file.display()
+        )?;
         return crate::printed::write_line(out, value);
     }
     page(out, &file, &text, 0)
 }
 
-/// Writes `text` to `file` whole or not at all: through a file beside it, renamed over it.
+/// Writes `text` to `file` whole or not at all: through a file beside it, renamed over it, the
+/// file beside it removed when that fails.
 fn write(file: &Path, text: &str) -> std::io::Result<()> {
     let tmp = file.with_extension("out.tmp");
-    std::fs::write(&tmp, text)?;
-    std::fs::rename(&tmp, file)
+    let written = std::fs::write(&tmp, text).and_then(|()| std::fs::rename(&tmp, file));
+    if written.is_err() {
+        // Best effort: a temp file that was never made is no error.
+        drop(std::fs::remove_file(&tmp));
+    }
+    written
 }
 
 /// `craft review page`: the page of a paged step's file from offset `from`. Only a run
 /// directory's [`FILE`] is read.
 pub fn page_of(args: &PageArgs) -> Result<ExitCode> {
-    let file = &args.file;
+    let text = read_step(&args.file)?;
+    page(&mut std::io::stdout().lock(), &args.file, &text, args.from)?;
+    Ok(ExitCode::SUCCESS)
+}
+
+/// The text of a run directory's [`FILE`]: a regular file of that name, itself no symlink, beside
+/// the run's state; refused otherwise.
+fn read_step(file: &Path) -> Result<String> {
     let in_run = file.file_name().is_some_and(|n| n == FILE)
         && file
             .parent()
-            .is_some_and(|d| d.join("state.json").is_file());
+            .is_some_and(|d| craft_review::state::state_path(d).is_file());
+    let regular = std::fs::symlink_metadata(file).is_ok_and(|m| m.file_type().is_file());
     anyhow::ensure!(
-        in_run,
+        in_run && regular,
         "{} is not the {FILE} of a run directory",
         file.display()
     );
-    let text =
-        std::fs::read_to_string(file).with_context(|| format!("reading {}", file.display()))?;
-    page(&mut std::io::stdout().lock(), file, &text, args.from)?;
-    Ok(ExitCode::SUCCESS)
+    let mut opened =
+        std::fs::File::open(file).with_context(|| format!("reading {}", file.display()))?;
+    same_file(file, &opened)?;
+    let mut text = String::new();
+    std::io::Read::read_to_string(&mut opened, &mut text)
+        .with_context(|| format!("reading {}", file.display()))?;
+    Ok(text)
+}
+
+/// That the file opened is the one checked: no symlink put in its place between the two.
+#[cfg(unix)]
+fn same_file(file: &Path, opened: &std::fs::File) -> Result<()> {
+    use std::os::unix::fs::MetadataExt;
+    let (checked, got) = (std::fs::symlink_metadata(file)?, opened.metadata()?);
+    anyhow::ensure!(
+        checked.file_type().is_file() && (checked.dev(), checked.ino()) == (got.dev(), got.ino()),
+        "{} changed while it was opened",
+        file.display()
+    );
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn same_file(_file: &Path, opened: &std::fs::File) -> Result<()> {
+    anyhow::ensure!(opened.metadata()?.is_file(), "not a regular file");
+    Ok(())
 }
 
 /// The page of `text` from offset `from`, framed, written to `out`.

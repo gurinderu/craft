@@ -22,6 +22,11 @@ pub(super) fn byte_at(text: &str, at: usize) -> Option<usize> {
     (seen == at).then_some(text.len())
 }
 
+/// Whether a JavaScript `trim` would take `c` off a line's end: whitespace, or U+FEFF.
+fn trimmed(c: char) -> bool {
+    c.is_whitespace() || c == '\u{feff}'
+}
+
 /// The page `rest` starts with: all of it when it fits, else at most [`PAGE_UNITS`] whole
 /// characters, ended where neither side of the cut is whitespace — a copy that trims a line's
 /// ends would lose it — unless no such place is left, when the bound itself.
@@ -42,7 +47,7 @@ pub(super) fn page(rest: &str) -> &str {
     let clean = |end: &usize| {
         let before = rest.get(..*end).and_then(|s| s.chars().last());
         let after = rest.get(*end..).and_then(|s| s.chars().next());
-        !before.is_some_and(char::is_whitespace) && !after.is_some_and(char::is_whitespace)
+        !before.is_some_and(trimmed) && !after.is_some_and(trimmed)
     };
     let end = ends
         .iter()

@@ -19,7 +19,8 @@ pub(super) const WHOLE: Scope<'static> = Scope {
 };
 
 /// A task's part of the list: the list narrowed and cut, how many of the scope's lines the cut left
-/// out, and the symbols it left none of — cut, never ones no line names.
+/// out, and the names of the symbols it left no line of, taken out of the list's symbols — cut,
+/// never ones no line names.
 pub(super) struct Part {
     pub list: Consumers,
     pub cut: usize,
@@ -52,13 +53,13 @@ pub(super) fn part(c: &Consumers, scope: &Scope<'_>, max: usize) -> Part {
         .retain(|u| searched_here(c, scope, before_why(u)));
     let had: Vec<bool> = out.symbols.iter().map(|s| !s.sites.is_empty()).collect();
     let cut = budget(&mut out.symbols, PER_SYMBOL, max);
-    let emptied = out
-        .symbols
-        .iter()
+    // A symbol the budget left no line of leaves the part's symbols, so none is read as unused.
+    let (kept, emptied): (Vec<_>, Vec<_>) = std::mem::take(&mut out.symbols)
+        .into_iter()
         .zip(had)
-        .filter(|(s, had)| *had && s.sites.is_empty())
-        .map(|(s, _)| s.name.clone())
-        .collect();
+        .partition(|(s, had)| !had || !s.sites.is_empty());
+    out.symbols = kept.into_iter().map(|(s, _)| s).collect();
+    let emptied = emptied.into_iter().map(|(s, _)| s.name).collect();
     Part {
         list: out,
         cut,

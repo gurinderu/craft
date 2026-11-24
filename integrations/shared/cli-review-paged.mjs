@@ -46,17 +46,32 @@ export function pageOf(stdout, from) {
 /**
  * The step's whole output from a paged command's answer `got`: its first page, then each next one asked through
  * `ask(file, from)`, each asked twice at most. An answer that is not paged — no stdout, a refusal, a binary error, an
- * output not framed — comes back as it is, and so does a page step stopped by the usage limit or refused by the harness;
- * one whose step could not be read whole comes back with `cut` saying why, and no stdout.
+ * output not framed — comes back as it is. A page step the usage limit stopped, the harness refused or the binary
+ * refused comes back as that answer, with `pagedRun`; one whose step could not be read whole comes back with `cut`
+ * saying why, no stdout, and `pagedRun`: the run directory the step was written to, which exists though its step was
+ * not read.
  * @param {unknown} got @param {(file: string, from: number) => Promise<unknown>} ask @returns {Promise<unknown>}
  */
 export async function readPaged(got, ask) {
   if (!isObject(got) || typeof got['stdout'] !== 'string' || !got['stdout'].startsWith('craft-out ')) return got
   const { stdout, ...rest } = got
   const read = await stepOf(stdout, ask)
-  if ('stop' in read) return read.stop
-  return 'cut' in read ? { ...rest, cut: read.cut } : { ...rest, stdout: read.text }
+  if ('text' in read) return { ...rest, stdout: read.text }
+  const run = runOf(stdout)
+  const pagedRun = run === null ? {} : { pagedRun: run }
+  return 'stop' in read ? { ...(isObject(read.stop) ? read.stop : {}), ...pagedRun } : { ...rest, cut: read.cut, ...pagedRun }
 }
+
+/** The run directory a paged answer's first line names its step file in, null when it names none. @param {string} stdout */
+function runOf(stdout) {
+  const file = headOf(stdout.split('\n')[0] ?? '')?.file
+  if (file === undefined) return null
+  const at = Math.max(file.lastIndexOf('/'), file.lastIndexOf('\\'))
+  return at > 0 ? file.slice(0, at) : null
+}
+
+/** The run directory a paged answer named, when its step could not be read. @param {unknown} got @returns {string | null} */
+export const pagedRunOf = got => (isObject(got) && typeof got['pagedRun'] === 'string' ? got['pagedRun'] : null)
 
 /**
  * The step's text from its first page `stdout` and the pages after it, why it could not all be read, or the answer that
@@ -95,8 +110,12 @@ async function twice(ask, frame, from) {
   return { cut: `its page from offset ${String(from)} of ${frame.file} came back cut twice` }
 }
 
-/** Whether a page step's answer is the usage limit's stop or the harness's refusal. @param {unknown} got */
-const pageStopped = got => isObject(got) && (typeof got['limit'] === 'string' || harnessRefusal(got) !== null)
+/**
+ * Whether a page step's answer is no page to ask again: the usage limit's stop, the harness's refusal, or the binary's —
+ * the command ran and failed, its reason on stderr. @param {unknown} got
+ */
+const pageStopped = got =>
+  isObject(got) && (typeof got['limit'] === 'string' || harnessRefusal(got) !== null || (typeof got['exitCode'] === 'number' && got['exitCode'] !== 0))
 
 /**
  * Whether `page` is one of `frame`'s step that moves on: another step's page — its file or length not the first page's —

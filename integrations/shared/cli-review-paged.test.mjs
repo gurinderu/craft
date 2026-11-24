@@ -121,14 +121,23 @@ test('a step past the page bound is given up, not read for ever', async () => {
 
 test('a page step stopped by the usage limit or refused by the harness is passed on as it is', async () => {
   const limit = { limit: "You've hit your limit" }
-  assert.equal(await readPaged(ran(page(STEP, 0, 9)), async () => limit), limit)
+  assert.deepEqual(await readPaged(ran(page(STEP, 0, 9)), async () => limit), { ...limit, pagedRun: '/run' })
   const refused = {
     exitCode: 1,
     stdout: '',
     stderr:
       'Permission for this action was denied by the Claude Code auto mode classifier. The command was not run. Denied command: /opt/craft review page (timeout 120000 ms).',
   }
-  assert.equal(await readPaged(ran(page(STEP, 0, 9)), async () => refused), refused)
+  assert.deepEqual(await readPaged(ran(page(STEP, 0, 9)), async () => refused), { ...refused, pagedRun: '/run' })
+  // The binary refusing the page command is not a cut page: asked once, its own reason kept.
+  let n = 0
+  const binary = { exitCode: 1, stdout: '', stderr: 'craft: offset 9 is no character boundary of the 70' }
+  const got = await readPaged(ran(page(STEP, 0, 9)), async () => {
+    n++
+    return binary
+  })
+  assert.equal(n, 1)
+  assert.equal(errorOf(got), 'the command exited 1: craft: offset 9 is no character boundary of the 70')
 })
 
 let RUN = ''
@@ -165,6 +174,11 @@ test('the driver reads a paged start and a paged submit through `craft review pa
   )
   const pageCall = run.calls.find(c => c.label === 'step:submit:1:page')
   assert.match(String(pageCall?.prompt), new RegExp(`^/opt/craft review page --file '${file}' --from ${String(Math.floor(done.length / 2))}$`, 'm'))
+  // A page is three lines, its body one line however long: the agent is told so.
+  assert.match(
+    String(pageCall?.prompt),
+    /stdout is exactly three lines — the craft-out line, the page's one body line copied whole, character for character, never split, wrapped or trimmed/,
+  )
   assert.match(run.report, /^## Verdict\n\n⛔ Block/)
 })
 
@@ -174,4 +188,24 @@ test('pages that run past the length the first page named are said cut', async (
     ran(`craft-out ${FILE} ${String(total)} ${String(from)} 5\nabcde\ncraft-page ${String(from + 5)}\n`),
   )
   assert.equal(errorOf(got), `the command's output could not be read whole: it came to ${String(total + 3)} of ${String(total)} characters`)
+})
+
+test('a start whose page step the harness refused names the run it made, not "No run was started"', async () => {
+  const file = `${RUN}/host-step.out`
+  const start = JSON.stringify({ run: RUN, done: false, tasks: [] })
+  const run = await runEngine('review', {
+    args: { craftBin: '/opt/craft', craftRoot: '/plugin' },
+    script: {
+      'step:root': ran('root=/plugin\n'),
+      'step:start': ran(page(start, 0, 5, file)),
+      'step:start:page': {
+        exitCode: 1,
+        stdout: '',
+        stderr: `Permission for this action was denied by the Claude Code auto mode classifier. The command was not run. Denied command: /opt/craft review page --file '${file}' --from 5 (timeout 120000 ms).`,
+      },
+      'log-run': { ok: true, output: ['wrote /store/r.json'] },
+    },
+  })
+  assert.doesNotMatch(run.report, /No run was started/)
+  assert.ok(run.report.includes(`The steps done so far are kept in ${RUN}`), run.report)
 })

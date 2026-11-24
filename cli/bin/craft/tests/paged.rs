@@ -137,11 +137,25 @@ fn every_step_command_pages_its_step_into_the_run_directory() {
 #[test]
 fn review_page_reads_only_a_run_directory_s_step_file() {
     let tmp = tempfile::tempdir().unwrap();
-    let elsewhere = tmp.path().join("notes.txt");
-    std::fs::write(&elsewhere, "secret").unwrap();
+    let secret = tmp.path().join("notes.txt");
+    std::fs::write(&secret, "secret").unwrap();
+    // No run directory: a file of the right name beside no state.
     let named = tmp.path().join("host-step.out");
     std::fs::write(&named, "{}").unwrap();
-    for file in [&elsewhere, &named] {
+    // A run directory: a file of another name beside its state, and the step file as a symlink.
+    let run = tmp.path().join("run");
+    std::fs::create_dir_all(&run).unwrap();
+    std::fs::write(run.join("state.json"), "{}").unwrap();
+    let misnamed = run.join("step.out");
+    std::fs::write(&misnamed, "{}").unwrap();
+    let mut refused = vec![secret.clone(), named, misnamed];
+    #[cfg(unix)]
+    {
+        let link = run.join("host-step.out");
+        std::os::unix::fs::symlink(&secret, &link).unwrap();
+        refused.push(link);
+    }
+    for file in &refused {
         let out = run_craft(
             &[
                 "review",
@@ -153,7 +167,7 @@ fn review_page_reads_only_a_run_directory_s_step_file() {
             ],
             tmp.path(),
         );
-        assert_eq!(out.status.code(), Some(1), "{out:?}");
+        assert_eq!(out.status.code(), Some(1), "{file:?}: {out:?}");
         assert!(out.stdout.is_empty(), "{out:?}");
         let err = String::from_utf8_lossy(&out.stderr);
         assert!(

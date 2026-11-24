@@ -154,7 +154,12 @@ fn a_confined_part_names_an_unsearched_symbol_only_when_declared_under_its_units
 fn a_symbol_the_budget_left_no_line_of_reads_as_cut_not_as_unused() {
     let many = (0..40).map(|n| symbol(&format!("s{n}"), "a/lib.rs", vec![site("x/u.rs", n)]));
     let c = Consumers {
-        symbols: many.chain([symbol("idle", "a/lib.rs", vec![])]).collect(),
+        symbols: many
+            .chain([
+                symbol("idle", "a/lib.rs", vec![]),
+                symbol("s35", "b/lib.rs", vec![]),
+            ])
+            .collect(),
         ..two()
     };
     let block = lens_block(&c).unwrap();
@@ -162,8 +167,19 @@ fn a_symbol_the_budget_left_no_line_of_reads_as_cut_not_as_unused() {
         block.contains("Every line of these was cut by the budget, kept in the whole list: `s30`,"),
         "{block}"
     );
+    // No whole list saved: the cut lines are kept nowhere, and the block does not say they are.
+    let unsaved = lens_block(&Consumers {
+        file: String::new(),
+        ..c
+    })
+    .unwrap();
     assert!(
-        block.contains("No line outside the change names: `idle`."),
+        unsaved.contains("Every line of these was cut by the budget: `s30`,"),
+        "{unsaved}"
+    );
+    assert!(
+        // A same-named symbol no line names is still one, though `s35` of a/lib.rs was cut.
+        block.contains("No line outside the change names: `idle`, `s35`."),
         "{block}"
     );
     assert!(!block.contains("names: `s3"), "{block}");

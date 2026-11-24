@@ -24,7 +24,7 @@ import { briefOf, endedOf, standingOf, statusUnreadable } from './cli-review-end
 import { harnessRefused, harnessStop } from './cli-review-refusal.mjs'
 import { gateAnswer, gateCommand, gateShell } from './cli-review-gate.mjs'
 import { stepRounds } from './cli-step-loop.mjs'
-import { pageCommand, readPaged } from './cli-review-paged.mjs'
+import { pageCommand, pagedRunOf, readPaged } from './cli-review-paged.mjs'
 import { telemetryLostSection } from './review-coverage.mjs'
 import { argumentRefusal } from './run-record.mjs'
 import { normalizeArgs } from './workflow-args.mjs'
@@ -233,7 +233,8 @@ function submitStep(serve, label, title, ...parts) {
 }
 
 /** What a paged command prints: one page of its step, framed (integrations/shared/cli-review-paged.mjs). */
-const PAGE = 'a craft-out line, the lines of one page and a craft-page line,'
+const PAGE =
+  "exactly three lines — the craft-out line, the page's one body line copied whole, character for character, never split, wrapped or trimmed however long it is, and the craft-page line —"
 
 /**
  * A paged command's step read whole: its answer `got`, then the rest of its step a page at a time, each page its own
@@ -552,7 +553,7 @@ async function drive(sb, o, craftVersion, service, recorder) {
   const filedThrough = filedRoot(sb, where, recorder)
   const started = await opening(sb, o, craftVersion, serve, { ...where, filedThrough })
   if ('argument' in started) return { refused: started.argument }
-  if ('error' in started) return { stopped: stoppedAt('', started, 'refused' in started ? '' : o.run, where.bin) }
+  if ('error' in started) return { stopped: stoppedAt('', started, runOfStop(started, o), where.bin) }
   // The record is keyed to the repository the run reviews, which the binary names: a resumed run's, and a start's that
   // reviews elsewhere than the checkout given — craft's own worktree of the PR given (realm @nick/craft, node #517).
   const reviews = started.step.repo
@@ -563,11 +564,18 @@ async function drive(sb, o, craftVersion, service, recorder) {
 }
 
 /**
+ * The run directory a stopped opening names: none for a run the binary refused to resume; a start's that made its run
+ * though its step was not read; else the one given.
+ * @param {{ refused?: true, run?: string }} started @param {Options} o @returns {string}
+ */
+const runOfStop = (started, o) => (started.refused ? '' : (started.run ?? o.run))
+
+/**
  * The run's first step: a resume's (`resumed`), or a start's — or why its binary refused an argument before any work
  * (`argument`).
  * @param {Watched} sb @param {Options} o @param {string} craftVersion @param {Serve} serve
  * @param {{ bin: string, root: string, filedThrough: string }} where
- * @returns {Promise<{ step: Step } | { error: string, harness?: string, refused?: true } | { argument: string }>}
+ * @returns {Promise<{ step: Step } | { error: string, harness?: string, refused?: true, run?: string } | { argument: string }>}
  */
 async function opening(sb, o, craftVersion, serve, where) {
   if (o.run)
@@ -580,7 +588,11 @@ async function opening(sb, o, craftVersion, serve, where) {
     serve('step:start', 'Start', startPrompt(o, where, craftVersion), startIssued(o, where, craftVersion)),
   )
   const argument = argumentRefused(got)
-  return argument ? { argument } : readStep(got)
+  if (argument) return { argument }
+  const read = readStep(got)
+  // A start whose step was paged but not read whole still made its run.
+  const run = pagedRunOf(got)
+  return 'error' in read && run !== null ? { ...read, run } : read
 }
 
 /**

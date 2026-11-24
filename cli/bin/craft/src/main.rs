@@ -104,8 +104,8 @@ enum ReviewCommand {
     /// Run the whole review in one command: the binary drives its steps itself, each task run as
     /// its own process of the host's CLI (`codex exec`, `pi -p`, `opencode run`), and prints the verdict.
     Run(Box<run::RunArgs>),
-    /// Print the page of a step `--paged` wrote, from a line on: the Claude Code driver reads a
-    /// large step this way, a page at a time.
+    /// Print the page of a step `--paged` wrote, from an offset in UTF-16 code units on: the
+    /// Claude Code driver reads a large step this way, a page at a time.
     Page(paged::PageArgs),
 }
 

@@ -121,8 +121,13 @@ fn site_lines(part: &Part, full: &Consumers) -> Vec<String> {
     };
     let emptied: Vec<&str> = part.emptied.iter().map(String::as_str).collect();
     if !emptied.is_empty() {
+        let kept = if full.file.is_empty() {
+            ""
+        } else {
+            ", kept in the whole list"
+        };
         lines.push(format!(
-            "Every line of these was cut by the budget, kept in the whole list: {}.",
+            "Every line of these was cut by the budget{kept}: {}.",
             named(&emptied)
         ));
     }
@@ -130,7 +135,7 @@ fn site_lines(part: &Part, full: &Consumers) -> Vec<String> {
         .list
         .symbols
         .iter()
-        .filter(|s| s.sites.is_empty() && !emptied.contains(&s.name.as_str()))
+        .filter(|s| s.sites.is_empty())
         .filter(|s| !unsearched(full, &s.name))
         .map(|s| s.name.as_str())
         .collect();

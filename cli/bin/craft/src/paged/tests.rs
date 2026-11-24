@@ -122,7 +122,13 @@ fn a_paged_step_is_written_to_its_run_directory() {
     let step =
         json!({"run": run, "done": true, "verdict": "Block", "report": "/r.md", "ledger": [1]});
     let mut out = Vec::new();
-    super::step_to(&mut out, &step, &super::Paging { paged: true }).unwrap();
+    super::step_to(
+        &mut out,
+        &mut Vec::new(),
+        &step,
+        &super::Paging { paged: true },
+    )
+    .unwrap();
     assert!(String::from_utf8(out).unwrap().starts_with("craft-out "));
     let saved = std::fs::read_to_string(t.path().join(FILE)).unwrap();
     assert_eq!(
@@ -137,17 +143,62 @@ fn a_step_whose_file_cannot_be_written_is_printed_whole_and_not_lost() {
     let t = tempfile::tempdir().unwrap();
     let run = t.path().join("gone").display().to_string();
     let step = json!({"run": run, "done": false, "tasks": []});
-    let mut out = Vec::new();
-    super::step_to(&mut out, &step, &super::Paging { paged: true }).unwrap();
+    let (mut out, mut err) = (Vec::new(), Vec::new());
+    super::step_to(&mut out, &mut err, &step, &super::Paging { paged: true }).unwrap();
     let out = String::from_utf8(out).unwrap();
     assert_eq!(serde_json::from_str::<Value>(&out).unwrap(), step, "{out}");
+    let err = String::from_utf8(err).unwrap();
+    assert!(
+        err.contains("could not be written") && err.contains("printed whole"),
+        "{err}"
+    );
+    // The file beside it written, the rename refused: the file beside it is not left behind.
+    let run = t.path().join("run");
+    std::fs::create_dir_all(run.join(FILE).join("taken")).unwrap();
+    let step = json!({"run": run.display().to_string(), "done": false, "tasks": []});
+    let mut err = Vec::new();
+    super::step_to(
+        &mut Vec::new(),
+        &mut err,
+        &step,
+        &super::Paging { paged: true },
+    )
+    .unwrap();
+    assert!(!err.is_empty());
+    assert!(!run.join("host-step.out.tmp").exists());
     // Without --paged, or with no run named, the step is printed whole too.
     for (step, paged) in [(step.clone(), false), (json!({"done": false}), true)] {
         let mut out = Vec::new();
-        super::step_to(&mut out, &step, &super::Paging { paged }).unwrap();
+        super::step_to(&mut out, &mut Vec::new(), &step, &super::Paging { paged }).unwrap();
         assert_eq!(
             serde_json::from_str::<Value>(&String::from_utf8(out).unwrap()).unwrap(),
             step
         );
     }
+}
+
+#[test]
+fn a_cut_avoids_a_byte_order_mark_and_falls_back_to_the_bound_when_all_is_blank() {
+    let feff = format!("{}{}", "y".repeat(PAGE_UNITS - 1), "\u{feff}x".repeat(5));
+    let body = cut_page(&feff);
+    assert!(!body.ends_with('\u{feff}'), "{}", body.len());
+    assert!(!feff.get(body.len()..).unwrap().starts_with('\u{feff}'));
+    let blank = " ".repeat(PAGE_UNITS + 5);
+    assert_eq!(units(cut_page(&blank)), PAGE_UNITS);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_file_swapped_between_its_check_and_its_open_is_refused() {
+    let t = tempfile::tempdir().unwrap();
+    let (checked, opened) = (t.path().join("a"), t.path().join("b"));
+    std::fs::write(&checked, "a").unwrap();
+    std::fs::write(&opened, "b").unwrap();
+    let file = std::fs::File::open(&opened).unwrap();
+    super::same_file(&opened, &file).unwrap();
+    let err = super::same_file(&checked, &file).unwrap_err();
+    assert!(
+        err.to_string().contains("changed while it was opened"),
+        "{err}"
+    );
 }
