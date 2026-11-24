@@ -164,7 +164,7 @@
         "record": {
           "schemaVersion": 1,
           "runtime": "claude-code",
-          "craftVersion": "0.58.0",
+          "craftVersion": "0.59.0",
           "kind": "workflow",
           "name": "triage-findings",
           "verdict": "",
@@ -319,7 +319,7 @@
         "record": {
           "schemaVersion": 1,
           "runtime": "claude-code",
-          "craftVersion": "0.58.0",
+          "craftVersion": "0.59.0",
           "kind": "workflow",
           "name": "triage-findings",
           "verdict": "",
@@ -491,7 +491,7 @@
         "record": {
           "schemaVersion": 1,
           "runtime": "claude-code",
-          "craftVersion": "0.58.0",
+          "craftVersion": "0.59.0",
           "kind": "workflow",
           "name": "triage-findings",
           "verdict": "",
@@ -704,7 +704,7 @@
         "record": {
           "schemaVersion": 1,
           "runtime": "claude-code",
-          "craftVersion": "0.58.0",
+          "craftVersion": "0.59.0",
           "kind": "workflow",
           "name": "triage-findings",
           "verdict": "",
@@ -732,7 +732,7 @@
             "accept": 0,
             "reject": 0,
             "defer": 1,
-            "needs-decision": 0,
+            "needs-decision": 2,
             "conflict": 0,
             "sifted": {
               "repeats": 0,
@@ -761,6 +761,16 @@
               "verdict": "defer",
               "reason": "not this PR",
               "action": "issue"
+            },
+            {
+              "stable_id": "rust-reviewer::no-loc::nit",
+              "verdict": "needs-decision",
+              "reason": "claimed not this PR's, but nothing at the PR's fork point bbbbbbb2222 was opened to show it — defer on the code"
+            },
+            {
+              "stable_id": "rust-reviewer::src/b.rs:5::race on close",
+              "verdict": "needs-decision",
+              "reason": "accept on the code"
             }
           ],
           "memory": "memory: none — recalled (backend mcp iskron)",
@@ -861,7 +871,7 @@
         "record": {
           "schemaVersion": 1,
           "runtime": "claude-code",
-          "craftVersion": "0.58.0",
+          "craftVersion": "0.59.0",
           "kind": "workflow",
           "name": "triage-findings",
           "verdict": "",
@@ -996,7 +1006,7 @@
         "record": {
           "schemaVersion": 1,
           "runtime": "claude-code",
-          "craftVersion": "0.58.0",
+          "craftVersion": "0.59.0",
           "kind": "workflow",
           "name": "triage-findings",
           "verdict": "",
@@ -1149,7 +1159,7 @@
         "record": {
           "schemaVersion": 1,
           "runtime": "claude-code",
-          "craftVersion": "0.58.0",
+          "craftVersion": "0.59.0",
           "kind": "workflow",
           "name": "triage-findings",
           "verdict": "",
@@ -1453,7 +1463,7 @@
         "record": {
           "schemaVersion": 1,
           "runtime": "claude-code",
-          "craftVersion": "0.58.0",
+          "craftVersion": "0.59.0",
           "kind": "workflow",
           "name": "triage-findings",
           "verdict": "",

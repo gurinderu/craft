@@ -89,3 +89,28 @@ fn class_one_defers_with_an_issue_only_when_shown_at_the_fork_point() {
         "accept"
     );
 }
+
+#[test]
+fn only_a_verdict_the_class_turned_is_settled_by_it() {
+    use super::settled_by_class;
+    for (verdict, premise, base) in [
+        ("accept", "git show b1:a.rs", "b1"),
+        ("defer", "git show HEAD:a.rs", "b1"),
+        ("accept", "", ""),
+    ] {
+        let turned = classified_verdict(v(verdict, "1", premise), base);
+        assert!(settled_by_class(&turned), "{verdict} at {base:?}");
+    }
+    for left in ["reject", "needs-decision"] {
+        let kept = classified_verdict(v(left, "1", ""), "b1");
+        assert!(!settled_by_class(&kept), "{left}");
+    }
+    assert!(settled_by_class(&classified_verdict(
+        v("needs-decision", "5", ""),
+        ""
+    )));
+    for class in ["2", "3", "4", "6"] {
+        let issued = v("defer", class, "").with("action", Js::str("issue"));
+        assert!(!settled_by_class(&issued), "class {class}");
+    }
+}

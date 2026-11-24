@@ -104,8 +104,8 @@ run id the Workflow completion names. Best-effort: if it fails, say so in one li
 
 **The loop is light by default.** The first round reviews the whole branch diff; every later round
 reviews only the delta the fixes changed, together with the findings that delta touched — not the
-whole diff again — and at `depth: 'light'`: the diff-scoped lenses once, Medium and above verified,
-with `extraLenses: []` so a light round does not run the repository's own reviewers over a delta.
+whole diff again — and at `depth: 'light'`: the diff-scoped lenses once, Medium and above verified (and a weak
+assertion naming its regression), with `extraLenses: []` so a light round does not run the repository's own reviewers over a delta.
 Full depth runs only in round 1 and in phase 5, where the whole diff is reviewed once more. Only on the human's word ("full
 rounds") does every round review the whole branch diff. Before each round, note `git rev-parse HEAD`
 — the commit that round reviews.
@@ -138,7 +138,8 @@ The engine's argument for each round, as an object (never a string):
   and `intent` still run whenever the diff changes production code, `reconciler` and
   `failure-windows` on controller code, `compat` on a public contract path),
   no completeness critic, and only Medium and above verified (plus a Low/Info finding two or more
-  lenses reported with a must-fix harm claimed); its verdict says light pass and its
+  lenses reported with a must-fix harm claimed, and a weak assertion naming its regression, whose
+  verifier is asked whether the change's promise is unmet); its verdict says light pass and its
   report names what it skipped. The default, `depth: 'full'`, is the whole review. The engine
   accepts only `depth: 'light'`; any other value runs full. Deciding that a "quick" or "light"
   request means `depth: 'light'` is the job of the skill or hook that launches it, not the engine's.

@@ -95,3 +95,44 @@ fn discovery_reads_the_session_project_and_skips_a_foreign_repository() {
     assert!(none.is_empty());
     assert!(why.contains("declares no agent"), "{why}");
 }
+
+#[test]
+fn a_run_ended_on_nothing_to_review_needs_no_extra_lens_held_or_not() {
+    let run = |files: &[&str], verdict: &str| {
+        let mut s: RunState = serde_json::from_value(serde_json::json!({
+            "version": crate::state::STATE_VERSION,
+            "context": {"repo": "/r", "base": "origin/main", "spec": "", "craftRoot": null, "craftVersion": null},
+            "diff": {"base": "origin/main", "mergeBase": "m", "head": "h", "dirty": false,
+                     "files": files, "stat": "", "log": ""},
+            "tracks": [], "light": false, "phase": "done", "tasks": [],
+            "rounds": {"round": 1, "pool": [], "yields": [], "expected": [], "returned": [], "failures": {}},
+            "findings": [], "settled": [], "notes": [], "notRun": []
+        }))
+        .unwrap();
+        s.gate = crate::gate::Gate::not_asked();
+        s.exit = Some(crate::coverage::Exit {
+            verdict: verdict.into(),
+            line: String::new(),
+            not_run: None,
+            listed: None,
+        });
+        s
+    };
+    let nothing = ("nothing reviewable changed", false);
+    assert_eq!(
+        exit_reason(&run(&["a.md"], crate::coverage::NOTHING_TO_REVIEW)),
+        nothing
+    );
+    assert_eq!(
+        exit_reason(&run(&["ops.md"], crate::coverage::NOTHING_TO_REVIEW_HELD)),
+        nothing
+    );
+    assert_eq!(
+        exit_reason(&run(&["a.zig"], "INCOMPLETE (no language profile)")),
+        ("no language profile covers the diff", true)
+    );
+    assert_eq!(
+        exit_reason(&run(&[], "INCOMPLETE (empty diff)")),
+        ("the diff is empty", false)
+    );
+}

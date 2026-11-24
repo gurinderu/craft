@@ -222,8 +222,9 @@ live-data/news tooling (crate/docs/changelog fetchers). LSP navigation is now co
 (skills shared verbatim by symlink; 4 translated agent files and `review-task`, the read-only agent of the review's tasks; one TS plugin for OpenCode 1.x and 2.x —
 its default export carries both entries, and a host layer (`host.ts`, with `host-v1.ts` and `host-v2.ts`)
 gives the `rust-audit` and `triage-findings` workflows, the `review` tool (`bin/craft review run --backend opencode --events json`
-through `integrations/shared/craft-review-run.mjs`, on the calling session's model, each task its own `opencode run` on `review-task`; the
-on 1.x without `--archived` and with subagent tasks on `review-task`; the tool is not yet seen in a real OpenCode session) and craft's work hook one surface on either runtime; on 2.x the review's progress also
+through `integrations/shared/craft-review-run.mjs`, on the calling session's model, each task on 1.x its own `opencode run` on `review-task`,
+without `--archived` and with subagent tasks on `review-task`; on 2.x `--delegate`, each task handed back to the plugin and run as a child
+session of the calling session (`review-children.ts`, `child-run.ts`, the binary's `run/delegate.rs` and `run/delegate_read.rs`); the tool is not yet seen in a real OpenCode session) and craft's work hook one surface on either runtime; on 2.x the review's progress also
 reaches the TUI's prompt footer through the `craft.review` RPC — `progress-rpc.ts` emits it, `review-footer.mjs` draws it, loaded by the TUI
 from `plugin/tui/`, the directory `install.sh` links as `plugins/craft-review-footer`;
 a symlink `install.sh` that also installs the plugin's locked dependencies; on 2.x the package `opencode plugin add`
@@ -259,7 +260,7 @@ a host (the `review` engine above) runs its agents. The step protocol was observ
 in a live session (craft 0.41.0, a Rust diff, finished with Approve); the full-lens review it runs
 now is not yet observed live. `bin/craft` (the command: `craft review start | submit | status`, the step
 protocol; `craft review run --backend codex|pi|opencode`, which drives that protocol itself to the verdict, each task its own
-`codex exec`, `pi -p` or `opencode run` process, its progress as lines or `--events json`; `craft review probe`, one agent end to end; `filing_worker.rs` isolates a run-store write in a time-bounded child of the same binary; and `craft runs ls | show | stats | check | retro`, the run store read by streaming its files, a table or NDJSON), `crates/craft-agent` (one agent run through a
+`codex exec`, `pi -p` or `opencode run` process — or, with `--delegate`, handed back to the OpenCode plugin that runs it as a child session —, its progress as lines or `--events json`; `craft review probe`, one agent end to end; `filing_worker.rs` isolates a run-store write in a time-bounded child of the same binary; and `craft runs ls | show | stats | check | retro`, the run store read by streaming its files, a table or NDJSON), `crates/craft-agent` (one agent run through a
 backend — the `claude`, `codex`, `pi` or `opencode` CLI — and many under a concurrency cap), `crates/craft-review` (the steps — each changed file to one profile (Rust, Nix, SQL, or the general lenses for source in
 any other language, `content/profiles/`; a Rust or general file whose changed lines hold a query string also gets the
 `sql-queries` lens, `src/embedded_sql.rs`; a Markdown file whose change touches a step — a shell block's or a
@@ -406,6 +407,6 @@ The pi package installs at the release tag:
 
 <!-- x-release-please-start-version -->
 ```sh
-pi install git:github.com/gurinderu/craft@v0.58.0
+pi install git:github.com/gurinderu/craft@v0.59.0
 ```
 <!-- x-release-please-end -->

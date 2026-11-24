@@ -88,6 +88,7 @@ fn host_with(args: &RunArgs, env: &dyn Fn(&str) -> Option<String>) -> Result<Hos
         command,
         agents: None,
         archived: true,
+        delegate: None,
     })
 }
 

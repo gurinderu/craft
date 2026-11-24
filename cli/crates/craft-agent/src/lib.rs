@@ -80,6 +80,10 @@ pub enum AgentError {
     /// A host CLI that exited cleanly with no answer to read.
     #[error("gave no answer")]
     NoAnswer { stderr: String, stdout: String },
+    /// The process a delegated run hands its tasks to stopped answering — its input ended or a
+    /// task could not be handed to it: no later task can answer either.
+    #[error("the process that runs the tasks stopped answering: {0}")]
+    HostGone(String),
     /// Never started: the batch was stopped before its turn came.
     #[error("not started: the batch was stopped before it")]
     NotStarted,

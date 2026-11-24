@@ -80,6 +80,14 @@ fn open_named(
     out
 }
 
+/// Whether `tasks` hold a critic follow-up lens of profile `p` that is metrics-only.
+pub(super) fn admits_metrics(tasks: &[Task], p: &Profile) -> bool {
+    tasks.iter().any(|t| {
+        matches!(&t.kind, TaskKind::CriticLens { profile, lens }
+            if *profile == p.id && p.metrics_only(lens))
+    })
+}
+
 /// The lenses every critic of the run admitted, as tasks; its notes kept for the report and the
 /// admitted lenses on the record. A critic that gave no valid answer adds nothing.
 ///
@@ -126,12 +134,7 @@ pub(crate) fn followups(
     run.critic.notes.extend(gaps);
     run.critic.lenses.extend(lenses_run);
     // A metrics lens it admits judges its part as the plan's would, unmeasured files and all.
-    crate::complexity::note_unmeasured(run, profiles, |p| {
-        tasks.iter().any(|t| {
-            matches!(&t.kind, TaskKind::CriticLens { profile, lens }
-                if *profile == p.id && p.metrics_only(lens))
-        })
-    });
+    crate::complexity::note_unmeasured(run, profiles, |p| admits_metrics(&tasks, p));
     if !run.critic.lenses.is_empty() {
         notes.push(format!(
             "completeness critic → follow-up lenses: {}",

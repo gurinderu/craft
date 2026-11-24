@@ -6,9 +6,10 @@ mod common;
 use common::fixture;
 use common::post::{head, posted, stand_in};
 use craft_review::publish::{self, Doubtful, PostError, PostSetup, Posting};
+use craft_store::sorting::posting::MarkError;
 use serde_json::json;
 
-type Remember<'a> = Option<&'a dyn Fn(u64) -> Result<(), String>>;
+type Remember<'a> = Option<&'a dyn Fn(u64) -> Result<(), MarkError>>;
 
 fn post(
     (repo, scratch): (&std::path::Path, &std::path::Path),
@@ -39,7 +40,7 @@ fn a_pr_that_cannot_be_noted_before_the_post_is_not_posted_to() {
     let (repo, out) = (fixture(true), tempfile::tempdir().unwrap());
     let (gh, h) = (out.path().join("gh"), head(repo.path()));
     let setup = stand_in(&gh, &h);
-    let fail = |_: u64| Err("the record is read-only".to_owned());
+    let fail = |_: u64| Err(MarkError::Failed("the record is read-only".to_owned()));
     let e = post(
         (repo.path(), out.path()),
         (&h, None, None),
@@ -48,7 +49,9 @@ fn a_pr_that_cannot_be_noted_before_the_post_is_not_posted_to() {
     )
     .unwrap_err();
     assert!(
-        matches!(&e, PostError::Remember(w) if w.contains("PR #7 could not be noted") && w.contains("the record is read-only")),
+        matches!(&e, PostError::Remember { pr: 7, source } if !source.is_refusal())
+            && e.to_string().contains("PR #7 could not be noted")
+            && e.to_string().contains("the record is read-only"),
         "{e}"
     );
     assert!(posted(&gh).is_empty(), "nothing posted");

@@ -196,6 +196,8 @@ struct Bench {
     concurrency: usize,
     deadline: Option<Duration>,
     agents: Option<Vec<String>>,
+    /// opencode's tasks handed to this delegate rather than run as `opencode run`.
+    delegate: Option<super::delegate::Delegate>,
     events: RefCell<Vec<Event>>,
     /// A stopping signal's exit status, sent this long after the drive starts.
     stop_after: Option<(Duration, u8)>,
@@ -230,6 +232,7 @@ impl Bench {
             concurrency: 4,
             deadline: None,
             agents: None,
+            delegate: None,
             events: RefCell::default(),
             stop_after: None,
             stop_once: None,
@@ -255,6 +258,7 @@ impl Bench {
             command: self.path("host"),
             agents: self.agents.clone(),
             archived: true,
+            delegate: self.delegate.clone(),
         };
         let (root, repo) = (self.path("root"), self.path("repo"));
         let again = |run: &str| {
@@ -608,5 +612,98 @@ async fn the_tasks_run_in_the_worktree_the_step_names_and_the_answer_names_it() 
         )),
         "{}",
         answer.text
+    );
+}
+
+#[tokio::test]
+async fn a_delegated_round_hands_each_task_out_in_the_worktree_and_reads_its_reply() {
+    let mut bench = Bench::new(HostKind::OpenCode);
+    bench.agents = Some(vec!["review-task".into()]);
+    let (send, mut heard) = tokio::sync::mpsc::unbounded_channel::<Event>();
+    let delegate = super::delegate::Delegate::new(move |e| send.send(e).is_ok(), |_| {});
+    bench.delegate = Some(delegate.clone());
+    let worktree = bench.path("worktree");
+    std::fs::create_dir_all(&worktree).unwrap();
+    let mut fake = bench.fake(vec![
+        Spec("a", "do a", None),
+        Spec("b", "do b", Some("rust-reviewer")),
+    ]);
+    fake.worktree = Some(worktree.clone());
+    // The delegating process: each task answered, what it was handed kept.
+    let responder = tokio::spawn(async move {
+        let mut tasks = Vec::new();
+        while let Some(event) = heard.recv().await {
+            if let Event::Task {
+                key,
+                id,
+                agent,
+                cwd,
+                ..
+            } = event
+            {
+                let text = "```craft-answer\n{\"answer\": \"ok\"}\n```";
+                delegate
+                    .deliver(&json!({"key": key, "text": text}).to_string())
+                    .unwrap();
+                tasks.push((id, agent, cwd));
+                if tasks.len() == 2 {
+                    return tasks;
+                }
+            }
+        }
+        tasks
+    });
+    let answer = bench.drive(&fake).await;
+    assert!(answer.finished, "{}", answer.text);
+    let mut tasks = tokio::time::timeout(Duration::from_secs(5), responder)
+        .await
+        .unwrap()
+        .unwrap();
+    tasks.sort();
+    let at = worktree.display().to_string();
+    assert_eq!(
+        tasks,
+        vec![
+            ("a".to_owned(), Some("review-task".to_owned()), at.clone()),
+            // Its own agent is not among those listed: it runs on review-task, said degraded.
+            ("b".to_owned(), Some("review-task".to_owned()), at),
+        ]
+    );
+    assert!(bench.calls().is_empty(), "no opencode ran");
+    assert_eq!(bench.answer("a")["answer"], "ok");
+    assert!(
+        fake.submits.borrow()[0]
+            .degraded
+            .iter()
+            .any(|n| n.contains("`rust-reviewer`")),
+        "{:?}",
+        fake.submits.borrow()
+    );
+}
+
+#[tokio::test]
+async fn a_delegate_that_stopped_answering_stops_the_run_resumable_before_the_submit() {
+    let mut bench = Bench::new(HostKind::OpenCode);
+    bench.agents = Some(vec!["review-task".into()]);
+    // Its task events cannot be written: no task could ever answer.
+    bench.delegate = Some(super::delegate::Delegate::new(|_| false, |_| {}));
+    let fake = bench.fake(vec![Spec("a", "do a", None), Spec("b", "do b", None)]);
+    let answer = bench.drive(&fake).await;
+    assert!(!answer.finished);
+    assert!(
+        fake.submits.borrow().is_empty(),
+        "no task is failed to be handed out again"
+    );
+    assert!(
+        answer.text.contains(
+            "the process that runs the tasks stopped answering: a task could not be handed to it"
+        ),
+        "{}",
+        answer.text
+    );
+    assert!(answer.text.contains("--run '"), "{}", answer.text);
+    assert_eq!(
+        *fake.filed.borrow(),
+        ["the craft binary did not finish the run"]
     );
 }
