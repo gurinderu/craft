@@ -75,14 +75,22 @@ export function openedAt(premise, ref) {
   return false
 }
 
+/** The opening of the reason a class-1 claim nothing showed is handed to a human with. */
+const NOT_SHOWN = "claimed not this PR's, but "
+
 /**
- * Whether the triage settled `v`'s verdict by its noise class itself (class 1 or 5), so the plan
- * agent's ledger cannot drop or change it: it is restored there as the unjudged and sifted rows are.
+ * Whether the triage settled `v`'s verdict by its noise class itself, so the plan agent's ledger
+ * cannot drop or change it: it is restored there as the unjudged and sifted rows are. Class 5 always
+ * (its verdict is the class's); class 1 only where it turned the validator's verdict — a deferral
+ * with an issue, or a claim nothing showed handed to a human — never a verdict it left alone.
  * @param {unknown} v @returns {boolean}
  */
 export function settledByClass(v) {
   const n = noiseClassOf(v)
-  return n === 1 || n === 5
+  if (n === 5) return true
+  if (n !== 1 || !v || typeof v !== 'object') return false
+  const row = /** @type {Record<string, unknown>} */ (v)
+  return row['action'] === 'issue' || String(row['reason'] ?? '').startsWith(NOT_SHOWN)
 }
 
 /**
@@ -111,13 +119,12 @@ export function classifiedVerdict(v, prBase = '') {
  */
 export function notThisPrs(v, prBase) {
   if (v.verdict !== 'accept' && v.verdict !== 'defer') return v
-  if (!prBase)
-    return { ...v, verdict: 'needs-decision', reason: `claimed not this PR's, but no prBase (the PR's fork point) was given to check it at — ${v.reason}` }
+  if (!prBase) return { ...v, verdict: 'needs-decision', reason: `${NOT_SHOWN}no prBase (the PR's fork point) was given to check it at — ${v.reason}` }
   if (!openedAt(v.premise_checked, prBase)) {
     return {
       ...v,
       verdict: 'needs-decision',
-      reason: `claimed not this PR's, but nothing at the PR's fork point ${prBase} was opened to show it — ${v.reason}`,
+      reason: `${NOT_SHOWN}nothing at the PR's fork point ${prBase} was opened to show it — ${v.reason}`,
     }
   }
   return { ...v, verdict: 'defer', action: 'issue' }

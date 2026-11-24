@@ -13,12 +13,8 @@ use craft_store::js::{Js, JsString, Obj};
 
 use crate::field;
 use crate::ledger::{Row, UNJUDGED_MARKER};
+use crate::noise::settled_by_class;
 use crate::sift::SIFT_MARK;
-
-/// Whether this side settled `v`'s verdict by its noise class (realm @nick/craft, node #303).
-fn settled_by_class(v: &Row) -> bool {
-    matches!(crate::noise::noise_class_of(v), 1 | 5)
-}
 
 /// The rows this side settled, by id in first-insertion order, a later row under one id
 /// replacing an earlier one: the sifted rows, then every verdict marked unjudged or settled by its

@@ -100,9 +100,14 @@ test('siftByMemory with no records sends everything to the validator and asks no
   assert.deepEqual(r.counts, { rejectedBefore: 0, deferred: 0, covered: 0, conflict: 0, reraised: 0 })
 })
 
-test('settledByClass: only classes 1 and 5 are settled by the triage itself', () => {
-  for (const n of [1, 5]) assert.equal(settledByClass({ noise_class: n }), true, String(n))
-  for (const v of [{ noise_class: 2 }, { noise_class: 6 }, {}, null]) assert.equal(settledByClass(v), false, JSON.stringify(v))
+test('settledByClass: class 5, and class 1 only where it turned the verdict', () => {
+  const v = (/** @type {string} */ verdict, /** @type {string} */ premise) => ({ noise_class: 1, verdict, reason: 'r', premise_checked: premise })
+  assert.equal(settledByClass({ noise_class: 5, verdict: 'needs-decision', reason: 'r' }), true)
+  assert.equal(settledByClass(classifiedVerdict(v('accept', 'git show b1:a.rs'), 'b1')), true, 'deferred with an issue')
+  assert.equal(settledByClass(classifiedVerdict(v('defer', 'git show HEAD:a.rs'), 'b1')), true, 'handed to a human')
+  assert.equal(settledByClass(classifiedVerdict(v('accept', ''), '')), true, 'no prBase')
+  for (const left of ['reject', 'needs-decision']) assert.equal(settledByClass(classifiedVerdict(v(left, ''), 'b1')), false, left)
+  for (const o of [{ noise_class: 2, action: 'issue' }, {}, null]) assert.equal(settledByClass(o), false, JSON.stringify(o))
 })
 
 test('noiseClassOf reads 1..6 and nothing else', () => {
