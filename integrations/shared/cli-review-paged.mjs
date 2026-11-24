@@ -1,97 +1,105 @@
 // A binary step read in pages (realm @nick/craft, node #625). The sandbox reads no file, so a service agent copies what
 // the command printed into its answer, and a large step — a round of many tasks, a finished run's findings — came back
 // cut, read as "the command printed no JSON". With `--paged` the binary writes the step to its run directory and prints
-// one bounded page of it, framed — a `craft-out <file> <lines>` line first, a `craft-page <last>` line after the page's
-// lines (cli/bin/craft/src/paged.rs); `craft review page` prints the next. A page that comes back without its frame or
-// with another count of lines is asked again from the file; the command is never run twice. The step's lines are cut
-// where JSON allows whitespace, so they join back with newlines into the same value.
+// one bounded page of it (cli/bin/craft/src/paged.rs): a `craft-out <file> <total> <from> <count>` line, the page's
+// `count` characters of the step from offset `from` on one line, and a `craft-page <end>` line — offsets and counts in
+// UTF-16 code units, as a string's length counts them. `craft review page` prints the next. The pages are joined with
+// no separator. Every count is checked, and every page must name the first page's file and total, so a page cut in a
+// copy is asked again from the file, two different steps are never joined, and the command is never run twice.
 import { absolutePath, isObject } from './cli-review-step.mjs'
+import { harnessRefusal } from './cli-review-refusal.mjs'
 import { shq } from './plugin-script.mjs'
 
 /** How many pages the driver reads before it gives the step up as too large. */
 export const MAX_PAGES = 64
 
-/** The command that prints the page of `file` from line `from`. @param {string} bin @param {string} file @param {number} from */
+/** The command that prints the page of `file` from offset `from`. @param {string} bin @param {string} file @param {number} from */
 export const pageCommand = (bin, file, from) => `${bin} review page --file ${shq(file)} --from ${String(from)}`
 
-/** @typedef {{ file: string, total: number, last: number, lines: string[] }} Page */
+/** @typedef {{ file: string, total: number }} Frame  the step a page belongs to: its file and its length */
+/** @typedef {Frame & { from: number, body: string, end: number }} Page */
 
-/** The file and line count a page's first line names, or null. @param {string} line */
-function frameOf(line) {
-  const head = /^craft-out (.+) (\d+)$/.exec(line)
+/** The frame a page's first line names, with where the page starts and how long it is, or null. @param {string} line */
+function headOf(line) {
+  const head = /^craft-out (.+) (\d+) (\d+) (\d+)$/.exec(line)
   const file = absolutePath(head?.[1])
-  return head && file !== null ? { file, total: Number(head[2]) } : null
+  return head && file !== null ? { file, total: Number(head[2]), from: Number(head[3]), count: Number(head[4]) } : null
 }
 
 /**
- * A page as the agent copied it, or null when its frame is missing — cut — or its count of lines is not the one its
- * frame names; `from` the line it was asked from.
+ * A page as the agent copied it, or null when it is not the page from offset `from` whole: its frame missing — cut — or
+ * a count that does not hold.
  * @param {string} stdout @param {number} from @returns {Page | null}
  */
 export function pageOf(stdout, from) {
   const lines = stdout.split('\n')
   if (lines.at(-1) === '') lines.pop()
-  const frame = frameOf(lines[0] ?? '')
-  const tail = /^craft-page (\d+)$/.exec(lines.at(-1) ?? '')
-  if (!frame || !tail) return null
-  const last = Number(tail[1])
-  const body = lines.slice(1, -1)
-  return body.length === last - from + 1 ? { ...frame, last, lines: body } : null
+  if (lines.length !== 3) return null
+  const [first = '', body = '', last = ''] = lines
+  const head = headOf(first)
+  // The closing line holds the offset the page started at: a page of another offset fails it.
+  if (!head || body.length !== head.count) return null
+  const end = from + head.count
+  return last === `craft-page ${String(end)}` ? { file: head.file, total: head.total, from, body, end } : null
 }
 
 /**
  * The step's whole output from a paged command's answer `got`: its first page, then each next one asked through
  * `ask(file, from)`, each asked twice at most. An answer that is not paged — no stdout, a refusal, a binary error, an
- * output not framed — comes back as it is; one whose step could not be read whole comes back with `cut` saying why,
- * and no stdout.
+ * output not framed — comes back as it is, and so does a page step stopped by the usage limit or refused by the harness;
+ * one whose step could not be read whole comes back with `cut` saying why, and no stdout.
  * @param {unknown} got @param {(file: string, from: number) => Promise<unknown>} ask @returns {Promise<unknown>}
  */
 export async function readPaged(got, ask) {
   if (!isObject(got) || typeof got['stdout'] !== 'string' || !got['stdout'].startsWith('craft-out ')) return got
   const { stdout, ...rest } = got
-  const read = await linesOf(stdout, ask)
-  return 'cut' in read ? { ...rest, cut: read.cut } : { ...rest, stdout: read.lines.join('\n') }
+  const read = await stepOf(stdout, ask)
+  if ('stop' in read) return read.stop
+  return 'cut' in read ? { ...rest, cut: read.cut } : { ...rest, stdout: read.text }
 }
 
 /**
- * The step's lines from its first page `stdout` and the pages after it, or why they could not all be read.
+ * The step's text from its first page `stdout` and the pages after it, why it could not all be read, or the answer that
+ * stopped a page step.
  * @param {string} stdout @param {(file: string, from: number) => Promise<unknown>} ask
- * @returns {Promise<{ lines: string[] } | { cut: string }>}
+ * @returns {Promise<{ text: string } | { cut: string } | { stop: unknown }>}
  */
-async function linesOf(stdout, ask) {
-  const start = firstOf(stdout)
-  if (start === null) return { cut: 'its first page named no file' }
-  const { file, total } = start
-  const lines = start.lines
-  let pages = start.pages
-  for (let from = start.last + 1; from <= total; pages++) {
+async function stepOf(stdout, ask) {
+  const first = pageOf(stdout, 0)
+  // A first page cut keeps its first line, which names the step.
+  const frame = first ?? headOf(stdout.split('\n')[0] ?? '')
+  if (frame === null) return { cut: 'its first page named no file' }
+  let text = first ? first.body : ''
+  for (let pages = first ? 1 : 0; text.length < frame.total; pages++) {
     if (pages >= MAX_PAGES) return { cut: `it ran past ${String(MAX_PAGES)} pages` }
-    const page = (await pageAt(ask, file, from)) ?? (await pageAt(ask, file, from))
-    if (!page) return { cut: `its page from line ${String(from)} of ${file} came back cut twice` }
-    lines.push(...page.lines)
-    from = page.last + 1
+    const page = await twice(ask, frame, text.length)
+    if (!('body' in page)) return page
+    text += page.body
   }
-  return { lines }
+  return text.length === frame.total ? { text } : { cut: `it came to ${String(text.length)} of ${String(frame.total)} characters` }
 }
 
 /**
- * The first page read: whole, or, cut, only its first line, which names the file — its lines then read again from
- * line 1; null when not even that came back. @param {string} stdout
- * @returns {{ file: string, total: number, last: number, lines: string[], pages: number } | null}
+ * The page of `frame`'s step from offset `from`, asked once more when it came back cut; the answer that stopped it, or
+ * why it could not be read.
+ * @param {(file: string, from: number) => Promise<unknown>} ask @param {Frame} frame @param {number} from
+ * @returns {Promise<Page | { cut: string } | { stop: unknown }>}
  */
-function firstOf(stdout) {
-  const first = pageOf(stdout, 1)
-  if (first) return { ...first, lines: [...first.lines], pages: 1 }
-  const frame = frameOf(stdout.split('\n')[0] ?? '')
-  return frame && { ...frame, last: 0, lines: [], pages: 0 }
+async function twice(ask, frame, from) {
+  for (let tries = 0; tries < 2; tries++) {
+    const got = await ask(frame.file, from)
+    if (pageStopped(got)) return { stop: got }
+    const page = isObject(got) && typeof got['stdout'] === 'string' ? pageOf(got['stdout'], from) : null
+    if (page && ofStep(page, frame)) return page
+  }
+  return { cut: `its page from offset ${String(from)} of ${frame.file} came back cut twice` }
 }
 
+/** Whether a page step's answer is the usage limit's stop or the harness's refusal. @param {unknown} got */
+const pageStopped = got => isObject(got) && (typeof got['limit'] === 'string' || harnessRefusal(got) !== null)
+
 /**
- * The page from line `from`, or null when it came back cut or empty.
- * @param {(file: string, from: number) => Promise<unknown>} ask @param {string} file @param {number} from
+ * Whether `page` is one of `frame`'s step that moves on: another step's page — its file or length not the first page's —
+ * or one that moves nothing is not. @param {Page} page @param {Frame} frame
  */
-async function pageAt(ask, file, from) {
-  const got = await ask(file, from)
-  const page = isObject(got) && typeof got['stdout'] === 'string' ? pageOf(got['stdout'], from) : null
-  return page && page.last >= from ? page : null
-}
+const ofStep = (page, frame) => page.file === frame.file && page.total === frame.total && page.end > page.from

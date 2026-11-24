@@ -143,4 +143,35 @@ fn a_confined_part_names_an_unsearched_symbol_only_when_declared_under_its_units
     let block = confined_block(&c, &["x".into()], "crate").unwrap();
     assert!(block.contains(": a"), "{block}");
     assert!(!block.contains("b (over 200 lines)"), "{block}");
+    // `b` was never searched: it is not one no line names.
+    assert!(
+        !block.contains("No line outside the change names"),
+        "{block}"
+    );
+}
+
+#[test]
+fn a_symbol_the_budget_left_no_line_of_reads_as_cut_not_as_unused() {
+    let many = (0..40).map(|n| symbol(&format!("s{n}"), "a/lib.rs", vec![site("x/u.rs", n)]));
+    let c = Consumers {
+        symbols: many.chain([symbol("idle", "a/lib.rs", vec![])]).collect(),
+        ..two()
+    };
+    let block = lens_block(&c).unwrap();
+    assert!(
+        block.contains("Every line of these was cut by the budget, kept in the whole list: `s30`,"),
+        "{block}"
+    );
+    assert!(
+        block.contains("No line outside the change names: `idle`."),
+        "{block}"
+    );
+    assert!(!block.contains("names: `s3"), "{block}");
+}
+
+#[test]
+fn a_confined_part_with_every_line_under_its_units_hands_nothing_to_the_seam() {
+    let block = confined_block(&two(), &["x".into(), "y".into()], "crate").unwrap();
+    assert!(block.contains("y/use.rs:4"), "{block}");
+    assert!(!block.contains("in other crates"), "{block}");
 }

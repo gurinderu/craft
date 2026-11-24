@@ -1,7 +1,7 @@
 //! The lenses' CONSUMERS block of the consumers list: each task's part of it ([`super::scope`]).
 
 use super::order::{FILE_MAX, LENS_MAX, SEAM_MAX};
-use super::scope::{Scope, WHOLE, part};
+use super::scope::{Part, Scope, WHOLE, part};
 use super::{Consumers, Site, gaps};
 use crate::content::{self, ContentError, vars};
 
@@ -48,7 +48,7 @@ pub fn confined_block(c: &Consumers, roots: &[String], noun: &str) -> Result<Str
         .filter(|x| !under(x))
         .count();
     let tail = (elsewhere > 0).then(|| {
-        format!("{elsewhere} more line(s) name these symbols in other {noun}s: the seam pass checks them, not you.")
+        format!("{elsewhere} more line(s) name these symbols in other {noun}s: not yours — the seam pass starts from them, to its own budget.")
     });
     let scope = Scope {
         symbol: &|_| true,
@@ -62,17 +62,17 @@ pub fn confined_block(c: &Consumers, roots: &[String], noun: &str) -> Result<Str
 /// per line.
 #[must_use]
 pub fn seam_block(c: &Consumers) -> String {
-    let (seam, cut) = part(c, &WHOLE, SEAM_MAX);
-    let gaps = gaps::for_lens(&seam);
-    if seam.symbols.is_empty() && gaps.is_empty() {
+    let seam = part(c, &WHOLE, SEAM_MAX);
+    let gaps = gaps::for_lens(&seam.list);
+    if seam.list.symbols.is_empty() && gaps.is_empty() {
         return String::new();
     }
-    let (mut lines, _) = site_lines(&seam);
+    let mut lines = site_lines(&seam, c);
     lines.extend(gaps);
     format!(
         "\n   The consumers list ({}{}) names these lines outside the change; start from them:\n{}",
         c.sources.join(" and "),
-        cut_text(c, cut),
+        cut_text(c, seam.cut),
         lines.join("\n")
     )
 }
@@ -80,52 +80,67 @@ pub fn seam_block(c: &Consumers) -> String {
 /// The lines the seam pass's part shows, as `file:line`.
 #[must_use]
 pub fn seam_sites(c: &Consumers) -> Vec<String> {
-    part(c, &WHOLE, SEAM_MAX).0.sites()
+    part(c, &WHOLE, SEAM_MAX).list.sites()
 }
 
 /// The block over `scope`'s part of `c`, `tail` said after the gaps.
 fn render(c: &Consumers, scope: &Scope<'_>, tail: Option<String>) -> Result<String, ContentError> {
-    let (mine, cut) = part(c, scope, LENS_MAX);
-    let gaps = gaps::for_lens(&mine);
-    if mine.symbols.is_empty() && gaps.is_empty() {
+    let mine = part(c, scope, LENS_MAX);
+    let gaps = gaps::for_lens(&mine.list);
+    if mine.list.symbols.is_empty() && gaps.is_empty() {
         return Ok(String::new());
     }
-    let (mut lines, count) = site_lines(&mine);
+    let mut lines = site_lines(&mine, c);
     lines.extend(gaps);
     lines.extend(tail);
     let block = content::prompt(
         "lens-consumers",
         &vars([
-            ("count", count.to_string()),
+            ("count", mine.list.lines().to_string()),
             ("sources", c.sources.join(" and ")),
-            ("cut", cut_text(c, cut)),
+            ("cut", cut_text(c, mine.cut)),
             ("lines", lines.join("\n")),
         ]),
     )?;
     Ok(format!("\n{block}"))
 }
 
-/// Each symbol's sites under its name, then the symbols no line names; and how many sites there
-/// are.
-fn site_lines(c: &Consumers) -> (Vec<String>, usize) {
+/// Each symbol's sites in `part` under its name, then the symbols the budget left no line of, then
+/// those no line names: searched by name in `full`, the whole list, and nothing found.
+fn site_lines(part: &Part, full: &Consumers) -> Vec<String> {
     let mut lines: Vec<String> = Vec::new();
-    for s in c.symbols.iter().filter(|s| !s.sites.is_empty()) {
+    for s in part.list.symbols.iter().filter(|s| !s.sites.is_empty()) {
         lines.push(format!("`{}` ({}:{}):", s.name, s.file, s.line));
         lines.extend(s.sites.iter().map(site_line));
     }
-    let none: Vec<String> = c
+    let named = |v: &[&str]| {
+        v.iter()
+            .map(|n| format!("`{n}`"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let emptied: Vec<&str> = part.emptied.iter().map(String::as_str).collect();
+    if !emptied.is_empty() {
+        lines.push(format!(
+            "Every line of these was cut by the budget, kept in the whole list: {}.",
+            named(&emptied)
+        ));
+    }
+    let none: Vec<&str> = part
+        .list
         .symbols
         .iter()
-        .filter(|s| s.sites.is_empty() && !unsearched(c, &s.name))
-        .map(|s| format!("`{}`", s.name))
+        .filter(|s| s.sites.is_empty() && !emptied.contains(&s.name.as_str()))
+        .filter(|s| !unsearched(full, &s.name))
+        .map(|s| s.name.as_str())
         .collect();
     if !none.is_empty() {
         lines.push(format!(
             "No line outside the change names: {}.",
-            none.join(", ")
+            named(&none)
         ));
     }
-    (lines, c.lines())
+    lines
 }
 
 /// Whether the name search left `name` out: an `unsearched` entry is the name, or the name and

@@ -18,9 +18,16 @@ pub(super) const WHOLE: Scope<'static> = Scope {
     file: &|_| true,
 };
 
-/// `c` narrowed to `scope` and cut to [`PER_SYMBOL`] lines a symbol and `max` in all; and how
-/// many of the scope's lines the cut left out.
-pub(super) fn part(c: &Consumers, scope: &Scope<'_>, max: usize) -> (Consumers, usize) {
+/// A task's part of the list: the list narrowed and cut, how many of the scope's lines the cut left
+/// out, and the symbols it left none of — cut, never ones no line names.
+pub(super) struct Part {
+    pub list: Consumers,
+    pub cut: usize,
+    pub emptied: Vec<String>,
+}
+
+/// `c` narrowed to `scope` and cut to [`PER_SYMBOL`] lines a symbol and `max` in all.
+pub(super) fn part(c: &Consumers, scope: &Scope<'_>, max: usize) -> Part {
     let mut out = c.clone();
     out.symbols = c
         .symbols
@@ -43,8 +50,20 @@ pub(super) fn part(c: &Consumers, scope: &Scope<'_>, max: usize) -> (Consumers, 
     out.unreadable.retain(|u| (scope.file)(before_why(u)));
     out.unsearched
         .retain(|u| searched_here(c, scope, before_why(u)));
+    let had: Vec<bool> = out.symbols.iter().map(|s| !s.sites.is_empty()).collect();
     let cut = budget(&mut out.symbols, PER_SYMBOL, max);
-    (out, cut)
+    let emptied = out
+        .symbols
+        .iter()
+        .zip(had)
+        .filter(|(s, had)| *had && s.sites.is_empty())
+        .map(|(s, _)| s.name.clone())
+        .collect();
+    Part {
+        list: out,
+        cut,
+        emptied,
+    }
 }
 
 /// An entry's head before its ` (why)`: a file, or a symbol's name.

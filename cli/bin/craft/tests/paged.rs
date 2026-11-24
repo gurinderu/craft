@@ -1,5 +1,6 @@
-//! `--paged` from the command line: `review start` writes its step to the run directory and prints
-//! its first page framed; `review page` prints the rest; the pages joined are the step it wrote.
+//! `--paged` from the command line: each step command a driver pages — `start`, `submit`, `status`
+//! and `comment` — takes it; a paged step goes to the run directory and its first page is printed
+//! framed; `review page` prints a page of it, and reads no other file; a brief status prints whole.
 #![expect(
     clippy::unwrap_used,
     clippy::indexing_slicing,
@@ -7,7 +8,7 @@
 )]
 
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Output};
 
 use serde_json::Value;
 
@@ -25,31 +26,37 @@ fn git(dir: &Path, args: &[&str]) {
     assert!(ok.status.success(), "git {args:?}");
 }
 
-fn craft(args: &[&str], home: &Path) -> String {
-    let out = Command::new(env!("CARGO_BIN_EXE_craft"))
+fn run_craft(args: &[&str], home: &Path) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_craft"))
         .env("CRAFT_CODE_GRAPH", "")
         .env("HOME", home)
         .args(args)
         .output()
-        .unwrap();
+        .unwrap()
+}
+
+fn craft(args: &[&str], home: &Path) -> String {
+    let out = run_craft(args, home);
     assert!(out.status.success(), "{out:?}");
     String::from_utf8(out.stdout).unwrap()
 }
 
-/// The lines of a framed page between its frame, and the last line it names.
-fn body(page: &str) -> (Vec<String>, String, usize) {
-    let lines: Vec<&str> = page.lines().collect();
-    let head = lines[0].strip_prefix("craft-out ").unwrap();
-    let (file, _) = head.rsplit_once(' ').unwrap();
-    let last = lines.last().unwrap().strip_prefix("craft-page ").unwrap();
-    let inner = lines[1..lines.len() - 1].iter().map(|l| (*l).to_owned());
-    (inner.collect(), file.to_owned(), last.parse().unwrap())
+/// A framed page: the file it names, and its body.
+fn framed(page: &str) -> (String, String) {
+    let lines: Vec<&str> = page.split('\n').collect();
+    assert_eq!(lines.len(), 4, "{page}");
+    let head: Vec<&str> = lines[0].split(' ').collect();
+    assert_eq!(head[0], "craft-out", "{page}");
+    let (total, from, count) = (head[2], head[3], head[4]);
+    assert_eq!(from, "0");
+    assert_eq!(total, count, "a small step is one page: {page}");
+    assert_eq!(lines[2], format!("craft-page {count}"));
+    (head[1].to_owned(), lines[1].to_owned())
 }
 
-#[test]
-fn a_paged_start_reads_back_page_by_page_as_the_step_it_wrote() {
-    let tmp = tempfile::tempdir().unwrap();
-    let code = tmp.path().join("repo");
+/// A repository whose branch adds `src/lib.rs` over `origin/main`, and the run started on it.
+fn started(tmp: &Path) -> (String, String) {
+    let code = tmp.join("repo");
     std::fs::create_dir_all(code.join("src")).unwrap();
     git(&code, &["init", "-q", "-b", "main"]);
     std::fs::write(code.join("README.md"), "x\n").unwrap();
@@ -59,56 +66,99 @@ fn a_paged_start_reads_back_page_by_page_as_the_step_it_wrote() {
     std::fs::write(code.join("src/lib.rs"), "pub fn f() -> u8 { 1 }\n").unwrap();
     git(&code, &["add", "."]);
     git(&code, &["commit", "-qm", "feat: add f"]);
-    let run = tmp.path().join("run");
-    let cwd = code.to_str().unwrap();
-    let dir = run.to_str().unwrap();
-    let first = craft(
-        &[
-            "review",
-            "start",
-            "--run-dir",
-            dir,
-            "--base",
-            "origin/main",
-            "--no-recall",
-            "--no-gate",
-            "--paged",
-            "--cwd",
-            cwd,
-        ],
-        tmp.path(),
-    );
-    let (mut lines, file, mut last) = body(&first);
-    assert_eq!(file, run.join("host-step.out").display().to_string());
-    let total = std::fs::read_to_string(&file).unwrap().lines().count();
-    // `review page` from line 1 prints the very page the start printed.
+    let run = tmp.join("run").display().to_string();
+    let cwd = code.display().to_string();
+    let args = [
+        "review",
+        "start",
+        "--run-dir",
+        &run,
+        "--base",
+        "origin/main",
+    ];
+    let more = ["--no-recall", "--no-gate", "--paged", "--cwd", &cwd];
+    let first = craft(&[&args[..], &more[..]].concat(), tmp);
+    (run, first)
+}
+
+#[test]
+fn every_step_command_pages_its_step_into_the_run_directory() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (run, first) = started(tmp.path());
+    let (file, body) = framed(&first);
     assert_eq!(
-        craft(
-            &["review", "page", "--file", &file, "--from", "1"],
-            tmp.path()
-        ),
-        first
+        file,
+        Path::new(&run).join("host-step.out").display().to_string()
     );
-    while last < total {
-        let from = (last + 1).to_string();
-        let (more, _, to) = body(&craft(
-            &["review", "page", "--file", &file, "--from", &from],
-            tmp.path(),
-        ));
-        lines.extend(more);
-        last = to;
-    }
-    let step: Value = serde_json::from_str(&lines.join("\n")).unwrap();
-    assert_eq!(step["run"], Value::String(dir.to_owned()));
+    let step: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(step["run"], Value::String(run.clone()));
     assert!(
         step["tasks"].as_array().is_some_and(|t| !t.is_empty()),
         "{step}"
     );
-    let whole: Value = serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
-    assert_eq!(step, whole);
+    // `review page` from 0 prints the very page the start printed.
+    assert_eq!(
+        craft(
+            &["review", "page", "--file", &file, "--from", "0"],
+            tmp.path()
+        ),
+        first
+    );
+    for cmd in [["review", "submit"], ["review", "status"]] {
+        let page = craft(
+            &[&cmd[..], &["--run", &run, "--paged"]].concat(),
+            tmp.path(),
+        );
+        let (named, body) = framed(&page);
+        assert_eq!(named, file, "{cmd:?}");
+        let step: Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(step["run"], Value::String(run.clone()), "{cmd:?}");
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), body, "{cmd:?}");
+    }
+    // A comment takes the flag: an unfinished run is refused for what it is (exit 1), not for
+    // an argument it does not know (exit 2).
+    let comment = run_craft(&["review", "comment", "--run", &run, "--paged"], tmp.path());
+    assert_eq!(comment.status.code(), Some(1), "{comment:?}");
+    // A brief status is bounded and prints whole, --paged or not.
+    for paged in [&[][..], &["--paged"][..]] {
+        let brief = craft(
+            &[&["review", "status", "--run", &run, "--brief"][..], paged].concat(),
+            tmp.path(),
+        );
+        assert_eq!(brief.lines().count(), 1, "{brief}");
+        assert!(serde_json::from_str::<Value>(&brief).is_ok(), "{brief}");
+    }
     // Without --paged, a status prints its step whole on one line.
-    let status = craft(&["review", "status", "--run", dir], tmp.path());
+    let status = craft(&["review", "status", "--run", &run], tmp.path());
     assert_eq!(status.lines().count(), 1, "{status}");
-    let status: Value = serde_json::from_str(&status).unwrap();
-    assert_eq!(status["run"], Value::String(dir.to_owned()));
+    assert!(serde_json::from_str::<Value>(&status).is_ok(), "{status}");
+}
+
+#[test]
+fn review_page_reads_only_a_run_directory_s_step_file() {
+    let tmp = tempfile::tempdir().unwrap();
+    let elsewhere = tmp.path().join("notes.txt");
+    std::fs::write(&elsewhere, "secret").unwrap();
+    let named = tmp.path().join("host-step.out");
+    std::fs::write(&named, "{}").unwrap();
+    for file in [&elsewhere, &named] {
+        let out = run_craft(
+            &[
+                "review",
+                "page",
+                "--file",
+                file.to_str().unwrap(),
+                "--from",
+                "0",
+            ],
+            tmp.path(),
+        );
+        assert_eq!(out.status.code(), Some(1), "{out:?}");
+        assert!(out.stdout.is_empty(), "{out:?}");
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            err.contains("is not the host-step.out of a run directory"),
+            "{err}"
+        );
+    }
 }

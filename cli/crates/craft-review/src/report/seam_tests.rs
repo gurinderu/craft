@@ -151,4 +151,32 @@ fn a_line_past_the_seam_pass_s_budget_is_cut_not_handed_to_it() {
     );
     let cut = "- 1 line(s) cut from every lens's prompt by its budget, in the whole list's file only: tools/z.rs:80\n";
     assert!(report.contains(cut), "{report}");
+    // The seam pass did not answer: its 80 are unread, the 81st still cut.
+    s.units.tracks[0].seam = None;
+    let report = markdown(&s, "Approve");
+    assert!(
+        report.contains("- 80 line(s) no lens marked, the seam pass did not run"),
+        "{report}"
+    );
+    assert!(report.contains(cut), "{report}");
+}
+
+#[test]
+fn under_unit_mode_the_seam_lines_stand_though_no_lens_was_shown_a_line() {
+    let mut s = state(&["src/a"], &answered());
+    s.rounds.consumers_shown.clear();
+    s.rounds.consumers_marked.clear();
+    let report = markdown(&s, "Approve");
+    assert!(
+        report.contains("- 2 line(s) handed to the seam pass, not marked per line"),
+        "{report}"
+    );
+    s.units.tracks[0].seam = None;
+    let notes = degraded_notes(&s);
+    assert!(
+        notes
+            .iter()
+            .any(|n| n.starts_with("2 line(s) no lens marked, the seam pass did not run")),
+        "{notes:?}"
+    );
 }

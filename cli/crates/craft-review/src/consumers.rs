@@ -4,8 +4,9 @@
 //! file and line, within a per-symbol and a per-run budget. It unions the code graph's callers,
 //! when the reviewer's profile says the graph answers and its index is not older than the base,
 //! with a name search, always run, because the graph loses edges, and, for a name too common to
-//! search by text, a structural search of the paths that reach it. Each lens gets the list and
-//! marks every line; the report says which sources built it. Rust symbols only.
+//! search by text, a structural search of the paths that reach it. The run keeps the whole list;
+//! each lens task gets its scope's part of it, cut to a budget, and marks every line it is shown
+//! (realm `@nick/craft`, node #625); the report says which sources built it. Rust symbols only.
 
 use serde::{Deserialize, Serialize};
 

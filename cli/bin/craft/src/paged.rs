@@ -2,11 +2,12 @@
 //! no file, so a service agent copies what a step command prints, and a large step — a round of
 //! many tasks, a finished run's findings — came back cut. With `--paged` the step goes whole to
 //! [`FILE`] in its run directory and only its first page is printed; `craft review page` prints
-//! the next. A page is framed — a `craft-out <file> <lines>` line first, a `craft-page <last>`
-//! line after it — so a page that comes back cut is seen and asked again, and the command is never
-//! run twice. The step is cut into lines at each `,"`: in JSON that pair stands only between
-//! tokens (a quote inside a string is escaped), so the lines joined with newlines are the same
-//! value, and a page never splits a character.
+//! the next. The step is the one JSON line `printed` would print, cut by characters: a page is a
+//! `craft-out <file> <total> <from> <count>` line, the page's `count` characters of the step from
+//! offset `from` on one line, and a `craft-page <end>` line — offsets and counts in UTF-16 code
+//! units, as the driver's strings count them, and never splitting a character. The driver joins
+//! the pages with no separator and checks every count, so a page cut in a copy is seen and asked
+//! again, and the command is never run twice.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -15,10 +16,10 @@ use std::process::ExitCode;
 use anyhow::{Context, Result};
 use serde_json::Value;
 
+mod cut;
+
 /// The run directory's file a paged step is written to.
 pub const FILE: &str = "host-step.out";
-/// How many characters a page holds, its first line aside: a longer line is a page of its own.
-const PAGE_CHARS: usize = 8000;
 
 #[derive(Debug, Default, clap::Args)]
 pub struct Paging {
@@ -30,54 +31,72 @@ pub struct Paging {
 
 #[derive(Debug, clap::Args)]
 pub struct PageArgs {
-    /// The file a paged step named on its `craft-out` line.
+    /// The `host-step.out` of a run directory, as a paged step's `craft-out` line named it.
     #[arg(long)]
     pub file: PathBuf,
-    /// The first line of the page, counted from 1.
+    /// Where the page starts in the step, in UTF-16 code units from 0.
     #[arg(long)]
     pub from: usize,
 }
 
 /// `value` as a step command prints it: whole on one line, or paged when asked and the step names
-/// its run directory.
+/// its run directory. A step whose file cannot be written is printed whole: the step has been
+/// taken, so it is never lost for want of its file.
 pub(crate) fn print(value: &Value, paging: &Paging) -> Result<ExitCode> {
+    step_to(&mut std::io::stdout().lock(), value, paging)?;
+    Ok(ExitCode::SUCCESS)
+}
+
+/// [`print`] to `out`.
+fn step_to(out: &mut impl Write, value: &Value, paging: &Paging) -> Result<()> {
     let run = value.get("run").and_then(Value::as_str);
     let (true, Some(run)) = (paging.paged, run) else {
-        return crate::steps::print(value);
+        return crate::printed::write_line(out, value);
     };
     let text = serde_json::to_string(&crate::printed::for_host(value.clone()))?;
     let file = Path::new(run).join(FILE);
-    let lines = text.replace(",\"", ",\n\"");
-    std::fs::write(&file, format!("{lines}\n"))
-        .with_context(|| format!("writing {}", file.display()))?;
-    page(&mut std::io::stdout().lock(), &file, &lines, 1)?;
-    Ok(ExitCode::SUCCESS)
-}
-
-/// `craft review page`: the page of a paged step's file from line `from`.
-pub fn page_of(args: &PageArgs) -> Result<ExitCode> {
-    let text = std::fs::read_to_string(&args.file)
-        .with_context(|| format!("reading {}", args.file.display()))?;
-    page(&mut std::io::stdout().lock(), &args.file, &text, args.from)?;
-    Ok(ExitCode::SUCCESS)
-}
-
-/// The page of `text`'s lines from line `from` (1-based), framed, written to `out`.
-fn page(out: &mut impl Write, file: &Path, text: &str, from: usize) -> Result<()> {
-    let lines: Vec<&str> = text.lines().collect();
-    writeln!(out, "craft-out {} {}", file.display(), lines.len())?;
-    let mut used = 0;
-    let mut last = from.saturating_sub(1);
-    for (n, line) in lines.iter().enumerate().skip(last) {
-        let len = line.chars().count() + 1;
-        if n + 1 > from && used + len > PAGE_CHARS {
-            break;
-        }
-        writeln!(out, "{line}")?;
-        used += len;
-        last = n + 1;
+    if write(&file, &text).is_err() {
+        return crate::printed::write_line(out, value);
     }
-    writeln!(out, "craft-page {last}")?;
+    page(out, &file, &text, 0)
+}
+
+/// Writes `text` to `file` whole or not at all: through a file beside it, renamed over it.
+fn write(file: &Path, text: &str) -> std::io::Result<()> {
+    let tmp = file.with_extension("out.tmp");
+    std::fs::write(&tmp, text)?;
+    std::fs::rename(&tmp, file)
+}
+
+/// `craft review page`: the page of a paged step's file from offset `from`. Only a run
+/// directory's [`FILE`] is read.
+pub fn page_of(args: &PageArgs) -> Result<ExitCode> {
+    let file = &args.file;
+    let in_run = file.file_name().is_some_and(|n| n == FILE)
+        && file
+            .parent()
+            .is_some_and(|d| d.join("state.json").is_file());
+    anyhow::ensure!(
+        in_run,
+        "{} is not the {FILE} of a run directory",
+        file.display()
+    );
+    let text =
+        std::fs::read_to_string(file).with_context(|| format!("reading {}", file.display()))?;
+    page(&mut std::io::stdout().lock(), file, &text, args.from)?;
+    Ok(ExitCode::SUCCESS)
+}
+
+/// The page of `text` from offset `from`, framed, written to `out`.
+fn page(out: &mut impl Write, file: &Path, text: &str, from: usize) -> Result<()> {
+    let total = cut::units(text);
+    let start = cut::byte_at(text, from)
+        .with_context(|| format!("offset {from} is no character boundary of the {total}"))?;
+    let body = cut::page(text.get(start..).unwrap_or_default());
+    let count = cut::units(body);
+    writeln!(out, "craft-out {} {total} {from} {count}", file.display())?;
+    writeln!(out, "{body}")?;
+    writeln!(out, "craft-page {}", from + count)?;
     Ok(())
 }
 

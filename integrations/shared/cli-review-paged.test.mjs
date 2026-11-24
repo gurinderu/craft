@@ -1,5 +1,6 @@
-// A paged step read whole (integrations/shared/cli-review-paged.mjs): its pages joined, a cut page asked again from the
-// file, never the command; and the review driver reading a paged submit through `craft review page`.
+// A paged step read whole (integrations/shared/cli-review-paged.mjs): its pages joined with no separator, every count
+// checked, a cut page asked again from the file and never the command, a page of another step refused, a stopped page
+// step passed on; and the review driver reading a paged start and submit through `craft review page`.
 import { afterEach, beforeEach, test } from 'vitest'
 import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
@@ -10,78 +11,124 @@ import { commandOutput } from './cli-review-step.mjs'
 import { runEngine } from './engine-harness.mjs'
 
 const FILE = '/run/host-step.out'
+/** A step whose strings end in a comma, hold `,"` and characters of every width — 🦀 is two UTF-16 units. */
+const STEP = JSON.stringify({ run: '/run', note: 'a, "b",', label: 'é — 🦀 ,', done: false, tasks: [] })
 
-/** A page as the binary prints it. @param {string[]} lines @param {number} total @param {number} from */
-const framed = (lines, total, from) => `craft-out ${FILE} ${String(total)}\n${lines.map(l => `${l}\n`).join('')}craft-page ${String(from + lines.length - 1)}\n`
+/** The page of `text` from `from`, `count` units long, as the binary prints it. @param {string} text @param {number} from @param {number} count @param {string} [file] */
+const page = (text, from, count, file = FILE) =>
+  `craft-out ${file} ${String(text.length)} ${String(from)} ${String(count)}\n${text.slice(from, from + count)}\ncraft-page ${String(from + count)}\n`
 /** A service answer carrying `stdout`. @param {string} stdout */
 const ran = stdout => ({ exitCode: 0, stdout, stderr: '' })
-
 /** The command output of a read answer, '' when there is none. @param {unknown} got */
 const stdoutOf = got => {
   const out = commandOutput(got)
   return 'stdout' in out ? out.stdout : ''
 }
+/** The error a read answer carries, '' when it has output. @param {unknown} got */
+const errorOf = got => {
+  const out = commandOutput(got)
+  return 'error' in out ? out.error : ''
+}
+/** An `ask` that answers each offset with the page of `text` from it, `size` units long. @param {string} text @param {number} size @param {number[]} asked */
+const pager = (text, size, asked) => async (/** @type {string} */ file, /** @type {number} */ from) => {
+  asked.push(from)
+  assert.equal(file, FILE)
+  return ran(page(text, from, Math.min(size, text.length - from)))
+}
 
-const LINES = ['{"run":"/run",', '"done":false,', '"tasks":[]}']
-
-test('a page is read only with its frame and the count of lines it names', () => {
-  assert.deepEqual(pageOf(framed(LINES.slice(1), 3, 2), 2), { file: FILE, total: 3, last: 3, lines: LINES.slice(1) })
-  assert.equal(pageOf(framed(LINES, 3, 1).replace(/craft-page 3\n$/, ''), 1), null, 'cut before its last line')
-  assert.equal(pageOf(framed(LINES, 3, 1).replace('"done":false,\n', ''), 1), null, 'a line dropped inside')
-  assert.equal(pageOf(framed(LINES, 3, 1).replace(FILE, 'host-step.out'), 1), null, 'a file that is no absolute path')
+test('a page is read only whole: its frame, its offset and every count holding', () => {
+  assert.deepEqual(pageOf(page(STEP, 5, 7), 5), { file: FILE, total: STEP.length, from: 5, body: STEP.slice(5, 12), end: 12 })
+  assert.equal(pageOf(page(STEP, 5, 7), 4), null, 'another offset than the one asked')
+  assert.equal(pageOf(page(STEP, 0, 7).replace(/craft-page 7\n$/, ''), 0), null, 'cut before its last line')
+  assert.equal(pageOf(page(STEP, 0, 7).replace(STEP.slice(0, 7), STEP.slice(0, 6)), 0), null, 'a character dropped')
+  assert.equal(pageOf(page(STEP, 0, 7).replace('craft-page 7', 'craft-page 8'), 0), null, 'an end that is not from + count')
+  assert.equal(pageOf(page(STEP, 0, 7, 'host-step.out'), 0), null, 'a file that is no absolute path')
+  assert.equal(pageOf(`${page(STEP, 0, 7)}junk\n`, 0), null, 'a line after its closing line')
 })
 
 test('an answer that is not paged comes back as it is', async () => {
+  /** @type {number[]} */
   const asked = []
   for (const got of [ran('{"run":"/r"}'), { exitCode: 1, stdout: '', stderr: 'craft: no run' }, null, { limit: 'x' }]) {
-    assert.equal(await readPaged(got, async () => asked.push(1)), got)
+    assert.equal(await readPaged(got, pager(STEP, 4, asked)), got)
   }
   assert.equal(asked.length, 0)
 })
 
-test('the pages join into the step, each asked from the line after the last', async () => {
+test('the pages join with no separator into the step, commas, quotes and wide characters across their edges', async () => {
   /** @type {number[]} */
   const asked = []
-  const got = await readPaged({ ...ran(framed(LINES.slice(0, 1), 3, 1)), exitCode: 0 }, async (file, from) => {
-    asked.push(from)
-    assert.equal(file, FILE)
-    return ran(framed(LINES.slice(from - 1, from), 3, from))
-  })
-  assert.deepEqual(asked, [2, 3])
-  assert.deepEqual(JSON.parse(stdoutOf(got)), { run: '/run', done: false, tasks: [] })
+  const got = await readPaged(ran(page(STEP, 0, 9)), pager(STEP, 9, asked))
+  assert.equal(stdoutOf(got), STEP)
+  assert.deepEqual(JSON.parse(stdoutOf(got)), JSON.parse(STEP))
+  assert.deepEqual(
+    asked,
+    Array.from({ length: Math.ceil(STEP.length / 9) - 1 }, (_, i) => (i + 1) * 9),
+  )
 })
 
 test('a page cut once is asked again; cut twice, the step is said cut, never parsed', async () => {
   let n = 0
-  const once = await readPaged(ran(framed(LINES.slice(0, 2), 3, 1)), async () =>
-    n++ === 0 ? ran('craft-out /run/host-step.out 3\n"tas') : ran(framed(LINES.slice(2), 3, 3)),
+  const once = await readPaged(ran(page(STEP, 0, 20)), async (_file, from) =>
+    n++ === 0 ? ran(`craft-out ${FILE} ${String(STEP.length)} ${String(from)} 30\n${STEP.slice(from, from + 12)}`) : ran(page(STEP, from, STEP.length - from)),
   )
   assert.equal(n, 2)
-  assert.deepEqual(JSON.parse(stdoutOf(once)), { run: '/run', done: false, tasks: [] })
-  const twice = await readPaged(ran(framed(LINES.slice(0, 2), 3, 1)), async () => ran('craft-out /run/host-step.out 3\n'))
-  assert.deepEqual(commandOutput(twice), { error: `the command's output could not be read whole: its page from line 3 of ${FILE} came back cut twice` })
+  assert.equal(stdoutOf(once), STEP)
+  const twice = await readPaged(ran(page(STEP, 0, 20)), async () => ran(`craft-out ${FILE} ${String(STEP.length)}`))
+  assert.equal(errorOf(twice), `the command's output could not be read whole: its page from offset 20 of ${FILE} came back cut twice`)
+})
+
+test('a page of another step — another file or length — is no page of this one', async () => {
+  const other = `${STEP}x`
+  for (const ask of [async () => ran(page(STEP, 20, STEP.length - 20, '/elsewhere/host-step.out')), async () => ran(page(other, 20, other.length - 20))]) {
+    assert.match(errorOf(await readPaged(ran(page(STEP, 0, 20)), ask)), /came back cut twice$/)
+  }
 })
 
 test('a first page cut is read again from the file it names', async () => {
   /** @type {number[]} */
   const asked = []
-  const got = await readPaged(ran(`craft-out ${FILE} 3\n{"run":"/ru`), async (_file, from) => {
-    asked.push(from)
-    return ran(framed(LINES.slice(from - 1), 3, from))
+  const got = await readPaged(ran(`craft-out ${FILE} ${String(STEP.length)} 0 9\n{"ru`), pager(STEP, 40, asked))
+  assert.equal(asked[0], 0)
+  assert.equal(stdoutOf(got), STEP)
+})
+
+test('a frame naming no absolute file, or a page that moves nothing, is said cut', async () => {
+  assert.equal(
+    errorOf(await readPaged(ran('craft-out host-step.out 3 0 3\n{}x\ncraft-page 3\n'), async () => ran(''))),
+    "the command's output could not be read whole: its first page named no file",
+  )
+  let n = 0
+  const empty = await readPaged(ran(page(STEP, 0, 9)), async (_file, from) => {
+    n++
+    return ran(page(STEP, from, 0))
   })
-  assert.deepEqual(asked, [1])
-  assert.deepEqual(JSON.parse(stdoutOf(got)), { run: '/run', done: false, tasks: [] })
+  assert.equal(n, 2, 'an empty page is asked once more, then given up')
+  assert.match(errorOf(empty), /its page from offset 9 of \/run\/host-step\.out came back cut twice$/)
 })
 
 test('a step past the page bound is given up, not read for ever', async () => {
-  const total = MAX_PAGES + 5
-  let n = 0
-  const got = await readPaged(ran(framed(['{'], total, 1)), async (_file, from) => {
-    n++
-    return ran(framed([`"k${String(from)}":1,`], total, from))
+  const long = 'y'.repeat(MAX_PAGES + 5)
+  /** @type {number[]} */
+  const asked = []
+  const got = await readPaged(ran(page(long, 0, 1)), async (_file, from) => {
+    asked.push(from)
+    return ran(page(long, from, 1))
   })
-  assert.equal(n, MAX_PAGES - 1)
-  assert.deepEqual(commandOutput(got), { error: `the command's output could not be read whole: it ran past ${String(MAX_PAGES)} pages` })
+  assert.equal(asked.length, MAX_PAGES - 1)
+  assert.equal(errorOf(got), `the command's output could not be read whole: it ran past ${String(MAX_PAGES)} pages`)
+})
+
+test('a page step stopped by the usage limit or refused by the harness is passed on as it is', async () => {
+  const limit = { limit: "You've hit your limit" }
+  assert.equal(await readPaged(ran(page(STEP, 0, 9)), async () => limit), limit)
+  const refused = {
+    exitCode: 1,
+    stdout: '',
+    stderr:
+      'Permission for this action was denied by the Claude Code auto mode classifier. The command was not run. Denied command: /opt/craft review page (timeout 120000 ms).',
+  }
+  assert.equal(await readPaged(ran(page(STEP, 0, 9)), async () => refused), refused)
 })
 
 let RUN = ''
@@ -92,40 +139,39 @@ afterEach(() => {
   rmSync(RUN, { recursive: true, force: true })
 })
 
-test('the driver reads a paged submit through `craft review page` and goes on with the step', async () => {
+test('the driver reads a paged start and a paged submit through `craft review page` and goes on with each step', async () => {
   const file = `${RUN}/host-step.out`
-  const done = [`{"run":"${RUN}",`, '"done":true,', `"report":"${RUN}/report.md",`, '"verdict":"Block"}']
-  const page = (/** @type {number} */ from, /** @type {number} */ to) =>
-    ran(`craft-out ${file} 4\n${done.slice(from - 1, to).join('\n')}\ncraft-page ${String(to)}\n`)
+  const task = { id: 'l', label: 'lens:a', model: 'opus', promptFile: `${RUN}/p.md`, schemaFile: `${RUN}/s.json`, answerFile: `${RUN}/a.json` }
+  const start = JSON.stringify({ run: RUN, done: false, tasks: [task] })
+  const done = JSON.stringify({ run: RUN, done: true, report: `${RUN}/report.md`, verdict: 'Block' })
+  const half = (/** @type {string} */ text, /** @type {boolean} */ second) => {
+    const at = Math.floor(text.length / 2)
+    return ran(second ? page(text, at, text.length - at, file) : page(text, 0, at, file))
+  }
   const run = await runEngine('review', {
     args: { craftBin: '/opt/craft', craftRoot: '/plugin' },
     script: {
       'step:root': ran('root=/plugin\n'),
-      'step:start': ran(
-        JSON.stringify({
-          run: RUN,
-          done: false,
-          tasks: [{ id: 'l', label: 'lens:a', model: 'opus', promptFile: `${RUN}/p.md`, schemaFile: `${RUN}/s.json`, answerFile: `${RUN}/a.json` }],
-        }),
-      ),
+      'step:start': half(start, false),
+      'step:start:page': half(start, true),
       lens: 'done',
-      'step:submit:1': page(1, 2),
-      'step:submit:1:page': page(3, 4),
+      'step:submit:1': half(done, false),
+      'step:submit:1:page': half(done, true),
     },
   })
+  assert.deepEqual(
+    run.calls.map(c => c.label),
+    ['step:root', 'step:start', 'step:start:page', 'lens:a', 'step:submit:1', 'step:submit:1:page'],
+  )
   const pageCall = run.calls.find(c => c.label === 'step:submit:1:page')
-  assert.match(String(pageCall?.prompt), new RegExp(`^/opt/craft review page --file '${file}' --from 3$`, 'm'))
+  assert.match(String(pageCall?.prompt), new RegExp(`^/opt/craft review page --file '${file}' --from ${String(Math.floor(done.length / 2))}$`, 'm'))
   assert.match(run.report, /^## Verdict\n\n⛔ Block/)
 })
 
-test('a frame naming no absolute file, or an empty page, is said cut, not read as an empty step', async () => {
-  const unnamed = await readPaged(ran('craft-out host-step.out 3\n{"run":"/run",\ncraft-page 1\n'), async () => ran(''))
-  assert.deepEqual(commandOutput(unnamed), { error: "the command's output could not be read whole: its first page named no file" })
-  let n = 0
-  const empty = await readPaged(ran(framed(LINES.slice(0, 1), 3, 1)), async () => {
-    n++
-    return ran(`craft-out ${FILE} 3\ncraft-page 1\n`)
-  })
-  assert.equal(n, 2, 'an empty page is asked once more, then given up')
-  assert.deepEqual(commandOutput(empty), { error: `the command's output could not be read whole: its page from line 2 of ${FILE} came back cut twice` })
+test('pages that run past the length the first page named are said cut', async () => {
+  const total = STEP.length
+  const got = await readPaged(ran(page(STEP, 0, total - 2)), async (_file, from) =>
+    ran(`craft-out ${FILE} ${String(total)} ${String(from)} 5\nabcde\ncraft-page ${String(from + 5)}\n`),
+  )
+  assert.equal(errorOf(got), `the command's output could not be read whole: it came to ${String(total + 3)} of ${String(total)} characters`)
 })

@@ -70,7 +70,10 @@ export function commandOutput(got) {
  * Why an answer carries no command output: a paged step whose pages could not all be read
  * (integrations/shared/cli-review-paged.mjs), or none at all. @param {unknown} got @returns {string}
  */
-const unread = got => (isObject(got) && typeof got['cut'] === 'string' ? `the command's output could not be read whole: ${got['cut']}` : NO_OUTPUT)
+const unread = got => (isObject(got) && typeof got['cut'] === 'string' ? `${UNREAD_WHOLE}: ${got['cut']}` : NO_OUTPUT)
+
+/** Why a paged step's answer carries no output: its pages could not all be read (integrations/shared/cli-review-paged.mjs). */
+export const UNREAD_WHOLE = "the command's output could not be read whole"
 
 /** The exit of a `craft` command that refused an argument before any work, as clap's own usage errors exit (main.rs). */
 const ARGUMENT_REFUSED = 2

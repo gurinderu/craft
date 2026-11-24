@@ -537,6 +537,23 @@ test('a finished run whose step and status are too large to copy files no INCOMP
   assert.doesNotMatch(run.report, /did not finish the run|None reported/)
 })
 
+test('a paged status whose pages could not all be read falls back to the brief status, as a status too large to copy does', async () => {
+  const whole = statusSays({ record: 'filed' }, true).stdout
+  const page = `craft-out /tmp/run-x/host-step.out ${String(whole.length)} 0 10\n${whole.slice(0, 10)}\ncraft-page 10\n`
+  const run = await lostSubmit({
+    'step:status': { exitCode: 0, stderr: '', stdout: page },
+    'step:status:page': { exitCode: 0, stderr: '', stdout: 'craft-out /tmp/run-x/host-step.out' },
+    'step:brief': briefSays('filed'),
+  })
+  assert.deepEqual(
+    run.calls.map(c => c.label),
+    ['step:locate', 'step:start', 'lens:a', 'step:submit:1', 'step:status', 'step:status:page', 'step:status:page', 'step:brief'],
+    'the page asked twice, then the brief status; no INCOMPLETE record',
+  )
+  assert.equal(verdictLine(run.report), '⛔ Block — 1 High')
+  assert.doesNotMatch(run.report, /did not finish the run/)
+})
+
 test('a finished run read only briefly, whose record did not land, has it filed again and confirmed by the brief status', async () => {
   let asked = 0
   const run = await lostSubmit({

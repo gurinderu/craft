@@ -116,7 +116,7 @@ fn a_confined_lens_gets_its_crates_lines_and_hands_the_rest_to_the_seam() {
     assert!(!got.contains("crates/c/src/y.rs"), "{got}");
     assert!(
         got.contains(
-            "1 more line(s) name these symbols in other crates: the seam pass checks them, not you."
+            "1 more line(s) name these symbols in other crates: not yours — the seam pass starts from them, to its own budget."
         ),
         "{got}"
     );
