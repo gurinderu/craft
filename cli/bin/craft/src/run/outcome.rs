@@ -1,6 +1,7 @@
 //! What came of one task's process, by the one rule both hosts follow (realm @nick/craft, node
 //! #453): an answer is written to the task's answer file; past the deadline the task is abandoned;
-//! a failure that says the account's usage limit, or that the host is not logged in, stops the run;
+//! a failure that says the account's usage limit, that the host is not logged in, or — in a delegated
+//! run — that the process running the tasks stopped answering (`AgentError::HostGone`), stops the run;
 //! any other failure, and a process that gave no answer, is left unanswered — the binary hands it
 //! out again.
 
@@ -20,6 +21,8 @@ pub(crate) enum Outcome {
     Limit(String),
     /// Why the host is not logged in, and how to log in.
     Login(String),
+    /// Why the process a delegated run hands its tasks to stopped answering (delegate.rs).
+    Gone(String),
     /// `said`: the last line the process wrote on stderr, when it wrote one.
     Unanswered {
         why: String,
@@ -40,6 +43,7 @@ impl Outcome {
             Self::Abandoned => Some("abandoned — past its deadline".into()),
             Self::Limit(t) => Some(format!("limit — {t}")),
             Self::Login(t) => Some(format!("login — {t}")),
+            Self::Gone(t) => Some(format!("stopped — {t}")),
             Self::Unanswered { why, .. } => Some(format!("unanswered — {why}")),
             Self::Blocked(why) => Some(blocked::failure(why)),
         }
@@ -70,13 +74,15 @@ pub(crate) fn stops(host: &Host, e: &AgentError) -> bool {
             let said = format!("{stderr}\n{stdout}");
             usage_limit_text(&said).is_some() || host.not_logged_in(&said).is_some()
         }
+        // A delegated task's failure, in the words the delegating process gave (delegate.rs).
+        AgentError::Failed { subtype } => usage_limit_text(subtype).is_some(),
+        AgentError::HostGone(_) => true,
         AgentError::Spawn { .. }
         | AgentError::Io(_)
         | AgentError::TimedOut(_)
         | AgentError::Exit { .. }
         | AgentError::Unreadable(_)
         | AgentError::NotAnObject
-        | AgentError::Failed { .. }
         | AgentError::NoStructuredOutput
         | AgentError::NotYet { .. }
         | AgentError::NoAnswer { .. }
@@ -109,12 +115,17 @@ pub(crate) fn outcome_of(
     match reply {
         Ok(r) => write_answer(task, &r),
         Err(AgentError::NotStarted) => Outcome::NotStarted,
+        // No later task can answer: the run stops as on a missing login, to be resumed (round.rs).
+        Err(e @ AgentError::HostGone(_)) => Outcome::Gone(e.to_string()),
         Err(AgentError::TimedOut(_)) => Outcome::Abandoned,
         Err(AgentError::Quit {
             code,
             stderr,
             stdout,
         }) => quit(host, code, &stderr, &stdout),
+        Err(AgentError::Failed { subtype }) if let Some(limit) = usage_limit_text(&subtype) => {
+            Outcome::Limit(limit)
+        }
         Err(AgentError::NoAnswer { stderr, stdout }) => Outcome::Unanswered {
             why: format!("{} gave no answer: {}", host.name(), tail(&stderr, &stdout)),
             said: last_line(&stderr),

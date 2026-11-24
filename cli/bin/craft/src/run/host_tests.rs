@@ -14,6 +14,7 @@ fn host(kind: HostKind) -> Host {
         command: PathBuf::from("x"),
         agents: None,
         archived: true,
+        delegate: None,
     }
 }
 

@@ -8,6 +8,9 @@ reports/mutation/
 stryker-setup-*.js
 .vitest/
 cli/target/
+# cargo-mutants output: kept in the session scratch, never committed
+mutants.out/
+mutants.out.old/
 .worktrees/
 .claude/agents/reader.md
 .claude/agents/recaller.md
