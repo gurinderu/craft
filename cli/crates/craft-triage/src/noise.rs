@@ -95,6 +95,21 @@ pub fn classified_verdict(v: Row, pr_base: &str) -> Row {
     }
 }
 
+/// The opening of the reason a class-1 claim nothing showed is handed to a human with.
+const NOT_SHOWN: &str = "claimed not this PR's, but ";
+
+/// Whether the triage settled `v`'s verdict by its noise class itself (node #303): class 5 always,
+/// its verdict the class's; class 1 only where it turned the validator's verdict — a deferral with
+/// an issue, or a claim nothing showed handed to a human — never a verdict it left alone.
+#[must_use]
+pub fn settled_by_class(v: &Row) -> bool {
+    match noise_class_of(v) {
+        5 => true,
+        1 => v.text("action") == "issue" || v.text("reason").starts_with(NOT_SHOWN),
+        _ => false,
+    }
+}
+
 /// A class-1 verdict settled: a real problem shown at `pr_base` is a deferral with an issue, one
 /// not shown there a human's; a `reject` or `needs-decision` stands.
 #[must_use]
@@ -108,14 +123,12 @@ pub fn not_this_prs(v: Row, pr_base: &str) -> Row {
             .with("reason", Js::Str(reason))
     };
     if pr_base.is_empty() {
-        let why =
-            "claimed not this PR's, but no prBase (the PR's fork point) was given to check it at";
-        return human(v, why.into());
+        let why = format!("{NOT_SHOWN}no prBase (the PR's fork point) was given to check it at");
+        return human(v, why);
     }
     if !opened_at(&v.text("premise_checked"), pr_base) {
-        let why = format!(
-            "claimed not this PR's, but nothing at the PR's fork point {pr_base} was opened to show it"
-        );
+        let why =
+            format!("{NOT_SHOWN}nothing at the PR's fork point {pr_base} was opened to show it");
         return human(v, why);
     }
     v.with("verdict", Js::str("defer"))

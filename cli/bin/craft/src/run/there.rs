@@ -11,12 +11,13 @@ use super::HostKind;
 use super::host::Host;
 use super::opencode;
 
-/// `host` as it runs in `repo`: opencode's agents listed there; another host as it is.
+/// `host` as it runs in `repo`: opencode's agents listed there; another host as it is, and so is
+/// opencode whose tasks are delegated, which runs no `opencode` of its own.
 ///
 /// # Errors
 /// Why opencode cannot run the review's tasks in `repo`, naming the worktree.
 pub(crate) fn host_in(host: &Host, repo: &Path, log: &dyn Fn(&str)) -> Result<Host, String> {
-    if host.kind != HostKind::OpenCode {
+    if host.kind != HostKind::OpenCode || host.delegate.is_some() {
         return Ok(host.clone());
     }
     let ready = opencode::preflight(&host.command, repo, log).map_err(|why| {
@@ -57,6 +58,7 @@ esac
             command,
             agents: Some(vec!["build".into(), "review-task".into()]),
             archived: true,
+            delegate: None,
         }
     }
 
@@ -84,6 +86,20 @@ esac
     }
 
     #[test]
+    fn a_delegated_opencode_runs_there_as_it_is_and_no_opencode_is_asked() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = Host {
+            command: "/no/opencode".into(),
+            agents: Some(vec!["review-task".into()]),
+            delegate: Some(super::super::delegate::Delegate::new(|_| true, |_| {})),
+            ..project_scoped(dir.path())
+        };
+        let there = host_in(&host, &dir.path().join("worktree"), &|_| {}).unwrap();
+        assert_eq!(there.agents, host.agents);
+        assert!(there.delegate.is_some());
+    }
+
+    #[test]
     fn another_host_runs_there_as_it_is() {
         let host = Host {
             kind: HostKind::Pi,
@@ -92,6 +108,7 @@ esac
             command: "/no/pi".into(),
             agents: None,
             archived: false,
+            delegate: None,
         };
         let there = host_in(&host, Path::new("/nowhere"), &|_| {}).unwrap();
         assert_eq!(there.command, host.command);

@@ -1,8 +1,8 @@
 // The 2.x side of the host (host.ts), on the surface opencode-v2.d.ts pins: `ctx.session` runs child sessions,
 // `ctx.tool` registers the tools with a JSON Schema input (no Effect, no zod: 2.2.7 accepts plain JSON Schema),
 // and the session `prompt` hook plus `ctx.event` feed the work hook.
-import { stringArgs, type Host, type ToolSpec, type WorkHook } from './host.ts'
-import type { V2Context, V2Event, V2Message, V2ToolDefinition } from './opencode-v2.js'
+import { stringArgs, type ChildRequest, type Host, type ModelRef, type ToolSpec, type WorkHook } from './host.ts'
+import type { V2Context, V2Event, V2Message, V2ModelRef, V2ToolDefinition } from './opencode-v2.js'
 import { shellIn } from './shell.mjs'
 import { progressChannel, withProgress, type Say } from './progress-rpc.ts'
 
@@ -14,16 +14,41 @@ const MAX_POLLS = 3 * 60 * 60 * 2
 
 const pause = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
 
-// The text of the session's last message, when it is a finished assistant turn; null while it is not.
-export function finishedReply(messages: readonly V2Message[]): string | null {
-  const last = messages.at(-1)
-  if (!last || last.type !== 'assistant') return null
-  if (last.finish === undefined && last.time?.completed === undefined) return null
-  return (last.content ?? [])
+/**
+ * A child session whose agent loop did not succeed: the runtime's error by its type and message when it failed
+ * (realm @nick/craft, node #626), else the outcome it ended with (`interrupted`, or one this reader does not know).
+ */
+export class ChildSessionFailed extends Error {
+  constructor(
+    readonly type: string,
+    readonly detail: string,
+  ) {
+    super(`the child session failed (${type})${detail ? `: ${detail}` : ''}`)
+    this.name = 'ChildSessionFailed'
+  }
+}
+
+const textOf = (message: V2Message | undefined) =>
+  (message?.content ?? [])
     .filter(c => c.type === 'text' && typeof c.text === 'string')
     .map(c => c.text)
     .join('\n')
     .trim()
+
+// The outcome an idle entry has when the loop succeeded; 2.2.7's are `succeeded`, `failed` and `interrupted` (read from
+// its session schema, realm @nick/craft, node #627).
+const SUCCEEDED = 'succeeded'
+
+// The session's reply once its agent loop is idle: the text of the last assistant message before the `idle` entry that
+// ends the context (observed on 2.2.7, realm @nick/craft, node #626), "" when it said nothing; null while that entry is
+// not there, the loop still running. An assistant message alone is no reply: one that ends a step mid-loop looks finished
+// too. Only a succeeded loop has a reply: a failed one throws its error, any other outcome throws that outcome.
+export function finishedReply(messages: readonly V2Message[]): string | null {
+  const last = messages.at(-1)
+  if (last?.type !== 'idle') return null
+  if (last.outcome === 'failed') throw new ChildSessionFailed(last.error?.type || 'unknown', last.error?.message ?? '')
+  if (last.outcome !== SUCCEEDED) throw new ChildSessionFailed(`outcome ${last.outcome ?? 'none'}`, 'the agent loop ended without succeeding')
+  return textOf([...messages].reverse().find(m => m.type === 'assistant'))
 }
 
 const STOPPED = 'the child session was stopped at its deadline'
@@ -40,18 +65,50 @@ function untilAbort<T>(work: Promise<T>, signal: AbortSignal | undefined): Promi
   return Promise.race([work, aborted]).finally(() => signal.removeEventListener('abort', onAbort))
 }
 
-// `wait` may resolve before the admitted prompt's loop has started, so idle is read as "look again", and
-// only a finished assistant message is an answer (UNOBSERVED with a real model: opencode-v2.d.ts). An abort (the
-// caller's deadline) ends the polling, even mid-`wait`: the session itself is interrupted by `stopOnAbort`.
-async function awaitReply(ctx: V2Context, sessionID: string, pollMs: number, signal?: AbortSignal): Promise<string> {
-  for (let i = 0; i < MAX_POLLS; i++) {
+/** How a child is polled and stopped: tests shorten the bounds and hear the log. */
+export interface Polling {
+  pollMs: number
+  maxPolls: number
+  // How long a stop is waited for before it is said unconfirmed.
+  interruptMs: number
+  log: (line: string) => void
+}
+
+const POLLING: Polling = { pollMs: POLL_MS, maxPolls: MAX_POLLS, interruptMs: 10_000, log: line => console.error(line) }
+
+/**
+ * The session's agent loop stopped, waited for at most `interruptMs`: a stop that failed or was not confirmed in time is
+ * logged, never thrown — the child may then still be running.
+ */
+async function interrupted(ctx: V2Context, sessionID: string, p: Polling): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const late = new Promise<'late'>(resolve => {
+    timer = setTimeout(() => resolve('late'), p.interruptMs)
+  })
+  try {
+    const got = await Promise.race([ctx.session.interrupt({ sessionID }).then(() => 'done' as const), late])
+    if (got === 'late') p.log(`craft: child session ${sessionID} did not confirm its stop within ${String(p.interruptMs)} ms; it may still be running`)
+  } catch (e) {
+    p.log(`craft: child session ${sessionID} could not be stopped (${e instanceof Error ? e.message : String(e)}); it may still be running`)
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+// `wait` resolves at once on 2.2.7 (realm @nick/craft, node #626), so the context is read until its `idle` entry says the
+// loop ended; between reads the loop pauses `pollMs`. An abort (the caller's deadline) ends the polling, even mid-`wait`:
+// the session itself is interrupted by `stopOnAbort`. Polling given up after `maxPolls` stops the session first, so no
+// loop outlives its reader.
+async function awaitReply(ctx: V2Context, sessionID: string, p: Polling, signal?: AbortSignal): Promise<string> {
+  for (let i = 0; i < p.maxPolls; i++) {
     if (signal?.aborted) throw new Error(STOPPED)
     await untilAbort(ctx.session.wait({ sessionID }), signal)
     if (signal?.aborted) throw new Error(STOPPED)
     const reply = finishedReply(await ctx.session.context({ sessionID }))
     if (reply !== null) return reply
-    await pause(pollMs)
+    await pause(p.pollMs)
   }
+  await interrupted(ctx, sessionID, p)
   return ''
 }
 
@@ -65,32 +122,49 @@ function stopOnAbort(ctx: V2Context, sessionID: string, signal: AbortSignal | un
   return () => signal?.removeEventListener('abort', stop)
 }
 
-export function v2Host(ctx: V2Context, pollMs = POLL_MS): Host {
+/** A model as 2.x names it, its variant kept. */
+const v2Model = (m: ModelRef): V2ModelRef => ({ providerID: m.providerID, id: m.modelID, ...(m.variant ? { variant: m.variant } : {}) })
+
+/** What `session.create` is given for a child: only what the request names. */
+const createInput = (req: ChildRequest) => ({
+  title: req.title,
+  ...(req.agent ? { agent: req.agent } : {}),
+  ...(req.model ? { model: v2Model(req.model) } : {}),
+  ...(req.parentID ? { parentID: req.parentID } : {}),
+})
+
+export function v2Host(ctx: V2Context, pollMs = POLL_MS, polling: Partial<Omit<Polling, 'pollMs'>> = {}): Host {
+  const p: Polling = { ...POLLING, ...polling, pollMs }
   const directory = ctx.location.directory
   return {
     directory,
     worktree: ctx.location.project?.directory ?? directory,
     sh: shellIn(directory),
     async runChild(req) {
-      const session = await ctx.session.create({
-        title: req.title,
-        ...(req.agent ? { agent: req.agent } : {}),
-        ...(req.model ? { model: { providerID: req.model.providerID, id: req.model.modelID } } : {}),
-        ...(req.parentID ? { parentID: req.parentID } : {}),
-      })
+      // A task already given up is never started; one given up while its session was made is never prompted.
+      if (req.signal?.aborted) throw new Error(STOPPED)
+      const session = await ctx.session.create(createInput(req))
       req.onSession?.(session.id)
+      if (req.signal?.aborted) throw new Error(STOPPED)
       const unlisten = stopOnAbort(ctx, session.id, req.signal)
       try {
         await ctx.session.prompt({ sessionID: session.id, text: req.prompt })
-        return await awaitReply(ctx, session.id, pollMs, req.signal)
+        return await awaitReply(ctx, session.id, p, req.signal)
+      } catch (e) {
+        // A loop that ended failed needs no stop; any other break stops the child before the caller may retry it.
+        if (!(e instanceof ChildSessionFailed)) await interrupted(ctx, session.id, p)
+        throw e
       } finally {
         unlisten()
       }
     },
+    async agents() {
+      return (await ctx.agent.list()).data.map(a => a.id)
+    },
     // The session's own model, set at creation or by a switch (observed on opencode 2.2.7); none when it has none.
     async callerModel(sessionID) {
       const model = (await ctx.session.get({ sessionID })).model
-      return model ? { providerID: model.providerID, modelID: model.id } : undefined
+      return model ? { providerID: model.providerID, modelID: model.id, ...(model.variant ? { variant: model.variant } : {}) } : undefined
     },
   }
 }

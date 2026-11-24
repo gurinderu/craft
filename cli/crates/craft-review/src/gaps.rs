@@ -28,6 +28,19 @@ pub fn critic_dead(profile: &str, lens: &str) -> String {
     )
 }
 
+/// A changed Markdown file, `named`, the runbook signal could not read, and why: whether its change
+/// touches a step is unknown, so the runbook lens may have missed it (realm @nick/craft, node #620).
+#[must_use]
+pub fn runbook_unread(named: &str, why: &str) -> String {
+    entry(
+        "runbook signal could not read a changed Markdown file",
+        &format!(
+            "{named} could not be read ({why}): whether its change touches a runbook step is \
+             unknown, and it was NOT reviewed by the runbook lens"
+        ),
+    )
+}
+
 /// Why a critic follow-up lens is named as not having answered.
 pub(crate) const CRITIC_DEAD: &str =
     "dispatched and returned no findings (died, or answered off-schema)";

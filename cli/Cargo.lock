@@ -324,7 +324,7 @@ dependencies = [
 
 [[package]]
 name = "craft"
-version = "0.58.0"
+version = "0.59.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -344,7 +344,7 @@ dependencies = [
 
 [[package]]
 name = "craft-agent"
-version = "0.58.0"
+version = "0.59.0"
 dependencies = [
  "nix 0.31.3",
  "serde",
@@ -356,7 +356,7 @@ dependencies = [
 
 [[package]]
 name = "craft-review"
-version = "0.58.0"
+version = "0.59.0"
 dependencies = [
  "craft-step",
  "craft-store",
@@ -377,7 +377,7 @@ dependencies = [
 
 [[package]]
 name = "craft-step"
-version = "0.58.0"
+version = "0.59.0"
 dependencies = [
  "jsonschema",
  "serde",
@@ -389,7 +389,7 @@ dependencies = [
 
 [[package]]
 name = "craft-store"
-version = "0.58.0"
+version = "0.59.0"
 dependencies = [
  "getrandom 0.3.4",
  "nix 0.31.3",
@@ -403,7 +403,7 @@ dependencies = [
 
 [[package]]
 name = "craft-triage"
-version = "0.58.0"
+version = "0.59.0"
 dependencies = [
  "craft-review",
  "craft-store",
@@ -412,7 +412,7 @@ dependencies = [
 
 [[package]]
 name = "craft-tui"
-version = "0.58.0"
+version = "0.59.0"
 dependencies = [
  "crossterm",
  "ratatui",

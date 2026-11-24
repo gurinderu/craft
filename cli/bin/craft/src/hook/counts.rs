@@ -32,10 +32,15 @@ pub fn counts(line: &Line, detail: Option<&Detail>, here: &Here, git: &dyn Git) 
 
 /// Whether the run's lenses ran: a lens round filed, or none needed — the coverage exit for a
 /// change of documentation, assets, lockfiles or generated output alone
-/// ([`coverage::NOTHING_TO_REVIEW`], verbatim), which runs no lens. A red gate's bare Block files
-/// no round and stays out.
+/// ([`coverage::NOTHING_TO_REVIEW`], verbatim), which runs no lens, also when a coverage gap holds it
+/// at Warning ([`coverage::NOTHING_TO_REVIEW_HELD`]). A red gate's bare Block files no round and
+/// stays out.
 fn lenses_ran(verdict: Option<&str>, rounds: Option<&[Value]>) -> bool {
-    rounds.is_some_and(|r| !r.is_empty() || verdict == Some(coverage::NOTHING_TO_REVIEW))
+    let nothing = [
+        coverage::NOTHING_TO_REVIEW,
+        coverage::NOTHING_TO_REVIEW_HELD,
+    ];
+    rounds.is_some_and(|r| !r.is_empty() || verdict.is_some_and(|v| nothing.contains(&v)))
 }
 
 /// A verdict that claims its whole scope: not empty, and with neither of the markers the review

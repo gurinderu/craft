@@ -4,8 +4,8 @@
 // (nix opencode2-2.2.7: the plugin loader's `{id, effect} | {id, setup}` check and the promise-side context
 // it builds) and observed by a probe plugin loaded in `opencode serve` 2.2.7: the context's keys, a session
 // created (nested by `parentID`, with a model) and read back, an admitted prompt, the `prompt` hook rewriting its text, a JSON Schema tool added
-// and executed, and `session.created` events. What no probe could reach without a model — a child session's
-// reply after a real agent loop — is marked UNOBSERVED. Re-read this against the binary on each 2.x bump.
+// and executed, and `session.created` events; a child session's reply and failure after a real agent loop were observed later (realm
+// @nick/craft, node #626). Re-read this against the binary on each 2.x bump.
 
 import type { V2AgentDraft, V2CommandDefinition, V2Skill } from './opencode-v2-editors.js'
 
@@ -42,12 +42,17 @@ export interface V2Session {
   title?: string
 }
 
-// UNOBSERVED in a real loop: the message union as 2.2.7's schema spells it; only `assistant` is read.
+// A session's context entries as 2.2.7 returns them (observed, realm @nick/craft, node #626): the messages, then — once
+// the agent loop is done — an `idle` entry whose `outcome` is `succeeded`, `failed` (with the runtime's `error` beside
+// it) or `interrupted`, the three its session schema names (read from the 2.2.7 binary, node #627). Only `assistant` and
+// `idle` are read.
 export interface V2Message {
   type: string
   content?: { type: string; text?: string }[]
   finish?: string
   time?: { created: number; completed?: number }
+  outcome?: string
+  error?: { type?: string; message?: string }
 }
 
 export interface V2PromptHookInput {
@@ -99,11 +104,13 @@ export interface V2Context {
     transform(edit: (editor: { add(definition: V2ToolDefinition): void }) => void): Promise<V2Registration>
   }
   session: {
+    // A child (`parentID`) is made where its parent is: the plugin's `create` passes a `location` only to a session with
+    // no parent (read from the 2.2.7 binary, realm @nick/craft, node #627), so no child can be put in another directory.
     create(input: { title?: string; agent?: string; model?: V2ModelRef; parentID?: string }): Promise<V2Session>
     get(input: { sessionID: string }): Promise<V2Session>
     // Admits the input and schedules the agent loop (`resume: false` admits it without running the loop).
     prompt(input: { sessionID: string; text: string; resume?: boolean; delivery?: string }): Promise<unknown>
-    // Experimental in 2.2.7: resolves when the session's agent loop is idle.
+    // Experimental in 2.2.7: documented to resolve when the loop is idle, observed resolving `{}` at once (node #626).
     wait(input: { sessionID: string }): Promise<unknown>
     // Stops the session's agent loop; `{ interrupted: false }` when it was idle (observed).
     interrupt(input: { sessionID: string }): Promise<unknown>

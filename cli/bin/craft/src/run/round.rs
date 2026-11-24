@@ -183,7 +183,8 @@ fn gather(
             Outcome::Limit(text) => {
                 r.limit.get_or_insert_with(|| text.clone());
             }
-            Outcome::Login(why) => {
+            // Both stop the run before the submit, to be resumed (drive.rs).
+            Outcome::Login(why) | Outcome::Gone(why) => {
                 r.login.get_or_insert_with(|| why.clone());
             }
             Outcome::Unanswered { said, .. } => r.errors.extend(said.clone()),

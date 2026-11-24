@@ -2,7 +2,8 @@
 // Two shared pieces:
 //   • `runChildSession` marks the child as the engine's while it runs — craft's hook at the moment of work stays silent
 //     there (work-hook.ts) — and unmarks it when it ends;
-//   • `solo` is the one queue retries go through: opencode's child-session execution bugs (anomalyco/opencode #8528,
+//   • `solo` is the queue the audit's and the triage's fan-out retries go through (the review's delegated tasks retry
+//     alone within the review instead, review-children.ts): opencode's child-session execution bugs (anomalyco/opencode #8528,
 //     sst/opencode #6573) leave a child created but never run, and the mitigation is to try again ALONE. The fan-out
 //     retries its failed jobs one at a time through it.
 import type { ChildRequest, Host } from './host.ts'

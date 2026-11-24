@@ -10,6 +10,7 @@ mod args;
 #[cfg(test)]
 mod blocked_tests;
 mod deadline;
+mod delegate;
 mod drive;
 #[cfg(test)]
 mod drive_tests;
@@ -101,6 +102,17 @@ pub struct RunArgs {
     /// Progress as events on stderr rather than lines: `json`, one object per line.
     #[arg(long, value_enum)]
     pub events: Option<EventFormat>,
+    /// opencode only, with `--events json`: hand each task to the process that runs this command
+    /// as a `task` event and read its reply from stdin, one JSON line `{"key":n,"text":…}` or
+    /// `{"key":n,"error":…}` — the OpenCode 2.x plugin runs each as a child session. No `opencode`
+    /// is run.
+    #[arg(long)]
+    pub delegate: bool,
+    /// With `--delegate`: the agents the delegating OpenCode lists, comma-separated. Without
+    /// `review-task` the review refuses; a task whose own agent is not listed runs on
+    /// `review-task`, said degraded.
+    #[arg(long, requires = "delegate")]
+    pub agents: Option<String>,
 }
 
 fn say(out: &mut dyn Write, text: &str) -> Result<()> {
@@ -119,10 +131,21 @@ fn refused(sink: Sink, why: &str) -> Result<ExitCode> {
 }
 
 /// The host and what it runs with, or why it cannot be used: opencode is asked first which
-/// agents it has.
+/// agents it has — or, with `--delegate`, takes those `--agents` names and runs no opencode.
 fn ready(args: &RunArgs, repo: &Path, sink: Sink) -> Result<(NonZeroUsize, Host, PathBuf), String> {
     let (concurrency, mut host, root) =
         concurrency_of(args).and_then(|c| Ok((c, host_of(args)?, root_of(args)?)))?;
+    if args.delegate {
+        if host.kind != HostKind::OpenCode || !sink.json {
+            return Err("--delegate is opencode's alone, with --events json".into());
+        }
+        host.agents = Some(opencode::delegated(args.agents.as_deref())?);
+        host.delegate = Some(delegate::Delegate::on_stdin(
+            move |e| sink.emitted(&e),
+            move |l| sink.log(l),
+        ));
+        return Ok((concurrency, host, root));
+    }
     if host.kind == HostKind::OpenCode {
         let ready = opencode::preflight(&host.command, repo, &|l| sink.log(l))?;
         (host.agents, host.archived) = (ready.agents, ready.archived);

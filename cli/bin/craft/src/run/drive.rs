@@ -290,6 +290,10 @@ async fn round_of(ctx: &RoundCtx<'_>, tasks: &[Task], round: usize) -> RoundResu
             };
             run_round(pi, tasks, round, ctx).await
         }
+        HostKind::OpenCode if let Some(delegate) = &ctx.host.delegate => {
+            delegate.name(tasks);
+            run_round(delegate.clone(), tasks, round, ctx).await
+        }
         HostKind::OpenCode => {
             let opencode = OpenCode {
                 command,

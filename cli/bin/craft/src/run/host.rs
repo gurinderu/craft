@@ -37,6 +37,9 @@ pub(crate) struct Host {
     pub(crate) agents: Option<Vec<String>>,
     /// Whether opencode archives each task's session (2.x); true for another host.
     pub(crate) archived: bool,
+    /// opencode's tasks handed to the process that runs the review (`--delegate`), not run as
+    /// `opencode run`.
+    pub(crate) delegate: Option<super::delegate::Delegate>,
 }
 
 impl Host {

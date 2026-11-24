@@ -12,6 +12,7 @@
 
 use std::path::Path;
 
+use craft_store::sorting::posting::MarkError;
 use serde_json::Value;
 
 use super::gh::send::To;
@@ -52,7 +53,7 @@ pub struct Doubtful<'a> {
     pub posted_on: Option<u64>,
     /// Called with the PR right before the comment is posted, so a retry can name it; its failure
     /// posts nothing.
-    pub before_post: Option<&'a dyn Fn(u64) -> Result<(), String>>,
+    pub before_post: Option<&'a dyn Fn(u64) -> Result<(), MarkError>>,
 }
 
 /// Posts `d` on its branch's pull request (`pr`, checked against it, or the one open
@@ -122,11 +123,9 @@ pub fn post(
         line: c.line,
     };
     if let Some(remember) = d.before_post {
-        remember(p.number).map_err(|e| {
-            PostError::Remember(format!(
-                "PR #{} could not be noted in the record before posting: {e} — nothing posted",
-                p.number
-            ))
+        remember(p.number).map_err(|source| PostError::Remember {
+            pr: p.number,
+            source,
         })?;
     }
     let refused = to

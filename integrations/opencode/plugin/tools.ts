@@ -1,8 +1,9 @@
 // The tools craft registers in OpenCode, once for both runtimes: host-v1.ts turns each into a `tool()`,
 // host-v2.ts into a `ctx.tool` definition with a JSON Schema input.
-import type { Host, ToolAnswer, ToolCall, ToolSpec } from './host.ts'
+import type { Host, ModelRef, ToolAnswer, ToolCall, ToolSpec } from './host.ts'
 import { spawn } from 'node:child_process'
 import path from 'node:path'
+import { childCap, childTasks, taskAgents } from './review-children.ts'
 import { runRustAudit } from './rust-audit.ts'
 import { runTriageFindings } from './triage-findings.ts'
 
@@ -19,6 +20,7 @@ export function nestedUnder(host: Host, parent: string | undefined): Host {
 // `CRAFT_OPENCODE_MODELS`, which the binary reads itself. integrations/shared/ is loaded from the
 // checkout the plugin is linked from when the tool runs, as the work hook loads its modules: a plugin copy without
 // integrations/shared/ keeps its other tools.
+// On 2.x the binary hands each task back to the plugin, which runs it as a child session (review-children.ts).
 const hasModels = (words: string[]) => words.some(w => w === '--models' || w.startsWith('--models='))
 
 function stopPreflight(pid: number | undefined) {
@@ -75,40 +77,76 @@ function profileOptions(words: string[], directory: string) {
   return { forwarded, skip, resumed, cwd: path.resolve(directory, requestedCwd ?? '.') }
 }
 
-async function runReview(host: Host, args: string, call: ToolCall): Promise<ToolAnswer> {
+/** A model as the binary's `--models` names it: `provider/model`, its `#variant` kept. */
+const modelName = (m: ModelRef) => `${m.providerID}/${m.modelID}${m.variant ? `#${m.variant}` : ''}`
+
+/** The flags with the calling session's model added, unless they or the environment name the models. */
+function withCallerModel(forwarded: string[], caller: ModelRef | undefined): string[] {
+  const mapped = hasModels(forwarded) || Boolean(process.env['CRAFT_OPENCODE_MODELS'])
+  return caller && !mapped ? [...forwarded, '--models', modelName(caller)] : forwarded
+}
+
+/** The calling session's model — none when there is no caller or it records none — or why it could not be read. */
+async function callerOf(host: Host, sessionID: string | undefined): Promise<{ model?: ModelRef; note?: string }> {
+  if (!sessionID) return {}
+  try {
+    const model = await host.callerModel(sessionID)
+    return model ? { model } : {}
+  } catch (e) {
+    return {
+      note: `Note: the calling session's model could not be read (${e instanceof Error ? e.message : String(e)}); a task the flags or CRAFT_OPENCODE_MODELS named no model for ran on whatever model OpenCode gives a child session with none.`,
+    }
+  }
+}
+
+/** What a 2.x run adds: the agents listed, for the binary, and the runner of the tasks it hands back; nothing on 1.x. */
+function delegation(host: Host, call: ToolCall, agents: string[] | undefined, caller: ModelRef | undefined, words: string[]) {
+  if (!agents) return { flags: [] }
+  return { flags: ['--agents', agents.join(',')], onTask: childTasks(host, call.sessionID, caller, childCap(words)) }
+}
+
+async function runReview(host: Host, args: string, call: ToolCall, children = false): Promise<ToolAnswer> {
+  const listed: { agents?: string[] } | { refused: string } = children ? await taskAgents(host) : {}
+  if ('refused' in listed) return { title: 'craft review: INCOMPLETE', output: listed.refused }
   const review = await import('../../shared/craft-review-run.mjs')
   const { forwarded, skip, resumed, cwd } = profileOptions(review.flagWords(args), host.directory)
-  if (!skip && !resumed) {
-    const why = await profilePreflight(review.WRAPPER, cwd, call.signal)
-    if (why) return { title: 'craft review: profile', output: why }
-  }
-  const mapped = hasModels(forwarded) || Boolean(process.env['CRAFT_OPENCODE_MODELS'])
-  const model = mapped || !call.sessionID ? undefined : await host.callerModel(call.sessionID).catch(() => undefined)
+  const why = skip || resumed ? undefined : await profilePreflight(review.WRAPPER, cwd, call.signal)
+  if (why) return { title: 'craft review: profile', output: why }
+  const caller = await callerOf(host, call.sessionID)
+  const { flags, onTask } = delegation(host, call, listed.agents, caller.model, forwarded)
   const outcome = await review.runReview({
     backend: 'opencode',
-    args: model ? [...forwarded, '--models', `${model.providerID}/${model.modelID}`] : forwarded,
+    args: [...withCallerModel(forwarded, caller.model), ...flags],
     cwd: host.directory,
     ...(call.signal ? { signal: call.signal } : {}),
     onProgress: p => call.progress?.(review.progressLine(p)),
+    ...(onTask ? { onTask } : {}),
   })
-  return { title: `craft review: ${review.summaryOf(outcome).verdict}`, output: review.answerText(outcome) }
+  const answer = review.answerText(outcome)
+  return { title: `craft review: ${review.summaryOf(outcome).verdict}`, output: caller.note ? `${answer}\n\n${caller.note}` : answer }
 }
 
-// What the audit and the triage answer on OpenCode 2.x, before any child session: no 2.x child session was seen
-// answering. Built here, without integrations/shared/, so a plugin copy without it still answers. The review is not refused: it runs
-// each task as its own `opencode run` (realm @nick/craft, nodes #499, #502), seen answering on 2.2.7.
+// What the audit and the triage answer on OpenCode 2.x, before any child session. Built here, without
+// integrations/shared/, so a plugin copy without it still answers. The review is not refused: its tasks run as child
+// sessions read by the reply reader fixed for #626 (host-v2.ts), which the audit and the triage share; their own runs on
+// it are not yet observed, so they stay refused (realm @nick/craft, node #627).
 export function refusalOnV2(name: string): string {
-  return `⚠️ INCOMPLETE — craft's \`${name}\` does not yet work in OpenCode 2.x: its child sessions never answered in testing (craft 0.50.0, OpenCode 2.2.7). A route through \`opencode run\` is in progress; until it ships, use OpenCode 1.x, Claude Code, Codex or pi. Nothing ran.`
+  return `⚠️ INCOMPLETE — craft's \`${name}\` is not yet enabled in OpenCode 2.x: its child sessions never answered in testing (craft 0.50.0, OpenCode 2.2.7), and it has not been run on the child-session reader \`/craft-review\` now uses. Until it is, use OpenCode 1.x, Claude Code, Codex or pi. Nothing ran.`
 }
 
 /**
- * The tools as the 2.x entry (`setup`) registers them: the workflows that run child sessions refuse up front and say so
- * in their description; all stay registered, to answer a call with why. The review runs as it is.
+ * The tools as the 2.x entry (`setup`) registers them: the review runs each task as a child session of the caller
+ * (childTasks); the audit and the triage refuse up front and say so in their description; all stay registered, to
+ * answer a call with why.
  */
 export const onV2 = (tools: readonly ToolSpec[]): ToolSpec[] =>
   tools.map(spec =>
     spec.name === 'review'
-      ? spec
+      ? {
+          ...spec,
+          description: spec.description.replace(ONE_RUN_EACH, 'each task runs as a child session of this session'),
+          run: (host, args, call) => runReview(host, args['args'] ?? '', call, true),
+        }
       : {
           ...spec,
           description: `Not available on OpenCode 2.x yet: craft's \`${spec.name}\` answers INCOMPLETE and runs nothing (use OpenCode 1.x, Claude Code, Codex or pi).`,
@@ -135,6 +173,9 @@ export const withoutContent = (tools: readonly ToolSpec[], reason: string): Tool
         }
       : spec,
   )
+
+// How the 1.x review's description says its tasks run; 2.x says child sessions in its place.
+const ONE_RUN_EACH = 'each task runs as its own `opencode run`'
 
 export const TOOLS: readonly ToolSpec[] = [
   {

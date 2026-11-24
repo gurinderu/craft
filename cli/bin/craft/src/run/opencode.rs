@@ -112,6 +112,32 @@ pub(crate) struct Ready {
     pub(crate) archived: bool,
 }
 
+/// Why a review cannot run on an opencode without `review-task`.
+fn no_task_agent() -> String {
+    format!(
+        "the craft OpenCode agents are not installed or are out of date: on OpenCode 2.x add the craft package of this release (`opencode plugin add git+https://github.com/gurinderu/craft#opencode-v{}`), or rerun integrations/opencode/install.sh (this opencode has no `{TASK_AGENT}` agent, which every review task runs on read-only)",
+        env!("CARGO_PKG_VERSION")
+    )
+}
+
+/// The agents a delegating OpenCode listed (`--agents`, comma-separated), or why the review
+/// cannot run on them: fail closed — no list, or one without `review-task`, runs nothing
+/// (realm @nick/craft, node #627).
+pub(crate) fn delegated(list: Option<&str>) -> Result<Vec<String>, String> {
+    let list = list.ok_or("--delegate needs --agents, the agents the delegating OpenCode lists")?;
+    let agents: Vec<String> = list
+        .split(',')
+        .map(str::trim)
+        .filter(|a| !a.is_empty())
+        .map(str::to_owned)
+        .collect();
+    if agents.iter().any(|a| a == TASK_AGENT) {
+        Ok(agents)
+    } else {
+        Err(no_task_agent())
+    }
+}
+
 /// The opencode a review can run on, or why it cannot run: an opencode without `review-task`
 /// would run every task on another agent or fail it. On 1.x, `review-task` runs as named only as
 /// a `mode: all` agent (1.19.5 puts a subagent named to `run --agent` on its default agent, which
@@ -137,10 +163,7 @@ pub(crate) fn preflight(command: &Path, repo: &Path, log: &dyn Fn(&str)) -> Resu
     if let Some(list) = &agents
         && !list.iter().any(|a| a == TASK_AGENT)
     {
-        return Err(format!(
-            "the craft OpenCode agents are not installed or are out of date: on OpenCode 2.x add the craft package of this release (`opencode plugin add git+https://github.com/gurinderu/craft#opencode-v{}`), or rerun integrations/opencode/install.sh (this opencode has no `{TASK_AGENT}` agent, which every review task runs on read-only)",
-            env!("CARGO_PKG_VERSION")
-        ));
+        return Err(no_task_agent());
     }
     // A 1.x list that could not be read is taken as `review-task` alone: a subagent named to its
     // `run` would run as the writable default agent, so none is ever named there.
