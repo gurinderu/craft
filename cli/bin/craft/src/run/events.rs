@@ -20,9 +20,9 @@ use serde_json::Value;
 /// - `{"type":"task_failed","id":…,"reason":…}` — a task's process gave no reply.
 /// - `{"type":"degraded","note":…}` — part of the run ran weaker than asked.
 /// - `{"type":"usage_limit","text":…}` — the account's usage limit: no further task starts.
-/// - `{"type":"task","key":n,"id":…,"label":…,"agent":…|null,"model":…|null,"prompt":…}` — with
-///   `--delegate`, a task for the delegating process to run, its reply awaited on stdin under `key`
-///   (`delegate.rs`).
+/// - `{"type":"task","key":n,"id":…,"label":…,"agent":…|null,"model":…|null,"cwd":…,"prompt":…}` —
+///   with `--delegate`, a task for the delegating process to run in the repository `cwd` names, its
+///   reply awaited on stdin under `key` (`delegate.rs`).
 /// - `{"type":"task_cancelled","key":n}` — with `--delegate`, a task no longer awaited: stop it.
 /// - `{"type":"result","verdict":…,"report":…|null,"run":…|null,"findings":n,"exit_code":n}` —
 ///   the last event: the verdict line, the report file and run directory when there are, how many
@@ -69,6 +69,7 @@ pub(crate) enum Event {
         label: String,
         agent: Option<String>,
         model: Option<String>,
+        cwd: String,
         prompt: String,
     },
     TaskCancelled {
@@ -123,14 +124,17 @@ impl Sink {
         }
     }
 
-    /// An event, written only in the event stream.
+    /// An event, written only in the event stream. A failed write loses only progress.
     pub(crate) fn emit(self, event: &Event) {
-        if !self.json {
-            return;
-        }
-        if let Ok(line) = serde_json::to_string(event) {
-            let _unlogged = writeln!(std::io::stderr().lock(), "{line}");
-        }
+        let _lost = self.emitted(event);
+    }
+
+    /// An event written to the event stream: whether it was — what a delegated task's dispatch
+    /// stands on (`delegate.rs`).
+    pub(crate) fn emitted(self, event: &Event) -> bool {
+        self.json
+            && serde_json::to_string(event)
+                .is_ok_and(|line| writeln!(std::io::stderr().lock(), "{line}").is_ok())
     }
 }
 
@@ -205,13 +209,24 @@ mod tests {
                 label: s("lens a"),
                 agent: Some(s("review-task")),
                 model: None,
+                cwd: s("/repo"),
                 prompt: s("p"),
             },
-            &json!({"type": "task", "key": 7, "id": "t1", "label": "lens a", "agent": "review-task", "model": null, "prompt": "p"}),
+            &json!({"type": "task", "key": 7, "id": "t1", "label": "lens a", "agent": "review-task", "model": null, "cwd": "/repo", "prompt": "p"}),
         );
         round_trip(
             &Event::TaskCancelled { key: 7 },
             &json!({"type": "task_cancelled", "key": 7}),
+        );
+    }
+
+    #[test]
+    fn an_event_is_written_only_in_the_event_stream_and_says_so() {
+        let event = Event::TaskCancelled { key: 1 };
+        assert!(Sink { json: true }.emitted(&event));
+        assert!(
+            !Sink { json: false }.emitted(&event),
+            "without --events json no event is written, so no task can be handed out"
         );
     }
 

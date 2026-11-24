@@ -14,7 +14,10 @@ const MAX_POLLS = 3 * 60 * 60 * 2
 
 const pause = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
 
-/** A child session whose agent loop ended failed: the runtime's error, by its type and message (realm @nick/craft, node #626). */
+/**
+ * A child session whose agent loop did not succeed: the runtime's error by its type and message when it failed
+ * (realm @nick/craft, node #626), else the outcome it ended with (`interrupted`, or one this reader does not know).
+ */
 export class ChildSessionFailed extends Error {
   constructor(
     readonly type: string,
@@ -32,14 +35,19 @@ const textOf = (message: V2Message | undefined) =>
     .join('\n')
     .trim()
 
+// The outcome an idle entry has when the loop succeeded; 2.2.7's are `succeeded`, `failed` and `interrupted` (read from
+// its session schema, realm @nick/craft, node #627).
+const SUCCEEDED = 'succeeded'
+
 // The session's reply once its agent loop is idle: the text of the last assistant message before the `idle` entry that
 // ends the context (observed on 2.2.7, realm @nick/craft, node #626), "" when it said nothing; null while that entry is
 // not there, the loop still running. An assistant message alone is no reply: one that ends a step mid-loop looks finished
-// too. A failed loop throws its error.
+// too. Only a succeeded loop has a reply: a failed one throws its error, any other outcome throws that outcome.
 export function finishedReply(messages: readonly V2Message[]): string | null {
   const last = messages.at(-1)
   if (last?.type !== 'idle') return null
   if (last.outcome === 'failed') throw new ChildSessionFailed(last.error?.type || 'unknown', last.error?.message ?? '')
+  if (last.outcome !== SUCCEEDED) throw new ChildSessionFailed(`outcome ${last.outcome ?? 'none'}`, 'the agent loop ended without succeeding')
   return textOf([...messages].reverse().find(m => m.type === 'assistant'))
 }
 
@@ -89,6 +97,8 @@ export function v2Host(ctx: V2Context, pollMs = POLL_MS): Host {
     worktree: ctx.location.project?.directory ?? directory,
     sh: shellIn(directory),
     async runChild(req) {
+      // A task already given up is never started; one given up while its session was made is never prompted.
+      if (req.signal?.aborted) throw new Error(STOPPED)
       const session = await ctx.session.create({
         title: req.title,
         ...(req.agent ? { agent: req.agent } : {}),
@@ -98,6 +108,7 @@ export function v2Host(ctx: V2Context, pollMs = POLL_MS): Host {
         ...(req.parentID ? { parentID: req.parentID } : {}),
       })
       req.onSession?.(session.id)
+      if (req.signal?.aborted) throw new Error(STOPPED)
       const unlisten = stopOnAbort(ctx, session.id, req.signal)
       try {
         await ctx.session.prompt({ sessionID: session.id, text: req.prompt })
@@ -112,7 +123,7 @@ export function v2Host(ctx: V2Context, pollMs = POLL_MS): Host {
     // The session's own model, set at creation or by a switch (observed on opencode 2.2.7); none when it has none.
     async callerModel(sessionID) {
       const model = (await ctx.session.get({ sessionID })).model
-      return model ? { providerID: model.providerID, modelID: model.id } : undefined
+      return model ? { providerID: model.providerID, modelID: model.id, ...(model.variant ? { variant: model.variant } : {}) } : undefined
     },
   }
 }

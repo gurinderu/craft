@@ -5,7 +5,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { START, advance, answerText, delegation, flagWords, progressLine, runReview, summaryOf } from './craft-review-run.mjs'
+import { START, advance, answerText, delegation, flagWords, progressLine, runReview, summaryOf, taskOf } from './craft-review-run.mjs'
 import { writeExecutable } from './write-executable.mjs'
 
 const ANSWER =
@@ -83,7 +83,7 @@ test('an event of no known kind changes nothing; a usage limit is the line', () 
   assert.equal(advance(START, { type: 'phase', name: 'verify' }).phase, 'verify')
 })
 
-const TASK = { type: 'task', key: 3, id: 't1', label: 'lens a', agent: 'review-task', model: 'p/m', prompt: 'read p.md' }
+const TASK = { type: 'task', key: 3, id: 't1', label: 'lens a', agent: 'review-task', model: 'p/m', cwd: '/wt', prompt: 'read p.md' }
 
 test('a delegated run hands each task to onTask and writes its reply to the binary under the key', async () => {
   // The stand-in emits a task, then says back the line it read on stdin.
@@ -100,7 +100,7 @@ test('a delegated run hands each task to onTask and writes its reply to the bina
       return Promise.resolve('```craft-answer\n{}\n```')
     },
   })
-  assert.deepEqual(seen, [TASK, false])
+  assert.deepEqual(seen, [taskOf(TASK), false])
   assert.deepEqual(got.said, [
     'argv:review run --backend opencode --events json --delegate --base main',
     `got:${JSON.stringify({ key: 3, text: '```craft-answer\n{}\n```' })}`,
@@ -119,7 +119,7 @@ test("a task that fails is said to the binary as its error, by the failure's mes
   assert.deepEqual(got.said, [`got:${JSON.stringify({ key: 3, error: 'the child session failed (provider.no-route): no route' })}`])
 })
 
-test('a cancelled task is aborted, and so is every task still running once the binary is gone', () => {
+test('a cancelled task is aborted, and so is every task still running once the binary is gone', async () => {
   /** @type {AbortSignal[]} */
   const signals = []
   const never = new Promise(() => {})
@@ -132,7 +132,9 @@ test('a cancelled task is aborted, and so is every task still running once the b
   )
   d.heard({ ...TASK, key: 1 })
   d.heard({ ...TASK, key: 2 })
+  // The runner is called on the next turn; a cancel before it already aborts the task's signal.
   d.heard({ type: 'task_cancelled', key: 1 })
+  await tick()
   assert.deepEqual(
     signals.map(s => s.aborted),
     [true, false],
@@ -199,5 +201,109 @@ test('a task still running when the binary exits is aborted', async () => {
     },
   })
   assert.equal(signals.length, 1)
+  assert.equal(signals[0]?.aborted, true)
+})
+
+/** The next turn of the event loop, once the microtasks before it ran. */
+const tick = () => new Promise(resolve => setTimeout(resolve, 0))
+
+/** Each reply `d` wrote, once its tasks settled. @param {string[]} replies */
+const settled = async (/** @type {string[]} */ replies, n = 1) => {
+  for (let i = 0; i < 50 && replies.length < n; i++) await new Promise(resolve => setTimeout(resolve, 2))
+  return replies.map(r => /** @type {unknown} */ (JSON.parse(r)))
+}
+
+test('two tasks settled out of order each reply under their own key', async () => {
+  /** @type {Map<number, (text: string) => void>} */
+  const open = new Map()
+  /** @type {string[]} */
+  const replies = []
+  const d = delegation(
+    t =>
+      new Promise(resolve => {
+        open.set(t.key, resolve)
+      }),
+    line => replies.push(line),
+  )
+  d.heard({ ...TASK, key: 1 })
+  d.heard({ ...TASK, key: 2 })
+  await tick()
+  open.get(2)?.('two')
+  open.get(1)?.('one')
+  assert.deepEqual(await settled(replies, 2), [
+    { key: 2, text: 'two' },
+    { key: 1, text: 'one' },
+  ])
+})
+
+test('a task event that is not well-formed is answered as a failure; one with no key is passed over', async () => {
+  /** @type {string[]} */
+  const replies = []
+  let ran = 0
+  const d = delegation(
+    () => {
+      ran++
+      return Promise.resolve('x')
+    },
+    line => replies.push(line),
+  )
+  d.heard({ ...TASK, key: 4, prompt: 7 })
+  d.heard({ ...TASK, key: 5, agent: 3 })
+  d.heard({ ...TASK, key: '6' })
+  assert.deepEqual(await settled(replies, 2), [
+    { key: 4, error: 'the task event was not well-formed' },
+    { key: 5, error: 'the task event was not well-formed' },
+  ])
+  assert.equal(ran, 0)
+  assert.deepEqual(taskOf(TASK), { key: 3, id: 't1', label: 'lens a', agent: 'review-task', model: 'p/m', cwd: '/wt', prompt: 'read p.md' })
+  assert.deepEqual(taskOf({ ...TASK, agent: null, model: null })?.agent, null)
+  for (const field of ['id', 'label', 'cwd']) assert.equal(taskOf({ ...TASK, [field]: undefined }), null, field)
+  assert.equal(taskOf({ ...TASK, model: 1 }), null)
+  assert.equal(taskOf({ ...TASK, key: '3' }), null, 'a key that is no number')
+})
+
+test('a runner that throws before returning its promise fails that task, not the stream', async () => {
+  /** @type {string[]} */
+  const replies = []
+  const d = delegation(
+    () => {
+      throw new Error('no model')
+    },
+    line => replies.push(line),
+  )
+  d.heard(TASK)
+  assert.deepEqual(await settled(replies), [{ key: 3, error: 'no model' }])
+})
+
+test('a reply written after the binary closed its input, still alive, is lost, not thrown (EPIPE)', async () => {
+  const wrapper = fake(`exec 0<&-\necho '${JSON.stringify(TASK)}' >&2\nsleep 0.5\nexit 0`)
+  const got = await runReview({
+    backend: 'opencode',
+    args: [],
+    cwd: os.tmpdir(),
+    wrapper,
+    onTask: () => new Promise(resolve => setTimeout(() => resolve('late'), 100)),
+  })
+  assert.equal(got.code, 0)
+})
+
+test("the caller's abort while a task runs stops the run and aborts the task", async () => {
+  const wrapper = fake(`echo '${JSON.stringify(TASK)}' >&2\nexec sleep 30`)
+  const stop = new AbortController()
+  /** @type {AbortSignal[]} */
+  const signals = []
+  const running = runReview({
+    backend: 'opencode',
+    args: [],
+    cwd: os.tmpdir(),
+    wrapper,
+    signal: stop.signal,
+    onTask: (_t, signal) => {
+      signals.push(signal)
+      stop.abort()
+      return new Promise(() => {})
+    },
+  })
+  await assert.rejects(running, /abort/i)
   assert.equal(signals[0]?.aborted, true)
 })

@@ -43,8 +43,9 @@ export interface V2Session {
 }
 
 // A session's context entries as 2.2.7 returns them (observed, realm @nick/craft, node #626): the messages, then — once
-// the agent loop is done — an `idle` entry whose `outcome` is `failed` with the runtime's `error` when the loop failed.
-// Only `assistant` and `idle` are read.
+// the agent loop is done — an `idle` entry whose `outcome` is `succeeded`, `failed` (with the runtime's `error` beside
+// it) or `interrupted`, the three its session schema names (read from the 2.2.7 binary, node #627). Only `assistant` and
+// `idle` are read.
 export interface V2Message {
   type: string
   content?: { type: string; text?: string }[]
@@ -103,6 +104,8 @@ export interface V2Context {
     transform(edit: (editor: { add(definition: V2ToolDefinition): void }) => void): Promise<V2Registration>
   }
   session: {
+    // A child (`parentID`) is made where its parent is: the plugin's `create` passes a `location` only to a session with
+    // no parent (read from the 2.2.7 binary, realm @nick/craft, node #627), so no child can be put in another directory.
     create(input: { title?: string; agent?: string; model?: V2ModelRef; parentID?: string }): Promise<V2Session>
     get(input: { sessionID: string }): Promise<V2Session>
     // Admits the input and schedules the agent loop (`resume: false` admits it without running the loop).

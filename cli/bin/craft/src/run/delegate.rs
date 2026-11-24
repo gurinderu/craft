@@ -1,44 +1,44 @@
 //! The `opencode` host's tasks handed back to the process that runs `craft review run --delegate`
-//! (realm @nick/craft, nodes #496, #626): the OpenCode 2.x plugin runs each as a child session of
-//! the calling session, which `opencode run` cannot make. A task goes out as a `task` event on the
-//! event stream, its key fresh per dispatch; its reply comes back on stdin as one JSON line,
-//! `{"key":n,"text":…}` or `{"key":n,"error":…}`. The text is read as an `opencode run` reply is
+//! (realm @nick/craft, nodes #496, #626, #627): the OpenCode 2.x plugin runs each as a child
+//! session of the calling session, which `opencode run` cannot make. A task goes out as a `task`
+//! event on the event stream, its key fresh per dispatch and its working directory the repository
+//! the run reviews; its reply comes back on stdin as one JSON line, `{"key":n,"text":…}` or
+//! `{"key":n,"error":…}` (`delegate_read.rs`). The text is read as an `opencode run` reply is
 //! ([`answer_of`]); an error as the agent's failed turn, whose words are read for a usage limit as
-//! a failed exit's are, so it stops the run as there. A dispatch dropped before its reply — past its deadline, or its round stopped — is said
-//! with a `task_cancelled` event, for the plugin to stop that child.
+//! a failed exit's are, so it stops the run as there. A dispatch dropped before its reply — past
+//! its deadline, or its round stopped — is said with a `task_cancelled` event, for the plugin to
+//! stop that child. A dispatch whose event could not be written, or made once the input closed,
+//! fails at once.
 
 use std::collections::HashMap;
-use std::io::BufRead;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use craft_agent::pi::answer::answer_of;
 use craft_agent::{AgentBackend, AgentError, AgentReply, AgentRequest, Usage};
-use serde::Deserialize;
 use serde_json::Value;
 use tokio::sync::oneshot;
 
 use super::events::Event;
 use super::task::Task;
 
-/// What the delegating process sent back for one dispatch.
-#[derive(Debug, Deserialize)]
-struct Reply {
-    key: u64,
-    #[serde(default)]
-    text: Option<String>,
-    #[serde(default)]
-    error: Option<String>,
-}
+#[path = "delegate_read.rs"]
+mod read;
 
-type Emit = Box<dyn Fn(Event) + Send + Sync>;
+/// A reply: the task's text, or its failure's words.
+type Said = Result<String, String>;
+type Pending = HashMap<u64, oneshot::Sender<Said>>;
 
 struct Shared {
     next: AtomicU64,
-    pending: Mutex<HashMap<u64, oneshot::Sender<Result<String, String>>>>,
+    pending: Mutex<Pending>,
+    /// Set once the input closed: no reply can come any more.
+    closed: AtomicBool,
     /// Each task's label by its id, for the event.
     labels: Mutex<HashMap<String, String>>,
-    emit: Emit,
+    /// Writes an event; whether it was written.
+    emit: Box<dyn Fn(Event) -> bool + Send + Sync>,
+    log: Box<dyn Fn(&str) + Send + Sync>,
 }
 
 /// The backend that hands each task to the delegating process.
@@ -53,30 +53,35 @@ impl std::fmt::Debug for Delegate {
 
 /// Why a dispatch has no reply: the delegating process closed its input first.
 const CLOSED: &str = "the process that delegates the tasks closed its input";
+/// Why a dispatch failed before any reply could come: its event was not written.
+const UNSENT: &str = "the task could not be handed to the process that delegates the tasks";
 
 impl Delegate {
-    /// A delegate whose events go to `emit`; replies come through [`Delegate::deliver`].
-    pub(crate) fn new(emit: impl Fn(Event) + Send + Sync + 'static) -> Self {
+    /// A delegate whose events go to `emit`, which says whether it wrote one, and whose passed-over
+    /// reply lines are said to `log`; replies come through [`Delegate::deliver`].
+    pub(crate) fn new(
+        emit: impl Fn(Event) -> bool + Send + Sync + 'static,
+        log: impl Fn(&str) + Send + Sync + 'static,
+    ) -> Self {
         Self(Arc::new(Shared {
             next: AtomicU64::new(1),
             pending: Mutex::new(HashMap::new()),
+            closed: AtomicBool::new(false),
             labels: Mutex::new(HashMap::new()),
             emit: Box::new(emit),
+            log: Box::new(log),
         }))
     }
 
     /// A delegate whose replies are read from this process's stdin, on a thread of their own;
-    /// once stdin ends, every dispatch still waiting fails.
-    pub(crate) fn on_stdin(emit: impl Fn(Event) + Send + Sync + 'static) -> Self {
-        let delegate = Self::new(emit);
+    /// once stdin ends, every dispatch still waiting fails, and every later one at once.
+    pub(crate) fn on_stdin(
+        emit: impl Fn(Event) -> bool + Send + Sync + 'static,
+        log: impl Fn(&str) + Send + Sync + 'static,
+    ) -> Self {
+        let delegate = Self::new(emit, log);
         let reader = delegate.clone();
-        std::thread::spawn(move || {
-            for line in std::io::stdin().lock().lines() {
-                let Ok(line) = line else { break };
-                reader.deliver(&line);
-            }
-            reader.close();
-        });
+        std::thread::spawn(move || reader.read_replies(std::io::stdin().lock()));
         delegate
     }
 
@@ -88,33 +93,22 @@ impl Delegate {
         }
     }
 
-    /// One reply line handed to the dispatch it names; a line that is no reply, or names no
-    /// dispatch still waiting, is passed over. Whether it was taken.
-    pub(crate) fn deliver(&self, line: &str) -> bool {
-        let Ok(reply) = serde_json::from_str::<Reply>(line) else {
-            return false;
-        };
-        let said = match (reply.text, reply.error) {
-            (_, Some(error)) => Err(error),
-            (Some(text), None) => Ok(text),
-            (None, None) => return false,
-        };
-        let waiting = self.pending().remove(&reply.key);
-        waiting.is_some_and(|tx| tx.send(said).is_ok())
-    }
-
-    /// Every dispatch still waiting fails: no reply can come any more.
+    /// Every dispatch still waiting fails, and every later one at once: no reply can come any more.
     fn close(&self) {
+        self.0.closed.store(true, Ordering::SeqCst);
         self.pending().clear();
     }
 
-    fn pending(
-        &self,
-    ) -> std::sync::MutexGuard<'_, HashMap<u64, oneshot::Sender<Result<String, String>>>> {
+    fn pending(&self) -> MutexGuard<'_, Pending> {
         self.0
             .pending
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn label_of(&self, id: &str) -> String {
+        let labels = self.0.labels.lock().unwrap_or_else(PoisonError::into_inner);
+        labels.get(id).cloned().unwrap_or_else(|| id.to_owned())
     }
 }
 
@@ -133,7 +127,7 @@ impl Drop for Waiting<'_> {
 }
 
 /// The reply as the round reads an agent's: an answer, no answer, or a failure's words.
-fn reply_of(said: Result<String, String>) -> Result<AgentReply, AgentError> {
+fn reply_of(said: Said) -> Result<AgentReply, AgentError> {
     let text = said.map_err(|subtype| AgentError::Failed { subtype })?;
     let Some(answer) = answer_of(&text) else {
         return Err(AgentError::NoAnswer {
@@ -155,26 +149,28 @@ impl AgentBackend for Delegate {
         let key = self.0.next.fetch_add(1, Ordering::SeqCst);
         let (tx, rx) = oneshot::channel();
         self.pending().insert(key, tx);
+        // Checked after the insert: a close between the two has cleared it, or is seen here.
+        if self.0.closed.load(Ordering::SeqCst) {
+            self.pending().remove(&key);
+            return reply_of(Err(CLOSED.to_owned()));
+        }
         let waiting = Waiting {
             delegate: self,
             key,
         };
-        let label = self
-            .0
-            .labels
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .get(&request.label)
-            .cloned()
-            .unwrap_or_else(|| request.label.clone());
-        (self.0.emit)(Event::Task {
+        let sent = (self.0.emit)(Event::Task {
             key,
             id: request.label.clone(),
-            label,
+            label: self.label_of(&request.label),
             agent: request.agent.clone(),
             model: request.model.clone(),
+            cwd: request.cwd.display().to_string(),
             prompt: request.prompt.clone(),
         });
+        if !sent {
+            self.pending().remove(&key);
+            return reply_of(Err(UNSENT.to_owned()));
+        }
         let said = rx.await;
         drop(waiting);
         reply_of(said.unwrap_or_else(|_closed| Err(CLOSED.to_owned())))

@@ -15,7 +15,7 @@ export const WRAPPER = path.join(path.resolve(path.dirname(fileURLToPath(import.
 /** @typedef {{ type: string } & Record<string, unknown>} ReviewEvent */
 /** @typedef {{ phase: string, round: number, running: number, done: number, failed: number, line: string }} Progress */
 /** @typedef {{ verdict: string, report: string | null, run: string | null, findings: string[] }} Summary */
-/** @typedef {{ key: number, id: string, label: string, agent: string | null, model: string | null, prompt: string }} DelegatedTask */
+/** @typedef {{ key: number, id: string, label: string, agent: string | null, model: string | null, cwd: string, prompt: string }} DelegatedTask  a `task` event of `--delegate`: cwd the repository the task reviews */
 /** @typedef {(task: DelegatedTask, signal: AbortSignal) => Promise<string>} RunTask  the task's reply text; a rejection is its failure, said to the binary */
 /** @typedef {{ code: number, answer: string, result: ReviewEvent | null, said: string[], progress: Progress }} Outcome  said: the stderr lines that were no event (the wrapper's own failure) */
 
@@ -68,6 +68,20 @@ function eventOf(line) {
 /** @param {unknown} e @returns {string} */
 const messageOf = e => (e instanceof Error ? e.message : String(e))
 
+/** @param {unknown} v @returns {v is string | null} */
+const textOrNull = v => v === null || typeof v === 'string'
+
+/**
+ * A `task` event as the task it hands out, or null when one of its fields is not as `--delegate` writes it.
+ * @param {ReviewEvent} e @returns {DelegatedTask | null}
+ */
+export function taskOf(e) {
+  const { key, id, label, agent, model, cwd, prompt } = e
+  const texts = [id, label, cwd, prompt].every(v => typeof v === 'string')
+  if (typeof key !== 'number' || !texts || !textOrNull(agent) || !textOrNull(model)) return null
+  return /** @type {DelegatedTask} */ ({ key, id, label, agent, model, cwd, prompt })
+}
+
 /**
  * The delegated tasks of one run: `heard` takes a `task` or `task_cancelled` event, `reply` writes a reply line to the
  * binary, and `stop` aborts every task still running once the binary is gone.
@@ -78,12 +92,20 @@ export function delegation(onTask, reply) {
   const running = new Map()
   /** @param {ReviewEvent} event */
   const heard = event => {
-    const key = Number(event['key'])
+    const key = event['key']
+    if (typeof key !== 'number') return
     if (event.type === 'task_cancelled') running.get(key)?.abort()
     if (event.type !== 'task') return
+    const task = taskOf(event)
+    if (!task) {
+      reply(JSON.stringify({ key, error: 'the task event was not well-formed' }))
+      return
+    }
     const stop = new AbortController()
     running.set(key, stop)
-    onTask(/** @type {DelegatedTask} */ (/** @type {unknown} */ (event)), stop.signal)
+    // A throw before onTask returns its promise is its failure too, never one of the stream's reader.
+    Promise.resolve()
+      .then(() => onTask(task, stop.signal))
       .then(
         text => {
           reply(JSON.stringify({ key, text }))

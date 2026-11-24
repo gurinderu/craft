@@ -13,8 +13,9 @@ const assistant = (/** @type {string} */ text) => ({
   ],
 })
 
-// The entry that ends a session's context once its agent loop is done, as 2.2.7 returns it (realm @nick/craft, node #626).
-const IDLE = { type: 'idle', outcome: 'completed' }
+// The entry that ends a session's context once its agent loop succeeded, as 2.2.7 returns it (realm @nick/craft, nodes
+// #626, #627).
+const IDLE = { type: 'idle', outcome: 'succeeded' }
 /** A finished child's context: the prompt, the reply, the idle entry. @param {string} text */
 const answered = text => [{ type: 'user' }, assistant(text), IDLE]
 
@@ -111,7 +112,7 @@ test("a child nests under its parent, and the caller's model is the one its sess
   const host = v2Host(f.ctx, 0)
   await host.runChild({ title: 't', agent: '', prompt: 'p', parentID: 'ses_parent' })
   assert.deepEqual(f.sent[0], ['create', { title: 't', parentID: 'ses_parent' }])
-  assert.deepEqual(await host.callerModel('ses_set'), { providerID: 'p', modelID: 'm' })
+  assert.deepEqual(await host.callerModel('ses_set'), { providerID: 'p', modelID: 'm', variant: 'default' }, 'its variant kept')
   assert.equal(await host.callerModel('ses_unset'), undefined, 'a session that set none runs on the runtime default')
   assert.deepEqual(await host.agents?.(), ['build', 'review-task'], "the runtime's agents by id")
 })
@@ -135,6 +136,41 @@ test('only an idle loop has a reply: the last assistant message before the idle 
   assert.equal(finishedReply(answered(' a ')), 'a', 'the reply sits behind the idle entry')
   assert.equal(finishedReply([{ type: 'user' }, assistant('first'), { type: 'tool' }, assistant('last'), IDLE]), 'last')
   assert.equal(finishedReply([{ type: 'user' }, IDLE]), '', 'idle, said nothing')
+})
+
+test('only a succeeded loop has a reply: an interrupted one, or an outcome this reader does not know, is a named error', () => {
+  for (const outcome of ['interrupted', 'completed', undefined]) {
+    assert.throws(
+      () => finishedReply([{ type: 'user' }, assistant('half'), { type: 'idle', ...(outcome ? { outcome } : {}) }]),
+      (/** @type {unknown} */ e) =>
+        e instanceof ChildSessionFailed &&
+        e.type === `outcome ${outcome ?? 'none'}` &&
+        e.message === `the child session failed (outcome ${outcome ?? 'none'}): the agent loop ended without succeeding`,
+      String(outcome),
+    )
+  }
+})
+
+test('a child given up before its session exists is never made, and one given up while it was made is never prompted', async () => {
+  const before = fakeCtx()
+  const stop = new AbortController()
+  stop.abort()
+  await assert.rejects(v2Host(before.ctx, 0).runChild({ title: 't', agent: '', prompt: 'p', signal: stop.signal }), /stopped at its deadline/)
+  assert.deepEqual(before.sent, [])
+  const during = fakeCtx()
+  const late = new AbortController()
+  const create = during.ctx.session.create.bind(during.ctx.session)
+  during.ctx.session.create = async input => {
+    const made = await create(input)
+    late.abort()
+    return made
+  }
+  await assert.rejects(v2Host(during.ctx, 0).runChild({ title: 't', agent: '', prompt: 'p', signal: late.signal }), /stopped at its deadline/)
+  assert.deepEqual(
+    during.sent.map(e => /** @type {unknown[]} */ (e)[0]),
+    ['create'],
+    'made, never prompted',
+  )
 })
 
 test('a failed loop throws its error, by type and message', () => {
@@ -262,7 +298,7 @@ test('the audit and the triage on the 2.x entry refuse up front and say so; the 
     assert.match(
       out.content[0].text,
       new RegExp(
-        `INCOMPLETE — craft's \`${tool.name}\` does not yet work in OpenCode 2\\.x: .*A route through \`opencode run\` is in progress; until it ships, use OpenCode 1\\.x, Claude Code, Codex or pi\\. Nothing ran\\.`,
+        `INCOMPLETE — craft's \`${tool.name}\` is not yet enabled in OpenCode 2\\.x: .*use OpenCode 1\\.x, Claude Code, Codex or pi\\. Nothing ran\\.`,
       ),
     )
     assert.match(tool.description, /^Not available on OpenCode 2\.x yet/)

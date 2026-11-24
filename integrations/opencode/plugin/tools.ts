@@ -3,7 +3,7 @@
 import type { Host, ModelRef, ToolAnswer, ToolCall, ToolSpec } from './host.ts'
 import { spawn } from 'node:child_process'
 import path from 'node:path'
-import { runChildSession } from './child-run.ts'
+import { childTasks, taskAgents } from './review-children.ts'
 import { runRustAudit } from './rust-audit.ts'
 import { runTriageFindings } from './triage-findings.ts'
 
@@ -20,34 +20,7 @@ export function nestedUnder(host: Host, parent: string | undefined): Host {
 // `CRAFT_OPENCODE_MODELS`, which the binary reads itself. integrations/shared/ is loaded from the
 // checkout the plugin is linked from when the tool runs, as the work hook loads its modules: a plugin copy without
 // integrations/shared/ keeps its other tools.
-// On 2.x the binary delegates each task (`--delegate`, realm @nick/craft, nodes #496, #626) and the plugin runs it as a
-// child session of the calling session, on the agent and model the binary names, so the tasks show as its subagents;
-// the binary bounds each by its kind's deadline and says a task no longer awaited, which aborts that child.
-type DelegatedTask = { label: string; agent: string | null; model: string | null; prompt: string }
-
-/** A model as the binary names it — `provider/model`, a `#variant` allowed — or undefined for the session's own. */
-export function modelRef(name: string | null): ModelRef | undefined {
-  const at = name?.indexOf('/') ?? -1
-  if (!name || at <= 0) return undefined
-  const [modelID = '', variant] = name.slice(at + 1).split('#')
-  return { providerID: name.slice(0, at), modelID, ...(variant ? { variant } : {}) }
-}
-
-/** The runner of the binary's delegated tasks: each one child session under `parent`. */
-export const childTasks =
-  (host: Host, parent: string | undefined) =>
-  (task: DelegatedTask, signal: AbortSignal): Promise<string> => {
-    const model = modelRef(task.model)
-    return runChildSession(host, {
-      title: `craft review: ${task.label}`,
-      agent: task.agent ?? '',
-      prompt: task.prompt,
-      signal,
-      ...(model ? { model } : {}),
-      ...(parent ? { parentID: parent } : {}),
-    })
-  }
-
+// On 2.x the binary hands each task back to the plugin, which runs it as a child session (review-children.ts).
 const hasModels = (words: string[]) => words.some(w => w === '--models' || w.startsWith('--models='))
 
 function stopPreflight(pid: number | undefined) {
@@ -104,50 +77,50 @@ function profileOptions(words: string[], directory: string) {
   return { forwarded, skip, resumed, cwd: path.resolve(directory, requestedCwd ?? '.') }
 }
 
-// The read-only agent every delegated task runs on unless the binary names another; a child session named an agent the
-// runtime lacks may run on its writable default, so the review refuses first, as the binary's own opencode preflight does.
-const TASK_AGENT = 'review-task'
-
-/** Why a 2.x review cannot run its tasks as child sessions, or undefined when it can (or the agents cannot be listed). */
-async function missingTaskAgent(host: Host): Promise<string | undefined> {
-  const agents = await host.agents?.().catch(() => undefined)
-  if (!agents || agents.includes(TASK_AGENT)) return undefined
-  return `⚠️ INCOMPLETE — the craft OpenCode agents are not installed or are out of date: this OpenCode has no \`${TASK_AGENT}\` agent, which every review task runs on read-only. Add the craft package of this release (\`opencode plugin add\`), or rerun integrations/opencode/install.sh. Nothing ran.`
-}
+/** A model as the binary's `--models` names it: `provider/model`, its `#variant` kept. */
+const modelName = (m: ModelRef) => `${m.providerID}/${m.modelID}${m.variant ? `#${m.variant}` : ''}`
 
 /** The flags with the calling session's model added, unless they or the environment name the models. */
-async function withCallerModel(host: Host, forwarded: string[], sessionID: string | undefined): Promise<string[]> {
+function withCallerModel(forwarded: string[], caller: ModelRef | undefined): string[] {
   const mapped = hasModels(forwarded) || Boolean(process.env['CRAFT_OPENCODE_MODELS'])
-  const model = mapped || !sessionID ? undefined : await host.callerModel(sessionID).catch(() => undefined)
-  return model ? [...forwarded, '--models', `${model.providerID}/${model.modelID}`] : forwarded
+  return caller && !mapped ? [...forwarded, '--models', modelName(caller)] : forwarded
+}
+
+/** The calling session's model, undefined when there is no caller or it records none. */
+const callerOf = (host: Host, sessionID: string | undefined) => (sessionID ? host.callerModel(sessionID).catch(() => undefined) : Promise.resolve(undefined))
+
+/** What a 2.x run adds: the agents listed, for the binary, and the runner of the tasks it hands back; nothing on 1.x. */
+function delegation(host: Host, call: ToolCall, agents: string[] | undefined, caller: ModelRef | undefined) {
+  if (!agents) return { flags: [] }
+  return { flags: ['--agents', agents.join(',')], onTask: childTasks(host, call.sessionID, caller) }
 }
 
 async function runReview(host: Host, args: string, call: ToolCall, children = false): Promise<ToolAnswer> {
-  const missing = children ? await missingTaskAgent(host) : undefined
-  if (missing) return { title: 'craft review: INCOMPLETE', output: missing }
+  const listed: { agents?: string[] } | { refused: string } = children ? await taskAgents(host) : {}
+  if ('refused' in listed) return { title: 'craft review: INCOMPLETE', output: listed.refused }
   const review = await import('../../shared/craft-review-run.mjs')
   const { forwarded, skip, resumed, cwd } = profileOptions(review.flagWords(args), host.directory)
-  if (!skip && !resumed) {
-    const why = await profilePreflight(review.WRAPPER, cwd, call.signal)
-    if (why) return { title: 'craft review: profile', output: why }
-  }
+  const why = skip || resumed ? undefined : await profilePreflight(review.WRAPPER, cwd, call.signal)
+  if (why) return { title: 'craft review: profile', output: why }
+  const caller = await callerOf(host, call.sessionID)
+  const { flags, onTask } = delegation(host, call, listed.agents, caller)
   const outcome = await review.runReview({
     backend: 'opencode',
-    args: await withCallerModel(host, forwarded, call.sessionID),
+    args: [...withCallerModel(forwarded, caller), ...flags],
     cwd: host.directory,
     ...(call.signal ? { signal: call.signal } : {}),
     onProgress: p => call.progress?.(review.progressLine(p)),
-    ...(children ? { onTask: childTasks(host, call.sessionID) } : {}),
+    ...(onTask ? { onTask } : {}),
   })
   return { title: `craft review: ${review.summaryOf(outcome).verdict}`, output: review.answerText(outcome) }
 }
 
-// What the audit and the triage answer on OpenCode 2.x, before any child session: no 2.x child session was seen
-// answering in their runs. Built here, without integrations/shared/, so a plugin copy without it still answers. The
-// review is not refused: its tasks run as child sessions too, read by the reply reader fixed for #626 (host-v2.ts); the
-// audit's and the triage's runs on that reader are not yet observed, so they stay refused.
+// What the audit and the triage answer on OpenCode 2.x, before any child session. Built here, without
+// integrations/shared/, so a plugin copy without it still answers. The review is not refused: its tasks run as child
+// sessions read by the reply reader fixed for #626 (host-v2.ts), which the audit and the triage share; their own runs on
+// it are not yet observed, so they stay refused (realm @nick/craft, node #627).
 export function refusalOnV2(name: string): string {
-  return `⚠️ INCOMPLETE — craft's \`${name}\` does not yet work in OpenCode 2.x: its child sessions never answered in testing (craft 0.50.0, OpenCode 2.2.7). A route through \`opencode run\` is in progress; until it ships, use OpenCode 1.x, Claude Code, Codex or pi. Nothing ran.`
+  return `⚠️ INCOMPLETE — craft's \`${name}\` is not yet enabled in OpenCode 2.x: its child sessions never answered in testing (craft 0.50.0, OpenCode 2.2.7), and it has not been run on the child-session reader \`/craft-review\` now uses. Until it is, use OpenCode 1.x, Claude Code, Codex or pi. Nothing ran.`
 }
 
 /**

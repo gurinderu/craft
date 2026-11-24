@@ -108,6 +108,11 @@ pub struct RunArgs {
     /// is run.
     #[arg(long)]
     pub delegate: bool,
+    /// With `--delegate`: the agents the delegating OpenCode lists, comma-separated. Without
+    /// `review-task` the review refuses; a task whose own agent is not listed runs on
+    /// `review-task`, said degraded.
+    #[arg(long, requires = "delegate")]
+    pub agents: Option<String>,
 }
 
 fn say(out: &mut dyn Write, text: &str) -> Result<()> {
@@ -134,7 +139,11 @@ fn ready(args: &RunArgs, repo: &Path, sink: Sink) -> Result<(NonZeroUsize, Host,
         if host.kind != HostKind::OpenCode || !sink.json {
             return Err("--delegate is opencode's alone, with --events json".into());
         }
-        host.delegate = Some(delegate::Delegate::on_stdin(move |e| sink.emit(&e)));
+        host.agents = Some(opencode::delegated(args.agents.as_deref())?);
+        host.delegate = Some(delegate::Delegate::on_stdin(
+            move |e| sink.emitted(&e),
+            move |l| sink.log(l),
+        ));
         return Ok((concurrency, host, root));
     }
     if host.kind == HostKind::OpenCode {

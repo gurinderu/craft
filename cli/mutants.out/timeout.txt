@@ -1,3 +1,0 @@
-bin/craft/src/run/delegate.rs:94:9: replace Delegate::deliver -> bool with true
-bin/craft/src/run/delegate.rs:94:9: replace Delegate::deliver -> bool with false
-bin/craft/src/run/delegate.rs:108:9: replace Delegate::close with ()

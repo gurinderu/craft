@@ -6,8 +6,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { writeExecutable } from '../../shared/write-executable.mjs'
-import { TOOLS, childTasks, modelRef, nestedUnder, onV2, withoutContent } from './tools.ts'
-import { ENGINE_SESSIONS } from './child-run.ts'
+import { TOOLS, nestedUnder, onV2, withoutContent } from './tools.ts'
 
 /** @param {import('./host.ts').ModelRef} [model] @returns {import('./host.ts').Host & { asked: import('./host.ts').ChildRequest[] }} */
 function fakeHost(model) {
@@ -180,63 +179,41 @@ test('when the registration failed, the review says why and runs nothing; the ot
   )
 })
 
-test("a model the binary names is read as provider, model and variant; none, or no provider, is the session's own", () => {
-  assert.deepEqual(modelRef('anthropic/claude-x'), { providerID: 'anthropic', modelID: 'claude-x' })
-  assert.deepEqual(modelRef('openrouter/a/b#high'), { providerID: 'openrouter', modelID: 'a/b', variant: 'high' })
-  assert.equal(modelRef(null), undefined)
-  assert.equal(modelRef('bare'), undefined)
-  assert.equal(modelRef('/m'), undefined)
-})
-
-test('a delegated task runs as one child session under the caller, on the agent and model the binary names', async () => {
-  const host = fakeHost()
-  const stop = new AbortController()
-  /** @type {string[]} */
-  const marked = []
-  host.runChild = req => {
-    host.asked.push(req)
-    req.onSession?.('ses_child')
-    marked.push(String(ENGINE_SESSIONS.has('ses_child')))
-    return Promise.resolve('reply')
-  }
-  const run = childTasks(host, 'ses_caller')
-  assert.equal(await run({ label: 'lens a', agent: 'review-task', model: 'p/m#v', prompt: 'read p.md' }, stop.signal), 'reply')
-  const { onSession, ...asked } = host.asked[0] ?? {}
-  assert.ok(onSession)
-  assert.deepEqual(asked, {
-    title: 'craft review: lens a',
-    agent: 'review-task',
-    prompt: 'read p.md',
-    signal: stop.signal,
-    model: { providerID: 'p', modelID: 'm', variant: 'v' },
-    parentID: 'ses_caller',
-  })
-  assert.deepEqual(marked, ['true'], "the child is the engine's while it runs: the work hook stays silent there")
-  await childTasks(host, undefined)({ label: 'b', agent: null, model: null, prompt: 'p' }, stop.signal)
-  const { onSession: _o, signal: _s, ...bare } = host.asked[1] ?? {}
-  assert.deepEqual(bare, { title: 'craft review: b', agent: '', prompt: 'p' }, 'no agent, model or caller: the defaults')
-})
-
-test('on 2.x the review delegates its tasks and runs each as a child session of the caller; 1.x does not', async () => {
+/** A fake binary that, given --delegate, hands out one task and keeps the reply it reads. @returns {string} its argv file */
+function delegatingBinary() {
   const argv = fakeBinary()
   const bin = process.env['CRAFT_BIN']
   assert.ok(bin)
-  const task = JSON.stringify({ type: 'task', key: 1, id: 't1', label: 'lens a', agent: 'review-task', model: null, prompt: 'go' })
+  const task = JSON.stringify({ type: 'task', key: 1, id: 't1', label: 'lens a', agent: 'review-task', model: null, cwd: '/wt', prompt: 'go' })
   writeExecutable(
     bin,
     `#!/bin/sh\nif [ "$1" = init ]; then printf '{"exists":true}\\n'; exit 0; fi\necho "$*" > "$(dirname "$0")/argv"\nif [ -n "$(echo "$*" | grep -e --delegate)" ]; then echo '${task}' >&2; read -r line; printf '%s\\n' "$line" > "$(dirname "$0")/reply"; fi\nprintf '## Verdict\\n\\nApprove\\n'\n`,
   )
+  return argv
+}
+
+/** A 2.x host: it lists `agents` and records the caller on `model`. @param {string[]} agents @param {import('./host.ts').ModelRef} [model] */
+const listing = (agents, model) => ({ ...fakeHost(model), agents: () => Promise.resolve(agents) })
+
+test('on 2.x the review hands the binary the agents listed and runs each task as a child session of the caller; 1.x does not', async () => {
+  const argv = delegatingBinary()
   const review = onV2(TOOLS).find(t => t.name === 'review')
   assert.ok(review)
   assert.match(review.description, /each task runs as a child session of this session/)
   assert.doesNotMatch(review.description, /opencode run` on/)
-  const host = fakeHost()
+  const host = listing(['build', 'review-task'], { providerID: 'p', modelID: 'm', variant: 'high' })
   await review.run(host, { args: '--base main' }, { sessionID: 'ses_caller' })
-  assert.equal(fs.readFileSync(argv, 'utf8').trim(), 'review run --backend opencode --events json --delegate --base main')
+  assert.equal(
+    fs.readFileSync(argv, 'utf8').trim(),
+    'review run --backend opencode --events json --delegate --base main --models p/m#high --agents build,review-task',
+    "the caller's model goes to the binary with its variant",
+  )
   const [child] = host.asked
   assert.ok(child)
   assert.equal(child.parentID, 'ses_caller')
   assert.equal(child.agent, 'review-task')
+  assert.match(child.prompt, /^WORKING DIRECTORY: this task reviews the repository at \/wt /)
+  assert.deepEqual(child.model, { providerID: 'p', modelID: 'm', variant: 'high' }, "a task naming no model runs on the caller's")
   assert.equal(fs.readFileSync(path.join(path.dirname(argv), 'reply'), 'utf8').trim(), JSON.stringify({ key: 1, text: 'done' }))
   const v1 = TOOLS.find(t => t.name === 'review')
   assert.ok(v1)
@@ -244,16 +221,33 @@ test('on 2.x the review delegates its tasks and runs each as a child session of 
   assert.equal(fs.readFileSync(argv, 'utf8').trim(), 'review run --backend opencode --events json --base main')
 })
 
-test('on 2.x the review refuses before anything runs when the runtime lists no review-task agent', async () => {
+test('on 2.x the review refuses before anything runs when the agents cannot be listed or lack review-task', async () => {
   const argv = fakeBinary()
-  fs.rmSync(argv, { force: true })
   const review = onV2(TOOLS).find(t => t.name === 'review')
-  const host = { ...fakeHost(), agents: () => Promise.resolve(['build']) }
-  const answer = await review?.run(host, {}, { sessionID: 'ses_caller' })
-  assert.equal(typeof answer === 'object' ? answer.title : '', 'craft review: INCOMPLETE')
-  assert.match(typeof answer === 'object' ? answer.output : '', /no `review-task` agent, which every review task runs on read-only\. .*Nothing ran\.$/)
-  assert.equal(fs.existsSync(argv), false, 'the binary never ran')
-  const listed = { ...fakeHost(), agents: () => Promise.resolve(['build', 'review-task']) }
-  await review?.run(listed, {}, { sessionID: 'ses_caller' })
+  assert.ok(review)
+  const refusedBy = async (/** @type {import('./host.ts').Host} */ host) => {
+    fs.rmSync(argv, { force: true })
+    const answer = await review.run(host, {}, { sessionID: 'ses_caller' })
+    assert.equal(fs.existsSync(argv), false, 'the binary never ran')
+    assert.ok(typeof answer === 'object')
+    assert.equal(answer.title, 'craft review: INCOMPLETE')
+    return answer.output
+  }
+  assert.match(await refusedBy(listing(['build'])), /no `review-task` agent, which every review task runs on read-only\. .*Nothing ran\.$/)
+  assert.match(
+    await refusedBy({ ...fakeHost(), agents: () => Promise.reject(new Error('agent editor gone')) }),
+    /could not list this OpenCode's agents \(agent editor gone\).*Nothing ran\.$/,
+  )
+  assert.match(await refusedBy(fakeHost()), /cannot list this OpenCode's agents/)
+  await review.run(listing(['review-task']), {}, { sessionID: 'ses_caller' })
   assert.equal(fs.existsSync(argv), true, 'with review-task listed, it runs')
+})
+
+test('the 2.x audit and triage say they are not yet enabled, and why', async () => {
+  for (const spec of onV2(TOOLS).filter(t => t.name !== 'review')) {
+    const answer = await spec.run(fakeHost(), {}, {})
+    assert.ok(typeof answer === 'string')
+    assert.match(answer, /is not yet enabled in OpenCode 2\.x: .*has not been run on the child-session reader `\/craft-review` now uses/)
+    assert.doesNotMatch(answer, /opencode run/)
+  }
 })
