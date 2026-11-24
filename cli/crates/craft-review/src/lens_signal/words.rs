@@ -4,7 +4,7 @@
 
 /// Words of an identifier that name money, matched whole after splitting snake and camel case.
 #[rustfmt::skip]
-const MONEY: [&str; 118] = [
+const MONEY: [&str; 116] = [
     "amount", "amounts", "price", "prices", "priced", "pricing", "balance", "balances", "currency",
     "currencies", "decimal", "decimals", "cents", "cent", "money", "monetary", "payment",
     "payments", "pay", "paid", "payer", "payers", "payee", "payees", "payable", "payout", "payouts",
@@ -17,7 +17,7 @@ const MONEY: [&str; 118] = [
     "cost", "costs", "total", "totals", "subtotal", "subtotals", "discount", "discounts", "settle",
     "settles", "settled", "settlement", "settlements", "escrow", "revenue", "revenues", "salary",
     "salaries", "rounding", "checkout", "checkouts", "cart", "carts", "purchase", "purchases",
-    "purchased", "purchasing", "order", "orders", "ordered", "subscription", "subscriptions",
+    "purchased", "purchasing", "orders", "subscription", "subscriptions",
     "subscribe", "subscribed", "donation", "donations", "donate", "donated",
 ];
 

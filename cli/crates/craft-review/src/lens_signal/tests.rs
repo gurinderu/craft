@@ -94,6 +94,9 @@ fn an_allocation_in_an_iterator_chain_fires_loop_io_without_a_loop_keyword() {
     // A map/filter/collect with no iteration starter is not a loop.
     let none = lines(&["    let v = opt.map(|x| x + 1);"]);
     assert!(of_file(&none, 0, false, 0).is_empty());
+    // A bare `.iter().next()` is a single-element access, not a loop body, and carries no cost.
+    let first = lines(&["    let first = xs.iter().next();"]);
+    assert!(of_file(&first, 0, false, 0).is_empty());
 }
 
 #[test]
@@ -250,6 +253,25 @@ fn a_real_change_marks_each_track_from_its_context_and_removals() {
         tracks[1].signals.as_deref(),
         Some(&["money".to_owned()][..]),
         "a removed balance guard: no added or context line names money"
+    );
+}
+
+#[test]
+fn a_real_change_that_adds_branches_marks_new_or_large_file() {
+    let t = tempfile::tempdir().unwrap();
+    let before = "fn f(x: i32) -> i32 {\n    x\n}\n";
+    let after = "fn f(x: i32) -> i32 {\n    if x > 0 {\n        x\n    } else if x < 0 {\n        -x\n    } else {\n        match x {\n            _ => 0,\n        }\n    }\n}\n";
+    let diff = change(
+        t.path(),
+        &[("src/lib.rs", before)],
+        &[("src/lib.rs", after)],
+    );
+    let mut tracks = vec![Track::new("rust", vec!["src/lib.rs".into()])];
+    assert_eq!(mark(t.path(), &diff, &mut tracks), None);
+    assert_eq!(
+        tracks[0].signals.as_deref(),
+        Some(&["new-or-large-file".to_owned()][..]),
+        "a small change that grows control flow: four added branch lines"
     );
 }
 

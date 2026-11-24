@@ -4,7 +4,7 @@
 //! it removed and the function around them ([`hunks`]), so an edit inside an existing money path,
 //! or a deleted guard, shows it; a data file ([`crate::coverage::is_data`]) shows none:
 //! - `money`: an identifier naming money (amount, price, balance, ledger, charge, total, cents,
-//!   checkout, cart, purchase, order, subscription, donation…);
+//!   checkout, cart, purchase, orders, subscription, donation…);
 //! - `loop-io`: an allocation or an I/O call in the body of a loop or an iterator chain — a hot
 //!   loop is not visible in a diff, what a loop pays per turn is;
 //! - `new-or-large-file`: a source file the change adds, one it adds [`LARGE`] lines or more to, or
