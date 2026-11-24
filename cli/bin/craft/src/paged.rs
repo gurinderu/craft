@@ -3,7 +3,7 @@
 //! many tasks, a finished run's findings — came back cut. With `--paged` the step goes whole to
 //! [`FILE`] in its run directory and only its first page is printed; `craft review page` prints
 //! the next. The step is the one JSON line `printed` would print, cut by characters: a page is a
-//! `craft-out <file> <total> <from> <count>` line, the page's `count` characters of the step from
+//! `craft-out <run> <total> <from> <count>` line naming the run directory, the page's `count` characters of the step from
 //! offset `from` on one line, and a `craft-page <end>` line — offsets and counts in UTF-16 code
 //! units, as the driver's strings count them, and never splitting a character. The driver joins
 //! the pages with no separator and checks every count, so a page cut in a copy is seen and asked
@@ -17,6 +17,7 @@ use anyhow::{Context, Result};
 use serde_json::Value;
 
 mod cut;
+mod open;
 
 /// The run directory's file a paged step is written to.
 pub const FILE: &str = "host-step.out";
@@ -31,9 +32,9 @@ pub struct Paging {
 
 #[derive(Debug, clap::Args)]
 pub struct PageArgs {
-    /// The `host-step.out` of a run directory, as a paged step's `craft-out` line named it.
+    /// The run directory a paged step's `craft-out` line named: its `host-step.out` is read.
     #[arg(long)]
-    pub file: PathBuf,
+    pub run: PathBuf,
     /// Where the page starts in the step, in UTF-16 code units from 0.
     #[arg(long)]
     pub from: usize,
@@ -66,14 +67,15 @@ fn step_to(
     let text = serde_json::to_string(&crate::printed::for_host(value.clone()))?;
     let file = Path::new(run).join(FILE);
     if let Err(e) = write(&file, &text) {
-        writeln!(
+        // The note is best effort: failing to say it must not lose the step.
+        drop(writeln!(
             err,
             "craft: {} could not be written ({e}): the step is printed whole",
             file.display()
-        )?;
+        ));
         return crate::printed::write_line(out, value);
     }
-    page(out, &file, &text, 0)
+    page(out, Path::new(run), &text, 0)
 }
 
 /// Writes `text` to `file` whole or not at all: through a file beside it, renamed over it, the
@@ -88,63 +90,21 @@ fn write(file: &Path, text: &str) -> std::io::Result<()> {
     written
 }
 
-/// `craft review page`: the page of a paged step's file from offset `from`. Only a run
-/// directory's [`FILE`] is read.
+/// `craft review page`: the page of the step the run in `--run` wrote, from offset `from`.
 pub fn page_of(args: &PageArgs) -> Result<ExitCode> {
-    let text = read_step(&args.file)?;
-    page(&mut std::io::stdout().lock(), &args.file, &text, args.from)?;
+    let text = open::read_step(&args.run)?;
+    page(&mut std::io::stdout().lock(), &args.run, &text, args.from)?;
     Ok(ExitCode::SUCCESS)
 }
 
-/// The text of a run directory's [`FILE`]: a regular file of that name, itself no symlink, beside
-/// the run's state; refused otherwise.
-fn read_step(file: &Path) -> Result<String> {
-    let in_run = file.file_name().is_some_and(|n| n == FILE)
-        && file
-            .parent()
-            .is_some_and(|d| craft_review::state::state_path(d).is_file());
-    let regular = std::fs::symlink_metadata(file).is_ok_and(|m| m.file_type().is_file());
-    anyhow::ensure!(
-        in_run && regular,
-        "{} is not the {FILE} of a run directory",
-        file.display()
-    );
-    let mut opened =
-        std::fs::File::open(file).with_context(|| format!("reading {}", file.display()))?;
-    same_file(file, &opened)?;
-    let mut text = String::new();
-    std::io::Read::read_to_string(&mut opened, &mut text)
-        .with_context(|| format!("reading {}", file.display()))?;
-    Ok(text)
-}
-
-/// That the file opened is the one checked: no symlink put in its place between the two.
-#[cfg(unix)]
-fn same_file(file: &Path, opened: &std::fs::File) -> Result<()> {
-    use std::os::unix::fs::MetadataExt;
-    let (checked, got) = (std::fs::symlink_metadata(file)?, opened.metadata()?);
-    anyhow::ensure!(
-        checked.file_type().is_file() && (checked.dev(), checked.ino()) == (got.dev(), got.ino()),
-        "{} changed while it was opened",
-        file.display()
-    );
-    Ok(())
-}
-
-#[cfg(not(unix))]
-fn same_file(_file: &Path, opened: &std::fs::File) -> Result<()> {
-    anyhow::ensure!(opened.metadata()?.is_file(), "not a regular file");
-    Ok(())
-}
-
 /// The page of `text` from offset `from`, framed, written to `out`.
-fn page(out: &mut impl Write, file: &Path, text: &str, from: usize) -> Result<()> {
+fn page(out: &mut impl Write, run: &Path, text: &str, from: usize) -> Result<()> {
     let total = cut::units(text);
     let start = cut::byte_at(text, from)
         .with_context(|| format!("offset {from} is no character boundary of the {total}"))?;
     let body = cut::page(text.get(start..).unwrap_or_default());
     let count = cut::units(body);
-    writeln!(out, "craft-out {} {total} {from} {count}", file.display())?;
+    writeln!(out, "craft-out {} {total} {from} {count}", run.display())?;
     writeln!(out, "{body}")?;
     writeln!(out, "craft-page {}", from + count)?;
     Ok(())

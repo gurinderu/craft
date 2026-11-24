@@ -1,5 +1,6 @@
 //! Where a page of a step starts and ends: offsets in UTF-16 code units, as the driver's strings
-//! count them, on character boundaries, and never next to whitespace a copy could trim.
+//! count them, on character boundaries, and not next to whitespace or U+FEFF a copy could trim
+//! wherever the page has another boundary; a page with none ends at its bound.
 
 /// How many UTF-16 code units a page holds at most.
 pub(super) const PAGE_UNITS: usize = 8000;

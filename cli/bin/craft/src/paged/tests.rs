@@ -16,13 +16,7 @@ struct Printed {
 
 fn printed(text: &str, from: usize) -> Printed {
     let mut out = Vec::new();
-    page(
-        &mut out,
-        std::path::Path::new("/run/host-step.out"),
-        text,
-        from,
-    )
-    .unwrap();
+    page(&mut out, std::path::Path::new("/run"), text, from).unwrap();
     let out = String::from_utf8(out).unwrap();
     let lines: Vec<&str> = out.split('\n').collect();
     assert_eq!(
@@ -31,7 +25,7 @@ fn printed(text: &str, from: usize) -> Printed {
         "a header, one body line, a closing line: {out}"
     );
     let head: Vec<&str> = lines[0].split(' ').collect();
-    assert_eq!(&head[..2], ["craft-out", "/run/host-step.out"]);
+    assert_eq!(&head[..2], ["craft-out", "/run"]);
     let n = |s: &str| s.parse::<usize>().unwrap();
     Printed {
         total: n(head[2]),
@@ -187,18 +181,29 @@ fn a_cut_avoids_a_byte_order_mark_and_falls_back_to_the_bound_when_all_is_blank(
     assert_eq!(units(cut_page(&blank)), PAGE_UNITS);
 }
 
-#[cfg(unix)]
+/// A writer that refuses every write.
+struct Refusing;
+
+impl std::io::Write for Refusing {
+    fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+        Err(std::io::Error::other("closed"))
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
 #[test]
-fn a_file_swapped_between_its_check_and_its_open_is_refused() {
+fn a_note_that_cannot_be_written_does_not_lose_the_step() {
     let t = tempfile::tempdir().unwrap();
-    let (checked, opened) = (t.path().join("a"), t.path().join("b"));
-    std::fs::write(&checked, "a").unwrap();
-    std::fs::write(&opened, "b").unwrap();
-    let file = std::fs::File::open(&opened).unwrap();
-    super::same_file(&opened, &file).unwrap();
-    let err = super::same_file(&checked, &file).unwrap_err();
-    assert!(
-        err.to_string().contains("changed while it was opened"),
-        "{err}"
-    );
+    let step = json!({"run": t.path().join("gone").display().to_string(), "done": false});
+    let mut out = Vec::new();
+    super::step_to(
+        &mut out,
+        &mut Refusing,
+        &step,
+        &super::Paging { paged: true },
+    )
+    .unwrap();
+    assert_eq!(serde_json::from_slice::<Value>(&out).unwrap(), step);
 }

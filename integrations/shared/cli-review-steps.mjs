@@ -24,7 +24,7 @@ import { briefOf, endedOf, standingOf, statusUnreadable } from './cli-review-end
 import { harnessRefused, harnessStop } from './cli-review-refusal.mjs'
 import { gateAnswer, gateCommand, gateShell } from './cli-review-gate.mjs'
 import { stepRounds } from './cli-step-loop.mjs'
-import { pageCommand, pagedRunOf, readPaged } from './cli-review-paged.mjs'
+import { pageCommand, readPaged, unreadRun } from './cli-review-paged.mjs'
 import { telemetryLostSection } from './review-coverage.mjs'
 import { argumentRefusal } from './run-record.mjs'
 import { normalizeArgs } from './workflow-args.mjs'
@@ -192,11 +192,11 @@ function checkedRoot(got) {
  */
 function startPrompt(o, where, version) {
   const cmd = startCommand(o, where, version)
-  if (!o.priorDecisions) return servicePrompt(`Run exactly this one command, ${START_TIMEOUT}:\n\n${cmd}`, PAGE)
+  if (!o.priorDecisions) return servicePrompt(`Run exactly this one command, ${START_TIMEOUT}:\n\n${cmd}`, STEP)
   // One line of JSON (JSON.stringify escapes every newline), so no line of it can be the quoted heredoc's delimiter.
   return servicePrompt(
     `Run exactly this one command, ${START_TIMEOUT}, the line between the heredoc's markers copied character for character:\n\n${cmd} --prior-decisions - <<'${PRIOR_DECISIONS_EOF}'\n${o.priorDecisions}\n${PRIOR_DECISIONS_EOF}`,
-    PAGE,
+    STEP,
   )
 }
 
@@ -215,7 +215,7 @@ function startIssued(o, where, version) {
  * (`run=`) an answer still missing is handed out again, not counted as a failed attempt; an `--abandoned` task the
  * binary fails at once. @param {string} cmd @returns {string}
  */
-const submitPrompt = cmd => servicePrompt(`Run exactly this one command, ${SUBMIT_TIMEOUT}:\n\n${cmd}`, PAGE)
+const submitPrompt = cmd => servicePrompt(`Run exactly this one command, ${SUBMIT_TIMEOUT}:\n\n${cmd}`, STEP)
 
 /**
  * A service step: `sent` is the one command its prompt asks run ('' for a script), which names the refused command when
@@ -232,9 +232,13 @@ function submitStep(serve, label, title, ...parts) {
   return paged(serve, label, title, parts[0], serve(label, title, submitPrompt(cmd), cmd))
 }
 
-/** What a paged command prints: one page of its step, framed (integrations/shared/cli-review-paged.mjs). */
-const PAGE =
-  "exactly three lines — the craft-out line, the page's one body line copied whole, character for character, never split, wrapped or trimmed however long it is, and the craft-page line —"
+/** A page's lines, as the service agent is told them. */
+const PAGE_LINES =
+  "exactly three lines: the craft-out line, the page's one body line copied whole, character for character, never split, wrapped or trimmed however long it is, and the craft-page line"
+/** What a paged command prints: its step whole on one line, or its first page, framed (integrations/shared/cli-review-paged.mjs). */
+const STEP = `either one line of JSON or, when the step is paged, ${PAGE_LINES} —`
+/** What a page step prints (integrations/shared/cli-review-paged.mjs). */
+const PAGE = `${PAGE_LINES} —`
 
 /**
  * A paged command's step read whole: its answer `got`, then the rest of its step a page at a time, each page its own
@@ -591,7 +595,7 @@ async function opening(sb, o, craftVersion, serve, where) {
   if (argument) return { argument }
   const read = readStep(got)
   // A start whose step was paged but not read whole still made its run.
-  const run = pagedRunOf(got)
+  const run = unreadRun(got)
   return 'error' in read && run !== null ? { ...read, run } : read
 }
 
@@ -716,4 +720,4 @@ async function briefly(sb, bin, run, serve, recorder) {
 }
 
 /** The step that asks the binary where the run stands. @param {string} bin @param {string} run @returns {string} */
-const statusPrompt = (bin, run) => servicePrompt(`Run exactly this one command:\n\n${statusCommand(bin, run)}`, PAGE)
+const statusPrompt = (bin, run) => servicePrompt(`Run exactly this one command:\n\n${statusCommand(bin, run)}`, STEP)

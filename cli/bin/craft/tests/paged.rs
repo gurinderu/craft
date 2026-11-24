@@ -85,11 +85,9 @@ fn started(tmp: &Path) -> (String, String) {
 fn every_step_command_pages_its_step_into_the_run_directory() {
     let tmp = tempfile::tempdir().unwrap();
     let (run, first) = started(tmp.path());
-    let (file, body) = framed(&first);
-    assert_eq!(
-        file,
-        Path::new(&run).join("host-step.out").display().to_string()
-    );
+    let (named, body) = framed(&first);
+    assert_eq!(named, run, "the frame names the run directory");
+    let file = Path::new(&run).join("host-step.out");
     let step: Value = serde_json::from_str(&body).unwrap();
     assert_eq!(step["run"], Value::String(run.clone()));
     assert!(
@@ -99,7 +97,7 @@ fn every_step_command_pages_its_step_into_the_run_directory() {
     // `review page` from 0 prints the very page the start printed.
     assert_eq!(
         craft(
-            &["review", "page", "--file", &file, "--from", "0"],
+            &["review", "page", "--run", &run, "--from", "0"],
             tmp.path()
         ),
         first
@@ -110,7 +108,7 @@ fn every_step_command_pages_its_step_into_the_run_directory() {
             tmp.path(),
         );
         let (named, body) = framed(&page);
-        assert_eq!(named, file, "{cmd:?}");
+        assert_eq!(named, run, "{cmd:?}");
         let step: Value = serde_json::from_str(&body).unwrap();
         assert_eq!(step["run"], Value::String(run.clone()), "{cmd:?}");
         assert_eq!(std::fs::read_to_string(&file).unwrap(), body, "{cmd:?}");
@@ -134,45 +132,64 @@ fn every_step_command_pages_its_step_into_the_run_directory() {
     assert!(serde_json::from_str::<Value>(&status).is_ok(), "{status}");
 }
 
+/// `review page` over `run`: its exit code and its stderr.
+fn page_of(run: &Path, home: &Path) -> (Option<i32>, String) {
+    let out = run_craft(
+        &[
+            "review",
+            "page",
+            "--run",
+            run.to_str().unwrap(),
+            "--from",
+            "0",
+        ],
+        home,
+    );
+    assert!(out.stdout.is_empty(), "{out:?}");
+    (
+        out.status.code(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+    )
+}
+
 #[test]
-fn review_page_reads_only_a_run_directory_s_step_file() {
+fn review_page_reads_only_a_run_directory_s_own_plain_step_file() {
     let tmp = tempfile::tempdir().unwrap();
     let secret = tmp.path().join("notes.txt");
     std::fs::write(&secret, "secret").unwrap();
-    // No run directory: a file of the right name beside no state.
-    let named = tmp.path().join("host-step.out");
-    std::fs::write(&named, "{}").unwrap();
-    // A run directory: a file of another name beside its state, and the step file as a symlink.
+    // A directory with a step file but no run state is no run directory.
+    let bare = tmp.path().join("bare");
+    std::fs::create_dir_all(&bare).unwrap();
+    std::fs::write(bare.join("host-step.out"), "{}").unwrap();
+    let (code, err) = page_of(&bare, tmp.path());
+    assert_eq!(code, Some(1));
+    assert!(
+        err.contains("is not a run directory: it holds no run state"),
+        "{err}"
+    );
+    // A run directory with no step file says so with the io error.
     let run = tmp.path().join("run");
     std::fs::create_dir_all(&run).unwrap();
     std::fs::write(run.join("state.json"), "{}").unwrap();
-    let misnamed = run.join("step.out");
-    std::fs::write(&misnamed, "{}").unwrap();
-    let mut refused = vec![secret.clone(), named, misnamed];
+    let (code, err) = page_of(&run, tmp.path());
+    assert_eq!(code, Some(1));
+    assert!(
+        err.contains("reading ") && err.contains("No such file"),
+        "{err}"
+    );
     #[cfg(unix)]
     {
-        let link = run.join("host-step.out");
-        std::os::unix::fs::symlink(&secret, &link).unwrap();
-        refused.push(link);
-    }
-    for file in &refused {
-        let out = run_craft(
-            &[
-                "review",
-                "page",
-                "--file",
-                file.to_str().unwrap(),
-                "--from",
-                "0",
-            ],
-            tmp.path(),
-        );
-        assert_eq!(out.status.code(), Some(1), "{file:?}: {out:?}");
-        assert!(out.stdout.is_empty(), "{out:?}");
-        let err = String::from_utf8_lossy(&out.stderr);
-        assert!(
-            err.contains("is not the host-step.out of a run directory"),
-            "{err}"
-        );
+        // A symlink in the step file's place is refused by the open itself.
+        std::os::unix::fs::symlink(&secret, run.join("host-step.out")).unwrap();
+        let (code, err) = page_of(&run, tmp.path());
+        assert_eq!(code, Some(1));
+        assert!(!err.contains("secret"), "{err}");
+        assert!(err.contains("reading "), "{err}");
+        // A hard link to another file is refused by its link count.
+        std::fs::remove_file(run.join("host-step.out")).unwrap();
+        std::fs::hard_link(&secret, run.join("host-step.out")).unwrap();
+        let (code, err) = page_of(&run, tmp.path());
+        assert_eq!(code, Some(1));
+        assert!(err.contains("the file has 2 links"), "{err}");
     }
 }
