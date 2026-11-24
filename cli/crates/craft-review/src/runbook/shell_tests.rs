@@ -90,10 +90,17 @@ fn an_arithmetic_shift_opens_no_here_document() {
         "x=$(( y << 3 ))",
         "((x<<=1))",
         "let x=y<<1",
+        // A single `)` inside the arithmetic closes no `((`.
+        "x=$(( (1+2) << 3 ))",
         "let 'x = y << 1'",
     ] {
         assert_eq!(scan(line, None), Opened::default(), "{line}");
     }
+    // A `))` closing two command substitutions closes no arithmetic.
+    assert_eq!(
+        scan("cat $(dirname $(pwd)) <<EOF", None),
+        opened(None, &["EOF"])
+    );
     // Past the arithmetic, a here-document still opens.
     assert_eq!(
         scan("n=$((1<<2)); psql <<EOF", None),
