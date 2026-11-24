@@ -117,7 +117,8 @@ Verification raises it when the verifier confirms a must-fix harm; synthesis nev
   reconcile, concurrency or error-handling rule, or that is flagged on a deletion or recovery path
   is verified in a batch on a full pass when a harm it claims is must-fix, so the verified harm can
   raise it. One whose harm could not be must-fix stays unverified. A light pass still verifies only
-  Medium and above.
+  Medium and above, but for a weak assertion that names its regression (below): it is verified on a
+  light pass too.
 - **Synthesis** never reports a finding above that cap.
 - **A weak assertion** the tests lens reported alone, naming its regression and a harm of
   operator recovery or worse, is raised to should-fix before verification when the lens rated it

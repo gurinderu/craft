@@ -63,6 +63,25 @@ impl From<anyhow::Error> for Stop {
     }
 }
 
+/// How a post that did not land stops: refused (exit 2) when what was asked cannot be told — no
+/// such finding, no such PR, a record that refused the mark — failed (exit 1) otherwise, the
+/// record `file` named for a retry where one may land.
+fn stop(e: PostError, file: &std::path::Path) -> Stop {
+    match e {
+        PostError::Finding(why) | PostError::Pr(why) => Stop::Refused(why),
+        PostError::Remember { ref source, .. } if source.is_refusal() => {
+            Stop::Refused(e.to_string())
+        }
+        other @ (PostError::Gh(_) | PostError::Fetch(_) | PostError::Remember { .. }) => {
+            Stop::Failed(anyhow!(
+                "{other} (record {}: a retry names it with --record)",
+                file.display()
+            ))
+        }
+        other @ PostError::Refused(_) => Stop::Failed(anyhow!(other)),
+    }
+}
+
 pub fn post(args: &PostArgs) -> Result<ExitCode> {
     match posted(args) {
         Ok(out) => {
@@ -122,16 +141,7 @@ fn posted(args: &PostArgs) -> Result<Out, Stop> {
     let scratch = crate::scratch::dir("craft-post")?;
     let posting = publish::post_doubtful(&repo, &d, args.pr, &PostSetup::default(), &scratch);
     drop(std::fs::remove_dir_all(&scratch));
-    let posting = posting.map_err(|e| match e {
-        PostError::Finding(why) | PostError::Pr(why) => Stop::Refused(why),
-        other @ (PostError::Gh(_) | PostError::Fetch(_) | PostError::Remember(_)) => {
-            Stop::Failed(anyhow!(
-                "{other} (record {}: a retry names it with --record)",
-                file.display()
-            ))
-        }
-        other @ PostError::Refused(_) => Stop::Failed(anyhow!(other)),
-    })?;
+    let posting = posting.map_err(|e| stop(e, &file))?;
     let choice = if question { "question" } else { "defect" };
     let recorded = record::choose(&store, &file, (args.n, choice), env.now);
     Ok(Out {
@@ -139,4 +149,41 @@ fn posted(args: &PostArgs) -> Result<Out, Stop> {
         recorded,
         record: file.display().to_string(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use craft_review::publish::PostError;
+    use craft_store::sorting::posting::{MarkError, Refusal};
+
+    use super::{Stop, stop};
+
+    #[test]
+    fn a_record_refusing_the_mark_is_refused_and_a_failed_write_fails() {
+        let file = Path::new("/s/r-review.json");
+        let refused = MarkError::Refused {
+            file: file.display().to_string(),
+            refusal: Refusal::NoFinding("9".into()),
+        };
+        let e = PostError::Remember {
+            pr: 5,
+            source: refused,
+        };
+        assert!(
+            matches!(stop(e, file), Stop::Refused(why) if why.contains("numbered 9") && why.contains("PR #5")),
+            "a refusal exits 2"
+        );
+        let failed = MarkError::Failed("disk full".into());
+        let e = PostError::Remember {
+            pr: 5,
+            source: failed,
+        };
+        assert!(
+            matches!(stop(e, file), Stop::Failed(why) if why.to_string().contains("disk full")
+                && why.to_string().contains("a retry names it with --record")),
+            "a failure exits 1"
+        );
+    }
 }

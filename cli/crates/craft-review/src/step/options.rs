@@ -20,7 +20,8 @@ pub struct StartOptions {
     pub craft_root: Option<String>,
     pub craft_version: Option<String>,
     /// A light pass (`depth=light`): the diff-scoped lenses, one round, only Medium and above
-    /// verified.
+    /// verified — and a weak assertion naming its regression, whose verifier is asked whether the
+    /// change's promise is unmet (realm @nick/craft, node #619).
     pub light: bool,
     /// Start a new chain of rounds rather than build on the branch's earlier round.
     pub fresh: bool,

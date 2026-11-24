@@ -79,13 +79,24 @@ pub(crate) fn verifier_lines(f: &Value) -> String {
     )
 }
 
-/// The test-promise rule for a weak assertion still at Low or Info — one the floor did not raise —
+/// Whether `f` is a weak assertion naming its regression still at Low or Info — one the floor did
+/// not raise — so the test-promise rule lists `intent-unmet` among its claims: a verifier may
+/// confirm the unmet promise, and that confirmation raises it to Medium (realm @nick/craft, node #619).
+pub(crate) fn promised(f: &Value) -> bool {
+    is_weak(f) && matches!(text(f, "severity"), Some("Low" | "Info"))
+}
+
+/// The harm text of the claim the test-promise rule adds to a [`promised`] weak assertion.
+pub(crate) const PROMISE_HARM: &str = "the change's own promise is unmet: its test passes against an implementation broken exactly the way the change promises not to break";
+
+/// The test-promise rule for a [`promised`] weak assertion, with the `intent-unmet` level it lists,
 /// so its verifier can confirm the unmet promise; a missing test, or a weak assertion already at
 /// Medium or above, is not read the rule, which must never argue it down.
 fn promise_line(f: &Value) -> String {
-    let low = matches!(text(f, "severity"), Some("Low" | "Info"));
-    if gap(f) == Some(WEAK) && low {
-        format!("\n  SEVERITY OF THIS TEST GAP: {PROMISE_FLOOR}")
+    if promised(f) {
+        format!(
+            "\n  SEVERITY OF THIS TEST GAP: {PROMISE_FLOOR}\n  harm also claimed by that rule (a listed level): intent-unmet: {PROMISE_HARM}"
+        )
     } else {
         String::new()
     }

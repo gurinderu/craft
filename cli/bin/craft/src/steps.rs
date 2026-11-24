@@ -28,8 +28,8 @@ pub struct StartArgs {
     /// craft's plugin root, named in the prompts; found above the executable when absent.
     #[arg(long, env = "CRAFT_ROOT")]
     pub craft_root: Option<PathBuf>,
-    /// `light`: the diff-scoped lenses, one round, only Medium and above verified; `full`: the
-    /// whole review.
+    /// `light`: the diff-scoped lenses, one round, only Medium and above verified (and a weak
+    /// assertion naming its regression, for the change's promise); `full`: the whole review.
     #[arg(long, value_enum, default_value_t = Depth::Full)]
     pub depth: Depth,
     /// Start a new chain of review rounds: build on no earlier round of this branch.

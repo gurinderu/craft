@@ -128,3 +128,41 @@ fn a_hash_is_a_root_prompt_only_in_a_session_block() {
     ));
     assert!(!carries_steps("```sh\n# systemctl restart kubelet\n```"));
 }
+
+#[test]
+fn a_here_document_s_body_is_part_of_the_command_that_opened_it() {
+    let psql = "```sh\npsql \"$DB\" <<EOF\nDELETE FROM users;\nEOF\nnpm ci\n```\n";
+    assert_eq!(lines(psql), [1, 2, 3, 4]);
+    let manifest = "```sh\nkubectl apply -f - <<'EOF'\nspec:\n  replicas: 0\nEOF\n```\n";
+    assert_eq!(lines(manifest), [1, 2, 3, 4, 5]);
+    // A body that ends with the block is still the command's.
+    assert_eq!(lines("```sh\npsql <<SQL\ndrop table t;\n```\n"), [1, 2, 3]);
+    // The body of a command acting on nothing outside is no step; the next command is read anew.
+    let local = "```sh\ncat <<EOF > x.yaml\nreplicas: 0\nEOF\nkubectl apply -f x.yaml\n```\n";
+    assert_eq!(lines(local), [1, 5]);
+}
+
+#[test]
+fn a_quoted_argument_spanning_lines_is_part_of_its_command() {
+    let ssh = "```sh\nssh db-1 '\n  set -e\n  systemctl stop app\n'\necho done\n```\n";
+    assert_eq!(lines(ssh), [1, 2, 3, 4, 5]);
+    let sql = "```sh\npsql -c \"\nDELETE FROM users;\n\"\n```\n";
+    assert_eq!(lines(sql), [1, 2, 3, 4]);
+}
+
+#[test]
+fn an_indented_delimiter_closes_only_a_dashed_here_document() {
+    // Under a plain `<<`, an indented EOF is body: the command runs on to the real one.
+    let plain = "```sh\ncat <<EOF > x\n  EOF\nkubectl delete pod p\nEOF\n```\n";
+    assert_eq!(lines(plain), [1, 2, 3, 4, 5]);
+    let dashed = "```sh\ncat <<-EOF > x\n\tEOF\nkubectl delete pod p\n```\n";
+    assert_eq!(lines(dashed), [1, 4]);
+}
+
+#[test]
+fn shell_arithmetic_is_carried_across_a_continued_line() {
+    // `<< 2` on the continued line is the shift of the `$((` above it, opening no here-document,
+    // so the kubectl line after it is a command of its own.
+    let text = "```sh\necho $(( 1 \\\n  << 2 ))\nkubectl get pods\n```\n";
+    assert_eq!(lines(text), [1, 4]);
+}

@@ -50,10 +50,13 @@ SKILL.md's ("Choosing the backend"); this file only says how to write and search
      that says it holds more than was read and gives no way to read the rest makes the recall
      **truncated**: say what it said (`12 found, 10 shown`); a review then reads its memory as
      degraded, whatever was recalled.
-  4. **Text fallback**: only when every attribute listing came back empty, run the text search on
-     the kind name once (`decision`, then the others) and take a hit only when it carries the craft
-     kind as an attribute, a tag or an observation — a record written as text rather than attribute
-     (SKILL.md's plain mapping allows either). Say which call found the records.
+  4. **Text search, always**: whatever the listings returned, also run the text search on each
+     kind name (`decision`, then the others), every page read, and take a hit only when it carries
+     the craft kind (either spelling) as an attribute, a tag or an observation — the plain mapping
+     writes any of them, and a record written as a tag or an observation is invisible to an
+     attribute filter, so a store mixing them is read whole only by both calls. Merge the hits with
+     the listed records by id (the store's own id when it keeps one, else the skill-rule id), one
+     record per id. Say which call found each record.
   5. Narrow what was listed by `scope` (to the paths, as "recall" in SKILL.md matches them), then
      by `status` and the topic keywords — yourself, or through the search's own scope or status
      filter beside the attribute one; never by a text query per path alone, and never a listing of
@@ -65,7 +68,7 @@ SKILL.md's ("Choosing the backend"); this file only says how to write and search
   failed so, or every call was a text query and none an attribute listing, or the attribute listing came back
   empty while the store shows craft records exist (an index, a count the server reports, a craft
   record seen in any other answer) — never for records the scope narrowing (step 5) left out, nor
-  for the fallback's not-found after a clean empty listing, both clean answers — say `recall found
+  for the text search's not-found beside a clean empty listing, both clean answers — say `recall found
   nothing — backend query may have failed: <the call, its tool and arguments, and its error or
   answer>`. A review engine's recall agent puts that call and error in its answer's `queryError`
   (and a truncated answer in `truncated`); the review then names its memory as degraded.

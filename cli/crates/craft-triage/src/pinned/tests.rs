@@ -93,3 +93,56 @@ fn a_class_one_row_carries_the_issue_action_at_its_end() {
         Some("issue")
     );
 }
+
+#[test]
+fn a_row_keeping_the_pinned_mark_but_changing_the_verdict_is_restored() {
+    let unjudged = Row::unjudged(&"d".into());
+    let reason = unjudged.text("reason").into_owned();
+    let planned = rows(&format!(
+        r#"[{{"stable_id":"d","verdict":"reject","reason":"{reason}"}}]"#
+    ));
+    let got = pinned_ledger(&planned, &[], &[unjudged]);
+    assert_eq!(
+        crate::field::at(&got[0], "verdict").as_str(),
+        Some("needs-decision")
+    );
+    let sifted = REPEAT.replace(r#""verdict":"reject""#, r#""verdict":"accept""#);
+    let got = pinned_ledger(&rows(&format!("[{sifted}]")), &[row(REPEAT)], &[]);
+    assert_eq!(
+        crate::field::at(&got[0], "verdict").as_str(),
+        Some("reject")
+    );
+}
+
+#[test]
+fn a_verdict_its_noise_class_settled_is_restored_and_a_dropped_one_appended() {
+    let five = row(
+        r#"{"stable_id":"f","verdict":"needs-decision","reason":"not decidable","noise_class":5}"#,
+    );
+    let one = row(
+        r#"{"stable_id":"o","verdict":"needs-decision","reason":"claimed not this PR's, but x","noise_class":1}"#,
+    );
+    let other = row(r#"{"stable_id":"x","verdict":"needs-decision","reason":"r","noise_class":2}"#);
+    let planned = rows(
+        r#"[{"stable_id":"o","verdict":"accept","reason":"fine"},
+            {"stable_id":"x","verdict":"accept","reason":"fine"}]"#,
+    );
+    let got = pinned_ledger(&planned, &[], &[five, one, other]);
+    assert_eq!(
+        text(&got),
+        r#"[{"stable_id":"o","verdict":"needs-decision","reason":"claimed not this PR's, but x"},{"stable_id":"x","verdict":"accept","reason":"fine"},{"stable_id":"f","verdict":"needs-decision","reason":"not decidable"}]"#
+    );
+    // Its verdict kept, a paraphrased reason stands: the class row carries no mark.
+    let kept = rows(r#"[{"stable_id":"f","verdict":"needs-decision","reason":"a human decides"}]"#);
+    let five = row(
+        r#"{"stable_id":"f","verdict":"needs-decision","reason":"not decidable","noise_class":5}"#,
+    );
+    assert_eq!(pinned_ledger(&kept, &[], &[five]), kept);
+}
+
+#[test]
+fn a_class_one_verdict_the_class_left_alone_is_not_pinned() {
+    let left = row(r#"{"stable_id":"r","verdict":"reject","reason":"r","noise_class":1}"#);
+    let planned = rows(r#"[{"stable_id":"r","verdict":"accept","reason":"fine"}]"#);
+    assert_eq!(pinned_ledger(&planned, &[], &[left]), planned);
+}
