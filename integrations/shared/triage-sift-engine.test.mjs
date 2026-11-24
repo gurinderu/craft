@@ -244,3 +244,67 @@ test('a re-run never carries a sifted row: a finding the sift now raises again, 
   const alone = await run([low], {}, { priorLedger: twice.reportValue.ledger })
   assert.equal(validated(alone).length, 1, 'its copy is gone, so the former repeat is judged')
 })
+
+test('a plan that drops verdicts a noise class settled has them restored; one the class left alone stands as the plan wrote it', async () => {
+  const deferred = finding('Medium', 'unbounded queue growth', 'lib/q.rs:3')
+  const undecidable = finding('Medium', 'rollout order unknown', 'lib/r.rs:5')
+  const left = finding('Low', 'a name could be clearer', 'lib/s.rs:7')
+  /** @type {Record<string, Record<string, unknown>>} */
+  const verdicts = {
+    [idOf(deferred)]: { verdict: 'defer', reason: 'stands at main', noise_class: 1, premise_checked: 'git show abc1234:lib/q.rs:3' },
+    [idOf(undecidable)]: { noise_class: 5 },
+    [idOf(left)]: { verdict: 'reject', reason: 'not a defect', noise_class: 1, premise_checked: '' },
+  }
+  const r = await run(
+    [deferred, undecidable, left],
+    {
+      validate: (/** @type {{ prompt: string }} */ { prompt }) => {
+        const id = /stable_id MUST be exactly: (.+)/.exec(prompt)?.[1] ?? '?'
+        return validation(id, verdicts[id])
+      },
+      // The plan agent drops both rows the class settled and rewrites the one it left alone.
+      plan: () => ({ plan_markdown: 'BODY', summary: 'S', ledger: [{ stable_id: idOf(left), verdict: 'accept', reason: 'fix it after all' }] }),
+    },
+    { prBase: 'abc1234', base: 'feed999' },
+  )
+  assert.deepEqual([row(r, idOf(deferred)).verdict, row(r, idOf(deferred)).action], ['defer', 'issue'])
+  assert.equal(row(r, idOf(undecidable)).verdict, 'needs-decision')
+  assert.deepEqual(row(r, idOf(left)), { stable_id: idOf(left), verdict: 'accept', reason: 'fix it after all' })
+  const tally = filedRecord(r).triage
+  assert.deepEqual([tally.accept, tally.defer, tally['needs-decision']], [1, 1, 1])
+})
+
+test('a plan that rewrites class-settled verdicts in place has each restored there: a deferral with an issue, class 5, and a claim handed to a human', async () => {
+  const deferred = finding('Medium', 'unbounded queue growth', 'lib/q.rs:3')
+  const undecidable = finding('Medium', 'rollout order unknown', 'lib/r.rs:5')
+  const handedOff = finding('Medium', 'stale cache entry', 'lib/t.rs:9')
+  /** @type {Record<string, Record<string, unknown>>} */
+  const verdicts = {
+    [idOf(deferred)]: { verdict: 'defer', reason: 'stands at main', noise_class: 1, premise_checked: 'git show abc1234:lib/q.rs:3' },
+    [idOf(undecidable)]: { noise_class: 5 },
+    // Class 1 with nothing opened at the fork point: the class hands it to a human.
+    [idOf(handedOff)]: { verdict: 'defer', reason: 'pre-existing', noise_class: 1, premise_checked: 'git show HEAD:lib/t.rs' },
+  }
+  const rewritten = [deferred, undecidable, handedOff].map(f => ({ stable_id: idOf(f), verdict: 'accept', reason: 'fix it here' }))
+  const r = await run(
+    [deferred, undecidable, handedOff],
+    {
+      validate: (/** @type {{ prompt: string }} */ { prompt }) => {
+        const id = /stable_id MUST be exactly: (.+)/.exec(prompt)?.[1] ?? '?'
+        return validation(id, verdicts[id])
+      },
+      plan: () => ({ plan_markdown: 'BODY', summary: 'S', ledger: rewritten }),
+    },
+    { prBase: 'abc1234', base: 'feed999' },
+  )
+  const ledger = r.reportValue.ledger
+  assert.deepEqual(
+    ledger.map((/** @type {any} */ e) => e.stable_id),
+    rewritten.map(e => e.stable_id),
+    'restored in place, none appended',
+  )
+  assert.deepEqual([row(r, idOf(deferred)).verdict, row(r, idOf(deferred)).action], ['defer', 'issue'], 'the deferral with an issue')
+  assert.equal(row(r, idOf(undecidable)).verdict, 'needs-decision', 'class 5')
+  assert.equal(row(r, idOf(handedOff)).verdict, 'needs-decision', 'the claim nothing showed, handed to a human')
+  assert.match(row(r, idOf(handedOff)).reason, /^claimed not this PR's, but nothing at the PR's fork point abc1234/)
+})

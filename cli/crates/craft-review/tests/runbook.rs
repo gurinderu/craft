@@ -1,7 +1,8 @@
 //! A changed Markdown runbook whose change touches a step — a shell block's or a numbered step's
-//! command against an external system — goes to the runbook profile and its lens, under `.github/`
-//! and with an upper-case name too; prose, a change beside the steps and a file that cannot be read
-//! safely do not, the last said in the report.
+//! command against an external system — goes to the runbook profile and its lens, under `.github/`,
+//! with an upper-case name and with a `.markdown` suffix too; prose, a change beside the steps and
+//! a file that cannot be read safely do not; the last is a coverage gap that holds the verdict at
+//! Warning, never Approve.
 
 mod common;
 
@@ -72,16 +73,21 @@ fn a_runbook_goes_to_the_runbook_lens_and_prose_beside_it_does_not() {
 }
 
 #[test]
-fn a_runbook_under_github_or_with_an_upper_case_name_is_a_runbook_too() {
+fn a_runbook_under_github_with_an_upper_case_name_or_a_markdown_suffix_is_a_runbook_too() {
     let repo = repo(
         &[],
-        &[(".github/RELEASE.md", STEPS), ("OPS/RUNBOOK.MD", STEPS)],
+        &[
+            (".github/RELEASE.md", STEPS),
+            ("OPS/RUNBOOK.MD", STEPS),
+            ("ops/restore.markdown", STEPS),
+        ],
     );
     let out = tempfile::tempdir().unwrap();
     let s = start(repo.path(), out.path());
     let p = prompt_of(&s["tasks"][0]);
     assert!(p.contains("':(literal).github/RELEASE.md'"), "{p}");
     assert!(p.contains("':(literal)OPS/RUNBOOK.MD'"), "{p}");
+    assert!(p.contains("':(literal)ops/restore.markdown'"), "{p}");
 }
 
 #[test]
@@ -113,4 +119,14 @@ fn a_markdown_file_that_cannot_be_read_safely_is_named_not_dropped() {
         "{r}"
     );
     assert!(r.contains("NOT reviewed by the runbook lens"), "{r}");
+    // A runbook-only change the signal could not read is no approval: no lens ran.
+    assert_eq!(s["verdict"], json!("Warning (nothing to review)"), "{s}");
+    assert!(
+        s["capped"].to_string().contains("ops.md could not be read"),
+        "a coverage gap, not a degraded note: {s}"
+    );
+    assert!(
+        !s["degraded"].to_string().contains("ops.md"),
+        "not a degraded note: {s}"
+    );
 }

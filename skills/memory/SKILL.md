@@ -199,7 +199,7 @@ rule 3. Never put secrets, credentials or personal data in a record, whatever th
    and ranks last. An old scope `path:N` or `path:N-M` matches as `path`.
 2. **Keyword match.** `topic` keywords against `title` and `body`; with both scope and topic,
    a record must match the scope and at least one keyword.
-3. **Only matches come back.** Use the backend's search (the MCP search tool's attribute filter on each exact `craft_kind`, every page read, a text search only as the fallback, then narrowed by scope — [backends.md](backends.md) —, `grep -l` over the
+3. **Only matches come back.** Use the backend's search (the MCP search tool's attribute filter on each exact `craft_kind`, every page read, a text search on each kind name beside it, merged by id, then narrowed by scope — [backends.md](backends.md) —, `grep -l` over the
    memory files, craft's harness index `craft-memory.md` and any craft lines not yet moved out of
    `MEMORY.md`, then the record files neither lists, found by their `craft_kind` frontmatter; only an active one
    among them makes the index stale) —

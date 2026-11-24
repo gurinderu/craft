@@ -156,6 +156,7 @@ fn a_full_review_with_nothing_to_review_counts_and_a_red_gate_does_not() {
         "Block",
         "Approve",
         "Warning",
+        "Warning (nothing to review) (PARTIAL COVERAGE)",
         "Approve (nothing to review) (PARTIAL COVERAGE)",
         "Approve (nothing to review) — a prose note",
         "approve (NOTHING TO REVIEW)",
@@ -163,6 +164,16 @@ fn a_full_review_with_nothing_to_review_counts_and_a_red_gate_does_not() {
         l["verdict"] = json!(verdict);
         assert!(!judge(&l, &d), "{verdict}");
     }
+}
+
+#[test]
+fn nothing_to_review_held_at_warning_by_an_unread_runbook_still_counts() {
+    // The gap holds the verdict at Warning; it does not take the run out of review.
+    let (mut l, mut d) = review();
+    l["verdict"] = json!("Warning (nothing to review)");
+    d["lensRounds"] = json!([]);
+    d["capped"] = json!(["runbook signal could not read a changed Markdown file — ops.md"]);
+    assert!(judge(&l, &d));
 }
 
 #[test]

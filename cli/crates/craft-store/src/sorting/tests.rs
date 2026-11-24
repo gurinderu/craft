@@ -85,7 +85,44 @@ fn the_pr_a_post_is_marked_with_stays_with_the_choice_that_completes_it() {
     let json: serde_json::Value = serde_json::from_str(&Js::Obj(done).compact()).unwrap();
     assert_eq!(posting::recorded_pr(&json, 2), Some(7));
     assert_eq!(posting::recorded_pr(&json, 1), None);
-    posting::apply(&record(), 9.0, 7, "T").unwrap_err();
+    assert_eq!(
+        posting::apply(&record(), 9.0, 7, "T").unwrap_err(),
+        posting::Refusal::NoFinding("9".into())
+    );
+    assert_eq!(
+        posting::apply(&Obj::new(), 2.0, 7, "T").unwrap_err(),
+        posting::Refusal::NoSorting
+    );
+}
+
+#[test]
+fn a_mark_tells_a_record_s_refusal_from_a_failure_to_read_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = dir.path().join("store");
+    let file = dir.path().join("r-review.json");
+    std::fs::write(&file, Js::Obj(record()).pretty()).unwrap();
+    posting::mark(&store, &file, 2.0, 7, 0).unwrap();
+    assert_eq!(
+        posting::recorded_pr(
+            &serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap(),
+            2
+        ),
+        Some(7)
+    );
+    let refused = posting::mark(&store, &file, 9.0, 7, 0).unwrap_err();
+    assert!(refused.is_refusal(), "{refused}");
+    assert_eq!(
+        refused,
+        posting::MarkError::Refused {
+            file: file.display().to_string(),
+            refusal: posting::Refusal::NoFinding("9".into())
+        }
+    );
+    let missing = posting::mark(&store, &dir.path().join("gone.json"), 2.0, 7, 0).unwrap_err();
+    assert!(
+        matches!(&missing, posting::MarkError::Failed(_)) && !missing.is_refusal(),
+        "{missing}"
+    );
 }
 
 #[test]

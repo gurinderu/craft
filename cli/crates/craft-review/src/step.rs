@@ -142,7 +142,7 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
         scope,
         ..PromptContext::default()
     };
-    let (tracks, uncovered, runbook_notes) = tracks_of(&cwd, &diff, &profiles);
+    let (tracks, uncovered, runbooks) = tracks_of(&cwd, &diff, &profiles);
     let (optional, unknown) = crate::optional::request(opts.optional.as_deref(), &profiles);
     let notes =
         crate::optional::unknown_note(opts.optional.as_deref().unwrap_or(""), &unknown, &profiles);
@@ -162,8 +162,8 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
         settled: Vec::new(),
         notes: notes.into_iter().chain(pr_note).collect(),
         not_run: Vec::new(),
-        capped: Vec::new(),
-        degraded: runbook_notes,
+        capped: runbooks.unread,
+        degraded: runbooks.notes,
         skills_unresolved: Vec::new(),
         verdict: None,
         exit: None,
@@ -207,25 +207,27 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
 }
 
 /// The coverage exit of a new `run` over `profiles`, `based` when its base was given or it
-/// re-reviews.
+/// re-reviews; a runbook the signal could not read holds a run that would end with nothing to
+/// review at Warning: what went unread is no approval.
 fn coverage_exit(run: &RunState, profiles: &[Profile], based: bool) -> Option<coverage::Exit> {
-    coverage::exit(
+    let exit = coverage::exit(
         &run.diff,
         run.tracks.len(),
         &coverage::supported(profiles),
         based,
-    )
+    );
+    coverage::held(exit, &run.capped)
 }
 
 /// Each profile's part of the changed files of `diff`, made in the checkout `cwd` is in, the files
-/// no profile covers that carry something to review, and what the report says of a Markdown file
-/// whose steps could not be judged. Whether a Markdown file's change touches an operator step is
+/// no profile covers that carry something to review, and the runbook signal's reading: its notes,
+/// and the Markdown files it could not read, each a coverage gap. Whether a Markdown file's change touches an operator step is
 /// read from the working tree ([`crate::runbook`]).
 pub(crate) fn tracks_of(
     cwd: &Path,
     diff: &crate::git::Diff,
     profiles: &[Profile],
-) -> (Vec<Track>, Vec<String>, Vec<String>) {
+) -> (Vec<Track>, Vec<String>, crate::runbook::Taken) {
     let files = &diff.files;
     let candidates: Vec<String> = files
         .iter()
@@ -249,7 +251,7 @@ pub(crate) fn tracks_of(
         .collect();
     let taken = |f: &str| tracks.iter().any(|t| t.files.iter().any(|x| x == f));
     let uncovered = coverage::uncovered(files, taken);
-    (tracks, uncovered, runbooks.notes)
+    (tracks, uncovered, runbooks)
 }
 
 /// The new run's first step: its tasks, or, with none to run, the run ended at once (with nothing

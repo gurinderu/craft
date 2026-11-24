@@ -215,11 +215,9 @@ fn exit_reason(run: &RunState) -> (&'static str, bool) {
         ("the mechanical gate is red", true)
     } else if run.diff.files.is_empty() {
         ("the diff is empty", false)
-    } else if run
-        .exit
-        .as_ref()
-        .is_some_and(|e| e.verdict.starts_with("Approve"))
-    {
+    } else if run.exit.as_ref().is_some_and(|e| {
+        e.verdict.starts_with("Approve") || e.verdict == crate::coverage::NOTHING_TO_REVIEW_HELD
+    }) {
         ("nothing reviewable changed", false)
     } else {
         ("no language profile covers the diff", true)
