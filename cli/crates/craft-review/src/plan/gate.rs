@@ -30,25 +30,22 @@ pub(super) fn signals(p: &Profile, (fired, strict): (Option<&[String]>, bool), p
         .collect();
 }
 
-/// The data in the part `own` of a profile taking the rest ([`crate::coverage::is_data`]): a part
-/// with source beside it keeps it from its per-file lenses, named in `data_files`; an empty part is
-/// no data-only one; a part of
-/// nothing but data keeps only the lenses that read it ([`Profile::reads`]), its always ones that
-/// do when it had none, the others named in `data_skipped`.
-pub(super) fn data(p: &Profile, own: &[String], plan: &mut Plan) {
+/// The data of a profile taking the rest ([`crate::coverage::is_data`]), judged over the paths its
+/// lenses read, `read` (its files and the old paths of those renamed): a part with source among them
+/// keeps its data from its per-file lenses, its current data files (of `own`) named in
+/// `data_files`; an empty part is no data-only one; a part of nothing but data keeps only the
+/// lenses that read it ([`Profile::reads`]), its always ones that do when it had none, the others
+/// named in `data_skipped`.
+pub(super) fn data(p: &Profile, (own, read): (&[String], &[String]), plan: &mut Plan) {
     if !p.detect.rest {
         return;
     }
-    let data: Vec<String> = own
-        .iter()
-        .filter(|f| crate::coverage::is_data(f))
-        .cloned()
-        .collect();
-    if own.is_empty() || data.len() < own.len() {
-        plan.data_files = data;
+    let is_data = |f: &&String| crate::coverage::is_data(f);
+    if read.is_empty() || !read.iter().all(|f| is_data(&f)) {
+        plan.data_files = own.iter().filter(is_data).cloned().collect();
         return;
     }
-    let reads = |l: &String| !p.reads(l, own).is_empty();
+    let reads = |l: &String| !p.reads_nothing(l, read);
     let (kept, held): (Vec<String>, Vec<String>) = plan.lenses.drain(..).partition(reads);
     plan.lenses = kept;
     if plan.lenses.is_empty() {

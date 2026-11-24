@@ -2,9 +2,10 @@
 //! planned lens over its profile's part of the diff in the first round, then, round after round,
 //! only the dispatches whose last answer found something new (realm @nick/craft, node #625), each
 //! told what the pool already holds, until a round adds nothing new to the profile, no lens that
-//! found something may run again, or the profile's plan's rounds are spent (loop until dry). The profiles of
-//! a run share each round and the pool. A finding is new when no pooled finding has its key (file,
-//! line and title); a lens dispatch that never returns is a hole the verdict reads as INCOMPLETE.
+//! found something may run again, or the profile's plan's rounds are spent (loop until dry). The
+//! profiles of a run share each round and the pool. A finding is new when no pooled finding has
+//! its key (file, line and title); a lens dispatch that dies, in any round, is a hole the verdict
+//! reads as INCOMPLETE.
 
 use craft_store::js::JsStr;
 use std::collections::{BTreeMap, BTreeSet};
@@ -98,13 +99,9 @@ fn lens_key(profile: &str, lens: &str) -> String {
     format!("{profile}:{lens}")
 }
 
-/// One task per planned lens of `profile` for `round`, over what it reads of the profile's part
-/// `files` ([`Profile::reads`]; none for a lens that reads nothing of it), each told what the pool
-/// holds and run on the profile's lens agent. A sliceable lens runs once per slice of `slices`
-/// instead — the unit batches under unit mode, else the normal mode's directory slices —, the
-/// security lens of a profile taking the rest once more over the part's data, which no slice
-/// carries. From the second round, only the dispatches whose last answer found something new run
-/// again ([`rerun`]), a first-round-only lens (metrics, design) never (realm @nick/craft, node
+/// One task per planned lens of `profile` for `round`, over what it reads of the part `files`
+/// ([`Profile::reads`]), told what the pool holds; a sliceable lens once per slice of `slices`
+/// ([`with_data`]). Later rounds send only what [`Rounds::sends`] allows (realm @nick/craft, node
 /// #625).
 ///
 /// # Errors
@@ -158,7 +155,8 @@ pub fn tasks(
 }
 
 /// The key of the dispatch over a sliced part's data.
-const DATA_SLICE: &str = "data files";
+/// It opens with `/`, which no directory or unit slice key does: both are repository-relative.
+pub(crate) const DATA_SLICE: &str = "/data files";
 
 /// The slices a lens reading `own` runs over: `slices`, and, as no slice of a profile taking the
 /// rest carries its data, one more over the data `own` holds — the security lens's, read once, not
@@ -424,6 +422,10 @@ impl Rounds {
                 .clone()
                 .unwrap_or_else(|| "returned no result (skipped or died without an error)".into());
             self.failures.insert(k.to_owned(), why);
+            // A dispatch that dies is a hole whatever an earlier round's answer was: a later round
+            // reruns one only on what it found, so the answer it owed is lost (realm @nick/craft,
+            // node #625).
+            self.returned.retain(|r| r != k);
             return None;
         };
         if !self.returned.iter().any(|r| r == k) {
@@ -432,7 +434,8 @@ impl Rounds {
         Some(answer)
     }
 
-    /// The lenses of `profile` that never answered in any round, each with why.
+    /// The lenses of `profile` whose last dispatch gave no answer — never answered, or died in a
+    /// later round after answering in an earlier one —, each with why.
     #[must_use]
     pub fn holes(&self, profile: &str) -> Vec<String> {
         self.holes_of(profile).into_iter().map(|(_, h)| h).collect()

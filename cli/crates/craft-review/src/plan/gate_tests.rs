@@ -213,3 +213,34 @@ fn a_part_with_source_beside_its_data_or_another_profile_keeps_its_per_file_lens
         got.lenses
     );
 }
+
+/// Data-only is judged over the paths the lenses read, a renamed file's old path among them; the
+/// report names only the current data files (realm @nick/craft, node #625).
+#[test]
+fn a_part_is_judged_data_only_over_the_paths_its_lenses_read() {
+    let p = Profile::load("general").unwrap();
+    let renamed = owned(&["web/rows.json"]);
+    let read = owned(&["web/rows.json", "web/rows.ts"]);
+    let got = plan(PlanInput {
+        read_paths: &read,
+        ..input(&p, &renamed, Some(&[]))
+    });
+    assert!(
+        got.lenses.iter().any(|l| l == "correctness") && got.data_skipped.is_empty(),
+        "a source file renamed to data still has its old path read: {:?}",
+        got.lenses
+    );
+    assert_eq!(got.data_files, ["web/rows.json"]);
+    let alone = plan(input(&p, &renamed, Some(&[])));
+    assert!(
+        !alone.data_skipped.is_empty(),
+        "judged over its files alone it would be data only"
+    );
+    let mixed = owned(&["web/app.ts", "web/new.csv"]);
+    let read = owned(&["web/app.ts", "web/new.csv", "web/old.csv"]);
+    let got = plan(PlanInput {
+        read_paths: &read,
+        ..input(&p, &mixed, Some(&[]))
+    });
+    assert_eq!(got.data_files, ["web/new.csv"], "the current paths only");
+}

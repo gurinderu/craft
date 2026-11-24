@@ -280,7 +280,7 @@ pub fn plan(input: PlanInput<'_>) -> Plan {
         );
     }
     gate::signals(p, (input.signals, input.strict), &mut plan);
-    gate::data(p, input.read_paths, &mut plan);
+    gate::data(p, (input.profile_files, input.read_paths), &mut plan);
     plan
 }
 

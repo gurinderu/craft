@@ -239,7 +239,7 @@ fn the_security_lens_of_a_sliced_general_part_reads_its_data_once() {
             "errors b",
             "security a",
             "security b",
-            "security data files"
+            "security /data files"
         ]
     );
     for t in &got[..4] {
@@ -264,4 +264,73 @@ fn the_security_lens_of_a_sliced_general_part_reads_its_data_once() {
         ["errors a", "errors b", "security a", "security b"],
         "a Rust lens is never given data beside its slices"
     );
+}
+
+/// The data-files dispatch has a key no directory slice can have, and later rounds rerun or
+/// withhold it by that key like any other (realm @nick/craft, node #625).
+#[test]
+fn the_data_dispatch_is_keyed_apart_from_every_slice_and_reruns_by_its_key() {
+    let ctx = PromptContext::fixture("/work/repo", "main");
+    let general = Profile::load("general").unwrap();
+    let plan = plan_of(&["security"]);
+    let slices = [
+        Slice::loose("data files".into(), vec!["data files/x.ts".into()]),
+        Slice::loose("b".into(), vec!["b/y.ts".into()]),
+    ];
+    let files: Vec<String> = ["data files/x.ts", "b/y.ts", "rows.csv"]
+        .iter()
+        .map(|f| (*f).to_owned())
+        .collect();
+    let mut r = Rounds {
+        round: 1,
+        ..Rounds::default()
+    };
+    let all = ["security data files", "security b", "security /data files"];
+    assert_eq!(
+        sent(&tasks(&ctx, (&general, &plan), &files, &slices, &r).unwrap()),
+        all,
+        "a directory named like it is a slice of its own"
+    );
+    r.round = 2;
+    r.rerun = Some(vec!["general:security :: /data files".into()]);
+    assert_eq!(
+        sent(&tasks(&ctx, (&general, &plan), &files, &slices, &r).unwrap()),
+        ["security /data files"],
+        "rerun by its key, and the directory slice of that name not"
+    );
+    r.rerun = Some(vec!["general:security :: data files".into()]);
+    assert_eq!(
+        sent(&tasks(&ctx, (&general, &plan), &files, &slices, &r).unwrap()),
+        ["security data files"],
+        "withheld when only the directory slice found something"
+    );
+}
+
+/// A dispatch that died is a hole even after an earlier round's answer (realm @nick/craft, node
+/// #625).
+#[test]
+fn a_dispatch_that_answered_then_died_is_a_hole() {
+    let mut r = Rounds {
+        round: 1,
+        ..Rounds::default()
+    };
+    r.absorb(&[dispatch("errors", 1, None, &["a"])]);
+    assert!(r.holes("rust").is_empty());
+    r.round = 2;
+    r.absorb(&[dead("errors", 2)]);
+    assert_eq!(
+        r.holes("rust"),
+        ["errors: returned no result (skipped or died without an error)"]
+    );
+}
+
+/// A state written while rounds still kept a `retry` list loads, the list ignored.
+#[test]
+fn a_state_with_the_removed_retry_list_still_loads() {
+    let r: Rounds = serde_json::from_value(json!({
+        "round": 2, "pool": [], "yields": [], "expected": ["rust:errors"], "returned": [],
+        "failures": {}, "rerun": ["rust:errors"], "retry": ["rust:design"]
+    }))
+    .unwrap();
+    assert_eq!(r.rerun, Some(vec!["rust:errors".to_owned()]));
 }

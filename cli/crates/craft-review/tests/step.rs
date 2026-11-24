@@ -680,6 +680,17 @@ fn a_dead_dispatch_is_a_hole_and_never_runs_again() {
             .len(),
         1
     );
+    let s = common::past_critic(&run, s);
+    assert_eq!(
+        (&s["done"], &s["verdict"]),
+        (&json!(true), &json!("INCOMPLETE")),
+        "the hole is the verdict's: {s}"
+    );
+    let report = std::fs::read_to_string(s["report"].as_str().unwrap()).unwrap();
+    assert!(
+        report.contains("rust lenses that never returned — design: "),
+        "{report}"
+    );
 
     let out = tempfile::tempdir().unwrap();
     let (_repo, run, s) = new_file_run(out.path());
@@ -705,5 +716,48 @@ fn a_dead_dispatch_is_a_hole_and_never_runs_again() {
         ids(&s),
         ["lens-rust-errors-r2"],
         "round 2 sends what found something new, not the dead dispatch"
+    );
+}
+
+/// A dispatch that answered in round 1 and died in its round-2 rerun is a hole too: the answer it
+/// owed in round 2 is lost, and the verdict is INCOMPLETE (realm @nick/craft, node #625).
+#[test]
+fn a_dispatch_that_answered_then_died_in_its_rerun_makes_the_verdict_incomplete() {
+    let repo = fixture(true);
+    let out = tempfile::tempdir().unwrap();
+    let run = out.path().join("run");
+    step::start(&opts(repo.path(), out.path())).unwrap();
+    let s = submit(&run, json!({"scout-rust": scout("medium", &["errors"])}));
+    let mut first = Map::new();
+    for id in ids(&s) {
+        let name = id.trim_start_matches("lens-rust-").trim_end_matches("-r1");
+        let found = if name == "errors" {
+            vec![titled("Medium", 1, "f returns 1")]
+        } else {
+            Vec::new()
+        };
+        first.insert(id.clone(), lens(name, &found));
+    }
+    let s = submit(&run, Value::Object(first));
+    assert_eq!(ids(&s), ["lens-rust-errors-r2"]);
+    let s = round_with_a_death(&run, &s, "lens-rust-errors-r2");
+    let mut s = s;
+    for _ in 0..4 {
+        if s["done"] == json!(true) {
+            break;
+        }
+        let votes: Map<String, Value> =
+            ids(&s).into_iter().map(|id| (id, verdict(false))).collect();
+        s = submit(&run, Value::Object(votes));
+    }
+    assert_eq!(
+        (&s["done"], &s["verdict"]),
+        (&json!(true), &json!("INCOMPLETE")),
+        "{s}"
+    );
+    let report = std::fs::read_to_string(s["report"].as_str().unwrap()).unwrap();
+    assert!(
+        report.contains("rust lenses that never returned — errors: "),
+        "{report}"
     );
 }
