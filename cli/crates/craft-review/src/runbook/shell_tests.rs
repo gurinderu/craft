@@ -89,13 +89,19 @@ fn an_arithmetic_shift_opens_no_here_document() {
         "echo $((1<<2))",
         "x=$(( y << 3 ))",
         "((x<<=1))",
-        "let x=y<<1",
         // A single `)` inside the arithmetic closes no `((`.
         "x=$(( (1+2) << 3 ))",
         "let 'x = y << 1'",
+        // An inner `))` closes no outer arithmetic.
+        "x=$(( (1+(2)) << 3 ))",
+        // Nor does an inner arithmetic's own `))`.
+        "x=$(( $((1)) << 2 ))",
     ] {
         assert_eq!(scan(line, None), Opened::default(), "{line}");
     }
+    // An unquoted `let` opens one: the shell reads its redirections before `let` runs.
+    assert_eq!(scan("let x=y<<1", None), opened(None, &["1"]));
+    assert_eq!(scan("let n=1; psql <<EOF", None), opened(None, &["EOF"]));
     // A `))` closing two command substitutions closes no arithmetic.
     assert_eq!(
         scan("cat $(dirname $(pwd)) <<EOF", None),

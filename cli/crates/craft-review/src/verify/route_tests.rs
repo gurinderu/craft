@@ -76,3 +76,21 @@ fn a_failure_path_low_whose_harm_cannot_be_must_fix_stays_unverified() {
     let unnamed = json!({"severity": "Low", "source": "reconciler", "ruleId": ""});
     assert_eq!(route(&unnamed), Route::Skip, "a Low naming no harm");
 }
+
+#[test]
+fn a_light_pass_s_skipped_note_names_the_weak_assertion_it_still_verifies() {
+    let run: crate::state::RunState = serde_json::from_value(json!({
+        "version": crate::state::STATE_VERSION,
+        "context": {"repo": "/r", "base": "origin/main", "spec": "", "craftRoot": null, "craftVersion": null},
+        "diff": {"base": "origin/main", "mergeBase": "m", "head": "h", "dirty": false, "files": [], "stat": "", "log": ""},
+        "tracks": [], "light": true, "phase": "verify", "tasks": [],
+        "rounds": {"round": 1, "pool": [], "yields": [], "expected": [], "returned": [], "failures": {}},
+        "findings": [low(&json!({}))], "settled": [], "notes": [], "notRun": []
+    }))
+    .unwrap();
+    let note = super::skipped_note(&run).unwrap();
+    assert!(
+        note.contains("a weak assertion naming its regression"),
+        "{note}"
+    );
+}

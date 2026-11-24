@@ -347,7 +347,8 @@ function finalLedger(planIn) {
 }
 /**
  * The plan's ledger with every row this script settled itself restored: an unjudged one, a sifted one and
- * one its noise class settled (class 1 or 5, realm @nick/craft, node #303).
+ * one whose verdict its noise class settled (`settledByClass`: class 5, and a class-1 verdict the class
+ * turned — never one it left alone; realm @nick/craft, node #303).
  * @param {LedgerEntry[]} planLedger @returns {LedgerEntry[]}
  */
 function pinnedLedger(planLedger) {

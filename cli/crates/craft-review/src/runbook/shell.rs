@@ -3,7 +3,9 @@
 //! (`ssh host '…'`), and the here-documents it opened (`psql <<EOF`, `kubectl apply -f - <<'EOF'`),
 //! whose bodies run through that command. Read as the shell reads them, without parsing further:
 //! quotes and `\` escapes, a `#` comment opening a word, a `<<` or `<<-` with its delimiter word,
-//! a `<<<` here-string and an arithmetic `<<` (inside `((…))`, or on a `let` line) opening nothing.
+//! a `<<<` here-string and an arithmetic `<<` (inside `((…))` or `$((…))`, its parentheses counted
+//! one by one) opening nothing. An unquoted `let x=y<<1` does open one: the shell reads redirections
+//! before `let` runs.
 
 /// A here-document a line opened: its delimiter word, and whether it was opened by `<<-`, whose
 /// body and closing line have their leading tabs stripped.
@@ -67,9 +69,8 @@ pub(super) fn scan(line: &str, quote: Option<char>) -> Opened {
         quote,
         heredocs: Vec::new(),
     };
-    // `let` evaluates its words as arithmetic, where `<<` is a shift.
-    let arithmetic_line = quote.is_none() && line.split_whitespace().next() == Some("let");
-    let mut arithmetic = 0usize;
+    // The parentheses open, and the depth each open arithmetic `((` was opened at.
+    let (mut depth, mut arithmetic) = (0usize, Vec::new());
     let mut chars = line.chars().peekable();
     let mut word_start = true;
     while let Some(c) = chars.next() {
@@ -80,14 +81,24 @@ pub(super) fn scan(line: &str, quote: Option<char>) -> Opened {
             }
             (None, '\'' | '"') => out.quote = Some(c),
             (None, '#') if word_start => break,
-            (None, '(') if chars.next_if_eq(&'(').is_some() => arithmetic += 1,
-            (None, ')') if arithmetic > 0 && chars.next_if_eq(&')').is_some() => arithmetic -= 1,
+            (None, '(') => {
+                if chars.next_if_eq(&'(').is_some() {
+                    arithmetic.push(depth);
+                    depth += 1;
+                }
+                depth += 1;
+            }
+            (None, ')') => {
+                depth = depth.saturating_sub(1);
+                if arithmetic.last().is_some_and(|at| depth <= *at) {
+                    arithmetic.pop();
+                }
+            }
             // `<<` opens a here-document — `<<<`, a here-string, and an arithmetic shift none.
             (None, '<')
                 if chars.next_if_eq(&'<').is_some()
                     && chars.next_if_eq(&'<').is_none()
-                    && arithmetic == 0
-                    && !arithmetic_line =>
+                    && arithmetic.is_empty() =>
             {
                 out.heredocs.extend(heredoc(&mut chars));
             }

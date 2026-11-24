@@ -135,7 +135,7 @@ pub(crate) fn skipped_note(run: &RunState) -> Option<String> {
         .filter(|f| route_in(f, run.light) == Route::Skip)
         .count();
     let why = if run.light {
-        "a light pass verifies only Medium and above, and a finding two lenses agree on with a must-fix harm claimed"
+        "a light pass verifies only Medium and above, a finding two lenses agree on with a must-fix harm claimed, and a weak assertion naming its regression (its verifier asked whether the change's promise is unmet)"
     } else {
         "none is on a failure path or agreed by two lenses with a harm a verifier could raise to must-fix, so none could move the verdict"
     };

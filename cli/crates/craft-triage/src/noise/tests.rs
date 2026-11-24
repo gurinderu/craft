@@ -109,5 +109,8 @@ fn only_a_verdict_the_class_turned_is_settled_by_it() {
         v("needs-decision", "5", ""),
         ""
     )));
-    assert!(!settled_by_class(&v("accept", "2", "")));
+    for class in ["2", "3", "4", "6"] {
+        let issued = v("defer", class, "").with("action", Js::str("issue"));
+        assert!(!settled_by_class(&issued), "class {class}");
+    }
 }
