@@ -4,7 +4,7 @@
 
 /// Words of an identifier that name money, matched whole after splitting snake and camel case.
 #[rustfmt::skip]
-const MONEY: [&str; 99] = [
+const MONEY: [&str; 118] = [
     "amount", "amounts", "price", "prices", "priced", "pricing", "balance", "balances", "currency",
     "currencies", "decimal", "decimals", "cents", "cent", "money", "monetary", "payment",
     "payments", "pay", "paid", "payer", "payers", "payee", "payees", "payable", "payout", "payouts",
@@ -16,7 +16,9 @@ const MONEY: [&str; 99] = [
     "transferring", "deposit", "deposits", "withdraw", "withdraws", "withdrawal", "withdrawals",
     "cost", "costs", "total", "totals", "subtotal", "subtotals", "discount", "discounts", "settle",
     "settles", "settled", "settlement", "settlements", "escrow", "revenue", "revenues", "salary",
-    "salaries", "rounding",
+    "salaries", "rounding", "checkout", "checkouts", "cart", "carts", "purchase", "purchases",
+    "purchased", "purchasing", "order", "orders", "ordered", "subscription", "subscriptions",
+    "subscribe", "subscribed", "donation", "donations", "donate", "donated",
 ];
 
 /// An allocation or an I/O call: what a loop body pays for on every turn.
@@ -29,8 +31,10 @@ const LOOP_COST: [&str; 30] = [
     ".execute(", ".query(", "open(",
 ];
 
-/// How many lines past a loop's opening an allocation or I/O call still counts as its body.
-pub(super) const LOOP_BODY: u32 = 10;
+/// How many lines past a loop's opening an allocation or I/O call still counts as its body. A
+/// loop body can run far past the opening; the heuristic errs toward firing — a lens it lets
+/// through costs tokens, one it holds back costs findings (realm @nick/craft, node #625).
+pub(super) const LOOP_BODY: u32 = 40;
 
 pub(super) fn is_money(line: &str) -> bool {
     words(line).any(|w| MONEY.contains(&w.as_str()))
@@ -40,15 +44,37 @@ pub(super) fn is_loop_cost(line: &str) -> bool {
     LOOP_COST.iter().any(|t| line.contains(t))
 }
 
-/// Whether `line` opens a loop: a `for`, `while` or `loop` statement, or an iterator's
-/// `for_each`/`forEach`.
+/// Whether `line` opens a loop: a `for`, `while` or `loop` statement, or an iterator chain —
+/// `for_each`/`forEach` or Rust's `iter`/`into_iter`/`iter_mut`, which name an iteration a
+/// `.collect()`/`.clone()` then pays for without any loop keyword.
 pub(super) fn opens_loop(line: &str) -> bool {
     let t = line.trim_start();
     ["for ", "for(", "while ", "while(", "loop {", "loop{"]
         .iter()
         .any(|o| t.starts_with(o))
-        || line.contains(".for_each(")
-        || line.contains(".forEach(")
+        || [
+            ".for_each(",
+            ".forEach(",
+            ".iter(",
+            ".into_iter(",
+            ".iter_mut(",
+        ]
+        .iter()
+        .any(|o| line.contains(o))
+}
+
+/// Whether `line` introduces a branch — an `if`, `else`, `match`, `for`, `while` or `loop` at the
+/// start of a statement (a leading `}` is stripped, so `} else {` counts) — what a small change
+/// adds when it grows control flow.
+pub(super) fn is_branch(line: &str) -> bool {
+    let t = line.trim_start().trim_start_matches('}').trim_start();
+    ["if", "match", "for", "while", "loop", "else"]
+        .iter()
+        .any(|k| {
+            t.strip_prefix(k).is_some_and(|rest| {
+                rest.starts_with(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+            })
+        })
 }
 
 /// The lower-case words of `line`'s identifiers: split on anything not alphanumeric, then before

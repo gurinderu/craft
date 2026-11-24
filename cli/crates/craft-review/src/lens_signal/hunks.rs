@@ -16,6 +16,8 @@ pub(crate) struct FileChange {
     pub lines: Option<Vec<(u32, String)>>,
     /// How many lines the change adds to it.
     pub added: usize,
+    /// How many of those added lines introduce a branch (`if`/`else`/`match`/`for`/`while`/`loop`).
+    pub branches: usize,
 }
 
 /// The gap between two hunks' positions: a loop opening in one never reaches into the next.
@@ -49,7 +51,10 @@ pub(crate) fn parse(diff: &str) -> BTreeMap<String, FileChange> {
             pos += HUNK_GAP;
         } else if let Some(text) = l.strip_prefix(['+', '-', ' ']) {
             pos += 1;
-            change.added += usize::from(l.starts_with('+'));
+            if l.starts_with('+') {
+                change.added += 1;
+                change.branches += usize::from(super::words::is_branch(text));
+            }
             change
                 .lines
                 .get_or_insert_with(Vec::new)

@@ -3,7 +3,7 @@
 //! each track; and what cannot be read leaves the signals unknown, never empty.
 
 use super::hunks::FileChange;
-use super::{LARGE, bounded, mark, of_file, of_part};
+use super::{BRANCH_MIN, LARGE, bounded, mark, of_file, of_part};
 use crate::design::mark_tests::change;
 use crate::state::Track;
 
@@ -12,7 +12,7 @@ fn lines(text: &[&str]) -> Vec<(u32, String)> {
 }
 
 fn fires(line: &str) -> Vec<&'static str> {
-    of_file(&lines(&[line]), 1, false)
+    of_file(&lines(&[line]), 1, false, 0)
 }
 
 #[test]
@@ -57,39 +57,88 @@ fn an_allocation_or_io_in_a_loop_body_fires_loop_io_only_near_its_opening() {
         text.push("        out.push(x.clone());");
         lines(&text)
     };
-    assert_eq!(of_file(&body(0), 0, false), ["loop-io"]);
+    assert_eq!(of_file(&body(0), 0, false, 0), ["loop-io"]);
     assert_eq!(
-        of_file(&body(9), 0, false),
+        of_file(&body(39), 0, false, 0),
         ["loop-io"],
-        "line 11: its last"
+        "line 41: its last"
     );
     assert!(
-        of_file(&body(10), 0, false).is_empty(),
-        "line 12: past the body"
+        of_file(&body(40), 0, false, 0).is_empty(),
+        "line 42: past the body"
     );
     let inline = lines(&["    while let Some(l) = r.read(&mut buf)? {"]);
     assert_eq!(
-        of_file(&inline, 0, false),
+        of_file(&inline, 0, false, 0),
         ["loop-io"],
         "on the opening itself"
     );
     let before = lines(&["    let v = xs.clone();", "    for x in v {"]);
-    assert!(of_file(&before, 0, false).is_empty(), "above the loop");
+    assert!(of_file(&before, 0, false, 0).is_empty(), "above the loop");
     let no_loop = lines(&["    let v = xs.clone();", "    use(v);"]);
-    assert!(of_file(&no_loop, 0, false).is_empty());
+    assert!(of_file(&no_loop, 0, false, 0).is_empty());
     let each = lines(&["    xs.iter().for_each(|x| out.push(format!(\"{x}\")));"]);
-    assert_eq!(of_file(&each, 0, false), ["loop-io"]);
+    assert_eq!(of_file(&each, 0, false, 0), ["loop-io"]);
 }
 
 #[test]
-fn a_new_file_or_one_with_many_added_lines_fires_new_or_large_file() {
+fn an_allocation_in_an_iterator_chain_fires_loop_io_without_a_loop_keyword() {
+    for l in [
+        "    let v: Vec<_> = xs.iter().map(|x| x.clone()).collect();",
+        "    let n = ys.into_iter().filter(|y| y.keep).map(|y| y.to_string()).count();",
+        "    for_each(&mut zs.iter_mut(), |z| z.push(z.clone()));",
+        "    arr.forEach(x => out.push(format!(\"{x}\")));",
+    ] {
+        assert_eq!(fires(l), ["loop-io"], "{l}");
+    }
+    // A map/filter/collect with no iteration starter is not a loop.
+    let none = lines(&["    let v = opt.map(|x| x + 1);"]);
+    assert!(of_file(&none, 0, false, 0).is_empty());
+}
+
+#[test]
+fn a_branch_is_an_if_else_match_for_while_or_loop_at_a_statement_start() {
+    for l in [
+        "    if a {",
+        "    if (a) {",
+        "    } else if b {",
+        "    } else {",
+        "    match x {",
+        "    for x in xs {",
+        "    while let Some(v) = it.next() {",
+        "    loop {",
+    ] {
+        assert!(super::words::is_branch(l), "{l}");
+    }
+    for l in [
+        "    let ifx = 1;",
+        "    // if a comment",
+        "    elsewhere(x);",
+        "    let v = x.clone();",
+        "    use_loop(x);",
+    ] {
+        assert!(!super::words::is_branch(l), "{l}");
+    }
+}
+
+#[test]
+fn a_new_file_or_one_with_many_added_lines_or_branches_fires_new_or_large_file() {
     let small = lines(&["fn f() {}"]);
-    assert_eq!(of_file(&small, 1, true), ["new-or-large-file"]);
-    assert!(of_file(&small, 1, false).is_empty());
-    assert_eq!(of_file(&small, LARGE, false), ["new-or-large-file"]);
+    assert_eq!(of_file(&small, 1, true, 0), ["new-or-large-file"]);
+    assert!(of_file(&small, 1, false, 0).is_empty());
+    assert_eq!(of_file(&small, LARGE, false, 0), ["new-or-large-file"]);
     assert!(
-        of_file(&small, LARGE - 1, false).is_empty(),
+        of_file(&small, LARGE - 1, false, 0).is_empty(),
         "one line short"
+    );
+    assert_eq!(
+        of_file(&small, 1, false, BRANCH_MIN),
+        ["new-or-large-file"],
+        "a small change with enough new branches is maintainable too"
+    );
+    assert!(
+        of_file(&small, 1, false, BRANCH_MIN - 1).is_empty(),
+        "one branch short"
     );
 }
 
@@ -98,6 +147,7 @@ fn known(text: &[&str], added: usize, new: bool) -> FileChange {
         new,
         lines: Some(lines(text)),
         added,
+        branches: 0,
     }
 }
 
