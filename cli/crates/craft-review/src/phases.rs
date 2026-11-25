@@ -246,8 +246,8 @@ fn next_round(dir: &Path, run: &mut RunState, profiles: &[Profile]) -> Result<()
     run.rounds.round += 1;
     // The consumer's own agents run once, beside the first round, over the whole change.
     let mut tasks = extra::tasks(run)?;
-    // Each live track's lens dispatches, then its units' contracts: only the lens dispatches count
-    // against the agent budget, a contract running beside the first round alone.
+    // Each live track's lens dispatches, then its units' contracts, which run beside the first
+    // round alone.
     let mut parts = Vec::new();
     for (track, p) in run.tracks.iter().zip(profiles).filter(|(t, _)| t.live()) {
         let plan = track.plan.as_ref().ok_or(StepError::NoPlan)?;
@@ -265,11 +265,24 @@ fn next_round(dir: &Path, run: &mut RunState, profiles: &[Profile]) -> Result<()
             let round = run.rounds.round;
             contracts = units::contract_tasks(&run.context, p, plan, unit, round, &prior)?;
         }
-        parts.push((lenses, contracts));
+        parts.push((p, plan.max_rounds > 1, lenses, contracts));
     }
     // A later round over the agent budget is not bought: the rounds end on what they found (realm
     // @nick/craft, node #634).
-    if let Some(note) = run.rounds.over_budget(parts.iter().flat_map(|(l, _)| l)) {
+    // Every lens dispatch spends the budget; only those a later round may send again — a lens
+    // past neither its own limit nor its plan's rounds — make its default base.
+    let sent = || parts.iter().flat_map(|(_, _, l, _)| l);
+    let base = || {
+        parts
+            .iter()
+            .filter(|(_, later, _, _)| *later)
+            .flat_map(|(p, _, l, _)| {
+                l.iter().filter(
+                |t| matches!(&t.kind, TaskKind::Lens { lens, .. } if rounds::resendable(p, lens)),
+            )
+            })
+    };
+    if let Some(note) = run.rounds.over_budget(sent()) {
         run.rounds.round -= 1;
         run.notes.push(note);
         for t in &mut run.tracks {
@@ -277,8 +290,8 @@ fn next_round(dir: &Path, run: &mut RunState, profiles: &[Profile]) -> Result<()
         }
         return end_rounds(dir, run, profiles);
     }
-    run.rounds.count_sent(parts.iter().flat_map(|(l, _)| l));
-    for (lenses, contracts) in parts {
+    run.rounds.count_sent(sent(), base());
+    for (_, _, lenses, contracts) in parts {
         tasks.extend(lenses);
         tasks.extend(contracts);
     }

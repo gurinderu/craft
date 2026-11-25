@@ -29,6 +29,13 @@ pub(super) fn limit(profile: &Profile, lens: &str) -> Option<u32> {
     }
 }
 
+/// Whether a later round may send `lens` again: the dispatches the agent budget counts (realm
+/// @nick/craft, node #634).
+#[must_use]
+pub fn resendable(profile: &Profile, lens: &str) -> bool {
+    within(profile, lens, 2)
+}
+
 /// Whether `lens` may run in `round`.
 fn within(profile: &Profile, lens: &str, round: u32) -> bool {
     limit(profile, lens).is_none_or(|n| round <= n)

@@ -40,8 +40,13 @@ fn a_round_over_the_budget_is_not_bought_and_the_run_verifies_what_it_found() {
     let state: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(run.join("state.json")).unwrap()).unwrap();
     assert_eq!(
-        (&state["rounds"]["round"], &state["rounds"]["sent"]),
-        (&json!(1), &json!(3)),
+        (
+            &state["rounds"]["round"],
+            &state["rounds"]["sent"],
+            &state["rounds"]["first"],
+            &state["rounds"]["auto"]
+        ),
+        (&json!(1), &json!(3), &json!(3), &json!(6)),
         "the round not bought is not counted: a coordinator stamps what it finds with the last round run"
     );
     let s = submit(&run, json!({"dedup-rust": {"groups": []}}));

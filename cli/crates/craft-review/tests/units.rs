@@ -136,9 +136,9 @@ fn a_two_crate_change_is_sliced_judged_by_contract_and_seam_and_its_questions_de
     let state: Value =
         serde_json::from_str(&std::fs::read_to_string(run.join("state.json")).unwrap()).unwrap();
     assert_eq!(
-        state["rounds"]["first"],
-        json!(8),
-        "the agent budget counts the lens dispatches, not the units' contracts (realm @nick/craft, node #634)"
+        (&state["rounds"]["first"], &state["rounds"]["sent"]),
+        (&Value::Null, &json!(8)),
+        "every lens dispatch spends the budget, the units' contracts do not; a small plan runs one round, so none of it makes the default base (realm @nick/craft, node #634)"
     );
     let confined = task(&s, "lens-rust-errors-r1-s1");
     assert_eq!(

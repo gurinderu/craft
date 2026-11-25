@@ -70,13 +70,17 @@ pub struct Rounds {
     /// state written before it was kept, which reruns every lens.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rerun: Option<Vec<String>>,
-    /// The tasks the lens rounds dispatched so far, and those of the first round alone, which the
-    /// default agent budget is counted from ([`budget`]; realm @nick/craft, node #634). Zero in a
+    /// The lens tasks the rounds dispatched so far, and the first round's a later round may send
+    /// again, which the default agent budget is counted from ([`budget`]; realm @nick/craft, node #634). Zero in a
     /// state written before they were kept, which no budget then stops.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub sent: u32,
     #[serde(default, skip_serializing_if = "is_zero")]
     pub first: u32,
+    /// The default budget the first round set: its lens tasks, and as many again as those of them
+    /// a later round may send again ([`budget`]); zero until then.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub auto: u32,
     /// The launcher's own agent budget for the lens rounds (`--lens-agents`); `None`, the default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub budget: Option<u32>,
@@ -503,6 +507,7 @@ mod budget;
 #[cfg(test)]
 mod budget_tests;
 mod rerun;
+pub use rerun::resendable;
 #[cfg(test)]
 mod rerun_tests;
 #[cfg(test)]

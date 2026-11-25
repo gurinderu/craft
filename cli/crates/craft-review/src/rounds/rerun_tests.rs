@@ -433,3 +433,14 @@ fn a_round_limit_of_zero_is_refused() {
         Some(1)
     );
 }
+
+/// What a later round may send again: a lens with no limit, not design, a metrics lens or one the
+/// profile limits to one round (realm @nick/craft, node #634).
+#[test]
+fn only_a_lens_a_later_round_may_send_again_is_resendable() {
+    let rust = Profile::load("rust").unwrap();
+    assert!(resendable(&rust, "errors"));
+    for lens in ["design", "complexity", "maintainability", "performance"] {
+        assert!(!resendable(&rust, lens), "{lens}");
+    }
+}

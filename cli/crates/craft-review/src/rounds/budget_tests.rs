@@ -30,7 +30,8 @@ fn after_first(first: usize) -> Rounds {
         round: 1,
         ..Rounds::default()
     };
-    r.count_sent(&lens_tasks(first, 1));
+    let t = lens_tasks(first, 1);
+    r.count_sent(&t, &t);
     r
 }
 
@@ -45,7 +46,8 @@ fn the_default_budget_is_twice_the_first_round_and_buys_the_round_that_fits() {
         None,
         "at the budget, bought"
     );
-    r.count_sent(&lens_tasks(110, 2));
+    let t = lens_tasks(110, 2);
+    r.count_sent(&t, &t);
     assert_eq!(
         (r.first, r.sent),
         (113, 223),
@@ -57,7 +59,7 @@ fn the_default_budget_is_twice_the_first_round_and_buys_the_round_that_fits() {
         .expect("223 + 4 is over 226");
     assert_eq!(
         note,
-        "lens round 3 not bought: its 4 task(s) would bring the lens rounds to 227 agent(s), over the budget of 226 (twice the first round's 113 task(s)); not run in it: rust:errors (src), rust:errors, rust:errors, rust:errors; what the rounds found went on to verification"
+        "lens round 3 not bought: its 4 task(s) would bring the lens rounds to 227 agent(s), over the budget of 226 (the first round's 113 lens task(s) and 113 more for those a later round may send again); not run in it: rust:errors (src), rust:errors, rust:errors, rust:errors; what the rounds found went on to verification"
     );
 }
 
@@ -73,7 +75,8 @@ fn the_first_round_is_always_bought_and_the_launchers_budget_wins() {
         None,
         "the first round, over any budget"
     );
-    r.count_sent(&lens_tasks(50, 1));
+    let t = lens_tasks(50, 1);
+    r.count_sent(&t, &t);
     assert_eq!(r.agent_budget(), Some(10));
     r.round = 2;
     assert!(
@@ -110,4 +113,27 @@ fn a_state_with_no_round_yet_writes_no_count() {
         (&v["sent"], &v["first"]),
         (&serde_json::json!(3), &serde_json::json!(3))
     );
+}
+
+/// Every lens dispatch spends the budget, a lens run once included; only those a later round may
+/// send again make the default base.
+#[test]
+fn every_lens_dispatch_spends_the_budget_and_only_the_resendable_make_its_base() {
+    let mut r = Rounds {
+        round: 1,
+        budget: Some(120),
+        ..Rounds::default()
+    };
+    let all = lens_tasks(100, 1);
+    r.count_sent(&all, all.iter().take(70));
+    assert_eq!((r.first, r.sent, r.auto), (70, 100, 170));
+    r.round = 2;
+    assert!(
+        r.over_budget(&lens_tasks(30, 2)).is_some(),
+        "100 sent and 30 more pass the launcher's 120"
+    );
+    r.budget = None;
+    assert_eq!(r.agent_budget(), Some(170), "the default: 100 and 70 more");
+    assert!(r.over_budget(&lens_tasks(70, 2)).is_none());
+    assert!(r.over_budget(&lens_tasks(71, 2)).is_some());
 }
