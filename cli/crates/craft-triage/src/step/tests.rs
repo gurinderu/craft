@@ -209,3 +209,18 @@ fn an_answer_for_no_pending_task_is_refused() {
         matches!(submit(dir.path(), Some(&given), &[]), Err(TriageError::UnknownTask(id)) if id == "plan")
     );
 }
+
+#[test]
+fn a_refused_answer_file_is_moved_aside_and_its_task_asked_again() {
+    let c = case("repeats collapsed");
+    let (repo, dir) = (git_repo(), tempfile::tempdir().unwrap());
+    let step = start(&opts_of(&c, repo.path(), dir.path())).unwrap();
+    let file = std::path::PathBuf::from(step["tasks"][0]["answerFile"].as_str().unwrap());
+    std::fs::write(&file, "{}").unwrap();
+    let again = submit(dir.path(), None, &[]).unwrap();
+    assert!(!file.exists(), "the refused file is moved aside");
+    let aside = file.with_file_name("gather-report.rejected-0.json");
+    assert!(aside.exists(), "{aside:?}");
+    assert_eq!(again["tasks"][0]["id"], "gather-report", "{again}");
+    assert!(again.get("notes").is_none(), "{again}");
+}
