@@ -7,10 +7,9 @@ name: native-builds
 # discovery code these tests run with the JavaScript strings it hands the regexp engine, this workflow and the release's. Any other pull request still compiles the workspace on macOS and Windows in ci.yml's
 # store-native job (a debug build) — the only compile those two systems get on such a pull request; Linux static musl
 # and the release profile get none. A target broken by a change the paths did not catch shows on main after the
-# merge; release-please's PR gets no CI of its own, so release-please.yml's targets-built job cuts no release until
-# this workflow is green on main. workflow_dispatch runs it by hand for that.
+# merge; release-please's PR gets no CI of its own, so release-please.yml's targets-built job cuts a release only
+# from a commit this workflow was green on.
 on:
-  workflow_dispatch:
   push:
     branches: [main]
   pull_request:
