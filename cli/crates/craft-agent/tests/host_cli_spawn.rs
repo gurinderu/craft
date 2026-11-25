@@ -74,7 +74,7 @@ async fn codex_failing_keeps_both_streams_and_a_clean_exit_with_no_file_is_no_an
     .unwrap();
     let err = codex(failing).run(&request(dir.path())).await.unwrap_err();
     assert!(
-        matches!(&err, AgentError::Quit { code: Some(1), stderr, stdout } if stderr == "Not logged in" && stdout == "out"),
+        matches!(&err, AgentError::Quit { code: Some(1), stderr, stdout, .. } if stderr == "Not logged in" && stdout == "out"),
         "{err:?}"
     );
     let silent = script(dir.path(), "codex2", "cat > /dev/null; echo hm >&2").unwrap();
@@ -184,7 +184,7 @@ async fn opencode_error_events_are_its_words_and_no_block_is_no_answer() {
         .await
         .unwrap_err();
     assert!(
-        matches!(&err, AgentError::Quit { code: Some(1), stdout, .. } if stdout == "Agent not found: \"x\""),
+        matches!(&err, AgentError::Quit { code: Some(1), stdout, errors, .. } if stdout == "Agent not found: \"x\"" && errors == &["Agent not found: \"x\""]),
         "{err:?}"
     );
     assert_eq!(

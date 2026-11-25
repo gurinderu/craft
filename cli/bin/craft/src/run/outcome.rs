@@ -8,7 +8,6 @@
 use craft_agent::{AgentError, AgentReply};
 use craft_review::blocked;
 
-use super::HostKind;
 use super::host::Host;
 use super::limit::usage_limit_text;
 use super::task::Task;
@@ -72,15 +71,19 @@ fn tail(stderr: &str, stdout: &str) -> String {
     joined.chars().take(300).collect()
 }
 
-/// What a failed exit wrote of why: opencode's error events, which its backend puts on stdout in
-/// place of the event stream when it printed any (an event stream's lines open `{"type":`), else
-/// stderr's last line. Another host's stdout is its reply, not why it failed.
-fn quit_words(host: &Host, stderr: &str, stdout: &str) -> Option<String> {
-    let events = match host.kind {
-        HostKind::OpenCode => last_line(stdout).filter(|l| !l.starts_with(r#"{"type":"#)),
-        HostKind::Codex | HostKind::Pi => None,
-    };
-    events.or_else(|| last_line(stderr))
+/// `text` as one line, capped at 300 characters; `None` when it is blank.
+fn one_line(text: &str) -> Option<String> {
+    let one = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    (!one.is_empty()).then(|| one.chars().take(300).collect())
+}
+
+/// What a failed exit wrote of why: its last error event's message, as the backend read it
+/// (opencode's), else stderr's last line. Its stdout is not why: an event stream or a reply.
+fn quit_words(errors: &[String], stderr: &str) -> Option<String> {
+    errors
+        .last()
+        .and_then(|e| one_line(e))
+        .or_else(|| last_line(stderr))
 }
 
 /// How the opencode plugin opens a failed child session's error (`integrations/opencode/plugin/
@@ -110,8 +113,7 @@ fn runtime_words(subtype: &str) -> Option<String> {
         k if message.is_empty() => k.to_owned(),
         k => format!("{k}: {message}"),
     };
-    let one = words.split_whitespace().collect::<Vec<_>>().join(" ");
-    (!one.is_empty()).then(|| one.chars().take(300).collect())
+    one_line(&words)
 }
 
 /// The last line the agent's process wrote in a failure `e` that is neither a quit nor a clean exit
@@ -159,7 +161,12 @@ pub(crate) fn stops(host: &Host, e: &AgentError) -> bool {
 }
 
 /// A failed exit's outcome.
-fn quit(host: &Host, code: Option<i32>, stderr: &str, stdout: &str) -> Outcome {
+fn quit(
+    host: &Host,
+    code: Option<i32>,
+    (stderr, stdout): (&str, &str),
+    errors: &[String],
+) -> Outcome {
     let said = format!("{stderr}\n{stdout}");
     if let Some(limit) = usage_limit_text(&said) {
         return Outcome::Limit(limit);
@@ -171,7 +178,7 @@ fn quit(host: &Host, code: Option<i32>, stderr: &str, stdout: &str) -> Outcome {
     Outcome::Unanswered {
         why: format!("{} exited {code}: {}", host.name(), tail(stderr, stdout)),
         said: last_line(stderr),
-        wrote: quit_words(host, stderr, stdout),
+        wrote: quit_words(errors, stderr),
     }
 }
 
@@ -191,7 +198,8 @@ pub(crate) fn outcome_of(
             code,
             stderr,
             stdout,
-        }) => quit(host, code, &stderr, &stdout),
+            errors,
+        }) => quit(host, code, (&stderr, &stdout), &errors),
         Err(AgentError::Failed { subtype }) if let Some(limit) = usage_limit_text(&subtype) => {
             Outcome::Limit(limit)
         }

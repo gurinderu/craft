@@ -17,11 +17,7 @@ fn host(kind: HostKind) -> Host {
 }
 
 fn wrote(e: AgentError) -> Option<String> {
-    wrote_on(HostKind::OpenCode, e)
-}
-
-fn wrote_on(kind: HostKind, e: AgentError) -> Option<String> {
-    let o = quit_or(kind, e);
+    let o = quit_or(HostKind::OpenCode, e);
     let Outcome::Unanswered { wrote, .. } = o else {
         panic!("{o:?}")
     };
@@ -43,11 +39,12 @@ fn quit_or(kind: HostKind, e: AgentError) -> Outcome {
     outcome_of(&task, Err(e), &host(kind))
 }
 
-fn quit(stderr: &str, stdout: &str) -> AgentError {
+fn quit(stderr: &str, stdout: &str, errors: &[&str]) -> AgentError {
     AgentError::Quit {
         code: Some(1),
         stderr: stderr.into(),
         stdout: stdout.into(),
+        errors: errors.iter().map(|&e| e.to_owned()).collect(),
     }
 }
 
@@ -57,39 +54,45 @@ fn failed(subtype: &str) -> Option<String> {
     })
 }
 
-/// A failed exit's words are opencode's error events on stdout, else stderr's: never an event
-/// stream, nor another host's reply (realm @nick/craft, node #666).
+/// A failed exit's words are its last error event's, as the backend read them, else stderr's:
+/// never its stdout, an event stream or a reply (realm @nick/craft, node #666).
 #[test]
 fn a_failed_exit_wrote_its_error_not_its_stream_or_reply() {
-    assert_eq!(
-        wrote(quit("loading plugins", "Insufficient Balance")).as_deref(),
-        Some("Insufficient Balance")
-    );
-    assert_eq!(wrote(quit("boom", "")).as_deref(), Some("boom"));
-    // opencode with no error event: its stdout is the event stream, so stderr says why.
-    assert_eq!(
-        wrote(quit("killed: out of memory", "{\"type\":\"step_start\"}")).as_deref(),
-        Some("killed: out of memory")
-    );
-    assert_eq!(wrote(quit("", "{\"type\":\"step_start\"}")), None);
-    // An error event whose message is a JSON body is still the error.
+    let events = "{\"type\":\"step_start\"}";
     assert_eq!(
         wrote(quit(
             "loading plugins",
-            "{\"error\":\"Insufficient Balance\"}"
+            "Insufficient Balance",
+            &["Insufficient Balance"]
         ))
         .as_deref(),
-        Some("{\"error\":\"Insufficient Balance\"}")
+        Some("Insufficient Balance")
     );
-    // Another host's stdout is its reply, never why it failed.
-    for kind in [HostKind::Codex, HostKind::Pi] {
-        assert_eq!(
-            wrote_on(kind, quit("rate limited", "Here is my review.")).as_deref(),
-            Some("rate limited")
-        );
-        assert_eq!(wrote_on(kind, quit("", "Here is my review.")), None);
-    }
-    assert_eq!(wrote(quit("", "")), None);
+    // A provider's raw error body opens as an event does, and is still the error.
+    let body = "{\"type\":\"error\",\"error\":{\"message\":\"overloaded\"}}";
+    assert_eq!(
+        wrote(quit("loading plugins", body, &[body])).as_deref(),
+        Some(body)
+    );
+    assert_eq!(
+        wrote(quit("", "x", &["first", "APIError:\n  upstream refused"])).as_deref(),
+        Some("APIError: upstream refused")
+    );
+    assert_eq!(
+        wrote(quit("killed: out of memory", events, &[])).as_deref(),
+        Some("killed: out of memory")
+    );
+    assert_eq!(wrote(quit("", events, &[])), None);
+    assert_eq!(
+        wrote(quit("rate limited", "Here is my review.", &[])).as_deref(),
+        Some("rate limited")
+    );
+    assert_eq!(wrote(quit("", "Here is my review.", &[])), None);
+    let long = "e".repeat(400);
+    assert_eq!(
+        wrote(quit("", "", &[&long])).map(|l| l.chars().count()),
+        Some(300)
+    );
 }
 
 /// A clean exit with no answer is read by stderr alone, a failed one by its stderr; craft's own
@@ -143,6 +146,15 @@ fn a_delegated_failure_is_read_by_the_runtime_error_alone() {
         )
         .as_deref(),
         Some("provider.no-route: no route")
+    );
+    let retried = |second: &str| failed(&format!("broke (tried once more alone: {second})"));
+    assert_eq!(
+        retried("the child session failed (x)").as_deref(),
+        Some("x")
+    );
+    assert_eq!(
+        retried("the child session failed (x): bad (400)").as_deref(),
+        Some("x: bad (400)")
     );
     // The plugin's and the binary's own words are none of the agent's.
     for own in [

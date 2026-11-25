@@ -76,6 +76,9 @@ pub enum AgentError {
         code: Option<i32>,
         stderr: String,
         stdout: String,
+        /// The message of each error event it printed, for a host that prints them (opencode);
+        /// empty for another, and where it printed none.
+        errors: Vec<String>,
     },
     /// A host CLI that exited cleanly with no answer to read.
     #[error("gave no answer")]
