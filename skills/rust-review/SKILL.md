@@ -258,8 +258,13 @@ lenses are the general ones — the Rust brief replacing the general one where b
 Rust's own. The two files are the authoritative lens set. On a security-sensitive or large plan, or one the scout gave no
 pick for, the security floor adds only the profile's `securityFloor` lenses — for Rust security,
 safety, correctness, errors, concurrency, compat and invariants — beside the always set; `tests`
-still joins on any change to production code, and `maintainability`, `money` and `complexity`
-stay the scout's pick.
+still joins on any change to production code, and `complexity` stays the scout's pick. `money`,
+`performance` and `maintainability` run on a signal the binary reads in the diff, hunks with their
+function around them — a money-like name; an allocation or I/O call in a loop; a new file or one
+gaining 150 lines or more — whoever picked them, and only the completeness critic of a full review
+may name one the signal held back (not yet observed live). `safety` and `concurrency` are not
+gated: reachable panics, build-profile arithmetic, a load-bearing `debug_assert!`, `Send`/`Sync`
+and the many forms of async and locking have no word list to see them.
 
 **The optional pass — off by default.** Two lenses are not part of the standard fan-out, because
 on the measured run they returned no High findings at all while producing the bulk of the
@@ -269,8 +274,8 @@ completeness — `rust-web`). Their findings are real and worth having, so they 
 are bought deliberately with `optional=true` (or a subset: `optional=api-idioms`). The general
 profile's `design` lens is optional too, and joins without a request when the diff adds a module, a
 crate, a public type or a format. `performance`
-was in this pass and now runs in every Rust review (not yet observed live), scoped to needless
-allocation at LOW. Neither `strict` nor the security-sensitive floor turns the pass on or off —
+was in this pass and now runs on its signal, an allocation or I/O call in a loop (not yet observed
+live), scoped to needless allocation at LOW. Neither `strict` nor the security-sensitive floor turns the pass on or off —
 the request is the only switch. A run that
 skipped it says so in its report and on its run record: that is an absence of a result, never a
 clean one. A run stopped by a red mechanical gate lists only the optional lenses you requested —

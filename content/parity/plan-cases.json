@@ -22,7 +22,6 @@
         "lenses": [
           "errors",
           "intent",
-          "performance",
           "tests"
         ],
         "maxRounds": 1,
@@ -34,7 +33,14 @@
         "churn": [],
         "repoRules": [],
         "surfaceDropped": [],
-        "lightSkipped": []
+        "lightSkipped": [],
+        "signalSkipped": [
+          "money",
+          "performance",
+          "maintainability"
+        ],
+        "dataFiles": [],
+        "dataSkipped": []
       }
     },
     {
@@ -60,8 +66,7 @@
         "lenses": [
           "errors",
           "safety",
-          "intent",
-          "performance"
+          "intent"
         ],
         "maxRounds": 1,
         "verifyVotes": 1,
@@ -72,7 +77,14 @@
         "churn": [],
         "repoRules": [],
         "surfaceDropped": [],
-        "lightSkipped": []
+        "lightSkipped": [],
+        "signalSkipped": [
+          "money",
+          "performance",
+          "maintainability"
+        ],
+        "dataFiles": [],
+        "dataSkipped": []
       }
     },
     {
@@ -92,7 +104,6 @@
           "invariants",
           "safety",
           "intent",
-          "performance",
           "tests",
           "negative-space"
         ],
@@ -105,7 +116,14 @@
         "churn": [],
         "repoRules": [],
         "surfaceDropped": [],
-        "lightSkipped": []
+        "lightSkipped": [],
+        "signalSkipped": [
+          "money",
+          "performance",
+          "maintainability"
+        ],
+        "dataFiles": [],
+        "dataSkipped": []
       }
     },
     {
@@ -130,7 +148,6 @@
         "lenses": [
           "errors",
           "intent",
-          "performance",
           "tests",
           "correctness",
           "security",
@@ -149,7 +166,14 @@
         "churn": [],
         "repoRules": [],
         "surfaceDropped": [],
-        "lightSkipped": []
+        "lightSkipped": [],
+        "signalSkipped": [
+          "money",
+          "performance",
+          "maintainability"
+        ],
+        "dataFiles": [],
+        "dataSkipped": []
       }
     },
     {
@@ -179,10 +203,8 @@
           "safety",
           "errors",
           "concurrency",
-          "maintainability",
           "invariants",
           "intent",
-          "performance",
           "tests",
           "correctness",
           "security",
@@ -198,7 +220,14 @@
         "churn": [],
         "repoRules": [],
         "surfaceDropped": [],
-        "lightSkipped": []
+        "lightSkipped": [],
+        "signalSkipped": [
+          "money",
+          "performance",
+          "maintainability"
+        ],
+        "dataFiles": [],
+        "dataSkipped": []
       }
     },
     {
@@ -225,7 +254,6 @@
           "reconciler",
           "errors",
           "intent",
-          "performance",
           "tests",
           "failure-windows"
         ],
@@ -238,7 +266,14 @@
         "churn": [],
         "repoRules": [],
         "surfaceDropped": [],
-        "lightSkipped": []
+        "lightSkipped": [],
+        "signalSkipped": [
+          "money",
+          "performance",
+          "maintainability"
+        ],
+        "dataFiles": [],
+        "dataSkipped": []
       }
     },
     {
@@ -265,7 +300,6 @@
       "expected": {
         "sizeBucket": "small",
         "lenses": [
-          "performance",
           "failure-windows",
           "intent",
           "tests"
@@ -279,7 +313,14 @@
         "churn": [],
         "repoRules": [],
         "surfaceDropped": [],
-        "lightSkipped": []
+        "lightSkipped": [],
+        "signalSkipped": [
+          "money",
+          "performance",
+          "maintainability"
+        ],
+        "dataFiles": [],
+        "dataSkipped": []
       }
     },
     {
@@ -311,7 +352,6 @@
         "lenses": [
           "errors",
           "intent",
-          "performance",
           "tests",
           "correctness",
           "security",
@@ -331,7 +371,14 @@
           "invariants",
           "negative-space"
         ],
-        "lightSkipped": []
+        "lightSkipped": [],
+        "signalSkipped": [
+          "money",
+          "performance",
+          "maintainability"
+        ],
+        "dataFiles": [],
+        "dataSkipped": []
       }
     },
     {
@@ -361,7 +408,6 @@
         "lenses": [
           "errors",
           "intent",
-          "performance",
           "tests",
           "compat"
         ],
@@ -374,7 +420,14 @@
         "churn": [],
         "repoRules": [],
         "surfaceDropped": [],
-        "lightSkipped": []
+        "lightSkipped": [],
+        "signalSkipped": [
+          "money",
+          "performance",
+          "maintainability"
+        ],
+        "dataFiles": [],
+        "dataSkipped": []
       }
     },
     {
@@ -407,7 +460,6 @@
         "lenses": [
           "errors",
           "intent",
-          "performance",
           "tests"
         ],
         "maxRounds": 2,
@@ -424,7 +476,14 @@
           "CLAUDE.md"
         ],
         "surfaceDropped": [],
-        "lightSkipped": []
+        "lightSkipped": [],
+        "signalSkipped": [
+          "money",
+          "performance",
+          "maintainability"
+        ],
+        "dataFiles": [],
+        "dataSkipped": []
       }
     },
     {
@@ -454,7 +513,6 @@
           "safety",
           "errors",
           "intent",
-          "performance",
           "tests",
           "correctness",
           "security",
@@ -473,7 +531,14 @@
           "invariants",
           "compat",
           "negative-space"
-        ]
+        ],
+        "signalSkipped": [
+          "money",
+          "performance",
+          "maintainability"
+        ],
+        "dataFiles": [],
+        "dataSkipped": []
       }
     },
     {
@@ -499,7 +564,6 @@
         "lenses": [
           "reconciler",
           "intent",
-          "performance",
           "tests",
           "failure-windows"
         ],
@@ -512,7 +576,14 @@
         "churn": [],
         "repoRules": [],
         "surfaceDropped": [],
-        "lightSkipped": []
+        "lightSkipped": [],
+        "signalSkipped": [
+          "money",
+          "performance",
+          "maintainability"
+        ],
+        "dataFiles": [],
+        "dataSkipped": []
       }
     },
     {
@@ -538,7 +609,6 @@
         "lenses": [
           "failure-windows",
           "intent",
-          "performance",
           "tests"
         ],
         "maxRounds": 1,
@@ -550,7 +620,14 @@
         "churn": [],
         "repoRules": [],
         "surfaceDropped": [],
-        "lightSkipped": []
+        "lightSkipped": [],
+        "signalSkipped": [
+          "money",
+          "performance",
+          "maintainability"
+        ],
+        "dataFiles": [],
+        "dataSkipped": []
       }
     },
     {
@@ -574,7 +651,14 @@
       "expected": {
         "sizeBucket": "small",
         "lenses": [
-          "performance"
+          "correctness",
+          "security",
+          "concurrency",
+          "errors",
+          "tests",
+          "complexity",
+          "safety",
+          "reconciler"
         ],
         "maxRounds": 1,
         "verifyVotes": 1,
@@ -588,7 +672,14 @@
         "lightSkipped": [
           "invariants",
           "intent"
-        ]
+        ],
+        "signalSkipped": [
+          "money",
+          "performance",
+          "maintainability"
+        ],
+        "dataFiles": [],
+        "dataSkipped": []
       }
     },
     {
@@ -626,7 +717,10 @@
         "churn": [],
         "repoRules": [],
         "surfaceDropped": [],
-        "lightSkipped": []
+        "lightSkipped": [],
+        "signalSkipped": [],
+        "dataFiles": [],
+        "dataSkipped": []
       }
     },
     {
@@ -656,7 +750,10 @@
         "churn": [],
         "repoRules": [],
         "surfaceDropped": [],
-        "lightSkipped": []
+        "lightSkipped": [],
+        "signalSkipped": [],
+        "dataFiles": [],
+        "dataSkipped": []
       }
     },
     {
@@ -697,7 +794,10 @@
         "churn": [],
         "repoRules": [],
         "surfaceDropped": [],
-        "lightSkipped": []
+        "lightSkipped": [],
+        "signalSkipped": [],
+        "dataFiles": [],
+        "dataSkipped": []
       }
     },
     {
@@ -742,7 +842,10 @@
         "churn": [],
         "repoRules": [],
         "surfaceDropped": [],
-        "lightSkipped": []
+        "lightSkipped": [],
+        "signalSkipped": [],
+        "dataFiles": [],
+        "dataSkipped": []
       }
     },
     {
@@ -789,7 +892,10 @@
         "surfaceDropped": [
           "negative-space"
         ],
-        "lightSkipped": []
+        "lightSkipped": [],
+        "signalSkipped": [],
+        "dataFiles": [],
+        "dataSkipped": []
       }
     },
     {
@@ -834,7 +940,10 @@
         "lightSkipped": [
           "compat",
           "negative-space"
-        ]
+        ],
+        "signalSkipped": [],
+        "dataFiles": [],
+        "dataSkipped": []
       }
     },
     {
@@ -859,7 +968,6 @@
         "lenses": [
           "errors",
           "intent",
-          "performance",
           "tests",
           "maintainability"
         ],
@@ -872,7 +980,13 @@
         "churn": [],
         "repoRules": [],
         "surfaceDropped": [],
-        "lightSkipped": []
+        "lightSkipped": [],
+        "signalSkipped": [
+          "money",
+          "performance"
+        ],
+        "dataFiles": [],
+        "dataSkipped": []
       },
       "strict": true
     },
@@ -899,7 +1013,6 @@
         "lenses": [
           "errors",
           "intent",
-          "performance",
           "tests",
           "sql-queries"
         ],
@@ -912,7 +1025,14 @@
         "churn": [],
         "repoRules": [],
         "surfaceDropped": [],
-        "lightSkipped": []
+        "lightSkipped": [],
+        "signalSkipped": [
+          "money",
+          "performance",
+          "maintainability"
+        ],
+        "dataFiles": [],
+        "dataSkipped": []
       }
     },
     {
@@ -950,7 +1070,14 @@
         "sizeBucket": "small",
         "surfaceDropped": [],
         "verifyVotes": 1,
-        "lensModel": "opus"
+        "lensModel": "opus",
+        "signalSkipped": [
+          "money",
+          "performance",
+          "maintainability"
+        ],
+        "dataFiles": [],
+        "dataSkipped": []
       }
     },
     {
@@ -980,7 +1107,6 @@
         "isLibrary": false,
         "lenses": [
           "tests",
-          "maintainability",
           "compat",
           "invariants",
           "correctness",
@@ -997,7 +1123,14 @@
         "sizeBucket": "large",
         "surfaceDropped": [],
         "verifyVotes": 3,
-        "lensModel": "opus"
+        "lensModel": "opus",
+        "signalSkipped": [
+          "money",
+          "performance",
+          "maintainability"
+        ],
+        "dataFiles": [],
+        "dataSkipped": []
       }
     },
     {
@@ -1029,7 +1162,14 @@
         "sizeBucket": "medium",
         "surfaceDropped": [],
         "verifyVotes": 3,
-        "lensModel": "opus"
+        "lensModel": "opus",
+        "signalSkipped": [
+          "money",
+          "performance",
+          "maintainability"
+        ],
+        "dataFiles": [],
+        "dataSkipped": []
       }
     },
     {
@@ -1065,7 +1205,163 @@
         "churn": [],
         "repoRules": [],
         "surfaceDropped": [],
-        "lightSkipped": []
+        "lightSkipped": [],
+        "signalSkipped": [],
+        "dataFiles": [],
+        "dataSkipped": []
+      }
+    },
+    {
+      "name": "signals: a Rust diff showing a loop's I/O takes the performance lens, the other gated ones held back",
+      "changedFiles": [
+        "src/pool.rs"
+      ],
+      "signals": [
+        "loop-io"
+      ],
+      "scout": {
+        "sizeBucket": "medium",
+        "lenses": [
+          "errors",
+          "money",
+          "maintainability"
+        ],
+        "isLibrary": false,
+        "securitySensitive": false,
+        "intent": "adds f",
+        "churn": [],
+        "repoRules": [],
+        "notes": "n"
+      },
+      "expected": {
+        "churn": [],
+        "dataFiles": [],
+        "dataSkipped": [],
+        "intent": "adds f",
+        "isLibrary": false,
+        "lenses": [
+          "errors",
+          "intent",
+          "tests",
+          "performance"
+        ],
+        "lightSkipped": [],
+        "maxRounds": 2,
+        "repoRules": [],
+        "securitySensitive": false,
+        "signalSkipped": [
+          "money",
+          "maintainability"
+        ],
+        "sizeBucket": "medium",
+        "surfaceDropped": [],
+        "verifyVotes": 1,
+        "lensModel": "opus"
+      }
+    },
+    {
+      "name": "signals: a general diff showing money and a new file takes those gated lenses, the others held back",
+      "changedFiles": [
+        "web/pay.ts"
+      ],
+      "profile": "general",
+      "signals": [
+        "money",
+        "new-or-large-file"
+      ],
+      "scout": {
+        "sizeBucket": "small",
+        "lenses": [
+          "security",
+          "concurrency"
+        ],
+        "isLibrary": false,
+        "securitySensitive": false,
+        "intent": "adds f",
+        "churn": [],
+        "repoRules": [],
+        "notes": "n"
+      },
+      "expected": {
+        "churn": [],
+        "dataFiles": [],
+        "dataSkipped": [],
+        "intent": "adds f",
+        "isLibrary": false,
+        "lenses": [
+          "security",
+          "concurrency",
+          "correctness",
+          "intent",
+          "tests",
+          "money",
+          "maintainability"
+        ],
+        "lightSkipped": [],
+        "maxRounds": 1,
+        "repoRules": [],
+        "securitySensitive": false,
+        "signalSkipped": [
+          "performance"
+        ],
+        "sizeBucket": "small",
+        "surfaceDropped": [],
+        "verifyVotes": 1,
+        "lensModel": "opus"
+      }
+    },
+    {
+      "name": "general: a part of only data keeps the lenses that read it",
+      "changedFiles": [
+        "fixtures/rows.csv",
+        "api/sample.json"
+      ],
+      "profile": "general",
+      "signals": [],
+      "scout": {
+        "sizeBucket": "large",
+        "lenses": [
+          "correctness",
+          "errors",
+          "compat"
+        ],
+        "isLibrary": false,
+        "securitySensitive": true,
+        "intent": "adds f",
+        "churn": [],
+        "repoRules": [],
+        "notes": "n"
+      },
+      "expected": {
+        "churn": [],
+        "dataFiles": [],
+        "dataSkipped": [
+          "correctness",
+          "errors",
+          "concurrency"
+        ],
+        "intent": "adds f",
+        "isLibrary": false,
+        "lenses": [
+          "compat",
+          "intent",
+          "security",
+          "invariants",
+          "negative-space"
+        ],
+        "lightSkipped": [],
+        "maxRounds": 3,
+        "repoRules": [],
+        "securitySensitive": true,
+        "signalSkipped": [
+          "money",
+          "performance",
+          "maintainability"
+        ],
+        "sizeBucket": "large",
+        "surfaceDropped": [],
+        "verifyVotes": 3,
+        "lensModel": "opus"
       }
     }
   ]
