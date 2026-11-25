@@ -1,13 +1,28 @@
 # craft
 
-Engineering skills, review agents and a diff review for coding agents: Claude Code, OpenCode, Codex and pi.
+**Code review for the change your coding agent just made.**
 
-craft gives your agent two things. **Skills** that carry Rust and Nix knowledge in full — testing, errors,
-ownership, concurrency, unsafe, flakes, packaging and more — and load on their own when the task matches. And a
-**review** of a diff in any language: each changed file goes to the lenses of its language, every finding is checked
-against the code, and you get one report with a verdict.
+craft is a review tool that runs inside Claude Code, OpenCode, Codex and pi. Point it at a branch and it comes back
+with one report and a verdict — Approve, Warning or Block — that you can act on before the pull request is opened.
 
-craft is self-contained: it declares no plugin dependencies.
+- **Many narrow passes instead of one general one.** Each changed file goes to the lenses of its language — Rust,
+  Nix, SQL, or general lenses for everything else — and each lens looks for one kind of defect: correctness,
+  security, concurrency, error handling, tests, backward compatibility, broken invariants.
+- **Findings are checked before you read them.** A finding that can decide the verdict is verified against the code
+  by a separate pass: one that does not hold is listed apart as refuted, and one that was not checked is marked so.
+  Each finding names the harm — who is hurt and how they recover — and its severity is capped by that harm.
+- **Real tools come first.** For Rust and Nix, clippy, semgrep, `nix flake check`, statix and deadnix run before any
+  lens does; a red check blocks.
+- **It learns your project.** A finding you already decided on is set aside while the code it concerns stays
+  unchanged; the systems your code talks to, once you name them, are read at the version you deploy; a second review
+  of a branch reads only the fix commits.
+- **It says what it did not review.** When part of a change could not be reviewed, the verdict says so instead of
+  showing a green one.
+- **It runs where you already work** — in your agent's own session, with your own login. There is no service to
+  sign up for, and craft declares no plugin dependencies.
+
+craft also carries the knowledge its review judges by as **skills** your agent loads while it writes code: Rust and
+Nix in full — testing, errors, ownership, concurrency, unsafe, flakes, packaging and more.
 
 ## Install
 
@@ -80,7 +95,7 @@ Ask your agent for a craft review of your branch. This is what runs it on each h
 | Codex | the `craft:codex-review` skill |
 | pi | `/skill:craft-review`, or just ask |
 
-The skills need no command: the agent loads one when the task matches its description — `rust-testing` when you
+The skills need no command: the agent loads one when your work matches its description — `rust-testing` when you
 write Rust tests, `nix-flakes` when you edit a flake. In Claude Code and Codex they appear as `craft:<name>`.
 
 Once per repository, `craft:review-init` (`craft init`) can record the external systems your code talks to and
@@ -113,12 +128,11 @@ PR's own OpenCode configuration and plugins, so its code runs even with `--no-ga
 
 ## What is inside
 
+- **The review** — `review`, the diff review; beside it `rust-audit`, a whole-crate audit before a release, and
+  `triage-findings`, which turns review findings and PR comments into one ordered fix plan.
 - **Skills** — Rust (testing, errors, ownership, concurrency, traits, performance, unsafe, architecture, security
   and the domains: web, CLI, fintech, cloud-native, embedded, ML), Nix (flakes, packaging, dev shells, NixOS), the
   review rubrics and rules, backward compatibility, controller races, project memory.
-- **Review agents** — a Rust and a Nix reviewer, a security scanner, a Miri runner, an architecture auditor.
-- **Workflows** — `review` (the diff review), `rust-audit` (a whole-crate audit before a release) and
-  `triage-findings` (review findings and PR comments into one ordered fix plan).
 - **Hooks** — in a repository that declares its own agent roles or review rules, craft tells the session how those
   run with craft's tools; these are silent elsewhere and off with `CRAFT_ROLE_HOOK=0`. One more hook speaks in any
   repository and has no switch: after `gh pr create` in Claude Code it warns when the new PR has no finished full
