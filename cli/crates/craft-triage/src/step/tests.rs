@@ -76,6 +76,7 @@ fn seen_of(c: &Js) -> state::Seen {
         checked: record_ids(c).into_iter().collect(),
         unchanged: named("unchanged"),
         missing: named("missing"),
+        ..state::Seen::default()
     }
 }
 

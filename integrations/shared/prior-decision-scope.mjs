@@ -51,7 +51,12 @@ export function candidatesToCheck(findings, decisions) {
  * `git diff --quiet` against it, printing the id and the exit status (0 = unchanged since the commit,
  * working tree included); when it does not (a squash-merged branch, another clone), the id and
  * `missing`. A decision naming no commit but a date is compared the same way against the last commit
- * before 00:00 UTC of that day, `missing` when there is none (realm @nick/craft, node #676). Arguments
+ * before that day began anywhere (00:00 at +14:00) on the trunk's first-parent line from where HEAD
+ * forks from it — not over all of HEAD's history, where a branch's backdated commit, or a side branch's
+ * commit dated before the day but merged after it, would be the base and hide a later change of the
+ * scope (realm @nick/craft, node #676) — printing `future` for a date later than today in UTC,
+ * `no-trunk` when origin/HEAD or its merge-base with HEAD cannot be resolved, `unreadable` when git
+ * fails listing the trunk, and `missing` when the trunk holds no commit before the day. Arguments
  * single-quoted.
  * @param {PriorDecision[]} decisions @returns {string}
  */
@@ -59,14 +64,28 @@ export function scopeCheckScript(decisions) {
   /** @param {string} s */
   const q = s => `'${s.replace(/'/g, `'\\''`)}'`
   /** @param {PriorDecision} d */
+  const dated = d => {
+    const [day, id] = [decisionDate(d), q(d.id)]
+    return (
+      `if [ ${q(day.replace(/-/g, ''))} -gt "$(date -u +%F | tr -d -)" ]; then echo ${id} future; ` +
+      `elif ! f=$(git merge-base HEAD refs/remotes/origin/HEAD 2>/dev/null); then echo ${id} no-trunk; ` +
+      `elif ! b=$(git rev-list -1 --first-parent ${q(`--before=${day} 00:00:00 +1400`)} "$f" 2>/dev/null); then echo ${id} unreadable; ` +
+      `elif [ -n "$b" ]; then git diff --quiet "$b" -- ${q(d.scope)}; echo ${id} $?; else echo ${id} missing; fi`
+    )
+  }
+  /** @param {PriorDecision} d */
   const line = d =>
     d.commit
       ? `if git cat-file -e ${q(`${d.commit}^{commit}`)} 2>/dev/null; then git diff --quiet ${q(d.commit)} -- ${q(d.scope)}; echo ${q(d.id)} $?; else echo ${q(d.id)} missing; fi`
-      : `b=$(git rev-list -1 ${q(`--before=${decisionDate(d)} 00:00:00 +0000`)} HEAD 2>/dev/null); if [ -n "$b" ]; then git diff --quiet "$b" -- ${q(d.scope)}; echo ${q(d.id)} $?; else echo ${q(d.id)} missing; fi`
+      : dated(d)
   return decisions.map(line).join('\n')
 }
 
-// What the scope-check agent returns: the ids it saw print status 0, and those it saw print `missing`.
+// The words a scope-check line prints, after the id, for a decision whose anchor names no commit to compare.
+const UNUSABLE_WORDS = ['future', 'no-trunk', 'unreadable']
+
+// What the scope-check agent returns: the ids it saw print status 0, those it saw print `missing`, and
+// those it saw print another word in place of a status.
 export const SCOPE_CHECK_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -74,39 +93,57 @@ export const SCOPE_CHECK_SCHEMA = {
   properties: {
     unchanged: { type: 'array', items: { type: 'string' }, description: 'ids whose line ended in exit status 0, exactly as printed' },
     missing: { type: 'array', items: { type: 'string' }, description: 'ids whose line ended in the word missing, exactly as printed' },
+    unusable: {
+      type: 'array',
+      description: 'ids whose line ended in the word future, no-trunk or unreadable, each with that word',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'word'],
+        properties: { id: { type: 'string' }, word: { type: 'string', enum: UNUSABLE_WORDS } },
+      },
+    },
     reason: { type: 'string', description: 'one line: anything that did not run' },
   },
 }
 
 /** The scope-check agent's prompt. @param {PriorDecision[]} decisions @returns {string} */
 export function scopeCheckPrompt(decisions) {
-  return `Run these lines in the repository under review, exactly as written (shell only, read only). Each prints a decision id and the exit status of \`git diff --quiet\` against that decision's commit (or, for a decision naming only a date, the last commit before that date), or the word missing when the repository does not have that commit.
+  return `Run these lines in the repository under review, exactly as written (shell only, read only). Each prints a decision id and the exit status of \`git diff --quiet\` against that decision's commit (or, for a decision naming only a date, the trunk's last commit before that date), or the word missing when the repository does not have that commit — or, for a date, future, no-trunk or unreadable when it cannot be compared.
 ${scopeCheckScript(decisions)}
-Return {unchanged: [every id whose printed status was 0], missing: [every id printed with the word missing], reason: one line on anything that did not run}.`
+Return {unchanged: [every id whose printed status was 0], missing: [every id printed with the word missing], unusable: [{id, word} for every id printed with the word future, no-trunk or unreadable], reason: one line on anything that did not run}.`
 }
 
 /**
- * The ids a scope-check answer names unchanged and missing, or null when the answer is absent or its
- * `unchanged` unreadable — then no decision is shown unchanged and nothing is set aside.
- * @param {unknown} ans @returns {{ unchanged: string[], missing: string[] } | null}
+ * The ids a scope-check answer names unchanged and missing, and the word it names each unusable one by,
+ * or null when the answer is absent or its `unchanged` unreadable — then no decision is shown unchanged
+ * and nothing is set aside.
+ * @param {unknown} ans @returns {{ unchanged: string[], missing: string[], unusable: Array<{ id: string, word: string }> } | null}
  */
 export function readScopeCheck(ans) {
   const o = ans && typeof ans === 'object' ? /** @type {Record<string, unknown>} */ (ans) : {}
   /** @param {unknown} v */
   const ids = v => (Array.isArray(v) ? v.filter(x => typeof x === 'string') : [])
-  return Array.isArray(o['unchanged']) ? { unchanged: ids(o['unchanged']), missing: ids(o['missing']) } : null
+  /** @param {unknown} x @returns {x is { id: string, word: string }} */
+  const named = x => {
+    const e = x && typeof x === 'object' ? /** @type {Record<string, unknown>} */ (x) : {}
+    return typeof e['id'] === 'string' && typeof e['word'] === 'string' && UNUSABLE_WORDS.includes(e['word'])
+  }
+  const unusable = (Array.isArray(o['unusable']) ? o['unusable'] : []).filter(named).map(e => ({ id: e.id, word: e.word }))
+  return Array.isArray(o['unchanged']) ? { unchanged: ids(o['unchanged']), missing: ids(o['missing']), unusable } : null
 }
 
 /**
- * Runs the scope check for `toCheck` (never with none; a commit-based check, an unknown commit raises
- * the finding and is reported — realm @nick/craft, node #184): the ids observed unchanged, and those whose
- * commit the repo does not know. A dead or unreadable answer shows nothing unchanged (said in `notes`).
+ * Runs the scope check for `toCheck` (never with none; an anchor naming no commit raises the finding and is
+ * reported — realm @nick/craft, node #184): the ids observed unchanged since their commit or date, and those
+ * whose anchor names no commit to compare, each with the word its line printed (`missing`, `future`,
+ * `no-trunk`, `unreadable`). A dead or unreadable answer shows nothing unchanged (said in `notes`).
  * @param {PriorDecision[]} toCheck @param {(toCheck: PriorDecision[]) => Promise<unknown>} checkScopes @param {string[]} notes
- * @returns {Promise<{ toCheck: PriorDecision[], unchanged: Set<string>, missing: Set<string> }>}
+ * @returns {Promise<{ toCheck: PriorDecision[], unchanged: Set<string>, missing: Map<string, string> }>}
  */
 export async function runScopeCheck(toCheck, checkScopes, notes) {
   const unchanged = new Set(/** @type {string[]} */ ([]))
-  const missing = new Set(/** @type {string[]} */ ([]))
+  const missing = new Map(/** @type {Array<[string, string]>} */ ([]))
   if (!toCheck.length) return { toCheck, unchanged, missing }
   const ids = readScopeCheck(await checkScopes(toCheck))
   if (ids == null)
@@ -116,6 +153,17 @@ export async function runScopeCheck(toCheck, checkScopes, notes) {
   // An id outside `toCheck` sets nothing aside: splitByDecisions only consults decisions that answer
   // a finding below Critical/High and carry a commit or a date, which is exactly what was checked.
   for (const id of ids?.unchanged || []) unchanged.add(id)
-  for (const d of toCheck) if (ids?.missing.includes(d.id)) missing.add(d.id)
+  if (ids) for (const d of toCheck) missingWord(d, ids, missing)
   return { toCheck, unchanged, missing }
+}
+
+/**
+ * Notes in `missing` the word the answer `ids` gives decision `d` when its anchor names no commit to
+ * compare: `missing`, or for a date another word its line printed.
+ * @param {PriorDecision} d @param {NonNullable<ReturnType<typeof readScopeCheck>>} ids @param {Map<string, string>} missing
+ */
+function missingWord(d, ids, missing) {
+  if (ids.missing.includes(d.id)) missing.set(d.id, 'missing')
+  const said = d.commit ? undefined : ids.unusable.find(u => u.id === d.id)?.word
+  if (said) missing.set(d.id, said)
 }

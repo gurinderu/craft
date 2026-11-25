@@ -42,6 +42,7 @@ fn the_match_judges_answer_is_read_against_the_scopes_kept_when_it_was_asked() {
         unchanged: ["decision-a".to_owned()].into(),
         missing: std::collections::BTreeSet::new(),
         pairs: kept.pairs,
+        ..MatchAsked::default()
     });
     let (mut aside, mut notes) = (settled.clone(), Vec::new());
     m.apply(repo, &mut aside, &mut chain, &mut notes, (None, &[]));

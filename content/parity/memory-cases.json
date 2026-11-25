@@ -1114,7 +1114,7 @@
       }
     },
     {
-      "name": "a record with a date and no commit is checked since the last commit before that day: unchanged sets aside, changed and no such commit raise, no date raises as before",
+      "name": "a record with a date and no commit is checked since the trunk's last commit before that day: unchanged sets aside; changed, no such commit, a future date and no trunk raise, each named; a zoned date is its UTC day; no date raises as before",
       "recall": {
         "backend": "repo",
         "why": "the .craft/memory directory",
@@ -1138,7 +1138,7 @@
             "body": "validated upstream",
             "scope": "src/b.rs",
             "status": "active",
-            "date": "2026-05-02T09:00:00Z",
+            "date": "2026-05-01T23:30:00-02:00",
             "author": "nick",
             "line": 20,
             "lens": "errors"
@@ -1166,6 +1166,30 @@
             "author": "nick",
             "line": 40,
             "lens": "errors"
+          },
+          {
+            "id": "decision-d6d6d6d6d6",
+            "kind": "decision",
+            "title": "panic in the parser",
+            "body": "input is trusted",
+            "scope": "src/f.rs",
+            "status": "active",
+            "date": "2099-01-01",
+            "author": "nick",
+            "line": 60,
+            "lens": "errors"
+          },
+          {
+            "id": "decision-d7d7d7d7d7",
+            "kind": "decision",
+            "title": "lock held across await",
+            "body": "single task",
+            "scope": "src/g.rs",
+            "status": "active",
+            "date": "2026-05-05",
+            "author": "nick",
+            "line": 70,
+            "lens": "concurrency"
           }
         ],
         "questions": [
@@ -1229,6 +1253,24 @@
           "why": "w",
           "source": "errors",
           "tier": "confirmed"
+        },
+        {
+          "severity": "Medium",
+          "title": "panic in the parser",
+          "file": "src/f.rs",
+          "line": 60,
+          "why": "w",
+          "source": "errors",
+          "tier": "confirmed"
+        },
+        {
+          "severity": "Medium",
+          "title": "lock held across await",
+          "file": "src/g.rs",
+          "line": 70,
+          "why": "w",
+          "source": "concurrency",
+          "tier": "confirmed"
         }
       ],
       "unchanged": [
@@ -1238,11 +1280,15 @@
       "missing": [
         "2026-05-03"
       ],
+      "unusable": {
+        "2099-01-01": "future",
+        "2026-05-05": "no-trunk"
+      },
       "expected": {
         "kept": [
           {
             "title": "unwrap on parse",
-            "why": "w · Rejected before (decision decision-d2d2d2d2d2, nick, 2026-05-02T09:00:00Z) — raised again: the code in src/b.rs changed since the decision date 2026-05-02 (or that could not be checked)."
+            "why": "w · Rejected before (decision decision-d2d2d2d2d2, nick, 2026-05-01T23:30:00-02:00) — raised again: the code in src/b.rs changed since the decision date 2026-05-02 (or that could not be checked)."
           },
           {
             "title": "global state in init",
@@ -1251,6 +1297,14 @@
           {
             "title": "sleep in the retry",
             "why": "w · Rejected before (decision decision-d4d4d4d4d4, nick, early May) — raised again: the decision records no commit and no date, so an unchanged scope cannot be established."
+          },
+          {
+            "title": "panic in the parser",
+            "why": "w · Rejected before (decision decision-d6d6d6d6d6, nick, 2099-01-01) — raised again: the decision date 2099-01-01 is in the future, so no commit precedes it — raised normally."
+          },
+          {
+            "title": "lock held across await",
+            "why": "w · Rejected before (decision decision-d7d7d7d7d7, nick, 2026-05-05) — raised again: the trunk this change forks from could not be resolved (no origin/HEAD, or no merge-base of it with HEAD), so nothing anchors the decision date 2026-05-05 — raised normally."
           }
         ],
         "setAside": [
@@ -1272,16 +1326,16 @@
           }
         ],
         "notes": [
-          "4 decision(s) given, 1 finding(s) set aside as rejected before, 3 raised again; 1 deferred question(s) given, 1 finding(s) set aside as known and deferred"
+          "6 decision(s) given, 1 finding(s) set aside as rejected before, 5 raised again; 1 deferred question(s) given, 1 finding(s) set aside as known and deferred"
         ],
         "memory": {
           "source": "recalled",
-          "count": 5,
+          "count": 7,
           "why": "repo (the .craft/memory directory)",
           "backend": "repo",
           "questions": 1
         },
-        "report": "\n\n## Rejected before (set aside — not in the verdict)\n- Medium · `src/a.rs:11` · clone in the hot loop · w · REJECTED BEFORE: measured cold — nick, 2026-05-01, no link (decision decision-d1d1d1d1d1) · matched by file:line+lens\n\n## Known and deferred (open question — not in the verdict)\n- Medium · `src/e.rs:50` · timeout of the fetch · w · KNOWN AND DEFERRED: decide after the load test — nick, 2026-05-04, no link (question question-e5e5e5e5e5) · matched by file:line+lens\n\n## Memory\n- memory: recalled 4 decision(s) and 1 open question(s) from repo (the .craft/memory directory)\n\n\n## Prior decisions not applied\n- ⚠️ the match judge died or answered unreadably — 3 re-raised match(es) not asked whether the code goes against the record\n- ⚠️ decision decision-d3d3d3d3d3: no commit in this repo before the decision date 2026-05-03 — raised normally\n"
+        "report": "\n\n## Rejected before (set aside — not in the verdict)\n- Medium · `src/a.rs:11` · clone in the hot loop · w · REJECTED BEFORE: measured cold — nick, 2026-05-01, no link (decision decision-d1d1d1d1d1) · matched by file:line+lens\n\n## Known and deferred (open question — not in the verdict)\n- Medium · `src/e.rs:50` · timeout of the fetch · w · KNOWN AND DEFERRED: decide after the load test — nick, 2026-05-04, no link (question question-e5e5e5e5e5) · matched by file:line+lens\n\n## Memory\n- memory: recalled 6 decision(s) and 1 open question(s) from repo (the .craft/memory directory)\n\n\n## Prior decisions not applied\n- ⚠️ the match judge died or answered unreadably — 5 re-raised match(es) not asked whether the code goes against the record\n- ⚠️ decision decision-d3d3d3d3d3: no commit in this repo before the decision date 2026-05-03 — raised normally\n- ⚠️ decision decision-d6d6d6d6d6: the decision date 2099-01-01 is in the future, so no commit precedes it — raised normally\n- ⚠️ decision decision-d7d7d7d7d7: the trunk this change forks from could not be resolved (no origin/HEAD, or no merge-base of it with HEAD), so nothing anchors the decision date 2026-05-05 — raised normally\n"
       }
     }
   ]

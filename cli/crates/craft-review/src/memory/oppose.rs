@@ -242,7 +242,7 @@ fn not_later_why(p: &str, status: &str, date: &str) -> String {
 }
 
 /// The days of month `m` of year `y`.
-pub(super) fn month_days(y: i64, m: i64) -> i64 {
+fn month_days(y: i64, m: i64) -> i64 {
     match m {
         2 if y % 4 == 0 && (y % 100 != 0 || y % 400 == 0) => 29,
         2 => 28,
@@ -326,7 +326,7 @@ fn utc_seconds(t: &str) -> Option<f64> {
 
 /// An ISO date read by hand (`isoMoment`): its UTC day and, for a timestamp, its seconds into
 /// that day; `None` when it is no ISO date or names a day or time the calendar lacks.
-fn moment(v: &str) -> Option<(String, Option<f64>)> {
+pub(super) fn moment(v: &str) -> Option<(String, Option<f64>)> {
     let (year, month, day) = (num(v, 0, 4)?, num(v, 5, 7)?, num(v, 8, 10)?);
     if v.get(4..5) != Some("-")
         || v.get(7..8) != Some("-")

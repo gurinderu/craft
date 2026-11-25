@@ -97,8 +97,8 @@ test('scope script: one quoted line per decision, printing id and status — or 
 test('scope check answer: a missing or unreadable answer shows nothing unchanged', () => {
   assert.equal(readScopeCheck(null), null)
   assert.equal(readScopeCheck({ unchanged: 'decision-1' }), null)
-  assert.deepEqual(readScopeCheck({ unchanged: ['a', 7, 'b'], reason: '' }), { unchanged: ['a', 'b'], missing: [] })
-  assert.deepEqual(readScopeCheck({ unchanged: [], missing: ['c', null], reason: '' }), { unchanged: [], missing: ['c'] })
+  assert.deepEqual(readScopeCheck({ unchanged: ['a', 7, 'b'], reason: '' }), { unchanged: ['a', 'b'], missing: [], unusable: [] })
+  assert.deepEqual(readScopeCheck({ unchanged: [], missing: ['c', null], reason: '' }), { unchanged: [], missing: ['c'], unusable: [] })
 })
 
 test('apply: a commit the repo does not know raises the finding normally and is named apart from a changed scope', async () => {

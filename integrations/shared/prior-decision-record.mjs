@@ -220,7 +220,7 @@ export function hasControlChar(s) {
 /**
  * The id, the scope and the commit go into a shell line (scopeCheckScript) and the agent prompt that
  * carries it: no control character in any, the scope a repo-relative path of safe characters, the
- * commit a hash. '' when all hold.
+ * commit a hash; a date goes in only as the calendar day decisionDate reads. '' when all hold.
  * @param {PriorDecision} d @returns {string}
  */
 export function decisionAnchorProblem(d) {

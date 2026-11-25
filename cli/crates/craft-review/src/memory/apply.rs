@@ -12,10 +12,11 @@
 //! finding the judge says goes against a record is marked with it. A project rule covers a class of
 //! findings, not one, and is applied after this split (`memory::rules`).
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::{Value, json};
 
+use super::anchor::Anchor;
 use super::judge;
 use super::matching::{self, Match};
 use super::{PriorDecision, RecordKind};
@@ -31,12 +32,24 @@ pub(super) use mark::noted;
 use mark::{reraise_reason, reraised_note, set_aside};
 pub(super) use section::{refused_section, section};
 
-/// What the scope check observed: the records whose scope is unchanged since their anchor, and
-/// those whose anchor the repository holds no commit for.
+/// What the scope check observed: the records whose scope is unchanged since their anchor, those
+/// whose anchor the repository holds no commit for, and, by id, why where that is other than the
+/// commit or a commit before the date missing (a future date, no trunk, git failing).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Scope {
     pub unchanged: BTreeSet<String>,
     pub missing: BTreeSet<String>,
+    pub why_missing: BTreeMap<String, String>,
+}
+
+impl Scope {
+    /// Why `d`, anchored at `a`, is missing.
+    fn missing_why(&self, d: &PriorDecision, a: &Anchor<'_>) -> String {
+        self.why_missing
+            .get(&d.id)
+            .cloned()
+            .unwrap_or_else(|| a.missing())
+    }
 }
 
 /// The findings split: those kept in the verdict (a re-raised one with its note), those set aside
@@ -88,7 +101,8 @@ fn refusals(
     }
     for d in seen.into_iter().filter_map(|i| ds.get(i)) {
         if let Some(a) = d.anchor().filter(|_| scope.missing.contains(&d.id)) {
-            out.push(format!("{} {}: {}", d.kind.label(), d.id, a.missing()));
+            let why = scope.missing_why(d, &a);
+            out.push(format!("{} {}: {why}", d.kind.label(), d.id));
         }
     }
     out

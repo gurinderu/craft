@@ -90,14 +90,14 @@ export function severityReason(f, d) {
 
 /**
  * Why decision `d` cannot set finding `f` aside; '' when it can. `missing`: ids whose commit the repo
- * does not know (a squash-merged branch, another clone), or whose date no commit precedes — named apart
- * from a changed scope.
- * @param {DecidableFinding} f @param {PriorDecision} d @param {Set<string>} unchanged @param {Set<string>} [missing] @returns {string}
+ * does not know (a squash-merged branch, another clone), or whose date names no trunk commit to compare,
+ * each with the word its scope-check line printed — named apart from a changed scope.
+ * @param {DecidableFinding} f @param {PriorDecision} d @param {Set<string>} unchanged @param {Map<string, string>} [missing] @returns {string}
  */
-export function reraiseReason(f, d, unchanged, missing = new Set()) {
+export function reraiseReason(f, d, unchanged, missing = new Map()) {
   if (reraisedByRank(f.severity, d)) return severityReason(f, d)
   if (!hasAnchor(d)) return `the ${priorKindLabel(d)} records no commit and no date, so an unchanged scope cannot be established`
-  if (missing.has(d.id)) return anchorMissingReason(d)
+  if (missing.has(d.id)) return anchorMissingReason(d, missing.get(d.id))
   if (!unchanged.has(d.id)) return `the code in ${d.scope} changed since ${anchorSince(d)} (or that could not be checked)`
   return ''
 }
@@ -124,12 +124,12 @@ export function reraisedFinding(f, note, noteField, violationOf) {
  * is appended to `noteField` — `why` in a review finding.
  * @template {DecidableFinding} F
  * @param {F[]} findings @param {PriorDecision[]} decisions @param {Set<string>} unchanged @param {string} tier @param {string} [noteField]
- * @param {Set<string>} [missing]  ids whose commit (or a commit before whose date) the repo does not know
+ * @param {Map<string, string>} [missing]  ids whose anchor names no commit to compare, with the word their scope-check line printed
  * @param {(f: DecidableFinding) => PriorMatch | undefined} [matchOf]  the record answering a finding (default: the sure matches)
  * @param {(f: DecidableFinding) => { d: PriorDecision, why: string } | undefined} [violationOf]  the record a re-raised finding's code goes against (node #282)
  * @returns {{ kept: F[], setAside: Array<SetAside<F>>, reraised: number }}
  */
-export function splitByDecisions(findings, decisions, unchanged, tier, noteField = 'why', missing = new Set(), matchOf = sureMatchOf(decisions), violationOf) {
+export function splitByDecisions(findings, decisions, unchanged, tier, noteField = 'why', missing = new Map(), matchOf = sureMatchOf(decisions), violationOf) {
   /** @type {F[]} */
   const kept = []
   /** @type {Array<SetAside<F>>} */
@@ -166,7 +166,8 @@ export function splitByDecisions(findings, decisions, unchanged, tier, noteField
 /**
  * Applies the decisions to every tier of an engine's findings. `checkScopes` runs the scope check for
  * the decisions it is handed (never called with none) and returns the agent's raw answer. `refused`:
- * the decisions whose commit (or a commit before whose date) the repo does not know, for the report's Prior decisions not applied.
+ * the decisions whose anchor names no commit to compare (an unknown commit; a date in the future, with no trunk,
+ * or no trunk commit before it), for the report's Prior decisions not applied.
  * `judge` is the one match judge (integrations/shared/prior-decision-match.mjs), called with its prompt only when a
  * disputed record–finding pair exists; what it could not decide is named in `refused`.
  * @template {DecidableFinding} F
@@ -202,7 +203,7 @@ export async function applyPriorDecisions(tiers, records, checkScopes, noteField
     decisions
       .filter(d => !recordsDeferral(d))
       .map(d => `question ${d.id}: records a deferral but no commit and no date, so an unchanged scope cannot be established — raised normally`)
-      .concat(applied.filter(d => missing.has(d.id)).map(d => `${priorKindLabel(d)} ${d.id}: ${anchorMissingReason(d)}`)),
+      .concat(applied.filter(d => missing.has(d.id)).map(d => `${priorKindLabel(d)} ${d.id}: ${anchorMissingReason(d, missing.get(d.id))}`)),
   )
   let reraised = 0
   /** @type {Record<string, F[]>} */

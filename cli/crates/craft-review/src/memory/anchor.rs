@@ -1,19 +1,47 @@
 //! What a record's scope check compares against (`decisionDate` in
-//! `integrations/shared/prior-decision-anchor.mjs`): its commit, else the calendar date its `when`
-//! starts with — a record written where no commit may be named still sets a finding aside when
-//! the code in its scope is unchanged since that day (realm @nick/craft, node #676).
+//! `integrations/shared/prior-decision-anchor.mjs`): its commit, else the UTC day its `when`
+//! names — a record written where no commit may be named still sets a finding aside when the
+//! code in its scope is unchanged since that day (realm @nick/craft, node #676).
 
 use std::path::Path;
 
 use super::PriorDecision;
-use super::oppose::month_days;
+use super::oppose::moment;
 use crate::git;
 
-/// A record's anchor: the commit it names, or the day it was made.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// A record's anchor: the commit it names, or the UTC day it was made.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Anchor<'a> {
     Commit(&'a str),
-    Date(&'a str),
+    Date(String),
+}
+
+/// Why a record's anchor names no commit to diff its scope against, each as the scope-check line
+/// of `scopeCheckScript` prints it after the record's id.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Unusable {
+    /// The repository lacks the commit, or the trunk holds none before the date.
+    Missing,
+    /// The date is later than today in UTC.
+    Future,
+    /// No trunk: no `origin/HEAD`, or no merge-base of it with `HEAD`.
+    NoTrunk,
+    /// git failed listing the trunk's commits.
+    Unreadable,
+}
+
+impl Unusable {
+    /// The word the scope-check line prints for it.
+    #[cfg(test)]
+    pub(crate) fn from_word(word: &str) -> Option<Self> {
+        match word {
+            "missing" => Some(Self::Missing),
+            "future" => Some(Self::Future),
+            "no-trunk" => Some(Self::NoTrunk),
+            "unreadable" => Some(Self::Unreadable),
+            _ => None,
+        }
+    }
 }
 
 impl PriorDecision {
@@ -28,54 +56,88 @@ impl PriorDecision {
 
 impl Anchor<'_> {
     /// What the scope is said to have changed since.
-    pub(crate) fn since(self) -> String {
+    pub(crate) fn since(&self) -> String {
         match self {
-            Anchor::Commit(c) => c.to_owned(),
+            Anchor::Commit(c) => (*c).to_owned(),
             Anchor::Date(day) => format!("the decision date {day}"),
         }
     }
 
     /// Why the repository holds nothing to compare against — raised normally.
-    pub(crate) fn missing(self) -> String {
-        match self {
-            Anchor::Commit(c) => format!("commit {c} not found in this repo — raised normally"),
-            Anchor::Date(day) => {
+    pub(crate) fn missing(&self) -> String {
+        self.unusable(Unusable::Missing)
+    }
+
+    /// Why the anchor names no commit to compare against, for `why` — raised normally.
+    pub(crate) fn unusable(&self, why: Unusable) -> String {
+        let day = match self {
+            Anchor::Commit(c) => {
+                return format!("commit {c} not found in this repo — raised normally");
+            }
+            Anchor::Date(day) => day,
+        };
+        match why {
+            Unusable::Missing => {
                 format!("no commit in this repo before the decision date {day} — raised normally")
             }
+            Unusable::Future => format!(
+                "the decision date {day} is in the future, so no commit precedes it — raised normally"
+            ),
+            Unusable::NoTrunk => format!(
+                "the trunk this change forks from could not be resolved (no origin/HEAD, or no \
+                 merge-base of it with HEAD), so nothing anchors the decision date {day} — raised \
+                 normally"
+            ),
+            Unusable::Unreadable => format!(
+                "git could not list the trunk's commits before the decision date {day} — raised \
+                 normally"
+            ),
         }
     }
 
-    /// The commit the scope is diffed against in `repo`: the anchor's own when the repository has
-    /// it; for a date, the last commit reachable from `HEAD` before 00:00 UTC of that day, so an
-    /// edit the same day counts as after the record. `None` when there is none.
-    pub(crate) fn base(self, repo: &Path) -> Option<String> {
-        match self {
-            Anchor::Commit(c) => git::has_commit(repo, c).then(|| c.to_owned()),
-            Anchor::Date(day) => git::last_before(repo, day),
+    /// The commit the scope is diffed against in `repo`, `today` being the UTC date: the anchor's
+    /// own when the repository has it. For a date, the last commit before that day began anywhere
+    /// (00:00 at +14:00) on the trunk's first-parent line from where `HEAD` forks from it — not
+    /// over all of `HEAD`'s history, where a branch's backdated commit, or a side branch's commit
+    /// dated before the day but merged after it, would be the base and hide a later change of the
+    /// scope; the change's own edits of the scope thus always count as after the record (realm
+    /// @nick/craft, node #676). A date later than `today` anchors nothing.
+    pub(crate) fn base(&self, repo: &Path, today: &str) -> Result<String, Unusable> {
+        let day = match self {
+            Anchor::Commit(c) => {
+                return git::has_commit(repo, c)
+                    .then(|| (*c).to_owned())
+                    .ok_or(Unusable::Missing);
+            }
+            Anchor::Date(day) => day,
+        };
+        if day.as_str() > today {
+            return Err(Unusable::Future);
         }
+        let fork = git::trunk_fork(repo).ok_or(Unusable::NoTrunk)?;
+        git::last_before(repo, &fork, day)
+            .map_err(|_said_by_git| Unusable::Unreadable)?
+            .ok_or(Unusable::Missing)
     }
 }
 
-/// The `YYYY-MM-DD` date `when` starts with, a real day of the calendar not run on by another
-/// digit; `None` otherwise.
-fn calendar_date(when: &str) -> Option<&str> {
-    let day = when.get(..10)?;
-    if when.as_bytes().get(10).is_some_and(u8::is_ascii_digit) {
+/// Today's date in UTC, `YYYY-MM-DD`.
+pub(crate) fn today() -> String {
+    let now = craft_store::time::iso(craft_store::time::now_ms());
+    now.get(..10).unwrap_or_default().to_owned()
+}
+
+/// The UTC day of the ISO date `when` is (a timestamp's zone applied, `isoMoment`), or of the
+/// `YYYY-MM-DD` it starts with when words follow it; `None` when neither names a real day.
+fn calendar_date(when: &str) -> Option<String> {
+    if let Some((day, _)) = moment(when) {
+        return Some(day);
+    }
+    let rest = when.get(10..)?;
+    if rest.starts_with(|c: char| c.is_ascii_digit() || c == 'T') {
         return None;
     }
-    let num = |s: &str, len: usize| {
-        (s.len() == len && s.bytes().all(|b| b.is_ascii_digit()))
-            .then(|| s.parse::<i64>().ok())
-            .flatten()
-    };
-    let (y, m, d) = (
-        num(day.get(..4)?, 4)?,
-        num(day.get(5..7)?, 2)?,
-        num(day.get(8..)?, 2)?,
-    );
-    let dashed = day.as_bytes().get(4) == Some(&b'-') && day.as_bytes().get(7) == Some(&b'-');
-    let real = (1..=12).contains(&m) && (1..=month_days(y, m)).contains(&d);
-    (dashed && real).then_some(day)
+    moment(when.get(..10)?).map(|(day, _)| day)
 }
 
 #[cfg(test)]

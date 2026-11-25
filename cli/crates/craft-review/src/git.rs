@@ -165,15 +165,27 @@ pub fn has_commit(cwd: &Path, commit: &str) -> bool {
     !commit.starts_with('-') && verifies(cwd, commit)
 }
 
-/// The last commit reachable from `HEAD` committed before 00:00 UTC of `day` (`YYYY-MM-DD`), as
-/// `git rev-list -1 --before='<day> 00:00:00 +0000' HEAD` names it; `None` when the history
-/// starts after it or git cannot tell.
+/// Where `HEAD` forks from the trunk, `git merge-base HEAD refs/remotes/origin/HEAD`; `None` when
+/// origin names no default branch, the two share no history, or git cannot tell.
 #[must_use]
-pub fn last_before(cwd: &Path, day: &str) -> Option<String> {
-    let before = format!("--before={day} 00:00:00 +0000");
-    let out = git(cwd, &["rev-list", "-1", &before, "HEAD"]).ok()?;
+pub fn trunk_fork(cwd: &Path) -> Option<String> {
+    let out = git(cwd, &["merge-base", "HEAD", "refs/remotes/origin/HEAD"]).ok()?;
+    let fork = out.trim();
+    (!fork.is_empty()).then(|| fork.to_owned())
+}
+
+/// The last commit on `fork`'s first-parent line committed before `day` (`YYYY-MM-DD`) began
+/// anywhere, at 00:00 +14:00, as `git rev-list -1 --first-parent --before='<day> 00:00:00 +1400'
+/// <fork>` names it; `None` when that line starts after it.
+///
+/// # Errors
+/// When `fork` is spelled as an option or `git` fails.
+pub fn last_before(cwd: &Path, fork: &str, day: &str) -> Result<Option<String>, GitError> {
+    not_an_option(cwd, &[fork])?;
+    let before = format!("--before={day} 00:00:00 +1400");
+    let out = git(cwd, &["rev-list", "-1", "--first-parent", &before, fork])?;
     let commit = out.trim();
-    (!commit.is_empty()).then(|| commit.to_owned())
+    Ok((!commit.is_empty()).then(|| commit.to_owned()))
 }
 
 /// Whether the code in `scope`, a repository-relative path, is unchanged since `commit`, the

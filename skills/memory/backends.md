@@ -14,8 +14,9 @@ SKILL.md's ("Choosing the backend"); this file only says how to write and search
   never a write to the server's default or another store.
 - **Its own instructions first.** When the server ships a skill, a prompt or tool descriptions
   saying how to write (which item type, which fields, which modes, where to anchor), follow them
-  and hand it the record's content — title, body, scope, kind, author, commit, deferred, line, lens, toolRule, links. Do not force the fields
-  below onto a store that has its own discipline.
+  and hand it the record's content — title, body, scope, kind, date, author, commit, deferred, line, lens, toolRule, links;
+  the date goes into the item as `craft_date` unless those instructions name a field of their own for
+  it. Do not force the other fields below onto a store that has its own discipline.
 - **Without instructions**, the plain mapping: one item per record; the item's name = `title`;
   its text = `body`; the other fields under fixed keys, prefixed `craft_` as in the harness format
   below — `craft_kind`, `craft_id`, `craft_scope`, `craft_status`, `craft_date`, `craft_author`, `craft_commit`,
@@ -29,8 +30,9 @@ SKILL.md's ("Choosing the backend"); this file only says how to write and search
   one (`craft_kind:decision` or `kind:decision`), never by one alone, and hand the record on with the
   bare names of SKILL.md.
 - **Recall returns the record shape**: whatever the server stores, a recalled record handed on
-  (to a subagent, or to a review as `priorDecisions`) is rebuilt as the SKILL.md shape — `date`
-  (from `craft_date`, never the server's modified time), `author`,
+  (to a subagent, or to a review as `priorDecisions`) is rebuilt as the SKILL.md shape — an active
+  record's `date` from `craft_date` (or the field the server's instructions named), never the server's
+  modified time (an inactive one's `date` stays the store's last write, SKILL.md "Recall", step 4), `author`,
   `commit`, `deferred`, `line`, `lens` and `toolRule` included when the item carries them, and an
   `external` record's `system`, `repo`, and `versionFrom` and `versionMatch` or a stated `version`.
 - **Ids — the convention for a server with its own ids**: `id` is the skill-rule id (SKILL.md,

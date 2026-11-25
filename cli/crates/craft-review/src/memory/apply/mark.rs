@@ -63,7 +63,7 @@ pub(super) fn reraise_reason(f: &Value, d: &PriorDecision, scope: &Scope) -> Str
         );
     };
     if scope.missing.contains(&d.id) {
-        return anchor.missing();
+        return scope.missing_why(d, &anchor);
     }
     if !scope.unchanged.contains(&d.id) {
         return format!(

@@ -129,9 +129,9 @@ pub(in crate::memory) fn prepare(
     } else {
         check(&checked)
     };
-    scope
-        .missing
-        .retain(|id| checked.iter().any(|d| &d.id == id));
+    let was_checked = |id: &String| checked.iter().any(|d| &d.id == id);
+    scope.missing.retain(was_checked);
+    scope.why_missing.retain(|id, _| was_checked(id));
     let reraised = |fi: usize, di: usize| match (findings.get(fi), ds.get(di)) {
         (Some(f), Some(d)) => !reraise_reason(f, d, &scope).is_empty(),
         _ => false,
@@ -157,6 +157,7 @@ pub(in crate::memory) fn prepare_asked(
     let seen = Scope {
         unchanged: saved.unchanged.clone(),
         missing: saved.missing.clone(),
+        why_missing: saved.why_missing.clone(),
     };
     let mut p = prepare(findings, records, &|_| seen.clone(), focus);
     p.asked.pairs.clone_from(&saved.pairs);
@@ -169,6 +170,7 @@ impl Prepared {
         MatchAsked {
             unchanged: self.scope.unchanged.clone(),
             missing: self.scope.missing.clone(),
+            why_missing: self.scope.why_missing.clone(),
             pairs: self.asked.pairs.clone(),
         }
     }

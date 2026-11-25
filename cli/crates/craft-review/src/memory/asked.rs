@@ -2,7 +2,7 @@
 //! the step that reads its answer: the answer is read against the very pairs it was asked about,
 //! and the scope check git ran for them is not run again.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
@@ -26,11 +26,14 @@ impl Asked {
 }
 
 /// The match stage as it was prepared: the records git saw unchanged in their scope since their
-/// commit, those whose commit the repository lacks, and the (finding, record) pairs asked.
+/// anchor, those whose anchor the repository holds no commit for, why where that is other than
+/// missing ([`super::Scope`]), and the (finding, record) pairs asked.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct MatchAsked {
     pub unchanged: BTreeSet<String>,
     pub missing: BTreeSet<String>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub why_missing: BTreeMap<String, String>,
     pub pairs: Vec<(usize, usize)>,
 }

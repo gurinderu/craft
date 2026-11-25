@@ -12,6 +12,7 @@ use std::path::Path;
 
 use serde_json::Value;
 
+use super::anchor::today;
 use super::{Memory, PriorDecision, RecordKind, apply, matching, rules};
 use crate::content::ContentError;
 use crate::git;
@@ -237,19 +238,30 @@ fn take_prior(f: &Value) -> Option<(usize, Value)> {
 }
 
 /// The scope check of `ds`, by git in `repo` (`scopeCheckScript`, run here rather than by an
-/// agent): a record whose anchor the repository holds no commit for is missing; one whose scope
-/// `git diff --quiet` shows untouched since that commit, the working tree included, is unchanged.
+/// agent): a record whose anchor the repository holds no commit for is missing, with why; one
+/// whose scope `git diff --quiet` shows untouched since that commit, the working tree included, is
+/// unchanged.
 pub(super) fn scope_check(repo: &Path, ds: &[&PriorDecision]) -> apply::Scope {
+    scope_check_on(repo, ds, &today())
+}
+
+/// [`scope_check`] with `today` the UTC date.
+pub(super) fn scope_check_on(repo: &Path, ds: &[&PriorDecision], today: &str) -> apply::Scope {
     let mut out = apply::Scope::default();
     for d in ds {
-        match d.anchor().and_then(|a| a.base(repo)) {
-            None => {
+        let Some(anchor) = d.anchor() else {
+            out.missing.insert(d.id.clone());
+            continue;
+        };
+        match anchor.base(repo, today) {
+            Err(why) => {
                 out.missing.insert(d.id.clone());
+                out.why_missing.insert(d.id.clone(), anchor.unusable(why));
             }
-            Some(base) if git::unchanged_since(repo, &base, &d.scope) => {
+            Ok(base) if git::unchanged_since(repo, &base, &d.scope) => {
                 out.unchanged.insert(d.id.clone());
             }
-            Some(_) => {}
+            Ok(_) => {}
         }
     }
     out

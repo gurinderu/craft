@@ -1,15 +1,12 @@
 // A record anchored by its date when it names no commit (realm @nick/craft, node #676): the date read,
-// the scope-check line run against a repository with dated commits, and the split it drives.
+// the scope-check answer read, and the split it drives; the scope-check line against a repository is
+// integrations/shared/prior-decision-anchor-repo.test.mjs.
 import { test } from 'vitest'
 import assert from 'node:assert/strict'
-import { execFileSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { parsePriorDecisions } from './prior-decisions.mjs'
 import { anchorMissingReason, anchorSince, decisionDate, hasAnchor } from './prior-decision-anchor.mjs'
 import { applyPriorDecisions, recordsDeferral, reraiseReason } from './prior-decision-apply.mjs'
-import { candidatesToCheck, decisionsToCheck, scopeCheckScript } from './prior-decision-scope.mjs'
+import { candidatesToCheck, decisionsToCheck, readScopeCheck, runScopeCheck } from './prior-decision-scope.mjs'
 
 const record = (/** @type {Record<string, unknown>} */ over = {}) => ({
   id: 'decision-d1d1d1d1d1',
@@ -23,11 +20,19 @@ const record = (/** @type {Record<string, unknown>} */ over = {}) => ({
 const parsed = (/** @type {Array<Record<string, unknown>>} */ ...over) => /** @type {any[]} */ (parsePriorDecisions(over.map(o => record(o))).decisions)
 const finding = (over = {}) => ({ file: 'src/a.rs', title: 'clone in the hot loop', severity: 'Medium', why: 'w', ...over })
 
-test('date: read from the start of `when`, a real calendar day not run on by another digit', () => {
+test('date: the UTC day `when` names, a real calendar day not run on by another digit', () => {
   /** @type {Array<[string, string]>} */
   const cases = [
     ['2026-05-01', '2026-05-01'],
     ['2026-05-01T10:00:00Z', '2026-05-01'],
+    ['2026-05-01T10:00:00', '2026-05-01'],
+    // A zone moves the moment to its UTC day, either way.
+    ['2026-05-01T23:30:00-02:00', '2026-05-02'],
+    ['2026-05-02T01:00:00+05:00', '2026-05-01'],
+    ['2026-12-31T23:00:00-01:30', '2027-01-01'],
+    ['2026-05-01T25:00:00Z', ''],
+    ['2026-05-01T10:00:00+25:00', ''],
+    ['2026-05-01T10:00:00Z by nick', ''],
     ['2026-05-01 by nick', '2026-05-01'],
     ['2024-02-29', '2024-02-29'],
     ['2000-02-29', '2000-02-29'],
@@ -38,7 +43,10 @@ test('date: read from the start of `when`, a real calendar day not run on by ano
     ['2026-05-00', ''],
     ['2026-05-011', ''],
     ['2026/05/01', ''],
+    ['2026-05/01', ''],
     ['+026-05-01', ''],
+    ['2026-5-011x', ''],
+    ['26-05-01', ''],
     ['June 2026', ''],
     ['', ''],
   ]
@@ -58,10 +66,20 @@ test('anchor: the commit before the date, the date when there is no commit, and 
   assert.equal(anchorSince(dated), 'the decision date 2026-05-02')
   assert.equal(anchorMissingReason(both), 'commit abc1234 not found in this repo — raised normally')
   assert.equal(anchorMissingReason(dated), 'no commit in this repo before the decision date 2026-05-02 — raised normally')
+  assert.equal(anchorMissingReason(dated, 'missing'), anchorMissingReason(dated))
+  assert.equal(anchorMissingReason(both, 'no-trunk'), anchorMissingReason(both))
+  assert.equal(anchorMissingReason(dated, 'future'), 'the decision date 2026-05-02 is in the future, so no commit precedes it — raised normally')
+  assert.equal(
+    anchorMissingReason(dated, 'no-trunk'),
+    'the trunk this change forks from could not be resolved (no origin/HEAD, or no merge-base of it with HEAD), so nothing anchors the decision date 2026-05-02 — raised normally',
+  )
+  assert.equal(anchorMissingReason(dated, 'unreadable'), "git could not list the trunk's commits before the decision date 2026-05-02 — raised normally")
+  assert.equal(anchorSince(parsed({ when: '2026-05-01T23:30:00-02:00' })[0]), 'the decision date 2026-05-02')
   const f = finding()
   assert.equal(reraiseReason(f, dated, new Set([dated.id])), '')
   assert.equal(reraiseReason(f, dated, new Set()), 'the code in src/a.rs changed since the decision date 2026-05-02 (or that could not be checked)')
-  assert.equal(reraiseReason(f, dated, new Set(), new Set([dated.id])), anchorMissingReason(dated))
+  assert.equal(reraiseReason(f, dated, new Set(), new Map([[dated.id, 'missing']])), anchorMissingReason(dated))
+  assert.equal(reraiseReason(f, dated, new Set([dated.id]), new Map([[dated.id, 'future']])), anchorMissingReason(dated, 'future'))
   assert.equal(reraiseReason(f, vague, new Set([vague.id])), 'the decision records no commit and no date, so an unchanged scope cannot be established')
   assert.equal(reraiseReason(finding({ severity: 'Critical' }), dated, new Set([dated.id])), 'a Critical finding is never set aside by a prior decision')
 })
@@ -103,49 +121,40 @@ test('apply: a dated record sets aside when unchanged, raises and names its date
   assert.match(noted.refused.join('\n'), /question question-9: records a deferral but no commit and no date/)
 })
 
-/** Runs git in `dir`, its commit dated `date`. @param {string} dir @param {string[]} args @param {string} [date] */
-const git = (dir, args, date = '2026-01-01T00:00:00+0000') =>
-  execFileSync('git', ['-C', dir, ...args], {
-    encoding: 'utf8',
-    env: {
-      ...process.env,
-      GIT_AUTHOR_NAME: 't',
-      GIT_AUTHOR_EMAIL: 't@x',
-      GIT_COMMITTER_NAME: 't',
-      GIT_COMMITTER_EMAIL: 't@x',
-      GIT_AUTHOR_DATE: date,
-      GIT_COMMITTER_DATE: date,
-    },
-  }).trim()
-
-test('scope script: a dated record is diffed against the last commit before 00:00 UTC of its day, missing when there is none', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'craft-anchor-'))
-  try {
-    git(dir, ['init', '-q', '-b', 'main'])
-    mkdirSync(join(dir, 'src'))
-    writeFileSync(join(dir, 'src/a.rs'), 'a\n')
-    writeFileSync(join(dir, 'src/b.rs'), 'b\n')
-    git(dir, ['add', '.'])
-    git(dir, ['commit', '-qm', 'one'], '2026-05-01T12:00:00+0000')
-    writeFileSync(join(dir, 'src/b.rs'), 'b2\n')
-    // 2026-05-02 01:30 UTC: after the start of the 2nd in UTC, though the 1st where it was made.
-    git(dir, ['commit', '-qam', 'two'], '2026-05-01T23:30:00-0200')
-    const ds = parsed(
-      { id: "a-2nd's" },
-      { id: 'b-2nd', scope: 'src/b.rs' },
-      { id: 'a-1st', when: '2026-05-01' },
-      { id: 'b-3rd', scope: 'src/b.rs', when: '2026-05-03' },
-    )
-    const script = scopeCheckScript(ds)
-    assert.equal(
-      script.split('\n')[0],
-      `b=$(git rev-list -1 '--before=2026-05-02 00:00:00 +0000' HEAD 2>/dev/null); if [ -n "$b" ]; then git diff --quiet "$b" -- 'src/a.rs'; echo 'a-2nd'\\''s' $?; else echo 'a-2nd'\\''s' missing; fi`,
-    )
-    const run = () => execFileSync('sh', ['-c', script], { cwd: dir, encoding: 'utf8' }).trim().split('\n')
-    assert.deepEqual(run(), ["a-2nd's 0", 'b-2nd 1', 'a-1st missing', 'b-3rd 0'])
-    writeFileSync(join(dir, 'src/b.rs'), 'b3\n')
-    assert.deepEqual(run(), ["a-2nd's 0", 'b-2nd 1', 'a-1st missing', 'b-3rd 1'], 'the working tree counts as a change')
-  } finally {
-    rmSync(dir, { recursive: true, force: true })
+test('scope answer: an unusable anchor is read with its word, a word outside the list or a commit record is not', async () => {
+  const ans = {
+    unchanged: [],
+    missing: ['c'],
+    unusable: [
+      { id: 'a', word: 'future' },
+      { id: 'b', word: 'later' },
+      { id: 7, word: 'no-trunk' },
+      { id: 'k', word: 'no-trunk' },
+    ],
+    reason: '',
   }
+  assert.deepEqual(readScopeCheck(ans)?.unusable, [
+    { id: 'a', word: 'future' },
+    { id: 'k', word: 'no-trunk' },
+  ])
+  assert.deepEqual(readScopeCheck({ unchanged: [], missing: [], unusable: 'x', reason: '' })?.unusable, [])
+  const ds = parsed({ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'k', commit: 'abc1234' })
+  const notes = /** @type {string[]} */ ([])
+  const { missing } = await runScopeCheck(ds, async () => ans, notes)
+  assert.deepEqual(
+    [...missing],
+    [
+      ['a', 'future'],
+      ['c', 'missing'],
+    ],
+  )
+})
+
+test('apply: a date in the future or with no trunk raises its finding and names why', async () => {
+  const [d] = parsed({ when: '2099-01-01' })
+  const answer = async () => ({ unchanged: [d.id], missing: [], unusable: [{ id: d.id, word: 'future' }], reason: '' })
+  const r = await applyPriorDecisions({ confirmed: [finding()] }, [d], answer)
+  assert.equal(r.setAside.length, 0)
+  assert.deepEqual(r.refused, [`decision ${d.id}: the decision date 2099-01-01 is in the future, so no commit precedes it — raised normally`])
+  assert.match(String(r.tiers['confirmed']?.[0]?.why), /raised again: the decision date 2099-01-01 is in the future/)
 })
