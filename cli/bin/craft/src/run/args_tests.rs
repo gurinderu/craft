@@ -56,3 +56,15 @@ fn delta_is_a_start_flag_the_hosts_run_takes() {
     let plain = Cli::try_parse_from(["craft", "--backend", "codex"]).unwrap();
     assert!(!plain.run.start.delta);
 }
+
+#[test]
+fn the_lens_agent_budget_is_a_start_flag_of_at_least_one() {
+    let cli = Cli::try_parse_from(["craft", "--backend", "codex", "--lens-agents", "120"]).unwrap();
+    assert_eq!(cli.run.start.lens_agents, Some(120));
+    let plain = Cli::try_parse_from(["craft", "--backend", "codex"]).unwrap();
+    assert_eq!(
+        plain.run.start.lens_agents, None,
+        "absent: the default budget"
+    );
+    assert!(Cli::try_parse_from(["craft", "--backend", "codex", "--lens-agents", "0"]).is_err());
+}

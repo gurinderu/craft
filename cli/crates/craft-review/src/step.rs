@@ -157,7 +157,7 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
         delta: opts.delta,
         optional,
         phase: Phase::Scout,
-        rounds: Rounds::default(),
+        rounds: Rounds::with_budget(opts.lens_agents),
         findings: Vec::new(),
         settled: Vec::new(),
         notes: notes.into_iter().chain(pr_note).collect(),

@@ -268,6 +268,17 @@ fn next_round(dir: &Path, run: &mut RunState, profiles: &[Profile]) -> Result<()
             )?);
         }
     }
+    // A later round over the agent budget is not bought: the rounds end on what they found (realm
+    // @nick/craft, node #634).
+    if let Some(note) = run.rounds.over_budget(tasks.len()) {
+        run.rounds.round -= 1;
+        run.notes.push(note);
+        for t in &mut run.tracks {
+            t.dry = true;
+        }
+        return end_rounds(dir, run, profiles);
+    }
+    run.rounds.count_sent(tasks.len());
     run.tasks = tasks;
     run.phase = Phase::Lenses;
     Ok(())

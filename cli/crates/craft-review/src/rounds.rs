@@ -69,6 +69,24 @@ pub struct Rounds {
     /// state written before it was kept, which reruns every lens.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rerun: Option<Vec<String>>,
+    /// The tasks the lens rounds dispatched so far, and those of the first round alone, which the
+    /// default agent budget is counted from ([`budget`]; realm @nick/craft, node #634). Zero in a
+    /// state written before they were kept, which no budget then stops.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub sent: u32,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub first: u32,
+    /// The launcher's own agent budget for the lens rounds (`--lens-agents`); `None`, the default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub budget: Option<u32>,
+}
+
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde's skip_serializing_if passes a reference"
+)]
+const fn is_zero(n: &u32) -> bool {
+    *n == 0
 }
 
 /// The exact key of a finding: its file and title folded, and its line, as `key` in
@@ -480,6 +498,9 @@ impl Rounds {
     }
 }
 
+mod budget;
+#[cfg(test)]
+mod budget_tests;
 mod rerun;
 #[cfg(test)]
 mod rerun_tests;

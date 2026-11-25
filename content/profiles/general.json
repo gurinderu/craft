@@ -22,11 +22,11 @@
     { "id": "security", "brief": "lens-briefs/general-security", "model": "opus" },
     { "id": "money", "brief": "lens-briefs/general-money", "model": "opus", "conditional": true, "signal": "money" },
     { "id": "concurrency", "brief": "lens-briefs/general-concurrency", "model": "opus" },
-    { "id": "errors", "brief": "lens-briefs/general-errors", "model": "opus" },
-    { "id": "performance", "brief": "lens-briefs/general-performance", "model": "opus", "conditional": true, "signal": "loop-io" },
+    { "id": "errors", "brief": "lens-briefs/general-errors", "model": "opus", "rounds": 1 },
+    { "id": "performance", "brief": "lens-briefs/general-performance", "model": "opus", "conditional": true, "signal": "loop-io", "rounds": 1 },
     { "id": "intent", "brief": "lens-briefs/general-intent", "model": "opus", "wholeDiff": true },
     { "id": "tests", "brief": "lens-briefs/general-tests", "model": "opus" },
-    { "id": "maintainability", "brief": "lens-briefs/general-maintainability", "model": "opus", "conditional": true, "signal": "new-or-large-file" },
+    { "id": "maintainability", "brief": "lens-briefs/general-maintainability", "model": "opus", "conditional": true, "signal": "new-or-large-file", "rounds": 1 },
     {
       "id": "compat", "brief": "lens-briefs/general-compat", "model": "opus", "surface": "wireForm", "wholeDiff": true,
       "catalogue": { "label": "COMPATIBILITY CATALOGUE", "file": "skills/compatibility/catalogue.md", "fallback": "C1–C4, C8, C9 and C11–C13" }

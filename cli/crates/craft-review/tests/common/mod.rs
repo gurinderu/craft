@@ -82,6 +82,7 @@ pub fn opts(repo: &Path, run: &Path) -> StartOptions {
         fresh: false,
         delta: false,
         full_every: 0,
+        lens_agents: None,
         runs: None,
         strict: false,
         prior_decisions: None,

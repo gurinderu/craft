@@ -30,6 +30,10 @@ pub struct StartOptions {
     pub delta: bool,
     /// Every this-many-th round of a chain reviews the whole diff again; 0, never.
     pub full_every: u32,
+    /// The agent budget of the lens rounds (`--lens-agents`): a later round whose tasks would take
+    /// the rounds past it is not bought; `None`, twice the first round's tasks (realm @nick/craft,
+    /// node #634).
+    pub lens_agents: Option<u32>,
     /// Where earlier runs are looked for; the run directory's parent when `None`.
     pub runs: Option<PathBuf>,
     /// Strict mode: the maintainability bar is a presumption of block.

@@ -53,6 +53,11 @@ pub struct StartArgs {
     /// fix commits since the prior round; 0, never.
     #[arg(long, default_value_t = 3)]
     pub full_every: u32,
+    /// The agent budget of the lens rounds: a later round whose tasks would take them past it is
+    /// not bought, and the rounds end on what they found; twice the first round's tasks when
+    /// absent.
+    #[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
+    pub lens_agents: Option<u32>,
     /// Where the earlier runs a re-review builds on are looked for; the run directory's parent
     /// (~/.craft/runs/cli by default) when absent.
     #[arg(long)]
@@ -303,6 +308,7 @@ pub(crate) fn start_step(args: &StartArgs, cancel: &craft_review::cancel::Cancel
         fresh: args.fresh,
         delta: args.delta,
         full_every: args.full_every,
+        lens_agents: args.lens_agents,
         runs: args.runs.clone(),
         strict: args.strict,
         recall: !args.no_recall,

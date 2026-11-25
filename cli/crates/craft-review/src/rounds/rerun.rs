@@ -1,7 +1,7 @@
 //! Which lens dispatches a later round sends again (realm @nick/craft, node #625): round 2 and
 //! later send only the dispatches — a lens of a profile, on its slice when sliced — whose answer in
-//! the round before held a finding the pool lacked, a first-round-only lens excepted. A dispatch
-//! that gave no answer after its retries within its round is a hole the verdict reads as
+//! the round before held a finding the pool lacked, a lens past its own round limit excepted. A
+//! dispatch that gave no answer after its retries within its round is a hole the verdict reads as
 //! INCOMPLETE, as in a one-round plan; no later round sends it again. The plan's `max_rounds`
 //! stays the ceiling.
 
@@ -13,11 +13,21 @@ use super::{Rounds, SLICE_SEP, key, lens_key};
 use crate::plan::Plan;
 use crate::profile::Profile;
 
-/// Whether `lens` runs in the first round only: a metrics lens reads numbers another round would
-/// not change, and the design lens decisions another round would not change (realm @nick/craft,
-/// node #534).
-pub(super) fn first_only(profile: &Profile, lens: &str) -> bool {
-    lens == crate::design::LENS || profile.lens(lens).is_some_and(|x| x.metrics)
+/// The rounds `lens` runs at most, `None` when only the plan bounds it: one for a metrics lens,
+/// which reads numbers another round would not change, and for the design lens, whose decisions
+/// another round would not change (realm @nick/craft, node #534); otherwise its profile's own
+/// limit (realm @nick/craft, node #632).
+pub(super) fn limit(profile: &Profile, lens: &str) -> Option<u32> {
+    if lens == crate::design::LENS {
+        return Some(1);
+    }
+    let l = profile.lens(lens)?;
+    if l.metrics { Some(1) } else { l.rounds }
+}
+
+/// Whether `lens` may run in `round`.
+fn within(profile: &Profile, lens: &str, round: u32) -> bool {
+    limit(profile, lens).is_none_or(|n| round <= n)
 }
 
 /// Whether `answer` holds a finding whose key `before` lacks.
@@ -37,24 +47,26 @@ fn of_lens(k: &str, lens: &str) -> bool {
 
 impl Rounds {
     /// Whether the dispatch keyed `k`, of `profile`'s `lens`, runs in the round under way: always in
-    /// the first; in a later one when its answer in the round before found something new and it is
-    /// no first-round-only lens (all of those when that is not known).
+    /// the first; in a later one when its answer in the round before found something new and the
+    /// round is within the lens's limit (all of those when what it found is not known).
     pub(crate) fn sends(&self, profile: &Profile, lens: &str, k: &str) -> bool {
         self.round <= 1
-            || (!first_only(profile, lens)
+            || (within(profile, lens, self.round)
                 && self.rerun.as_ref().is_none_or(|y| y.iter().any(|x| x == k)))
     }
 
     /// Whether a round after the last one absorbed would dispatch any lens of `profile`'s `plan`:
-    /// the round `found_new` something, and a lens that found it may run again. A profile whose
-    /// dispatches all died or found nothing new starts no round.
+    /// the round `found_new` something, and a lens that found it may run in the next round. A
+    /// profile whose dispatches all died or found nothing new starts no round.
     #[must_use]
     pub fn goes_on(&self, profile: &Profile, plan: &Plan, found_new: bool) -> bool {
+        // A later round: at least the second, whatever round the absorbed one was numbered.
+        let next = self.round.max(1) + 1;
         found_new
             && plan
                 .lenses
                 .iter()
-                .filter(|l| !first_only(profile, l))
+                .filter(|l| within(profile, l, next))
                 .any(|l| {
                     let lens = lens_key(&profile.id, l);
                     self.rerun

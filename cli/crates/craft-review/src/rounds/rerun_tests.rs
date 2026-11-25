@@ -334,3 +334,79 @@ fn a_state_with_the_removed_retry_list_still_loads() {
     .unwrap();
     assert_eq!(r.rerun, Some(vec!["rust:errors".to_owned()]));
 }
+
+/// A lens its profile limits to one round is not sent in the second, even after finding something
+/// new, while a lens with no limit is; the limit never drops the lens from the first round (realm
+/// @nick/craft, node #632).
+#[test]
+fn a_lens_limited_to_one_round_is_not_sent_again_though_it_found_something_new() {
+    let ctx = PromptContext::fixture("/work/repo", "main");
+    let rust = Profile::load("rust").unwrap();
+    let plan = plan_of(&["errors", "maintainability"]);
+    let files = ["src/a.rs".to_owned()];
+    let mut r = Rounds {
+        round: 1,
+        ..Rounds::default()
+    };
+    assert_eq!(
+        sent(&tasks(&ctx, (&rust, &plan), &files, &[], &r).unwrap()),
+        ["errors", "maintainability"],
+        "the first round sends the limited lens too"
+    );
+    r.absorb(&[
+        dispatch("errors", 1, None, &["a"]),
+        dispatch("maintainability", 1, None, &["b"]),
+    ]);
+    r.round = 2;
+    assert_eq!(
+        sent(&tasks(&ctx, (&rust, &plan), &files, &[], &r).unwrap()),
+        ["errors"]
+    );
+    r.rerun = None;
+    assert_eq!(
+        sent(&tasks(&ctx, (&rust, &plan), &files, &[], &r).unwrap()),
+        ["errors"],
+        "a state that does not know what it found still keeps the limit"
+    );
+}
+
+#[test]
+fn a_profile_whose_only_new_finding_came_from_a_limited_lens_goes_no_further() {
+    let rust = Profile::load("rust").unwrap();
+    let plan = plan_of(&["errors", "performance", "maintainability"]);
+    let mut r = Rounds {
+        round: 1,
+        rerun: Some(vec![
+            "rust:performance".into(),
+            "rust:maintainability :: src".into(),
+        ]),
+        ..Rounds::default()
+    };
+    assert!(!r.goes_on(&rust, &plan, true));
+    r.rerun = Some(vec!["rust:errors".into()]);
+    assert!(r.goes_on(&rust, &plan, true), "an unlimited lens goes on");
+}
+
+/// The limits #632 names, and none beyond them: Rust errors, concurrency and the Nix
+/// maintainability lens keep every round the plan allows.
+#[test]
+fn the_profiles_limit_the_low_yield_lenses_to_one_round() {
+    let rounds = |p: &str, l: &str| Profile::load(p).unwrap().lens(l).and_then(|x| x.rounds);
+    for (p, l) in [
+        ("rust", "maintainability"),
+        ("rust", "performance"),
+        ("general", "maintainability"),
+        ("general", "performance"),
+        ("general", "errors"),
+    ] {
+        assert_eq!(rounds(p, l), Some(1), "{p}:{l}");
+    }
+    for (p, l) in [
+        ("rust", "errors"),
+        ("rust", "concurrency"),
+        ("general", "concurrency"),
+        ("nix", "maintainability"),
+    ] {
+        assert_eq!(rounds(p, l), None, "{p}:{l}");
+    }
+}
