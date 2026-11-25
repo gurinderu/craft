@@ -93,13 +93,6 @@ pub fn kill_group(child: &mut Child) {
     }
 }
 
-/// Stops the group `leader` leads, a process this one did not start and cannot reap: the mutants'
-/// worker, which outlives the step that launched it ([`crate::gate::mutants`]).
-#[cfg(unix)]
-pub(crate) fn stop_group_of(leader: i32) {
-    stop_group(nix::unistd::Pid::from_raw(leader));
-}
-
 /// The group's stop. The leader is not reaped here, so while it lives or is a zombie its id
 /// names no other group; one reaped before (`hook/bounded.rs` waits for its exit, then for its
 /// output) is signalled only while the group still has a member, a later one's id taken only

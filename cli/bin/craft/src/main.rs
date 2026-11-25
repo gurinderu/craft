@@ -177,7 +177,7 @@ async fn dispatch() -> anyhow::Result<ExitCode> {
         Command::FileRun => filing_worker::worker(),
         Command::ProcessIdentity(args) => process_identity::run(&args),
         Command::Mutants { dir } => {
-            craft_review::gate::mutants::work(&dir).map_err(|e| anyhow::anyhow!(e))?;
+            craft_review::gate::mutants::work(&dir)?;
             Ok(std::process::ExitCode::SUCCESS)
         }
         Command::Hook(HookCommand::SessionStart) => hook::role_hook(hook::RoleHook::SessionStart),

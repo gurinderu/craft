@@ -30,26 +30,48 @@ impl MutantsSection {
     }
 }
 
+/// Why the section could not be read.
+#[derive(Debug, thiserror::Error)]
+pub enum SectionError {
+    #[error("{}: {source}", path.display())]
+    Read {
+        path: std::path::PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("{}: {}", path.display(), source.message())]
+    Toml {
+        path: std::path::PathBuf,
+        #[source]
+        source: toml::de::Error,
+    },
+}
+
 /// The `[mutants]` section of the profile at `path`: the default when the profile or the section
 /// is absent.
 ///
 /// # Errors
 /// When the profile cannot be read, is not TOML, or the section is not of this shape.
-pub fn of(path: &Path) -> Result<MutantsSection, String> {
+pub fn of(path: &Path) -> Result<MutantsSection, SectionError> {
     let text = match std::fs::read_to_string(path) {
         Ok(t) => t,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(MutantsSection::default()),
-        Err(e) => return Err(format!("{}: {e}", path.display())),
+        Err(source) => {
+            return Err(SectionError::Read {
+                path: path.to_owned(),
+                source,
+            });
+        }
     };
-    let table: toml::Table =
-        toml::from_str(&text).map_err(|e| format!("{}: {}", path.display(), e.message()))?;
-    let Some(section) = table.get("mutants") else {
-        return Ok(MutantsSection::default());
+    let toml = |source| SectionError::Toml {
+        path: path.to_owned(),
+        source,
     };
-    section
-        .clone()
-        .try_into()
-        .map_err(|e: toml::de::Error| format!("{}: [mutants]: {}", path.display(), e.message()))
+    let table: toml::Table = toml::from_str(&text).map_err(toml)?;
+    match table.get("mutants") {
+        None => Ok(MutantsSection::default()),
+        Some(section) => section.clone().try_into().map_err(toml),
+    }
 }
 
 #[cfg(test)]
@@ -63,7 +85,7 @@ mod tests {
         let dir = tempfile::tempdir().map_err(|e| e.to_string())?;
         let path = dir.path().join("review.toml");
         std::fs::write(&path, text).map_err(|e| e.to_string())?;
-        of(&path)
+        of(&path).map_err(|e| e.to_string())
     }
 
     #[test]

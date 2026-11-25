@@ -35,6 +35,8 @@ use crate::verify;
 
 mod critic;
 mod memory;
+#[cfg(test)]
+mod mutants_tests;
 
 pub(crate) use memory::settle as settle_memory;
 

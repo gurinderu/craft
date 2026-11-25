@@ -7,9 +7,11 @@ use std::time::Duration;
 use super::super::tests::{exe, git};
 use super::super::{Gate, Status, Track};
 use super::worker::{self, Came};
-use super::{Launch, Mutants, MutantsSetup, join, launch};
+use super::{Launch, Mutants, MutantsSetup, abandon, join, launch};
 
-/// A workspace whose second commit changes `big` on line 2 of `src/lib.rs`.
+/// A workspace whose first commit is on `main`; a side branch moves `main` on by a commit to
+/// `add`, and the branch under review, cut before that, changes `big` on line 2 of `src/lib.rs`.
+/// The review's base is `main`: its merge-base with the branch is the first commit.
 fn repo() -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     let d = dir.path();
@@ -20,18 +22,18 @@ fn repo() -> tempfile::TempDir {
     )
     .unwrap();
     std::fs::create_dir(d.join("src")).unwrap();
-    std::fs::write(
-        d.join("src/lib.rs"),
-        "pub fn add(a: i32) -> i32 { a + 1 }\npub fn big(x: i32) -> bool { x > 10 }\n",
-    )
-    .unwrap();
+    let lib = |add: &str, big: &str| {
+        format!("pub fn add(a: i32) -> i32 {{ {add} }}\npub fn big(x: i32) -> bool {{ {big} }}\n")
+    };
+    std::fs::write(d.join("src/lib.rs"), lib("a + 1", "x > 10")).unwrap();
     git(d, &["add", "."]);
     git(d, &["commit", "-qm", "init"]);
-    std::fs::write(
-        d.join("src/lib.rs"),
-        "pub fn add(a: i32) -> i32 { a + 1 }\npub fn big(x: i32) -> bool { x >= 10 }\n",
-    )
-    .unwrap();
+    git(d, &["checkout", "-q", "-b", "change"]);
+    git(d, &["checkout", "-q", "main"]);
+    std::fs::write(d.join("src/lib.rs"), lib("a + 2", "x > 10")).unwrap();
+    git(d, &["commit", "-qam", "main moves on"]);
+    git(d, &["checkout", "-q", "change"]);
+    std::fs::write(d.join("src/lib.rs"), lib("a + 1", "x >= 10")).unwrap();
     git(d, &["commit", "-qam", "feat: big"]);
     dir
 }
@@ -48,14 +50,15 @@ fn passed(dev_shell: bool) -> Gate {
     }
 }
 
-/// A stand-in cargo: `mutants … -o <out> …` writes `outcomes` under `<out>/mutants.out/` after
-/// `sleep` seconds and exits `code`.
+/// A stand-in cargo: `mutants --version` answers; `mutants … -o <out> …` names itself in
+/// `<bin>/cargo.pid`, waits `sleep` seconds, writes `outcomes` under `<out>/mutants.out/` and
+/// exits `code`.
 fn cargo(bin: &Path, outcomes: &str, sleep: u32, code: i32) -> String {
     let path = bin.join("cargo");
     std::fs::write(bin.join("outcomes.json"), outcomes).unwrap();
     let script = format!(
-        "#!/bin/sh\nwhile [ \"$1\" != -o ]; do shift; done\nmkdir -p \"$2/mutants.out\"\nsleep {sleep}\ncp '{}' \"$2/mutants.out/outcomes.json\"\nexit {code}\n",
-        bin.join("outcomes.json").display()
+        "#!/bin/sh\n[ \"$2\" = --version ] && {{ echo 'cargo-mutants 27.1.0'; exit 0; }}\necho $$ > '{bin}/cargo.pid'\nwhile [ \"$1\" != -o ]; do shift; done\nmkdir -p \"$2/mutants.out\"\nsleep {sleep}\ncp '{bin}/outcomes.json' \"$2/mutants.out/outcomes.json\"\nexit {code}\n",
+        bin = bin.display()
     );
     exe::write_executable(&path, &script).unwrap();
     path.display().to_string()
@@ -63,25 +66,24 @@ fn cargo(bin: &Path, outcomes: &str, sleep: u32, code: i32) -> String {
 
 const MISSED_BIG: &str = r#"{"outcomes":[{"scenario":"Baseline","summary":"Success"},{"scenario":{"Mutant":{"name":"src/lib.rs:2:32: replace >= with < in big","file":"src/lib.rs","function":{"function_name":"big","return_type":"-> bool","span":{"start":{"line":2,"column":1},"end":{"line":2,"column":40}}},"span":{"start":{"line":2,"column":32},"end":{"line":2,"column":34}},"replacement":"<","genre":"BinaryOperator"}},"summary":"MissedMutant"},{"scenario":{"Mutant":{"name":"src/lib.rs:1:30: replace + with * in add","file":"src/lib.rs","function":{"function_name":"add","return_type":"-> i32","span":{"start":{"line":1,"column":1},"end":{"line":1,"column":36}}},"span":{"start":{"line":1,"column":30},"end":{"line":1,"column":31}},"replacement":"*","genre":"BinaryOperator"}},"summary":"MissedMutant"}],"total_mutants":2,"end_time":"t"}"#;
 
-fn launched(top: &Path, run: &Path, workspace: &str) -> Mutants {
-    let dir = run.join("mutants");
+fn launched(top: &Path, run: &Path) -> Mutants {
     Mutants {
-        dir: dir.display().to_string(),
+        dir: run.join("mutants").display().to_string(),
         top: top.display().to_string(),
-        workspace: workspace.into(),
-        base: "HEAD~1".into(),
+        workspace: String::new(),
+        base: "main".into(),
         joined: false,
     }
 }
 
-/// Runs the worker over `top` in `run`'s mutants directory with `cargo`, in this process.
-fn work(top: &Path, run: &Path, cargo: &str, budget_secs: u64) -> Came {
+/// Writes the request the launch would for `top` with `cargo`.
+fn request(top: &Path, run: &Path, cargo: &str, budget_secs: u64) -> std::path::PathBuf {
     let dir = run.join("mutants");
     std::fs::create_dir_all(&dir).unwrap();
     let req = worker::Request {
         top: top.to_owned(),
         workspace: String::new(),
-        base: "HEAD~1".into(),
+        base: "main".into(),
         inside: false,
         budget_secs,
         cargo: cargo.into(),
@@ -91,10 +93,48 @@ fn work(top: &Path, run: &Path, cargo: &str, budget_secs: u64) -> Came {
         serde_json::to_string(&req).unwrap(),
     )
     .unwrap();
+    dir
+}
+
+/// Runs the worker over `top` in `run`'s mutants directory with `cargo`, in this process.
+fn work(top: &Path, run: &Path, cargo: &str, budget_secs: u64) -> Came {
+    let dir = request(top, run, cargo, budget_secs);
     worker::work(&dir).unwrap();
-    // The in-process worker wrote this process's id: no join below may stop it.
-    std::fs::remove_file(dir.join(worker::PID)).unwrap();
     serde_json::from_str(&std::fs::read_to_string(dir.join(worker::RESULT)).unwrap()).unwrap()
+}
+
+/// Whether the process `pid` is gone, its zombie aside.
+fn gone(pid: &str) -> bool {
+    let stat = std::fs::read_to_string(format!("/proc/{}/stat", pid.trim())).unwrap_or_default();
+    stat.is_empty() || stat.contains(") Z ")
+}
+
+#[test]
+fn the_mutants_diff_is_the_change_from_its_merge_base_not_from_where_main_moved_to() {
+    let (top, run, bin) = (
+        repo(),
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+    );
+    work(
+        top.path(),
+        run.path(),
+        &cargo(bin.path(), MISSED_BIG, 0, 2),
+        30,
+    );
+    let diff = std::fs::read_to_string(run.path().join("mutants").join(worker::DIFF)).unwrap();
+    assert!(
+        diff.contains("+pub fn big(x: i32) -> bool { x >= 10 }"),
+        "{diff}"
+    );
+    assert!(
+        !diff.contains("a + 2"),
+        "main's own move is no part of the change: {diff}"
+    );
+    assert!(
+        diff.contains("--- a/src/lib.rs") && diff.contains("+++ b/src/lib.rs"),
+        "{diff}"
+    );
 }
 
 #[test]
@@ -104,17 +144,16 @@ fn a_survivor_in_the_changed_function_is_pooled_and_one_in_its_neighbour_is_coun
         tempfile::tempdir().unwrap(),
         tempfile::tempdir().unwrap(),
     );
-    let cargo = cargo(bin.path(), MISSED_BIG, 0, 2);
     assert_eq!(
-        work(top.path(), run.path(), &cargo, 30),
+        work(
+            top.path(),
+            run.path(),
+            &cargo(bin.path(), MISSED_BIG, 0, 2),
+            30
+        ),
         Came::Exited { code: Some(2) }
     );
-    let diff = std::fs::read_to_string(run.path().join("mutants").join(worker::DIFF)).unwrap();
-    assert!(
-        diff.contains("+pub fn big(x: i32) -> bool { x >= 10 }"),
-        "{diff}"
-    );
-    let (found, line) = join(&mut launched(top.path(), run.path(), ""), Duration::ZERO);
+    let (found, line) = join(&mut launched(top.path(), run.path()), Duration::ZERO);
     assert_eq!(found.len(), 1, "{found:?}");
     assert_eq!(
         (found[0]["file"].as_str(), found[0]["line"].as_u64()),
@@ -126,6 +165,7 @@ fn a_survivor_in_the_changed_function_is_pooled_and_one_in_its_neighbour_is_coun
             && line.contains("1 more survived in neighbouring functions"),
         "{line}"
     );
+    assert!(!line.contains("run short"), "{line}");
 }
 
 #[test]
@@ -135,22 +175,115 @@ fn a_worker_past_its_budget_stops_cargo_mutants_and_says_how_long_it_ran() {
         tempfile::tempdir().unwrap(),
         tempfile::tempdir().unwrap(),
     );
-    let cargo = cargo(bin.path(), MISSED_BIG, 30, 2);
     let start = std::time::Instant::now();
     assert!(matches!(
-        work(top.path(), run.path(), &cargo, 1),
+        work(
+            top.path(),
+            run.path(),
+            &cargo(bin.path(), MISSED_BIG, 30, 2),
+            1
+        ),
         Came::TimedOut { .. }
     ));
     assert!(
         start.elapsed() < Duration::from_secs(20),
         "cargo-mutants was left to run"
     );
-    let (found, line) = join(&mut launched(top.path(), run.path(), ""), Duration::ZERO);
+    assert!(gone(
+        &std::fs::read_to_string(bin.path().join("cargo.pid")).unwrap()
+    ));
+    let (found, line) = join(&mut launched(top.path(), run.path()), Duration::ZERO);
     assert!(found.is_empty());
     assert!(
         line.unwrap().contains("budget ran out"),
         "a stopped run is said, not silent"
     );
+}
+
+#[test]
+fn a_worker_asked_to_stop_at_the_join_stops_cargo_mutants_itself() {
+    let (top, run, bin) = (
+        repo(),
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+    );
+    let dir = request(
+        top.path(),
+        run.path(),
+        &cargo(bin.path(), MISSED_BIG, 60, 2),
+        120,
+    );
+    let worker = std::thread::spawn(move || worker::work(&dir).unwrap());
+    let pid = bin.path().join("cargo.pid");
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    while !pid.is_file() && std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let (found, line) = join(
+        &mut launched(top.path(), run.path()),
+        Duration::from_millis(100),
+    );
+    worker.join().unwrap();
+    assert!(found.is_empty());
+    assert!(line.unwrap().contains("stopped at the join"));
+    assert!(
+        gone(&std::fs::read_to_string(&pid).unwrap()),
+        "cargo-mutants outlived the join"
+    );
+}
+
+#[test]
+fn a_run_abandoned_before_its_join_has_its_worker_stop() {
+    let (top, run, bin) = (
+        repo(),
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+    );
+    let dir = request(
+        top.path(),
+        run.path(),
+        &cargo(bin.path(), MISSED_BIG, 60, 2),
+        120,
+    );
+    let worker = std::thread::spawn(move || worker::work(&dir).unwrap());
+    let pid = bin.path().join("cargo.pid");
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    while !pid.is_file() && std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let mut m = launched(top.path(), run.path());
+    abandon(&mut m);
+    worker.join().unwrap();
+    assert!(!m.running());
+    assert!(
+        gone(&std::fs::read_to_string(&pid).unwrap()),
+        "cargo-mutants outlived the run"
+    );
+}
+
+#[test]
+fn a_worker_that_never_answers_is_said_with_its_last_word() {
+    let (top, run) = (repo(), tempfile::tempdir().unwrap());
+    let dir = run.path().join("mutants");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join(worker::ERR),
+        "error: unrecognized subcommand '__craft-mutants'\n",
+    )
+    .unwrap();
+    let (_, line) = join(&mut launched(top.path(), run.path()), Duration::ZERO);
+    assert!(line.unwrap().contains("unrecognized subcommand"));
+}
+
+#[test]
+fn a_request_it_cannot_read_is_a_result_not_silence() {
+    let run = tempfile::tempdir().unwrap();
+    let dir = run.path().join("mutants");
+    std::fs::create_dir_all(&dir).unwrap();
+    worker::work(&dir).unwrap();
+    let came: Came =
+        serde_json::from_str(&std::fs::read_to_string(dir.join(worker::RESULT)).unwrap()).unwrap();
+    assert!(matches!(came, Came::Broken { .. }), "{came:?}");
 }
 
 #[test]
@@ -170,7 +303,7 @@ fn a_cargo_without_mutants_is_named_as_not_installed() {
         work(top.path(), run.path(), &path.display().to_string(), 30),
         Came::Missing
     );
-    let (_, line) = join(&mut launched(top.path(), run.path(), ""), Duration::ZERO);
+    let (_, line) = join(&mut launched(top.path(), run.path()), Duration::ZERO);
     assert!(line.unwrap().contains("not installed"));
 }
 
@@ -183,147 +316,76 @@ fn a_run_that_chose_no_mutant_on_changed_rust_points_at_the_paths_not_at_a_clean
     );
     let none = r#"{"outcomes":[{"scenario":"Baseline","summary":"Success"}],"total_mutants":0,"end_time":"t"}"#;
     work(top.path(), run.path(), &cargo(bin.path(), none, 0, 0), 30);
-    let (_, line) = join(&mut launched(top.path(), run.path(), ""), Duration::ZERO);
+    let (_, line) = join(&mut launched(top.path(), run.path()), Duration::ZERO);
     assert!(line.unwrap().contains("check the diff's paths"));
 }
 
 #[test]
-fn a_worker_still_running_at_the_join_is_stopped_with_its_group() {
+fn a_run_cut_short_is_said_short() {
     let (top, run, bin) = (
         repo(),
         tempfile::tempdir().unwrap(),
         tempfile::tempdir().unwrap(),
     );
-    let exe_path = bin.path().join("worker");
-    // A stand-in worker that never writes a result: it names itself and waits.
-    exe::write_executable(
-        &exe_path,
-        "#!/bin/sh\necho $$ > \"$2/worker.pid\"\nexec sleep 60\n",
-    )
-    .unwrap();
-    let setup = MutantsSetup {
-        exe: exe_path,
-        budget: Duration::from_secs(60),
-        off: false,
-        cargo: "cargo".into(),
-        note: String::new(),
-    };
-    let gate = passed(false);
-    let files = ["src/lib.rs".to_owned()];
-    let (mut m, line) = launch(&Launch {
-        run_dir: run.path(),
-        top: top.path(),
-        base: "HEAD~1",
-        rust_files: &files,
-        other_profiles: false,
-        gate: &gate,
-        setup: Some(&setup),
-    });
-    assert!(line.is_empty(), "{line:?}");
-    let pid_file = run.path().join("mutants").join(worker::PID);
-    let deadline = std::time::Instant::now() + Duration::from_secs(10);
-    while !pid_file.is_file() && std::time::Instant::now() < deadline {
-        std::thread::sleep(Duration::from_millis(20));
-    }
-    let pid: i32 = std::fs::read_to_string(&pid_file)
-        .unwrap()
-        .trim()
-        .parse()
-        .unwrap();
-    let (_, line) = join(&mut m, Duration::from_millis(100));
-    assert!(line.unwrap().contains("stopped at the join"));
-    std::thread::sleep(Duration::from_millis(200));
+    let unended = MISSED_BIG.replace("\"end_time\":\"t\"", "\"end_time\":null");
+    work(
+        top.path(),
+        run.path(),
+        &cargo(bin.path(), &unended, 0, 2),
+        30,
+    );
+    let (_, line) = join(&mut launched(top.path(), run.path()), Duration::ZERO);
+    assert!(line.unwrap().contains("run short: 2 of 2 tested"));
+}
+
+#[test]
+fn a_baseline_that_failed_in_the_copy_is_said_with_its_cause_and_log() {
+    let (top, run, bin) = (
+        repo(),
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+    );
+    let failed = r#"{"outcomes":[{"scenario":"Baseline","summary":"Failure"}],"total_mutants":3,"end_time":"t"}"#;
+    work(top.path(), run.path(), &cargo(bin.path(), failed, 0, 4), 30);
+    let (found, line) = join(&mut launched(top.path(), run.path()), Duration::ZERO);
+    let line = line.unwrap();
+    assert!(found.is_empty());
     assert!(
-        !Path::new(&format!("/proc/{pid}")).exists()
-            || std::fs::read_to_string(format!("/proc/{pid}/stat"))
-                .unwrap()
-                .contains(") Z "),
-        "the worker outlived the join"
+        line.contains("outside its workspace") && line.contains("baseline.log"),
+        "{line}"
     );
-    assert!(!m.running());
-}
-
-type Case<'a> = (
-    &'a [String],
-    bool,
-    &'a Gate,
-    Option<&'a MutantsSetup>,
-    &'a str,
-);
-
-fn why(rust: &[String], other: bool, gate: &Gate, setup: Option<&MutantsSetup>) -> Option<String> {
-    let top = repo();
-    let run = tempfile::tempdir().unwrap();
-    let (m, line) = launch(&Launch {
-        run_dir: run.path(),
-        top: top.path(),
-        base: "HEAD~1",
-        rust_files: rust,
-        other_profiles: other,
-        gate,
-        setup,
-    });
-    assert!(!m.running(), "nothing may be launched when they do not run");
-    line.into_iter().next()
 }
 
 #[test]
-fn each_reason_they_do_not_run_is_said_never_silent() {
-    let rust = ["src/lib.rs".to_owned()];
-    let setup = MutantsSetup {
-        exe: "/nonexistent".into(),
-        budget: Duration::from_secs(1),
-        off: false,
-        cargo: "cargo".into(),
-        note: String::new(),
-    };
-    let off = MutantsSetup {
-        off: true,
-        ..setup.clone()
-    };
-    let red = Gate {
-        tracks: vec![Track {
-            profile: "rust".into(),
-            status: Status::Fail,
-            ..Track::default()
-        }],
-        ..Gate::default()
-    };
-    let cases: [Case<'_>; 5] = [
-        (&[], true, &passed(false), Some(&setup), "no Rust"),
-        (&rust, false, &passed(false), None, "no gate of its own"),
-        (
-            &rust,
-            false,
-            &passed(false),
-            Some(&off),
-            "off in the reviewer's profile",
-        ),
-        (&rust, false, &red, Some(&setup), "the Rust gate is red"),
-        (
-            &rust,
-            false,
-            &Gate::default(),
-            Some(&setup),
-            "the Rust gate did not run",
-        ),
-    ];
-    for (files, other, gate, setup, said) in cases {
-        let line = why(files, other, gate, setup).unwrap_or_default();
-        assert!(
-            line.contains("did not run") && line.contains(said),
-            "{said}: {line}"
-        );
-    }
+fn the_join_waits_for_a_result_written_within_its_wait_and_no_longer() {
+    let dir = tempfile::tempdir().unwrap();
+    let start = std::time::Instant::now();
     assert_eq!(
-        why(&[], false, &passed(false), Some(&setup)),
-        None,
-        "a change of nothing says nothing"
+        super::join::wait_for(dir.path(), Duration::from_millis(300)),
+        None
     );
+    assert!(
+        start.elapsed() >= Duration::from_millis(300),
+        "it gave up early"
+    );
+    assert!(
+        start.elapsed() < Duration::from_secs(3),
+        "it waited past its wait"
+    );
+    let path = dir.path().join(worker::RESULT);
+    let writer = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(300));
+        std::fs::write(path, r#"{"ran":"missing"}"#).unwrap();
+    });
+    assert_eq!(
+        super::join::wait_for(dir.path(), Duration::from_secs(5)),
+        Some(Came::Missing)
+    );
+    writer.join().unwrap();
 }
 
 #[test]
-fn the_workspace_is_the_topmost_declared_one_holding_most_changed_files() {
+fn the_workspace_is_the_nearest_declared_one_holding_most_changed_files() {
     let top = tempfile::tempdir().unwrap();
     let d = top.path();
     for dir in ["cli/crates/a/src", "cli/crates/b/src", "tool/src"] {
@@ -331,7 +393,7 @@ fn the_workspace_is_the_topmost_declared_one_holding_most_changed_files() {
     }
     std::fs::write(
         d.join("cli/Cargo.toml"),
-        "[workspace]\nmembers = [\"crates/*\"]\n",
+        "[workspace] # all crates\nmembers = [\"crates/*\"]\n",
     )
     .unwrap();
     std::fs::write(
@@ -351,14 +413,11 @@ fn the_workspace_is_the_topmost_declared_one_holding_most_changed_files() {
         "tool/src/main.rs",
     ]
     .map(String::from);
-    assert_eq!(super::workspace(d, &files).as_deref(), Some("cli"));
-    let tool = ["tool/src/main.rs".to_owned()];
+    assert_eq!(super::launch::workspaces_of(d, &files), ["cli", "tool"]);
     assert_eq!(
-        super::workspace(d, &tool).as_deref(),
-        Some("tool"),
-        "a package with no workspace is its own"
+        super::launch::workspaces_of(d, &["loose.rs".to_owned()]),
+        Vec::<String>::new()
     );
-    assert_eq!(super::workspace(d, &["loose.rs".to_owned()]), None);
 }
 
 #[test]
@@ -376,136 +435,167 @@ fn a_launched_run_is_kept_in_the_gate_and_none_is_not_written() {
     assert!(kept.mutants.running());
 }
 
-#[test]
-fn a_run_short_is_said_short_and_one_with_no_neighbour_names_none() {
-    let (top, run, bin) = (
-        repo(),
-        tempfile::tempdir().unwrap(),
-        tempfile::tempdir().unwrap(),
-    );
-    let only_big = MISSED_BIG
-        .replace(
-            ",{\"scenario\":{\"Mutant\":{\"name\":\"src/lib.rs:1:30",
-            ",{\"scenario\":{\"Mutant\":{\"name\":\"x",
-        )
-        .replace("\"line\":1,", "\"line\":2,");
-    work(
-        top.path(),
-        run.path(),
-        &cargo(bin.path(), &only_big, 0, 2),
-        30,
-    );
-    let (_, line) = join(&mut launched(top.path(), run.path(), ""), Duration::ZERO);
-    let line = line.unwrap();
-    assert!(
-        !line.contains("neighbouring") && !line.contains("run short"),
-        "{line}"
-    );
-    let unended = MISSED_BIG.replace("\"end_time\":\"t\"", "\"end_time\":null");
-    let (run, bin) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
-    work(
-        top.path(),
-        run.path(),
-        &cargo(bin.path(), &unended, 0, 2),
-        30,
-    );
-    let (_, line) = join(&mut launched(top.path(), run.path(), ""), Duration::ZERO);
-    assert!(line.unwrap().contains("run short: 2 of 2 tested"));
-}
-
-#[test]
-fn the_join_waits_for_a_result_written_within_its_wait_and_no_longer() {
-    let dir = tempfile::tempdir().unwrap();
-    let start = std::time::Instant::now();
-    assert_eq!(
-        super::wait_for(dir.path(), Duration::from_millis(300)),
-        None
-    );
-    assert!(
-        start.elapsed() >= Duration::from_millis(300),
-        "it gave up early"
-    );
-    assert!(
-        start.elapsed() < Duration::from_secs(3),
-        "it waited past its wait"
-    );
-    let path = dir.path().join(worker::RESULT);
-    let writer = std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_millis(300));
-        std::fs::write(path, r#"{"ran":"missing"}"#).unwrap();
-    });
-    assert_eq!(
-        super::wait_for(dir.path(), Duration::from_secs(5)),
-        Some(Came::Missing)
-    );
-    writer.join().unwrap();
-}
-
-#[test]
-fn a_run_abandoned_before_its_join_stops_its_worker() {
-    let (top, run, bin) = (
-        repo(),
-        tempfile::tempdir().unwrap(),
-        tempfile::tempdir().unwrap(),
-    );
-    let exe_path = bin.path().join("worker");
-    exe::write_executable(
-        &exe_path,
-        "#!/bin/sh\necho $$ > \"$2/worker.pid\"\nexec sleep 60\n",
-    )
-    .unwrap();
-    let setup = MutantsSetup {
-        exe: exe_path,
-        budget: Duration::from_secs(60),
+fn setup(cargo: String) -> MutantsSetup {
+    MutantsSetup {
+        exe: "/nonexistent".into(),
+        budget: Duration::from_secs(1),
         off: false,
-        cargo: "cargo".into(),
+        cargo,
         note: String::new(),
-    };
-    let (gate, files) = (passed(false), ["src/lib.rs".to_owned()]);
-    let at = Launch {
+    }
+}
+
+type Case<'a> = (
+    &'a [String],
+    bool,
+    &'a Gate,
+    Result<&'a MutantsSetup, &'a str>,
+    bool,
+    &'a str,
+);
+
+fn said(c: &Case<'_>) -> (Mutants, Vec<String>) {
+    let (top, run) = (repo(), tempfile::tempdir().unwrap());
+    let &(files, other, gate, setup, stopped, _) = c;
+    launch(&Launch {
         run_dir: run.path(),
         top: top.path(),
-        base: "HEAD~1",
-        rust_files: &files,
-        other_profiles: false,
-        gate: &gate,
-        setup: Some(&setup),
-    };
-    let (mut m, _) = launch(&at);
-    let pid_file = run.path().join("mutants").join(worker::PID);
-    let deadline = std::time::Instant::now() + Duration::from_secs(10);
-    while !pid_file.is_file() && std::time::Instant::now() < deadline {
-        std::thread::sleep(Duration::from_millis(20));
-    }
-    let pid: i32 = std::fs::read_to_string(&pid_file)
-        .unwrap()
-        .trim()
-        .parse()
-        .unwrap();
-    super::abandon(&mut m);
-    std::thread::sleep(Duration::from_millis(200));
-    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).unwrap_or_default();
-    assert!(
-        stat.is_empty() || stat.contains(") Z "),
-        "the worker outlived the run"
-    );
-    assert!(!m.running());
+        base: "main",
+        rust_files: files,
+        other_profiles: other,
+        gate,
+        setup,
+        stopped,
+    })
 }
 
 #[test]
-fn a_baseline_that_failed_in_the_copy_is_said_with_its_cause_and_log() {
+fn each_reason_they_do_not_run_is_said_never_silent() {
+    let rust = ["src/lib.rs".to_owned()];
+    let bin = tempfile::tempdir().unwrap();
+    let ok = setup(cargo(bin.path(), MISSED_BIG, 0, 2));
+    let off = MutantsSetup {
+        off: true,
+        ..ok.clone()
+    };
+    let missing = setup(bin.path().join("absent-cargo").display().to_string());
+    let red = Gate {
+        tracks: vec![Track {
+            profile: "rust".into(),
+            status: Status::Fail,
+            ..Track::default()
+        }],
+        ..Gate::default()
+    };
+    let pass = passed(false);
+    let cases: [Case<'_>; 7] = [
+        (&[], true, &pass, Ok(&ok), false, "no Rust"),
+        (
+            &rust,
+            false,
+            &pass,
+            Err("no gate of its own"),
+            false,
+            "no gate of its own",
+        ),
+        (
+            &rust,
+            false,
+            &pass,
+            Ok(&off),
+            false,
+            "off in the reviewer's profile",
+        ),
+        (&rust, false, &red, Ok(&ok), false, "the Rust gate is red"),
+        (
+            &rust,
+            false,
+            &Gate::default(),
+            Ok(&ok),
+            false,
+            "the Rust gate did not run",
+        ),
+        (&rust, false, &pass, Ok(&ok), true, "the run was stopped"),
+        (
+            &rust,
+            false,
+            &pass,
+            Ok(&missing),
+            false,
+            "cargo is not on the PATH",
+        ),
+    ];
+    for c in &cases {
+        let (m, lines) = said(c);
+        let line = lines.join(" | ");
+        assert!(
+            !m.running(),
+            "{}: nothing may be launched when they do not run",
+            c.5
+        );
+        assert!(
+            line.contains("did not run") && line.contains(c.5),
+            "{}: {line}",
+            c.5
+        );
+    }
+    let (_, lines) = said(&(&[], false, &pass, Ok(&ok), false, ""));
+    assert!(lines.is_empty(), "a change of nothing says nothing");
+}
+
+#[test]
+fn a_probe_that_finds_cargo_without_mutants_launches_nothing() {
+    let bin = tempfile::tempdir().unwrap();
+    let path = bin.path().join("cargo");
+    exe::write_executable(
+        &path,
+        "#!/bin/sh\necho 'error: no such command: `mutants`' >&2\nexit 101\n",
+    )
+    .unwrap();
+    let s = setup(path.display().to_string());
+    let rust = ["src/lib.rs".to_owned()];
+    let (m, lines) = said(&(&rust, false, &passed(false), Ok(&s), false, ""));
+    assert!(!m.running());
+    assert!(
+        lines.join(" ").contains("cargo-mutants is not installed"),
+        "{lines:?}"
+    );
+}
+
+#[test]
+fn a_launch_names_the_workspaces_it_leaves_out() {
     let (top, run, bin) = (
         repo(),
         tempfile::tempdir().unwrap(),
         tempfile::tempdir().unwrap(),
     );
-    let failed = r#"{"outcomes":[{"scenario":"Baseline","summary":"Failure"}],"total_mutants":3,"end_time":"t"}"#;
-    work(top.path(), run.path(), &cargo(bin.path(), failed, 0, 4), 30);
-    let (found, line) = join(&mut launched(top.path(), run.path(), ""), Duration::ZERO);
-    let line = line.unwrap();
-    assert!(found.is_empty());
+    std::fs::create_dir_all(top.path().join("tool/src")).unwrap();
+    std::fs::write(
+        top.path().join("tool/Cargo.toml"),
+        "[package]\nname = \"tool\"\n\n[workspace]\n",
+    )
+    .unwrap();
+    // A stand-in worker that exits at once: the launch is all this test reads.
+    let worker = bin.path().join("worker");
+    exe::write_executable(&worker, "#!/bin/sh\nexit 0\n").unwrap();
+    let s = MutantsSetup {
+        exe: worker,
+        ..setup(cargo(bin.path(), MISSED_BIG, 0, 2))
+    };
+    let files = ["src/lib.rs".to_owned(), "tool/src/main.rs".to_owned()];
+    let (m, lines) = launch(&Launch {
+        run_dir: run.path(),
+        top: top.path(),
+        base: "main",
+        rust_files: &files,
+        other_profiles: false,
+        gate: &passed(false),
+        setup: Ok(&s),
+        stopped: false,
+    });
+    assert!(m.running());
     assert!(
-        line.contains("outside its workspace") && line.contains("baseline.log"),
-        "{line}"
+        lines.join(" ").contains("got none") && lines.join(" ").contains("`tool`"),
+        "{lines:?}"
     );
 }

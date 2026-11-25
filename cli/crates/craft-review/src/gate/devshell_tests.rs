@@ -130,6 +130,10 @@ pub(super) const LABEL: &str =
 fn a_default_dev_shell_for_this_system_runs_cargo_inside_it() {
     let r = gate_of(&world());
     assert_eq!(r.track().status, Status::Pass, "{:?}", r.gate);
+    assert!(
+        r.track().dev_shell,
+        "the mutants run where the gate's cargo did"
+    );
     let nix: Vec<&str> = r.nix.lines().collect();
     assert_eq!(
         nix.len(),
@@ -175,6 +179,7 @@ fn no_dev_shell_no_flake_or_no_nix_runs_cargo_as_before() {
             ..world()
         });
         assert_eq!(r.track().status, Status::Pass, "{:?}", r.gate);
+        assert!(!r.track().dev_shell);
         assert!(!r.nix.contains("develop"), "{}", r.nix);
         assert_eq!(r.cargo.lines().count(), 2, "{}", r.cargo);
         assert!(!r.track().provenance.contains("develop"), "{:?}", r.gate);

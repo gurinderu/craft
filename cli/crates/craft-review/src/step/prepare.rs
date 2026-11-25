@@ -148,10 +148,14 @@ fn launch_mutants(cwd: &Path, dir: &Path, opts: &StartOptions, run: &mut RunStat
         .map_or(&[], |t| t.files.as_slice());
     let top = crate::git::toplevel(cwd).unwrap_or_else(|_| cwd.to_owned());
     // A run that took another's gate ran none of its own: it runs no mutants either.
-    let setup = opts
-        .mutants
-        .as_ref()
-        .filter(|_| opts.gate_from.is_none() && opts.gate.is_some());
+    let own_gate = opts.gate_from.is_none() && opts.gate.is_some();
+    let setup = match (own_gate, opts.mutants.as_ref()) {
+        (true, Some(s)) => Ok(s),
+        (true, None) => Err("the binary could not name itself as their worker"),
+        (false, _) => Err(
+            "the run ran no gate of its own (`--no-gate` or `--gate-from`), and they run the branch's tests as the gate builds it",
+        ),
+    };
     let (mutants, line) = crate::gate::mutants::launch(&crate::gate::mutants::Launch {
         run_dir: dir,
         top: &top,
@@ -160,6 +164,7 @@ fn launch_mutants(cwd: &Path, dir: &Path, opts: &StartOptions, run: &mut RunStat
         other_profiles: run.tracks.iter().any(|t| t.profile != "rust"),
         gate: &run.gate,
         setup,
+        stopped: opts.cancel.is_cancelled(),
     });
     run.context.mutants = mutants.running();
     run.gate.mutants = mutants;

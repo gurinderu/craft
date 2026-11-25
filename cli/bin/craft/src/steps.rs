@@ -599,10 +599,13 @@ fn recall_note(s: &str) -> Result<String, String> {
 /// names, or the default (realm @nick/craft, node #645).
 fn mutants_setup(cwd: &std::path::Path) -> Option<craft_review::gate::mutants::MutantsSetup> {
     use craft_review::project::{mutants, profile_path};
-    let path = crate::init::projects_dir().and_then(|p| profile_path(&p, cwd).ok());
-    let (section, note) = match path.map(|(p, _)| mutants::of(&p)) {
-        Some(Ok(s)) => (s, String::new()),
-        Some(Err(e)) => (mutants::MutantsSection::default(), e),
+    let path = crate::init::projects_dir().map(|p| profile_path(&p, cwd));
+    let (section, note) = match path {
+        Some(Ok((p, _))) => match mutants::of(&p) {
+            Ok(s) => (s, String::new()),
+            Err(e) => (mutants::MutantsSection::default(), e.to_string()),
+        },
+        Some(Err(e)) => (mutants::MutantsSection::default(), e.to_string()),
         None => (mutants::MutantsSection::default(), String::new()),
     };
     Some(craft_review::gate::mutants::MutantsSetup {
