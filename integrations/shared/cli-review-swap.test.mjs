@@ -122,12 +122,12 @@ test.each(REFUSED)('%s is refused with nothing run but its INCOMPLETE record, it
 test("optional, _recalled and _via reach the binary's start as --optional, --no-recall, --nested and --via; absent, none", async () => {
   /** @param {Record<string, unknown>} args */
   const start = async args => String((await runWith(args)).calls.find(c => c.label === 'step:start')?.prompt)
-  assert.match(await start({ optional: 'rust-performance' }), /review start --cwd \. --optional 'rust-performance' --record '[^']+'$/m)
+  assert.match(await start({ optional: 'rust-performance' }), /review start --cwd \. --optional 'rust-performance' --record '[^']+' --paged$/m)
   assert.match(
     await start({ optional: ['performance', 'api-boundary'], _recalled: true }),
-    /--optional 'performance,api-boundary' --no-recall --record '[^']+'$/m,
+    /--optional 'performance,api-boundary' --no-recall --record '[^']+' --paged$/m,
   )
-  assert.match(await start({ optional: true, _via: 'rust-audit' }), /--optional 'all' --nested --record '[^']+' --via 'rust-audit'$/m)
+  assert.match(await start({ optional: true, _via: 'rust-audit' }), /--optional 'all' --nested --record '[^']+' --via 'rust-audit' --paged$/m)
   const plain = await start({ optional: false, _recalled: false })
   assert.doesNotMatch(plain, /--optional|--no-recall|--nested|--via/)
 })
@@ -137,7 +137,7 @@ test("_recallDegraded beside _recalled reaches the binary's start as one --recal
   const start = async args => String((await runWith(args)).calls.find(c => c.label === 'step:start')?.prompt)
   assert.match(
     await start({ _recalled: true, _recallDegraded: "-q refused: it's required" }),
-    /--no-recall --recall-degraded='-q refused: it'\\''s required' --record '[^']+'$/m,
+    /--no-recall --recall-degraded='-q refused: it'\\''s required' --record '[^']+' --paged$/m,
   )
   assert.doesNotMatch(await start({ _recalled: true }), /--recall-degraded/)
   assert.match((await runWith({ _recallDegraded: 'x' })).report, /_recallDegraded is taken only beside _recalled=true/)

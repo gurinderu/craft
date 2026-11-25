@@ -1,7 +1,7 @@
 // How a run ended as the binary's `craft review status` says it (cli/crates/craft-review/src/status.rs, `filing`), for
 // the review driver when it could not read the step that ended it (integrations/shared/cli-review-steps.mjs, recovered): the step
 // the run's segment ended with, as the binary filed it, and whether its record is to be filed again.
-import { NO_OUTPUT, absolutePath, commandOutput, finishedStep, isObject } from './cli-review-step.mjs'
+import { NO_OUTPUT, UNREAD_WHOLE, absolutePath, commandOutput, finishedStep, isObject } from './cli-review-step.mjs'
 import { stepText, stopNoteOf, strings } from './cli-review-step-fields.mjs'
 import { hasControl } from './cli-review-keys.mjs'
 
@@ -39,7 +39,8 @@ export function endedOf(got) {
 }
 
 /**
- * Whether the status command ran but left no status that could be read — its output empty, missing or not whole: the
+ * Whether the status command ran but left no status that could be read — its output empty, missing or not whole (a
+ * paged status whose pages could not all be read included): the
  * service agent could not copy it — the finished step it embeds grows with the findings — and the brief status may be
  * read where it was not (realm @nick/craft, node #522). A harness refusal, the usage limit and a failed command keep
  * their own paths.
@@ -47,7 +48,7 @@ export function endedOf(got) {
  */
 export function statusUnreadable(got) {
   const out = commandOutput(got)
-  return 'error' in out ? out.error === NO_OUTPUT : statusOf(got) === null
+  return 'error' in out ? out.error === NO_OUTPUT || out.error.startsWith(UNREAD_WHOLE) : statusOf(got) === null
 }
 
 /**

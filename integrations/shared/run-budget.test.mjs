@@ -80,7 +80,7 @@ test("review: each submit tells the binary the run's own tokens, not the session
   const before = run.calls.indexOf(/** @type {NonNullable<typeof submit>} */ (submit))
   assert.match(
     String(submit?.prompt),
-    new RegExp(`--output-tokens ${String(before * CALL_SPEND)} --output-tokens-scope turn-delta$`, 'm'),
+    new RegExp(`--output-tokens ${String(before * CALL_SPEND)} --output-tokens-scope turn-delta --paged$`, 'm'),
     'the calls dispatched before it, nothing of the session before the run',
   )
 })

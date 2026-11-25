@@ -56,7 +56,7 @@ export function commandOutput(got) {
   const refused = harnessRefusal(got)
   if (refused)
     return { error: `the harness's permission check refused the command, not craft: ${refused.command || 'it quoted none'}`, harness: refused.command }
-  if (!isObject(got) || typeof got['stdout'] !== 'string') return { error: NO_OUTPUT }
+  if (!isObject(got) || typeof got['stdout'] !== 'string') return { error: unread(got) }
   if (got['exitCode'] !== 0)
     return {
       error: `the command exited ${String(got['exitCode'])}: ${String(got['stderr'] ?? '')
@@ -65,6 +65,15 @@ export function commandOutput(got) {
     }
   return { stdout: got['stdout'] }
 }
+
+/**
+ * Why an answer carries no command output: a paged step whose pages could not all be read
+ * (integrations/shared/cli-review-paged.mjs), or none at all. @param {unknown} got @returns {string}
+ */
+const unread = got => (isObject(got) && typeof got['cut'] === 'string' ? `${UNREAD_WHOLE}: ${got['cut']}` : NO_OUTPUT)
+
+/** Why a paged step's answer carries no output: its pages could not all be read (integrations/shared/cli-review-paged.mjs). */
+export const UNREAD_WHOLE = "the command's output could not be read whole"
 
 /** The exit of a `craft` command that refused an argument before any work, as clap's own usage errors exit (main.rs). */
 const ARGUMENT_REFUSED = 2
