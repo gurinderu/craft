@@ -50,7 +50,6 @@ pub struct RecallCut {
 /// The scope check by git in `repo`, as the review runs it: a record whose commit the repository
 /// lacks is missing; one whose scope `git diff --quiet` shows untouched since its commit, the
 /// working tree included, is unchanged.
-#[must_use]
 pub fn git_scope(repo: &Path) -> impl Fn(&[&PriorDecision]) -> Scope + '_ {
     move |ds| super::priors::scope_check(repo, ds)
 }

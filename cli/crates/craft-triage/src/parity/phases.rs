@@ -18,14 +18,6 @@ pub(super) fn text(args: &Js, key: &str) -> String {
         .unwrap_or_default()
 }
 
-/// A list of text, the texts of it alone.
-pub(super) fn strings(v: &Js) -> Vec<String> {
-    let all = v.as_arr().unwrap_or_default();
-    all.iter()
-        .filter_map(|x| x.as_str().map(str::to_owned))
-        .collect()
-}
-
 /// The Gather phase: each requested source's answer, and the sources that produced nothing.
 pub(super) fn gather(args: &Js, answers: &Js) -> (Vec<Gathered>, Vec<String>) {
     let (mut gathered, mut not_run) = (Vec::new(), Vec::new());

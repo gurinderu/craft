@@ -44,7 +44,8 @@ pub use rules::Covered;
 pub use source::MemorySource;
 
 pub(crate) use id::{memory_record_id, split_scope_line};
-pub(crate) use judge::{contradiction_of, contradiction_record};
+pub use judge::contradiction_of;
+pub(crate) use judge::contradiction_record;
 pub(crate) use record::scope_parts;
 
 use crate::content::ContentError;
