@@ -54,8 +54,9 @@ pub struct StartArgs {
     #[arg(long, default_value_t = 3)]
     pub full_every: u32,
     /// The agent budget of the lens rounds: a later round whose lens tasks would take them past it
-    /// is not bought, and the rounds end on what they found; when absent, twice the first round's
-    /// lens tasks a later round may send again.
+    /// is not bought, and the rounds end on what they found; when absent, the first round's lens
+    /// tasks plus those of them a later round may send again (twice the first round when every
+    /// lens may run again).
     #[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
     pub lens_agents: Option<u32>,
     /// Where the earlier runs a re-review builds on are looked for; the run directory's parent
