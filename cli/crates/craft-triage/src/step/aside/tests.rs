@@ -121,13 +121,21 @@ fn unlock(d: &tempfile::TempDir) {
 
 #[cfg(unix)]
 #[test]
-fn a_failed_save_of_the_note_fails_a_live_run_and_is_let_go_once_it_is_done() {
-    for (phase, fails) in [(Phase::Plan, true), (Phase::Done, false)] {
+fn a_failed_save_of_the_note_fails_only_while_a_pending_tasks_file_stays() {
+    let cases = [
+        (Phase::Plan, false, true),
+        (Phase::Done, false, false),
+        (Phase::Plan, true, false),
+    ];
+    for (phase, settled, fails) in cases {
         let Some((d, aside)) = locked() else { return };
         let mut s = run(phase, None);
+        if settled {
+            s.tasks[1].state = craft_step::TaskState::Failed;
+        }
         let got = set_aside(d.path(), &mut s, aside);
         unlock(&d);
-        assert_eq!(got.is_err(), fails, "{phase:?}");
+        assert_eq!(got.is_err(), fails, "{phase:?}, settled {settled}");
         assert_eq!(s.notes.len(), 1, "{phase:?}: noted all the same");
     }
 }

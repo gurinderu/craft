@@ -39,8 +39,8 @@ pub(super) fn write(dir: &Path, done: &Finished) -> Result<(), TriageError> {
     Ok(())
 }
 
-/// `done` with the host's notes on how it ran tasks weaker than asked leading its plan: a banner
-/// and a `degraded` list, so the plan never reads as a full triage that was not one. A failed
+/// `done` with the host's notes on how it ran tasks weaker than asked leading its plan: a banner,
+/// a `DEGRADED:` lead on its summary and a `degraded` list, so the plan never reads as a full triage that was not one. A failed
 /// plan (text) is left as it is; the step names the notes beside it.
 pub(super) fn with_degraded(mut done: Finished, degraded: &[String]) -> Finished {
     let Js::Obj(o) = &mut done.plan else {

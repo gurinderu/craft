@@ -10,14 +10,21 @@ use crate::TriageError;
 use crate::run::Phase;
 use crate::state::{self, TriageState};
 
+/// The task `id` while the run still waits for its answer.
+fn task_pending<'a>(s: &'a TriageState, id: &str) -> Option<&'a crate::state::Task> {
+    s.tasks
+        .iter()
+        .find(|t| t.id == id)
+        .filter(|t| s.phase != Phase::Done && t.pending())
+}
+
+fn pending(s: &TriageState, id: &str) -> bool {
+    task_pending(s, id).is_some()
+}
+
 /// The note on a refused answer file `u` left in place, saying what its next read does.
 fn unmoved_note(s: &TriageState, u: &Unmoved) -> String {
-    let pending = s
-        .tasks
-        .iter()
-        .find(|t| t.id == u.id)
-        .filter(|t| s.phase != Phase::Done && t.pending());
-    let then = match pending {
+    let then = match task_pending(s, &u.id) {
         None => "its task is settled, so it stays there",
         Some(_) if !u.known => "read again, it is taken as a new answer",
         Some(t) if t.counted.as_ref().is_some_and(|c| c.again) => {
@@ -34,12 +41,12 @@ fn unmoved_note(s: &TriageState, u: &Unmoved) -> String {
     )
 }
 
-/// Moves the refused answers aside, notes each it could not move and saves the run again. Once the
-/// run is done the note is information alone: a failed save of it is let go, so the finished step
-/// is still returned.
+/// Moves the refused answers aside, notes each it could not move and saves the run again. Where
+/// only settled tasks' files stay, or the run is done, the note is information alone: a failed save
+/// of it is let go, so the step is still returned.
 ///
 /// # Errors
-/// When that save fails while the run goes on.
+/// When that save fails while a pending task's file stays in place.
 pub(super) fn set_aside(dir: &Path, s: &mut TriageState, aside: Aside) -> Result<(), TriageError> {
     let unmoved = aside.apply();
     if unmoved.is_empty() {
@@ -47,8 +54,10 @@ pub(super) fn set_aside(dir: &Path, s: &mut TriageState, aside: Aside) -> Result
     }
     let notes: Vec<String> = unmoved.iter().map(|u| unmoved_note(s, u)).collect();
     take::note(&mut s.notes, &notes);
+    // Only a pending task's file read again matters to what comes next.
+    let goes_on = unmoved.iter().any(|u| pending(s, &u.id));
     match state::save(dir, s) {
-        Err(e) if s.phase != Phase::Done => Err(e.into()),
+        Err(e) if goes_on => Err(e.into()),
         Ok(()) | Err(_) => Ok(()),
     }
 }
