@@ -142,3 +142,7 @@ PR's own OpenCode configuration and plugins, so its code runs even with `--no-ga
 The full catalogue, what each hook says and when, how the workflows run and how the repository is laid out:
 [MAP.md](https://github.com/gurinderu/craft/blob/main/MAP.md). The run records the workflows write: [docs/observability.md](https://github.com/gurinderu/craft/blob/main/docs/observability.md). Working on
 craft itself: [AGENTS.md](https://github.com/gurinderu/craft/blob/main/AGENTS.md).
+
+## License
+
+MIT — see [LICENSE](https://github.com/gurinderu/craft/blob/main/LICENSE).
