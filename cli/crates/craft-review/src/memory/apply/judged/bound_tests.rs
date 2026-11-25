@@ -58,3 +58,37 @@ fn past_the_bound_a_high_no_human_decided_goes_after_the_pairs_a_record_can_set_
     assert_eq!(pairs.len(), PAIRS_MAX);
     assert!(!pairs.contains(&(high, 1)), "{pairs:?}");
 }
+
+/// The refusal naming the pairs past the bound when `focus` names the reviewed paths, or none.
+fn cut_refusal(focus: &[String]) -> String {
+    let findings: Vec<Value> = (0..=PAIRS_MAX)
+        .map(|i| finding(i, "src/g.rs", "Medium"))
+        .collect();
+    let ds = [record("decision-g", "src/g.rs", "agent")];
+    let plans: Vec<Plan> = (0..findings.len())
+        .map(|_| Plan {
+            sure: None,
+            disputed: vec![0],
+        })
+        .collect();
+    let a = Asked::new(&findings, &ds, &plans, &|_, _| false, focus);
+    let m = super::matched(&findings, &ds, &plans, &a, None);
+    m.refused
+        .into_iter()
+        .find(|r| r.contains("past the judge's bound"))
+        .unwrap()
+}
+
+#[test]
+fn past_the_bound_a_run_given_no_reviewed_paths_says_so_and_one_given_them_names_them() {
+    let pathless = cut_refusal(&[]);
+    assert!(
+        pathless.contains("not judged — no reviewed paths are given here, so judged first were the pairs whose record"),
+        "{pathless}"
+    );
+    let paths = cut_refusal(&["src/g.rs".to_owned()]);
+    assert!(
+        paths.contains("not judged — judged first were the findings on the reviewed paths and the priors re-adjudicated"),
+        "{paths}"
+    );
+}

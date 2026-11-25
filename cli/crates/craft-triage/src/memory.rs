@@ -23,6 +23,20 @@ pub use value::as_values;
 
 /// The field of a gathered finding the memory's marks and notes are appended to.
 pub const NOTE: &str = "memoryNote";
+/// Why a batch whose findings name no file asks no recall: only the launcher's records apply.
+pub const NOT_RECALLED: &str = "not recalled — no gathered finding names a file";
+
+/// The files the recall is asked about: each kept finding's, once, in the batch's order.
+#[must_use]
+pub fn recall_paths(kept: &[Sifted]) -> Vec<String> {
+    let mut paths: Vec<String> = Vec::new();
+    for f in kept.iter().map(|s| s.file.to_utf8_lossy()) {
+        if !f.is_empty() && !paths.contains(&f) {
+            paths.push(f);
+        }
+    }
+    paths
+}
 
 /// The batch once the memory sifted it: the findings left for the validators, the ledger rows of
 /// everything it settled, and what the plan and the run record say of it.

@@ -52,17 +52,18 @@ fn the_validators_asked_and_the_plan_agents_blocks_are_the_engines() {
             got_asked, asked,
             "{name}: the findings a validator was asked about"
         );
-        for s in got.noted() {
-            let prompt = scripted
-                .get(&s.stable_id)
-                .and_then(Js::as_str)
-                .unwrap_or("");
-            let note = s.memory_note.to_utf8_lossy();
-            let mark = note.trim_start_matches([' ', '·']);
-            assert!(
-                prompt.contains(mark),
-                "{name}: the validator of {:?} reads {mark:?}",
-                s.stable_id
+        for (id, prompt) in scripted.iter() {
+            let prompt = prompt.as_str().unwrap_or("");
+            let note = got
+                .noted()
+                .find(|s| s.stable_id == *id)
+                .map(|s| s.memory_note.to_utf8_lossy());
+            let line =
+                note.map(|n| format!("- project memory: {} —", n.trim_start_matches([' ', '·'])));
+            assert_eq!(
+                line.as_ref().is_some_and(|l| prompt.contains(l.as_str())),
+                prompt.contains("- project memory: "),
+                "{name}: the validator of {id:?} reads the memory's note as the engine's does ({line:?})"
             );
         }
         let rows =

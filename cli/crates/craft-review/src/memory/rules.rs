@@ -63,9 +63,16 @@ pub(super) struct Pairs {
     superseded: Vec<String>,
     /// Every candidate pair as (finding, rule) indices, ranked: those past [`SENT_MAX`] are cut.
     pairs: Vec<(usize, usize)>,
+    /// No reviewed paths were given to rank by.
+    pathless: bool,
 }
 
 impl Pairs {
+    /// Whether no reviewed paths were given to rank the pairs by.
+    pub(super) fn pathless(&self) -> bool {
+        self.pathless
+    }
+
     /// Every candidate pair as (finding, rule) indices, ranked.
     pub(super) fn pairs(&self) -> &[(usize, usize)] {
         &self.pairs
@@ -119,6 +126,7 @@ impl Pairs {
             rules,
             superseded: gone.iter().map(|d| d.id.clone()).collect(),
             pairs,
+            pathless: focus.is_empty(),
         }
     }
 

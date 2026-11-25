@@ -88,3 +88,26 @@ fn a_fields_ceiling_counts_utf16_units_as_javascript_does() {
         "{why}"
     );
 }
+
+/// The refusal of the records past the cap of a list of 101 read with the reviewed `paths`.
+fn cap_refusal(paths: &[String]) -> String {
+    let list: Vec<Value> = (0..101)
+        .map(|i| json!({"id": format!("decision-{i:010}"), "kind": "decision", "title": format!("t{i}"), "body": "b", "scope": "src", "status": "active"}))
+        .collect();
+    let p = parse(Some(&Value::Array(list)), paths, &plain_label);
+    p.refused
+        .into_iter()
+        .find(|r| r.contains("past the cap"))
+        .unwrap()
+}
+
+#[test]
+fn past_the_cap_a_list_read_with_no_reviewed_paths_says_how_it_kept_them() {
+    assert!(cap_refusal(&[]).contains(
+        "not applied — no reviewed paths are given here, so kept are the records with a scope"
+    ));
+    assert!(
+        cap_refusal(&["src/a.rs".to_owned()])
+            .contains("not applied — kept are the records closest to the reviewed paths")
+    );
+}

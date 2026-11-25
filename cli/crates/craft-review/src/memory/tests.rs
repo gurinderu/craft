@@ -196,7 +196,7 @@ fn a_list_past_the_cap_names_what_it_did_not_apply() {
     assert_eq!(
         p.refused,
         [
-            "2 decision(s) past the cap of 100 were not applied — kept are the records closest to the reviewed paths (a scope naming a changed file, then a directory holding one, a deeper scope before a shallower, a newer record before an older); to apply the rest, review a narrower path (path=<dir>) or supersede the records that no longer hold; findings they would answer are raised normally: decision #100 (decision-100), decision #101 (decision-101)"
+            "2 decision(s) past the cap of 100 were not applied — no reviewed paths are given here, so kept are the records with a scope before those over the whole repository, a deeper scope before a shallower, a newer record before an older; to apply the rest, review a narrower path (path=<dir>) or supersede the records that no longer hold; findings they would answer are raised normally: decision #100 (decision-100), decision #101 (decision-101)"
         ]
     );
 }

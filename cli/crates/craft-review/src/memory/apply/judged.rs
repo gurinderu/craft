@@ -19,6 +19,8 @@ mod bound_tests;
 const FALLBACK: &str = "not matched unless a near-verbatim title answers them (for a tool finding naming no rule only a tool record with the same title, near its line when lines compare), the rest raised normally";
 /// How the pairs the judge saw were chosen past its bound, and how to need it less.
 const CUT_HOW: &str = "judged first were the findings on the reviewed paths and the priors re-adjudicated, then the pairs whose record can set the finding aside (a Medium or Low finding, or a High a human's decision answers) before those its severity raises again whatever the record says (a Critical, or a High no human decided), then each finding's closest record before any finding's second, severity ordering the findings within each of those; to need the judge less, record decisions with the finding's file as scope, its line and its lens (they then match outright), or review a narrower path (path=<dir>)";
+/// The same, for a run given no reviewed paths (triage): the pairs ranked by the records alone.
+const CUT_HOW_PATHLESS: &str = "no reviewed paths are given here, so judged first were the pairs whose record can set the finding aside (a Medium or Low finding, or a High a human's decision answers) before those its severity raises again whatever the record says (a Critical, or a High no human decided), then each finding's closest record before any finding's second, severity ordering the findings within each of those; to need the judge less, record decisions with the finding's file as scope, its line and its lens (they then match outright), or review a narrower path (path=<dir>)";
 
 /// The pairs the judge is asked about, as (finding, record) indices: the candidates first, ranked
 /// and cut at the bound, then the re-raised outright matches in the room left.
@@ -30,6 +32,8 @@ pub(in crate::memory) struct Asked {
     /// How many of `pairs` are candidates.
     disputed: usize,
     notes: Vec<String>,
+    /// No reviewed paths were given to rank by.
+    pathless: bool,
 }
 
 impl Asked {
@@ -80,6 +84,7 @@ impl Asked {
             pairs,
             disputed: sent,
             notes,
+            pathless: focus.is_empty(),
         }
     }
 }
@@ -171,7 +176,12 @@ pub(in crate::memory) fn matched(
             .iter()
             .filter_map(|&(fi, di)| Some(cut_name(findings.get(fi)?, ds.get(di)?)))
             .collect();
-        out.refused.push(format!("{} disputed record–finding pair(s) past the judge's bound of {PAIRS_MAX} were not judged — {CUT_HOW}; {FALLBACK}: {}", cut.len(), named(&names)));
+        let how = if asked.pathless {
+            CUT_HOW_PATHLESS
+        } else {
+            CUT_HOW
+        };
+        out.refused.push(format!("{} disputed record–finding pair(s) past the judge's bound of {PAIRS_MAX} were not judged — {how}; {FALLBACK}: {}", cut.len(), named(&names)));
     }
     let v = if asked.pairs.is_empty() {
         BTreeMap::new()

@@ -7,7 +7,7 @@ use craft_store::js::Js;
 use serde_json::Value;
 
 use crate::field::At;
-use crate::memory::{NOTE, Settled, as_values, settled};
+use crate::memory::{NOT_RECALLED, NOTE, Settled, as_values, recall_paths, settled};
 use crate::sift::Sifted;
 
 /// The recall's answer when a case scripts none: read, nothing recalled (the test's `MEMORY`).
@@ -19,11 +19,12 @@ fn plain(v: &Js) -> Option<Value> {
 }
 
 /// What the case's scope check saw: the ids it names unchanged, and those it names missing among
-/// the records it was handed (`readScopeCheck`); a dead one, nothing.
+/// the records it was handed (`readScopeCheck`); a dead one, or one whose `unchanged` is no list,
+/// nothing.
 fn scope_seen(answer: Option<&Value>, ds: &[&PriorDecision]) -> Scope {
+    let read = answer.filter(|a| a.get("unchanged").is_some_and(Value::is_array));
     let named = |k: &str, id: &str| {
-        answer
-            .and_then(|a| a.get(k))
+        read.and_then(|a| a.get(k))
             .and_then(Value::as_array)
             .is_some_and(|l| l.iter().any(|x| x == id))
     };
@@ -43,14 +44,9 @@ fn scope_seen(answer: Option<&Value>, ds: &[&PriorDecision]) -> Scope {
 pub(super) fn sift(args: &Js, answers: &Js, base: &str, kept: &[Sifted]) -> (Memory, Settled) {
     let passed = plain(args.at("priorDecisions")).map(Ok);
     let mut memory = Memory::open(passed);
-    let mut paths: Vec<String> = Vec::new();
-    for f in kept.iter().map(|s| s.file.to_utf8_lossy()) {
-        if !f.is_empty() && !paths.contains(&f) {
-            paths.push(f);
-        }
-    }
+    let paths = recall_paths(kept);
     if paths.is_empty() {
-        memory.not_recalled("not recalled — no gathered finding names a file");
+        memory.not_recalled(NOT_RECALLED);
     } else {
         let (_, cut) = Memory::recall_ask(&paths, base).unwrap();
         let answer = plain(answers.at("memoryRecall"))
