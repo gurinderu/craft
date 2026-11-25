@@ -239,3 +239,18 @@ fn the_critic_never_admits_a_lens_with_nothing_to_read() {
         "once, and nothing for a name that is no lens"
     );
 }
+
+#[test]
+fn a_lens_the_reviewers_profile_turned_off_is_no_candidate_for_the_critic() {
+    let rust = Profile::rust().unwrap();
+    let mut p = plan("large", false, &["errors"], &[]);
+    let on: crate::plan::Plan = serde_json::from_value(p.clone()).unwrap();
+    assert!(
+        super::candidates(&rust, &on, true, &["src/lib.rs".to_owned()])
+            .contains(&"money".to_owned())
+    );
+    p["profileOff"] = json!(["money"]);
+    let off: crate::plan::Plan = serde_json::from_value(p).unwrap();
+    let named = super::candidates(&rust, &off, true, &["src/lib.rs".to_owned()]);
+    assert!(!named.contains(&"money".to_owned()), "{named:?}");
+}

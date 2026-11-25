@@ -36,6 +36,7 @@ fn a_lens_turned_off_or_held_is_kept_by_its_qualified_name() {
         "{line}"
     );
     assert_eq!(Composition::default().line(), None);
+    assert!(Composition::default().is_empty() && !c.is_empty());
 }
 
 #[test]
@@ -70,11 +71,10 @@ fn a_name_that_is_no_profiles_lens_is_refused() {
             .unwrap_err()
             .contains("no such lens")
     );
-    assert!(
-        of(&[("money", State::Off)])
-            .unwrap_err()
-            .contains("profile:lens")
-    );
+    for bad in ["money", "rust:", ":money"] {
+        let e = of(&[(bad, State::Off)]).unwrap_err();
+        assert!(e.contains("profile:lens"), "{bad}: {e}");
+    }
     assert!(
         of(&[("nope:money", State::Off)])
             .unwrap_err()
