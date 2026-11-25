@@ -2,23 +2,19 @@
 //! `integrations/shared/triage-parity.test.mjs` writes by running `triage-findings.js` with the
 //! case's scripted answers.
 //!
-//! Replayed here through this crate's functions, the same gathered findings, prior ledger and
-//! answers give the same verdicts and settled rows handed to the plan agent, the same record and
-//! the same plan — compared as JSON text, so a key out of the engine's order fails as surely as a
-//! wrong value. The memory — the launcher's records, the recall, its line and degraded notes, the
-//! decisions and rules it sifts by — is the review's, replayed through its open API with the
-//! scope check and the judges answered as the case scripts them; only the craft version is read
-//! from the expected side (realm @nick/craft, node #629).
+//! The run ([`crate::run`]) is driven here by the same arguments and answers — the scope check and
+//! the memory's judges answered as the case scripts them — and gives the same prompts to every
+//! agent, the same record and the same plan, compared as text, so a key out of the engine's order
+//! fails as surely as a wrong value. Only the craft version is read from the expected side (realm
+//! @nick/craft, node #629).
 
-mod memory;
-mod phases;
-mod prompts;
-mod replay;
+mod answers;
 
-use craft_store::js::{Js, JsString};
+use craft_store::js::Js;
 
 use crate::field::At;
-use replay::Replay;
+use crate::run::{Ask, Phase, Progress, run};
+use answers::{CaseAnswers, args_of};
 
 const CASES: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -36,59 +32,68 @@ fn text(v: &Js) -> String {
     v.compact()
 }
 
+/// The asks of `phase` when the case's answers to it are held back.
+fn asks_of(case: &Js, phase: Phase) -> Vec<Ask> {
+    let a = CaseAnswers::new(case, Some(phase));
+    match run(&args_of(case), &a, &|ds| a.scope(ds)).unwrap() {
+        Progress::Asks(p, asks) if p == phase => asks,
+        other @ (Progress::Asks(..) | Progress::Done(_)) => panic!(
+            "{}: {phase:?} was not asked: {other:?}",
+            text(case.at("name"))
+        ),
+    }
+}
+
+/// The prompts the engine dispatched under `key` (`gather`, `validate`), by their key.
+fn dispatched<'a>(case: &'a Js, key: &str) -> Vec<(String, &'a str)> {
+    let o = case.at("expected").at("prompts").at(key).as_obj().unwrap();
+    o.iter()
+        .map(|(k, v)| (k.to_utf8_lossy(), v.as_str().unwrap()))
+        .collect()
+}
+
 #[test]
-fn the_validators_asked_and_the_plan_agents_blocks_are_the_engines() {
+fn every_prompt_a_case_dispatched_is_the_engines() {
     for case in cases() {
-        let (name, want, got) = (
-            text(case.at("name")),
-            case.at("expected"),
-            Replay::of(&case),
-        );
-        let scripted = want.at("prompts").at("validate").as_obj().unwrap();
-        let mut asked: Vec<&JsString> = scripted.iter().map(|(k, _)| k).collect();
-        asked.sort_unstable();
-        let mut got_asked: Vec<&JsString> = got.asked.iter().collect();
-        got_asked.sort_unstable();
+        let name = text(case.at("name"));
+        let gathered: Vec<(String, String)> = asks_of(&case, Phase::Gather)
+            .into_iter()
+            .map(|a| (a.label, a.prompt))
+            .collect();
+        let want: Vec<(String, String)> = dispatched(&case, "gather")
+            .into_iter()
+            .map(|(k, v)| (k, v.to_owned()))
+            .collect();
+        assert_eq!(gathered, want, "{name}: the gatherers");
+        let mut validated: Vec<(String, String)> =
+            match case.at("expected").at("prompts").at("validate").as_obj() {
+                Some(o) if o.is_empty() => Vec::new(),
+                _ => asks_of(&case, Phase::Validate)
+                    .into_iter()
+                    .map(|a| {
+                        let crate::kind::TriageKind::Validate { id } = a.kind else {
+                            panic!("{name}: {:?} among the validators", a.kind);
+                        };
+                        (id, a.prompt)
+                    })
+                    .collect(),
+            };
+        let mut want: Vec<(String, String)> = dispatched(&case, "validate")
+            .into_iter()
+            .map(|(k, v)| (k, v.to_owned()))
+            .collect();
+        validated.sort();
+        want.sort();
         assert_eq!(
-            got_asked, asked,
-            "{name}: the findings a validator was asked about"
+            validated, want,
+            "{name}: the validators asked and their prompts"
         );
-        for (id, prompt) in scripted.iter() {
-            let prompt = prompt.as_str().unwrap_or("");
-            let note = got
-                .noted()
-                .find(|s| s.stable_id == *id)
-                .map(|s| s.memory_note.to_utf8_lossy());
-            let line =
-                note.map(|n| format!("- project memory: {} —", n.trim_start_matches([' ', '·'])));
-            assert_eq!(
-                line.is_some(),
-                prompt.contains("- project memory: "),
-                "{name}: the validator of {id:?} has a memory note exactly when the engine's does"
-            );
-            if let Some(l) = &line {
-                assert!(
-                    prompt.contains(l.as_str()),
-                    "{name}: the validator of {id:?} reads {l:?}"
-                );
-            }
-        }
-        let rows =
-            |r: &[crate::ledger::Row]| text(&Js::Arr(r.iter().cloned().map(Js::from).collect()));
+        let plan = asks_of(&case, Phase::Plan);
+        let want = case.at("expected").at("prompts").at("plan").as_str();
         assert_eq!(
-            rows(&got.validations),
-            text(want.at("validations")),
-            "{name}: the verdicts"
-        );
-        assert_eq!(
-            rows(&got.sifted),
-            text(want.at("sifted")),
-            "{name}: the rows settled before validation"
-        );
-        assert_eq!(
-            text(&got.accepted()),
-            text(want.at("accepted")),
-            "{name}: the accepted findings"
+            plan.first().map(|a| a.prompt.as_str()),
+            want,
+            "{name}: the plan agent"
         );
     }
 }
@@ -97,8 +102,15 @@ fn the_validators_asked_and_the_plan_agents_blocks_are_the_engines() {
 fn the_record_and_the_plan_are_the_engines_to_the_byte() {
     for case in cases() {
         let (name, want) = (text(case.at("name")), case.at("expected"));
-        let (record, plan) = Replay::of(&case).finish(case.at("answers").at("plan"), want);
-        assert_eq!(text(&record), text(want.at("record")), "{name}: the record");
-        assert_eq!(text(&plan), text(want.at("plan")), "{name}: the plan");
+        let a = CaseAnswers::new(&case, None);
+        let Progress::Done(done) = run(&args_of(&case), &a, &|ds| a.scope(ds)).unwrap() else {
+            panic!("{name}: the run did not finish");
+        };
+        assert_eq!(
+            text(&done.record),
+            text(want.at("record")),
+            "{name}: the record"
+        );
+        assert_eq!(text(&done.plan), text(want.at("plan")), "{name}: the plan");
     }
 }

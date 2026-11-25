@@ -16,6 +16,7 @@ pub mod banner;
 pub mod field;
 pub mod finding;
 pub mod issue;
+pub mod kind;
 pub mod ledger;
 pub mod memory;
 pub mod noise;
@@ -25,6 +26,7 @@ pub mod pinned;
 pub mod prior;
 pub mod prompts;
 pub mod record;
+pub mod run;
 pub mod sift;
 
 /// Why an agent's answer could not be read as the triage needs it.
@@ -33,4 +35,7 @@ pub enum TriageError {
     /// The answer is not the shape its schema promises.
     #[error("{what} is not the answer its schema promises: {why}")]
     Answer { what: String, why: String },
+    /// A prompt or schema of the triage's content could not be rendered.
+    #[error(transparent)]
+    Content(#[from] craft_review::content::ContentError),
 }
