@@ -125,8 +125,9 @@ const changeKept = o => ({ base: o.base ?? '', path: o.path ?? '' })
 const hostOf = r => r || 'claude-code'
 
 // The order the engines set a memory source's keys in (`readMemoryRecall`, `acceptedMemory`, `withPassed`, `withDerived`
-// in integrations/shared/memory-recall.mjs): a record keeps it whatever order the binary's step gave them, as the Rust writer
-// does (cli/crates/craft-store/src/memory.rs; realm @nick/craft, node #250).
+// in integrations/shared/memory-recall.mjs, then a launcher's degraded recall as rust-audit notes it): a record keeps it
+// whatever order the binary's step gave them, as the Rust writer does (cli/crates/craft-store/src/memory.rs; realm
+// @nick/craft, node #250).
 const MEMORY_ORDER = [
   'source',
   'count',
@@ -141,6 +142,7 @@ const MEMORY_ORDER = [
   'passed',
   'added',
   'derived',
+  'recallDegraded',
 ]
 
 /**

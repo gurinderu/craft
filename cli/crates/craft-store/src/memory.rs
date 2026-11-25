@@ -5,8 +5,9 @@
 use crate::js::{Js, Obj};
 
 /// The order the engines' memory source holds its keys in, as `readMemoryRecall` sets them and
-/// `acceptedMemory`, `withPassed` and `withDerived` add theirs after (the kinds re-added last).
-const ORDER: [&str; 13] = [
+/// `acceptedMemory`, `withPassed` and `withDerived` add theirs after (the kinds re-added last),
+/// then a launcher's degraded recall as `rust-audit` notes it.
+const ORDER: [&str; 14] = [
     "source",
     "count",
     "why",
@@ -20,6 +21,7 @@ const ORDER: [&str; 13] = [
     "passed",
     "added",
     "derived",
+    "recallDegraded",
 ];
 
 /// `memory` with its keys in the engines' order, any other after them in the order they came.
@@ -65,8 +67,9 @@ mod tests {
     #[test]
     fn every_key_the_engines_set_takes_its_place() {
         // Every key the order names, at once: no one run carries them all (a dead recall has no
-        // backend), but each takes the place the engines give it.
-        let want = r#"{"source":"recalled","count":3,"why":"w","recallDied":"d","backend":"repo","externals":1,"queryError":"q","truncated":"t","questions":1,"rules":1,"passed":2,"added":1,"derived":1}"#;
+        // backend), but each takes the place the engines give it. `alpha` sorts before the last
+        // keys, so one of them missing from the order would land after it.
+        let want = r#"{"source":"recalled","count":3,"why":"w","recallDied":"d","backend":"repo","externals":1,"queryError":"q","truncated":"t","questions":1,"rules":1,"passed":2,"added":1,"derived":1,"recallDegraded":"g","alpha":0}"#;
         let Js::Obj(o) = parse(want).unwrap() else {
             panic!()
         };
@@ -82,5 +85,17 @@ mod tests {
             "the input arrives out of order"
         );
         assert_eq!(Js::Obj(ordered(&sorted)).compact(), want);
+    }
+
+    #[test]
+    fn a_memory_that_is_not_an_object_is_kept_as_null() {
+        for v in [
+            None,
+            Some(Js::str("x")),
+            Some(parse("[1]").unwrap()),
+            Some(Js::Null),
+        ] {
+            assert_eq!(super::field(v.as_ref()), Js::Null, "{v:?}");
+        }
     }
 }

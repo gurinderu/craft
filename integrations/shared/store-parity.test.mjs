@@ -64,13 +64,15 @@ const STEP = {
   // Sorted, as the binary's step carries it (serde): both writers put the engines' order back (realm @nick/craft, node #250).
   memory: {
     added: 1,
+    alpha: 0,
     backend: 'repo',
     count: 2,
-    externals: 1,
     derived: 1,
+    externals: 1,
     passed: 1,
-    questions: 1,
     queryError: 'q',
+    questions: 1,
+    recallDegraded: 'g',
     recallDied: 'd',
     rules: 1,
     source: 'recalled',
