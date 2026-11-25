@@ -99,6 +99,8 @@ jobs:
 
   # Exercise native process identity and both writer boundaries on the operating systems whose
   # Node writer uses the craft helper (realm @nick/craft, #563); cross-compilation is not execution.
+  # Since the release-target builds left the pull request (#671), this is also the only compile macOS and Windows
+  # get on an ordinary one: narrowing it removes that.
   store-native:
     strategy:
       fail-fast: false

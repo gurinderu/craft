@@ -10,7 +10,35 @@ permissions:
   pull-requests: write
 
 jobs:
+  # No release is cut over targets that were not built (realm @nick/craft, #671). A pull request no longer builds the
+  # release targets, and release-please's own PR gets no CI at all, so the guard is here: while a merged release PR
+  # awaits its release, the pushed commit or the one this push started from must have a green native-builds run. Without one the job
+  # fails, release-please does not run and no tag is cut: wait for native-builds on main (or run it by hand,
+  # `gh workflow run native-builds.yml --ref main`), then re-run this workflow. A push with no release pending
+  # passes at once.
+  targets-built:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+    steps:
+      - name: a pending release needs main's targets built
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          pending="$(gh pr list --repo "$GITHUB_REPOSITORY" --state merged --label "autorelease: pending" --json number --jq length)"
+          if [ "$pending" = 0 ]; then echo "no merged release PR awaits its release"; exit 0; fi
+          for sha in "$GITHUB_SHA" "$BEFORE"; do
+            green="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/native-builds.yml/runs?head_sha=$sha&per_page=50" --jq '[.workflow_runs[] | select(.conclusion == "success")] | length')"
+            if [ "$green" -gt 0 ]; then echo "native-builds is green for $sha"; exit 0; fi
+          done
+          echo "::error::a release is pending and native-builds has no green run for $GITHUB_SHA (this push) or $BEFORE (the commit it started from): no release is cut. Wait for it on main or run it by hand, then re-run this workflow."
+          exit 1
+
   release-please:
+    needs: targets-built
     runs-on: ubuntu-latest
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
