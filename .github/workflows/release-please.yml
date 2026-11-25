@@ -33,8 +33,9 @@ jobs:
   # musl the guard compares the target with its gnu twin. The C the build compiles (tree-sitter's runtime and its
   # Rust grammar, through `cc`, for the consumers list's structural search) needs a musl C compiler: the runner's own
   # gcc builds against glibc's headers. Each Linux runner is native to its arch, so musl-tools' `musl-gcc` is
-  # that compiler for both, no cross toolchain; Rust still links with its self-contained musl runtime. ci.yml's
-  # rust job builds the x86_64 musl target the same way on every PR. Windows is a tar.gz too: craft-bin
+  # that compiler for both, no cross toolchain; Rust still links with its self-contained musl runtime.
+  # native-builds.yml builds every target the same way on each push to main and on a pull request that touches the
+  # build's inputs (realm @nick/craft, #671). Windows is a tar.gz too: craft-bin
   # unpacks it with the tar.exe Windows 10 and later ship; every step runs in bash (Git Bash on the Windows runner).
   cli-binaries:
     needs: release-please

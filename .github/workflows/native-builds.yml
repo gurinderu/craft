@@ -1,0 +1,74 @@
+name: native-builds
+
+# The release's binaries, built as release-please.yml's cli-binaries job builds them, and the native external-discovery
+# tests on each target: the embedded regexp engine must build and run on every release target (realm @nick/craft, #574).
+# Not on every pull request (realm @nick/craft, #671): on each push to main, and on a pull request that touches what a
+# target's build rests on — the manifests and the lock, the toolchain, the discovery code these tests run, this
+# workflow and the release's. Any other pull request still compiles the workspace on macOS and Windows in ci.yml's
+# store-native job (a debug build). A target broken by a change the paths did not catch shows on main after the merge;
+# release-please's PR gets no CI of its own, so it merges only on a green main.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - cli/**/Cargo.toml
+      - cli/Cargo.lock
+      - cli/rust-toolchain.toml
+      - cli/crates/craft-review/src/externals.rs
+      - cli/crates/craft-review/src/externals/**
+      - .github/workflows/native-builds.yml
+      - .github/workflows/release-please.yml
+
+jobs:
+  # The same five runners as the release. Linux is static musl, its C (tree-sitter) compiled by musl-tools' musl-gcc,
+  # so a C build that fails is seen here, not at the release.
+  init-native:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            runner: ubuntu-latest
+          - target: aarch64-unknown-linux-musl
+            runner: ubuntu-24.04-arm
+          - target: aarch64-apple-darwin
+            runner: macos-15
+          - target: x86_64-apple-darwin
+            runner: macos-15-intel
+          - target: x86_64-pc-windows-msvc
+            runner: windows-latest
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: cli
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.99.0
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: cli
+          key: init-${{ matrix.target }}
+      - name: host is the matrix target
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          host="$(rustc -vV | sed -n 's/^host: //p')"
+          want="$TARGET"
+          case "$TARGET" in *-linux-musl) want="${TARGET%-musl}-gnu" ;; esac
+          [ "$host" = "$want" ] || { echo "::error::runner host $host is not $want (for $TARGET)"; exit 1; }
+      - name: musl C compiler
+        if: ${{ endsWith(matrix.target, '-linux-musl') }}
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: Release build and native external discovery tests
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          case "$TARGET" in
+            *-linux-musl) export "CC_$(echo "$TARGET" | tr - _)=musl-gcc" ;;
+          esac
+          cargo build --release --locked --target "$TARGET"
+          cargo test --release --locked -p craft-review --target "$TARGET" externals

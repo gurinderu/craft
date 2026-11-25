@@ -423,7 +423,9 @@ cached-binary queries on macOS/Windows); `tests/lock_interop.rs` exercises both 
 The toolchain is pinned in `cli/rust-toolchain.toml`;
 CI's `rust` job runs `cargo fmt --check`, `cargo clippy` at zero warnings and `cargo test`, and checks that the
 parity files the CLI owns (`verify-cases.json`, `plan-cases.json`, `prompt-cases.json`) regenerate unchanged, apart
-from `npm run gate`. The CLI's version is the plugin's: release-please moves `cli/Cargo.toml` and
+from `npm run gate`. The release build for each of the release's five targets, with the native external-discovery
+tests on it, is `.github/workflows/native-builds.yml`'s `init-native` job: on each push to main and on a pull request
+that touches the build's inputs, not on every pull request. The CLI's version is the plugin's: release-please moves `cli/Cargo.toml` and
 `cli/Cargo.lock` with the manifest, and its `cli-binaries` job attaches `craft-<target>.tar.gz` (the
 binary at the archive root, `craft.exe` for Windows) and its `.sha256` to each release for Linux and macOS on x64
 and arm64 and Windows on x64; `sh integrations/shared/craft-cli.sh --ensure --print-path` fetches the one for this platform and version into
