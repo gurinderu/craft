@@ -122,10 +122,10 @@ mod tests {
 
     #[test]
     fn a_validators_label_is_its_site_cut_at_forty_units_else_its_title() {
-        let long = format!("src/{}.rs:7", "é".repeat(50));
+        // Each 😀 is two UTF-16 units: forty units are `src/` and eighteen of them.
+        let long = format!("src/{}.rs:7", "😀".repeat(30));
         let a = ask(&Args::default(), 3, &sifted(&long, "t")).unwrap();
-        let head: String = long.chars().take(40).collect();
-        assert_eq!(a.label, format!("validate:{head}"));
+        assert_eq!(a.label, format!("validate:src/{}", "😀".repeat(18)));
         assert_eq!(a.id, "validate-3");
         let b = ask(&Args::default(), 0, &sifted("", "a title")).unwrap();
         assert_eq!(b.label, "validate:a title");

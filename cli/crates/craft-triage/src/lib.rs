@@ -70,6 +70,12 @@ pub enum TriageError {
     Done(std::path::PathBuf),
     #[error("answer for {0}, which is no pending task of this triage")]
     UnknownTask(String),
+    /// An argument the triage refuses before any agent.
+    #[error("{0}")]
+    Refused(String),
+    /// The finished plan holds text JSON cannot carry.
+    #[error("the finished plan cannot be given as JSON: {0}")]
+    PlanNotJson(String),
     /// The run asked again only agents it had asked: a defect, never a loop.
     #[error("the triage's {0:?} phase asked no agent it had not asked before")]
     Stuck(run::Phase),

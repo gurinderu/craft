@@ -2,14 +2,16 @@
 //! every task it handed out with what its answer said, and the scopes git observed for the
 //! memory's records. Nothing derived is kept: each step derives it again ([`crate::run`]).
 
-use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use craft_review::memory::{PriorDecision, Scope, git_scope};
 use serde::{Deserialize, Serialize};
 
 use crate::kind::TriageKind;
 use crate::run::{Args, Phase};
+
+mod seen;
+
+pub use seen::Seen;
 
 /// The state file's format; a run another format wrote is refused, not misread.
 pub const STATE_VERSION: u32 = 1;
@@ -47,43 +49,6 @@ pub enum StateError {
     },
 }
 
-/// What git observed of the records' scopes, each record checked once: those whose scope is
-/// unchanged since their commit, and those whose commit the repository lacks.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", default)]
-pub struct Seen {
-    pub checked: BTreeSet<String>,
-    pub unchanged: BTreeSet<String>,
-    pub missing: BTreeSet<String>,
-}
-
-impl Seen {
-    /// The scope of `ds`, git in `repo` asked only about the records not checked before.
-    pub fn scope(&mut self, repo: &Path, ds: &[&PriorDecision]) -> Scope {
-        let fresh: Vec<&PriorDecision> = ds
-            .iter()
-            .copied()
-            .filter(|d| !self.checked.contains(&d.id))
-            .collect();
-        if !fresh.is_empty() {
-            let s = git_scope(repo)(&fresh);
-            self.checked.extend(fresh.iter().map(|d| d.id.clone()));
-            self.unchanged.extend(s.unchanged);
-            self.missing.extend(s.missing);
-        }
-        let of = |set: &BTreeSet<String>| {
-            ds.iter()
-                .filter(|d| set.contains(&d.id))
-                .map(|d| d.id.clone())
-                .collect()
-        };
-        Scope {
-            unchanged: of(&self.unchanged),
-            missing: of(&self.missing),
-        }
-    }
-}
-
 /// A triage run between steps.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -100,6 +65,15 @@ pub struct TriageState {
     /// How the host ran tasks weaker than asked, each note once.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub degraded: Vec<String>,
+    /// What the run noted of its own handling: a refused answer file it could not move aside.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<String>,
+}
+
+/// A state's format, read before its shape.
+#[derive(Deserialize)]
+struct Format {
+    version: u32,
 }
 
 /// Where a run's state is kept.
@@ -118,18 +92,18 @@ pub fn load(dir: &Path) -> Result<TriageState, StateError> {
         path: path.clone(),
         source,
     })?;
-    let state: TriageState =
-        serde_json::from_str(&text).map_err(|source| StateError::Malformed {
-            path: path.clone(),
-            source,
-        })?;
-    if state.version != STATE_VERSION {
-        return Err(StateError::Version {
-            path,
-            found: state.version,
-        });
+    let malformed = |source| StateError::Malformed {
+        path: path.clone(),
+        source,
+    };
+    // The format first, so a state another format wrote is named as such, whatever its shape.
+    let found = serde_json::from_str::<Format>(&text)
+        .map_err(malformed)?
+        .version;
+    if found != STATE_VERSION {
+        return Err(StateError::Version { path, found });
     }
-    Ok(state)
+    serde_json::from_str(&text).map_err(malformed)
 }
 
 /// Writes the run's state into `dir`, whole or not at all.

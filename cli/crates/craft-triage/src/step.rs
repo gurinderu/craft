@@ -3,8 +3,10 @@
 //! `status` says where it stands. The finished step names the plan and the record, written beside
 //! the state with their keys in the engine's order.
 
+mod advance;
 mod answers;
 mod finished;
+mod refuse;
 
 use std::path::{Path, PathBuf};
 
@@ -12,10 +14,11 @@ use craft_step::{Aside, Hold, take};
 use serde_json::{Map, Value, json};
 
 use crate::TriageError;
-use crate::run::{Args, Phase, Progress, run};
+use crate::run::{Args, Phase};
 use crate::state::{self, STATE_VERSION, Task, TriageState};
 
-use answers::TaskAnswers;
+use advance::advance;
+use refuse::refuse;
 
 /// What a triage run is opened with.
 #[derive(Debug, Clone)]
@@ -32,6 +35,7 @@ pub struct StartOptions {
 /// When the repository cannot be read, the run directory holds a run already, or the state or a
 /// task's files cannot be written.
 pub fn start(opts: &StartOptions) -> Result<Value, TriageError> {
+    refuse(&opts.args)?;
     let repo = if opts.args.repo.is_empty() {
         opts.cwd.clone()
     } else {
@@ -56,6 +60,7 @@ pub fn start(opts: &StartOptions) -> Result<Value, TriageError> {
         tasks: Vec::new(),
         seen: state::Seen::default(),
         degraded: Vec::new(),
+        notes: Vec::new(),
     };
     step(dir, &mut s, Aside::default())
 }
@@ -92,9 +97,12 @@ pub fn submit(
 pub fn status(dir: &Path) -> Result<Value, TriageError> {
     let s = state::load(dir)?;
     let tasks: Vec<Value> = s.tasks.iter().map(craft_step::wire::status_line).collect();
-    Ok(
-        json!({"run": dir.display().to_string(), "phase": s.phase, "done": s.phase == Phase::Done, "tasks": tasks}),
-    )
+    let mut out = json!({"run": dir.display().to_string(), "phase": s.phase, "done": s.phase == Phase::Done, "tasks": tasks});
+    finished::said(&mut out, &s);
+    if s.phase == Phase::Done {
+        finished::files(&mut out, dir);
+    }
+    Ok(out)
 }
 
 /// Moves the run on when none of its tasks is pending, saves it, sets the refused answers aside,
@@ -105,56 +113,39 @@ fn step(dir: &Path, s: &mut TriageState, aside: Aside) -> Result<Value, TriageEr
     } else {
         advance(s)?
     };
+    let finished = finished.map(|done| finished::with_degraded(done, &s.degraded));
     if let Some(done) = &finished {
         finished::write(dir, done)?;
     }
     craft_step::handoff::write_pending(dir, &s.tasks, |t| Ok::<_, TriageError>(t.prompt_text()))?;
     state::save(dir, s)?;
-    drop(aside.apply());
+    set_aside(dir, s, aside)?;
     if let Some(done) = finished {
-        return Ok(finished::step(dir, &done));
+        return finished::step(dir, &done, s);
     }
     let mut out = craft_step::wire::pending_step(dir, &s.tasks)?;
     if let Some(o) = out.as_object_mut() {
         o.insert("phase".into(), json!(s.phase));
         o.insert("repo".into(), json!(s.cwd.display().to_string()));
     }
+    finished::said(&mut out, s);
     Ok(out)
 }
 
-/// The run derived from its answers: the next phase's tasks handed out, or the finished run.
-fn advance(s: &mut TriageState) -> Result<Option<crate::run::Finished>, TriageError> {
-    let progress = {
-        let answers = TaskAnswers(&s.tasks);
-        let seen = std::cell::RefCell::new(s.seen.clone());
-        let repo = s.cwd.clone();
-        let p = run(&s.args, &answers, &|ds| seen.borrow_mut().scope(&repo, ds))?;
-        s.seen = seen.into_inner();
-        p
-    };
-    match progress {
-        Progress::Asks(phase, asks) => {
-            s.phase = phase;
-            let before = s.tasks.len();
-            let fresh: Vec<crate::run::Ask> = asks
-                .into_iter()
-                .filter(|a| !s.tasks.iter().any(|t| t.kind == a.kind))
-                .collect();
-            for a in fresh {
-                s.tasks.push(Task::new(
-                    a.id, a.label, a.prompt, a.model, a.schema, a.kind,
-                ));
-            }
-            if s.tasks.len() == before {
-                return Err(TriageError::Stuck(phase));
-            }
-            Ok(None)
-        }
-        Progress::Done(done) => {
-            s.phase = Phase::Done;
-            Ok(Some(*done))
-        }
+/// Moves the refused answers aside once the state counting their refusal is saved; one that
+/// cannot be moved stays where its agent wrote it, read again as a new answer, and the run notes
+/// it, saved again.
+fn set_aside(dir: &Path, s: &mut TriageState, aside: Aside) -> Result<(), TriageError> {
+    let unmoved = aside.apply();
+    if unmoved.is_empty() {
+        return Ok(());
     }
+    let notes: Vec<String> = unmoved
+        .iter()
+        .map(|u| format!("{}: a refused answer file left in place ({}); read again, it is taken as a new answer", u.id, u.error))
+        .collect();
+    take::note(&mut s.notes, &notes);
+    Ok(state::save(dir, s)?)
 }
 
 #[cfg(test)]

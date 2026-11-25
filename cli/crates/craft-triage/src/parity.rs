@@ -44,6 +44,74 @@ fn asks_of(case: &Js, phase: Phase) -> Vec<Ask> {
     }
 }
 
+/// The asks of `phase` when the case's answers to it are held back, none when the run asks no
+/// agent of it.
+fn asked_in(case: &Js, phase: Phase) -> Vec<Ask> {
+    let a = CaseAnswers::new(case, Some(phase));
+    match run(&args_of(case), &a, &|ds| a.scope(ds)).unwrap() {
+        Progress::Asks(p, asks) if p == phase => asks,
+        Progress::Asks(..) | Progress::Done(_) => Vec::new(),
+    }
+}
+
+/// The model each kind of agent runs on, as the engine names it: judgement against the code and
+/// the plan on Opus, extraction and lookup on Sonnet (realm @nick/craft, node #553).
+fn model_of(kind: &crate::kind::TriageKind) -> craft_step::Model {
+    use crate::kind::TriageKind as K;
+    match kind {
+        K::Validate { .. } | K::Plan => craft_step::Model::Opus,
+        K::GatherReport | K::GatherPr | K::Recall { .. } | K::MatchJudge | K::RuleJudge { .. } => {
+            craft_step::Model::Sonnet
+        }
+    }
+}
+
+#[test]
+fn every_agent_runs_on_the_model_the_engine_names_and_the_memorys_prompts_are_the_engines() {
+    let phases = [
+        Phase::Gather,
+        Phase::Recall,
+        Phase::Match,
+        Phase::Rules,
+        Phase::Validate,
+        Phase::Plan,
+    ];
+    for case in cases() {
+        let name = text(case.at("name"));
+        let mut memory = Vec::new();
+        for phase in phases {
+            for a in asked_in(&case, phase) {
+                assert_eq!(
+                    a.model,
+                    model_of(&a.kind),
+                    "{name}: the model of {}",
+                    a.label
+                );
+                if matches!(phase, Phase::Recall | Phase::Match | Phase::Rules) {
+                    memory.push((a.label, a.prompt));
+                }
+            }
+        }
+        let want: Vec<(String, String)> = case
+            .at("expected")
+            .at("prompts")
+            .at("memory")
+            .as_arr()
+            .unwrap()
+            .iter()
+            .map(|m| (text_of(m.at("label")), text_of(m.at("prompt"))))
+            .collect();
+        assert_eq!(
+            memory, want,
+            "{name}: the memory's agents and their prompts"
+        );
+    }
+}
+
+fn text_of(v: &Js) -> String {
+    v.as_str().unwrap().to_owned()
+}
+
 /// The prompts the engine dispatched under `key` (`gather`, `validate`), by their key.
 fn dispatched<'a>(case: &'a Js, key: &str) -> Vec<(String, &'a str)> {
     let o = case.at("expected").at("prompts").at(key).as_obj().unwrap();

@@ -1,7 +1,7 @@
 //! `craft triage start | submit | status`: the triage of review findings on the step protocol
 //! (`craft_triage::step`; realm @nick/craft, node #616), each step printed as one JSON line.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::{Context, Result};
@@ -77,16 +77,28 @@ pub fn triage(cmd: &TriageCommand) -> Result<ExitCode> {
         TriageCommand::Start(a) => start(a)?,
         TriageCommand::Submit(a) => {
             let given = a.answers.as_deref().map(given_answers).transpose()?;
-            step::submit(&a.run, given.as_ref(), &a.degraded)?
+            step::submit(&absolute(&a.run)?, given.as_ref(), &a.degraded)?
         }
-        TriageCommand::Status(a) => step::status(&a.run)?,
+        TriageCommand::Status(a) => step::status(&absolute(&a.run)?)?,
     })
 }
 
-fn start(a: &StartArgs) -> Result<serde_json::Value> {
-    if a.report.is_empty() && a.pr.is_empty() {
-        anyhow::bail!("a triage needs a source: --report <file> and/or --pr <number>");
+/// `p` made absolute, so the files a step names are found from wherever its agents run.
+fn absolute(p: &Path) -> Result<PathBuf> {
+    std::path::absolute(p).with_context(|| format!("resolving {}", p.display()))
+}
+
+/// Refuses two inputs read from stdin: the second would read it empty.
+fn one_stdin(a: &StartArgs) -> Result<()> {
+    let stdin = |p: &Option<PathBuf>| p.as_deref().is_some_and(|p| p.as_os_str() == "-");
+    if stdin(&a.prior_ledger) && stdin(&a.prior_decisions) {
+        anyhow::bail!("--prior-ledger and --prior-decisions cannot both be read from stdin (-)");
     }
+    Ok(())
+}
+
+fn start(a: &StartArgs) -> Result<serde_json::Value> {
+    one_stdin(a)?;
     let run_dir = match &a.run_dir {
         Some(d) => d.clone(),
         None => default_run_dir()?,
@@ -110,8 +122,7 @@ fn start(a: &StartArgs) -> Result<serde_json::Value> {
             .map(|p| json_input(p).map_err(|e| format!("{e:#}"))),
         craft_version: env!("CARGO_PKG_VERSION").into(),
     };
-    let run_dir = std::path::absolute(&run_dir)
-        .with_context(|| format!("resolving {}", run_dir.display()))?;
+    let run_dir = absolute(&run_dir)?;
     Ok(step::start(&StartOptions {
         cwd: a.cwd.clone(),
         run_dir,

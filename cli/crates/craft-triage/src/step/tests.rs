@@ -47,23 +47,66 @@ fn answers(dir: &Path, a: &CaseAnswers<'_>) -> Map<String, Value> {
         .collect()
 }
 
-/// Runs `name` to its end, the answers handed in by task id.
-fn run_case(name: &str) -> (Js, tempfile::TempDir) {
+/// The ids of every record the case recalls or passes.
+fn record_ids(c: &Js) -> Vec<String> {
+    let recall = c.at("answers").at("memoryRecall");
+    let lists = ["decisions", "questions", "rules"].map(|k| recall.at(k));
+    let passed = c.at("args").at("priorDecisions");
+    let mut ids = Vec::new();
+    for list in lists.iter().chain([&passed]) {
+        for r in list.as_arr().unwrap_or_default() {
+            ids.extend(r.at("id").as_str().map(str::to_owned));
+        }
+    }
+    ids
+}
+
+/// The case's scope check as the run's state keeps what git saw: every record checked, those its
+/// answer names unchanged or missing so, as a submit after the one that observed them reads it.
+fn seen_of(c: &Js) -> state::Seen {
+    let scope = c.at("answers").at("scope");
+    let named = |k: &str| -> std::collections::BTreeSet<String> {
+        let read = scope.at("unchanged").as_arr().is_some();
+        let list = scope.at(k).as_arr().filter(|_| read).unwrap_or_default();
+        list.iter()
+            .filter_map(|x| x.as_str().map(str::to_owned))
+            .collect()
+    };
+    state::Seen {
+        checked: record_ids(c).into_iter().collect(),
+        unchanged: named("unchanged"),
+        missing: named("missing"),
+    }
+}
+
+/// The case's arguments, a repository it names replaced by `repo`: the run must read one.
+fn opts_of(c: &Js, repo: &Path, dir: &Path) -> StartOptions {
+    let mut args = args_of(c);
+    if !args.repo.is_empty() {
+        args.repo = repo.display().to_string();
+    }
+    StartOptions {
+        cwd: repo.into(),
+        run_dir: dir.into(),
+        args,
+    }
+}
+
+/// Runs `name` to its end, the answers handed in by task id, `degraded` said at every submit.
+fn run_case(name: &str, degraded: &[String]) -> (Js, tempfile::TempDir) {
     let c = case(name);
     let (repo, dir) = (git_repo(), tempfile::tempdir().unwrap());
     let a = CaseAnswers::new(&c, None);
-    let opts = StartOptions {
-        cwd: repo.path().into(),
-        run_dir: dir.path().into(),
-        args: args_of(&c),
-    };
-    let mut step = start(&opts).unwrap();
+    let mut step = start(&opts_of(&c, repo.path(), dir.path())).unwrap();
+    let mut s = state::load(dir.path()).unwrap();
+    s.seen = seen_of(&c);
+    state::save(dir.path(), &s).unwrap();
     for _ in 0..40 {
         if step["done"] == Value::Bool(true) {
             return (c, dir);
         }
         let given = answers(dir.path(), &a);
-        step = submit(dir.path(), Some(&given), &[]).unwrap();
+        step = submit(dir.path(), Some(&given), degraded).unwrap();
     }
     panic!("{name}: the run did not end");
 }
@@ -75,13 +118,10 @@ fn file(path: &Path) -> String {
 }
 
 #[test]
-fn a_case_run_on_the_protocol_ends_with_the_engines_plan_and_record() {
-    for name in [
-        "repeats collapsed",
-        "a dead validator is NOT JUDGED",
-        "a dead gather source",
-    ] {
-        let (c, dir) = run_case(name);
+fn every_case_run_on_the_protocol_ends_with_the_engines_plan_and_record() {
+    for c in cases() {
+        let name = c.at("name").as_str().unwrap().to_owned();
+        let (c, dir) = run_case(&name, &[]);
         let want = c.at("expected");
         assert_eq!(
             file(&record_path(dir.path())),
@@ -93,7 +133,15 @@ fn a_case_run_on_the_protocol_ends_with_the_engines_plan_and_record() {
         let plan: Value = serde_json::from_str(&file(&plan_path(dir.path()))).unwrap();
         let want_plan = Value::try_from(want.at("plan")).unwrap();
         assert_eq!(plan, want_plan, "{name}: the plan");
-        assert_eq!(status(dir.path()).unwrap()["done"], Value::Bool(true));
+        let st = status(dir.path()).unwrap();
+        assert_eq!(st["done"], Value::Bool(true));
+        let named = |k: &str| st[k].as_str().map(std::path::PathBuf::from);
+        assert_eq!(
+            named("planFile"),
+            Some(plan_path(dir.path())),
+            "{name}: status names the plan"
+        );
+        assert_eq!(named("recordFile"), Some(record_path(dir.path())), "{name}");
         assert!(matches!(
             submit(dir.path(), None, &[]),
             Err(TriageError::Done(_))
@@ -102,14 +150,49 @@ fn a_case_run_on_the_protocol_ends_with_the_engines_plan_and_record() {
 }
 
 #[test]
+fn the_hosts_degraded_notes_lead_the_plan_and_reach_the_step_and_the_status() {
+    let note = vec!["a validator ran without the agent it named".to_owned()];
+    let (_, dir) = run_case("repeats collapsed", &note);
+    let plan: Value = serde_json::from_str(&file(&plan_path(dir.path()))).unwrap();
+    let body = plan["plan_markdown"].as_str().unwrap();
+    assert!(body.starts_with("> **DEGRADED**"), "{body}");
+    assert!(body.contains(&note[0]), "{body}");
+    assert_eq!(plan["degraded"], serde_json::json!(note));
+    assert_eq!(
+        status(dir.path()).unwrap()["degraded"],
+        serde_json::json!(note)
+    );
+    let (_, clean) = run_case("repeats collapsed", &[]);
+    let plan: Value = serde_json::from_str(&file(&plan_path(clean.path()))).unwrap();
+    assert!(plan.get("degraded").is_none());
+}
+
+#[test]
+fn a_triage_with_no_source_or_a_relative_repository_is_refused_before_any_agent() {
+    let c = case("repeats collapsed");
+    let (repo, dir) = (git_repo(), tempfile::tempdir().unwrap());
+    let mut opts = opts_of(&c, repo.path(), dir.path());
+    opts.args.report.clear();
+    opts.args.pr.clear();
+    assert!(
+        matches!(start(&opts), Err(TriageError::Refused(why)) if why.contains("needs a source"))
+    );
+    let mut opts = opts_of(&c, repo.path(), dir.path());
+    opts.args.repo = "some/where".into();
+    assert!(
+        matches!(start(&opts), Err(TriageError::Refused(why)) if why.contains("absolute path"))
+    );
+    assert!(
+        !state::state_path(dir.path()).exists(),
+        "nothing was opened"
+    );
+}
+
+#[test]
 fn a_run_directory_holding_a_triage_is_refused() {
     let c = case("repeats collapsed");
     let (repo, dir) = (git_repo(), tempfile::tempdir().unwrap());
-    let opts = StartOptions {
-        cwd: repo.path().into(),
-        run_dir: dir.path().into(),
-        args: args_of(&c),
-    };
+    let opts = opts_of(&c, repo.path(), dir.path());
     start(&opts).unwrap();
     assert!(matches!(start(&opts), Err(TriageError::RunExists(_))));
 }
@@ -118,11 +201,7 @@ fn a_run_directory_holding_a_triage_is_refused() {
 fn an_answer_for_no_pending_task_is_refused() {
     let c = case("repeats collapsed");
     let (repo, dir) = (git_repo(), tempfile::tempdir().unwrap());
-    let opts = StartOptions {
-        cwd: repo.path().into(),
-        run_dir: dir.path().into(),
-        args: args_of(&c),
-    };
+    let opts = opts_of(&c, repo.path(), dir.path());
     start(&opts).unwrap();
     let mut given = Map::new();
     given.insert("plan".into(), Value::Null);
