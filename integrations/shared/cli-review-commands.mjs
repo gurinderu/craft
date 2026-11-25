@@ -24,12 +24,12 @@ const chainFlags = o =>
   `${o.fresh ? ' --fresh' : ''}${o.delta ? ' --delta' : ''}${o.fullEvery ? ` --full-every ${o.fullEvery}` : ''}${o.pr ? ` --pr ${o.pr}` : ''}`
 
 /**
- * The start's flags for the round chain, strict mode, the gate, the extra lenses, unit mode, the scope, publishing on the
+ * The start's flags for the round chain, strict mode, every lens, the gate, the extra lenses, unit mode, the scope, publishing on the
  * PR and the launch options.
  * @param {Options} o @returns {string}
  */
 const reviewFlags = o =>
-  `${chainFlags(o)}${o.strict ? ' --strict' : ''}${o.gate ? '' : ' --no-gate'}${o.gateFrom ? ` --gate-from ${shq(o.gateFrom)}` : ''}${o.extraLenses ? ` --extra-lenses ${shq(o.extraLenses)}` : ''}${o.unitScope ? ' --unit-scope' : ''}${o.path ? ` --path ${shq(o.path)}` : ''}${o.comment ? ' --comment' : ''}${launchFlags(o)}`
+  `${chainFlags(o)}${o.strict ? ' --strict' : ''}${o.allLenses ? ' --all-lenses' : ''}${o.gate ? '' : ' --no-gate'}${o.gateFrom ? ` --gate-from ${shq(o.gateFrom)}` : ''}${o.extraLenses ? ` --extra-lenses ${shq(o.extraLenses)}` : ''}${o.unitScope ? ' --unit-scope' : ''}${o.path ? ` --path ${shq(o.path)}` : ''}${o.comment ? ' --comment' : ''}${launchFlags(o)}`
 
 /**
  * `craft review start`, without the launcher's records (`--prior-decisions -`, which the caller hands on stdin). The

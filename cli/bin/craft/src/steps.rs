@@ -67,6 +67,10 @@ pub struct StartArgs {
     /// blocker, and the maintainability lens always runs.
     #[arg(long)]
     pub strict: bool,
+    /// Every lens of the profiles, whatever the reviewer's profile turns off or holds to the
+    /// first round: the release's full review, which rechecks what a reviewer turned off.
+    #[arg(long)]
+    pub all_lenses: bool,
     /// The launcher's own decision, question and rule records (`priorDecisions`), a JSON list, as
     /// a file or `-` for stdin; they add to what the run recalls from the project's memory.
     #[arg(long)]
@@ -298,6 +302,7 @@ pub(crate) fn start_step(args: &StartArgs, cancel: &craft_review::cancel::Cancel
         Some(d) => d.clone(),
         None => default_run_dir()?,
     };
+    let lenses = lenses_of(&args.cwd);
     let opts = step::StartOptions {
         cwd: args.cwd.clone(),
         base: args.base.clone(),
@@ -312,6 +317,9 @@ pub(crate) fn start_step(args: &StartArgs, cancel: &craft_review::cancel::Cancel
         lens_agents: args.lens_agents,
         runs: args.runs.clone(),
         strict: args.strict,
+        all_lenses: args.all_lenses,
+        lenses: lenses.clone().unwrap_or_default(),
+        lenses_unread: lenses.err().unwrap_or_default(),
         recall: !args.no_recall,
         recall_degraded: args.recall_degraded.clone(),
         // An unreadable list is refused and named in the report; the review still runs.
@@ -593,6 +601,19 @@ fn recall_note(s: &str) -> Result<String, String> {
     } else {
         Err("a blank note: say why the launcher's recall may not have read the whole store".into())
     }
+}
+
+/// The reviewer's profile's `[lenses]` section for the repository at `cwd` (realm @nick/craft, node
+/// #644); `Err` why it could not be read; empty when there is no profile.
+fn lenses_of(
+    cwd: &std::path::Path,
+) -> Result<Vec<(String, craft_review::composition::State)>, String> {
+    use craft_review::project::{lenses, profile_path};
+    let Some(projects) = crate::init::projects_dir() else {
+        return Ok(Vec::new());
+    };
+    let (path, _) = profile_path(&projects, cwd).map_err(|e| e.to_string())?;
+    lenses::of(&path).map_err(|e| e.to_string())
 }
 
 /// How a review's mutants run: this binary as their worker, for the budget the reviewer's profile

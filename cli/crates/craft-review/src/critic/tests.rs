@@ -239,3 +239,27 @@ fn the_critic_never_admits_a_lens_with_nothing_to_read() {
         "once, and nothing for a name that is no lens"
     );
 }
+
+#[test]
+fn a_lens_the_reviewers_profile_turned_off_is_no_candidate_for_the_critic() {
+    use crate::composition::{Composition, State, hold};
+    let rust = Profile::rust().unwrap();
+    let files = ["src/lib.rs".to_owned()];
+    let mut p = plan("large", false, &["errors"], &[]);
+    p["signalSkipped"] = json!(["performance"]);
+    let mut plan: crate::plan::Plan = serde_json::from_value(p).unwrap();
+    let open = super::candidates(&rust, &plan, true, &files);
+    assert!(
+        open.contains(&"money".to_owned()) && open.contains(&"performance".to_owned()),
+        "{open:?}"
+    );
+    let off = [("rust:money", State::Off), ("rust:performance", State::Off)]
+        .map(|(l, s)| (l.to_owned(), s));
+    let c = Composition::of(&off, std::slice::from_ref(&rust)).unwrap();
+    assert!(hold(&mut plan, &c, "rust", &[]).is_empty());
+    let named = super::candidates(&rust, &plan, true, &files);
+    assert!(
+        !named.contains(&"money".to_owned()) && !named.contains(&"performance".to_owned()),
+        "neither the unpicked lens nor the one held back for its signal: {named:?}"
+    );
+}

@@ -347,7 +347,9 @@ lenses and verifiers see, a tool not installed is named), the change's mutants o
 and `src/gate/mutants/`: `cargo mutants --in-diff` in a worker process of the same binary, `__craft-mutants`, that runs beside the
 lens rounds within its budget — the reviewer's profile's `[mutants]` section can name it or turn them off (`src/project/mutants.rs`) —;
 joined when the rounds end, each mutant that survived in a function the change touched pooled as a tool's finding, and the report
-saying what came of them or why they did not run), a scout per profile whose answer plans its lenses over its own files, the
+saying what came of them or why they did not run), the reviewer's profile's `[lenses]` composition (`src/composition.rs`, read by `src/project/lenses.rs`: a lens
+turned off leaves the plan, one held runs its first round only, the report naming each; never the security or a profile's safety lens,
+the concurrency lens at most held; `--all-lenses` sets it aside for the release's full review), a scout per profile whose answer plans its lenses over its own files, the
 consumers list, built at start beside the gate (`src/consumers/`: for each changed Rust symbol the lines outside the diff that name it —
 callers, implementors and same-named declarations, places passing it as a value — from a name search, always run
 (`names.rs`), a structural search for a name too common to search by text or past the name search's line cap

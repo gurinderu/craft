@@ -67,7 +67,7 @@ fn in_scope(plan: &Plan) -> bool {
 /// is no candidate while the run's code-metrics index is not ready (`metrics`), picked or not:
 /// nothing it would read is there; nor is a lens that reads nothing of the profile's part `files`,
 /// a per-file lens over a part of nothing but data. A lens held back for want of its diff signal is
-/// one (realm @nick/craft, node #625).
+/// one (realm @nick/craft, node #625); one the reviewer's profile turned off is not (node #644).
 pub(crate) fn candidates(
     profile: &Profile,
     plan: &Plan,
@@ -81,6 +81,9 @@ pub(crate) fn candidates(
         .filter(|l| {
             !plan.lenses.contains(l)
                 && !plan.metrics_dropped.contains(l)
+                // The reviewer's profile turned it off: no critic buys it back (realm
+                // @nick/craft, node #644).
+                && !plan.profile_off.contains(l)
                 && !profile.reads_nothing(l, files)
                 && !no_index.contains(l)
         })
