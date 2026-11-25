@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::io::{BufRead, Read, Write};
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Condvar, Mutex};
@@ -50,6 +51,27 @@ fn kept_logged(writes: bool) -> (Delegate, Kept<Event>, Kept<String>) {
         move |l| said.lock().unwrap().push(l.to_owned()),
     );
     (d, events, lines)
+}
+
+/// What a delegate reading an input is given to keep its events: it keeps each and says it was
+/// written.
+fn emit_into(events: &Kept<Event>) -> impl Fn(Event) -> bool + Send + Sync + 'static {
+    let seen = Arc::clone(events);
+    move |e| {
+        seen.lock().unwrap().push(e);
+        true
+    }
+}
+
+/// What a delegate reading an input is given to keep the reply lines it passed over.
+fn log_into(lines: &Kept<String>) -> impl Fn(&str) + Send + Sync + 'static {
+    let said = Arc::clone(lines);
+    move |l| said.lock().unwrap().push(l.to_owned())
+}
+
+/// The events and log lines a delegate reading an input keeps, still empty.
+fn nothing_kept() -> (Kept<Event>, Kept<String>) {
+    (Kept::<Event>::default(), Kept::<String>::default())
 }
 
 /// `work` within five seconds: a broken delegate fails the test instead of hanging it.
@@ -561,36 +583,49 @@ impl Replies {
 
 impl std::io::Read for Replies {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        match self.next_line() {
-            Some(line) => {
-                buf[..line.len()].copy_from_slice(&line);
-                Ok(line.len())
-            }
-            None => Ok(0),
+        let Some(mut line) = self.next_line() else {
+            return Ok(0);
+        };
+        let take = line.len().min(buf.len());
+        buf[..take].copy_from_slice(&line[..take]);
+        line.drain(..take);
+        if !line.is_empty() {
+            // What did not fit waits unread, ahead of the lines said after it.
+            self.0
+                .unread
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .lines
+                .push_front(line);
+            self.0.changed.notify_all();
         }
+        Ok(take)
     }
+}
+
+#[test]
+fn a_line_longer_than_the_readers_buffer_is_read_whole() {
+    let input = Replies::default();
+    // Three of the reader's own buffers: a reply may be mebibytes long.
+    let long = "x".repeat(3 * 8192);
+    input.say(format!("{long}\n"));
+    input.end();
+    let mut line = String::new();
+    std::io::BufReader::new(input).read_line(&mut line).unwrap();
+    assert_eq!(line, format!("{long}\n"));
 }
 
 #[tokio::test]
 async fn a_reply_is_read_on_its_own_thread_and_the_inputs_end_closes_the_delegate() {
-    let (events, lines) = (Kept::<Event>::default(), Kept::<String>::default());
+    let (events, lines) = nothing_kept();
     let input = Replies::default();
     let d = Delegate::reading(
         {
             let read = input.clone();
             move || std::io::BufReader::new(read)
         },
-        {
-            let events = Arc::clone(&events);
-            move |e| {
-                events.lock().unwrap().push(e);
-                true
-            }
-        },
-        {
-            let lines = Arc::clone(&lines);
-            move |l| lines.lock().unwrap().push(l.to_owned())
-        },
+        emit_into(&events),
+        log_into(&lines),
     );
     let running = tokio::spawn({
         let d = d.clone();
@@ -633,6 +668,100 @@ async fn a_reply_is_read_on_its_own_thread_and_the_inputs_end_closes_the_delegat
     assert!(
         lines.lock().unwrap().is_empty(),
         "a good line and the end are passed over for nothing"
+    );
+}
+
+/// Set when this test's binary runs again as a child: there the delegate reads that process's
+/// stdin, as it does under `--delegate`; the parent answers through the other end of the pipe.
+const READS_STDIN: &str = "CRAFT_TEST_DELEGATE_READS_STDIN";
+
+/// The child's side: the delegate `--delegate` makes answers a task from this process's stdin,
+/// says the key of each task it gives out, and fails the one waiting when that input ends.
+fn reads_stdin() {
+    fn said(key: u64) {
+        // Straight out, past the test harness's own capture of `println!`.
+        std::io::stdout()
+            .write_all(format!("KEY {key}\n").as_bytes())
+            .unwrap();
+    }
+    let (events, lines) = nothing_kept();
+    let d = Delegate::on_stdin(emit_into(&events), log_into(&lines));
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            let running = tokio::spawn({
+                let d = d.clone();
+                async move { d.run(&request("t1")).await }
+            });
+            said(key_of(&events, 1).await);
+            let reply = bounded(running).await.unwrap().unwrap();
+            assert_eq!(reply.structured, Some(json!({"n": 1})));
+            let waiting = tokio::spawn({
+                let d = d.clone();
+                async move { d.run(&request("t2")).await }
+            });
+            said(key_of(&events, 2).await);
+            let error = bounded(waiting).await.unwrap().unwrap_err();
+            assert!(
+                matches!(&error, AgentError::HostGone(why) if why == "its input to craft ended"),
+                "{error}"
+            );
+            assert!(
+                lines.lock().unwrap().is_empty(),
+                "a good line and the end are passed over for nothing"
+            );
+        });
+}
+
+#[test]
+fn a_reply_on_this_process_stdin_is_read_and_its_end_closes_the_delegate() {
+    if std::env::var_os(READS_STDIN).is_some() {
+        reads_stdin();
+        return;
+    }
+    let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+        .args(["a_reply_on_this_process_stdin"])
+        .env(READS_STDIN, "1")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut out = std::io::BufReader::new(child.stdout.take().unwrap());
+    let (mut heard, mut line) = (String::new(), String::new());
+    // The key of the task the child gave out last, once it has said it.
+    let mut last_key = || {
+        loop {
+            line.clear();
+            assert!(
+                out.read_line(&mut line).unwrap() != 0,
+                "the child ended before saying its key:\n{heard}"
+            );
+            heard.push_str(&line);
+            if let Some(key) = line.trim().strip_prefix("KEY ") {
+                return key.parse::<u64>().expect("the child says its task's key");
+            }
+        }
+    };
+    let mut into = child.stdin.take().unwrap();
+    into.write_all(
+        format!(
+            "{}\n",
+            json!({"key": last_key(), "text": "```craft-answer\n{\"n\":1}\n```"})
+        )
+        .as_bytes(),
+    )
+    .unwrap();
+    // Only once the next task is out and waiting may the input end under it.
+    last_key();
+    drop(into);
+    let mut rest = String::new();
+    out.read_to_string(&mut rest).unwrap();
+    let status = child.wait().unwrap();
+    assert!(
+        status.success(),
+        "the child reading its stdin: {status}\n{heard}{rest}"
     );
 }
 
