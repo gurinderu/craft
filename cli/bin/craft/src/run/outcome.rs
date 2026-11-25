@@ -8,6 +8,7 @@
 use craft_agent::{AgentError, AgentReply};
 use craft_review::blocked;
 
+use super::HostKind;
 use super::host::Host;
 use super::limit::usage_limit_text;
 use super::task::Task;
@@ -24,8 +25,9 @@ pub(crate) enum Outcome {
     /// Why the process a delegated run hands its tasks to stopped answering (delegate.rs).
     Gone(String),
     /// `said`: the last line the process wrote on stderr, when it wrote one. `wrote`: the last
-    /// line the agent itself wrote of why it gave no answer — never craft's own words, `None` when
-    /// it wrote nothing — for the stop on a round that died whole (realm @nick/craft, node #666).
+    /// line the agent's process wrote of why it gave no answer — not the binary's own reason, `None`
+    /// when it wrote nothing — for the stop on a round that died whole (realm @nick/craft, node
+    /// #666). A delegated run's failure is in the words of the process running its tasks.
     Unanswered {
         why: String,
         said: Option<String>,
@@ -70,7 +72,18 @@ fn tail(stderr: &str, stdout: &str) -> String {
     joined.chars().take(300).collect()
 }
 
-/// The last line the agent itself wrote in a failure `e` that is neither a quit nor a clean exit
+/// What a failed exit wrote of why: opencode's error events, which its backend puts on stdout in
+/// place of the event stream when it printed any (an event stream's lines are JSON objects), else
+/// stderr's last line. Another host's stdout is its reply, not why it failed.
+fn quit_words(host: &Host, stderr: &str, stdout: &str) -> Option<String> {
+    let events = match host.kind {
+        HostKind::OpenCode => last_line(stdout).filter(|l| !l.starts_with('{')),
+        HostKind::Codex | HostKind::Pi => None,
+    };
+    events.or_else(|| last_line(stderr))
+}
+
+/// The last line the agent's process wrote in a failure `e` that is neither a quit nor a clean exit
 /// with no answer: a failed exit's stderr, a delegated turn's failure; `None` where the words are
 /// craft's own.
 fn own_words(e: &AgentError) -> Option<String> {
@@ -127,8 +140,7 @@ fn quit(host: &Host, code: Option<i32>, stderr: &str, stdout: &str) -> Outcome {
     Outcome::Unanswered {
         why: format!("{} exited {code}: {}", host.name(), tail(stderr, stdout)),
         said: last_line(stderr),
-        // Last on either stream, as `tail` reads them: opencode prints its error events there.
-        wrote: last_line(&format!("{stderr}\n{stdout}")),
+        wrote: quit_words(host, stderr, stdout),
     }
 }
 

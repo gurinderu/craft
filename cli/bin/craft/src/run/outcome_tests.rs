@@ -4,9 +4,9 @@ use super::*;
 use crate::run::HostKind;
 use crate::run::models::thinking_table;
 
-fn host() -> Host {
+fn host(kind: HostKind) -> Host {
     Host {
-        kind: HostKind::OpenCode,
+        kind,
         models: std::iter::empty().collect(),
         thinking: thinking_table("", "--thinking").unwrap(),
         command: PathBuf::from("x"),
@@ -17,14 +17,18 @@ fn host() -> Host {
 }
 
 fn wrote(e: AgentError) -> Option<String> {
-    let o = quit_or(e);
+    wrote_on(HostKind::OpenCode, e)
+}
+
+fn wrote_on(kind: HostKind, e: AgentError) -> Option<String> {
+    let o = quit_or(kind, e);
     let Outcome::Unanswered { wrote, .. } = o else {
         panic!("{o:?}")
     };
     wrote
 }
 
-fn quit_or(e: AgentError) -> Outcome {
+fn quit_or(kind: HostKind, e: AgentError) -> Outcome {
     let task = Task {
         id: "t".into(),
         label: "t".into(),
@@ -36,7 +40,7 @@ fn quit_or(e: AgentError) -> Outcome {
         consumer_agent: None,
         kind: None,
     };
-    outcome_of(&task, Err(e), &host())
+    outcome_of(&task, Err(e), &host(kind))
 }
 
 /// What a dead agent wrote is its own words: an error on stdout after stderr's noise, its stderr
@@ -54,6 +58,19 @@ fn a_dead_agent_wrote_only_its_own_words() {
         Some("Insufficient Balance")
     );
     assert_eq!(wrote(quit("boom", "")).as_deref(), Some("boom"));
+    // opencode with no error event: its stdout is the event stream, so stderr says why.
+    assert_eq!(
+        wrote(quit("killed: out of memory", "{\"type\":\"step_start\"}")).as_deref(),
+        Some("killed: out of memory")
+    );
+    // Another host's stdout is its reply, never why it failed.
+    for kind in [HostKind::Codex, HostKind::Pi] {
+        assert_eq!(
+            wrote_on(kind, quit("rate limited", "Here is my review.")).as_deref(),
+            Some("rate limited")
+        );
+        assert_eq!(wrote_on(kind, quit("", "Here is my review.")), None);
+    }
     assert_eq!(wrote(quit("", "")), None);
     let no_answer = |stderr: &str| AgentError::NoAnswer {
         stderr: stderr.into(),
