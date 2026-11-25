@@ -73,28 +73,45 @@ fn tail(stderr: &str, stdout: &str) -> String {
 }
 
 /// What a failed exit wrote of why: opencode's error events, which its backend puts on stdout in
-/// place of the event stream when it printed any (an event stream's lines are JSON objects), else
+/// place of the event stream when it printed any (an event stream's lines open `{"type":`), else
 /// stderr's last line. Another host's stdout is its reply, not why it failed.
 fn quit_words(host: &Host, stderr: &str, stdout: &str) -> Option<String> {
     let events = match host.kind {
-        HostKind::OpenCode => last_line(stdout).filter(|l| !l.starts_with('{')),
+        HostKind::OpenCode => last_line(stdout).filter(|l| !l.starts_with(r#"{"type":"#)),
         HostKind::Codex | HostKind::Pi => None,
     };
     events.or_else(|| last_line(stderr))
 }
 
-/// The runtime's own error in a delegated task's failure, as the opencode plugin words a failed
-/// child session (`integrations/opencode/plugin/host-v2.ts`, `ChildSessionFailed`): `the child
-/// session failed (<type>): <message>`, read as `<type>: <message>`. Its other words — a session
-/// that ended another way, one stopped at its deadline, an error with no message, a reply
-/// the binary could not read — are craft's own, so `None`.
+/// How the opencode plugin opens a failed child session's error (`integrations/opencode/plugin/
+/// host-v2.ts`, `ChildSessionFailed`): `the child session failed (<type>)`, then `: <message>`
+/// when the runtime gave one.
+const CHILD_FAILED: &str = "the child session failed (";
+/// How the plugin names the failure of a child tried once more alone (`review-children.ts`).
+const RETRIED: &str = "(tried once more alone: ";
+
+/// The runtime's own error in a delegated task's failure, as one line: `<type>: <message>`, the
+/// type alone, or the message alone where the plugin had no type (`unknown`). A child tried once
+/// more alone is read by its last failure. The plugin's other words — a session that ended another
+/// way (`outcome …`), one stopped at its deadline, a type-less error with no message — and the
+/// binary's own are craft's, so `None`.
 fn runtime_words(subtype: &str) -> Option<String> {
-    let rest = subtype.strip_prefix("the child session failed (")?;
-    let (kind, message) = rest.split_once("): ")?;
-    if kind.starts_with("outcome ") {
-        return None;
-    }
-    last_line(&format!("{kind}: {message}"))
+    let at = subtype.rfind(CHILD_FAILED)?;
+    let rest = subtype.get(at + CHILD_FAILED.len()..)?;
+    let rest = match subtype.get(..at) {
+        Some(before) if before.ends_with(RETRIED) => rest.strip_suffix(')').unwrap_or(rest),
+        _ => rest,
+    };
+    let (kind, message) = rest.split_once(')')?;
+    let message = message.strip_prefix(": ").unwrap_or(message).trim();
+    let words = match kind {
+        k if k.starts_with("outcome ") => return None,
+        "unknown" => message.to_owned(),
+        k if message.is_empty() => k.to_owned(),
+        k => format!("{k}: {message}"),
+    };
+    let one = words.split_whitespace().collect::<Vec<_>>().join(" ");
+    (!one.is_empty()).then(|| one.chars().take(300).collect())
 }
 
 /// The last line the agent's process wrote in a failure `e` that is neither a quit nor a clean exit

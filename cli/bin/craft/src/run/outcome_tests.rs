@@ -43,16 +43,24 @@ fn quit_or(kind: HostKind, e: AgentError) -> Outcome {
     outcome_of(&task, Err(e), &host(kind))
 }
 
-/// What a dead agent wrote is its own words: an error on stdout after stderr's noise, its stderr
-/// on a clean exit with no answer, a delegated turn's failure; nothing where it wrote nothing or
-/// the words are craft's own (realm @nick/craft, node #666).
-#[test]
-fn a_dead_agent_wrote_only_its_own_words() {
-    let quit = |stderr: &str, stdout: &str| AgentError::Quit {
+fn quit(stderr: &str, stdout: &str) -> AgentError {
+    AgentError::Quit {
         code: Some(1),
         stderr: stderr.into(),
         stdout: stdout.into(),
-    };
+    }
+}
+
+fn failed(subtype: &str) -> Option<String> {
+    wrote(AgentError::Failed {
+        subtype: subtype.into(),
+    })
+}
+
+/// A failed exit's words are opencode's error events on stdout, else stderr's: never an event
+/// stream, nor another host's reply (realm @nick/craft, node #666).
+#[test]
+fn a_failed_exit_wrote_its_error_not_its_stream_or_reply() {
     assert_eq!(
         wrote(quit("loading plugins", "Insufficient Balance")).as_deref(),
         Some("Insufficient Balance")
@@ -63,6 +71,16 @@ fn a_dead_agent_wrote_only_its_own_words() {
         wrote(quit("killed: out of memory", "{\"type\":\"step_start\"}")).as_deref(),
         Some("killed: out of memory")
     );
+    assert_eq!(wrote(quit("", "{\"type\":\"step_start\"}")), None);
+    // An error event whose message is a JSON body is still the error.
+    assert_eq!(
+        wrote(quit(
+            "loading plugins",
+            "{\"error\":\"Insufficient Balance\"}"
+        ))
+        .as_deref(),
+        Some("{\"error\":\"Insufficient Balance\"}")
+    );
     // Another host's stdout is its reply, never why it failed.
     for kind in [HostKind::Codex, HostKind::Pi] {
         assert_eq!(
@@ -72,6 +90,12 @@ fn a_dead_agent_wrote_only_its_own_words() {
         assert_eq!(wrote_on(kind, quit("", "Here is my review.")), None);
     }
     assert_eq!(wrote(quit("", "")), None);
+}
+
+/// A clean exit with no answer is read by stderr alone, a failed one by its stderr; craft's own
+/// errors say nothing (realm @nick/craft, node #666).
+#[test]
+fn a_dead_agent_wrote_only_its_own_words() {
     let no_answer = |stderr: &str| AgentError::NoAnswer {
         stderr: stderr.into(),
         stdout: "Here is my review in prose.".into(),
@@ -89,13 +113,35 @@ fn a_dead_agent_wrote_only_its_own_words() {
         .as_deref(),
         Some("segfault")
     );
-    let failed = |subtype: &str| {
-        wrote(AgentError::Failed {
-            subtype: subtype.into(),
-        })
-    };
+    assert_eq!(wrote(AgentError::NotAnObject), None);
+}
+
+/// A delegated task's failure is the runtime's error, the retry's when the plugin tried once more
+/// alone; the plugin's and the binary's own words are none of the agent's (realm @nick/craft, node
+/// #666).
+#[test]
+fn a_delegated_failure_is_read_by_the_runtime_error_alone() {
     assert_eq!(
         failed("the child session failed (provider.no-route): no route").as_deref(),
+        Some("provider.no-route: no route")
+    );
+    assert_eq!(
+        failed("the child session failed (provider.no-route)").as_deref(),
+        Some("provider.no-route")
+    );
+    assert_eq!(
+        failed("the child session failed (unknown): Insufficient Balance").as_deref(),
+        Some("Insufficient Balance")
+    );
+    assert_eq!(
+        failed("the child session failed (api.error): upstream refused\n  retry later").as_deref(),
+        Some("api.error: upstream refused retry later")
+    );
+    assert_eq!(
+        failed(
+            "the child session was stopped at its deadline (tried once more alone: the child session failed (provider.no-route): no route)"
+        )
+        .as_deref(),
         Some("provider.no-route: no route")
     );
     // The plugin's and the binary's own words are none of the agent's.
@@ -107,5 +153,4 @@ fn a_dead_agent_wrote_only_its_own_words() {
     ] {
         assert_eq!(failed(own), None, "{own}");
     }
-    assert_eq!(wrote(AgentError::NotAnObject), None);
 }
