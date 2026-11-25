@@ -303,6 +303,7 @@ fn plan_lines(state: &RunState, t: &Track, out: &mut String) {
 fn held_back(plan: &crate::plan::Plan, whose: &str, out: &mut String) {
     let lines = [
         (&plan.signal_skipped, "Held back, no diff signal for them"),
+        (&plan.profile_off, "Turned off by the reviewer's profile"),
         (
             &plan.data_skipped,
             "Held back, the part is data only (read by the whole-diff lenses and security)",

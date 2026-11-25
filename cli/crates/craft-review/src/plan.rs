@@ -50,6 +50,9 @@ pub struct Plan {
     /// The data files of a part with source beside them, which its per-file lenses do not read.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub data_files: Vec<String>,
+    /// The lenses the reviewer's profile turned off ([`crate::composition`]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub profile_off: Vec<String>,
 }
 
 impl Plan {
@@ -247,6 +250,7 @@ pub fn plan(input: PlanInput<'_>) -> Plan {
         light_skipped: Vec::new(),
         metrics_dropped: Vec::new(),
         signal_skipped: Vec::new(),
+        profile_off: Vec::new(),
         data_skipped: Vec::new(),
         data_files: Vec::new(),
     };

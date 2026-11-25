@@ -72,6 +72,7 @@ pub(super) fn prepare(
     opts: &StartOptions,
     run: &mut RunState,
 ) {
+    compose(opts, profiles, run);
     let taking_part = |p: &&Profile| run.tracks.iter().any(|t| t.profile == p.id);
     let metrics = profiles.iter().filter(taking_part).any(complexity::wanted);
     let sql = crate::embedded_sql::mark(cwd, &run.diff.merge_base, &mut run.tracks);
@@ -135,6 +136,33 @@ pub(super) fn prepare(
     // A red gate ends the run before any lens: its mutants would run for no one.
     if run.gate.exit().is_none() {
         launch_mutants(cwd, dir, opts, run);
+    }
+}
+
+/// The lens composition the reviewer's profile gives the run (realm @nick/craft, node #644), and
+/// the line the report says of it: what it turned off and held, that `--all-lenses` set it aside,
+/// or why it was refused or could not be read — never silently.
+fn compose(opts: &StartOptions, profiles: &[Profile], run: &mut RunState) {
+    if !opts.lenses_unread.is_empty() {
+        run.notes.push(format!(
+            "the reviewer's profile's [lenses] section could not be read ({}): every lens runs as its profile says",
+            opts.lenses_unread
+        ));
+    }
+    if opts.lenses.is_empty() {
+        return;
+    }
+    match crate::composition::Composition::of(&opts.lenses, profiles) {
+        Err(e) => run.notes.push(format!(
+            "the reviewer's profile's [lenses] section was refused ({e}): every lens runs as its profile says"
+        )),
+        Ok(c) if opts.all_lenses => run.notes.extend(c.line().map(|l| {
+            format!("every lens runs (`--all-lenses`), though {l}")
+        })),
+        Ok(c) => {
+            run.notes.extend(c.line());
+            run.context.composition = c;
+        }
     }
 }
 

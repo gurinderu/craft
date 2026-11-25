@@ -38,6 +38,12 @@ pub struct StartOptions {
     pub runs: Option<PathBuf>,
     /// Strict mode: the maintainability bar is a presumption of block.
     pub strict: bool,
+    /// Every lens, the reviewer's profile's composition aside: the release's full review.
+    pub all_lenses: bool,
+    /// The reviewer's profile's `[lenses]` section, each `profile:lens` with its state
+    /// ([`crate::composition`]); empty with `lenses_unread` naming why when it could not be read.
+    pub lenses: Vec<(String, crate::composition::State)>,
+    pub lenses_unread: String,
     /// The launcher's own records (`priorDecisions`) as given, added to what the run recalls; `Err`
     /// names why the host's list could not be read, which refuses it and runs the review anyway.
     pub prior_decisions: Option<Result<Value, String>>,

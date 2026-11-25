@@ -55,10 +55,13 @@ fn why_failed(task: Option<&Task>) -> String {
 
 /// The profiles taking part in the run, in its tracks' order.
 pub(crate) fn profiles_of(run: &RunState) -> Result<Vec<Profile>, Error> {
-    run.tracks
+    let mut profiles = run
+        .tracks
         .iter()
         .map(|t| Profile::load(&t.profile).map_err(Error::from))
-        .collect()
+        .collect::<Result<Vec<_>, _>>()?;
+    crate::composition::apply(&mut profiles, &run.context.composition);
+    Ok(profiles)
 }
 
 /// Moves the run on once no task is pending.
@@ -221,6 +224,9 @@ fn plan_tracks(run: &mut RunState, profiles: &[Profile]) {
             design: track.design,
             signals: track.signals.as_deref(),
         }));
+        if let Some(plan) = track.plan.as_mut() {
+            crate::composition::hold(plan, &run.context.composition, &p.id);
+        }
     }
     // A lens the plan would run that could not look is a coverage gap, named once, under Not run;
     // one no plan picked leaves none.

@@ -51,11 +51,13 @@ mod ci_tests;
 mod code_graph;
 #[cfg(test)]
 mod code_graph_tests;
+pub mod lenses;
 pub mod mutants;
 mod point;
 mod reusable;
 #[cfg(test)]
 mod reusable_tests;
+mod section;
 mod shell;
 mod signal;
 pub mod workflow;

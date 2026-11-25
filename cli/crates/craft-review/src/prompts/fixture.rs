@@ -11,6 +11,7 @@ impl PromptContext {
     pub(crate) fn fixture(repo: &str, base: &str) -> Self {
         Self {
             mutants: false,
+            composition: crate::composition::Composition::default(),
             repo: repo.into(),
             base: base.into(),
             spec: String::new(),

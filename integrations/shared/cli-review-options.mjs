@@ -5,7 +5,7 @@ import { shellWord } from './plugin-script.mjs'
 import { hasControl, launchOptions } from './cli-review-keys.mjs'
 import { absolutePath } from './cli-review-step.mjs'
 
-/** @typedef {{ repo: string, base: string, depth: string, craftBin: string | null, craftRoot: string, fresh: boolean, delta: boolean, fullEvery: string, strict: boolean, gate: boolean, priorDecisions: string, extraLenses: string, unitScope: boolean, path: string, run: string, comment: boolean, optional: string, via: string, recalled: boolean, recallDegraded: string, gateOnly: boolean, gateFrom: string, pr: string }} Options  delta: the run reviews only the fix commits since an earlier review (`--delta`), so it never approves; pr: the pull request a finished run is published on (`run` with `comment`), or on a start the one under review, whose head branch keys a detached HEAD's chain; '' for the reviewed branch's; gateOnly: run the mechanical gate alone (`craft review gate`), no review; gateFrom: the directory of a gate run alone to take rather than run one ('' none); optional: the text of `--optional`, '' for none; via: the parent engine that launched the run, '' when none; recalled: the launcher recalled the memory itself (`--no-recall`); recallDegraded: why that recall may not have read the whole store (`--recall-degraded`), '' when not; comment: publish the findings on the branch's PR; run the directory of a stopped or interrupted run to resume, '' to start one; craftBin shell-quoted, null until fetched; depth and fullEvery '' when not given; priorDecisions the JSON text of the launcher's list, '' when none; extraLenses the text of `--extra-lenses`, '' when not given; path the directory to review, '' for the whole change */
+/** @typedef {{ repo: string, base: string, depth: string, craftBin: string | null, craftRoot: string, fresh: boolean, delta: boolean, fullEvery: string, strict: boolean, allLenses: boolean, gate: boolean, priorDecisions: string, extraLenses: string, unitScope: boolean, path: string, run: string, comment: boolean, optional: string, via: string, recalled: boolean, recallDegraded: string, gateOnly: boolean, gateFrom: string, pr: string }} Options  delta: the run reviews only the fix commits since an earlier review (`--delta`), so it never approves; allLenses: every lens runs, the reviewer's profile's lens composition set aside (`--all-lenses`, the release's full review); pr: the pull request a finished run is published on (`run` with `comment`), or on a start the one under review, whose head branch keys a detached HEAD's chain; '' for the reviewed branch's; gateOnly: run the mechanical gate alone (`craft review gate`), no review; gateFrom: the directory of a gate run alone to take rather than run one ('' none); optional: the text of `--optional`, '' for none; via: the parent engine that launched the run, '' when none; recalled: the launcher recalled the memory itself (`--no-recall`); recallDegraded: why that recall may not have read the whole store (`--recall-degraded`), '' when not; comment: publish the findings on the branch's PR; run the directory of a stopped or interrupted run to resume, '' to start one; craftBin shell-quoted, null until fetched; depth and fullEvery '' when not given; priorDecisions the JSON text of the launcher's list, '' when none; extraLenses the text of `--extra-lenses`, '' when not given; path the directory to review, '' for the whole change */
 
 // The depths `craft review start --depth` takes.
 const DEPTHS = new Set(['light', 'full'])
@@ -46,15 +46,27 @@ function roundOptions(a) {
  * branch not trusted) and the launcher's
  * own records, `priorDecisions`, as JSON text — the binary reads and refuses them as the engine does (a string, or any
  * value that is no list, is named and nothing of it applied), and adds them to what it recalls from the project's memory.
- * @param {Record<string, unknown>} a @returns {{ strict: boolean, gate: boolean, priorDecisions: string } | { refused: string }}
+ * `allLenses` (every lens, the reviewer's profile's lens composition set aside: the release's full review).
+ * @param {Record<string, unknown>} a @returns {{ strict: boolean, allLenses: boolean, gate: boolean, priorDecisions: string } | { refused: string }}
  */
 function memoryOptions(a) {
-  const strict = a['strict'] ?? false
-  if (strict !== true && strict !== false) return { refused: `strict=${JSON.stringify(strict)} is not true or false` }
-  const gate = a['gate'] ?? true
-  if (gate !== true && gate !== false) return { refused: `gate=${JSON.stringify(gate)} is not true or false` }
+  const strict = flag(a, 'strict', false)
+  if (typeof strict === 'string') return { refused: strict }
+  const allLenses = flag(a, 'allLenses', false)
+  if (typeof allLenses === 'string') return { refused: allLenses }
+  const gate = flag(a, 'gate', true)
+  if (typeof gate === 'string') return { refused: gate }
   const given = a['priorDecisions']
-  return { strict, gate, priorDecisions: given == null ? '' : JSON.stringify(given) }
+  return { strict, allLenses, gate, priorDecisions: given == null ? '' : JSON.stringify(given) }
+}
+
+/**
+ * The boolean argument `key` of `a`, `absent` when it is not given; the refusal's text when it is no boolean.
+ * @param {Record<string, unknown>} a @param {string} key @param {boolean} absent @returns {boolean | string}
+ */
+function flag(a, key, absent) {
+  const v = a[key] ?? absent
+  return v === true || v === false ? v : `${key}=${JSON.stringify(v)} is not true or false`
 }
 
 /**

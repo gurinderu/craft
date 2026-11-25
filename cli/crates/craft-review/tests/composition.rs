@@ -1,0 +1,134 @@
+//! The reviewer's lens composition end to end over a fixture repository (realm @nick/craft, node
+//! #644): a lens turned off leaves the lens step and is named in the report, `--all-lenses` sets the
+//! composition aside and says so, and a composition naming the security lens is refused whole.
+#![expect(
+    clippy::unwrap_used,
+    reason = "the helpers of these tests fail loudly, like the tests they serve"
+)]
+
+mod common;
+
+use common::{fixture, ids, opts, scout, submit};
+use craft_review::composition::State;
+use craft_review::step::{self, StartOptions};
+use serde_json::{Value, json};
+
+/// The lens step of a small run over a Rust fixture whose start takes `lenses` and `all`, its
+/// scout picking `errors`: the step and the run's state.
+fn lens_step(lenses: &[(&str, State)], all: bool) -> (Value, Value) {
+    let (repo, out) = (fixture(true), tempfile::tempdir().unwrap());
+    let run = out.path().join("run");
+    step::start(&StartOptions {
+        lenses: lenses.iter().map(|(l, s)| ((*l).to_owned(), *s)).collect(),
+        all_lenses: all,
+        ..opts(repo.path(), out.path())
+    })
+    .unwrap();
+    let s = submit(&run, json!({"scout-rust": scout("small", &["errors"])}));
+    let state: Value =
+        serde_json::from_str(&std::fs::read_to_string(run.join("state.json")).unwrap()).unwrap();
+    (s, state)
+}
+
+fn notes(state: &Value) -> String {
+    state["notes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(Value::as_str)
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[test]
+fn a_lens_the_profile_turns_off_leaves_the_lens_step_and_is_named() {
+    let (s, state) = lens_step(&[("rust:errors", State::Off)], false);
+    assert_eq!(ids(&s), ["lens-rust-intent-r1", "lens-rust-tests-r1"]);
+    assert_eq!(state["tracks"][0]["plan"]["profileOff"], json!(["errors"]));
+    assert!(
+        notes(&state).contains("turned off: rust:errors"),
+        "{}",
+        notes(&state)
+    );
+}
+
+#[test]
+fn all_lenses_sets_the_composition_aside_and_says_what_it_would_have_done() {
+    let (s, state) = lens_step(&[("rust:errors", State::Off)], true);
+    assert_eq!(
+        ids(&s),
+        [
+            "lens-rust-errors-r1",
+            "lens-rust-intent-r1",
+            "lens-rust-tests-r1"
+        ]
+    );
+    assert!(
+        notes(&state).contains("every lens runs (`--all-lenses`), though"),
+        "{}",
+        notes(&state)
+    );
+}
+
+#[test]
+fn a_composition_naming_the_security_lens_is_refused_whole() {
+    let (s, state) = lens_step(
+        &[("rust:errors", State::Off), ("rust:safety", State::Off)],
+        false,
+    );
+    assert_eq!(
+        ids(&s),
+        [
+            "lens-rust-errors-r1",
+            "lens-rust-intent-r1",
+            "lens-rust-tests-r1"
+        ]
+    );
+    assert!(
+        notes(&state).contains("was refused (rust:safety"),
+        "{}",
+        notes(&state)
+    );
+}
+
+/// The second round's lens step of a medium run whose `errors` found something new in the first,
+/// the start taking `lenses`.
+fn second_round(lenses: &[(&str, State)]) -> Vec<String> {
+    let (repo, out) = (fixture(true), tempfile::tempdir().unwrap());
+    let run = out.path().join("run");
+    step::start(&StartOptions {
+        lenses: lenses.iter().map(|(l, s)| ((*l).to_owned(), *s)).collect(),
+        ..opts(repo.path(), out.path())
+    })
+    .unwrap();
+    let s = submit(&run, json!({"scout-rust": scout("medium", &["errors"])}));
+    let first: serde_json::Map<String, Value> = ids(&s)
+        .into_iter()
+        .map(|id| {
+            let found = if id.contains("-errors-") {
+                vec![common::finding("Medium", 2)]
+            } else {
+                Vec::new()
+            };
+            let name = id
+                .trim_start_matches("lens-rust-")
+                .trim_end_matches("-r1")
+                .to_owned();
+            (id, common::lens(&name, &found))
+        })
+        .collect();
+    let s = step::submit(&run, Some(&first)).unwrap();
+    ids(&s)
+}
+
+#[test]
+fn a_lens_held_to_the_first_round_is_not_sent_again_though_it_found_something() {
+    assert!(
+        second_round(&[])
+            .iter()
+            .any(|id| id == "lens-rust-errors-r2"),
+        "unheld, it goes again"
+    );
+    let held = second_round(&[("rust:errors", State::FirstRound)]);
+    assert!(!held.iter().any(|id| id.contains("-errors-")), "{held:?}");
+}

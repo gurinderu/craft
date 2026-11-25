@@ -8,6 +8,8 @@ use std::time::Duration;
 
 use serde::Deserialize;
 
+pub use super::section::SectionError;
+
 /// The section as the reviewer confirmed it.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -30,48 +32,13 @@ impl MutantsSection {
     }
 }
 
-/// Why the section could not be read.
-#[derive(Debug, thiserror::Error)]
-pub enum SectionError {
-    #[error("{}: {source}", path.display())]
-    Read {
-        path: std::path::PathBuf,
-        #[source]
-        source: std::io::Error,
-    },
-    #[error("{}: {}", path.display(), source.message())]
-    Toml {
-        path: std::path::PathBuf,
-        #[source]
-        source: toml::de::Error,
-    },
-}
-
 /// The `[mutants]` section of the profile at `path`: the default when the profile or the section
 /// is absent.
 ///
 /// # Errors
 /// When the profile cannot be read, is not TOML, or the section is not of this shape.
 pub fn of(path: &Path) -> Result<MutantsSection, SectionError> {
-    let text = match std::fs::read_to_string(path) {
-        Ok(t) => t,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(MutantsSection::default()),
-        Err(source) => {
-            return Err(SectionError::Read {
-                path: path.to_owned(),
-                source,
-            });
-        }
-    };
-    let toml = |source| SectionError::Toml {
-        path: path.to_owned(),
-        source,
-    };
-    let table: toml::Table = toml::from_str(&text).map_err(toml)?;
-    match table.get("mutants") {
-        None => Ok(MutantsSection::default()),
-        Some(section) => section.clone().try_into().map_err(toml),
-    }
+    super::section::of(path, "mutants").map(Option::unwrap_or_default)
 }
 
 #[cfg(test)]
