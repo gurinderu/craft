@@ -23,10 +23,13 @@ pub(crate) enum Outcome {
     Login(String),
     /// Why the process a delegated run hands its tasks to stopped answering (delegate.rs).
     Gone(String),
-    /// `said`: the last line the process wrote on stderr, when it wrote one.
+    /// `said`: the last line the process wrote on stderr, when it wrote one. `wrote`: the last
+    /// line the agent itself wrote of why it gave no answer — never craft's own words, `None` when
+    /// it wrote nothing — for the stop on a round that died whole (realm @nick/craft, node #666).
     Unanswered {
         why: String,
         said: Option<String>,
+        wrote: Option<String>,
     },
     /// The run stopped before the task's turn came.
     NotStarted,
@@ -67,6 +70,27 @@ fn tail(stderr: &str, stdout: &str) -> String {
     joined.chars().take(300).collect()
 }
 
+/// The last line the agent itself wrote in a failure `e` that is neither a quit nor a clean exit
+/// with no answer: a failed exit's stderr, a delegated turn's failure; `None` where the words are
+/// craft's own.
+fn own_words(e: &AgentError) -> Option<String> {
+    match e {
+        AgentError::Exit { stderr, .. } => last_line(stderr),
+        AgentError::Failed { subtype } => last_line(subtype),
+        AgentError::Quit { .. }
+        | AgentError::NoAnswer { .. }
+        | AgentError::Spawn { .. }
+        | AgentError::Io(_)
+        | AgentError::TimedOut(_)
+        | AgentError::Unreadable(_)
+        | AgentError::NotAnObject
+        | AgentError::NoStructuredOutput
+        | AgentError::NotYet { .. }
+        | AgentError::HostGone(_)
+        | AgentError::NotStarted => None,
+    }
+}
+
 /// Whether the failure `e` stops the run: the usage limit, or no login.
 pub(crate) fn stops(host: &Host, e: &AgentError) -> bool {
     match e {
@@ -103,6 +127,8 @@ fn quit(host: &Host, code: Option<i32>, stderr: &str, stdout: &str) -> Outcome {
     Outcome::Unanswered {
         why: format!("{} exited {code}: {}", host.name(), tail(stderr, stdout)),
         said: last_line(stderr),
+        // Last on either stream, as `tail` reads them: opencode prints its error events there.
+        wrote: last_line(&format!("{stderr}\n{stdout}")),
     }
 }
 
@@ -129,12 +155,16 @@ pub(crate) fn outcome_of(
         Err(AgentError::NoAnswer { stderr, stdout }) => Outcome::Unanswered {
             why: format!("{} gave no answer: {}", host.name(), tail(&stderr, &stdout)),
             said: last_line(&stderr),
+            // Its stdout is the agent's reply text, not why it gave none.
+            wrote: last_line(&stderr),
         },
         Err(e) => {
+            let wrote = own_words(&e);
             let why = e.to_string();
             Outcome::Unanswered {
                 said: last_line(&why),
                 why,
+                wrote,
             }
         }
     }
@@ -173,6 +203,11 @@ fn write_answer(task: &Task, reply: &AgentReply) -> Outcome {
         Err(e) => Outcome::Unanswered {
             why: format!("its answer could not be written: {e}"),
             said: None,
+            wrote: None,
         },
     }
 }
+
+#[cfg(test)]
+#[path = "outcome_tests.rs"]
+mod tests;

@@ -1,0 +1,83 @@
+use std::path::PathBuf;
+
+use super::*;
+use crate::run::HostKind;
+use crate::run::models::thinking_table;
+
+fn host() -> Host {
+    Host {
+        kind: HostKind::OpenCode,
+        models: std::iter::empty().collect(),
+        thinking: thinking_table("", "--thinking").unwrap(),
+        command: PathBuf::from("x"),
+        agents: None,
+        archived: true,
+        delegate: None,
+    }
+}
+
+fn wrote(e: AgentError) -> Option<String> {
+    let o = quit_or(e);
+    let Outcome::Unanswered { wrote, .. } = o else {
+        panic!("{o:?}")
+    };
+    wrote
+}
+
+fn quit_or(e: AgentError) -> Outcome {
+    let task = Task {
+        id: "t".into(),
+        label: "t".into(),
+        model: "opus".into(),
+        prompt_file: PathBuf::from("/p"),
+        schema_file: PathBuf::from("/s"),
+        answer_file: PathBuf::from("/a"),
+        agent_type: None,
+        consumer_agent: None,
+        kind: None,
+    };
+    outcome_of(&task, Err(e), &host())
+}
+
+/// What a dead agent wrote is its own words: an error on stdout after stderr's noise, its stderr
+/// on a clean exit with no answer, a delegated turn's failure; nothing where it wrote nothing or
+/// the words are craft's own (realm @nick/craft, node #666).
+#[test]
+fn a_dead_agent_wrote_only_its_own_words() {
+    let quit = |stderr: &str, stdout: &str| AgentError::Quit {
+        code: Some(1),
+        stderr: stderr.into(),
+        stdout: stdout.into(),
+    };
+    assert_eq!(
+        wrote(quit("loading plugins", "Insufficient Balance")).as_deref(),
+        Some("Insufficient Balance")
+    );
+    assert_eq!(wrote(quit("boom", "")).as_deref(), Some("boom"));
+    assert_eq!(wrote(quit("", "")), None);
+    let no_answer = |stderr: &str| AgentError::NoAnswer {
+        stderr: stderr.into(),
+        stdout: "Here is my review in prose.".into(),
+    };
+    assert_eq!(wrote(no_answer("")), None);
+    assert_eq!(
+        wrote(no_answer("overloaded")).as_deref(),
+        Some("overloaded")
+    );
+    assert_eq!(
+        wrote(AgentError::Exit {
+            code: Some(2),
+            stderr: "segfault".into()
+        })
+        .as_deref(),
+        Some("segfault")
+    );
+    assert_eq!(
+        wrote(AgentError::Failed {
+            subtype: "provider.no-route".into()
+        })
+        .as_deref(),
+        Some("provider.no-route")
+    );
+    assert_eq!(wrote(AgentError::NotAnObject), None);
+}

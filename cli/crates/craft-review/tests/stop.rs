@@ -379,11 +379,12 @@ fn a_dead_round_names_what_its_agents_said_rather_than_a_guess() {
     let mut s = Value::Null;
     for n in 0..3 {
         let mut died = said(n);
-        // No task id, no `=`: passed over, as is an entry with no line.
+        // No task id, no `=`, no line, an id no task has: each passed over.
         died.extend([
             "=a stray line".to_owned(),
             "no separator".to_owned(),
-            "lens-rust-errors-r9=".to_owned(),
+            "lens-rust-errors-r1=".to_owned(),
+            "not-a-task=OpenCode exited 1: rate limited".to_owned(),
         ]);
         s = step::submit_with(
             &run,

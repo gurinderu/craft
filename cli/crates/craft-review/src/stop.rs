@@ -110,18 +110,18 @@ pub(crate) fn open(run: &mut RunState) {
 }
 
 /// Keeps what this submit's dead agents last wrote (`died`, each `<task id>=<line>`) for the
-/// round's stop; an entry with no `=` or no line is passed over.
+/// round's stop; an entry with no `=`, no line or an id that is no task of the run is passed over.
 pub(crate) fn hear(run: &mut RunState, died: &[String]) {
     for (id, line) in died.iter().filter_map(|d| d.split_once('=')) {
         let line = folded(line);
-        if !id.is_empty() && !line.is_empty() {
+        if !line.is_empty() && run.tasks.iter().any(|t| t.id == id) {
             run.watch.said.insert(id.to_owned(), line);
         }
     }
 }
 
-/// `line` as one line, capped, each id in it — a run of 8 or more hex digits and dashes, as a
-/// request id or a UUID is — folded to `…`, so the agents that said one thing count together.
+/// `line` as one line, capped, each id in it — a run of hex digits and dashes holding 8 or more hex
+/// digits, as a request id or a UUID is — folded to `…`, so the agents that said one thing count together.
 fn folded(line: &str) -> String {
     let one = line.js_split_whitespace().collect::<Vec<_>>().join(" ");
     let mut out = String::new();

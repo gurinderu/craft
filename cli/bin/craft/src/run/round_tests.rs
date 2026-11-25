@@ -27,6 +27,7 @@ fn a_round_counts_what_ran_and_says_each_outcome() {
             Outcome::Unanswered {
                 why: "x".into(),
                 said: Some("boom".into()),
+                wrote: Some("Insufficient Balance".into()),
             },
         ),
         (2, Outcome::Limit("hit your limit".into())),
@@ -41,6 +42,7 @@ fn a_round_counts_what_ran_and_says_each_outcome() {
     });
     assert_eq!(r.abandoned, ["a"]);
     assert_eq!(r.errors, ["boom"]);
+    assert_eq!(r.died, ["b=Insufficient Balance"]);
     assert_eq!(r.limit.as_deref(), Some("hit your limit"));
     assert_eq!(r.login.as_deref(), Some("no login"));
     assert_eq!(r.dispatched, 4);
@@ -61,4 +63,24 @@ fn one_answer_keeps_the_round_alive() {
         .into_iter()
         .collect();
     assert!(!gather(&tasks, &outcomes, Vec::new(), &|_| {}).all_died);
+}
+
+/// A task whose agent wrote nothing tells the binary nothing, so the stop keeps its guess rather
+/// than naming craft's own words (realm @nick/craft, node #666).
+#[test]
+fn a_task_whose_agent_wrote_nothing_is_not_said_to_have_died_of_anything() {
+    let tasks = vec![task("a")];
+    let outcomes: BTreeMap<usize, Outcome> = [(
+        0,
+        Outcome::Unanswered {
+            why: "opencode gave no answer: ".into(),
+            said: None,
+            wrote: None,
+        },
+    )]
+    .into_iter()
+    .collect();
+    let r = gather(&tasks, &outcomes, Vec::new(), &|_| {});
+    assert!(r.all_died);
+    assert!(r.died.is_empty(), "{:?}", r.died);
 }
