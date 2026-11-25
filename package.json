@@ -2,7 +2,7 @@
   "name": "craft",
   "private": true,
   "type": "module",
-  "description": "Dev-only tooling for the craft plugin repo. craft itself ships no runtime dependencies.",
+  "description": "craft: AI code review and code-quality skills for coding agents. This file holds the pi package manifest and the repo's dev tooling; craft itself ships no runtime dependencies.",
   "pi": {
     "extensions": [
       "./integrations/pi/pi-extension.mjs"
