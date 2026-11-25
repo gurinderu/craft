@@ -9,6 +9,8 @@ use serde_json::Value;
 
 use super::drive::{Driver, Running, is_done, steps};
 use super::protocol::{Protocol, Said};
+use craft_review::filing::{StopCause, UNFINISHED};
+
 use super::report::{cut_short, finished_answer, resume_hint, said_section, stopped_answer, text};
 
 /// How the loop ended.
@@ -16,8 +18,8 @@ use super::report::{cut_short, finished_answer, resume_hint, said_section, stopp
 pub(crate) enum Ending {
     /// The binary's finished step.
     Finished(Value),
-    /// The loop stopped before the binary finished the run, and why.
-    Stopped(String),
+    /// The loop stopped before the binary finished the run: why, and its class for the record.
+    Stopped(String, StopCause),
     /// A stopping signal ended the loop: the exit status it asks for, and where it caught the run.
     Signalled(u8, Caught),
     /// The binary finished the run but kept no finished step to file its record from.
@@ -123,11 +125,11 @@ fn ended<P: Protocol>(d: &Driver<'_, P>, ending: Ending, r: &mut Running) -> Ans
             }
         }
         Ending::Signalled(code, caught) => signalled(d, code, &caught, r),
-        Ending::Stopped(why) => {
-            let filed = r.run.as_deref().and_then(|run| {
-                d.proto
-                    .unfinished(run, "the craft binary did not finish the run")
-            });
+        Ending::Stopped(why, cause) => {
+            let filed = r
+                .run
+                .as_deref()
+                .and_then(|run| d.proto.unfinished(run, &[UNFINISHED, cause.note()]));
             for line in filed.into_iter().flatten() {
                 r.lost.note_line(line, &log);
             }
@@ -165,7 +167,7 @@ fn signalled<P: Protocol>(d: &Driver<'_, P>, code: u8, caught: &Caught, r: &mut 
     for line in r
         .run
         .as_deref()
-        .and_then(|run| d.proto.unfinished(run, &why))
+        .and_then(|run| d.proto.unfinished(run, &[&why]))
         .into_iter()
         .flatten()
     {
@@ -232,11 +234,14 @@ pub(crate) fn recovered<P: Protocol>(
         } else {
             format!(" (the binary reports {at})")
         };
-        return Ending::Stopped(format!(
-            "review stopped{at}: {error}. The run is in {}. {}",
-            run.display(),
-            d.hint(run)
-        ));
+        return Ending::Stopped(
+            format!(
+                "review stopped{at}: {error}. The run is in {}. {}",
+                run.display(),
+                d.hint(run)
+            ),
+            StopCause::Step,
+        );
     };
     let refile = done && filing.is_some_and(|f| text(f, "record") != "filed");
     let resume = Said {

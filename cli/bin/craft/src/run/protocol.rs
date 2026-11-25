@@ -34,9 +34,9 @@ pub(crate) trait Protocol {
     fn status(&self, run: &Path) -> Result<Value>;
     /// Publishes a finished run on its PR: its finished step.
     fn comment(&self, run: &Path) -> Result<Value>;
-    /// Files the INCOMPLETE record of a run the loop stopped driving: what did not land; `None`
-    /// when nothing was filed.
-    fn unfinished(&self, run: &Path, why: &str) -> Option<Vec<String>>;
+    /// Files the INCOMPLETE record of a run the loop stopped driving, `not_run` saying why: what
+    /// did not land; `None` when nothing was filed.
+    fn unfinished(&self, run: &Path, not_run: &[&str]) -> Option<Vec<String>>;
 }
 
 /// The protocol in this process: the commands' own functions.
@@ -82,7 +82,7 @@ impl Protocol for InProcess {
         })
     }
 
-    fn unfinished(&self, run: &Path, why: &str) -> Option<Vec<String>> {
-        filing::unfinished(run, why, &crate::filing_worker::BoundedWriter)
+    fn unfinished(&self, run: &Path, not_run: &[&str]) -> Option<Vec<String>> {
+        filing::unfinished(run, not_run, &crate::filing_worker::BoundedWriter)
     }
 }

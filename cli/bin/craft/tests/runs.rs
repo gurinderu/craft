@@ -537,3 +537,43 @@ fn a_retro_ranks_coverage_gaps_beside_not_run_by_their_lens_and_kind() {
     );
     assert_eq!(runs("a gap written with no separator"), Some(json!(1)));
 }
+
+/// Unfinished runs are counted by why they stopped: each cause line is one row of `notRun`, beside
+/// the line every unfinished run carries (realm @nick/craft, node #638).
+#[test]
+fn retro_counts_the_unfinished_runs_by_their_cause() {
+    let d = tempfile::tempdir().unwrap();
+    for (ts, cause) in [
+        (
+            "2026-11-25T10-00-00Z",
+            "stopped: the usage limit was reached",
+        ),
+        (
+            "2026-11-25T11-00-00Z",
+            "stopped: the usage limit was reached",
+        ),
+        (
+            "2026-11-25T12-00-00Z",
+            "stopped: a step of the binary was lost",
+        ),
+    ] {
+        let mut r = review("0.9.0", "INCOMPLETE", 0);
+        r["notRun"] = json!(["the craft binary did not finish the run", cause]);
+        record(d.path(), ts, &r);
+    }
+    let lines = ndjson(&craft(d.path(), &["retro", "0.9.0", "--json"]));
+    let runs = |what: &str| {
+        lines
+            .iter()
+            .find(|l| l["section"] == "notRun" && l["what"] == what)
+            .map(|l| l["runs"].clone())
+    };
+    assert_eq!(
+        (
+            runs("the craft binary did not finish the run"),
+            runs("stopped: the usage limit was reached"),
+            runs("stopped: a step of the binary was lost")
+        ),
+        (Some(json!(3)), Some(json!(2)), Some(json!(1)))
+    );
+}
