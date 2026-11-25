@@ -20,6 +20,7 @@ mod id;
 mod judge;
 mod matching;
 mod merge;
+mod open;
 mod oppose;
 #[cfg(test)]
 mod parity;
@@ -34,17 +35,19 @@ mod tests;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+pub use apply::{Applied, Scope};
 pub use asked::{Asked, MatchAsked};
 pub use matching::SURE_WINDOW;
+pub use open::{Ask, RecallCut, git_scope};
 pub use record::{PriorDecision, RecordKind};
+pub use rules::Covered;
 pub use source::MemorySource;
 
 pub(crate) use id::{memory_record_id, split_scope_line};
 pub(crate) use judge::{contradiction_of, contradiction_record};
 pub(crate) use record::scope_parts;
 
-use crate::agent::Model;
-use crate::content::{self, ContentError};
+use crate::content::ContentError;
 use crate::ledger::LedgerRow;
 use crate::rereview::Chain;
 use crate::state::{Task, TaskKind, TaskState};
@@ -134,16 +137,9 @@ impl Memory {
     /// # Errors
     /// When its prompt or schema is missing.
     pub fn recall_task(repo: &str, paths: &[String], base: &str) -> Result<Task, ContentError> {
-        let prompt = recall::prompt(paths, base)?;
-        let (_, grouped, cut) = recall::entries(paths);
-        Ok(Task::new(
-            "memory-recall".into(),
-            "memory-recall".into(),
-            format!("{}{prompt}", crate::prompts::repo_directive(repo)),
-            Model::Sonnet,
-            content::schema("memory-recall")?,
-            TaskKind::Recall { cut, grouped },
-        ))
+        let (mut ask, RecallCut { cut, grouped }) = Self::recall_ask(paths, base)?;
+        ask.prompt = format!("{}{}", crate::prompts::repo_directive(repo), ask.prompt);
+        Ok(ask.task(TaskKind::Recall { cut, grouped }))
     }
 
     /// The paths a round reviews, for the memory's bounds to rank by: the changed files of its
@@ -179,14 +175,7 @@ impl Memory {
             .answer
             .as_ref()
             .filter(|_| task.state == TaskState::Answered);
-        let m = merge::merge(
-            recall::read(answer, cut, grouped),
-            self.passed.as_ref(),
-            paths,
-        );
-        self.decisions = m.decisions;
-        self.set_refused(m.refused);
-        self.source = m.source;
+        self.take_recalled(answer, RecallCut { cut, grouped }, paths);
     }
 
     /// The ledger rows of the findings set aside: the author's word, which the next round carries.

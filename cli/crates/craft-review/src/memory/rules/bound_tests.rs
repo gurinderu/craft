@@ -50,7 +50,12 @@ fn a_critical_read_through_javascripts_trim_is_raised_under_a_covering_rule() {
     let verdicts: Vec<Value> = (0..p.pairs().len())
         .map(|i| json!({"pair": i, "covered": true, "violates": false, "why": "y"}))
         .collect();
-    let out = apply(findings, &p, &[Some(json!({ "verdicts": verdicts }))]);
+    let out = apply(
+        findings,
+        &p,
+        &[Some(json!({ "verdicts": verdicts }))],
+        "why",
+    );
     let severities = |list: &[Value]| -> Vec<String> {
         list.iter()
             .map(|f| f["severity"].as_str().unwrap().to_owned())

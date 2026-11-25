@@ -98,23 +98,19 @@ pub(super) fn reraised_note(d: &PriorDecision, why: &str) -> String {
     )
 }
 
-/// `f` with `note` appended to its `why`, and `extra` fields set.
-pub(in crate::memory) fn noted(f: &Value, note: &str, extra: &[(&str, Value)]) -> Value {
+/// `f` with `note` appended to its field `key` (the review's `why`), and `extra` fields set.
+pub(in crate::memory) fn noted(f: &Value, key: &str, note: &str, extra: &[(&str, Value)]) -> Value {
     let mut o: Map<String, Value> = f.as_object().cloned().unwrap_or_default();
-    let why = o
-        .get("why")
-        .and_then(Value::as_str)
-        .unwrap_or("")
-        .to_owned();
-    o.insert("why".into(), Value::from(format!("{why} · {note}")));
+    let was = o.get(key).and_then(Value::as_str).unwrap_or("").to_owned();
+    o.insert(key.into(), Value::from(format!("{was} · {note}")));
     for (k, v) in extra {
         o.insert((*k).to_owned(), v.clone());
     }
     Value::Object(o)
 }
 
-/// `f` set aside by `d`, matched as `how`.
-pub(super) fn set_aside(f: &Value, d: &PriorDecision, how: &str) -> Value {
+/// `f` set aside by `d`, matched as `how`, its mark appended to its field `key`.
+pub(super) fn set_aside(f: &Value, d: &PriorDecision, how: &str, key: &str) -> Value {
     let tier = f.get("tier").and_then(Value::as_str).unwrap_or("confirmed");
     let mut extra = vec![
         ("priorTier", Value::from(tier)),
@@ -128,5 +124,5 @@ pub(super) fn set_aside(f: &Value, d: &PriorDecision, how: &str) -> Value {
             json!({"id": d.id, "reason": d.reason, "who": d.who, "when": d.when, "link": d.link, "commit": d.commit}),
         ));
     }
-    noted(f, &mark(d), &extra)
+    noted(f, key, &mark(d), &extra)
 }

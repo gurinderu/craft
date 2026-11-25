@@ -32,18 +32,20 @@ pub(super) use section::{refused_section, section};
 
 /// What the scope check observed: the records whose scope is unchanged since their commit, and
 /// those whose commit the repository lacks.
-#[derive(Debug, Clone, Default)]
-pub(super) struct Scope {
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Scope {
     pub unchanged: BTreeSet<String>,
     pub missing: BTreeSet<String>,
 }
 
 /// The findings split: those kept in the verdict (a re-raised one with its note), those set aside
-/// with their mark, the notes on what was applied, and what could not be.
-#[derive(Debug, Clone, Default)]
-pub(super) struct Applied {
+/// with their mark, how many a record answered were raised again, the notes on what was applied,
+/// and what could not be.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Applied {
     pub kept: Vec<Value>,
     pub set_aside: Vec<Value>,
+    pub reraised: usize,
     pub notes: Vec<String>,
     pub refused: Vec<String>,
 }
@@ -96,8 +98,13 @@ fn refusals(
 }
 
 /// Applies the prepared records to `findings`, `answer` the match judge's when it was asked
-/// (`None`: it gave none).
-pub(super) fn apply(findings: Vec<Value>, p: &Prepared, answer: Option<&Value>) -> Applied {
+/// (`None`: it gave none), each mark and note appended to the findings' field `key`.
+pub(super) fn apply(
+    findings: Vec<Value>,
+    p: &Prepared,
+    answer: Option<&Value>,
+    key: &str,
+) -> Applied {
     let mut out = Applied {
         notes: p.notes.clone(),
         ..Applied::default()
@@ -127,10 +134,10 @@ pub(super) fn apply(findings: Vec<Value>, p: &Prepared, answer: Option<&Value>) 
         };
         let why = reraise_reason(&f, d, &p.scope);
         if why.is_empty() {
-            out.set_aside.push(set_aside(&f, d, how));
+            out.set_aside.push(set_aside(&f, d, how, key));
         } else {
             reraised += 1;
-            let f = noted(&f, &reraised_note(d, &why), &[]);
+            let f = noted(&f, key, &reraised_note(d, &why), &[]);
             out.kept.push(judge::mark_contradicting(
                 f,
                 judge::record_at(&p.ds, m.violation(fi)),
@@ -138,6 +145,7 @@ pub(super) fn apply(findings: Vec<Value>, p: &Prepared, answer: Option<&Value>) 
         }
     }
     out.notes.push(summary(&p.ds, &out.set_aside, reraised));
+    out.reraised = reraised;
     out
 }
 

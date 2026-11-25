@@ -181,6 +181,19 @@ impl Prepared {
         &self,
         findings: &[Value],
     ) -> Result<Option<crate::state::Task>, crate::content::ContentError> {
+        Ok(self
+            .ask(findings)?
+            .map(|a| a.task(crate::state::TaskKind::MatchJudge)))
+    }
+
+    /// What the match judge is asked about the asked pairs, `None` when there is none to ask.
+    ///
+    /// # Errors
+    /// When its template or schema is missing.
+    pub(in crate::memory) fn ask(
+        &self,
+        findings: &[Value],
+    ) -> Result<Option<super::super::Ask>, crate::content::ContentError> {
         if self.asked.pairs.is_empty() {
             return Ok(None);
         }
@@ -190,8 +203,6 @@ impl Prepared {
             .iter()
             .filter_map(|&(fi, di)| Some((self.ds.get(di)?, findings.get(fi)?)))
             .collect();
-        Judge::Match
-            .task(&judge::match_pairs_json(&pairs))
-            .map(Some)
+        Judge::Match.ask(&judge::match_pairs_json(&pairs)).map(Some)
     }
 }
