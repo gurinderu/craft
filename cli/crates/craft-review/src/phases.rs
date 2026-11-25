@@ -225,7 +225,12 @@ fn plan_tracks(run: &mut RunState, profiles: &[Profile]) {
             signals: track.signals.as_deref(),
         }));
         if let Some(plan) = track.plan.as_mut() {
-            crate::composition::hold(plan, &run.context.composition, &p.id);
+            let mut asked = crate::optional::bought(p, &run.optional);
+            if run.context.strict {
+                asked.push("maintainability".into());
+            }
+            let kept = crate::composition::hold(plan, &run.context.composition, &p.id, &asked);
+            run.notes.extend(kept);
         }
     }
     // A lens the plan would run that could not look is a coverage gap, named once, under Not run;

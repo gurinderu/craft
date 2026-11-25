@@ -16,10 +16,16 @@ use serde_json::{Value, json};
 /// The lens step of a small run over a Rust fixture whose start takes `lenses` and `all`, its
 /// scout picking `errors`: the step and the run's state.
 fn lens_step(lenses: &[(&str, State)], all: bool) -> (Value, Value) {
+    lens_step_with(lenses, all, "")
+}
+
+/// As [`lens_step`], the profile's section reported unread with `unread` when it is not empty.
+fn lens_step_with(lenses: &[(&str, State)], all: bool, unread: &str) -> (Value, Value) {
     let (repo, out) = (fixture(true), tempfile::tempdir().unwrap());
     let run = out.path().join("run");
     step::start(&StartOptions {
         lenses: lenses.iter().map(|(l, s)| ((*l).to_owned(), *s)).collect(),
+        lenses_unread: unread.to_owned(),
         all_lenses: all,
         ..opts(repo.path(), out.path())
     })
@@ -88,6 +94,55 @@ fn a_composition_naming_the_security_lens_is_refused_whole() {
         notes(&state).contains("was refused (rust:safety"),
         "{}",
         notes(&state)
+    );
+}
+
+#[test]
+fn a_composition_that_would_leave_a_part_with_no_lens_runs_them_all_and_says_so() {
+    let (s, state) = lens_step(
+        &[
+            ("rust:errors", State::Off),
+            ("rust:intent", State::Off),
+            ("rust:tests", State::Off),
+        ],
+        false,
+    );
+    assert_eq!(
+        ids(&s),
+        [
+            "lens-rust-errors-r1",
+            "lens-rust-intent-r1",
+            "lens-rust-tests-r1"
+        ]
+    );
+    assert!(
+        notes(&state).contains("would turn off every lens planned for rust's part"),
+        "{}",
+        notes(&state)
+    );
+}
+
+#[test]
+fn a_section_that_could_not_be_read_is_named_and_every_lens_runs() {
+    let (s, state) = lens_step_with(&[], false, "review.toml: [lenses]: bad state");
+    assert_eq!(
+        ids(&s),
+        [
+            "lens-rust-errors-r1",
+            "lens-rust-intent-r1",
+            "lens-rust-tests-r1"
+        ]
+    );
+    assert!(
+        notes(&state).contains("could not be read (review.toml: [lenses]: bad state)"),
+        "{}",
+        notes(&state)
+    );
+    let (_, clean) = lens_step(&[], false);
+    assert!(
+        !notes(&clean).contains("could not be read"),
+        "{}",
+        notes(&clean)
     );
 }
 

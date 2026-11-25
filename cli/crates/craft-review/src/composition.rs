@@ -3,9 +3,9 @@
 //! "First round only" is the language profile's own round ceiling (`rounds`, node #632) lowered to
 //! one — the same reader, no second mechanism; "off" leaves the lens out of the plan, named in the
 //! report. The security lens and a profile's safety lens are never touched, the concurrency lens is
-//! never off: a composition
-//! naming either is refused whole. A full review that re-reviews nothing (the release's) takes no
-//! composition and says so, and so rechecks what a reviewer turned off.
+//! never off (held to the first round, it is taken): a composition breaking either is refused
+//! whole. A run started with `--all-lenses` (the release's full review) takes no composition and
+//! says so, and so rechecks what a reviewer turned off.
 
 use std::num::NonZeroU32;
 
@@ -129,16 +129,43 @@ pub fn apply(profiles: &mut [Profile], c: &Composition) {
     }
 }
 
-/// Leaves the lenses `c` turns off out of `plan`, the plan of `profile`; named in its
-/// `profile_off`.
-pub(crate) fn hold(plan: &mut Plan, c: &Composition, profile: &str) {
-    let off: Vec<&str> = of_profile(&c.off, profile).collect();
-    let (dropped, kept): (Vec<String>, Vec<String>) = plan
-        .lenses
-        .drain(..)
-        .partition(|l| off.contains(&l.as_str()));
-    plan.lenses = kept;
-    plan.profile_off = dropped;
+/// Leaves the lenses `c` turns off out of `plan`, the plan of `profile`, and out of every list of
+/// what it held back for another reason, so none is a candidate the critic may buy back or a
+/// coverage gap; each is named in its `profile_off`. What the run asked for itself, `asked` —
+/// strict mode's maintainability lens, an optional lens it bought — stays: the run's own word
+/// is the later one. A part the composition would leave with no lens keeps its plan whole: the
+/// line returned says so, as an Approve on nothing read would not.
+pub(crate) fn hold(
+    plan: &mut Plan,
+    c: &Composition,
+    profile: &str,
+    asked: &[String],
+) -> Option<String> {
+    let off: Vec<String> = of_profile(&c.off, profile)
+        .filter(|l| !asked.iter().any(|a| a == l))
+        .map(str::to_owned)
+        .collect();
+    if off.is_empty() {
+        return None;
+    }
+    if !plan.lenses.is_empty() && plan.lenses.iter().all(|l| off.contains(l)) {
+        return Some(format!(
+            "the reviewer's profile would turn off every lens planned for {profile}'s part ({}): they all run",
+            plan.lenses.join(", ")
+        ));
+    }
+    for list in [
+        &mut plan.lenses,
+        &mut plan.metrics_dropped,
+        &mut plan.signal_skipped,
+        &mut plan.light_skipped,
+        &mut plan.data_skipped,
+        &mut plan.surface_dropped,
+    ] {
+        list.retain(|l| !off.contains(l));
+    }
+    plan.profile_off = off;
+    None
 }
 
 #[cfg(test)]

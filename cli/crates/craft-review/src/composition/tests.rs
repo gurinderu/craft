@@ -42,14 +42,12 @@ fn a_lens_turned_off_or_held_is_kept_by_its_qualified_name() {
 #[test]
 fn the_security_floor_is_never_touched_and_concurrency_never_off() {
     let rust = Profile::load("rust").unwrap();
-    let floor = rust
-        .security_floor
-        .first()
-        .cloned()
-        .unwrap_or_else(|| rust.safety_lens.clone());
-    for state in [State::Off, State::FirstRound] {
-        let e = of(&[(&format!("rust:{floor}"), state)]).unwrap_err();
-        assert!(e.contains("security lens"), "{e}");
+    assert_eq!(rust.safety_lens, "safety");
+    for lens in ["rust:security", "rust:safety", "general:security"] {
+        for state in [State::Off, State::FirstRound] {
+            let e = of(&[(lens, state)]).unwrap_err();
+            assert!(e.contains("security lens"), "{lens}: {e}");
+        }
     }
     assert!(
         of(&[("general:concurrency", State::Off)])
@@ -107,26 +105,88 @@ fn a_held_lens_gets_one_round_and_the_others_keep_theirs() {
     );
 }
 
-#[test]
-fn a_lens_turned_off_leaves_its_profiles_plan_and_is_named_there() {
-    let mut plan: Plan = serde_json::from_value(json!({
+fn small_plan(extra: &serde_json::Value) -> Plan {
+    let mut v = json!({
         "sizeBucket": "small", "lenses": ["errors", "money", "tests"], "maxRounds": 1, "verifyVotes": 1,
         "isLibrary": false, "securitySensitive": false, "intent": "", "spec": "", "churn": [],
         "repoRules": [], "surfaceDropped": [], "lightSkipped": []
-    }))
-    .unwrap();
+    });
+    for (k, x) in extra.as_object().unwrap() {
+        v[k] = x.clone();
+    }
+    serde_json::from_value(v).unwrap()
+}
+
+#[test]
+fn a_lens_turned_off_leaves_its_profiles_plan_and_is_named_there() {
+    let mut plan = small_plan(&json!({}));
     let other = of(&[("general:money", State::Off)]).unwrap();
-    hold(&mut plan, &other, "rust");
+    assert_eq!(hold(&mut plan, &other, "rust", &[]), None);
     assert_eq!(
         plan.lenses,
         ["errors", "money", "tests"],
         "general's money is not rust's"
     );
-    hold(
-        &mut plan,
-        &of(&[("rust:money", State::Off)]).unwrap(),
-        "rust",
-    );
+    assert!(plan.profile_off.is_empty());
+    let money = of(&[("rust:money", State::Off)]).unwrap();
+    assert_eq!(hold(&mut plan, &money, "rust", &[]), None);
     assert_eq!(plan.lenses, ["errors", "tests"]);
     assert_eq!(plan.profile_off, ["money"]);
+}
+
+#[test]
+fn a_lens_turned_off_but_never_planned_is_named_and_left_out_of_every_held_back_list() {
+    let mut plan = small_plan(&json!({
+        "lenses": ["errors"], "signalSkipped": ["performance"], "metricsDropped": ["complexity"],
+        "lightSkipped": ["compat"], "surfaceDropped": ["design"]
+    }));
+    let c = of(&[
+        ("rust:performance", State::Off),
+        ("rust:complexity", State::Off),
+        ("rust:compat", State::Off),
+        ("rust:design", State::Off),
+        ("rust:money", State::Off),
+    ])
+    .unwrap();
+    assert_eq!(hold(&mut plan, &c, "rust", &[]), None);
+    assert_eq!(plan.lenses, ["errors"]);
+    assert!(plan.signal_skipped.is_empty(), "{:?}", plan.signal_skipped);
+    assert!(
+        plan.metrics_dropped.is_empty(),
+        "{:?}",
+        plan.metrics_dropped
+    );
+    assert!(plan.light_skipped.is_empty(), "{:?}", plan.light_skipped);
+    assert!(
+        plan.surface_dropped.is_empty(),
+        "{:?}",
+        plan.surface_dropped
+    );
+    assert_eq!(
+        plan.profile_off,
+        ["performance", "complexity", "compat", "design", "money"]
+    );
+}
+
+#[test]
+fn what_the_run_asked_for_itself_stays_and_a_plan_left_with_nothing_keeps_its_lenses() {
+    let c = of(&[
+        ("rust:money", State::Off),
+        ("rust:errors", State::Off),
+        ("rust:tests", State::Off),
+    ])
+    .unwrap();
+    let mut asked = small_plan(&json!({}));
+    assert_eq!(hold(&mut asked, &c, "rust", &["money".to_owned()]), None);
+    assert_eq!(asked.lenses, ["money"]);
+    assert_eq!(asked.profile_off, ["errors", "tests"]);
+
+    let mut all = small_plan(&json!({}));
+    let line = hold(&mut all, &c, "rust", &[]).unwrap();
+    assert!(
+        line.contains("every lens planned for rust") && line.contains("errors, money, tests"),
+        "{line}"
+    );
+    assert_eq!(all.lenses, ["errors", "money", "tests"]);
+    assert!(all.profile_off.is_empty());
 }
