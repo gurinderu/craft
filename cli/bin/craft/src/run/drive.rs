@@ -72,10 +72,6 @@ pub(crate) async fn steps<P: Protocol>(
     resume: Option<&Path>,
     r: &mut Running,
 ) -> Ending {
-    // A resume's run is known before its first step: a resume that fails is filed into it.
-    if let Some(run) = resume {
-        r.run = Some(run.to_path_buf());
-    }
     let first = match resume {
         Some(run) => d.proto.submit(
             run,

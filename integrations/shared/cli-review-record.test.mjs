@@ -164,6 +164,22 @@ test('a binary fetch the usage limit stopped files the limit as its cause (realm
   assert.deepEqual(filedNotRun(run), ['the craft binary did not finish the run', 'stopped: the usage limit was reached'])
 })
 
+test('a plugin-root check the usage limit stopped files the limit; a fetch that plainly failed files the start (realm @nick/craft, node #638)', async () => {
+  const root = await runEngine('review', {
+    args: { craftBin: '/opt/craft', craftRoot: '/plugin' },
+    script: { 'step:root': { limit: "You've hit your weekly limit" }, 'log-run': { ok: true, output: ['wrote /store/r.json'] } },
+  })
+  assert.deepEqual(filedNotRun(root), ['the craft binary did not finish the run', 'stopped: the usage limit was reached'])
+  const fetch = await runEngine('review', {
+    args: {},
+    script: {
+      'step:resolve': { exitCode: 1, stdout: '', stderr: 'craft-bin: no released craft binary for freebsd/x64' },
+      'log-run': { ok: true, output: ['wrote /store/r.json'] },
+    },
+  })
+  assert.deepEqual(filedNotRun(fetch), ['the craft binary did not finish the run', 'stopped: the run could not start or resume'])
+})
+
 test('a run the binary never finished files an INCOMPLETE record without a reviewed head', async () => {
   const run = await runEngine('review', {
     args: { craftBin: '/opt/craft' },

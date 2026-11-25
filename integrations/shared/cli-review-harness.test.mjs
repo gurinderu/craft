@@ -52,4 +52,11 @@ test('a fetch the harness refused names who refused it and offers no resume', as
   )
   assert.ok(line.includes('approve the command when the harness asks'), line)
   assert.doesNotMatch(line, /run=|resume|continue/)
+  /** @type {{ notRun?: unknown } | null} */
+  const rec = JSON.parse(String(run.calls.find(c => c.label === 'log-run')?.prompt).split(/\nRECORD:\n/)[1] ?? 'null')
+  assert.deepEqual(
+    rec?.notRun,
+    ['the craft binary did not finish the run', 'stopped: the harness refused a service command'],
+    'the cause (realm @nick/craft, node #638)',
+  )
 })
