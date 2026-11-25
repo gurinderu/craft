@@ -23,10 +23,10 @@ pub(crate) enum Outcome {
     Login(String),
     /// Why the process a delegated run hands its tasks to stopped answering (delegate.rs).
     Gone(String),
-    /// `said`: the last line the process wrote on stderr, when it wrote one. `wrote`: the last
-    /// line the agent's process wrote of why it gave no answer — never craft's own reason, `None`
-    /// when it wrote nothing — for the stop on a round that died whole (realm @nick/craft, node
-    /// #666).
+    /// `said`: the last line the process wrote on stderr, when it wrote one. `wrote`: what the
+    /// agent's process said of why it gave no answer, as one line — its last error event, else its
+    /// last stderr line; a delegated task's runtime error — never craft's own reason, `None` when
+    /// it said nothing — for the stop on a round that died whole (realm @nick/craft, node #666).
     Unanswered {
         why: String,
         said: Option<String>,
