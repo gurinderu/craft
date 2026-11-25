@@ -21,3 +21,4 @@ mutants.out.old/
 .claude/agents/reviewer.md
 .claude/agents/verifier.md
 .claude/agents/deputy-chief-of-staff.md
+.direnv/
