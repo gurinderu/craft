@@ -47,7 +47,7 @@ fn ask(args: &Args, n: usize, s: &Sifted) -> Result<Ask, TriageError> {
     };
     Ok(Ask {
         kind: TriageKind::Validate {
-            id: s.stable_id.to_utf8_lossy(),
+            finding: s.stable_id.to_utf8_lossy(),
         },
         id: format!("validate-{n}"),
         label: format!("validate:{}", head(&field::js_text(o, site))),
@@ -76,7 +76,7 @@ pub(crate) fn validate(
             Row::carried(p)
         } else {
             match answers.answer(&TriageKind::Validate {
-                id: id.to_utf8_lossy(),
+                finding: id.to_utf8_lossy(),
             }) {
                 None => {
                     asks.push(ask(args, n, s)?);

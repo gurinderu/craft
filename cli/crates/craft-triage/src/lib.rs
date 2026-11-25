@@ -28,6 +28,8 @@ pub mod prompts;
 pub mod record;
 pub mod run;
 pub mod sift;
+pub mod state;
+pub mod step;
 
 /// Why an agent's answer could not be read as the triage needs it.
 #[derive(Debug, thiserror::Error)]
@@ -38,4 +40,35 @@ pub enum TriageError {
     /// A prompt or schema of the triage's content could not be rendered.
     #[error(transparent)]
     Content(#[from] craft_review::content::ContentError),
+    #[error(transparent)]
+    State(#[from] state::StateError),
+    #[error(transparent)]
+    Handoff(#[from] craft_step::HandoffError),
+    #[error("reading the repository {}", path.display())]
+    NoRepo {
+        path: std::path::PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("creating {}", path.display())]
+    NoDir {
+        path: std::path::PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("writing {}", path.display())]
+    Unwritable {
+        path: std::path::PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("{} holds a triage already", .0.display())]
+    RunExists(std::path::PathBuf),
+    #[error("the triage in {} is done", .0.display())]
+    Done(std::path::PathBuf),
+    #[error("answer for {0}, which is no pending task of this triage")]
+    UnknownTask(String),
+    /// The run asked again only agents it had asked: a defect, never a loop.
+    #[error("the triage's {0:?} phase asked no agent it had not asked before")]
+    Stuck(run::Phase),
 }

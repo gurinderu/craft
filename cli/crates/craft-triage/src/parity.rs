@@ -8,7 +8,7 @@
 //! fails as surely as a wrong value. Only the craft version is read from the expected side (realm
 //! @nick/craft, node #629).
 
-mod answers;
+pub(crate) mod answers;
 
 use craft_store::js::Js;
 
@@ -21,7 +21,7 @@ const CASES: &str = include_str!(concat!(
     "/../../../content/parity/triage-cases.json"
 ));
 
-fn cases() -> Vec<Js> {
+pub(crate) fn cases() -> Vec<Js> {
     let file = craft_store::js::parse(CASES).unwrap();
     let cases = file.at("cases").as_arr().unwrap().to_vec();
     assert!(cases.len() >= 8, "the cases were not found");
@@ -71,7 +71,7 @@ fn every_prompt_a_case_dispatched_is_the_engines() {
                 _ => asks_of(&case, Phase::Validate)
                     .into_iter()
                     .map(|a| {
-                        let crate::kind::TriageKind::Validate { id } = a.kind else {
+                        let crate::kind::TriageKind::Validate { finding: id } = a.kind else {
                             panic!("{name}: {:?} among the validators", a.kind);
                         };
                         (id, a.prompt)

@@ -19,8 +19,8 @@ pub enum TriageKind {
     MatchJudge,
     /// The memory's rule judge over the `at`-th prompt of its pairs.
     RuleJudge { at: usize },
-    /// The validator of the finding `id`.
-    Validate { id: String },
+    /// The validator of the finding whose stable id is `finding`.
+    Validate { finding: String },
     /// The plan agent.
     Plan,
 }
@@ -54,7 +54,7 @@ impl craft_step::Kind for TriageKind {
     /// refused and asked for again (realm @nick/craft, node #616).
     fn check(task: &craft_step::Task<Self>, answer: &Value) -> Result<Value, String> {
         let taken = craft_step::validate::check(&task.schema, Some(answer))?;
-        if let Self::Validate { id } = &task.kind {
+        if let Self::Validate { finding: id } = &task.kind {
             let said = taken.get("stable_id").and_then(Value::as_str).unwrap_or("");
             if said != id {
                 return Err(format!(
@@ -81,7 +81,9 @@ mod tests {
             TriageKind::Recall { cut: 0, grouped: 0 },
             TriageKind::MatchJudge,
             TriageKind::RuleJudge { at: 1 },
-            TriageKind::Validate { id: "a".into() },
+            TriageKind::Validate {
+                finding: "a".into(),
+            },
             TriageKind::Plan,
         ] {
             assert_eq!(json!(kind)["kind"], json!(kind.tag()), "{kind:?}");
@@ -98,7 +100,7 @@ mod tests {
             Model::Opus,
             schema,
             TriageKind::Validate {
-                id: "report::a.rs:1::x".into(),
+                finding: "report::a.rs:1::x".into(),
             },
         );
         TriageKind::check(&task, &json!({"stable_id": "report::a.rs:1::x"})).unwrap();

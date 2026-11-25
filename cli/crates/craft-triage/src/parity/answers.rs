@@ -25,7 +25,7 @@ fn text(args: &Js, key: &str) -> String {
 }
 
 /// The case's arguments; the craft version its record names.
-pub(super) fn args_of(case: &Js) -> Args {
+pub(crate) fn args_of(case: &Js) -> Args {
     let a = case.at("args");
     let version = case.at("expected").at("record").at("craftVersion");
     Args {
@@ -47,13 +47,13 @@ pub(super) fn args_of(case: &Js) -> Args {
 }
 
 /// The answers a case scripts, every agent asked, those of `held` held back.
-pub(super) struct CaseAnswers<'a> {
+pub(crate) struct CaseAnswers<'a> {
     answers: &'a Js,
     held: Option<Phase>,
 }
 
 impl<'a> CaseAnswers<'a> {
-    pub(super) fn new(case: &'a Js, held: Option<Phase>) -> Self {
+    pub(crate) fn new(case: &'a Js, held: Option<Phase>) -> Self {
         Self {
             answers: case.at("answers"),
             held,
@@ -63,7 +63,7 @@ impl<'a> CaseAnswers<'a> {
     /// What the case's scope check saw: the ids it names unchanged, and those it names missing
     /// among the records it was handed (`readScopeCheck`); a dead one, or one whose `unchanged`
     /// is no list, nothing.
-    pub(super) fn scope(&self, ds: &[&PriorDecision]) -> Scope {
+    pub(crate) fn scope(&self, ds: &[&PriorDecision]) -> Scope {
         let answer = plain(self.answers.at("scope"));
         let read = answer.filter(|a| a.get("unchanged").is_some_and(Value::is_array));
         let named = |k: &str, id: &str| {
@@ -119,7 +119,7 @@ impl Answers for CaseAnswers<'_> {
                 .as_arr()
                 .and_then(|r| r.get(*at))
                 .and_then(given),
-            TriageKind::Validate { id } => a
+            TriageKind::Validate { finding: id } => a
                 .at("validate")
                 .as_obj()
                 .and_then(|o| o.get(id.as_str()))
