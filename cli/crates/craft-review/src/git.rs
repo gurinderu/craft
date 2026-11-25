@@ -189,6 +189,23 @@ pub fn zero_context_diff(cwd: &Path, base: &str) -> Result<String, GitError> {
     diff_u0(cwd, &["--merge-base", base])
 }
 
+/// The change against `base` as [`zero_context_diff`] prints it, with git's default context and
+/// its paths from `relative`, a repository-relative directory ('' for the top level): what
+/// cargo-mutants reads its mutants of the change from, its paths from the workspace's root
+/// (realm @nick/craft, node #624).
+///
+/// # Errors
+/// When `cwd` is not in a working tree or `git` fails.
+pub fn relative_diff(cwd: &Path, base: &str, relative: &str) -> Result<String, GitError> {
+    not_an_option(cwd, &[base])?;
+    let rel = format!("--relative={}/", relative.trim_end_matches('/'));
+    let mut revs = vec!["--merge-base", base];
+    if !relative.is_empty() {
+        revs.insert(0, &rel);
+    }
+    diff_with(cwd, "-U3", &revs)
+}
+
 /// The change from `from` to the commit `to` with no context lines, printed as
 /// [`zero_context_diff`] prints it: from their merge-base when `merge_base`, else from `from`
 /// itself.

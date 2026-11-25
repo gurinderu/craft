@@ -343,7 +343,11 @@ numbered step's command against an external system, added, changed or removed �
 `cli/Cargo.lock`); a part that adds a module, crate, public type or format gets the `design`
 lens, seeded with what it adds and, for Rust, the crate graph's new edges and the dev-dependency cycles they close; first round only, `src/design.rs`), the mechanical gate the binary runs itself before any lens (clippy and semgrep
 for Rust, nix flake check, statix and deadnix for Nix: a red check blocks, a diagnostic on a changed line is a seed the
-lenses and verifiers see, a tool not installed is named), a scout per profile whose answer plans its lenses over its own files, the
+lenses and verifiers see, a tool not installed is named), the change's mutants once the Rust gate passed (`src/gate/mutants.rs`
+and `src/gate/mutants/`: `cargo mutants --in-diff` in a worker process of the same binary, `__craft-mutants`, that runs beside the
+lens rounds within its budget — the reviewer's profile's `[mutants]` section can name it or turn them off (`src/project/mutants.rs`) —;
+joined when the rounds end, each mutant that survived in a function the change touched pooled as a tool's finding, and the report
+saying what came of them or why they did not run), a scout per profile whose answer plans its lenses over its own files, the
 consumers list, built at start beside the gate (`src/consumers/`: for each changed Rust symbol the lines outside the diff that name it —
 callers, implementors and same-named declarations, places passing it as a value — from a name search, always run
 (`names.rs`), a structural search for a name too common to search by text or past the name search's line cap

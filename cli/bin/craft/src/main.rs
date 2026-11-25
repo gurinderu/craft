@@ -55,6 +55,9 @@ enum Command {
     FileRun,
     #[command(name = "__craft-process-identity", hide = true)]
     ProcessIdentity(process_identity::Args),
+    /// The mutants' worker a review's start leaves running beside its lens rounds.
+    #[command(name = "__craft-mutants", hide = true)]
+    Mutants { dir: std::path::PathBuf },
 }
 
 #[derive(Subcommand)]
@@ -173,6 +176,10 @@ async fn dispatch() -> anyhow::Result<ExitCode> {
         Command::Pr(cmd) => pr::pr(&cmd),
         Command::FileRun => filing_worker::worker(),
         Command::ProcessIdentity(args) => process_identity::run(&args),
+        Command::Mutants { dir } => {
+            craft_review::gate::mutants::work(&dir)?;
+            Ok(std::process::ExitCode::SUCCESS)
+        }
         Command::Hook(HookCommand::SessionStart) => hook::role_hook(hook::RoleHook::SessionStart),
         Command::Hook(HookCommand::UserPrompt) => hook::role_hook(hook::RoleHook::UserPrompt),
         Command::Hook(HookCommand::SubagentStart) => hook::role_hook(hook::RoleHook::SubagentStart),

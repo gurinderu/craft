@@ -185,9 +185,8 @@ pub(super) fn common_vars(
         plan,
         ..
     } = *at;
-    let mutants = profile.id == "rust"
-        && lens == "tests"
-        && matches!(plan.size_bucket.as_str(), "medium" | "large");
+    // The binary runs them (realm @nick/craft, node #648): the lens is told, not asked to.
+    let mutants = profile.id == "rust" && lens == "tests" && ctx.mutants;
     Ok(vars([
         ("lens", lens.to_owned()),
         ("lang", profile.lang.clone()),

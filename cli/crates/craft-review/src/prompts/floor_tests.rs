@@ -72,3 +72,22 @@ fn the_floor_never_reaches_a_raised_weak_assertion_or_a_missing_test() {
         );
     }
 }
+
+#[test]
+fn the_rust_tests_lens_is_told_the_mutants_run_only_when_the_binary_runs_them() {
+    let said = "MUTANTS: the binary runs cargo-mutants";
+    let running = PromptContext {
+        mutants: true,
+        ..PromptContext::default()
+    };
+    assert!(render("rust", "tests", &running).contains(said));
+    assert!(!render("rust", "tests", &PromptContext::default()).contains(said));
+    assert!(
+        !render("rust", "errors", &running).contains(said),
+        "only the tests lens"
+    );
+    assert!(
+        !render("general", "tests", &running).contains(said),
+        "only Rust's"
+    );
+}

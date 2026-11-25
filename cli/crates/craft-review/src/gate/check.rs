@@ -86,6 +86,8 @@ pub(super) struct Acc {
     /// A build was impossible: cargo ended with no compiler error, so the signal is unknown and
     /// CI may stand for it.
     pub unbuilt: bool,
+    /// cargo ran inside the flake's dev shell.
+    pub dev_shell: bool,
 }
 
 impl Acc {
@@ -171,6 +173,7 @@ impl Acc {
             missing: self.missing,
             notes: self.notes,
             seeds: self.seeds.len(),
+            dev_shell: self.dev_shell,
         };
         (track, self.seeds)
     }

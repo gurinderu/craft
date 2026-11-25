@@ -96,9 +96,13 @@ impl Runner {
         }
         let n = self.count.get() + 1;
         self.count.set(n);
+        // A program named by its path is logged by its file name.
+        let name = Path::new(program)
+            .file_name()
+            .map_or(program.into(), |n| n.to_string_lossy());
         let (out, err) = (
-            self.dir.join(format!("{n}-{program}.out")),
-            self.dir.join(format!("{n}-{program}.err")),
+            self.dir.join(format!("{n}-{name}.out")),
+            self.dir.join(format!("{n}-{name}.err")),
         );
         let child = std::fs::create_dir_all(&self.dir)
             .and_then(|()| Ok((File::create(&out)?, File::create(&err)?)))

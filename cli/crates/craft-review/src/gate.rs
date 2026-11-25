@@ -53,6 +53,7 @@ pub(crate) mod lines;
 mod lock;
 #[cfg(test)]
 mod locked_tests;
+pub mod mutants;
 mod nix;
 mod nix_answer;
 #[cfg(test)]
@@ -151,6 +152,10 @@ pub struct Track {
     pub notes: Vec<String>,
     /// How many seed findings it gave the lenses.
     pub seeds: usize,
+    /// Whether its cargo ran inside the checkout's flake dev shell: the mutants run where it did
+    /// ([`mutants`]). Optional, so a track written before it reads as outside.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub dev_shell: bool,
 }
 
 /// A run's gate: each profile's that has one, in the tracks' order. Optional, so a state written
@@ -173,6 +178,10 @@ pub struct Gate {
     /// empty when they were read.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub unread_lines: String,
+    /// The mutants of the change, while they run beside the lens rounds ([`mutants`]); none when
+    /// none were launched.
+    #[serde(skip_serializing_if = "mutants::Mutants::is_none")]
+    pub mutants: mutants::Mutants,
 }
 
 impl Gate {
@@ -186,6 +195,7 @@ impl Gate {
                     .into(),
             from: String::new(),
             unread_lines: String::new(),
+            mutants: mutants::Mutants::default(),
         }
     }
 
