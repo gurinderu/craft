@@ -1,8 +1,10 @@
+use std::collections::VecDeque;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::Ordering;
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
-use craft_agent::{AgentBackend, AgentError, AgentRequest};
+use craft_agent::{AgentBackend, AgentError, AgentRequest, Usage};
 use serde_json::json;
 
 use super::super::events::Event;
@@ -120,6 +122,11 @@ async fn a_task_goes_out_as_an_event_and_its_reply_is_read_as_an_answer() {
     let reply = bounded(running).await.unwrap().unwrap();
     assert_eq!(reply.structured, Some(json!({"findings": []})));
     assert_eq!(reply.text.as_deref(), Some(text));
+    // The reply line carries no usage, cost or denial, and none is made up: the task reads as
+    // one whose cost the run cannot say.
+    assert_eq!(reply.usage, Usage::default());
+    assert_eq!(reply.cost_usd, 0.0);
+    assert!(reply.denials.is_empty());
     assert_eq!(
         events.lock().unwrap().len(),
         1,
@@ -503,6 +510,130 @@ async fn an_interrupted_read_is_tried_again_and_a_read_error_is_said_and_closes_
     );
     let later = bounded(d.run(&request("t1"))).await.unwrap_err();
     assert!(matches!(later, AgentError::HostGone(_)), "{later}");
+}
+
+/// The delegating process's end of the input, as a test holds it: it says nothing until it is
+/// handed a line, and ends when told — as that process's stdin does while its child sessions run.
+#[derive(Clone, Default)]
+struct Replies(Arc<Pipe>);
+
+#[derive(Default)]
+struct Pipe {
+    unread: Mutex<Unread>,
+    changed: Condvar,
+}
+
+#[derive(Default)]
+struct Unread {
+    /// The lines said and not read yet.
+    lines: VecDeque<Vec<u8>>,
+    /// Whether the input ended.
+    ended: bool,
+}
+
+impl Replies {
+    /// The input says `line`.
+    fn say(&self, line: String) {
+        self.0
+            .unread
+            .lock()
+            .unwrap()
+            .lines
+            .push_back(line.into_bytes());
+        self.0.changed.notify_all();
+    }
+
+    /// The input ends.
+    fn end(&self) {
+        self.0.unread.lock().unwrap().ended = true;
+        self.0.changed.notify_all();
+    }
+
+    /// The next line said and not read yet, waiting for one; `None` once the input ended.
+    fn next_line(&self) -> Option<Vec<u8>> {
+        let mut unread = self.0.unread.lock().unwrap();
+        while unread.lines.is_empty() && !unread.ended {
+            unread = self.0.changed.wait(unread).unwrap();
+        }
+        unread.lines.pop_front()
+    }
+}
+
+impl std::io::Read for Replies {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        match self.next_line() {
+            Some(line) => {
+                buf[..line.len()].copy_from_slice(&line);
+                Ok(line.len())
+            }
+            None => Ok(0),
+        }
+    }
+}
+
+#[tokio::test]
+async fn a_reply_is_read_on_its_own_thread_and_the_inputs_end_closes_the_delegate() {
+    let (events, lines) = (Kept::<Event>::default(), Kept::<String>::default());
+    let input = Replies::default();
+    let d = Delegate::reading(
+        {
+            let read = input.clone();
+            move || std::io::BufReader::new(read)
+        },
+        {
+            let events = Arc::clone(&events);
+            move |e| {
+                events.lock().unwrap().push(e);
+                true
+            }
+        },
+        {
+            let lines = Arc::clone(&lines);
+            move |l| lines.lock().unwrap().push(l.to_owned())
+        },
+    );
+    let running = tokio::spawn({
+        let d = d.clone();
+        async move { d.run(&request("t1")).await }
+    });
+    let key = key_of(&events, 1).await;
+    // Only now that the task is out does the input answer, naming that event's key.
+    input.say(format!(
+        "{}\n",
+        json!({"key": key, "text": "```craft-answer\n{\"n\":1}\n```"})
+    ));
+    let reply = bounded(running).await.unwrap().unwrap();
+    assert_eq!(reply.structured, Some(json!({"n": 1})));
+    assert!(
+        !d.0.closed.load(Ordering::SeqCst),
+        "an input that is only quiet has not ended"
+    );
+    let waiting = tokio::spawn({
+        let d = d.clone();
+        async move { d.run(&request("t2")).await }
+    });
+    key_of(&events, 2).await;
+    input.end();
+    let ended = "its input to craft ended";
+    let error = bounded(waiting).await.unwrap().unwrap_err();
+    assert!(
+        matches!(&error, AgentError::HostGone(why) if why == ended),
+        "{error}"
+    );
+    let later = bounded(d.run(&request("t3"))).await.unwrap_err();
+    assert!(
+        matches!(&later, AgentError::HostGone(why) if why == ended),
+        "{later}"
+    );
+    assert_eq!(
+        events.lock().unwrap().len(),
+        2,
+        "the two tasks out, and no event once the input ended"
+    );
+    assert!(
+        lines.lock().unwrap().is_empty(),
+        "a good line and the end are passed over for nothing"
+    );
 }
 
 #[test]

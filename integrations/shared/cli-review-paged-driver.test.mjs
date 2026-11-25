@@ -1,7 +1,8 @@
 // The review driver over paged steps (integrations/shared/cli-review-steps.mjs, integrations/shared/cli-review-paged.mjs):
 // a paged start and submit read through `craft review page --run`; and a page step that fails — whatever it exits with —
-// read as a step not read whole on every path: a status falls back to the brief status, a resume keeps its run and
-// resume hint, a publication's outcome is unknown, and a start names the run it made.
+// read as a step not read whole on every path: a status falls back to the brief status when its page step failed or
+// the harness refused it (not when the harness refused the status command itself), a resume keeps its run and resume
+// hint, a publication's outcome is unknown, and a start names the run it made.
 import { afterEach, beforeEach, test } from 'vitest'
 import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
@@ -110,21 +111,66 @@ test('a publication whose page step fails says its outcome is unknown, never tha
   assert.doesNotMatch(run.report, /Nothing was posted/)
 })
 
-test('a status whose page step fails falls back to the brief status, and files no INCOMPLETE record', async () => {
-  const status = JSON.stringify({ run: RUN, done: true, filing: { record: 'filed' } })
-  const brief = JSON.stringify({
-    run: RUN,
-    brief: true,
-    phase: 'done',
-    round: 1,
-    done: true,
-    stopped: false,
-    head: 'abc1234',
-    verdict: 'Block',
-    line: 'Block — 1 High',
-    report: `${RUN}/report.md`,
-    filing: { record: 'filed', recordFile: '/store/r.json', kept: true, pending: 0 },
+// The page step's answers: a failed one is asked a second time before its step is given up; one the harness refused
+// is not — the stop comes back at once (integrations/shared/cli-review-paged.mjs).
+for (const [how, answer, asks] of /** @type {[string, () => unknown, number][]} */ ([
+  ['fails', () => failed(1), 2],
+  [
+    'the harness refused',
+    () => ({
+      exitCode: 1,
+      stdout: '',
+      stderr: `Permission for this action was denied by the Claude Code auto mode classifier. The command was not run. Denied command: /opt/craft review page --run '${RUN}' --from 5 (timeout 120000 ms).`,
+    }),
+    1,
+  ],
+])) {
+  test(`a status whose page step ${how} falls back to the brief status, and files no INCOMPLETE record`, async () => {
+    const status = JSON.stringify({ run: RUN, done: true, filing: { record: 'filed' } })
+    const brief = JSON.stringify({
+      run: RUN,
+      brief: true,
+      phase: 'done',
+      round: 1,
+      done: true,
+      stopped: false,
+      head: 'abc1234',
+      verdict: 'Block',
+      line: 'Block — 1 High',
+      report: `${RUN}/report.md`,
+      filing: { record: 'filed', recordFile: '/store/r.json', kept: true, pending: 0 },
+    })
+    const run = await runEngine('review', {
+      args: ARGS,
+      script: {
+        ...BASE(),
+        'step:start': ran(JSON.stringify({ run: RUN, done: false, tasks: [TASK()] })),
+        lens: 'done',
+        'step:submit:1': ran('Error: the output was cut'),
+        'step:status': page(status, 0, 5),
+        'step:status:page': answer(),
+        'step:brief': ran(brief),
+      },
+    })
+    assert.deepEqual(
+      run.calls.map(c => c.label),
+      ['step:root', 'step:start', 'lens:a', 'step:submit:1', 'step:status', ...Array.from({ length: asks }, () => 'step:status:page'), 'step:brief'],
+    )
+    assert.match(
+      String(run.calls.find(c => c.label === 'step:status')?.prompt),
+      /stdout is either one line of JSON or, when the step is paged, exactly three lines/,
+    )
+    assert.match(run.report, /Block — 1 High/)
+    assert.doesNotMatch(run.report, /did not finish the run/)
   })
+}
+
+test('a status command the harness refused asks no brief status: the review stops on the lost submit', async () => {
+  const refused = {
+    exitCode: 1,
+    stdout: '',
+    stderr: `Permission for this action was denied by the Claude Code auto mode classifier. The command was not run. Denied command: /opt/craft review status --run '${RUN}' (timeout 120000 ms).`,
+  }
   const run = await runEngine('review', {
     args: ARGS,
     script: {
@@ -132,21 +178,17 @@ test('a status whose page step fails falls back to the brief status, and files n
       'step:start': ran(JSON.stringify({ run: RUN, done: false, tasks: [TASK()] })),
       lens: 'done',
       'step:submit:1': ran('Error: the output was cut'),
-      'step:status': page(status, 0, 5),
-      'step:status:page': failed(1),
-      'step:brief': ran(brief),
+      'step:status': refused,
     },
   })
+  // The status command itself was not run, so nothing says whether the run finished; the refusal does not speak for
+  // the brief status, another command, which is not asked in its place. The review stops as on a status that said
+  // nothing: on the reason its submit was lost, with the run to resume.
   assert.deepEqual(
     run.calls.map(c => c.label),
-    ['step:root', 'step:start', 'lens:a', 'step:submit:1', 'step:status', 'step:status:page', 'step:status:page', 'step:brief'],
+    ['step:root', 'step:start', 'lens:a', 'step:submit:1', 'step:status', 'log-run'],
   )
-  assert.match(
-    String(run.calls.find(c => c.label === 'step:status')?.prompt),
-    /stdout is either one line of JSON or, when the step is paged, exactly three lines/,
-  )
-  assert.match(run.report, /Block — 1 High/)
-  assert.doesNotMatch(run.report, /did not finish the run/)
+  assert.match(run.report, /review stopped: the command printed no JSON: Error: the output was cut\. The run is in .*\. To resume .*`craft:review run=/)
 })
 
 test('a publication whose page step the harness refused says its outcome is unknown: the comment itself ran', async () => {

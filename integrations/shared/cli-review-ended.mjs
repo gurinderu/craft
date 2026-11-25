@@ -2,6 +2,7 @@
 // the review driver when it could not read the step that ended it (integrations/shared/cli-review-steps.mjs, recovered): the step
 // the run's segment ended with, as the binary filed it, and whether its record is to be filed again.
 import { NO_OUTPUT, UNREAD_WHOLE, absolutePath, commandOutput, finishedStep, isObject } from './cli-review-step.mjs'
+import { unreadRun } from './cli-review-paged.mjs'
 import { stepText, stopNoteOf, strings } from './cli-review-step-fields.mjs'
 import { hasControl } from './cli-review-keys.mjs'
 
@@ -40,14 +41,17 @@ export function endedOf(got) {
 
 /**
  * Whether the status command ran but left no status that could be read — its output empty, missing or not whole (a
- * paged status whose pages could not all be read included): the
+ * paged status whose pages could not all be read, its page step failed or refused by the harness, included): the
  * service agent could not copy it — the finished step it embeds grows with the findings — and the brief status may be
- * read where it was not (realm @nick/craft, node #522). A harness refusal, the usage limit and a failed command keep
- * their own paths.
+ * read where it was not (realm @nick/craft, node #522). The status command's own harness refusal, the usage limit and
+ * a failed command keep their own paths.
  * @param {unknown} got @returns {boolean}
  */
 export function statusUnreadable(got) {
   const out = commandOutput(got)
+  // A page step the harness refused stopped the read after the status command ran and named its run in a first page
+  // (integrations/shared/cli-review-paged.mjs); the brief status is another command, which that refusal does not speak for.
+  if ('harness' in out) return unreadRun(got) !== null
   return 'error' in out ? out.error === NO_OUTPUT || out.error.startsWith(UNREAD_WHOLE) : statusOf(got) === null
 }
 

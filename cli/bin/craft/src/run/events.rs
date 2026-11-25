@@ -132,9 +132,12 @@ impl Sink {
     /// An event written to the event stream: whether it was — what a delegated task's dispatch
     /// stands on (`delegate.rs`).
     pub(crate) fn emitted(self, event: &Event) -> bool {
-        self.json
-            && serde_json::to_string(event)
-                .is_ok_and(|line| writeln!(std::io::stderr().lock(), "{line}").is_ok())
+        self.written(&mut std::io::stderr().lock(), event)
+    }
+
+    /// An event written as one line to `out`, whole or not at all: whether it was written.
+    fn written(self, out: &mut dyn Write, event: &Event) -> bool {
+        self.json && serde_json::to_string(event).is_ok_and(|line| writeln!(out, "{line}").is_ok())
     }
 }
 
@@ -228,6 +231,44 @@ mod tests {
             !Sink { json: false }.emitted(&event),
             "without --events json no event is written, so no task can be handed out"
         );
+    }
+
+    /// An event stream that takes `n` bytes more, then is gone: its reader stopped reading.
+    struct GoneAfter(usize);
+
+    impl std::io::Write for GoneAfter {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            if self.0 == 0 {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::BrokenPipe,
+                    "the reader is gone",
+                ));
+            }
+            let take = self.0.min(buf.len());
+            self.0 -= take;
+            Ok(take)
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn an_event_that_could_not_be_written_whole_is_not_said_written() {
+        let event = Event::TaskCancelled { key: 1 };
+        let mut out = Vec::new();
+        assert!(Sink { json: true }.written(&mut out, &event));
+        assert_eq!(
+            out.as_slice(),
+            b"{\"type\":\"task_cancelled\",\"key\":1}\n".as_slice()
+        );
+        for taken in [0, 4] {
+            assert!(
+                !Sink { json: true }.written(&mut GoneAfter(taken), &event),
+                "a stream that took {taken} bytes and is gone did not get the event"
+            );
+        }
     }
 
     #[test]
