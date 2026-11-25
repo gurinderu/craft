@@ -138,6 +138,10 @@ async fn a_worktree_where_opencode_cannot_be_checked_runs_no_task_and_says_why()
         argvs(&bench)
     );
     assert!(fake.submits.borrow().is_empty(), "nothing is submitted");
+    assert_eq!(
+        *fake.filed.borrow(),
+        ["the craft binary did not finish the run | stopped: the host could not run the tasks"]
+    );
 }
 
 #[cfg(unix)]

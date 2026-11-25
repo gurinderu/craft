@@ -203,6 +203,8 @@ struct Bench {
     stop_after: Option<(Duration, u8)>,
     /// A file the stopping signal also waits for, sent once it exists or after [`STOP_ONCE_BOUND`].
     stop_once: Option<PathBuf>,
+    /// The run a drive resumes rather than starts.
+    resume: Option<PathBuf>,
 }
 
 impl Bench {
@@ -236,6 +238,7 @@ impl Bench {
             events: RefCell::default(),
             stop_after: None,
             stop_once: None,
+            resume: None,
         }
     }
 
@@ -297,7 +300,7 @@ impl Bench {
                 round,
                 again: &again,
             },
-            None,
+            self.resume.as_deref(),
             false,
         )
         .await
@@ -541,6 +544,27 @@ async fn a_submit_that_fails_is_asked_of_status_and_the_run_said_where_it_stands
         *fake.filed.borrow(),
         ["the craft binary did not finish the run | stopped: a step of the binary was lost"],
         "an unreadable step is the record's cause (realm @nick/craft, node #638)"
+    );
+}
+
+/// A resume that fails is filed into the run it names, its cause the start's (realm @nick/craft,
+/// node #638).
+#[tokio::test]
+async fn a_resume_that_fails_files_the_run_with_its_cause() {
+    let mut bench = Bench::new(HostKind::Codex);
+    bench.resume = Some(bench.path("run"));
+    let mut fake = bench.fake(vec![Spec("a", "do a", None)]);
+    fake.broken = true;
+    let answer = bench.drive(&fake).await;
+    assert!(!answer.finished);
+    assert!(
+        answer.text.contains("review could not resume"),
+        "{}",
+        answer.text
+    );
+    assert_eq!(
+        *fake.filed.borrow(),
+        ["the craft binary did not finish the run | stopped: the run could not start or resume"]
     );
 }
 

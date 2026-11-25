@@ -22,7 +22,8 @@ pub const UNFINISHED: &str = "the craft binary did not finish the run";
 pub enum StopCause {
     /// The run could not be started or resumed.
     Start,
-    /// The host could not run the tasks: not logged in, or not in the run's checkout.
+    /// The host could not run the tasks: not logged in, not in the run's checkout, or the process
+    /// a delegated host hands its tasks to stopped answering.
     Host,
     /// A step of the binary could not be read or handed in.
     Step,

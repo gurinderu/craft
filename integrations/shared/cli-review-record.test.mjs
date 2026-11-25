@@ -156,6 +156,14 @@ test("the caller's depth reaches `craft review start`; without one the binary's 
   assert.equal(JSON.parse(fs.readFileSync(path.join(none.store, String(file)), 'utf8')).depth, 'full', 'the record names the depth the binary ran at')
 })
 
+test('a binary fetch the usage limit stopped files the limit as its cause (realm @nick/craft, node #638)', async () => {
+  const run = await runEngine('review', {
+    args: {},
+    script: { 'step:resolve': { limit: "You've hit your weekly limit" }, 'log-run': { ok: true, output: ['wrote /store/r.json'] } },
+  })
+  assert.deepEqual(filedNotRun(run), ['the craft binary did not finish the run', 'stopped: the usage limit was reached'])
+})
+
 test('a run the binary never finished files an INCOMPLETE record without a reviewed head', async () => {
   const run = await runEngine('review', {
     args: { craftBin: '/opt/craft' },

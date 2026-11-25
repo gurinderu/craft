@@ -260,15 +260,17 @@ async function paged(serve, label, title, bin, got) {
  * binary's own, so a local build is not run with another plugin's content; otherwise this version's released binary
  * fetched, with the root its fetcher was found in.
  * @param {Options} o @param {string} craftVersion @param {Serve} serve
- * @returns {Promise<{ bin: string, root: string, recordRoot?: string, note?: string } | { incomplete: string }>}
+ * @returns {Promise<{ bin: string, root: string, recordRoot?: string, note?: string } | { incomplete: string, cause: import('./cli-review-stop.mjs').StopCause }>}
  */
 async function binAndRoot(o, craftVersion, serve) {
   if (o.craftBin === null) {
     const fetched = resolvedBin(await serve('step:resolve', 'Start', resolvePrompt(o, craftVersion)))
-    if ('harness' in fetched) return { incomplete: `review could not get the craft binary ${craftVersion}: ${harnessRefused(fetched.harness, null)}` }
+    if ('harness' in fetched)
+      return { incomplete: `review could not get the craft binary ${craftVersion}: ${harnessRefused(fetched.harness, null)}`, cause: 'harness' }
     return 'error' in fetched
       ? {
           incomplete: `review could not get the craft binary ${craftVersion}: ${fetched.error}. Pass craftBin=<absolute path> of a build (\`cargo build --release\` in cli/).`,
+          cause: stopCause(fetched, 'start'),
         }
       : fetched
   }
@@ -283,6 +285,7 @@ async function binAndRoot(o, craftVersion, serve) {
   return 'error' in checked
     ? {
         incomplete: `review: craftRoot=${JSON.stringify(o.craftRoot)} is not a usable plugin root: ${checked.error}. Pass the absolute path of a craft plugin root (an installed copy, or a checkout's integrations/claude-code) outside the reviewed repo.`,
+        cause: stopCause(checked, 'start'),
       }
     : { bin: o.craftBin, root: checked.root }
 }
@@ -553,7 +556,7 @@ async function drive(sb, o, craftVersion, service, recorder) {
   sb.log(`review ${craftVersion}: ${o.craftBin ?? `the released binary ${craftVersion}`} over ${o.repo || 'the session checkout'}`)
   sb.phase('Start')
   const where = await binAndRoot(o, craftVersion, serve)
-  if ('incomplete' in where) return { stopped: where.incomplete, cause: 'start' }
+  if ('incomplete' in where) return { stopped: where.incomplete, cause: where.cause }
   const filedThrough = filedRoot(sb, where, recorder)
   const started = await opening(sb, o, craftVersion, serve, { ...where, filedThrough })
   if ('argument' in started) return { refused: started.argument }
