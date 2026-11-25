@@ -64,8 +64,8 @@ mod tests {
 
     #[test]
     fn every_key_the_engines_set_takes_its_place() {
-        // As `acceptedMemory` leaves a recall with externals that may have failed in part, the
-        // launcher's records counted after (`withPassed`, `withDerived`), then a dead recall.
+        // Every key the order names, at once: no one run carries them all (a dead recall has no
+        // backend), but each takes the place the engines give it.
         let want = r#"{"source":"recalled","count":3,"why":"w","recallDied":"d","backend":"repo","externals":1,"queryError":"q","truncated":"t","questions":1,"rules":1,"passed":2,"added":1,"derived":1}"#;
         let Js::Obj(o) = parse(want).unwrap() else {
             panic!()

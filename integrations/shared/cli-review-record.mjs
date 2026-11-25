@@ -144,11 +144,12 @@ const MEMORY_ORDER = [
 ]
 
 /**
- * A memory object with its keys in the engines' order, any other after them as they came; anything else as given.
- * @param {unknown} m @returns {unknown}
+ * A memory object with its keys in the engines' order, any other named key after them as it came (index keys lead, as
+ * JavaScript orders them); anything else null, as the Rust writer keeps it.
+ * @param {unknown} m @returns {Record<string, unknown> | null}
  */
 function orderedMemory(m) {
-  if (!m || typeof m !== 'object' || Array.isArray(m)) return m
+  if (!m || typeof m !== 'object' || Array.isArray(m)) return null
   const o = /** @type {Record<string, unknown>} */ (m)
   /** @type {Record<string, unknown>} */
   const out = {}
@@ -197,7 +198,7 @@ export function cliRecord(o, { craftVersion, depth, strict, via, outputTokens, o
     ...telemetryKept(o),
     // Where the project memory the run applied came from, as the engine's record keeps it (integrations/shared/review-record.mjs; realm
     // @nick/craft, node #250): null when the binary never finished; and whether strict mode raised the maintainability bar.
-    memory: orderedMemory(o.memory ?? null),
+    memory: orderedMemory(o.memory),
     strict,
     ...publicationKept(o),
     outputTokens,
