@@ -4,7 +4,6 @@
 mod common;
 
 use common::{assert_contains_all, fixture, ids, lens, opts, scout, submit, titled, verdict};
-use craft_review::status;
 use craft_review::step::{self, StartOptions};
 use serde_json::json;
 
@@ -38,7 +37,13 @@ fn a_round_over_the_budget_is_not_bought_and_the_run_verifies_what_it_found() {
         ["dedup-rust"],
         "no round 2: straight on to the dedup"
     );
-    assert_eq!(status::status(&run).unwrap()["round"], json!(1));
+    let state: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(run.join("state.json")).unwrap()).unwrap();
+    assert_eq!(
+        (&state["rounds"]["round"], &state["rounds"]["sent"]),
+        (&json!(1), &json!(3)),
+        "the round not bought is not counted: a coordinator stamps what it finds with the last round run"
+    );
     let s = submit(&run, json!({"dedup-rust": {"groups": []}}));
     let mut answers = serde_json::Map::new();
     for id in ids(&s) {

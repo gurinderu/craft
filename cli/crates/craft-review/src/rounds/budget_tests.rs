@@ -64,3 +64,17 @@ fn a_state_that_did_not_count_its_first_round_sets_no_budget() {
     .unwrap();
     assert_eq!((old.sent, old.first, old.budget), (0, 0, None));
 }
+
+#[test]
+fn a_state_with_no_round_yet_writes_no_count() {
+    let v = serde_json::to_value(Rounds::with_budget(None)).unwrap();
+    assert!(
+        v.get("sent").is_none() && v.get("first").is_none() && v.get("budget").is_none(),
+        "a state is written as before until a round is sent: {v}"
+    );
+    let v = serde_json::to_value(after_first(3)).unwrap();
+    assert_eq!(
+        (&v["sent"], &v["first"]),
+        (&serde_json::json!(3), &serde_json::json!(3))
+    );
+}
