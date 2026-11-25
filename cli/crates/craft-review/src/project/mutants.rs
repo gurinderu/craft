@@ -87,6 +87,12 @@ mod tests {
     }
 
     #[test]
+    fn a_profile_that_cannot_be_read_is_an_error_not_the_defaults() {
+        let dir = tempfile::tempdir().unwrap();
+        of(dir.path()).unwrap_err();
+    }
+
+    #[test]
     fn a_command_line_in_the_section_is_refused_not_run() {
         let e = read("version = 1\n[mutants]\ncommand = \"rm -rf /\"\n").unwrap_err();
         assert!(e.contains("command"), "{e}");

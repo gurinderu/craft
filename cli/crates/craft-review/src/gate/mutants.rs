@@ -264,7 +264,7 @@ pub(crate) fn join(m: &mut Mutants, wait: Duration) -> (Vec<Value>, Option<Strin
         );
     };
     match outcomes::parse(&text) {
-        Ok(o) => said(&o, &m.workspace, &lines, stopped),
+        Ok(o) => said(&o, (&m.workspace, &dir), &lines, stopped),
         Err(e) => (
             Vec::new(),
             Some(format!(
@@ -302,17 +302,17 @@ fn why_none(c: &Came) -> String {
 /// What the run came to: the survivors kept and the report's line.
 fn said(
     o: &outcomes::Outcomes,
-    workspace: &str,
+    (workspace, dir): (&str, &Path),
     lines: &super::lines::Lines,
     stopped: bool,
 ) -> (Vec<Value>, Option<String>) {
     if !o.baseline_ok {
-        return (
-            Vec::new(),
-            Some(not_run(
-                "the tests fail on the unmutated tree, so no mutant's outcome means anything",
-            )),
+        let log = dir.join("mutants.out").join("log").join("baseline.log");
+        let why = format!(
+            "the unmutated workspace did not build or pass its tests in cargo-mutants' copy of it, so no mutant's outcome means anything — a crate that reads files outside its workspace fails there (realm @nick/craft, node #653); its log: {}",
+            log.display()
         );
+        return (Vec::new(), Some(not_run(&why)));
     }
     if o.total == 0 {
         return (Vec::new(), Some("mutants of the change: cargo-mutants chose none on a diff that touches Rust — check the diff's paths against the workspace root (node #624) before reading it as clean".into()));

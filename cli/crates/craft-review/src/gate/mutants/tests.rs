@@ -321,3 +321,191 @@ fn each_reason_they_do_not_run_is_said_never_silent() {
         "a change of nothing says nothing"
     );
 }
+
+#[test]
+fn the_workspace_is_the_topmost_declared_one_holding_most_changed_files() {
+    let top = tempfile::tempdir().unwrap();
+    let d = top.path();
+    for dir in ["cli/crates/a/src", "cli/crates/b/src", "tool/src"] {
+        std::fs::create_dir_all(d.join(dir)).unwrap();
+    }
+    std::fs::write(
+        d.join("cli/Cargo.toml"),
+        "[workspace]\nmembers = [\"crates/*\"]\n",
+    )
+    .unwrap();
+    std::fs::write(
+        d.join("cli/crates/a/Cargo.toml"),
+        "[package]\nname = \"a\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        d.join("cli/crates/b/Cargo.toml"),
+        "[package]\nname = \"b\"\n",
+    )
+    .unwrap();
+    std::fs::write(d.join("tool/Cargo.toml"), "[package]\nname = \"tool\"\n").unwrap();
+    let files = [
+        "cli/crates/a/src/lib.rs",
+        "cli/crates/b/src/lib.rs",
+        "tool/src/main.rs",
+    ]
+    .map(String::from);
+    assert_eq!(super::workspace(d, &files).as_deref(), Some("cli"));
+    let tool = ["tool/src/main.rs".to_owned()];
+    assert_eq!(
+        super::workspace(d, &tool).as_deref(),
+        Some("tool"),
+        "a package with no workspace is its own"
+    );
+    assert_eq!(super::workspace(d, &["loose.rs".to_owned()]), None);
+}
+
+#[test]
+fn a_launched_run_is_kept_in_the_gate_and_none_is_not_written() {
+    let none = serde_json::to_value(Gate::default()).unwrap();
+    assert!(none.get("mutants").is_none(), "{none}");
+    let gate = Gate {
+        mutants: Mutants {
+            dir: "/r/mutants".into(),
+            ..Mutants::default()
+        },
+        ..Gate::default()
+    };
+    let kept: Gate = serde_json::from_value(serde_json::to_value(&gate).unwrap()).unwrap();
+    assert!(kept.mutants.running());
+}
+
+#[test]
+fn a_run_short_is_said_short_and_one_with_no_neighbour_names_none() {
+    let (top, run, bin) = (
+        repo(),
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+    );
+    let only_big = MISSED_BIG
+        .replace(
+            ",{\"scenario\":{\"Mutant\":{\"name\":\"src/lib.rs:1:30",
+            ",{\"scenario\":{\"Mutant\":{\"name\":\"x",
+        )
+        .replace("\"line\":1,", "\"line\":2,");
+    work(
+        top.path(),
+        run.path(),
+        &cargo(bin.path(), &only_big, 0, 2),
+        30,
+    );
+    let (_, line) = join(&mut launched(top.path(), run.path(), ""), Duration::ZERO);
+    let line = line.unwrap();
+    assert!(
+        !line.contains("neighbouring") && !line.contains("run short"),
+        "{line}"
+    );
+    let unended = MISSED_BIG.replace("\"end_time\":\"t\"", "\"end_time\":null");
+    let (run, bin) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    work(
+        top.path(),
+        run.path(),
+        &cargo(bin.path(), &unended, 0, 2),
+        30,
+    );
+    let (_, line) = join(&mut launched(top.path(), run.path(), ""), Duration::ZERO);
+    assert!(line.unwrap().contains("run short: 2 of 2 tested"));
+}
+
+#[test]
+fn the_join_waits_for_a_result_written_within_its_wait_and_no_longer() {
+    let dir = tempfile::tempdir().unwrap();
+    let start = std::time::Instant::now();
+    assert_eq!(
+        super::wait_for(dir.path(), Duration::from_millis(300)),
+        None
+    );
+    assert!(
+        start.elapsed() >= Duration::from_millis(300),
+        "it gave up early"
+    );
+    assert!(
+        start.elapsed() < Duration::from_secs(3),
+        "it waited past its wait"
+    );
+    let path = dir.path().join(worker::RESULT);
+    let writer = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(300));
+        std::fs::write(path, r#"{"ran":"missing"}"#).unwrap();
+    });
+    assert_eq!(
+        super::wait_for(dir.path(), Duration::from_secs(5)),
+        Some(Came::Missing)
+    );
+    writer.join().unwrap();
+}
+
+#[test]
+fn a_run_abandoned_before_its_join_stops_its_worker() {
+    let (top, run, bin) = (
+        repo(),
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+    );
+    let exe_path = bin.path().join("worker");
+    exe::write_executable(
+        &exe_path,
+        "#!/bin/sh\necho $$ > \"$2/worker.pid\"\nexec sleep 60\n",
+    )
+    .unwrap();
+    let setup = MutantsSetup {
+        exe: exe_path,
+        budget: Duration::from_secs(60),
+        off: false,
+        cargo: "cargo".into(),
+        note: String::new(),
+    };
+    let (gate, files) = (passed(false), ["src/lib.rs".to_owned()]);
+    let at = Launch {
+        run_dir: run.path(),
+        top: top.path(),
+        base: "HEAD~1",
+        rust_files: &files,
+        other_profiles: false,
+        gate: &gate,
+        setup: Some(&setup),
+    };
+    let (mut m, _) = launch(&at);
+    let pid_file = run.path().join("mutants").join(worker::PID);
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    while !pid_file.is_file() && std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let pid: i32 = std::fs::read_to_string(&pid_file)
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    super::abandon(&mut m);
+    std::thread::sleep(Duration::from_millis(200));
+    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).unwrap_or_default();
+    assert!(
+        stat.is_empty() || stat.contains(") Z "),
+        "the worker outlived the run"
+    );
+    assert!(!m.running());
+}
+
+#[test]
+fn a_baseline_that_failed_in_the_copy_is_said_with_its_cause_and_log() {
+    let (top, run, bin) = (
+        repo(),
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+    );
+    let failed = r#"{"outcomes":[{"scenario":"Baseline","summary":"Failure"}],"total_mutants":3,"end_time":"t"}"#;
+    work(top.path(), run.path(), &cargo(bin.path(), failed, 0, 4), 30);
+    let (found, line) = join(&mut launched(top.path(), run.path(), ""), Duration::ZERO);
+    let line = line.unwrap();
+    assert!(found.is_empty());
+    assert!(
+        line.contains("outside its workspace") && line.contains("baseline.log"),
+        "{line}"
+    );
+}
