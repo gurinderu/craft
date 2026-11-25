@@ -61,7 +61,21 @@ const STEP = {
     { file: 'src/old.rs', line: 'x', disposition: 'closed', title: 'gone' },
   ],
   reReview: { prior: 1, carried: 2 },
-  memory: { source: '.craft/memory', 10: 'ten', 2: 'two' },
+  // Sorted, as the binary's step carries it (serde): both writers put the engines' order back (realm @nick/craft, node #250).
+  memory: {
+    added: 1,
+    backend: 'repo',
+    count: 2,
+    externals: 1,
+    passed: 1,
+    questions: 1,
+    queryError: 'q',
+    source: 'recalled',
+    why: 'w',
+    zeta: 0,
+    10: 'ten',
+    2: 'two',
+  },
   sorting: {
     defects: 1,
     findings: [

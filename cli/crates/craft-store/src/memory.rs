@@ -61,4 +61,26 @@ mod tests {
             r#"{"source":"recalled","count":5,"why":"w","backend":"repo","questions":1,"rules":2,"zeta":1,"alpha":0}"#
         );
     }
+
+    #[test]
+    fn every_key_the_engines_set_takes_its_place() {
+        // As `acceptedMemory` leaves a recall with externals that may have failed in part, the
+        // launcher's records counted after (`withPassed`, `withDerived`), then a dead recall.
+        let want = r#"{"source":"recalled","count":3,"why":"w","recallDied":"d","backend":"repo","externals":1,"queryError":"q","truncated":"t","questions":1,"rules":1,"passed":2,"added":1,"derived":1}"#;
+        let Js::Obj(o) = parse(want).unwrap() else {
+            panic!()
+        };
+        let mut keys: Vec<_> = o.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+        keys.sort_by_key(|a| a.0.to_utf8_lossy());
+        let mut sorted = crate::js::Obj::new();
+        for (k, v) in keys {
+            sorted.set(k, v);
+        }
+        assert_ne!(
+            Js::Obj(sorted.clone()).compact(),
+            want,
+            "the input arrives out of order"
+        );
+        assert_eq!(Js::Obj(ordered(&sorted)).compact(), want);
+    }
 }
