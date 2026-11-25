@@ -18,16 +18,19 @@ SKILL.md's ("Choosing the backend"); this file only says how to write and search
   below onto a store that has its own discipline.
 - **Without instructions**, the plain mapping: one item per record; the item's name = `title`;
   its text = `body`; the other fields under fixed keys, prefixed `craft_` as in the harness format
-  below — `craft_kind`, `craft_id`, `craft_scope`, `craft_status`, `craft_author`, `craft_commit`,
+  below — `craft_kind`, `craft_id`, `craft_scope`, `craft_status`, `craft_date`, `craft_author`, `craft_commit`,
   `craft_deferred`, `craft_line`, `craft_lens`, `craft_tool_rule` — as attributes, tags
   (`craft_kind:decision`) or observations, whichever the tool accepts, never under another name;
-  `links` as relations when the tool has them, else as text.
+  `links` as relations when the tool has them, else as text. `craft_date` is the record's `date`,
+  written by each record or re-record and by nothing else: the server's own modified time moves
+  with any edit of the item, and a review checks a record that names no commit against its date.
 - **Recall searches both spellings**: records written before these keys were fixed may carry them
   bare (`kind`, `id`, `scope`, `status`, …). Search and filter by the `craft_` key **and** the bare
   one (`craft_kind:decision` or `kind:decision`), never by one alone, and hand the record on with the
   bare names of SKILL.md.
 - **Recall returns the record shape**: whatever the server stores, a recalled record handed on
-  (to a subagent, or to a review as `priorDecisions`) is rebuilt as the SKILL.md shape — `author`,
+  (to a subagent, or to a review as `priorDecisions`) is rebuilt as the SKILL.md shape — `date`
+  (from `craft_date`, never the server's modified time), `author`,
   `commit`, `deferred`, `line`, `lens` and `toolRule` included when the item carries them, and an
   `external` record's `system`, `repo`, and `versionFrom` and `versionMatch` or a stated `version`.
 - **Ids — the convention for a server with its own ids**: `id` is the skill-rule id (SKILL.md,
