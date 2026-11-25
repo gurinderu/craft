@@ -380,6 +380,12 @@ craft:develop's loop do not run there. The review, new and not yet observed runn
 runs each task as its own `codex exec --ephemeral -s read-only` process, with the prompt body of the craft agent the
 task names (`integrations/claude-code/agents/`) before the task's prompt.
 
+## Dev shell
+
+`flake.nix` gives `nix develop` (and direnv, through `.envrc`) the CLI's pinned toolchain from
+`cli/rust-toolchain.toml` with rust-analyzer, Node 22, a C linker for the build scripts, `cargo mutants`, `jq` and
+`nixfmt`, its formatter. CI installs its own tools and does not read it.
+
 ## Deliveries
 
 `integrations/` holds all tracked JavaScript and TypeScript: one directory per harness and `shared/` for cross-host modules.
