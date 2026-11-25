@@ -95,16 +95,7 @@ pub fn cache_root(set: Option<&str>, home: Option<&Path>) -> Result<PathBuf, Str
     }
 }
 
-/// An error with each of its sources, one line.
-pub fn chain(e: &dyn std::error::Error) -> String {
-    let mut s = e.to_string();
-    let mut at = e.source();
-    while let Some(c) = at {
-        s.push_str(&format!(": {c}"));
-        at = c.source();
-    }
-    s
-}
+pub(crate) use craft_step::left::chain;
 
 /// The sources of the integration points the profile of the repository at `cwd` names; nothing
 /// when it has none. A profile that cannot be read is named, and the review goes on without.

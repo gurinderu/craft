@@ -263,7 +263,7 @@ fn a_refused_answer_file_that_cannot_be_moved_is_noted_with_what_its_next_read_d
         .expect("the step says what it could not move");
     let note = notes[0].as_str().unwrap();
     assert!(
-        note.starts_with("gather-report: a refused answer file left in place ("),
+        note.contains("gather-report.json aside: ") && note.contains(": left in place; "),
         "{note}"
     );
     // Its refusal was counted by its print, so read again it is not a new answer.
