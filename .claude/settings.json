@@ -1,15 +1,5 @@
 {
   "hooks": {
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":\"Before acting, read the Start section of the iskron door. Realm @nick/craft (r209), focus holon #1, agent role #3. Standing on watch (the watch word, start, a seat address from the window, a frame) or before the first write to the realm or a case, with one iskron_stand; a reading session takes no seat; `start <realm> <role> <case №N>` enters that case. A subagent has its own satellite bridge (iskron_stand with satellite_of; join and leave on it) and never writes to the realm through the launcher bridge.\"}}'"
-          }
-        ]
-      }
-    ],
     "PostToolUse": [
       {
         "matcher": "Bash",
