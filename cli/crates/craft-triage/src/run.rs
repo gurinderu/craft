@@ -7,6 +7,7 @@
 
 mod finish;
 mod gather;
+mod plan;
 mod sift;
 mod validate;
 
@@ -110,7 +111,7 @@ pub fn run(
     let gathered = ready!(gather::gather(args, answers)?);
     let sifted = ready!(sift::sift(args, answers, &gathered, scope)?);
     let validated = ready!(validate::validate(args, answers, &sifted)?);
-    let plan = ready!(finish::plan(args, answers, &gathered, &sifted, &validated)?);
+    let plan = ready!(plan::plan(args, answers, &gathered, &sifted, &validated)?);
     Ok(Progress::Done(Box::new(finish::finish(
         args,
         &gathered,
