@@ -126,3 +126,16 @@ fn a_write_over_a_stored_profile_of_another_format_is_refused() {
     save(&path, &profile).unwrap();
     assert_eq!(load(&path).unwrap(), Some(profile));
 }
+
+#[test]
+fn a_lens_composition_this_binary_cannot_read_never_hides_the_points() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("review.toml");
+    let p = ProjectProfile::new("/r/.git".into(), vec![kube_ovn()], Vec::new()).unwrap();
+    save(&path, &p).unwrap();
+    let text = std::fs::read_to_string(&path).unwrap();
+    let bad = text.replace("[lenses]", "[lenses]\n\"rust:money\" = \"sometimes\"");
+    assert_ne!(bad, text, "{text}");
+    std::fs::write(&path, bad).unwrap();
+    assert_eq!(load(&path).unwrap().unwrap().integrations, [kube_ovn()]);
+}

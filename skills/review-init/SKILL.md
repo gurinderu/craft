@@ -1,7 +1,7 @@
 ---
 name: review-init
 description: >-
-  Your own review profile of a repository for the craft CLI review — `craft init` — kept outside it (~/.craft/projects/<id>/review.toml), never committed. Integration points: the external systems this code talks to over the network or its API (kube-ovn, a cloud API), each with its source git URL and deployed tag or commit; it proposes the project memory's `external` records to confirm. CI map: which GitHub CI check runs clippy, tests, fmt or the build, on a command quoted from the workflow or its recipe — read when the gate cannot build. Lens composition: lenses held to the first round or turned off, offered by what they found here. Use before a repository's first review, on `not recorded: <system>`, when a deployed version changes, when the gate's build signal is unknown or its CI map stale, or to quiet a noisy lens. Triggers: craft init, set up my review profile, integration points, the deployed version changed, CI map, turn off a lens. Not for library dependencies, nor the project's shared memory (memory).
+  Your own review profile of a repository for the craft CLI review — `craft init` — kept outside it (~/.craft/projects/<id>/review.toml), never committed. Integration points: the external systems this code talks to over the network or its API (kube-ovn, a cloud API), each with its source git URL and deployed tag or commit; it proposes the project memory's `external` records to confirm. CI map: which GitHub CI check runs clippy, tests, fmt or the build, on a command quoted from the workflow or its recipe — read when the gate cannot build. Lens composition: lenses held to the first round or turned off, offered by what they found here. Use before a repository's first review, on `not recorded: <system>`, when a deployed version changes, when the gate's build signal is unknown or its CI map missing or stale, or to turn off a lens that finds nothing. Triggers: craft init, set up my review profile, integration points, CI map, turn off a lens. Not for library dependencies, nor the project's shared memory (memory).
 ---
 
 # review-init — your review profile of a repository
@@ -187,7 +187,10 @@ what the project is about:
 - `candidates` — the lenses with `passes` runs or more and no confirmed Medium or above, each with
   the `states` it may take: `first-round` (it reads the change once, never in a later round) and
   `off` (it does not run). The security lens and a profile's safety lens are never candidates; the
-  concurrency lens is offered `first-round` only.
+  concurrency lens is offered `first-round` only, and a state the profile already holds is not
+  offered again. `yieldUnread` says why the run store could not be read, and then there is no
+  yield; `unreadRecords` counts the records passed over, so the yield covers fewer reviews — say
+  so.
 
 With no candidates and nothing held, say so in one line and go on. Otherwise ask the reviewer in
 words, one numbered list: for each candidate, its runs and what it confirmed, and the states it

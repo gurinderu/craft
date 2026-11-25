@@ -71,8 +71,14 @@ fn the_security_and_safety_lenses_are_never_offered_and_concurrency_only_held() 
 #[test]
 fn a_cli_row_is_summed_under_its_own_name_and_a_row_naming_no_profile_passed_over() {
     let rows: BTreeMap<String, Lens> = [
-        ("rust:money (cli)", lens(12, [0.0, 0.0, 0.0, 1.0, 0.0])),
-        ("rust:money", lens(8, [0.0; 5])),
+        (
+            "rust:money (cli)",
+            Lens {
+                dead: 1,
+                ..lens(12, [0.0, 0.0, 0.0, 1.0, 0.0])
+            },
+        ),
+        ("rust:money", lens(8, [0.0, 0.0, 0.0, 2.0, 0.0])),
         ("money", lens(50, [0.0; 5])),
     ]
     .into_iter()
@@ -80,6 +86,9 @@ fn a_cli_row_is_summed_under_its_own_name_and_a_row_naming_no_profile_passed_ove
     .collect();
     let y = yields(&rows);
     assert_eq!(y.len(), 1, "{y:?}");
-    assert_eq!((y[0].lens.as_str(), y[0].runs), ("rust:money", 20));
-    assert_eq!(y[0].confirmed["Low"], 1.0);
+    assert_eq!(
+        (y[0].lens.as_str(), y[0].runs, y[0].dead),
+        ("rust:money", 20, 1)
+    );
+    assert_eq!(y[0].confirmed["Low"], 3.0, "both rows' findings, summed");
 }

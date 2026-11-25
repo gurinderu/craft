@@ -21,7 +21,8 @@ fn repo(t: &Path) -> String {
         .output()
         .unwrap();
     assert!(ok.status.success());
-    repo.display().to_string()
+    // The store's key is the path git reports, symlinks resolved (a temporary directory may be one).
+    std::fs::canonicalize(&repo).unwrap().display().to_string()
 }
 
 /// `n` finished review records of `project` in the store, each running `lenses`, a lens's confirmed
@@ -145,6 +146,11 @@ fn write_records_the_confirmed_lenses_replaces_them_and_refuses_what_a_review_wo
         "{refused:?}"
     );
     assert_ne!(write(&["rust:money=sometimes"]).status.code(), Some(0));
+    let twice = write(&["rust:money=off", "rust:money=first-round"]);
+    assert!(
+        String::from_utf8_lossy(&twice.stderr).contains("named twice"),
+        "{twice:?}"
+    );
     assert_eq!(
         lenses(t, &repo)["held"],
         json!(["general:concurrency=first-round", "rust:money=off"]),
@@ -157,4 +163,37 @@ fn write_records_the_confirmed_lenses_replaces_them_and_refuses_what_a_review_wo
         json!([]),
         "a write naming none replaces them with none"
     );
+}
+
+#[test]
+fn a_held_state_is_not_offered_again_and_an_unreadable_store_leaves_the_rest_of_propose() {
+    let tmp = tempfile::tempdir().unwrap();
+    let t = tmp.path();
+    let repo = repo(t);
+    runs(t, &repo, 20, &[("rust:money", json!({}))]);
+    json_of(&craft(
+        t,
+        &[
+            "init",
+            "--write",
+            "--cwd",
+            &repo,
+            "--lens",
+            "rust:money=off",
+        ],
+    ));
+    assert_eq!(
+        lenses(t, &repo)["candidates"],
+        json!([{"lens": "rust:money", "runs": 20, "states": ["first-round"]}])
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let store = t.join("home/.craft/runs");
+        std::fs::set_permissions(&store, std::fs::Permissions::from_mode(0o000)).unwrap();
+        let l = lenses(t, &repo);
+        std::fs::set_permissions(&store, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(l["yieldUnread"].is_string(), "{l}");
+        assert_eq!(l["held"], json!(["rust:money=off"]));
+    }
 }
