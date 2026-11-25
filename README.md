@@ -1,9 +1,10 @@
 # craft
 
-**Code review for the change your coding agent just made.**
+**AI code review for the change your coding agent just made.**
 
-craft is a review tool that runs inside Claude Code, OpenCode, Codex and pi. Point it at a branch and it comes back
-with one report and a verdict — Approve, Warning or Block — that you can act on before the pull request is opened.
+craft is an AI code review tool that runs inside Claude Code, OpenCode, Codex and pi. It checks code quality before
+the pull request is opened: point it at a branch and it comes back with one report and a verdict — Approve, Warning
+or Block.
 
 - **Many narrow passes instead of one general one.** Each changed file goes to the lenses of its language — Rust,
   Nix, SQL, or general lenses for everything else — and each lens looks for one kind of defect: correctness,
