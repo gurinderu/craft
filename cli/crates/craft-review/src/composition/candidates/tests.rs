@@ -78,7 +78,13 @@ fn a_cli_row_is_summed_under_its_own_name_and_a_row_naming_no_profile_passed_ove
                 ..lens(12, [0.0, 0.0, 0.0, 1.0, 0.0])
             },
         ),
-        ("rust:money", lens(8, [0.0, 0.0, 0.0, 2.0, 0.0])),
+        (
+            "rust:money",
+            Lens {
+                dead: 2,
+                ..lens(8, [0.0, 0.0, 0.0, 2.0, 0.0])
+            },
+        ),
         ("money", lens(50, [0.0; 5])),
     ]
     .into_iter()
@@ -88,7 +94,7 @@ fn a_cli_row_is_summed_under_its_own_name_and_a_row_naming_no_profile_passed_ove
     assert_eq!(y.len(), 1, "{y:?}");
     assert_eq!(
         (y[0].lens.as_str(), y[0].runs, y[0].dead),
-        ("rust:money", 20, 1)
+        ("rust:money", 20, 3)
     );
     assert_eq!(y[0].confirmed["Low"], 3.0, "both rows' findings, summed");
 }

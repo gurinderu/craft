@@ -192,7 +192,7 @@ what the project is about:
   yield; `unreadRecords` counts the records passed over, so the yield covers fewer reviews — say
   so.
 
-With no candidates and nothing held, say so in one line and go on. Otherwise ask the reviewer in
+With `yieldUnread` set, give its reason: the store was not read, so this is no finding of no candidates. With no candidates and nothing held, say so in one line and go on. Otherwise ask the reviewer in
 words, one numbered list: for each candidate, its runs and what it confirmed, and the states it
 may take; for each held entry, whether to keep it. They confirm a state, keep it as it runs, or
 drop a held one. Nothing is written without their word. A review started with `--all-lenses`
@@ -214,7 +214,7 @@ is still checked by a release's full review.
 The same holds for the CI map, one `--ci` per entry to keep, and for the lenses: one `--lens` per
 entry to keep, a held one as `held` prints it — a write with none leaves the profile with no
 composition. A lens entry a review would refuse (the security or a safety lens, the concurrency
-lens off, a lens no profile has) is named on stderr and nothing is written. A fresh confirmation is a resolved
+lens off, a lens no profile has) or a lens named twice is named on stderr and nothing is written. A fresh confirmation is a resolved
 candidate's `ci` as printed, or the same JSON with the command line you quoted from the recipe
 and the recipe files in `sources`; its files are hashed at the write. An entry already held is
 passed back exactly as `ci` prints it, `hashes` included: those are kept as recorded, so a
