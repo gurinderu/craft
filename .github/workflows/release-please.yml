@@ -18,11 +18,13 @@ jobs:
   # No release is cut from a commit whose targets were not built (realm @nick/craft, #671). A pull request no longer
   # builds the release targets, and release-please's own PR gets no CI at all, so the guard is here. release-please
   # tags the release PR's merge commit, whatever was pushed since; so while a merged release PR awaits its release
-  # (read from the pulls list, not the search index, which lags a merge), this job waits for native-builds on that
-  # very commit — its push to main started one — and passes only on a green run. On a red one, or none, it fails,
-  # release-please does not run and no tag is cut: re-run the failed native-builds run if the runner was at fault,
-  # then this workflow; a commit that does not build for a target is not released. A push with no release pending
-  # passes at once.
+  # (read from the pulls list as release-please reads it, every page, not the search index, which lags a merge), this
+  # job waits for native-builds on that very commit — its push to main started one — and passes only on a green run.
+  # On a red one, or none, it fails, release-please does not run and no tag is cut: re-run the failed native-builds
+  # run if the runner was at fault, then this workflow. A commit that does not build for a target is not released:
+  # its version is skipped by hand with no tag — last-release-sha in the config, then the release PR's label swapped
+  # to tagged — as AGENTS.md says under "Git workflow" (the way out read in release-please 17.3.0's source: realm
+  # @nick/craft, #671). A push with no release pending passes at once.
   targets-built:
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -35,8 +37,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          sha="$(gh api "repos/$GITHUB_REPOSITORY/pulls?state=closed&base=main&sort=updated&direction=desc&per_page=100" --jq '[.[] | select(.merged_at != null) | select(any(.labels[]; .name == "autorelease: pending"))][0].merge_commit_sha // ""')"
-          if [ -z "$sha" ]; then echo "no merged release PR awaits its release"; exit 0; fi
+          pending="$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls?state=closed&base=main&sort=updated&direction=desc&per_page=100" --jq '.[] | select(.merged_at != null) | select(any(.labels[]; .name == "autorelease: pending")) | .merge_commit_sha')"
+          if [ -z "$pending" ]; then echo "no merged release PR awaits its release"; exit 0; fi
+          sha="${pending%%$'\n'*}"
           echo "a release is pending at $sha: waiting for native-builds on it"
           started="$(date +%s)"
           while :; do
@@ -45,7 +48,7 @@ jobs:
             waited=$(( $(date +%s) - started ))
             # A run just queued may not be listed yet: none at all is a failure only after three minutes.
             if [ "$(echo "$runs" | jq '[.[] | select(.status != "completed")] | length')" = 0 ] && { [ "$runs" != "[]" ] || [ "$waited" -gt 180 ]; }; then
-              echo "::error::a release is pending at $sha and native-builds has no green run for it ($runs): no release is cut. Re-run that native-builds run if the runner was at fault, then this workflow; a commit that does not build for a target is not released."
+              echo "::error::a release is pending at $sha and native-builds has no green run for it ($runs): no release is cut. Re-run that native-builds run if the runner was at fault, then this workflow; a commit that does not build for a target is not released: skip its version with no tag as AGENTS.md says (Git workflow): last-release-sha in release-please-config.json, then the label swapped to tagged."
               exit 1
             fi
             sleep 30
