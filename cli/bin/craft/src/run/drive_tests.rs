@@ -152,8 +152,8 @@ impl Protocol for Fake {
         bail!("not asked")
     }
 
-    fn unfinished(&self, _run: &Path, why: &str) -> Option<Vec<String>> {
-        self.filed.borrow_mut().push(why.to_owned());
+    fn unfinished(&self, _run: &Path, not_run: &[&str]) -> Option<Vec<String>> {
+        self.filed.borrow_mut().push(not_run.join(" | "));
         Some(Vec::new())
     }
 }
@@ -462,7 +462,8 @@ async fn no_login_stops_the_run_before_the_submit_naming_how_to_resume_and_files
     );
     assert_eq!(
         *fake.filed.borrow(),
-        ["the craft binary did not finish the run"]
+        ["the craft binary did not finish the run | stopped: the host could not run the tasks"],
+        "the record names the cause (realm @nick/craft, node #638)"
     );
 }
 
@@ -536,7 +537,11 @@ async fn a_submit_that_fails_is_asked_of_status_and_the_run_said_where_it_stands
         "{}",
         answer.text
     );
-    assert_eq!(fake.filed.borrow().len(), 1);
+    assert_eq!(
+        *fake.filed.borrow(),
+        ["the craft binary did not finish the run | stopped: a step of the binary was lost"],
+        "an unreadable step is the record's cause (realm @nick/craft, node #638)"
+    );
 }
 
 #[tokio::test]
@@ -704,6 +709,7 @@ async fn a_delegate_that_stopped_answering_stops_the_run_resumable_before_the_su
     assert!(answer.text.contains("--run '"), "{}", answer.text);
     assert_eq!(
         *fake.filed.borrow(),
-        ["the craft binary did not finish the run"]
+        ["the craft binary did not finish the run | stopped: the host could not run the tasks"],
+        "the record names the cause (realm @nick/craft, node #638)"
     );
 }

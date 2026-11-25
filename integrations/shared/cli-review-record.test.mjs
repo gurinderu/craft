@@ -156,13 +156,40 @@ test("the caller's depth reaches `craft review start`; without one the binary's 
   assert.equal(JSON.parse(fs.readFileSync(path.join(none.store, String(file)), 'utf8')).depth, 'full', 'the record names the depth the binary ran at')
 })
 
+test('a binary fetch the usage limit stopped files the limit as its cause (realm @nick/craft, node #638)', async () => {
+  const run = await runEngine('review', {
+    args: {},
+    script: { 'step:resolve': { limit: "You've hit your weekly limit" }, 'log-run': { ok: true, output: ['wrote /store/r.json'] } },
+  })
+  assert.deepEqual(filedNotRun(run), ['the craft binary did not finish the run', 'stopped: the usage limit was reached'])
+})
+
+test('a plugin-root check the usage limit stopped files the limit; a fetch that plainly failed files the start (realm @nick/craft, node #638)', async () => {
+  const root = await runEngine('review', {
+    args: { craftBin: '/opt/craft', craftRoot: '/plugin' },
+    script: { 'step:root': { limit: "You've hit your weekly limit" }, 'log-run': { ok: true, output: ['wrote /store/r.json'] } },
+  })
+  assert.deepEqual(filedNotRun(root), ['the craft binary did not finish the run', 'stopped: the usage limit was reached'])
+  const fetch = await runEngine('review', {
+    args: {},
+    script: {
+      'step:resolve': { exitCode: 1, stdout: '', stderr: 'craft-bin: no released craft binary for freebsd/x64' },
+      'log-run': { ok: true, output: ['wrote /store/r.json'] },
+    },
+  })
+  assert.deepEqual(filedNotRun(fetch), ['the craft binary did not finish the run', 'stopped: the run could not start or resume'])
+})
+
 test('a run the binary never finished files an INCOMPLETE record without a reviewed head', async () => {
   const run = await runEngine('review', {
     args: { craftBin: '/opt/craft' },
     script: { 'step:start': { exitCode: 1, stdout: '', stderr: 'craft: no base' }, 'log-run': { ok: true, output: ['wrote /store/r.json'] } },
   })
   const rec = JSON.parse(String(run.calls.find(c => c.label === 'log-run')?.prompt).split(/\nRECORD:\n/)[1] ?? 'null')
-  assert.deepEqual([rec.name, rec.verdict, rec.notRun], ['review', 'INCOMPLETE', ['the craft binary did not finish the run']])
+  assert.deepEqual(
+    [rec.name, rec.verdict, rec.notRun],
+    ['review', 'INCOMPLETE', ['the craft binary did not finish the run', 'stopped: the run could not start or resume']],
+  )
   assert.ok(!run.calls.some(c => c.label.startsWith('checkpoint')), 'no checkpoint: the binary read no diff')
 })
 
@@ -414,6 +441,13 @@ const statusSays = ({ record, lost = [], finished = true }, done) => {
   }
   return { exitCode: 0, stderr: '', stdout: JSON.stringify(status) }
 }
+/** The `notRun` of the INCOMPLETE record the driver filed. @param {{ calls: Array<{ label: string, prompt: string }> }} run @returns {unknown} */
+const filedNotRun = run => {
+  /** @type {{ notRun?: unknown } | null} */
+  const rec = JSON.parse(String(run.calls.find(c => c.label === 'log-run')?.prompt).split(/\nRECORD:\n/)[1] ?? 'null')
+  return rec?.notRun
+}
+
 /** @param {Record<string, unknown>} script */
 const lostSubmit = script =>
   runEngine('review', {
@@ -475,7 +509,16 @@ test('a lost submit whose run the binary did not finish is filed INCOMPLETE by t
       ['step:locate', 'step:start', 'lens:a', 'step:submit:1', 'step:status', 'log-run'],
     )
     assert.ok(run.report.includes(`review stopped${at}: the command printed no JSON`), run.report)
+    assert.deepEqual(filedNotRun(run), ['the craft binary did not finish the run', 'stopped: a step of the binary was lost'], 'an unreadable step is the cause')
   }
+})
+
+test('a submit the usage limit stopped files the limit as its cause (realm @nick/craft, node #638)', async () => {
+  const run = await lostSubmit({
+    'step:submit:1': { limit: "You've hit your weekly limit" },
+    'step:status': statusSays({ record: 'none', finished: false }, false),
+  })
+  assert.deepEqual(filedNotRun(run), ['the craft binary did not finish the run', 'stopped: the usage limit was reached'])
 })
 
 test('a lost submit whose run the binary finished without keeping its finished step says so, and files no INCOMPLETE record', async () => {

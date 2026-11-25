@@ -9,6 +9,7 @@ use craft_agent::codex::Codex;
 use craft_agent::opencode::OpenCode;
 use craft_agent::pi::Pi;
 use craft_review::cancel::Cancel;
+use craft_review::filing::StopCause;
 use serde_json::Value;
 use tokio::runtime::{Handle, RuntimeFlavor};
 use tokio::task::block_in_place;
@@ -92,12 +93,15 @@ pub(crate) async fn steps<P: Protocol>(
     let step = match (first, signalled) {
         (Ok(s), _) => s,
         (Err(e), Some(code)) => return ending(code, Some(format!("{e:#}"))),
-        (Err(e), None) => return Ending::Stopped(format!("review could not {doing}: {e:#}")),
+        (Err(e), None) => {
+            return Ending::Stopped(format!("review could not {doing}: {e:#}"), StopCause::Start);
+        }
     };
     let Some(run) = step.get("run").and_then(Value::as_str).map(PathBuf::from) else {
-        return Ending::Stopped(format!(
-            "review could not {doing}: the step names no run directory"
-        ));
+        return Ending::Stopped(
+            format!("review could not {doing}: the step names no run directory"),
+            StopCause::Start,
+        );
     };
     d.log(&format!("run={}", run.display()));
     r.run = Some(run.clone());
@@ -117,10 +121,13 @@ pub(crate) async fn steps<P: Protocol>(
                 Ok(host) => host,
                 Err(why) => {
                     let hint = d.hint(&run);
-                    return Ending::Stopped(format!(
-                        "review cannot run its tasks: {why}. The run is in {}. {hint}",
-                        run.display()
-                    ));
+                    return Ending::Stopped(
+                        format!(
+                            "review cannot run its tasks: {why}. The run is in {}. {hint}",
+                            run.display()
+                        ),
+                        StopCause::Host,
+                    );
                 }
             };
             let there = Driver {
@@ -184,10 +191,13 @@ async fn rounds<P: Protocol>(
         }
         if round > MAX_ROUNDS {
             let hint = d.hint(run);
-            return Ending::Stopped(format!(
-                "review gave up after {MAX_ROUNDS} rounds; the run is in {}. {hint}",
-                run.display()
-            ));
+            return Ending::Stopped(
+                format!(
+                    "review gave up after {MAX_ROUNDS} rounds; the run is in {}. {hint}",
+                    run.display()
+                ),
+                StopCause::Rounds,
+            );
         }
         let tasks = match tasks_of(&at) {
             Ok(t) => t,
@@ -205,7 +215,10 @@ async fn rounds<P: Protocol>(
         // missing answers out again.
         if let Some(login) = said.1 {
             let hint = d.hint(run);
-            return Ending::Stopped(format!("{login}. The run is in {}. {hint}", run.display()));
+            return Ending::Stopped(
+                format!("{login}. The run is in {}. {hint}", run.display()),
+                StopCause::Host,
+            );
         }
         match d.proto.submit(run, &said.0) {
             Ok(step) => {
@@ -215,7 +228,7 @@ async fn rounds<P: Protocol>(
             Err(e) => return recovered(d, run, &format!("{e:#}"), r),
         }
     }
-    Ending::Stopped("review ran out of rounds".into())
+    Ending::Stopped("review ran out of rounds".into(), StopCause::Rounds)
 }
 
 /// A round's start, said: the phase when it moved, then the round and its tasks.

@@ -38,7 +38,7 @@ pub use root::{adopt, found_root};
 use said::outcome;
 pub use said::{brief, summary, with_filing};
 pub use store::StoreWriter;
-pub use unfinished::unfinished;
+pub use unfinished::{StopCause, UNFINISHED, unfinished};
 pub use wire::{Call, WriteError, Writer};
 
 /// Opens the run's telemetry after `start` printed `step`: the start checkpoint, and the record when

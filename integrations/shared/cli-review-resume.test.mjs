@@ -63,6 +63,13 @@ test('a run that gives up on its round backstop names its run and how to resume 
   })
   assert.ok(run.report.includes(`review gave up after 51 rounds; the run is in ${RUN}. To resume it`), run.report)
   assert.ok(run.report.includes(`craft:review run=${RUN}`), run.report)
+  /** @type {{ notRun?: unknown } | null} */
+  const rec = JSON.parse(String(run.calls.find(c => c.label === 'log-run')?.prompt).split(/\nRECORD:\n/)[1] ?? 'null')
+  assert.deepEqual(
+    rec?.notRun,
+    ['the craft binary did not finish the run', "stopped: the driver's round backstop was reached"],
+    'the cause (realm @nick/craft, node #638)',
+  )
 })
 
 test('a resume hands the binary the plugin root located now to file through, for a run started with none known', async () => {

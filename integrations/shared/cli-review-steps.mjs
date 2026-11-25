@@ -29,6 +29,7 @@ import { telemetryLostSection } from './review-coverage.mjs'
 import { argumentRefusal } from './run-record.mjs'
 import { normalizeArgs } from './workflow-args.mjs'
 import { runBudget } from './run-budget.mjs'
+import { stopCause, stopNotRun } from './cli-review-stop.mjs'
 
 /** @typedef {import('./cli-review-options.mjs').Options} Options */
 /** @typedef {import('./cli-review-step.mjs').Step} Step */
@@ -259,15 +260,17 @@ async function paged(serve, label, title, bin, got) {
  * binary's own, so a local build is not run with another plugin's content; otherwise this version's released binary
  * fetched, with the root its fetcher was found in.
  * @param {Options} o @param {string} craftVersion @param {Serve} serve
- * @returns {Promise<{ bin: string, root: string, recordRoot?: string, note?: string } | { incomplete: string }>}
+ * @returns {Promise<{ bin: string, root: string, recordRoot?: string, note?: string } | { incomplete: string, cause: import('./cli-review-stop.mjs').StopCause }>}
  */
 async function binAndRoot(o, craftVersion, serve) {
   if (o.craftBin === null) {
     const fetched = resolvedBin(await serve('step:resolve', 'Start', resolvePrompt(o, craftVersion)))
-    if ('harness' in fetched) return { incomplete: `review could not get the craft binary ${craftVersion}: ${harnessRefused(fetched.harness, null)}` }
+    if ('harness' in fetched)
+      return { incomplete: `review could not get the craft binary ${craftVersion}: ${harnessRefused(fetched.harness, null)}`, cause: 'harness' }
     return 'error' in fetched
       ? {
           incomplete: `review could not get the craft binary ${craftVersion}: ${fetched.error}. Pass craftBin=<absolute path> of a build (\`cargo build --release\` in cli/).`,
+          cause: stopCause(fetched, 'start'),
         }
       : fetched
   }
@@ -282,6 +285,7 @@ async function binAndRoot(o, craftVersion, serve) {
   return 'error' in checked
     ? {
         incomplete: `review: craftRoot=${JSON.stringify(o.craftRoot)} is not a usable plugin root: ${checked.error}. Pass the absolute path of a craft plugin root (an installed copy, or a checkout's integrations/claude-code) outside the reviewed repo.`,
+        cause: stopCause(checked, 'start'),
       }
     : { bin: o.craftBin, root: checked.root }
 }
@@ -327,7 +331,7 @@ function stoppedAt(standing, read, run, bin) {
 }
 
 /** @typedef {import('./cli-review-ended.mjs').Brief} Brief */
-/** @typedef {{ finished: Finished } | { stopped: string } | { unrecorded: string } | { unread: Brief } | { refused: string }} Ending  refused: the binary's start refused an argument, before any work; unrecorded: the binary finished the run but left nothing to file its record from; unread: the binary ended it, but only its brief status could be read */
+/** @typedef {{ finished: Finished } | { stopped: string, cause: import('./cli-review-stop.mjs').StopCause } | { unrecorded: string } | { unread: Brief } | { refused: string }} Ending  refused: the binary's start refused an argument, before any work; unrecorded: the binary finished the run but left nothing to file its record from; unread: the binary ended it, but only its brief status could be read */
 /** @typedef {ReturnType<typeof cliRecorder>} Recorder */
 /** @typedef {import('./cli-step-loop.mjs').Rounds<Exclude<Step, Finished>, Finished, Ending>} Rounds  the review's part of the step rounds */
 
@@ -359,7 +363,7 @@ export async function runCliReview(given, craftVersion) {
   // A resumed run whose resume ended before the binary named its repository, with none given, has no checkout to key
   // a record to: filing it under the session's would put it in another repository's history.
   const unkeyed = !!o.run && !recorder.keyed()
-  if (!unkeyed) await recorder.file({ verdict: 'INCOMPLETE', notRun: ['the craft binary did not finish the run'], runtimeStats: clock.stats() })
+  if (!unkeyed) await recorder.file({ verdict: 'INCOMPLETE', notRun: stopNotRun(ending.cause), runtimeStats: clock.stats() })
   return withNotes(stoppedAnswer(ending.stopped), [
     unkeyed ? "No run record was filed: the resumed run's repository is unknown (the resume ended before the binary named it, and no repo= was given)." : '',
     recorder.notes(),
@@ -369,7 +373,7 @@ export async function runCliReview(given, craftVersion) {
 /**
  * The answer of a run that did not stop short — finished, its last step lost, read only by its brief status, or an
  * argument its start refused — none of which is filed INCOMPLETE here.
- * @param {Sandbox} sb @param {Exclude<Ending, { stopped: string }>} ending @param {Recorder} recorder
+ * @param {Sandbox} sb @param {Exclude<Ending, { stopped: string, cause: import('./cli-review-stop.mjs').StopCause }>} ending @param {Recorder} recorder
  * @param {{ craftVersion: string, via: string }} at @returns {Promise<string>}
  */
 async function endedAnswer(sb, ending, recorder, at) {
@@ -552,11 +556,11 @@ async function drive(sb, o, craftVersion, service, recorder) {
   sb.log(`review ${craftVersion}: ${o.craftBin ?? `the released binary ${craftVersion}`} over ${o.repo || 'the session checkout'}`)
   sb.phase('Start')
   const where = await binAndRoot(o, craftVersion, serve)
-  if ('incomplete' in where) return { stopped: where.incomplete }
+  if ('incomplete' in where) return { stopped: where.incomplete, cause: where.cause }
   const filedThrough = filedRoot(sb, where, recorder)
   const started = await opening(sb, o, craftVersion, serve, { ...where, filedThrough })
   if ('argument' in started) return { refused: started.argument }
-  if ('error' in started) return { stopped: stoppedAt('', started, runOfStop(started, o), where.bin) }
+  if ('error' in started) return { stopped: stoppedAt('', started, runOfStop(started, o), where.bin), cause: stopCause(started, 'start') }
   // The record is keyed to the repository the run reviews, which the binary names: a resumed run's, and a start's that
   // reviews elsewhere than the checkout given — craft's own worktree of the PR given (realm @nick/craft, node #517).
   const reviews = started.step.repo
@@ -650,9 +654,9 @@ async function rounds(sb, bin, first, serve, recorder) {
     },
     lost: async read => {
       const truth = await recovered(sb, bin, first.run, serve, recorder)
-      return 'standing' in truth ? { stopped: stoppedAt(truth.standing, read, first.run, bin) } : truth
+      return 'standing' in truth ? { stopped: stoppedAt(truth.standing, read, first.run, bin), cause: stopCause(read, 'step') } : truth
     },
-    gaveUp: step => ({ stopped: `review gave up after ${MAX_ROUNDS} rounds; the run is in ${step.run}. ${resumeHint(step.run)}` }),
+    gaveUp: step => ({ stopped: `review gave up after ${MAX_ROUNDS} rounds; the run is in ${step.run}. ${resumeHint(step.run)}`, cause: 'rounds' }),
     finished: step => ({ finished: step }),
   }
   return stepRounds(first, review)

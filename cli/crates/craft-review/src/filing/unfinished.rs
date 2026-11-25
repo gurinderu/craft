@@ -11,10 +11,43 @@ use serde_json::json;
 use super::kept::load;
 use super::{Record, Writer, file_record, keep};
 
-/// Files the INCOMPLETE record of the run in `run`, stopped for `why`; the lines of what did not
-/// land. `None` when the run files no telemetry, or its segment's record was attempted already
-/// (the binary filed the run's end itself).
-pub fn unfinished(run: &Path, why: &str, w: &dyn Writer) -> Option<Vec<String>> {
+/// The `notRun` line of a run its driver stopped before the binary finished it; the cause's line
+/// follows it ([`StopCause::note`]).
+pub const UNFINISHED: &str = "the craft binary did not finish the run";
+
+/// Why the driver stopped a run the binary had not finished (realm @nick/craft, node #638): a
+/// class, so the run store counts each cause as one row (`notRun` is tallied by exact line), the
+/// same lines the Claude Code driver files (`content/parity/stop-causes.json`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StopCause {
+    /// The run could not be started or resumed.
+    Start,
+    /// The host could not run the tasks: not logged in, not in the run's checkout, or the process
+    /// a delegated host hands its tasks to stopped answering.
+    Host,
+    /// A step of the binary could not be read or handed in.
+    Step,
+    /// The driver's round backstop was reached.
+    Rounds,
+}
+
+impl StopCause {
+    /// The cause's `notRun` line.
+    #[must_use]
+    pub const fn note(self) -> &'static str {
+        match self {
+            Self::Start => "stopped: the run could not start or resume",
+            Self::Host => "stopped: the host could not run the tasks",
+            Self::Step => "stopped: a step of the binary was lost",
+            Self::Rounds => "stopped: the driver's round backstop was reached",
+        }
+    }
+}
+
+/// Files the INCOMPLETE record of the run in `run`, its `notRun` lines saying why it stopped; the
+/// lines of what did not land. `None` when the run files no telemetry, or its segment's record was
+/// attempted already (the binary filed the run's end itself).
+pub fn unfinished(run: &Path, not_run: &[&str], w: &dyn Writer) -> Option<Vec<String>> {
     let mut filing = load(run)?;
     if filing.finished.is_some() || filing.record != Record::None {
         return None;
@@ -22,7 +55,7 @@ pub fn unfinished(run: &Path, why: &str, w: &dyn Writer) -> Option<Vec<String>> 
     let mut step = json!({
         "run": run.display().to_string(), "done": true,
         "report": run.join("report.md").display().to_string(),
-        "verdict": "INCOMPLETE", "line": "", "notRun": [why], "findings": [],
+        "verdict": "INCOMPLETE", "line": "", "notRun": not_run, "findings": [],
         "repo": filing.ctx.repo,
     });
     // What the state holds of where the run stood; a state that cannot be read leaves the record
@@ -74,7 +107,7 @@ mod tests {
         let step = json!({"run": "/run", "done": false, "tasks": [], "phase": "scout"});
         open(run.path(), ctx(), "", &step, &w);
         assert_eq!(
-            unfinished(run.path(), "pi is not logged in", &w),
+            unfinished(run.path(), &["pi is not logged in"], &w),
             Some(vec![])
         );
         let calls = w.0.borrow();
@@ -84,7 +117,7 @@ mod tests {
         assert_eq!(request["step"]["notRun"], json!(["pi is not logged in"]));
         assert_eq!(request["step"]["repo"], json!("/r"));
         drop(calls);
-        assert_eq!(unfinished(run.path(), "again", &w), None);
+        assert_eq!(unfinished(run.path(), &["again"], &w), None);
     }
 
     #[test]
@@ -104,7 +137,7 @@ mod tests {
         let w = Kept::default();
         let step = json!({"run": "/run", "done": false, "tasks": [], "phase": "lenses"});
         open(run.path(), ctx(), "", &step, &w);
-        unfinished(run.path(), "stopped", &w);
+        unfinished(run.path(), &["stopped"], &w);
         let calls = w.0.borrow();
         let asked = &calls.last().unwrap().1["step"];
         assert_eq!(
@@ -122,6 +155,28 @@ mod tests {
     #[test]
     fn a_run_that_files_no_telemetry_is_left_alone() {
         let run = tempfile::tempdir().unwrap();
-        assert_eq!(unfinished(run.path(), "why", &StoreWriter::default()), None);
+        assert_eq!(
+            unfinished(run.path(), &["why"], &StoreWriter::default()),
+            None
+        );
+    }
+
+    /// The lines are the ones the Claude Code driver files too (realm @nick/craft, node #638).
+    #[test]
+    fn the_cause_lines_are_the_parity_files() {
+        let parity: Value = serde_json::from_str(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../content/parity/stop-causes.json"
+        )))
+        .unwrap();
+        assert_eq!(parity["unfinished"], json!(UNFINISHED));
+        for (key, cause) in [
+            ("start", StopCause::Start),
+            ("host", StopCause::Host),
+            ("step", StopCause::Step),
+            ("rounds", StopCause::Rounds),
+        ] {
+            assert_eq!(parity["causes"][key], json!(cause.note()), "{key}");
+        }
     }
 }
