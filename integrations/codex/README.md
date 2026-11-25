@@ -52,4 +52,22 @@ prints instead, and re-load it after Codex or bubblewrap is upgraded.
 For another install, find the path with `strace -f -e trace=execve codex sandbox true 2>&1 | grep bwrap` and put it
 in the profile. The profile persists across reboots; check it with `codex sandbox true && echo SANDBOX-OK`.
 
+## Install, upgrade and what runs
+
 Install: see "Codex" in the repository's `README.md`.
+
+The marketplace is pinned to the release tag because `bin/craft` runs the `craft` binary of the plugin's release
+version: a marketplace that followed `main` would run newer skills and content with an older binary. To move to a
+new release — or off a marketplace added without `--ref` — remove the marketplace first: Codex refuses to add
+`craft` again from another ref ("already added from a different source"), and `codex plugin marketplace upgrade
+craft` only refreshes the ref already pinned. Then add it at the new tag and add the plugin again.
+
+Codex runs a plugin's hooks only once you trust them: open `/hooks` in the Codex TUI and trust craft's. The skills
+appear as `craft:<name>`. Under Codex the hooks also count the project's own agent roles (`.codex/agents/*.toml`)
+as declared roles; when the review command cannot run or fails, they tell the session to review the diff itself.
+Codex has no Workflow tool, so the review loop of `craft:develop` does not run there either.
+
+The review command runs its tasks in parallel, 4 at once by default (`--concurrency <n>`), on Codex's configured
+model unless `--models <model>` or `--models opus=<m>,sonnet=<m>,haiku=<m>` (or `CRAFT_CODEX_MODELS`) names one per
+tier, each with the session's login. It writes under `~/.craft` and starts model calls, so it runs outside Codex's
+sandbox.

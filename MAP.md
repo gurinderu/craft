@@ -32,6 +32,12 @@ engineering-process content. It replaces `rust-skills` entirely.
 - Agents: by role (`rust-reviewer`).
 - Cross-cutting/language-agnostic skills (later): bare topic name (e.g. `git-workflow`).
 
+## Conventions
+
+- Crate versions in examples track the latest stable release; `edition = "2024"`.
+- Skills reference **each other** (e.g. `rust-review` points at `rust-testing` for how to write
+  missing tests): principle 1. A lean `SKILL.md` entry plus sub-files loaded on demand: principle 4.
+
 ## Rust skill set
 
 Status: ✅ done
@@ -124,6 +130,68 @@ prompts and answer schemas, `content/prompts/triage-*.md` and `content/schemas/t
 | `review` | the review of a diff in any language, the driver of the Rust CLI's step protocol: the binary decides every step (each changed file to its profile — Rust, Nix, SQL or the general lenses —, the gate, the scouts, the lens rounds, verification, memory, re-review rounds chained under `~/.craft/runs/cli`); the protocol was observed end to end in a live session (craft 0.41.0, a Rust diff, finished with Approve), the full-lens review that followed it not yet; by design `engine-service` runs `craft review start`/`submit`, the tasks each step hands out run in parallel, each reading its prompt file and writing its answer file in the run directory, and the engine holds no review logic of its own; the binary files the run's telemetry itself (`--record`: a checkpoint as each phase ends, the record when the run finishes, written by its own store writer, byte for byte as `integrations/shared/craft-log-run.mjs` writes them; not yet observed live), the engine only the INCOMPLETE record of a run the binary never finished | a `## Verdict` block with the verdict line the binary printed, and the path of the report it wrote |
 | `rust-audit` | gate once + per-crate CLI review (gate off) + inter-crate contracts + architecture + crate-decomposition + security + miri + semver + build-matrix + deps + unused-crates (verified) + tests-cov (parallel) | one synthesized severity-ranked report |
 | `triage-findings` | gather → sift by project memory → validate (parallel, per finding) → plan (barrier) | one ordered fix plan (writing-plans format) + triage ledger; no edits |
+
+### How each one runs
+
+`integrations/claude-code/workflows/review.js` is the diff review for any language. It drives the `craft` binary (the Rust
+CLI in `cli/`, fetched from this version's GitHub release unless `craftBin` names a local build), which
+decides every step: each changed file goes to its profile — Rust, Nix, SQL, a Markdown runbook (a file whose
+changed lines touch a shell block's or numbered step's command against an external system, walked step by step
+as a procedure by the `runbook` lens; not yet observed live), or the general lenses for
+source in any other language (correctness, security, money, concurrency, errors, performance, intent,
+tests, maintainability, compat, invariants, negative-space, design and, behind a code-metrics index,
+complexity — `design` judges the decisions a change makes (a new abstraction, source of truth,
+boundary, format, dependency direction or engine) and runs by itself when the diff adds a module,
+crate, public type or format, or on `optional=design` (not yet observed live); the Rust and Nix profiles extend them with their own lenses, Nix leaving out those that
+do not fit) — the mechanical gate runs, a scout per profile picks lenses, the lenses
+loop until dry, the findings are deduplicated and verified, and the binary writes one report with a
+verdict; the workflow only runs the agents each step hands out. A later run of the same branch builds
+on the earlier one (reviewing the fix commits, re-judging the findings it left open) unless `fresh`.
+`craft init` (the `craft:review-init` skill) writes your own profile of the repository, whose
+integration points the review fetches and reads at their deployed version, and whose CI map — which
+check of the project's CI runs clippy, the tests, fmt or the build, on which command line — the
+gate reads for the head when it cannot build the branch itself: a red check blocks, a green one is
+reported and never passes the gate.
+
+`integrations/claude-code/workflows/rust-audit.js` is the full pre-release audit: a scout detects the diff base, `unsafe`,
+the workspace crates and their dependency edges, then many dimensions run in parallel — per-crate
+review, inter-crate contracts, architecture, crate-decomposition, security, Miri (if `unsafe`),
+semver, build-matrix, deps, unused-crate detection (with verification), and test/doc health — and
+a final step synthesizes one severity-ranked report.
+
+`integrations/claude-code/workflows/triage-findings.js` gathers findings (craft agents + GitHub PR comments), sifts out what
+the project's memory already settled, validates the rest, dedups and conflict-checks them, and
+renders one ordered fix plan + a triage ledger (and the issues to file for findings the PR did not
+introduce) — no edits. A finding counts as not introduced by the PR only when it was shown at the
+commit the PR forks from: pass that as `prBase` (`git merge-base origin/<trunk> <reviewed head>`)
+only when the reviewed head is a branch diverging from trunk, together with `base` = the reviewed
+head's SHA, and leave it out on trunk or with no branch (it counts only beside a `base` it differs
+from: with no `base`, equal to it, or `HEAD`, it is absent); without it such findings come back as
+`needs-decision`. `base` is the ref the findings were generated against — the reviewed head — which
+validation pins to.
+
+The workflows and the standalone agents emit a structured run record after each run; see
+`docs/observability.md`.
+
+From a session in the repository to audit, run the workflow with the absolute path to the
+installed plugin root and a fixed diff base (replace `<plugin-root>` with that path):
+
+```
+Workflow({ scriptPath: "<plugin-root>/workflows/rust-audit.js", args: { base: "origin/main", craftRoot: "<plugin-root>" } })
+```
+
+`args.base` is optional — without it the scout falls back to
+`merge-base HEAD origin/main` → `main` → `HEAD~1`.
+
+## Hooks
+
+What craft says into a session on its own, and when. The Claude Code hooks file (`integrations/claude-code/hooks/hooks.json`) is also the one the Codex plugin names.
+
+| Hook | What it does |
+|---|---|
+| `SessionStart` (Claude Code) | When the repo declares its own agents (`.claude/agents/*.md`) or work rules (an `AGENTS.md` / `CLAUDE.md` that names the process: pull request, PR, code review, reviewer, review loop, before merging), adds four lines of context: the repo's roles and rules win on every step they cover, whichever declared role develops there runs its cycle with craft's tools (`craft:memory` before the work, `craft:develop`'s review loop before a PR), and a role running as a subagent hands the review loop back to the main session. Silent otherwise; off with `CRAFT_ROLE_HOOK=0` or a `craft-role-hook: off` line in `AGENTS.md` / `CLAUDE.md`. These hooks, the two below and the OpenCode one are the `craft` binary of the plugin's version (`craft hook …`), run from `~/.craft/bin/<version>/`; a hook never waits for it: where it is not there yet and the repo declares roles or rules (the switch on), the start hook downloads it in the background and says so in one line, the others say so on stderr, and they speak from the next session on; elsewhere they say nothing. Each run appends one line to `~/.craft/hooks.jsonl` (spoke or why silent; rotated past 256 KiB), which `integrations/shared/analyze-runs.mjs` reports beside the review runs made after it first spoke in their repo |
+| `UserPromptSubmit`, `SubagentStart` (Claude Code) | In the same repos and with the same off switch: on a message that asks for review work — English words such as review, findings, PR comments, pull request, merge request, a PR or MR link, or a comment or fix word beside a PR word ("check the PR for new comments") — adds its lines (eight for findings, five for a review) once per session for each kind of request (again after a compact or clear). A message written mostly in another script than Latin (Russian, Greek, Chinese…) gets one conditional text instead, the first in a session (again after a compact or clear), standing for that and every later request in the session and letting the model decide whether one asks for findings work or a review; each later such message gets one reminder line that those lines apply to it if it is about findings, PR comments or a review. The conditional text and the per-kind texts do not stand in for each other: an English request after it still gets its kind's lines, and a non-Latin one after them still gets the conditional text. It answers only a human's word: a subagent's report or a task notification the harness hands back as a prompt gets nothing, except one conditional line (if the report completes the fixes, re-review before posting replies) on the first subagent report in a session that heard the findings lines, again only after a compact or clear; a bare English "continue" ("keep going", "finish it") takes the kind of the session's latest prompt (none if that one asked for something else), or, as a session's first prompt, of the repo's latest prompt from another session within 12 hours; prompts it leaves unclassed are logged as `no-kind` for that. For findings: one call before the first tool call, `craft:addressing-findings`; right after it, the `craft:memory` recall for every path the findings touch, before triage; after the fixes are in and before any reply is posted, the re-review in the main session (the `craft:review` workflow on any language: Rust, Nix and SQL under their profiles, other source under its general lenses, in one run) until no Medium-or-higher finding is open; what the skill gives over working by hand; the main session holds the memory — it puts the records `craft:memory` recalls into each subagent's brief and records every triage disposition itself, right after triage (checking the `memory backend:` line); triage, whatever the number of findings, is the `craft:triage-findings` workflow launched in the main session (`report` = the findings written to a file whenever they live in a report, `pr` whenever there is a PR, at least one, and `prBase` with `base` = the reviewed head's SHA only when the reviewed head is a branch diverging from trunk — on trunk or with no branch `prBase` is left out and the findings claimed not this PR's go to the human), never handed to a subagent, and the main session files its issues; only the fixes may be delegated, with a ready line to paste into each fixer's brief with its file group that has the fixer never re-triage nor write memory and report a planned fix it finds wrong. For a review: `craft:develop` for the loop or, for one pass, the `craft:review` workflow on any language (Rust, Nix and SQL under their profiles, other source under its general lenses, in one run), both in the main session, never handed to a subagent; the same memory line; a ready brief line for a delegated reviewer, which reports findings only, changes no code and records nothing. In that session, a subagent started with the Agent tool gets five lines of its own (triage, replies and fixes per PR comments count as findings work; triage is never its own — asked to triage, it reports that back; it fixes a plan's file group with its verdicts as given, never writes memory and reports a planned fix it finds wrong; a pure review changes and records nothing) (craft's own agents get none: a `craft:` agent, one of craft's shipped agents by its bare name, or the Workflow tool's, none of them logged). Each firing goes to `~/.craft/hooks.jsonl` with its event, counted per event in the "craft hooks" section of `integrations/shared/analyze-runs.mjs` (the re-review line and the reminder line as rows of their own) (the review-run join stays on SessionStart) |
+| `chat.message`, `event` (OpenCode plugin) | The same request classes, repo test and off switch over OpenCode's plugin hooks: on a message asking for review work, appends a synthetic text part (eight lines for findings — with the recall before triage, triage in the session itself with the sift done by hand (OpenCode has no sift engine; its `triage-findings` tool only validates), and the re-review before replies, its own pass or `rust-review`/`rust-audit` — five for a review) once per session for each kind of request (again after a compaction; the first message in a non-Latin script gets one conditional text covering both kinds as a standing rule for the session, each later one a reminder line, and neither stands in for the per-kind texts), shaped as the Claude Code lines but naming what the OpenCode delivery ships: `addressing-findings` for findings, `rust-review` or the `rust-audit` tool (`/rust-audit`) for a review, the `memory` skill held by the main session, and a ready brief line for a fixer (the fixes only) or a reviewer agent; a repo's own `.opencode/agents` count as declared roles, craft's installed links there do not; a subagent session hears its own five lines on its first message when its brief asks for review work or its parent heard the prompt lines; the sessions the plugin's workflows open and craft's own agents hear nothing (unlogged). Logged to `~/.craft/hooks.jsonl` as `chat.message` and `session.compacted`. OpenCode has no session-start hook here |
 
 ## Documentation
 
@@ -386,6 +454,36 @@ task names (`integrations/claude-code/agents/`) before the task's prompt.
 `cli/rust-toolchain.toml` with rust-analyzer, Node 22, a C linker for the build scripts, `cargo mutants`, `jq` and
 `nixfmt`, its formatter. CI installs its own tools and does not read it.
 
+## Layout
+
+```
+craft/
+├── .claude-plugin/
+│   └── marketplace.json   # single-plugin marketplace (source: the claude-code-plugin branch)
+├── .codex-plugin/plugin.json      # the Codex plugin manifest (root skills/ and integrations/shared/, the Claude Code hooks file)
+├── .agents/plugins/marketplace.json  # the Codex marketplace (source: .)
+├── integrations/          # one directory per harness craft is delivered to
+│   ├── claude-code/       # the Claude Code plugin (what a marketplace install copies)
+│   │   ├── .claude-plugin/plugin.json   # plugin metadata
+│   │   ├── agents/        # diff/structure review agents and the engines' service agent
+│   │   ├── hooks/hooks.json   # SessionStart, UserPromptSubmit, SubagentStart, PreToolUse (integrations/shared/craft-hook.sh: `craft hook <name>`); PostToolUse (integrations/shared/pr-opened-hook.sh)
+│   │   ├── workflows/     # multi-agent orchestration scripts, generated from integrations/claude-code/src/ (npm run build:engines)
+│   │   ├── src/           # authored engines; packaged only at integrations/claude-code/src
+│   │   ├── integrations/  # finite projections: shared and claude-code/src
+│   │   └── skills, content, README.md -> ../../…   # release branch dereferences these links
+│   ├── shared/           # tested helpers and hooks; config/ tools, fixtures/semgrep/ examples
+│   ├── opencode/          # the OpenCode adapter layer (agents, commands, plugin, install.sh)
+│   ├── codex/             # where the Codex delivery lives, and why its manifest stays at the root
+│   └── pi/                # the pi package's craft-review skill; its craft_review tool is integrations/pi/pi-extension.mjs (new)
+├── bin/craft              # the sh wrapper Codex, pi and OpenCode run the craft binary of this version through
+├── content/               # prompts and schemas the engines and the CLI render
+├── cli/                   # the craft Rust CLI
+└── skills/                # (abbreviated)
+    ├── rust-review/
+    ├── rust-testing/
+    └── …
+```
+
 ## Deliveries
 
 `integrations/` holds all tracked JavaScript and TypeScript: one directory per harness and `shared/` for cross-host modules.
@@ -399,7 +497,12 @@ top-level `src`, so each engine source has one packaged home; a load in place (`
 marketplace (`.claude-plugin/marketplace.json`) installs it from the `claude-code-plugin` branch (a `url` source over
 HTTPS), which each release rebuilds from this directory with the links dereferenced into real files
 (`integrations/shared/materialize-claude-code.mjs`, run by `.github/workflows/claude-code-plugin.yml`, which release-please calls),
-so a clone without symlinks (Windows) installs it whole. `integrations/opencode/` is the OpenCode adapter; on 2.x it
+so a clone without symlinks (Windows) installs it whole: on Linux with `core.symlinks=false` (the Windows default)
+the plugin installs with all its files. It has not been observed on Windows, where the hooks are POSIX shell
+commands run by Claude Code's shell; the released binary covers x86_64 Windows too
+(`craft-x86_64-pc-windows-msvc.tar.gz`, unpacked with the system's `tar.exe`), built by the release but not yet
+run there. Working from a checkout, `claude --plugin-dir integrations/claude-code` loads the delivery in place
+through its symlinks (Linux, macOS). `integrations/opencode/` is the OpenCode adapter; on 2.x it
 installs as a package from the `opencode-plugin` branch, each release's commit tagged `opencode-v<version>`
 (`integrations/shared/opencode-package.mjs` lays it out with its own `package.json`, no scripts and no dependencies — it refuses a
 shipped module that imports an npm package at run time —, `integrations/shared/materialize-opencode.mjs` commits
