@@ -24,6 +24,8 @@ use crate::state::Task;
 const PRIOR_AT: &str = "priorIndex";
 /// The mark of a finding going against a record (`memoryContradicts`).
 const CONTRADICTS: &str = "memoryContradicts";
+/// The field of a review finding the memory's marks and notes are appended to.
+const REVIEW_NOTE: &str = "why";
 
 /// Every id a record is known by: its own and the store's.
 fn aliases(d: &PriorDecision) -> impl Iterator<Item = &String> {
@@ -105,7 +107,7 @@ impl Memory {
             let check = |ds: &[&PriorDecision]| scope_check(repo, ds);
             apply::prepare(&judged, &self.decisions, &check, focus)
         };
-        let out = apply::apply(judged, &prepared, answer);
+        let out = apply::apply(judged, &prepared, answer, REVIEW_NOTE);
         self.set_aside = commit(settled, chain, out.kept, out.set_aside);
         notes.extend(out.notes.iter().map(|n| format!("prior decisions: {n}")));
         self.refused.extend(out.refused);
@@ -151,7 +153,7 @@ impl Memory {
         if !pairs.any() {
             return;
         }
-        let out = rules::apply(judged, &pairs, answers);
+        let out = rules::apply(judged, &pairs, answers, REVIEW_NOTE);
         let covered = commit(settled, chain, out.kept, out.covered);
         self.set_aside.extend(covered);
         self.rule_notices = out.notices;
@@ -237,7 +239,7 @@ fn take_prior(f: &Value) -> Option<(usize, Value)> {
 /// The scope check of `ds`, by git in `repo` (`scopeCheckScript`, run here rather than by an
 /// agent): a record whose commit the repository lacks is missing; one whose scope `git diff
 /// --quiet` shows untouched since its commit, the working tree included, is unchanged.
-fn scope_check(repo: &Path, ds: &[&PriorDecision]) -> apply::Scope {
+pub(super) fn scope_check(repo: &Path, ds: &[&PriorDecision]) -> apply::Scope {
     let mut out = apply::Scope::default();
     for d in ds {
         if !git::has_commit(repo, &d.commit) {

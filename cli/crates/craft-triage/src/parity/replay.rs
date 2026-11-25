@@ -11,10 +11,13 @@ use craft_store::js::{Js, JsString};
 use crate::field::At;
 use crate::ledger::Row;
 use crate::pinned::final_ledger;
-use crate::record::{RecordInput, SiftCounts, run_record};
+use crate::record::{RecordInput, run_record};
 use crate::sift::{Collapsed, Sifted, collapse_repeats, repeat_entry};
 
-use super::phases::{gather, strings, validate};
+use super::memory::sift;
+use super::phases::{gather, text as arg, validate};
+use crate::memory::{Settled, memory_record};
+use craft_review::memory::Memory;
 
 /// Everything one case replays to.
 pub(super) struct Replay {
@@ -22,16 +25,12 @@ pub(super) struct Replay {
     not_run: Vec<String>,
     raw: Vec<Finding>,
     collapsed: Collapsed,
+    memory: Memory,
+    settled: Settled,
     pub(super) sifted: Vec<Row>,
     pub(super) validations: Vec<Row>,
     pub(super) asked: Vec<JsString>,
     unjudged: usize,
-}
-
-/// A count of the expected record's sift part.
-fn counted(sifted: &Js, key: &str) -> usize {
-    let n = sifted.at(key).as_num().unwrap();
-    craft_store::js::number_text(n).parse().unwrap()
 }
 
 impl Replay {
@@ -44,13 +43,17 @@ impl Replay {
                 .map(|f| Sifted::new(f.clone(), id_of(f)))
                 .collect(),
         );
-        let sifted = collapsed.repeated.iter().map(repeat_entry).collect();
-        let (validations, asked, unjudged) = validate(args, answers, &collapsed.kept);
+        let (memory, settled) = sift(args, answers, &arg(args, "base"), &collapsed.kept);
+        let mut sifted: Vec<Row> = collapsed.repeated.iter().map(repeat_entry).collect();
+        sifted.extend(settled.ledger.iter().cloned());
+        let (validations, asked, unjudged) = validate(args, answers, &settled.to_validate);
         Self {
             gathered,
             not_run,
             raw,
             collapsed,
+            memory,
+            settled,
             sifted,
             validations,
             asked,
@@ -86,20 +89,20 @@ impl Replay {
             .collect()
     }
 
-    /// The record and the plan, from the plan agent's answer; the memory's parts from `want`.
+    /// The kept findings handed to a validator with the marks the memory appended to them.
+    pub(super) fn noted(&self) -> impl Iterator<Item = &Sifted> {
+        self.settled
+            .to_validate
+            .iter()
+            .filter(|s| !s.memory_note.is_empty())
+    }
+
+    /// The record and the plan, from the plan agent's answer; the version from `want`.
     pub(super) fn finish(&self, plan: &Js, want: &Js) -> (Js, Js) {
         let planned = (!matches!(plan, Js::Null)).then(|| Plan::read(plan).unwrap());
         let rows = planned.as_ref().and_then(Plan::rows);
         let ledger = final_ledger(rows, &self.sifted, &self.validations);
         let issues = self.issues();
-        let s = want.at("record").at("triage").at("sifted");
-        let sift_counts = SiftCounts {
-            rejected_before: counted(s, "rejectedBefore"),
-            deferred: counted(s, "deferred"),
-            covered: counted(s, "covered"),
-            conflict: counted(s, "conflict"),
-            reraised: counted(s, "reraised"),
-        };
         let record = run_record(&RecordInput {
             craft_version: want.at("record").at("craftVersion").as_str().unwrap(),
             gathered: &self.gathered,
@@ -107,9 +110,9 @@ impl Replay {
             validated: self.validations.len(),
             ledger: &ledger,
             repeats: self.collapsed.repeated.len(),
-            sift_counts,
+            sift_counts: self.settled.counts,
             issues: issues.len(),
-            memory: want.at("record").at("memory").clone(),
+            memory: memory_record(&self.memory.source),
             not_run_sources: &self.not_run,
             unjudged: self.unjudged,
         });
@@ -119,14 +122,14 @@ impl Replay {
         if p.rows().is_some() {
             p.0.set("ledger", Js::Arr(ledger));
         }
-        let w = want.at("plan");
+        let refused = self.memory.refused.iter().chain(&self.settled.refused);
         let b = Banners {
-            memory_degraded: strings(w.at("memoryDegraded")),
+            memory_degraded: self.memory.source.degraded_notes(),
             not_run_sources: self.not_run.clone(),
             unjudged: self.unjudged,
-            memory: w.at("memory").as_str().unwrap().to_owned(),
-            prior_refused: strings(w.at("priorDecisionsNotApplied")),
-            rule_notices: strings(w.at("ruleNotices")),
+            memory: self.memory.source.line(),
+            prior_refused: refused.cloned().collect(),
+            rule_notices: self.settled.notices.clone(),
             issues,
             ..Banners::default()
         };

@@ -5,10 +5,12 @@
 //! Replayed here through this crate's functions, the same gathered findings, prior ledger and
 //! answers give the same verdicts and settled rows handed to the plan agent, the same record and
 //! the same plan — compared as JSON text, so a key out of the engine's order fails as surely as a
-//! wrong value. What is not this crate's — the memory recall, its degraded notes and line, the
-//! memory's own sift — is read from the expected side as input, and the replay validates every
-//! finding the batch kept: the cases recall no record that sets one aside.
+//! wrong value. The memory — the launcher's records, the recall, its line and degraded notes, the
+//! decisions and rules it sifts by — is the review's, replayed through its open API with the
+//! scope check and the judges answered as the case scripts them; only the craft version is read
+//! from the expected side (realm @nick/craft, node #629).
 
+mod memory;
 mod phases;
 mod replay;
 
@@ -50,6 +52,26 @@ fn the_validators_asked_and_the_plan_agents_blocks_are_the_engines() {
             got_asked, asked,
             "{name}: the findings a validator was asked about"
         );
+        for (id, prompt) in scripted.iter() {
+            let prompt = prompt.as_str().unwrap_or("");
+            let note = got
+                .noted()
+                .find(|s| s.stable_id == *id)
+                .map(|s| s.memory_note.to_utf8_lossy());
+            let line =
+                note.map(|n| format!("- project memory: {} —", n.trim_start_matches([' ', '·'])));
+            assert_eq!(
+                line.is_some(),
+                prompt.contains("- project memory: "),
+                "{name}: the validator of {id:?} has a memory note exactly when the engine's does"
+            );
+            if let Some(l) = &line {
+                assert!(
+                    prompt.contains(l.as_str()),
+                    "{name}: the validator of {id:?} reads {l:?}"
+                );
+            }
+        }
         let rows =
             |r: &[crate::ledger::Row]| text(&Js::Arr(r.iter().cloned().map(Js::from).collect()));
         assert_eq!(

@@ -15,6 +15,8 @@ const PRIOR_DECISIONS_MAX: usize = 100;
 /// What the refusal of the records past the cap says about how they were chosen and how to apply
 /// them.
 const CUT_HOW: &str = "kept are the records closest to the reviewed paths (a scope naming a changed file, then a directory holding one, a deeper scope before a shallower, a newer record before an older); to apply the rest, review a narrower path (path=<dir>) or supersede the records that no longer hold";
+/// The same, for a list read with no reviewed paths: kept by the records' own scopes alone.
+const CUT_HOW_PATHLESS: &str = "no reviewed paths are given here, so kept are the records with a scope before those over the whole repository, a deeper scope before a shallower, a newer record before an older; to apply the rest, review a narrower path (path=<dir>) or supersede the records that no longer hold";
 
 /// The records read from a list, and every refusal.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -101,8 +103,9 @@ pub(in crate::memory) fn parse(
     }
     if !caps.cut.is_empty() {
         out.refused.push(format!(
-            "{} decision(s) past the cap of {PRIOR_DECISIONS_MAX} were not applied — {CUT_HOW}; findings they would answer are raised normally: {}",
+            "{} decision(s) past the cap of {PRIOR_DECISIONS_MAX} were not applied — {}; findings they would answer are raised normally: {}",
             caps.cut.len(),
+            if paths.is_empty() { CUT_HOW_PATHLESS } else { CUT_HOW },
             cut_names(list, &caps.cut, label_of)
         ));
     }

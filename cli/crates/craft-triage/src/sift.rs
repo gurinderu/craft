@@ -1,7 +1,7 @@
 //! Repeats inside one batch collapsed onto one finding before any validator, as
 //! `integrations/shared/triage-sift.mjs` (realm @nick/craft, node #305).
 //!
-//! The memory's part of the sift stays the review's (`craft-review`'s memory) and is not here.
+//! The memory's part of the sift is [`crate::memory`], over the review's memory.
 
 use craft_review::ledger::overlap;
 pub use craft_review::memory::SURE_WINDOW;
@@ -17,13 +17,14 @@ pub const REPEAT_TITLE_OVERLAP: f64 = 0.6;
 pub const SIFT_MARK: &str = "SIFTED BEFORE VALIDATION";
 
 /// A gathered finding as the sift reads it: its stable id, file and line, the file in its own
-/// code units.
+/// code units, and the marks the memory's split appended (`memoryNote`), which its validator reads.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Sifted {
     pub finding: Finding,
     pub stable_id: JsString,
     pub file: JsString,
     pub line: u64,
+    pub memory_note: JsString,
 }
 
 impl Sifted {
@@ -42,6 +43,7 @@ impl Sifted {
             stable_id: id,
             file,
             line,
+            memory_note: JsString::default(),
         }
     }
 }

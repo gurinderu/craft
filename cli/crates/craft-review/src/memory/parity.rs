@@ -64,7 +64,7 @@ fn the_judges_prompts_render_as_the_engines_render_them() {
             Judge::Match => judge::match_pairs_json(&borrowed),
             Judge::Rule => judge::rule_pairs_json(&borrowed),
         };
-        let got = judge.task(&block).unwrap().prompt;
+        let got = judge.ask(&block).unwrap().prompt;
         assert_eq!(got, want[json].as_str().unwrap(), "{json}");
     }
 }
@@ -104,9 +104,9 @@ fn every_case_applies_as_the_engines_apply_it() {
         let m = merge::merge(recalled, case.get("passed"), &[]);
         let findings = case["findings"].as_array().unwrap().clone();
         let prepared = apply::prepare(&findings, &m.decisions, &|ds| scope_seen(case, ds), &[]);
-        let out = apply::apply(findings, &prepared, case.get("judge"));
+        let out = apply::apply(findings, &prepared, case.get("judge"), "why");
         let pairs = rules::Pairs::new(&out.kept, &m.decisions, &[]);
-        let ruled = rules::apply(out.kept, &pairs, &[case.get("ruleJudge").cloned()]);
+        let ruled = rules::apply(out.kept, &pairs, &[case.get("ruleJudge").cloned()], "why");
         let kept: Vec<Value> = ruled
             .kept
             .iter()

@@ -50,7 +50,12 @@ fn a_critical_read_through_javascripts_trim_is_raised_under_a_covering_rule() {
     let verdicts: Vec<Value> = (0..p.pairs().len())
         .map(|i| json!({"pair": i, "covered": true, "violates": false, "why": "y"}))
         .collect();
-    let out = apply(findings, &p, &[Some(json!({ "verdicts": verdicts }))]);
+    let out = apply(
+        findings,
+        &p,
+        &[Some(json!({ "verdicts": verdicts }))],
+        "why",
+    );
     let severities = |list: &[Value]| -> Vec<String> {
         list.iter()
             .map(|f| f["severity"].as_str().unwrap().to_owned())
@@ -60,4 +65,40 @@ fn a_critical_read_through_javascripts_trim_is_raised_under_a_covering_rule() {
     raised.sort();
     assert_eq!(raised, [" critical ", "\u{feff}Critical"]);
     assert_eq!(severities(&out.covered), ["\u{85}Critical"]);
+}
+
+/// The notice naming the findings past the rule judge's bound when `focus` names the reviewed
+/// paths, or none.
+fn cut_notice(focus: &[String]) -> String {
+    let findings: Vec<Value> = (0..=SENT_MAX)
+        .map(|i| finding(&format!("o{i}.rs"), "Low"))
+        .collect();
+    let rule = PriorDecision {
+        id: "rule-a".into(),
+        kind: RecordKind::Rule,
+        title: "clones are fine".into(),
+        scope: ".".into(),
+        reason: "r".into(),
+        ..PriorDecision::default()
+    };
+    let p = Pairs::new(&findings, &[rule], focus);
+    let out = apply(findings, &p, &[], "why");
+    out.notices
+        .into_iter()
+        .find(|n| n.contains("past the rule judge's bound"))
+        .unwrap()
+}
+
+#[test]
+fn past_the_rule_bound_a_run_given_no_reviewed_paths_says_so() {
+    let pathless = cut_notice(&[]);
+    assert!(
+        pathless.contains("pairs — no reviewed paths are given here, so judged first were the findings a rule can cover"),
+        "{pathless}"
+    );
+    let paths = cut_notice(&["o0.rs".to_owned()]);
+    assert!(
+        paths.contains("pairs — judged first were the findings on the reviewed paths"),
+        "{paths}"
+    );
 }

@@ -10,16 +10,15 @@ use std::collections::BTreeMap;
 
 use serde_json::Value;
 
-use super::PriorDecision;
-use crate::agent::Model;
+use super::{Ask, PriorDecision};
 use crate::content::{self, ContentError, vars};
-use crate::state::{Task, TaskKind};
 use crate::tool::finding_lenses;
 
 mod contradiction;
 mod pairs;
 
-pub(crate) use contradiction::{contradiction_of, contradiction_record};
+pub use contradiction::contradiction_of;
+pub(crate) use contradiction::contradiction_record;
 pub(super) use contradiction::{contradiction_section, mark_contradicting};
 pub(super) use pairs::{match_pairs_json, rule_pairs_json};
 
@@ -151,23 +150,21 @@ impl Judge {
         content::prompt(self.name(), &vars([("pairs", pairs.to_owned())]))
     }
 
-    /// The task asking it about `pairs`, on the cheap model the engine asks it on.
+    /// What it is asked about `pairs`, in no kind's task.
     ///
     /// # Errors
     /// When the template or the schema is missing.
-    pub(super) fn task(self, pairs: &str) -> Result<Task, ContentError> {
-        let (label, kind) = match self {
-            Self::Match => ("decision-match", TaskKind::MatchJudge),
-            Self::Rule => ("rule-match", TaskKind::RuleJudge),
+    pub(super) fn ask(self, pairs: &str) -> Result<Ask, ContentError> {
+        let label = match self {
+            Self::Match => "decision-match",
+            Self::Rule => "rule-match",
         };
-        Ok(Task::new(
-            self.name().into(),
-            label.into(),
-            self.prompt(pairs)?,
-            Model::Sonnet,
-            content::schema(self.name())?,
-            kind,
-        ))
+        Ok(Ask {
+            id: self.name().into(),
+            label: label.into(),
+            prompt: self.prompt(pairs)?,
+            schema: content::schema(self.name())?,
+        })
     }
 }
 

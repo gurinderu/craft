@@ -35,7 +35,8 @@ pub(in crate::memory) fn mark_contradicting(
 
 /// The record a finding is marked as going against: its id, kind and the judge's why
 /// (`contradictionOf`).
-pub(crate) fn contradiction_of(f: &Value) -> Option<(String, String, String)> {
+#[must_use]
+pub fn contradiction_of(f: &Value) -> Option<(String, String, String)> {
     let m = f.get("memoryContradicts")?.as_object()?;
     let id = m.get("id")?.as_str().filter(|s| !s.is_empty())?;
     let text = |k: &str| crate::js::text(m.get(k));

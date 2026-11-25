@@ -404,7 +404,7 @@ every kind of run shares, review now: the task and its kind, its prompt, schema 
 its schema and asked for again, the pending step and a task's status line; the review is its first kind, its phases, lenses,
 memory and verification its own), `crates/craft-store` (the run store's writer and its streaming reader, its output held to
 the JavaScript writer's by `content/parity/store-cases.json`), `crates/craft-triage` (the triage of findings as the binary
-will run it, for now its pure logic only — ids and sites, repeats collapsed, a prior ledger's settled verdicts carried,
+will run it, for now its pure logic only — ids and sites, repeats collapsed, the batch sifted by the review's memory, a prior ledger's settled verdicts carried,
 the noise classes and the issue class 1 files, the plan's ledger pinned, the plan's banners and the run record — held
 to `triage-findings` by `content/parity/triage-cases.json`, which `integrations/shared/triage-parity.test.mjs` writes)
 and `crates/craft-tui` (progress as a phases → agents tree

@@ -17,7 +17,7 @@ use super::apply::noted;
 use super::bounds;
 use super::judge::{self, CUT_NAMED_MAX, Judge, PAIRS_MAX, WHY_MAX};
 use super::matching::in_scope;
-use super::{PriorDecision, RecordKind};
+use super::{Ask, PriorDecision, RecordKind};
 use crate::content::ContentError;
 use crate::state::Task;
 use crate::tool::{finding_lenses, lens_words};
@@ -63,9 +63,16 @@ pub(super) struct Pairs {
     superseded: Vec<String>,
     /// Every candidate pair as (finding, rule) indices, ranked: those past [`SENT_MAX`] are cut.
     pairs: Vec<(usize, usize)>,
+    /// No reviewed paths were given to rank by.
+    pathless: bool,
 }
 
 impl Pairs {
+    /// Whether no reviewed paths were given to rank the pairs by.
+    pub(super) fn pathless(&self) -> bool {
+        self.pathless
+    }
+
     /// Every candidate pair as (finding, rule) indices, ranked.
     pub(super) fn pairs(&self) -> &[(usize, usize)] {
         &self.pairs
@@ -119,6 +126,7 @@ impl Pairs {
             rules,
             superseded: gone.iter().map(|d| d.id.clone()).collect(),
             pairs,
+            pathless: focus.is_empty(),
         }
     }
 
@@ -132,6 +140,18 @@ impl Pairs {
     /// # Errors
     /// When its template or schema is missing.
     pub(super) fn tasks(&self, findings: &[Value]) -> Result<Vec<Task>, ContentError> {
+        Ok(self
+            .asks(findings)?
+            .into_iter()
+            .map(|a| a.task(crate::state::TaskKind::RuleJudge))
+            .collect())
+    }
+
+    /// What the rule judges are asked over the pairs in its bound, as [`Pairs::tasks`] hands them.
+    ///
+    /// # Errors
+    /// When its template or schema is missing.
+    pub(super) fn asks(&self, findings: &[Value]) -> Result<Vec<Ask>, ContentError> {
         let sent = self.pairs.get(..self.sent()).unwrap_or_default();
         sent.chunks(PAIRS_MAX)
             .enumerate()
@@ -140,11 +160,11 @@ impl Pairs {
                     .iter()
                     .filter_map(|&(fi, ri)| Some((self.rules.get(ri)?, findings.get(fi)?)))
                     .collect();
-                let mut task = Judge::Rule.task(&judge::rule_pairs_json(&pairs))?;
+                let mut ask = Judge::Rule.ask(&judge::rule_pairs_json(&pairs))?;
                 if k > 0 {
-                    task.id = format!("{}-{}", task.id, k + 1);
+                    ask.id = format!("{}-{}", ask.id, k + 1);
                 }
-                Ok(task)
+                Ok(ask)
             })
             .collect()
     }
@@ -152,8 +172,8 @@ impl Pairs {
 
 /// The findings the rules left in the verdict, those they covered, the section's notices and the
 /// notes.
-#[derive(Debug, Clone, Default)]
-pub(super) struct Covered {
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Covered {
     pub kept: Vec<Value>,
     pub covered: Vec<Value>,
     pub notices: Vec<String>,
@@ -161,8 +181,14 @@ pub(super) struct Covered {
 }
 
 /// Applies the rules of `p` to `findings`, `answers` the rule judges' in their tasks' order (one
-/// missing or `None`: that judge gave none).
-pub(super) fn apply(findings: Vec<Value>, p: &Pairs, answers: &[Option<Value>]) -> Covered {
+/// missing or `None`: that judge gave none), each mark and note appended to the findings' field
+/// `key`.
+pub(super) fn apply(
+    findings: Vec<Value>,
+    p: &Pairs,
+    answers: &[Option<Value>],
+    key: &str,
+) -> Covered {
     let mut out = Covered::default();
     if !p.superseded.is_empty() {
         out.notes.push(format!(
@@ -208,9 +234,9 @@ pub(super) fn apply(findings: Vec<Value>, p: &Pairs, answers: &[Option<Value>]) 
                     "Raised under project rule {}: a Critical finding is never covered by a rule.",
                     d.id
                 );
-                out.kept.push(noted(&f, &note, &[]));
+                out.kept.push(noted(&f, key, &note, &[]));
             }
-            Some((d, why)) => out.covered.push(covered(&f, d, why)),
+            Some((d, why)) => out.covered.push(covered(&f, d, why, key)),
         }
     }
     out.notices.extend(names.into_iter().map(|(why, fs)| {
@@ -233,8 +259,8 @@ pub(super) fn apply(findings: Vec<Value>, p: &Pairs, answers: &[Option<Value>]) 
     out
 }
 
-/// `f` covered by rule `d`, the judge's `why` its match.
-fn covered(f: &Value, d: &PriorDecision, why: &str) -> Value {
+/// `f` covered by rule `d`, the judge's `why` its match, its mark appended to its field `key`.
+fn covered(f: &Value, d: &PriorDecision, why: &str, key: &str) -> Value {
     let tier = f
         .get("tier")
         .and_then(Value::as_str)
@@ -242,6 +268,7 @@ fn covered(f: &Value, d: &PriorDecision, why: &str) -> Value {
         .unwrap_or("confirmed");
     noted(
         f,
+        key,
         &format!("COVERED BY PROJECT RULE: {} (rule {})", d.title, d.id),
         &[
             ("priorTier", Value::from(tier)),

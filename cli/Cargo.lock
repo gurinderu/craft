@@ -407,6 +407,7 @@ version = "0.60.0"
 dependencies = [
  "craft-review",
  "craft-store",
+ "serde_json",
  "thiserror 2.0.21",
 ]
 
