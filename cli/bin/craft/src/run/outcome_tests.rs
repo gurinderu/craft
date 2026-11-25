@@ -89,12 +89,23 @@ fn a_dead_agent_wrote_only_its_own_words() {
         .as_deref(),
         Some("segfault")
     );
-    assert_eq!(
+    let failed = |subtype: &str| {
         wrote(AgentError::Failed {
-            subtype: "provider.no-route".into()
+            subtype: subtype.into(),
         })
-        .as_deref(),
-        Some("provider.no-route")
+    };
+    assert_eq!(
+        failed("the child session failed (provider.no-route): no route").as_deref(),
+        Some("provider.no-route: no route")
     );
+    // The plugin's and the binary's own words are none of the agent's.
+    for own in [
+        "the child session failed (outcome interrupted): the agent loop ended without succeeding",
+        "the child session failed (unknown)",
+        "the child session was stopped at its deadline",
+        "its reply could not be read: it is not UTF-8",
+    ] {
+        assert_eq!(failed(own), None, "{own}");
+    }
     assert_eq!(wrote(AgentError::NotAnObject), None);
 }

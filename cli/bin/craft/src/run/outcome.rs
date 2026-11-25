@@ -25,9 +25,9 @@ pub(crate) enum Outcome {
     /// Why the process a delegated run hands its tasks to stopped answering (delegate.rs).
     Gone(String),
     /// `said`: the last line the process wrote on stderr, when it wrote one. `wrote`: the last
-    /// line the agent's process wrote of why it gave no answer — not the binary's own reason, `None`
+    /// line the agent's process wrote of why it gave no answer — never craft's own reason, `None`
     /// when it wrote nothing — for the stop on a round that died whole (realm @nick/craft, node
-    /// #666). A delegated run's failure is in the words of the process running its tasks.
+    /// #666).
     Unanswered {
         why: String,
         said: Option<String>,
@@ -83,13 +83,27 @@ fn quit_words(host: &Host, stderr: &str, stdout: &str) -> Option<String> {
     events.or_else(|| last_line(stderr))
 }
 
+/// The runtime's own error in a delegated task's failure, as the opencode plugin words a failed
+/// child session (`integrations/opencode/plugin/host-v2.ts`, `ChildSessionFailed`): `the child
+/// session failed (<type>): <message>`, read as `<type>: <message>`. Its other words — a session
+/// that ended another way, one stopped at its deadline, an error with no message, a reply
+/// the binary could not read — are craft's own, so `None`.
+fn runtime_words(subtype: &str) -> Option<String> {
+    let rest = subtype.strip_prefix("the child session failed (")?;
+    let (kind, message) = rest.split_once("): ")?;
+    if kind.starts_with("outcome ") {
+        return None;
+    }
+    last_line(&format!("{kind}: {message}"))
+}
+
 /// The last line the agent's process wrote in a failure `e` that is neither a quit nor a clean exit
 /// with no answer: a failed exit's stderr, a delegated turn's failure; `None` where the words are
 /// craft's own.
 fn own_words(e: &AgentError) -> Option<String> {
     match e {
         AgentError::Exit { stderr, .. } => last_line(stderr),
-        AgentError::Failed { subtype } => last_line(subtype),
+        AgentError::Failed { subtype } => runtime_words(subtype),
         AgentError::Quit { .. }
         | AgentError::NoAnswer { .. }
         | AgentError::Spawn { .. }
