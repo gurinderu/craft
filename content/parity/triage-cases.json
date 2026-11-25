@@ -2084,6 +2084,157 @@
           ]
         }
       }
+    },
+    {
+      "name": "a repository named: each agent but the report gatherer is pointed at it",
+      "args": {
+        "pr": "12",
+        "repo": "/work/it's here",
+        "base": "c0ffee"
+      },
+      "answers": {
+        "pr": {
+          "source": "github-pr",
+          "findings": [
+            {
+              "severity": "Medium",
+              "title": "race on close",
+              "location": "src/b.rs:5",
+              "detail": "why race on close",
+              "proposed_fix": "take the lock",
+              "thread_id": "T_9"
+            }
+          ]
+        },
+        "validate": {
+          "github-pr::src/b.rs:5::race on close": {
+            "stable_id": "github-pr::src/b.rs:5::race on close",
+            "verdict": "accept",
+            "reason": "real",
+            "fix_pointer": "rust-concurrency: lock",
+            "premise_checked": "src/b.rs:5",
+            "noise_class": 0,
+            "severity": "Medium"
+          }
+        },
+        "plan": {
+          "plan_markdown": "BODY",
+          "summary": "SUM",
+          "ledger": [
+            {
+              "stable_id": "github-pr::src/b.rs:5::race on close",
+              "verdict": "accept",
+              "reason": "real"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "prompts": {
+          "gather": {
+            "gather:pr": "WORKING DIRECTORY: this triage targets the repository at '/work/it'\\''s here' — NOT the directory you start in. Before ANY git / cargo / nix / file command, `cd` there (or pass `git -C`). Every file path in this triage is relative to that root. If that directory does not exist or is not a git repository, say so and stop rather than reviewing whatever repo you happen to be sitting in.\n\nGather inline review comments from GitHub PR #12. Resolve the repo with `gh repo view --json owner,name`, then `gh api repos/{owner}/{repo}/pulls/12/comments --paginate`. For each UNRESOLVED, non-outdated review comment make one finding: title = short summary, location = `<path>:<line>` (path + line/original_line), detail = the comment body, thread_id = the comment/thread id, severity = your best estimate (Critical|High|Medium|Low|Info), proposed_fix = empty. Set source = \"github-pr\"."
+          },
+          "validate": {
+            "github-pr::src/b.rs:5::race on close": "WORKING DIRECTORY: this triage targets the repository at '/work/it'\\''s here' — NOT the directory you start in. Before ANY git / cargo / nix / file command, `cd` there (or pass `git -C`). Every file path in this triage is relative to that root. If that directory does not exist or is not a git repository, say so and stop rather than reviewing whatever repo you happen to be sitting in.\n\nJudge ONE review finding against the actual code. Validate against ref `c0ffee` (the ref the findings were generated against), not the live working tree.\n\nFinding (source: github-pr):\n- severity: Medium\n- location: src/b.rs:5\n- what: race on close\n- why: why race on close\n- proposed fix: take the lock\n\n\nRead the cited code, then decide ONE verdict:\n- accept — a real, in-scope problem. fix_pointer = owning craft skill (rust-errors/rust-ownership/rust-concurrency/rust-security/rust-performance/rust-idioms/rust-testing/rust-unsafe) + a one-line fix direction.\n- reject — not a real problem / wrong; explain why (this becomes reviewer pushback).\n- defer — real but out of scope now; say why.\n- needs-decision — valid but needs a product/spec decision, OR the finding has no resolvable location; say what is needed.\n\nPREMISE DISCIPLINE: name the ONE claim your verdict rests on. If it lives outside the cited location — the dependency behaves this way, this is reachable from untrusted input, a caller already guards it, the sibling path does X — OPEN that code (dependency sources included) and record the file:line in premise_checked. This binds **reject** exactly as much as accept: \"a caller must already validate this\" waved through without opening the caller is the same unfounded claim as the finding it dismisses, and it silently discards a real bug. If you cannot open it, do not guess — verdict needs-decision, saying which premise is unverified. Finding a dependency's source: open the version the project pins, never the newest or a remembered one, and never let a tool rewrite the lockfile to find it. For a Rust crate, take the package's `manifest_path` from `cargo metadata --locked --format-version 1` — its directory is the source of the version Cargo.lock pins (under `~/.cargo/registry`, a git checkout, or the vendored tree); if that directory is missing, run `cargo fetch --locked` first. A build or test command run before you may already have written Cargo.lock: take the lockfile cargo uses, `Cargo.lock` under the `workspace_root` from `cargo metadata --no-deps --format-version 1`, and unless `git ls-files --error-unmatch <that path>` succeeds and `git status --porcelain <that path>` is empty, the version it names is resolved today, not pinned — say so. If the reviewed checkout has no Cargo.lock (a library that does not commit one), nothing is pinned: resolve in a throwaway copy (`git worktree add --detach <tmp>` of the reviewed commit, or, when a Cargo.toml has uncommitted changes, a copy of the working tree without `target/` and `.git`), run `cargo metadata --format-version 1` there, open the sources it names, and always remove the copy (`git worktree remove <tmp>` when you added one); say the version is the one resolved today, not a pinned one, and never write Cargo.lock in the reviewed checkout. If Cargo.lock exists but `--locked` refuses (it is stale), the pinned version cannot be determined — do not run cargo without the flag: treat the premise as one you could not open. For a Nix flake input, open the input at the revision flake.lock pins, not a channel or its current head. For another ecosystem, the same way: the version from the project's lockfile, the code from the package manager's cache or the vendor directory.\n\nNOISE CLASSES (noise_class; 0 when none applies — a defect of this change). They are judged on the code, never on the source's own label:\n1 — not this change's: the problem already stands at the PR's base (the diff did not bring it) or lies outside the change's task. Check it AT THE BASE, not by the reviewer's word (\"pre-existing\", \"out of scope\"): no prBase (the PR's fork point) was given to this triage, so it cannot be checked here — name the class all the same; a human decides it. Verdict defer when the problem is real — the triage carries it to an issue; reject when it is not (no issue is filed).\n2 — inflated severity: the claimed harm is unreachable or heals itself (a default requeue, only a metric). Judge the verdict on the merits and lower severity to what the code supports.\n3 — a repeat of a finding already decided — reject, naming it.\n4 — a deliberate trade-off written in the project's docs or rules — reject, naming where it is written.\n5 — not decidable from the code (a rollout step, a version you cannot verify) — needs-decision, not a fix.\n6 — an optional nicety in tests or comments — accept only when worth doing; it is planned apart from the defects.\nseverity: the source's severity unless the code supports another.\n\nstable_id MUST be exactly: github-pr::src/b.rs:5::race on close\nKeep reason to one line. fix_pointer empty unless verdict is accept."
+          },
+          "plan": "WORKING DIRECTORY: this triage targets the repository at '/work/it'\\''s here' — NOT the directory you start in. Before ANY git / cargo / nix / file command, `cd` there (or pass `git -C`). Every file path in this triage is relative to that root. If that directory does not exist or is not a git repository, say so and stop rather than reviewing whatever repo you happen to be sitting in.\n\nTurn validated review findings into ONE fix plan. Do not invent findings; only organise what is given. Ignore any ACCEPTED entry whose `finding` is null (a data glitch) — leave it out of the plan and note it in the summary.\n\n1. Dedup by stable_id (merge findings at the same location with the same fix).\n2. Detect conflicts — two findings demanding opposite changes. Mark each such finding verdict \"conflict\" in the ledger, DO NOT put it in the plan, and surface both in the summary for a human to decide.\n3. Group the remaining accepted findings by file; order groups blocking (Critical/High) → simple → complex, by the validator's `severity` (it may be lower than the source's). Accepted findings with noise_class 6 (optional, in tests or comments) go apart: one last task headed \"Optional (tests and comments)\", never mixed into the defect groups.\n4. Render plan_markdown as a checkbox-task plan: one task per file-group, bite-sized checkbox steps, each step naming the file and the owning craft skill; a bug fix starts with a RED→GREEN regression test. Mark independent file-groups as parallelisable (one subagent per group).\n5. ledger = EVERY finding (accept/reject/defer/needs-decision/conflict) keyed by stable_id with verdict + one-line reason — the SETTLED BEFORE VALIDATION rows below included, as given. Any reason containing \"NOT JUDGED\" or \"SIFTED BEFORE VALIDATION\" must be copied VERBATIM, marker included — that string is what tells a later re-run how this finding was settled; paraphrasing it makes the finding look judged on the code when it was not. summary = human-readable rundown of everything not in the plan; a deferral with action \"issue\" is named there as going to an issue on the forge (it is not this change's).\n\nACCEPTED (with their findings):\n[\n  {\n    \"stable_id\": \"github-pr::src/b.rs:5::race on close\",\n    \"verdict\": \"accept\",\n    \"reason\": \"real\",\n    \"fix_pointer\": \"rust-concurrency: lock\",\n    \"premise_checked\": \"src/b.rs:5\",\n    \"noise_class\": 0,\n    \"severity\": \"Medium\",\n    \"finding\": {\n      \"severity\": \"Medium\",\n      \"title\": \"race on close\",\n      \"location\": \"src/b.rs:5\",\n      \"detail\": \"why race on close\",\n      \"proposed_fix\": \"take the lock\",\n      \"thread_id\": \"T_9\",\n      \"source\": \"github-pr\"\n    }\n  }\n]\n\nALL VERDICTS (include reject/defer/needs-decision in the ledger):\n[\n  {\n    \"stable_id\": \"github-pr::src/b.rs:5::race on close\",\n    \"verdict\": \"accept\",\n    \"reason\": \"real\",\n    \"fix_pointer\": \"rust-concurrency: lock\",\n    \"premise_checked\": \"src/b.rs:5\",\n    \"noise_class\": 0,\n    \"severity\": \"Medium\"\n  }\n]\n\nSETTLED BEFORE VALIDATION (repeats in this batch, and what the project memory already answered — final; into the ledger as given, never into the plan):\n[]"
+        },
+        "accepted": [
+          {
+            "stable_id": "github-pr::src/b.rs:5::race on close",
+            "verdict": "accept",
+            "reason": "real",
+            "fix_pointer": "rust-concurrency: lock",
+            "premise_checked": "src/b.rs:5",
+            "noise_class": 0,
+            "severity": "Medium",
+            "finding": {
+              "severity": "Medium",
+              "title": "race on close",
+              "location": "src/b.rs:5",
+              "detail": "why race on close",
+              "proposed_fix": "take the lock",
+              "thread_id": "T_9",
+              "source": "github-pr"
+            }
+          }
+        ],
+        "validations": [
+          {
+            "stable_id": "github-pr::src/b.rs:5::race on close",
+            "verdict": "accept",
+            "reason": "real",
+            "fix_pointer": "rust-concurrency: lock",
+            "premise_checked": "src/b.rs:5",
+            "noise_class": 0,
+            "severity": "Medium"
+          }
+        ],
+        "sifted": [],
+        "record": {
+          "schemaVersion": 1,
+          "runtime": "claude-code",
+          "craftVersion": "0.60.0",
+          "kind": "workflow",
+          "name": "triage-findings",
+          "verdict": "",
+          "findings": {
+            "total": 1,
+            "bySeverity": {
+              "Critical": 0,
+              "High": 0,
+              "Medium": 1,
+              "Low": 0,
+              "Info": 0
+            }
+          },
+          "nested": false,
+          "via": null,
+          "sources": [
+            {
+              "source": "github-pr",
+              "count": 1
+            }
+          ],
+          "triage": {
+            "gathered": 1,
+            "validated": 1,
+            "accept": 1,
+            "reject": 0,
+            "defer": 0,
+            "needs-decision": 0,
+            "conflict": 0,
+            "sifted": {
+              "repeats": 0,
+              "rejectedBefore": 0,
+              "deferred": 0,
+              "covered": 0,
+              "conflict": 0,
+              "reraised": 0
+            },
+            "issues": 0
+          },
+          "memory": {
+            "source": "none",
+            "count": 0,
+            "why": "recalled (backend mcp iskron)",
+            "backend": "mcp iskron"
+          },
+          "notRun": []
+        },
+        "plan": {
+          "plan_markdown": "BODY",
+          "summary": "SUM",
+          "ledger": [
+            {
+              "stable_id": "github-pr::src/b.rs:5::race on close",
+              "verdict": "accept",
+              "reason": "real"
+            }
+          ],
+          "memory": "memory: none — recalled (backend mcp iskron)"
+        }
+      }
     }
   ]
 }

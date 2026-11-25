@@ -90,7 +90,7 @@ pub fn settled(kept: &[Sifted], decided: Applied, ruled: Covered) -> Settled {
 const MIDDLE_DOT: u16 = 0xb7;
 
 /// A mark as the ledger's reason carries it: its leading ` · ` cut (`replace(/^\s*·\s*/, '')`).
-fn mark(note: &JsString) -> JsString {
+pub(crate) fn mark(note: &JsString) -> JsString {
     let mut units = note.units().skip_while(|u| is_space_unit(*u)).peekable();
     if units.next_if_eq(&MIDDLE_DOT).is_none() {
         return note.clone();

@@ -23,6 +23,7 @@ pub mod noise;
 mod parity;
 pub mod pinned;
 pub mod prior;
+pub mod prompts;
 pub mod record;
 pub mod sift;
 

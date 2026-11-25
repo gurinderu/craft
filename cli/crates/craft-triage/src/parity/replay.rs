@@ -89,6 +89,17 @@ impl Replay {
             .collect()
     }
 
+    /// The findings the memory left for the validators, each with its note.
+    pub(super) fn to_validate(&self) -> &[Sifted] {
+        &self.settled.to_validate
+    }
+
+    /// The rows settled before validation and the verdicts, as the plan agent is handed them.
+    pub(super) fn blocks(&self) -> (Js, Js) {
+        let rows = |r: &[Row]| Js::Arr(r.iter().cloned().map(Js::from).collect());
+        (rows(&self.validations), rows(&self.sifted))
+    }
+
     /// The kept findings handed to a validator with the marks the memory appended to them.
     pub(super) fn noted(&self) -> impl Iterator<Item = &Sifted> {
         self.settled

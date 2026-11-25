@@ -12,6 +12,7 @@
 
 mod memory;
 mod phases;
+mod prompts;
 mod replay;
 
 use craft_store::js::{Js, JsString};
