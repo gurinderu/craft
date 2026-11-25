@@ -256,7 +256,7 @@ fn a_lens_the_reviewers_profile_turned_off_is_no_candidate_for_the_critic() {
     let off = [("rust:money", State::Off), ("rust:performance", State::Off)]
         .map(|(l, s)| (l.to_owned(), s));
     let c = Composition::of(&off, std::slice::from_ref(&rust)).unwrap();
-    assert_eq!(hold(&mut plan, &c, "rust", &[]), None);
+    assert!(hold(&mut plan, &c, "rust", &[]).is_empty());
     let named = super::candidates(&rust, &plan, true, &files);
     assert!(
         !named.contains(&"money".to_owned()) && !named.contains(&"performance".to_owned()),

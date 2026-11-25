@@ -30,3 +30,31 @@ fn all_lenses_beside_a_resume_is_refused_before_any_task() {
     assert!(said.contains("Nothing ran"), "{said}");
     assert!(!run.exists(), "no run was touched");
 }
+
+#[test]
+fn all_lenses_alone_and_a_resume_alone_are_not_refused_for_it() {
+    let tmp = tempfile::tempdir().unwrap();
+    for with in [&["--all-lenses"][..], &["--run", "/nonexistent/run"][..]] {
+        let out = Command::new(env!("CARGO_BIN_EXE_craft"))
+            .args([
+                "review",
+                "run",
+                "--backend",
+                "codex",
+                "--host-bin",
+                "/nonexistent/codex",
+            ])
+            .args(with)
+            .arg("--cwd")
+            .arg(tmp.path())
+            .env("HOME", tmp.path())
+            .env("CRAFT_CODE_GRAPH", "")
+            .output()
+            .unwrap();
+        let said = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            !said.contains("--all-lenses goes with a start"),
+            "{with:?}: {said}"
+        );
+    }
+}

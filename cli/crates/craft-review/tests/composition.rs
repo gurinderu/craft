@@ -16,19 +16,23 @@ use serde_json::{Value, json};
 /// The lens step of a small run over a Rust fixture whose start takes `lenses` and `all`, its
 /// scout picking `errors`: the step and the run's state.
 fn lens_step(lenses: &[(&str, State)], all: bool) -> (Value, Value) {
-    lens_step_with(lenses, all, "")
+    lens_step_with(lenses, |o| StartOptions {
+        all_lenses: all,
+        ..o
+    })
 }
 
-/// As [`lens_step`], the profile's section reported unread with `unread` when it is not empty.
-fn lens_step_with(lenses: &[(&str, State)], all: bool, unread: &str) -> (Value, Value) {
+/// As [`lens_step`], the start's other options as `with` sets them.
+fn lens_step_with(
+    lenses: &[(&str, State)],
+    with: impl FnOnce(StartOptions) -> StartOptions,
+) -> (Value, Value) {
     let (repo, out) = (fixture(true), tempfile::tempdir().unwrap());
     let run = out.path().join("run");
-    step::start(&StartOptions {
+    step::start(&with(StartOptions {
         lenses: lenses.iter().map(|(l, s)| ((*l).to_owned(), *s)).collect(),
-        lenses_unread: unread.to_owned(),
-        all_lenses: all,
         ..opts(repo.path(), out.path())
-    })
+    }))
     .unwrap();
     let s = submit(&run, json!({"scout-rust": scout("small", &["errors"])}));
     let state: Value =
@@ -124,7 +128,10 @@ fn a_composition_that_would_leave_a_part_with_no_lens_runs_them_all_and_says_so(
 
 #[test]
 fn a_section_that_could_not_be_read_is_named_and_every_lens_runs() {
-    let (s, state) = lens_step_with(&[], false, "review.toml: [lenses]: bad state");
+    let (s, state) = lens_step_with(&[], |o| StartOptions {
+        lenses_unread: "review.toml: [lenses]: bad state".into(),
+        ..o
+    });
     assert_eq!(
         ids(&s),
         [
@@ -143,6 +150,36 @@ fn a_section_that_could_not_be_read_is_named_and_every_lens_runs() {
         !notes(&clean).contains("could not be read"),
         "{}",
         notes(&clean)
+    );
+}
+
+#[test]
+fn what_the_run_asks_for_itself_runs_though_the_profile_turns_it_off() {
+    let off = [
+        ("rust:maintainability", State::Off),
+        ("rust:api-idioms", State::Off),
+    ];
+    let (plain, _) = lens_step(&off, false);
+    assert!(
+        !ids(&plain)
+            .iter()
+            .any(|id| id.contains("maintainability") || id.contains("api-idioms"))
+    );
+    let (s, state) = lens_step_with(&off, |o| StartOptions {
+        strict: true,
+        optional: Some("api-idioms".into()),
+        ..o
+    });
+    let ran = ids(&s);
+    assert!(
+        ran.contains(&"lens-rust-maintainability-r1".to_owned())
+            && ran.contains(&"lens-rust-api-idioms-r1".to_owned()),
+        "{ran:?}"
+    );
+    assert!(
+        notes(&state).contains("the run asks for rust's maintainability, api-idioms itself"),
+        "{}",
+        notes(&state)
     );
 }
 

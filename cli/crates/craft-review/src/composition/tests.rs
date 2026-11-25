@@ -121,7 +121,7 @@ fn small_plan(extra: &serde_json::Value) -> Plan {
 fn a_lens_turned_off_leaves_its_profiles_plan_and_is_named_there() {
     let mut plan = small_plan(&json!({}));
     let other = of(&[("general:money", State::Off)]).unwrap();
-    assert_eq!(hold(&mut plan, &other, "rust", &[]), None);
+    assert!(hold(&mut plan, &other, "rust", &[]).is_empty());
     assert_eq!(
         plan.lenses,
         ["errors", "money", "tests"],
@@ -129,7 +129,7 @@ fn a_lens_turned_off_leaves_its_profiles_plan_and_is_named_there() {
     );
     assert!(plan.profile_off.is_empty());
     let money = of(&[("rust:money", State::Off)]).unwrap();
-    assert_eq!(hold(&mut plan, &money, "rust", &[]), None);
+    assert!(hold(&mut plan, &money, "rust", &[]).is_empty());
     assert_eq!(plan.lenses, ["errors", "tests"]);
     assert_eq!(plan.profile_off, ["money"]);
 }
@@ -138,7 +138,8 @@ fn a_lens_turned_off_leaves_its_profiles_plan_and_is_named_there() {
 fn a_lens_turned_off_but_never_planned_is_named_and_left_out_of_every_held_back_list() {
     let mut plan = small_plan(&json!({
         "lenses": ["errors"], "signalSkipped": ["performance"], "metricsDropped": ["complexity"],
-        "lightSkipped": ["compat"], "surfaceDropped": ["design"]
+        "lightSkipped": ["compat"], "surfaceDropped": ["design"],
+        "dataSkipped": ["sql-queries"]
     }));
     let c = of(&[
         ("rust:performance", State::Off),
@@ -146,9 +147,10 @@ fn a_lens_turned_off_but_never_planned_is_named_and_left_out_of_every_held_back_
         ("rust:compat", State::Off),
         ("rust:design", State::Off),
         ("rust:money", State::Off),
+        ("rust:sql-queries", State::Off),
     ])
     .unwrap();
-    assert_eq!(hold(&mut plan, &c, "rust", &[]), None);
+    assert!(hold(&mut plan, &c, "rust", &[]).is_empty());
     assert_eq!(plan.lenses, ["errors"]);
     assert!(plan.signal_skipped.is_empty(), "{:?}", plan.signal_skipped);
     assert!(
@@ -162,31 +164,62 @@ fn a_lens_turned_off_but_never_planned_is_named_and_left_out_of_every_held_back_
         "{:?}",
         plan.surface_dropped
     );
+    assert!(plan.data_skipped.is_empty(), "{:?}", plan.data_skipped);
     assert_eq!(
         plan.profile_off,
-        ["performance", "complexity", "compat", "design", "money"]
+        [
+            "performance",
+            "complexity",
+            "compat",
+            "design",
+            "money",
+            "sql-queries"
+        ]
     );
 }
 
 #[test]
-fn what_the_run_asked_for_itself_stays_and_a_plan_left_with_nothing_keeps_its_lenses() {
+fn what_the_run_asked_for_itself_stays_and_says_the_profile_gave_way() {
+    let c = of(&[("rust:money", State::Off), ("rust:errors", State::Off)]).unwrap();
+    let mut plan = small_plan(&json!({}));
+    let notes = hold(&mut plan, &c, "rust", &["money".to_owned()]);
+    assert_eq!(plan.lenses, ["money", "tests"]);
+    assert_eq!(plan.profile_off, ["errors"]);
+    assert_eq!(notes.len(), 1, "{notes:?}");
+    assert!(
+        notes[0].contains("the run asks for rust's money itself"),
+        "{notes:?}"
+    );
+}
+
+#[test]
+fn a_part_left_with_no_lens_keeps_its_planned_ones_yet_holds_back_the_rest() {
     let c = of(&[
         ("rust:money", State::Off),
         ("rust:errors", State::Off),
         ("rust:tests", State::Off),
+        ("rust:performance", State::Off),
+        ("rust:complexity", State::Off),
     ])
     .unwrap();
-    let mut asked = small_plan(&json!({}));
-    assert_eq!(hold(&mut asked, &c, "rust", &["money".to_owned()]), None);
-    assert_eq!(asked.lenses, ["money"]);
-    assert_eq!(asked.profile_off, ["errors", "tests"]);
-
-    let mut all = small_plan(&json!({}));
-    let line = hold(&mut all, &c, "rust", &[]).unwrap();
+    let mut plan = small_plan(&json!({
+        "signalSkipped": ["performance"], "metricsDropped": ["complexity"]
+    }));
+    let notes = hold(&mut plan, &c, "rust", &[]);
+    assert_eq!(notes.len(), 1, "{notes:?}");
     assert!(
-        line.contains("every lens planned for rust") && line.contains("errors, money, tests"),
-        "{line}"
+        notes[0].contains("every lens planned for rust")
+            && notes[0].contains("errors, money, tests"),
+        "{notes:?}"
     );
-    assert_eq!(all.lenses, ["errors", "money", "tests"]);
-    assert!(all.profile_off.is_empty());
+    assert_eq!(plan.lenses, ["errors", "money", "tests"]);
+    assert!(plan.signal_skipped.is_empty() && plan.metrics_dropped.is_empty());
+    assert_eq!(plan.profile_off, ["performance", "complexity"]);
+
+    let mut empty = small_plan(&json!({"lenses": [], "signalSkipped": ["performance"]}));
+    assert!(
+        hold(&mut empty, &c, "rust", &[]).is_empty(),
+        "an empty plan is not one left empty"
+    );
+    assert!(empty.signal_skipped.is_empty());
 }
