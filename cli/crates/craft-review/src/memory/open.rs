@@ -9,9 +9,9 @@ use serde_json::Value;
 
 use super::apply::{self, Applied, Scope};
 use super::rules::{self, Covered};
-use super::{Memory, MemorySource, PriorDecision, RecordKind, merge, recall};
+use super::{Memory, PriorDecision, RecordKind};
 use crate::agent::Model;
-use crate::content::{self, ContentError};
+use crate::content::ContentError;
 use crate::state::{Task, TaskKind};
 
 /// What the memory asks an agent, in no kind's task: its id and label, its prompt with no
@@ -39,14 +39,6 @@ impl Ask {
     }
 }
 
-/// The recall as it was asked: how many of its paths the prompt cut and grouped, to read its
-/// answer by.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct RecallCut {
-    pub cut: usize,
-    pub grouped: usize,
-}
-
 /// The scope check by git in `repo`, as the review runs it: a record whose commit the repository
 /// lacks is missing; one whose scope `git diff --quiet` shows untouched since its commit, the
 /// working tree included, is unchanged.
@@ -55,42 +47,6 @@ pub fn git_scope(repo: &Path) -> impl Fn(&[&PriorDecision]) -> Scope + '_ {
 }
 
 impl Memory {
-    /// The recall agent's ask over `paths` at `base`, and how its prompt cut them.
-    ///
-    /// # Errors
-    /// When its prompt or schema is missing.
-    pub fn recall_ask(paths: &[String], base: &str) -> Result<(Ask, RecallCut), ContentError> {
-        let (_, grouped, cut) = recall::entries(paths);
-        let ask = Ask {
-            id: "memory-recall".into(),
-            label: "memory-recall".into(),
-            prompt: recall::prompt(paths, base)?,
-            schema: content::schema("memory-recall")?,
-        };
-        Ok((ask, RecallCut { cut, grouped }))
-    }
-
-    /// Reads the recall's `answer` (`None`: it gave none) as it was asked (`asked`) and merges the
-    /// launcher's records into it, the cap keeping those closest to `paths`.
-    pub fn take_recalled(&mut self, answer: Option<&Value>, asked: RecallCut, paths: &[String]) {
-        let m = merge::merge(
-            recall::read(answer, asked.cut, asked.grouped),
-            self.passed.as_ref(),
-            paths,
-        );
-        self.decisions = m.decisions;
-        self.set_refused(m.refused);
-        self.source = m.source;
-    }
-
-    /// The memory of a run that asked no recall, said why.
-    pub fn not_recalled(&mut self, why: &str) {
-        self.source = MemorySource {
-            why: why.into(),
-            ..self.source.clone()
-        };
-    }
-
     /// The match judge's ask over `findings`, `None` when no pair needs it. Each record that could
     /// set one aside has its scope observed by `check` first, so the one ask also covers the
     /// outright matches it raises again; what it observed and the pairs asked are kept for
@@ -165,5 +121,8 @@ impl Memory {
     }
 }
 
+mod recall;
 #[cfg(test)]
 mod tests;
+
+pub use recall::RecallCut;

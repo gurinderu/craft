@@ -6,9 +6,10 @@
 //! a finding a judge shows going against a record is a `conflict` for a human; the rest go on to
 //! their validators, a raised one with its note.
 
+mod record;
 mod value;
 
-use craft_review::memory::{Applied, Covered, MemorySource, contradiction_of};
+use craft_review::memory::{Applied, Covered, contradiction_of};
 use craft_store::js::{Js, JsString, Obj, is_space_unit};
 use serde_json::Value;
 
@@ -17,6 +18,7 @@ use crate::ledger::Row;
 use crate::record::SiftCounts;
 use crate::sift::{SIFT_MARK, Sifted};
 
+pub use record::memory_record;
 pub use value::as_values;
 
 /// The field of a gathered finding the memory's marks and notes are appended to.
@@ -117,43 +119,6 @@ fn entry(s: &Sifted, verdict: &str, reason: JsString) -> Row {
         .with("verdict", Js::str(verdict))
         .with("sifted", Js::Bool(true))
         .with("reason", Js::Str(reason)))
-}
-
-/// The order the engine's memory source holds its keys in, as `readMemoryRecall` sets them and
-/// `acceptedMemory`, `withPassed` and `withDerived` add theirs after (the kinds re-added last).
-const RECORD_ORDER: [&str; 13] = [
-    "source",
-    "count",
-    "why",
-    "recallDied",
-    "backend",
-    "externals",
-    "queryError",
-    "truncated",
-    "questions",
-    "rules",
-    "passed",
-    "added",
-    "derived",
-];
-
-/// The memory as the run record keeps it (`memoryRecord`): the source's fields in the engine's
-/// order, any other after them, the derived ids' titles left out.
-#[must_use]
-pub fn memory_record(source: &MemorySource) -> Js {
-    let text = serde_json::to_string(source).unwrap_or_default();
-    let Ok(Js::Obj(mut o)) = craft_store::js::parse(&text) else {
-        return Js::Null;
-    };
-    o.remove("derivedNamed");
-    let mut out = Obj::new();
-    for k in RECORD_ORDER {
-        if let Some(v) = o.remove(k) {
-            out.set(k, v);
-        }
-    }
-    out.spread(&o);
-    Js::Obj(out)
 }
 
 #[cfg(test)]
