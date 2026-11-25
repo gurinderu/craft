@@ -146,3 +146,6 @@ pub fn save(dir: &Path, state: &TriageState) -> Result<(), StateError> {
     })?;
     std::fs::rename(&tmp, &path).map_err(|source| StateError::Unwritable { path, source })
 }
+
+#[cfg(test)]
+mod tests;

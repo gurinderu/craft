@@ -99,3 +99,35 @@ pub(crate) fn validate(
     }
     Ok(Ready::Got(out))
 }
+
+#[cfg(test)]
+mod tests {
+    use craft_store::js::{Js, Obj};
+
+    use super::{Args, ask};
+    use crate::finding::{Finding, id_of};
+    use crate::sift::Sifted;
+
+    fn sifted(location: &str, title: &str) -> Sifted {
+        let f = Finding(
+            Obj::new()
+                .with("severity", Js::str("Low"))
+                .with("title", Js::str(title))
+                .with("location", Js::str(location))
+                .with("source", Js::str("review")),
+        );
+        let id = id_of(&f);
+        Sifted::new(f, id)
+    }
+
+    #[test]
+    fn a_validators_label_is_its_site_cut_at_forty_units_else_its_title() {
+        let long = format!("src/{}.rs:7", "é".repeat(50));
+        let a = ask(&Args::default(), 3, &sifted(&long, "t")).unwrap();
+        let head: String = long.chars().take(40).collect();
+        assert_eq!(a.label, format!("validate:{head}"));
+        assert_eq!(a.id, "validate-3");
+        let b = ask(&Args::default(), 0, &sifted("", "a title")).unwrap();
+        assert_eq!(b.label, "validate:a title");
+    }
+}
