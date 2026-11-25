@@ -98,6 +98,11 @@ pub struct Lens {
     /// ([`crate::complexity`]).
     #[serde(default)]
     pub metrics: bool,
+    /// The rounds it runs at most, whatever a later round would find; `None`, as many as the plan
+    /// allows (realm @nick/craft, node #632). It never drops the lens: its first round stays.
+    /// Zero is refused at load: a lens limited to no round would never run.
+    #[serde(default)]
+    pub rounds: Option<std::num::NonZeroU32>,
     /// The rubric skill it is judged by when not its profile's — the embedded-SQL `sql-queries`
     /// lens of the Rust and general profiles takes `sql-review` (realm @nick/craft, node #536). Such
     /// a skill ships a `rules.md` catalog and no exclusion file of its own.

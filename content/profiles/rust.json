@@ -28,7 +28,7 @@
     { "id": "safety", "brief": "lens-briefs/rust-safety", "model": "opus" },
     { "id": "errors", "brief": "lens-briefs/rust-errors", "model": "opus" },
     { "id": "concurrency", "brief": "lens-briefs/rust-concurrency", "model": "opus" },
-    { "id": "performance", "brief": "lens-briefs/rust-performance", "model": "opus", "conditional": true, "signal": "loop-io" },
+    { "id": "performance", "brief": "lens-briefs/rust-performance", "model": "opus", "conditional": true, "signal": "loop-io", "rounds": 1 },
     { "id": "api-idioms", "brief": "lens-briefs/rust-api-idioms", "model": "opus", "optional": true },
     { "id": "api-boundary", "brief": "lens-briefs/rust-api-boundary", "model": "opus", "optional": true },
     {
@@ -36,7 +36,7 @@
       "catalogue": { "label": "RACE CATALOGUE", "file": "skills/distributed-races/catalogue.md", "fallback": "R1–R6" }
     },
     { "id": "failure-windows", "brief": "lens-briefs/rust-failure-windows", "model": "opus", "conditional": true, "wholeDiff": true },
-    { "id": "maintainability", "brief": "lens-briefs/rust-maintainability", "model": "opus", "conditional": true, "signal": "new-or-large-file" },
+    { "id": "maintainability", "brief": "lens-briefs/rust-maintainability", "model": "opus", "conditional": true, "signal": "new-or-large-file", "rounds": 1 },
     { "id": "intent", "brief": "lens-briefs/rust-intent", "model": "opus", "wholeDiff": true }
   ],
   "floorLenses": [

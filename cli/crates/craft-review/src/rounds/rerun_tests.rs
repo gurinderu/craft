@@ -334,3 +334,113 @@ fn a_state_with_the_removed_retry_list_still_loads() {
     .unwrap();
     assert_eq!(r.rerun, Some(vec!["rust:errors".to_owned()]));
 }
+
+/// A lens its profile limits to one round is not sent in the second, even after finding something
+/// new, while a lens with no limit is; the limit never drops the lens from the first round (realm
+/// @nick/craft, node #632).
+#[test]
+fn a_lens_limited_to_one_round_is_not_sent_again_though_it_found_something_new() {
+    let ctx = PromptContext::fixture("/work/repo", "main");
+    let rust = Profile::load("rust").unwrap();
+    let plan = plan_of(&["errors", "maintainability"]);
+    let files = ["src/a.rs".to_owned()];
+    let mut r = Rounds {
+        round: 1,
+        ..Rounds::default()
+    };
+    assert_eq!(
+        sent(&tasks(&ctx, (&rust, &plan), &files, &[], &r).unwrap()),
+        ["errors", "maintainability"],
+        "the first round sends the limited lens too"
+    );
+    r.absorb(&[
+        dispatch("errors", 1, None, &["a"]),
+        dispatch("maintainability", 1, None, &["b"]),
+    ]);
+    r.round = 2;
+    assert_eq!(
+        sent(&tasks(&ctx, (&rust, &plan), &files, &[], &r).unwrap()),
+        ["errors"]
+    );
+    r.rerun = None;
+    assert_eq!(
+        sent(&tasks(&ctx, (&rust, &plan), &files, &[], &r).unwrap()),
+        ["errors"],
+        "a state that does not know what it found still keeps the limit"
+    );
+}
+
+#[test]
+fn a_profile_whose_only_new_finding_came_from_a_limited_lens_goes_no_further() {
+    let rust = Profile::load("rust").unwrap();
+    let plan = plan_of(&["errors", "performance", "maintainability"]);
+    let mut r = Rounds {
+        round: 1,
+        rerun: Some(vec![
+            "rust:performance".into(),
+            "rust:maintainability :: src".into(),
+        ]),
+        ..Rounds::default()
+    };
+    assert!(!r.goes_on(&rust, &plan, true));
+    r.rerun = Some(vec!["rust:errors".into()]);
+    assert!(r.goes_on(&rust, &plan, true), "an unlimited lens goes on");
+}
+
+/// The limits #632 names, and none beyond them: Rust errors, concurrency and the Nix
+/// maintainability lens keep every round the plan allows.
+#[test]
+fn the_profiles_limit_the_low_yield_lenses_to_one_round() {
+    let rounds = |p: &str, l: &str| {
+        Profile::load(p)
+            .unwrap()
+            .lens(l)
+            .and_then(|x| x.rounds)
+            .map(std::num::NonZeroU32::get)
+    };
+    for (p, l) in [
+        ("rust", "maintainability"),
+        ("rust", "performance"),
+        ("general", "maintainability"),
+        ("general", "performance"),
+        ("general", "errors"),
+    ] {
+        assert_eq!(rounds(p, l), Some(1), "{p}:{l}");
+    }
+    for (p, l) in [
+        ("rust", "errors"),
+        ("rust", "concurrency"),
+        ("general", "concurrency"),
+        ("nix", "maintainability"),
+    ] {
+        assert_eq!(rounds(p, l), None, "{p}:{l}");
+    }
+}
+
+#[test]
+fn a_round_limit_of_zero_is_refused() {
+    let lens = |r: u32| {
+        serde_json::from_value::<crate::profile::Lens>(json!({
+            "id": "errors", "brief": "lens-briefs/rust-errors", "model": "opus", "rounds": r
+        }))
+    };
+    assert!(
+        lens(0).is_err(),
+        "a lens limited to no round would never run"
+    );
+    assert_eq!(
+        lens(1).unwrap().rounds.map(std::num::NonZeroU32::get),
+        Some(1)
+    );
+}
+
+/// What a later round may send again: a lens with no limit, not design, a metrics lens or one the
+/// profile limits to one round (realm @nick/craft, node #634).
+#[test]
+fn only_a_lens_a_later_round_may_send_again_is_resendable() {
+    let rust = Profile::load("rust").unwrap();
+    assert!(resendable(&rust, "errors"));
+    for lens in ["design", "complexity", "maintainability", "performance"] {
+        assert!(!resendable(&rust, lens), "{lens}");
+    }
+}

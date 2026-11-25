@@ -2,7 +2,8 @@
 //! planned lens over its profile's part of the diff in the first round, then, round after round,
 //! only the dispatches whose last answer found something new (realm @nick/craft, node #625), each
 //! told what the pool already holds, until a round adds nothing new to the profile, no lens that
-//! found something may run again, or the profile's plan's rounds are spent (loop until dry). The
+//! found something may run again within its own round limit (#632), the profile's plan's rounds
+//! are spent, or the next round would take the rounds past their agent budget (#634). The
 //! profiles of a run share each round and the pool. A finding is new when no pooled finding has
 //! its key (file, line and title); a lens dispatch that dies, in any round, is a hole the verdict
 //! reads as INCOMPLETE.
@@ -69,6 +70,28 @@ pub struct Rounds {
     /// state written before it was kept, which reruns every lens.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rerun: Option<Vec<String>>,
+    /// The lens tasks the rounds dispatched so far, and the first round's a later round may send
+    /// again, which the default agent budget is counted from ([`budget`]; realm @nick/craft, node #634). Zero in a
+    /// state written before they were kept, which no budget then stops.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub sent: u32,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub first: u32,
+    /// The default budget the first round set: its lens tasks, and as many again as those of them
+    /// a later round may send again ([`budget`]); zero until then.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub auto: u32,
+    /// The launcher's own agent budget for the lens rounds (`--lens-agents`); `None`, the default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub budget: Option<u32>,
+}
+
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde's skip_serializing_if passes a reference"
+)]
+const fn is_zero(n: &u32) -> bool {
+    *n == 0
 }
 
 /// The exact key of a finding: its file and title folded, and its line, as `key` in
@@ -480,7 +503,11 @@ impl Rounds {
     }
 }
 
+mod budget;
+#[cfg(test)]
+mod budget_tests;
 mod rerun;
+pub use rerun::resendable;
 #[cfg(test)]
 mod rerun_tests;
 #[cfg(test)]
