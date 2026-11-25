@@ -45,7 +45,7 @@ fn a_profile_round_trips_through_its_file_and_keeps_unknown_sections_readable() 
     );
     assert_eq!(load(&path).unwrap(), Some(p));
     // A later format's section the binary does not know yet: its points still read.
-    std::fs::write(&path, format!("{text}\n[lenses]\nskip = [\"compat\"]\n")).unwrap();
+    std::fs::write(&path, format!("{text}\n[future]\nskip = [\"compat\"]\n")).unwrap();
     assert_eq!(load(&path).unwrap().unwrap().integrations, [kube_ovn()]);
     // Written again: the points replaced, that section kept.
     save(
@@ -55,7 +55,7 @@ fn a_profile_round_trips_through_its_file_and_keeps_unknown_sections_readable() 
     .unwrap();
     let text = std::fs::read_to_string(&path).unwrap();
     assert!(
-        text.contains("[lenses]") && text.contains("skip = [\"compat\"]"),
+        text.contains("[future]") && text.contains("skip = [\"compat\"]"),
         "{text}"
     );
     assert_eq!(load(&path).unwrap().unwrap().integrations, []);
@@ -108,10 +108,10 @@ fn a_write_over_a_stored_profile_of_another_format_is_refused() {
     let profile = ProjectProfile::new("/r/.git".into(), vec![kube_ovn()], Vec::new()).unwrap();
     for stored in [
         format!(
-            "version = {}\n[lenses]\nskip = [\"compat\"]\n",
+            "version = {}\n[future]\nskip = [\"compat\"]\n",
             PROFILE_VERSION + 1
         ),
-        "[lenses]\nskip = [\"compat\"]\n".to_owned(),
+        "[future]\nskip = [\"compat\"]\n".to_owned(),
     ] {
         std::fs::write(&path, &stored).unwrap();
         let err = save(&path, &profile).unwrap_err().to_string();

@@ -280,6 +280,16 @@ fn printed(args: &RunsArgs) -> Result<ExitCode> {
 }
 
 fn retro(store: &Path, version: &str, skipped: &mut Skipped) -> Result<craft_store::retro::Retro> {
+    retro_where(store, &|r| r.text_units("craftVersion") == version, skipped)
+}
+
+/// The retro of the finished runs `keep` keeps — one version's, one repository's — read from the
+/// store at `store` as [`retro`] reads them, a resumed run once.
+pub(crate) fn retro_where(
+    store: &Path,
+    keep: &dyn Fn(&Obj) -> bool,
+    skipped: &mut Skipped,
+) -> Result<craft_store::retro::Retro> {
     let mut out = craft_store::retro::Retro::default();
     let mut newest = std::collections::BTreeMap::<String, (String, String)>::new();
     let mut parts = Parts::default();
@@ -289,7 +299,7 @@ fn retro(store: &Path, version: &str, skipped: &mut Skipped) -> Result<craft_sto
         if r.get("schemaVersion").is_some_and(Js::truthy) && !died {
             parts.note(&r);
         }
-        let inside = r.text_units("craftVersion") == version;
+        let inside = keep(&r);
         if r.get("schemaVersion").is_some_and(Js::truthy)
             && !died
             && held(&mut parts, (name, &r, inside), &mut failure)
@@ -331,7 +341,7 @@ fn retro(store: &Path, version: &str, skipped: &mut Skipped) -> Result<craft_sto
         match read::record(store, &name) {
             Ok(r)
                 if r.text_units("ts") == ts
-                    && r.text_units("craftVersion") == version
+                    && keep(&r)
                     && r.get("schemaVersion").is_some_and(Js::truthy)
                     && !r.get("partial").is_some_and(Js::truthy)
                     && craft_store::retro::run_key(&r).as_ref() == Some(&key) =>
@@ -346,8 +356,7 @@ fn retro(store: &Path, version: &str, skipped: &mut Skipped) -> Result<craft_sto
     }
     let (standing, folded) = parts.standing();
     out.folded += folded;
-    let of_version = |r: &Obj| r.text_units("craftVersion") == version;
-    for r in read_back(store, standing, skipped, of_version) {
+    for r in read_back(store, standing, skipped, keep) {
         craft_store::retro::add_record(&mut out, &r)?;
     }
     Ok(out)
