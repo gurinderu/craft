@@ -378,7 +378,13 @@ fn a_dead_round_names_what_its_agents_said_rather_than_a_guess() {
     };
     let mut s = Value::Null;
     for n in 0..3 {
-        let died = said(n);
+        let mut died = said(n);
+        // No task id, no `=`: passed over, as is an entry with no line.
+        died.extend([
+            "=a stray line".to_owned(),
+            "no separator".to_owned(),
+            "lens-rust-errors-r9=".to_owned(),
+        ]);
         s = step::submit_with(
             &run,
             Some(&serde_json::Map::new()),
@@ -396,5 +402,9 @@ fn a_dead_round_names_what_its_agents_said_rather_than_a_guess() {
         "{line}"
     );
     assert!(!line.contains("most likely"), "{line}");
+    assert!(
+        !line.contains("stray") && !line.contains("separator"),
+        "{line}"
+    );
     assert_eq!(s["stopped"]["told"], json!(true));
 }
