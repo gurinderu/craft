@@ -266,10 +266,9 @@ fn a_refused_answer_file_that_cannot_be_moved_is_noted_with_what_its_next_read_d
         note.starts_with("gather-report: a refused answer file left in place ("),
         "{note}"
     );
-    assert!(
-        note.ends_with("read again, it is taken as a new answer"),
-        "{note}"
-    );
+    // Its refusal was counted by its print, so read again it is not a new answer.
+    let then = "read again, it is set aside uncounted, and found there once more after a round that ran it counts as a missing answer";
+    assert!(note.ends_with(then), "{note}");
     assert_eq!(
         state::load(dir.path()).unwrap().notes,
         [note],
