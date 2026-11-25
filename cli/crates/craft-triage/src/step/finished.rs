@@ -58,6 +58,12 @@ pub(super) fn with_degraded(mut done: Finished, degraded: &[String]) -> Finished
         "plan_markdown",
         Js::str(format!("{}\n{body}", lines.join("\n"))),
     );
+    let summary = format!(
+        "DEGRADED: {}\n\n{}",
+        degraded.join("; "),
+        field::or_empty(o, "summary")
+    );
+    o.set("summary", Js::str(summary));
     o.set("degraded", field::texts(degraded));
     done
 }

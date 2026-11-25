@@ -2184,6 +2184,11 @@
               "stable_id": "github-pr::src/b.rs:5::race on close",
               "verdict": "accept",
               "reason": "real"
+            },
+            {
+              "stable_id": "review::src/c.rs:2::stale comment",
+              "verdict": "reject",
+              "reason": "not stale"
             }
           ]
         },
@@ -2293,7 +2298,7 @@
             "gathered": 2,
             "validated": 2,
             "accept": 1,
-            "reject": 0,
+            "reject": 1,
             "defer": 0,
             "needs-decision": 0,
             "conflict": 0,
@@ -2323,6 +2328,11 @@
               "stable_id": "github-pr::src/b.rs:5::race on close",
               "verdict": "accept",
               "reason": "real"
+            },
+            {
+              "stable_id": "review::src/c.rs:2::stale comment",
+              "verdict": "reject",
+              "reason": "not stale"
             }
           ],
           "memory": "memory: none — recalled (backend mcp iskron)"

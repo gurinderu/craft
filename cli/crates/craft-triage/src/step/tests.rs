@@ -93,7 +93,7 @@ fn opts_of(c: &Js, repo: &Path, dir: &Path) -> StartOptions {
 }
 
 /// Runs `name` to its end, the answers handed in by task id, `degraded` said at every submit.
-fn run_case(name: &str, degraded: &[String]) -> (Js, tempfile::TempDir) {
+fn run_case(name: &str, degraded: &[String]) -> (Js, tempfile::TempDir, Value) {
     let c = case(name);
     let (repo, dir) = (git_repo(), tempfile::tempdir().unwrap());
     let a = CaseAnswers::new(&c, None);
@@ -103,7 +103,7 @@ fn run_case(name: &str, degraded: &[String]) -> (Js, tempfile::TempDir) {
     state::save(dir.path(), &s).unwrap();
     for _ in 0..40 {
         if step["done"] == Value::Bool(true) {
-            return (c, dir);
+            return (c, dir, step);
         }
         let given = answers(dir.path(), &a);
         step = submit(dir.path(), Some(&given), degraded).unwrap();
@@ -121,7 +121,7 @@ fn file(path: &Path) -> String {
 fn every_case_run_on_the_protocol_ends_with_the_engines_plan_and_record() {
     for c in cases() {
         let name = c.at("name").as_str().unwrap().to_owned();
-        let (c, dir) = run_case(&name, &[]);
+        let (c, dir, _) = run_case(&name, &[]);
         let want = c.at("expected");
         assert_eq!(
             file(&record_path(dir.path())),
@@ -152,19 +152,34 @@ fn every_case_run_on_the_protocol_ends_with_the_engines_plan_and_record() {
 #[test]
 fn the_hosts_degraded_notes_lead_the_plan_and_reach_the_step_and_the_status() {
     let note = vec!["a validator ran without the agent it named".to_owned()];
-    let (_, dir) = run_case("repeats collapsed", &note);
+    let (_, dir, step) = run_case("repeats collapsed", &note);
     let plan: Value = serde_json::from_str(&file(&plan_path(dir.path()))).unwrap();
     let body = plan["plan_markdown"].as_str().unwrap();
     assert!(body.starts_with("> **DEGRADED**"), "{body}");
     assert!(body.contains(&note[0]), "{body}");
+    assert!(
+        body.ends_with("\nBODY"),
+        "the agent's plan stays under the banner: {body}"
+    );
+    let summary = plan["summary"].as_str().unwrap();
+    assert_eq!(summary, format!("DEGRADED: {}\n\nSUM", note[0]));
     assert_eq!(plan["degraded"], serde_json::json!(note));
+    assert_eq!(
+        step["degraded"],
+        serde_json::json!(note),
+        "the finished step"
+    );
+    assert_eq!(
+        step["plan"], plan,
+        "the finished step carries the plan its file holds"
+    );
     assert_eq!(
         status(dir.path()).unwrap()["degraded"],
         serde_json::json!(note)
     );
-    let (_, clean) = run_case("repeats collapsed", &[]);
+    let (_, clean, step) = run_case("repeats collapsed", &[]);
     let plan: Value = serde_json::from_str(&file(&plan_path(clean.path()))).unwrap();
-    assert!(plan.get("degraded").is_none());
+    assert!(plan.get("degraded").is_none() && step.get("degraded").is_none());
 }
 
 #[test]
@@ -223,4 +238,41 @@ fn a_refused_answer_file_is_moved_aside_and_its_task_asked_again() {
     assert!(aside.exists(), "{aside:?}");
     assert_eq!(again["tasks"][0]["id"], "gather-report", "{again}");
     assert!(again.get("notes").is_none(), "{again}");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_refused_answer_file_that_cannot_be_moved_is_noted_with_what_its_next_read_does() {
+    use std::os::unix::fs::PermissionsExt;
+    let c = case("repeats collapsed");
+    let (repo, dir) = (git_repo(), tempfile::tempdir().unwrap());
+    let step = start(&opts_of(&c, repo.path(), dir.path())).unwrap();
+    let file = std::path::PathBuf::from(step["tasks"][0]["answerFile"].as_str().unwrap());
+    std::fs::write(&file, "{}").unwrap();
+    let answers = file.parent().unwrap().to_owned();
+    std::fs::set_permissions(&answers, std::fs::Permissions::from_mode(0o555)).unwrap();
+    let again = submit(dir.path(), None, &[]);
+    std::fs::set_permissions(&answers, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let again = again.unwrap();
+    if !file.exists() {
+        // A user the directory's mode does not bind (root) moved it all the same.
+        return;
+    }
+    let notes = again["notes"]
+        .as_array()
+        .expect("the step says what it could not move");
+    let note = notes[0].as_str().unwrap();
+    assert!(
+        note.starts_with("gather-report: a refused answer file left in place ("),
+        "{note}"
+    );
+    assert!(
+        note.ends_with("read again, it is taken as a new answer"),
+        "{note}"
+    );
+    assert_eq!(
+        state::load(dir.path()).unwrap().notes,
+        [note],
+        "saved with the state"
+    );
 }

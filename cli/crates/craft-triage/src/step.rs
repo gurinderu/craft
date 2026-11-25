@@ -5,6 +5,7 @@
 
 mod advance;
 mod answers;
+mod aside;
 mod finished;
 mod refuse;
 
@@ -18,6 +19,7 @@ use crate::run::{Args, Phase};
 use crate::state::{self, STATE_VERSION, Task, TriageState};
 
 use advance::advance;
+use aside::set_aside;
 use refuse::refuse;
 
 /// What a triage run is opened with.
@@ -130,22 +132,6 @@ fn step(dir: &Path, s: &mut TriageState, aside: Aside) -> Result<Value, TriageEr
     }
     finished::said(&mut out, s);
     Ok(out)
-}
-
-/// Moves the refused answers aside once the state counting their refusal is saved; one that
-/// cannot be moved stays where its agent wrote it, read again as a new answer, and the run notes
-/// it, saved again.
-fn set_aside(dir: &Path, s: &mut TriageState, aside: Aside) -> Result<(), TriageError> {
-    let unmoved = aside.apply();
-    if unmoved.is_empty() {
-        return Ok(());
-    }
-    let notes: Vec<String> = unmoved
-        .iter()
-        .map(|u| format!("{}: a refused answer file left in place ({}); read again, it is taken as a new answer", u.id, u.error))
-        .collect();
-    take::note(&mut s.notes, &notes);
-    Ok(state::save(dir, s)?)
 }
 
 #[cfg(test)]
