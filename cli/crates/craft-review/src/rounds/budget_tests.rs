@@ -135,5 +135,9 @@ fn every_lens_dispatch_spends_the_budget_and_only_the_resendable_make_its_base()
     r.budget = None;
     assert_eq!(r.agent_budget(), Some(170), "the default: 100 and 70 more");
     assert!(r.over_budget(&lens_tasks(70, 2)).is_none());
-    assert!(r.over_budget(&lens_tasks(71, 2)).is_some());
+    let note = r.over_budget(&lens_tasks(71, 2)).expect("171 is over 170");
+    assert!(
+        note.contains("(the first round's 100 lens task(s) and 70 more for those a later round may send again)"),
+        "{note}"
+    );
 }

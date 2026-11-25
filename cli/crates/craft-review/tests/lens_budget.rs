@@ -76,3 +76,39 @@ fn a_round_over_the_budget_is_not_bought_and_the_run_verifies_what_it_found() {
     );
     assert!(!report.contains("- Round 2:"), "{report}");
 }
+
+/// A lens a later round never sends — design, a lens its profile limits to one round — spends the
+/// budget in the first round but makes none of the default's base (realm @nick/craft, node #634).
+#[test]
+fn a_lens_run_once_spends_the_budget_but_makes_none_of_its_default_base() {
+    let repo = fixture(true);
+    std::fs::write(repo.path().join("src/more.rs"), "pub fn g() {}\n").unwrap();
+    common::git(repo.path(), &["add", "."]);
+    common::git(repo.path(), &["commit", "-qm", "feat: add g"]);
+    let out = tempfile::tempdir().unwrap();
+    let run = out.path().join("run");
+    step::start(&opts(repo.path(), out.path())).unwrap();
+    let s = submit(&run, json!({"scout-rust": scout("medium", &["errors"])}));
+    let sent = ids(&s);
+    let once = |id: &&String| {
+        ["design", "maintainability", "performance", "complexity"]
+            .iter()
+            .any(|l| id.starts_with(&format!("lens-rust-{l}-")))
+    };
+    assert!(
+        sent.iter().any(|id| id == "lens-rust-design-r1"),
+        "{sent:?}"
+    );
+    let base = sent.len() - sent.iter().filter(once).count();
+    let state: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(run.join("state.json")).unwrap()).unwrap();
+    assert_eq!(
+        (
+            &state["rounds"]["sent"],
+            &state["rounds"]["first"],
+            &state["rounds"]["auto"]
+        ),
+        (&json!(sent.len()), &json!(base), &json!(sent.len() + base)),
+        "{sent:?}"
+    );
+}
