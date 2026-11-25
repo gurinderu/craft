@@ -52,6 +52,9 @@ pub(crate) struct RoundResult {
     pub(crate) dispatched: u64,
     /// The last error line of each task that gave no answer.
     pub(crate) errors: Vec<String>,
+    /// What each task whose agent gave no answer last wrote, for the binary's stop on a round that
+    /// died whole: its last stderr line, else why it gave none.
+    pub(crate) died: Vec<String>,
     /// No task of the round answered.
     pub(crate) all_died: bool,
 }
@@ -187,7 +190,11 @@ fn gather(
             Outcome::Login(why) | Outcome::Gone(why) => {
                 r.login.get_or_insert_with(|| why.clone());
             }
-            Outcome::Unanswered { said, .. } => r.errors.extend(said.clone()),
+            Outcome::Unanswered { why, said } => {
+                r.errors.extend(said.clone());
+                let line = said.clone().unwrap_or_else(|| why.clone());
+                r.died.push(format!("{}={line}", task.id));
+            }
             Outcome::Blocked(why) => r.errors.push(blocked::failure(why)),
             Outcome::NotStarted => {}
         }

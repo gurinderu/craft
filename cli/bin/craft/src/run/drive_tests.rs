@@ -492,6 +492,13 @@ async fn a_run_cut_short_exits_non_zero_and_says_what_the_dead_agents_wrote() {
     let answer = bench.drive(&fake).await;
     assert!(!answer.finished);
     assert!(answer.text.contains("## What the agents said\n\nThe tasks that gave no answer last wrote:\n\n- 6 task(s): `boom`"), "{}", answer.text);
+    let mut died: Vec<String> = fake.submits.borrow()[0].died.clone();
+    died.sort();
+    assert_eq!(
+        died,
+        ["a=boom", "b=boom"],
+        "the binary is told what each dead task wrote (realm @nick/craft, node #666)"
+    );
 }
 
 #[tokio::test]

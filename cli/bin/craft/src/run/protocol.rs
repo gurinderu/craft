@@ -17,6 +17,8 @@ use crate::steps::{StartArgs, SubmitArgs, start_step, status_step, submit_step};
 pub(crate) struct Said {
     pub(crate) degraded: Vec<String>,
     pub(crate) abandoned: Vec<String>,
+    /// What each task that gave no answer last wrote.
+    pub(crate) died: Vec<String>,
     pub(crate) limit: Option<String>,
     pub(crate) resume: bool,
     /// The task agents dispatched so far, for the run's telemetry.
@@ -60,6 +62,7 @@ impl Protocol for InProcess {
             limit: said.limit.clone(),
             resume: said.resume,
             abandoned: said.abandoned.clone(),
+            died: said.died.clone(),
             agents: Some(said.agents),
             // Neither host prints what its tasks spent in output tokens alone.
             output_tokens: None,

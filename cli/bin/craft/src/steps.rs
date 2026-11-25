@@ -189,6 +189,10 @@ pub struct SubmitArgs {
     /// not handed out again, and an answer its agent writes later is never read.
     #[arg(long)]
     pub abandoned: Vec<String>,
+    /// What a task that gave no answer last wrote, as `<task id>=<line>`; repeatable. A round whose
+    /// agents all died names what most of them said rather than a guess.
+    #[arg(long)]
+    pub died: Vec<String>,
     /// For the run's telemetry (`start --record`): the task agents the host has dispatched so far.
     #[arg(long)]
     pub agents: Option<u64>,
@@ -507,6 +511,7 @@ pub(crate) fn submit_step(args: &SubmitArgs) -> Result<Value> {
         resume: args.resume,
         post: None,
         abandoned: &args.abandoned,
+        died: &args.died,
     };
     let stepped = step::submit_with(&run, given.as_ref(), &said).map_err(|e| {
         // A refused resume still says what its re-filing of the stopped parts lost. A run an

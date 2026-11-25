@@ -312,6 +312,9 @@ pub struct Said<'a> {
     /// The tasks whose agents the host abandoned at their deadline (`--abandoned`): each fails at
     /// once, never handed out again, and an answer its agent writes later is never read.
     pub abandoned: &'a [String],
+    /// What each task that gave no answer last wrote, as `<task id>=<line>` (`--died`): a round
+    /// that dies whole names what its agents said, not a guess ([`crate::stop`]).
+    pub died: &'a [String],
 }
 
 /// [`submit`] with what the host `said`. A stopped run is resumed by a submit without a limit —
@@ -351,6 +354,7 @@ pub fn submit_with(
     let mut aside = Aside::default();
     take::abandon(dir, &mut run.tasks, said.abandoned, &mut aside)?;
     stop::open(&mut run);
+    stop::hear(&mut run, said.died);
     let hold = Hold::of(said.limit.is_some(), said.resume);
     run.watch.live |= take::take_pending(dir, &mut run.tasks, given, hold, &mut aside)?;
     move_on(dir, &mut run, said)?;

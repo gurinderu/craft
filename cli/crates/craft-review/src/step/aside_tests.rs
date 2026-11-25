@@ -190,6 +190,7 @@ fn a_stopped_submit_whose_second_save_fails_still_returns_its_stopped_step() {
     run.stopped = Some(crate::stop::Stop {
         cause: crate::stop::Cause::Limit,
         text: "resets 5pm".into(),
+        told: false,
     });
     let calls = Cell::new(0);
     let step = save_and_next_with(
@@ -241,6 +242,7 @@ fn a_stop_keeps_the_counted_file_a_resume_reads_again() {
         crate::stop::Stop {
             cause: crate::stop::Cause::Deaths,
             text: "every agent died".into(),
+            told: false,
         },
     );
     let held = &run.tasks[0];
