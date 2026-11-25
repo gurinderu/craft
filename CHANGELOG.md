@@ -19,7 +19,6 @@
 * keep a refused page read's publication unknown and refuse a FIFO or a second link on every host ([50a1590](https://github.com/gurinderu/craft/commit/50a1590b1d4037055fe9731026eaf41f3c6dac49))
 * read a step's page only from its own run and treat any failed page as unread ([ee3eea4](https://github.com/gurinderu/craft/commit/ee3eea448e41c8c39158df87fd81d9929a39fec6))
 * widen the lens-gating signals so the low-yield lenses are not silently dropped ([6249e30](https://github.com/gurinderu/craft/commit/6249e30041082e3018f55dd939c8742aff211832))
-* widen the lens-gating signals so the low-yield lenses are not silently dropped ([c3c7693](https://github.com/gurinderu/craft/commit/c3c769334cef05d2d2b9e7925a34139a6805c5be))
 
 ## [0.59.0](https://github.com/gurinderu/craft/compare/v0.58.0...v0.59.0) (2026-11-24)
 
