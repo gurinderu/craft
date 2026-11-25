@@ -242,7 +242,7 @@ fn not_later_why(p: &str, status: &str, date: &str) -> String {
 }
 
 /// The days of month `m` of year `y`.
-fn month_days(y: i64, m: i64) -> i64 {
+pub(super) fn month_days(y: i64, m: i64) -> i64 {
     match m {
         2 if y % 4 == 0 && (y % 100 != 0 || y % 400 == 0) => 29,
         2 => 28,

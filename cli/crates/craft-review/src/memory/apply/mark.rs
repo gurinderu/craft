@@ -27,14 +27,6 @@ fn mark(d: &PriorDecision) -> String {
     )
 }
 
-/// Why the repository's lack of a record's commit raises its finding.
-pub(super) fn commit_missing(d: &PriorDecision) -> String {
-    format!(
-        "commit {} not found in this repo — raised normally",
-        d.commit
-    )
-}
-
 /// Why `f`'s severity raises it again whatever `d` says (`severityReason`).
 fn severity_reason(f: &Value, d: &PriorDecision) -> String {
     let critical = f
@@ -64,19 +56,20 @@ pub(super) fn reraise_reason(f: &Value, d: &PriorDecision, scope: &Scope) -> Str
     if matching::reraised_by_rank(f, d) {
         return severity_reason(f, d);
     }
-    if d.commit.is_empty() {
+    let Some(anchor) = d.anchor() else {
         return format!(
-            "the {} records no commit, so an unchanged scope cannot be established",
+            "the {} records no commit and no date, so an unchanged scope cannot be established",
             d.kind.label()
         );
-    }
+    };
     if scope.missing.contains(&d.id) {
-        return commit_missing(d);
+        return anchor.missing();
     }
     if !scope.unchanged.contains(&d.id) {
         return format!(
             "the code in {} changed since {} (or that could not be checked)",
-            d.scope, d.commit
+            d.scope,
+            anchor.since()
         );
     }
     String::new()

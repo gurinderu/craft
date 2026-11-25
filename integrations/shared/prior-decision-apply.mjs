@@ -16,6 +16,7 @@ import { reraisedByRank } from './prior-decisions.mjs'
 import { matchFindings, sureMatchOf } from './prior-decision-match.mjs'
 import { candidatesToCheck, decisionsToCheck, runScopeCheck } from './prior-decision-scope.mjs'
 import { deferralOf } from './ledger-deferral.mjs'
+import { anchorMissingReason, anchorSince, hasAnchor } from './prior-decision-anchor.mjs'
 import { markContradicting } from './memory-contradiction.mjs'
 
 /**
@@ -47,12 +48,13 @@ export function matchesFindings(d) {
 
 /**
  * Whether a record can set a finding aside: every decision; a question only when it records a deferral
- * (`deferred: true`) AND a commit, which the scope check compares against. A deferral without a commit
- * is still matched (matchesFindings) so its finding is raised again and named, never silently.
+ * (`deferred: true`) AND a commit or a date, which the scope check compares against (realm @nick/craft,
+ * node #676). A deferral without either is still matched (matchesFindings) so its finding is raised
+ * again and named, never silently.
  * @param {PriorDecision} d
  */
 export function recordsDeferral(d) {
-  return d.kind !== 'question' || (d.deferred && !!d.commit)
+  return d.kind !== 'question' || (d.deferred && hasAnchor(d))
 }
 
 /**
@@ -74,11 +76,6 @@ export function priorDecisionMark(d) {
   return `REJECTED BEFORE: ${d.reason} — ${d.who || 'author not recorded'}, ${d.when || 'date not recorded'}, ${d.link || 'no link'} (${priorKindLabel(d)} ${d.id})`
 }
 
-/** Why a decision did not apply when the repo does not know its commit (realm @nick/craft, node #184). @param {PriorDecision} d */
-export function commitMissingReason(d) {
-  return `commit ${d.commit} not found in this repo — raised normally`
-}
-
 /**
  * Why a finding's severity raises it again whatever `d` says (realm @nick/craft, node #196): a Critical
  * always, a High unless `d` is a human's decision. @param {DecidableFinding} f @param {PriorDecision} d @returns {string}
@@ -93,14 +90,15 @@ export function severityReason(f, d) {
 
 /**
  * Why decision `d` cannot set finding `f` aside; '' when it can. `missing`: ids whose commit the repo
- * does not know (a squash-merged branch, another clone) — named apart from a changed scope.
+ * does not know (a squash-merged branch, another clone), or whose date no commit precedes — named apart
+ * from a changed scope.
  * @param {DecidableFinding} f @param {PriorDecision} d @param {Set<string>} unchanged @param {Set<string>} [missing] @returns {string}
  */
 export function reraiseReason(f, d, unchanged, missing = new Set()) {
   if (reraisedByRank(f.severity, d)) return severityReason(f, d)
-  if (!d.commit) return `the ${priorKindLabel(d)} records no commit, so an unchanged scope cannot be established`
-  if (missing.has(d.id)) return commitMissingReason(d)
-  if (!unchanged.has(d.id)) return `the code in ${d.scope} changed since ${d.commit} (or that could not be checked)`
+  if (!hasAnchor(d)) return `the ${priorKindLabel(d)} records no commit and no date, so an unchanged scope cannot be established`
+  if (missing.has(d.id)) return anchorMissingReason(d)
+  if (!unchanged.has(d.id)) return `the code in ${d.scope} changed since ${anchorSince(d)} (or that could not be checked)`
   return ''
 }
 
@@ -122,11 +120,11 @@ export function reraisedFinding(f, note, noteField, violationOf) {
 
 /**
  * Split one tier's findings by the decisions. `unchanged` holds the ids of decisions whose scope was
- * observed unchanged since their commit; every other decision cannot set a finding aside. The mark
+ * observed unchanged since their commit or date; every other decision cannot set a finding aside. The mark
  * is appended to `noteField` — `why` in a review finding.
  * @template {DecidableFinding} F
  * @param {F[]} findings @param {PriorDecision[]} decisions @param {Set<string>} unchanged @param {string} tier @param {string} [noteField]
- * @param {Set<string>} [missing]  ids whose commit the repo does not know
+ * @param {Set<string>} [missing]  ids whose commit (or a commit before whose date) the repo does not know
  * @param {(f: DecidableFinding) => PriorMatch | undefined} [matchOf]  the record answering a finding (default: the sure matches)
  * @param {(f: DecidableFinding) => { d: PriorDecision, why: string } | undefined} [violationOf]  the record a re-raised finding's code goes against (node #282)
  * @returns {{ kept: F[], setAside: Array<SetAside<F>>, reraised: number }}
@@ -168,7 +166,7 @@ export function splitByDecisions(findings, decisions, unchanged, tier, noteField
 /**
  * Applies the decisions to every tier of an engine's findings. `checkScopes` runs the scope check for
  * the decisions it is handed (never called with none) and returns the agent's raw answer. `refused`:
- * the decisions whose commit the repo does not know, for the report's Prior decisions not applied.
+ * the decisions whose commit (or a commit before whose date) the repo does not know, for the report's Prior decisions not applied.
  * `judge` is the one match judge (integrations/shared/prior-decision-match.mjs), called with its prompt only when a
  * disputed record–finding pair exists; what it could not decide is named in `refused`.
  * @template {DecidableFinding} F
@@ -203,8 +201,8 @@ export async function applyPriorDecisions(tiers, records, checkScopes, noteField
   const refused = matched.refused.concat(
     decisions
       .filter(d => !recordsDeferral(d))
-      .map(d => `question ${d.id}: records a deferral but no commit, so an unchanged scope cannot be established — raised normally`)
-      .concat(applied.filter(d => missing.has(d.id)).map(d => `${priorKindLabel(d)} ${d.id}: ${commitMissingReason(d)}`)),
+      .map(d => `question ${d.id}: records a deferral but no commit and no date, so an unchanged scope cannot be established — raised normally`)
+      .concat(applied.filter(d => missing.has(d.id)).map(d => `${priorKindLabel(d)} ${d.id}: ${anchorMissingReason(d)}`)),
   )
   let reraised = 0
   /** @type {Record<string, F[]>} */

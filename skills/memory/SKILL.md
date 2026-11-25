@@ -57,7 +57,9 @@ that import — every active `external` record, every scope — and never pass t
 **A decision on a review finding** carries all of `author`, `decidedBy`, `commit` and a link to where it was
 made (the PR thread, the review comment): the review engine names them when it sets the finding
 aside, and it sets a finding aside only while the code in `scope` is unchanged since `commit`. A
-decision without a `commit` is still recorded, but a review raises its finding again every time.
+decision without a `commit` (a store that allows no commit hashes) is checked against its `date`
+instead: the code in `scope` unchanged since the last commit before that day (`YYYY-MM-DD`, in UTC; an
+edit made the same day counts as after it). With neither, a review raises its finding again every time.
 The title is the finding's title as the review printed it — for a gate tool's finding without `toolRule`, as the report lists it under **Tool finding titles (verbatim)** at its `file:line` (none listed: the review ledger row's title only when it holds exactly one live such row at that `file:line` (live: `disposition` other than `closed` — a `closed` row is a tombstone and does not count), never a pick between several; else the report line, which then goes to the judge each round) — never from a refusal note, which clips it; `line`, `lens` and `toolRule` are the
 finding's anchor. The review rewords titles every round, so the engine matches a record to a finding by its
 file inside `scope`, its line and its lens: within 3 lines and the same lens it matches outright;
@@ -253,13 +255,14 @@ passing to stand in for the engine's recall.
    question answers, under **Known and deferred** with what would answer it, the author, date and
    link, also outside the verdict (the review ledger keeps it `deferred`, and a re-review carries it
    like a rejection); one a project rule covers, under **Covered by project rules** (above). A question without `deferred: true` records no deferral: it sets nothing aside
-   and labels nothing; a deferral without a `commit` is raised again and named. Either is raised
+   and labels nothing; a deferral without a `commit` or a `date` is raised again and named. Either is raised
    again as a normal finding when it is Critical, when it is High and its record is not a human's
    decision (`decidedBy: "human"` on a decision that records no deferral; an `agent` decision, one
    without the field — every record written before it — and a deferral never set a High aside) or a
    project rule (above), when the code in
-   the decision's scope changed since its `commit`, when the decision has no `commit`, or when the
-   repository does not know that `commit` (a squash-merged branch, another clone — named under
+   the decision's scope changed since its `commit` (with no `commit`, since the last commit before its
+   `date`), when the decision has neither, or when the repository does not know that `commit` or holds
+   no commit before that `date` (a squash-merged branch, another clone — named under
    **Prior decisions not applied**). A High a human's decision sets aside, its code unchanged since
    that `commit`, is listed under its own **High rejected by a human** section with who, when, why
    and the link, outside the verdict.

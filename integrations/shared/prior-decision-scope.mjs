@@ -1,8 +1,10 @@
 // The scope check of recalled prior decisions (integrations/shared/prior-decisions.mjs): which decisions need it, the
 // one shell line per decision the scope-check agent runs — whether the decision's commit is known to
-// this repo, and if so whether the code in its scope changed since — and the agent's answer read.
+// this repo (for a decision dated but naming no commit, whether a commit precedes its date), and if so
+// whether the code in its scope changed since — and the agent's answer read.
 // Imported by integrations/claude-code/src/triage-findings.js.
 import { reraisedByRank } from './prior-decisions.mjs'
+import { decisionDate, hasAnchor } from './prior-decision-anchor.mjs'
 import { findingPlan, sureMatchOf, triedOrder } from './prior-decision-match.mjs'
 
 /**
@@ -13,7 +15,7 @@ import { findingPlan, sureMatchOf, triedOrder } from './prior-decision-match.mjs
 
 /**
  * The decisions whose scope must be checked for change: those that answer some finding a decision
- * could set aside (not one its severity raises again: a Critical, a High no human's decision answers) and that recorded a commit to compare against. `matchOf` is the
+ * could set aside (not one its severity raises again: a Critical, a High no human's decision answers) and that recorded a commit or a date to compare against. `matchOf` is the
  * match the split runs on (integrations/shared/prior-decision-match.mjs); by default, the sure matches alone.
  * @param {DecidableFinding[]} findings @param {PriorDecision[]} decisions
  * @param {(f: DecidableFinding) => PriorMatch | undefined} [matchOf] @returns {PriorDecision[]}
@@ -22,14 +24,14 @@ export function decisionsToCheck(findings, decisions, matchOf = sureMatchOf(deci
   const out = new Set(/** @type {PriorDecision[]} */ ([]))
   for (const f of findings) {
     const d = matchOf(f)?.d
-    if (d && d.commit && !reraisedByRank(f.severity, d)) out.add(d)
+    if (d && hasAnchor(d) && !reraisedByRank(f.severity, d)) out.add(d)
   }
   return [...out]
 }
 
 /**
  * Every decision that could answer some finding a decision could set aside — a sure match or a candidate
- * for the judge — and that recorded a commit: checked once BEFORE the judge, so the one judge call can also
+ * for the judge — and that recorded a commit or a date: checked once BEFORE the judge, so the one judge call can also
  * ask whether a sure match re-raised for a changed scope shows the code going against its record (realm
  * @nick/craft, node #282). A superset of decisionsToCheck under any match.
  * @param {DecidableFinding[]} findings @param {PriorDecision[]} decisions @returns {PriorDecision[]}
@@ -39,7 +41,7 @@ export function candidatesToCheck(findings, decisions) {
   const out = new Set(/** @type {PriorDecision[]} */ ([]))
   for (const f of findings) {
     const plan = findingPlan(f, ordered)
-    for (const d of plan.sure ? [...plan.disputed, plan.sure.d] : plan.disputed) if (d.commit && !reraisedByRank(f.severity, d)) out.add(d)
+    for (const d of plan.sure ? [...plan.disputed, plan.sure.d] : plan.disputed) if (hasAnchor(d) && !reraisedByRank(f.severity, d)) out.add(d)
   }
   return [...out]
 }
@@ -48,18 +50,20 @@ export function candidatesToCheck(findings, decisions) {
  * The shell lines the scope check runs, one per decision: when the repo knows the decision's commit,
  * `git diff --quiet` against it, printing the id and the exit status (0 = unchanged since the commit,
  * working tree included); when it does not (a squash-merged branch, another clone), the id and
- * `missing`. Arguments single-quoted.
+ * `missing`. A decision naming no commit but a date is compared the same way against the last commit
+ * before 00:00 UTC of that day, `missing` when there is none (realm @nick/craft, node #676). Arguments
+ * single-quoted.
  * @param {PriorDecision[]} decisions @returns {string}
  */
 export function scopeCheckScript(decisions) {
   /** @param {string} s */
   const q = s => `'${s.replace(/'/g, `'\\''`)}'`
-  return decisions
-    .map(
-      d =>
-        `if git cat-file -e ${q(`${d.commit}^{commit}`)} 2>/dev/null; then git diff --quiet ${q(d.commit)} -- ${q(d.scope)}; echo ${q(d.id)} $?; else echo ${q(d.id)} missing; fi`,
-    )
-    .join('\n')
+  /** @param {PriorDecision} d */
+  const line = d =>
+    d.commit
+      ? `if git cat-file -e ${q(`${d.commit}^{commit}`)} 2>/dev/null; then git diff --quiet ${q(d.commit)} -- ${q(d.scope)}; echo ${q(d.id)} $?; else echo ${q(d.id)} missing; fi`
+      : `b=$(git rev-list -1 ${q(`--before=${decisionDate(d)} 00:00:00 +0000`)} HEAD 2>/dev/null); if [ -n "$b" ]; then git diff --quiet "$b" -- ${q(d.scope)}; echo ${q(d.id)} $?; else echo ${q(d.id)} missing; fi`
+  return decisions.map(line).join('\n')
 }
 
 // What the scope-check agent returns: the ids it saw print status 0, and those it saw print `missing`.
@@ -76,7 +80,7 @@ export const SCOPE_CHECK_SCHEMA = {
 
 /** The scope-check agent's prompt. @param {PriorDecision[]} decisions @returns {string} */
 export function scopeCheckPrompt(decisions) {
-  return `Run these lines in the repository under review, exactly as written (shell only, read only). Each prints a decision id and the exit status of \`git diff --quiet\` against that decision's commit, or the word missing when the repository does not have that commit.
+  return `Run these lines in the repository under review, exactly as written (shell only, read only). Each prints a decision id and the exit status of \`git diff --quiet\` against that decision's commit (or, for a decision naming only a date, the last commit before that date), or the word missing when the repository does not have that commit.
 ${scopeCheckScript(decisions)}
 Return {unchanged: [every id whose printed status was 0], missing: [every id printed with the word missing], reason: one line on anything that did not run}.`
 }
@@ -110,7 +114,7 @@ export async function runScopeCheck(toCheck, checkScopes, notes) {
       `the scope-check agent died or answered unreadably — no decision could be shown unchanged, so the ${toCheck.length} decision(s) set nothing aside`,
     )
   // An id outside `toCheck` sets nothing aside: splitByDecisions only consults decisions that answer
-  // a finding below Critical/High and carry a commit, which is exactly what was checked.
+  // a finding below Critical/High and carry a commit or a date, which is exactly what was checked.
   for (const id of ids?.unchanged || []) unchanged.add(id)
   for (const d of toCheck) if (ids?.missing.includes(d.id)) missing.add(d.id)
   return { toCheck, unchanged, missing }

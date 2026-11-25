@@ -237,15 +237,19 @@ fn take_prior(f: &Value) -> Option<(usize, Value)> {
 }
 
 /// The scope check of `ds`, by git in `repo` (`scopeCheckScript`, run here rather than by an
-/// agent): a record whose commit the repository lacks is missing; one whose scope `git diff
-/// --quiet` shows untouched since its commit, the working tree included, is unchanged.
+/// agent): a record whose anchor the repository holds no commit for is missing; one whose scope
+/// `git diff --quiet` shows untouched since that commit, the working tree included, is unchanged.
 pub(super) fn scope_check(repo: &Path, ds: &[&PriorDecision]) -> apply::Scope {
     let mut out = apply::Scope::default();
     for d in ds {
-        if !git::has_commit(repo, &d.commit) {
-            out.missing.insert(d.id.clone());
-        } else if git::unchanged_since(repo, &d.commit, &d.scope) {
-            out.unchanged.insert(d.id.clone());
+        match d.anchor().and_then(|a| a.base(repo)) {
+            None => {
+                out.missing.insert(d.id.clone());
+            }
+            Some(base) if git::unchanged_since(repo, &base, &d.scope) => {
+                out.unchanged.insert(d.id.clone());
+            }
+            Some(_) => {}
         }
     }
     out

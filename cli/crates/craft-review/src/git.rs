@@ -165,6 +165,17 @@ pub fn has_commit(cwd: &Path, commit: &str) -> bool {
     !commit.starts_with('-') && verifies(cwd, commit)
 }
 
+/// The last commit reachable from `HEAD` committed before 00:00 UTC of `day` (`YYYY-MM-DD`), as
+/// `git rev-list -1 --before='<day> 00:00:00 +0000' HEAD` names it; `None` when the history
+/// starts after it or git cannot tell.
+#[must_use]
+pub fn last_before(cwd: &Path, day: &str) -> Option<String> {
+    let before = format!("--before={day} 00:00:00 +0000");
+    let out = git(cwd, &["rev-list", "-1", &before, "HEAD"]).ok()?;
+    let commit = out.trim();
+    (!commit.is_empty()).then(|| commit.to_owned())
+}
+
 /// Whether the code in `scope`, a repository-relative path, is unchanged since `commit`, the
 /// working tree included, as `git diff --quiet <commit> -- <scope>` answers from the repository's
 /// top level — a pathspec git reads from a subdirectory would name another path; false when git

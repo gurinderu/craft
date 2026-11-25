@@ -221,7 +221,7 @@
       }
     },
     {
-      "name": "a deferred question sets its finding aside as known and deferred; one without a commit, and a plain question, do not",
+      "name": "a deferred question sets its finding aside as known and deferred; one without a commit or a date, and a plain question, do not",
       "recall": {
         "backend": "mcp",
         "why": "pinned by AGENTS.md",
@@ -303,7 +303,7 @@
         "kept": [
           {
             "title": "naming of the module is off",
-            "why": "w · Deferred before (question question-2222222222, author not recorded, date not recorded) — raised again: the question records no commit, so an unchanged scope cannot be established."
+            "why": "w · Deferred before (question question-2222222222, author not recorded, date not recorded) — raised again: the question records no commit and no date, so an unchanged scope cannot be established."
           }
         ],
         "setAside": [
@@ -330,7 +330,7 @@
           "questions": 3,
           "rules": 1
         },
-        "report": "\n\n## Known and deferred (open question — not in the verdict)\n- Medium · `src/lib.rs:21` · retry budget of fetch is unbounded · w · KNOWN AND DEFERRED: decide after the load test — nick, 2026-03-01, no link (question question-1111111111) · matched by file:line+lens\n\n## Memory\n- memory: recalled 0 decision(s) and 3 open question(s) and 1 project rule(s) and 1 external system(s) from mcp (pinned by AGENTS.md)\n\n\n## Prior decisions not applied\n- ⚠️ the match judge died or answered unreadably — 2 disputed record–finding pair(s) not matched unless a near-verbatim title answers them (for a tool finding naming no rule only a tool record with the same title, near its line when lines compare), the rest raised normally\n- ⚠️ question question-2222222222: records a deferral but no commit, so an unchanged scope cannot be established — raised normally\n"
+        "report": "\n\n## Known and deferred (open question — not in the verdict)\n- Medium · `src/lib.rs:21` · retry budget of fetch is unbounded · w · KNOWN AND DEFERRED: decide after the load test — nick, 2026-03-01, no link (question question-1111111111) · matched by file:line+lens\n\n## Memory\n- memory: recalled 0 decision(s) and 3 open question(s) and 1 project rule(s) and 1 external system(s) from mcp (pinned by AGENTS.md)\n\n\n## Prior decisions not applied\n- ⚠️ the match judge died or answered unreadably — 2 disputed record–finding pair(s) not matched unless a near-verbatim title answers them (for a tool finding naming no rule only a tool record with the same title, near its line when lines compare), the rest raised normally\n- ⚠️ question question-2222222222: records a deferral but no commit and no date, so an unchanged scope cannot be established — raised normally\n"
       }
     },
     {
@@ -503,7 +503,7 @@
         "kept": [
           {
             "title": "panics on empty input",
-            "why": "w · Rejected before (decision decision-6666666666, nick, 2026-04-01) — raised again: the decision records no commit, so an unchanged scope cannot be established."
+            "why": "w · Rejected before (decision decision-6666666666, nick, 2026-04-01) — raised again: the code in src/lib.rs changed since the decision date 2026-04-01 (or that could not be checked)."
           }
         ],
         "setAside": [],
@@ -1111,6 +1111,177 @@
           "rules": 1
         },
         "report": "\n\n## Covered by project rules (not in the verdict)\n- ⚠️ 1 finding(s) in a project rule's scope NOT covered — the rule judge died or answered unreadably, so they stay in the verdict: \"unwrap in a test helper\" @ src/lib.rs:3\n\n## Memory\n- memory: recalled 0 decision(s) and 1 project rule(s) from repo (the .craft/memory directory)\n"
+      }
+    },
+    {
+      "name": "a record with a date and no commit is checked since the last commit before that day: unchanged sets aside, changed and no such commit raise, no date raises as before",
+      "recall": {
+        "backend": "repo",
+        "why": "the .craft/memory directory",
+        "decisions": [
+          {
+            "id": "decision-d1d1d1d1d1",
+            "kind": "decision",
+            "title": "clone in the hot loop",
+            "body": "measured cold",
+            "scope": "src/a.rs",
+            "status": "active",
+            "date": "2026-05-01",
+            "author": "nick",
+            "line": 10,
+            "lens": "performance"
+          },
+          {
+            "id": "decision-d2d2d2d2d2",
+            "kind": "decision",
+            "title": "unwrap on parse",
+            "body": "validated upstream",
+            "scope": "src/b.rs",
+            "status": "active",
+            "date": "2026-05-02T09:00:00Z",
+            "author": "nick",
+            "line": 20,
+            "lens": "errors"
+          },
+          {
+            "id": "decision-d3d3d3d3d3",
+            "kind": "decision",
+            "title": "global state in init",
+            "body": "set once",
+            "scope": "src/c.rs",
+            "status": "active",
+            "date": "2026-05-03",
+            "author": "nick",
+            "line": 30,
+            "lens": "design"
+          },
+          {
+            "id": "decision-d4d4d4d4d4",
+            "kind": "decision",
+            "title": "sleep in the retry",
+            "body": "backoff is wanted",
+            "scope": "src/d.rs",
+            "status": "active",
+            "date": "early May",
+            "author": "nick",
+            "line": 40,
+            "lens": "errors"
+          }
+        ],
+        "questions": [
+          {
+            "id": "question-e5e5e5e5e5",
+            "title": "timeout of the fetch",
+            "body": "decide after the load test",
+            "scope": "src/e.rs",
+            "status": "active",
+            "date": "2026-05-04",
+            "author": "nick",
+            "deferred": true,
+            "line": 50,
+            "lens": "errors"
+          }
+        ],
+        "rules": []
+      },
+      "findings": [
+        {
+          "severity": "Medium",
+          "title": "clone in the hot loop",
+          "file": "src/a.rs",
+          "line": 11,
+          "why": "w",
+          "source": "performance",
+          "tier": "confirmed"
+        },
+        {
+          "severity": "Low",
+          "title": "unwrap on parse",
+          "file": "src/b.rs",
+          "line": 20,
+          "why": "w",
+          "source": "errors",
+          "tier": "confirmed"
+        },
+        {
+          "severity": "Medium",
+          "title": "global state in init",
+          "file": "src/c.rs",
+          "line": 30,
+          "why": "w",
+          "source": "design",
+          "tier": "confirmed"
+        },
+        {
+          "severity": "Medium",
+          "title": "sleep in the retry",
+          "file": "src/d.rs",
+          "line": 40,
+          "why": "w",
+          "source": "errors",
+          "tier": "confirmed"
+        },
+        {
+          "severity": "Medium",
+          "title": "timeout of the fetch",
+          "file": "src/e.rs",
+          "line": 50,
+          "why": "w",
+          "source": "errors",
+          "tier": "confirmed"
+        }
+      ],
+      "unchanged": [
+        "2026-05-01",
+        "2026-05-04"
+      ],
+      "missing": [
+        "2026-05-03"
+      ],
+      "expected": {
+        "kept": [
+          {
+            "title": "unwrap on parse",
+            "why": "w · Rejected before (decision decision-d2d2d2d2d2, nick, 2026-05-02T09:00:00Z) — raised again: the code in src/b.rs changed since the decision date 2026-05-02 (or that could not be checked)."
+          },
+          {
+            "title": "global state in init",
+            "why": "w · Rejected before (decision decision-d3d3d3d3d3, nick, 2026-05-03) — raised again: no commit in this repo before the decision date 2026-05-03 — raised normally."
+          },
+          {
+            "title": "sleep in the retry",
+            "why": "w · Rejected before (decision decision-d4d4d4d4d4, nick, early May) — raised again: the decision records no commit and no date, so an unchanged scope cannot be established."
+          }
+        ],
+        "setAside": [
+          {
+            "title": "clone in the hot loop",
+            "why": "w · REJECTED BEFORE: measured cold — nick, 2026-05-01, no link (decision decision-d1d1d1d1d1)",
+            "priorTier": "confirmed",
+            "priorDecision": "decision-d1d1d1d1d1",
+            "priorKind": "decision",
+            "priorMatch": "matched by file:line+lens"
+          },
+          {
+            "title": "timeout of the fetch",
+            "why": "w · KNOWN AND DEFERRED: decide after the load test — nick, 2026-05-04, no link (question question-e5e5e5e5e5)",
+            "priorTier": "confirmed",
+            "priorDecision": "question-e5e5e5e5e5",
+            "priorKind": "question",
+            "priorMatch": "matched by file:line+lens"
+          }
+        ],
+        "notes": [
+          "4 decision(s) given, 1 finding(s) set aside as rejected before, 3 raised again; 1 deferred question(s) given, 1 finding(s) set aside as known and deferred"
+        ],
+        "memory": {
+          "source": "recalled",
+          "count": 5,
+          "why": "repo (the .craft/memory directory)",
+          "backend": "repo",
+          "questions": 1
+        },
+        "report": "\n\n## Rejected before (set aside — not in the verdict)\n- Medium · `src/a.rs:11` · clone in the hot loop · w · REJECTED BEFORE: measured cold — nick, 2026-05-01, no link (decision decision-d1d1d1d1d1) · matched by file:line+lens\n\n## Known and deferred (open question — not in the verdict)\n- Medium · `src/e.rs:50` · timeout of the fetch · w · KNOWN AND DEFERRED: decide after the load test — nick, 2026-05-04, no link (question question-e5e5e5e5e5) · matched by file:line+lens\n\n## Memory\n- memory: recalled 4 decision(s) and 1 open question(s) from repo (the .craft/memory directory)\n\n\n## Prior decisions not applied\n- ⚠️ the match judge died or answered unreadably — 3 re-raised match(es) not asked whether the code goes against the record\n- ⚠️ decision decision-d3d3d3d3d3: no commit in this repo before the decision date 2026-05-03 — raised normally\n"
       }
     }
   ]

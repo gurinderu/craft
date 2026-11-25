@@ -59,7 +59,7 @@ fn applicable(records: &[PriorDecision], notes: &mut Vec<String>) -> Vec<PriorDe
 }
 
 /// The records whose scope is checked: every one that could answer a finding a record may set
-/// aside and that names a commit, each once.
+/// aside and that names a commit or a date (realm @nick/craft, node #676), each once.
 fn to_check<'a>(
     findings: &[Value],
     ds: &'a [PriorDecision],
@@ -74,7 +74,7 @@ fn to_check<'a>(
             .chain(p.sure.as_ref().map(|m| m.at))
         {
             let settable =
-                |d: &PriorDecision| !d.commit.is_empty() && !matching::reraised_by_rank(f, d);
+                |d: &PriorDecision| d.anchor().is_some() && !matching::reraised_by_rank(f, d);
             if ds.get(i).is_some_and(settable) && !at.contains(&i) {
                 at.push(i);
             }

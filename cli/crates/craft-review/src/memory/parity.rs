@@ -6,6 +6,7 @@
 
 use serde_json::{Value, json};
 
+use super::anchor::Anchor;
 use super::apply::{self, Scope};
 use super::judge::{self, Judge};
 use super::{Memory, PriorDecision, merge, recall, rules};
@@ -69,15 +70,20 @@ fn the_judges_prompts_render_as_the_engines_render_them() {
     }
 }
 
-/// What the case's scope check sees: the records whose commit it names unchanged or missing.
+/// What the case's scope check sees: the records whose anchor — the commit, else the date — it
+/// names unchanged or missing.
 fn scope_seen(case: &Value, ds: &[&PriorDecision]) -> Scope {
-    let named = |k: &str, commit: &str| case[k].as_array().unwrap().iter().any(|c| c == commit);
+    let named = |k: &str, anchor: &str| case[k].as_array().unwrap().iter().any(|c| c == anchor);
     let mut s = Scope::default();
     for d in ds {
-        if named("unchanged", &d.commit) {
+        let anchor = match d.anchor() {
+            Some(Anchor::Commit(c) | Anchor::Date(c)) => c,
+            None => "",
+        };
+        if named("unchanged", anchor) {
             s.unchanged.insert(d.id.clone());
         }
-        if named("missing", &d.commit) {
+        if named("missing", anchor) {
             s.missing.insert(d.id.clone());
         }
     }
