@@ -13,16 +13,12 @@ use crate::sift::Sifted;
 /// The field naming a finding's place in the batch.
 const AT: &str = "siftAt";
 
-/// A JavaScript value as plain JSON: a whole number stays an integer, any other a float.
+/// A JavaScript value as plain JSON, every number a float: the numbers the memory reads (the
+/// line, the place) are set apart as integers.
 fn plain(v: &Js) -> Value {
     match v {
         Js::Null => Value::Null,
         Js::Bool(b) => Value::Bool(*b),
-        #[expect(
-            clippy::cast_possible_truncation,
-            reason = "a whole number within i64's range is exact"
-        )]
-        Js::Num(n) if n.fract() == 0.0 && n.abs() < 9.0e15 => Value::from(*n as i64),
         Js::Num(n) => Number::from_f64(*n).map_or(Value::Null, Value::Number),
         Js::Str(s) => Value::String(s.to_utf8_lossy()),
         Js::Arr(a) => Value::Array(a.iter().map(plain).collect()),

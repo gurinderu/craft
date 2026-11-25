@@ -130,6 +130,22 @@ fn with_no_rule_given_every_finding_is_kept_and_nothing_said() {
 }
 
 #[test]
+fn a_run_that_asked_no_recall_says_why_and_keeps_the_launchers_count() {
+    let mut m = Memory::open(Some(Ok(
+        json!([{"id": "decision-9999999999", "kind": "decision", "title": "t", "body": "b", "scope": ".", "status": "active"}]),
+    )));
+    m.not_recalled("not recalled — no gathered finding names a file");
+    assert_eq!(
+        m.source.why,
+        "not recalled — no gathered finding names a file"
+    );
+    assert_eq!(
+        (m.source.source.as_str(), m.source.passed),
+        ("none", Some(1))
+    );
+}
+
+#[test]
 fn the_recall_ask_carries_no_repository_directive_and_its_cut() {
     let paths = vec!["src/lib.rs".to_owned()];
     let (ask, cut) = Memory::recall_ask(&paths, "v1").unwrap();
