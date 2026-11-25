@@ -22,7 +22,11 @@ pub(super) fn limit(profile: &Profile, lens: &str) -> Option<u32> {
         return Some(1);
     }
     let l = profile.lens(lens)?;
-    if l.metrics { Some(1) } else { l.rounds }
+    if l.metrics {
+        Some(1)
+    } else {
+        l.rounds.map(std::num::NonZeroU32::get)
+    }
 }
 
 /// Whether `lens` may run in `round`.

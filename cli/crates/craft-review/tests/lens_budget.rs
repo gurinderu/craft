@@ -65,7 +65,7 @@ fn a_round_over_the_budget_is_not_bought_and_the_run_verifies_what_it_found() {
     assert_contains_all(
         &report,
         &[
-            "lens round 2 not bought: its 2 task(s) would bring the lens rounds to 5 agent(s), over the budget of 4 (the launcher's --lens-agents); what the rounds found went on to verification",
+            "lens round 2 not bought: its 2 task(s) would bring the lens rounds to 5 agent(s), over the budget of 4 (the launcher's --lens-agents); not run in it: rust:errors, rust:intent; what the rounds found went on to verification",
             "- Round 1: 3 lens(es) dispatched, 3 returned, 2 new finding(s).",
         ],
     );

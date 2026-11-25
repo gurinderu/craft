@@ -1,6 +1,7 @@
 //! How a run moves on once no task of its phase is pending, as `reviewProfile` in
 //! `integrations/shared/review-profile.mjs` orders it for each profile: each profile's scout plans its lenses; the
-//! lens rounds run until each profile's last round adds nothing new or its plan's rounds are spent;
+//! lens rounds run until each profile's last round adds nothing new, its plan's rounds are spent or
+//! the next round would pass the run's agent budget;
 //! the one pool goes through the floor, the roll-up and the dedup; the verifiers judge it; the
 //! project's memory sets aside what it answers, its match judge and then its rule judge asked when
 //! a pair needs them; the verdicts make one report. On a re-review a red team attacks each
@@ -245,32 +246,30 @@ fn next_round(dir: &Path, run: &mut RunState, profiles: &[Profile]) -> Result<()
     run.rounds.round += 1;
     // The consumer's own agents run once, beside the first round, over the whole change.
     let mut tasks = extra::tasks(run)?;
+    // Each live track's lens dispatches, then its units' contracts: only the lens dispatches count
+    // against the agent budget, a contract running beside the first round alone.
+    let mut parts = Vec::new();
     for (track, p) in run.tracks.iter().zip(profiles).filter(|(t, _)| t.live()) {
         let plan = track.plan.as_ref().ok_or(StepError::NoPlan)?;
         let slices = run.units.slices(&p.id);
-        tasks.extend(rounds::tasks(
+        let lenses = rounds::tasks(
             &run.context,
             (p, plan),
             &track.read_paths(),
             slices,
             &run.rounds,
-        )?);
+        )?;
+        let mut contracts = Vec::new();
         if let Some(unit) = run.units.track(&p.id) {
             let prior = prompts::prior_found_summary(&run.rounds.pool);
             let round = run.rounds.round;
-            tasks.extend(units::contract_tasks(
-                &run.context,
-                p,
-                plan,
-                unit,
-                round,
-                &prior,
-            )?);
+            contracts = units::contract_tasks(&run.context, p, plan, unit, round, &prior)?;
         }
+        parts.push((lenses, contracts));
     }
     // A later round over the agent budget is not bought: the rounds end on what they found (realm
     // @nick/craft, node #634).
-    if let Some(note) = run.rounds.over_budget(tasks.len()) {
+    if let Some(note) = run.rounds.over_budget(parts.iter().flat_map(|(l, _)| l)) {
         run.rounds.round -= 1;
         run.notes.push(note);
         for t in &mut run.tracks {
@@ -278,7 +277,11 @@ fn next_round(dir: &Path, run: &mut RunState, profiles: &[Profile]) -> Result<()
         }
         return end_rounds(dir, run, profiles);
     }
-    run.rounds.count_sent(tasks.len());
+    run.rounds.count_sent(parts.iter().flat_map(|(l, _)| l));
+    for (lenses, contracts) in parts {
+        tasks.extend(lenses);
+        tasks.extend(contracts);
+    }
     run.tasks = tasks;
     run.phase = Phase::Lenses;
     Ok(())

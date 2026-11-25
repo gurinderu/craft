@@ -391,7 +391,13 @@ fn a_profile_whose_only_new_finding_came_from_a_limited_lens_goes_no_further() {
 /// maintainability lens keep every round the plan allows.
 #[test]
 fn the_profiles_limit_the_low_yield_lenses_to_one_round() {
-    let rounds = |p: &str, l: &str| Profile::load(p).unwrap().lens(l).and_then(|x| x.rounds);
+    let rounds = |p: &str, l: &str| {
+        Profile::load(p)
+            .unwrap()
+            .lens(l)
+            .and_then(|x| x.rounds)
+            .map(std::num::NonZeroU32::get)
+    };
     for (p, l) in [
         ("rust", "maintainability"),
         ("rust", "performance"),
@@ -409,4 +415,21 @@ fn the_profiles_limit_the_low_yield_lenses_to_one_round() {
     ] {
         assert_eq!(rounds(p, l), None, "{p}:{l}");
     }
+}
+
+#[test]
+fn a_round_limit_of_zero_is_refused() {
+    let lens = |r: u32| {
+        serde_json::from_value::<crate::profile::Lens>(json!({
+            "id": "errors", "brief": "lens-briefs/rust-errors", "model": "opus", "rounds": r
+        }))
+    };
+    assert!(
+        lens(0).is_err(),
+        "a lens limited to no round would never run"
+    );
+    assert_eq!(
+        lens(1).unwrap().rounds.map(std::num::NonZeroU32::get),
+        Some(1)
+    );
 }

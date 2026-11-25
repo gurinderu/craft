@@ -2,7 +2,8 @@
 //! planned lens over its profile's part of the diff in the first round, then, round after round,
 //! only the dispatches whose last answer found something new (realm @nick/craft, node #625), each
 //! told what the pool already holds, until a round adds nothing new to the profile, no lens that
-//! found something may run again, or the profile's plan's rounds are spent (loop until dry). The
+//! found something may run again within its own round limit (#632), the profile's plan's rounds
+//! are spent, or the next round would take the rounds past their agent budget (#634). The
 //! profiles of a run share each round and the pool. A finding is new when no pooled finding has
 //! its key (file, line and title); a lens dispatch that dies, in any round, is a hole the verdict
 //! reads as INCOMPLETE.
