@@ -61,10 +61,16 @@ fn the_validators_asked_and_the_plan_agents_blocks_are_the_engines() {
             let line =
                 note.map(|n| format!("- project memory: {} —", n.trim_start_matches([' ', '·'])));
             assert_eq!(
-                line.as_ref().is_some_and(|l| prompt.contains(l.as_str())),
+                line.is_some(),
                 prompt.contains("- project memory: "),
-                "{name}: the validator of {id:?} reads the memory's note as the engine's does ({line:?})"
+                "{name}: the validator of {id:?} has a memory note exactly when the engine's does"
             );
+            if let Some(l) = &line {
+                assert!(
+                    prompt.contains(l.as_str()),
+                    "{name}: the validator of {id:?} reads {l:?}"
+                );
+            }
         }
         let rows =
             |r: &[crate::ledger::Row]| text(&Js::Arr(r.iter().cloned().map(Js::from).collect()));
