@@ -9,8 +9,50 @@ permissions:
   contents: write
   pull-requests: write
 
+# One run at a time: the guard below may wait on a build, and two runs must not cut the same release.
+concurrency:
+  group: release-please
+  cancel-in-progress: false
+
 jobs:
+  # No release is cut from a commit whose targets were not built (realm @nick/craft, #671). A pull request no longer
+  # builds the release targets, and release-please's own PR gets no CI at all, so the guard is here. release-please
+  # tags the release PR's merge commit, whatever was pushed since; so while a merged release PR awaits its release
+  # (read from the pulls list, not the search index, which lags a merge), this job waits for native-builds on that
+  # very commit — its push to main started one — and passes only on a green run. On a red one, or none, it fails,
+  # release-please does not run and no tag is cut: re-run the failed native-builds run if the runner was at fault,
+  # then this workflow; a commit that does not build for a target is not released. A push with no release pending
+  # passes at once.
+  targets-built:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+    steps:
+      - name: a pending release waits for its commit's targets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          sha="$(gh api "repos/$GITHUB_REPOSITORY/pulls?state=closed&base=main&sort=updated&direction=desc&per_page=100" --jq '[.[] | select(.merged_at != null) | select(any(.labels[]; .name == "autorelease: pending"))][0].merge_commit_sha // ""')"
+          if [ -z "$sha" ]; then echo "no merged release PR awaits its release"; exit 0; fi
+          echo "a release is pending at $sha: waiting for native-builds on it"
+          started="$(date +%s)"
+          while :; do
+            runs="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/native-builds.yml/runs?head_sha=$sha&per_page=50" --jq '[.workflow_runs[] | {status, conclusion}]')"
+            if [ "$(echo "$runs" | jq '[.[] | select(.conclusion == "success")] | length')" -gt 0 ]; then echo "native-builds is green for $sha"; exit 0; fi
+            waited=$(( $(date +%s) - started ))
+            # A run just queued may not be listed yet: none at all is a failure only after three minutes.
+            if [ "$(echo "$runs" | jq '[.[] | select(.status != "completed")] | length')" = 0 ] && { [ "$runs" != "[]" ] || [ "$waited" -gt 180 ]; }; then
+              echo "::error::a release is pending at $sha and native-builds has no green run for it ($runs): no release is cut. Re-run that native-builds run if the runner was at fault, then this workflow; a commit that does not build for a target is not released."
+              exit 1
+            fi
+            sleep 30
+          done
+
   release-please:
+    needs: targets-built
     runs-on: ubuntu-latest
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
@@ -33,8 +75,9 @@ jobs:
   # musl the guard compares the target with its gnu twin. The C the build compiles (tree-sitter's runtime and its
   # Rust grammar, through `cc`, for the consumers list's structural search) needs a musl C compiler: the runner's own
   # gcc builds against glibc's headers. Each Linux runner is native to its arch, so musl-tools' `musl-gcc` is
-  # that compiler for both, no cross toolchain; Rust still links with its self-contained musl runtime. ci.yml's
-  # rust job builds the x86_64 musl target the same way on every PR. Windows is a tar.gz too: craft-bin
+  # that compiler for both, no cross toolchain; Rust still links with its self-contained musl runtime.
+  # native-builds.yml builds every target the same way on each push to main and on a pull request that touches the
+  # build's inputs (realm @nick/craft, #671). Windows is a tar.gz too: craft-bin
   # unpacks it with the tar.exe Windows 10 and later ship; every step runs in bash (Git Bash on the Windows runner).
   cli-binaries:
     needs: release-please

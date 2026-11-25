@@ -69,6 +69,7 @@ jobs:
   # The Rust CLI in cli/ (realm @nick/craft, #445): format, lint at zero warnings (the workspace
   # lints in cli/Cargo.toml become hard here), and the tests. A job of its own, not a gate step:
   # `npm run gate` covers the Node side, and integrations/shared/gate-steps.test.mjs reads only the `test` job.
+  # The release builds for every target are native-builds.yml's, not every pull request's (realm @nick/craft, #671).
   rust:
     runs-on: ubuntu-latest
     defaults:
@@ -81,7 +82,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.99.0
         with:
           components: rustfmt, clippy
-          targets: x86_64-unknown-linux-musl
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: cli
@@ -96,69 +96,11 @@ jobs:
         run: |
           CRAFT_UPDATE_PARITY=1 cargo test -p craft-review --locked parity
           git diff --exit-code ../content/parity
-      # The release's Linux binary, built as release-please.yml builds it: static musl, its C (tree-sitter)
-      # compiled by musl-tools' musl-gcc, so a C build that fails is seen on the PR, not at the release.
-      - name: musl C compiler
-        run: sudo apt-get update && sudo apt-get install -y musl-tools
-      - name: cargo build (release, x86_64 musl)
-        env:
-          CC_x86_64_unknown_linux_musl: musl-gcc
-        run: |
-          cargo build --release --locked --target x86_64-unknown-linux-musl
-          cargo test --release --locked -p craft-review --target x86_64-unknown-linux-musl externals
-
-  # The embedded regexp engine must build and run on the release targets (realm @nick/craft, #574).
-  # The rust job already builds x86_64 musl; these are the other four release runners.
-  init-native:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: aarch64-unknown-linux-musl
-            runner: ubuntu-24.04-arm
-          - target: aarch64-apple-darwin
-            runner: macos-15
-          - target: x86_64-apple-darwin
-            runner: macos-15-intel
-          - target: x86_64-pc-windows-msvc
-            runner: windows-latest
-    runs-on: ${{ matrix.runner }}
-    defaults:
-      run:
-        shell: bash
-        working-directory: cli
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.99.0
-        with:
-          targets: ${{ matrix.target }}
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: cli
-          key: init-${{ matrix.target }}
-      - name: host is the matrix target
-        env:
-          TARGET: ${{ matrix.target }}
-        run: |
-          host="$(rustc -vV | sed -n 's/^host: //p')"
-          want="$TARGET"
-          case "$TARGET" in *-linux-musl) want="${TARGET%-musl}-gnu" ;; esac
-          [ "$host" = "$want" ] || { echo "::error::runner host $host is not $want (for $TARGET)"; exit 1; }
-      - name: musl C compiler
-        if: ${{ endsWith(matrix.target, '-linux-musl') }}
-        run: sudo apt-get update && sudo apt-get install -y musl-tools
-      - name: Release build and native external discovery tests
-        env:
-          TARGET: ${{ matrix.target }}
-        run: |
-          case "$TARGET" in
-            *-linux-musl) export "CC_$(echo "$TARGET" | tr - _)=musl-gcc" ;;
-          esac
-          cargo build --release --locked --target "$TARGET"
-          cargo test --release --locked -p craft-review --target "$TARGET" externals
 
   # Exercise native process identity and both writer boundaries on the operating systems whose
   # Node writer uses the craft helper (realm @nick/craft, #563); cross-compilation is not execution.
+  # Since the release-target builds left the pull request (#671), this is also the only compile macOS and Windows
+  # get on an ordinary one: narrowing it removes that.
   store-native:
     strategy:
       fail-fast: false
