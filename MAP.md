@@ -404,9 +404,12 @@ every kind of run shares, review now: the task and its kind, its prompt, schema 
 its schema and asked for again, the pending step and a task's status line; the review is its first kind, its phases, lenses,
 memory and verification its own), `crates/craft-store` (the run store's writer and its streaming reader, its output held to
 the JavaScript writer's by `content/parity/store-cases.json`), `crates/craft-triage` (the triage of findings as the binary
-will run it, for now its pure logic only — ids and sites, repeats collapsed, the batch sifted by the review's memory, a prior ledger's settled verdicts carried,
-the noise classes and the issue class 1 files, the plan's ledger pinned, the plan's banners and the run record — held
-to `triage-findings` by `content/parity/triage-cases.json`, which `integrations/shared/triage-parity.test.mjs` writes)
+runs it — `craft triage start | submit | status` on the step protocol (`src/step.rs`, `src/state.rs`), its run derived
+at every step from its arguments and its agents' answers (`src/run.rs`, `run/`): the gatherers, repeats collapsed, the
+batch sifted by the review's memory, the validators, the plan agent, their prompts (`src/prompts.rs`), a prior ledger's
+settled verdicts carried, the noise classes and the issue class 1 files, the plan's ledger pinned, the plan's banners and
+the run record — held to `triage-findings` by `content/parity/triage-cases.json`, which
+`integrations/shared/triage-parity.test.mjs` writes; the Claude Code engine still runs the JavaScript triage)
 and `crates/craft-tui` (progress as a phases → agents tree
 on a terminal, one line per event otherwise); `test-support/` holds the one copy of a helper every crate's tests
 include by path (an executable a test writes and runs). In `craft-store`, `js/string.rs` holds lossless JavaScript

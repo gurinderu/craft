@@ -16,6 +16,7 @@ mod runs;
 mod scratch;
 mod settle;
 mod steps;
+mod triage;
 
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
@@ -51,6 +52,10 @@ enum Command {
     /// A pull request's review threads read with `gh`.
     #[command(subcommand)]
     Pr(pr::PrCommand),
+    /// Triage review findings into one validated fix plan, step by step: each step prints the
+    /// agents the host is to run, and the next takes their answers.
+    #[command(subcommand)]
+    Triage(triage::TriageCommand),
     #[command(name = "__craft-file-run", hide = true)]
     FileRun,
     #[command(name = "__craft-process-identity", hide = true)]
@@ -171,6 +176,7 @@ async fn dispatch() -> anyhow::Result<ExitCode> {
         Command::Runs(args) => runs::runs(&args),
         Command::Memory(cmd) => memory::memory(&cmd),
         Command::Pr(cmd) => pr::pr(&cmd),
+        Command::Triage(cmd) => triage::triage(&cmd),
         Command::FileRun => filing_worker::worker(),
         Command::ProcessIdentity(args) => process_identity::run(&args),
         Command::Hook(HookCommand::SessionStart) => hook::role_hook(hook::RoleHook::SessionStart),

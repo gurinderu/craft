@@ -1,6 +1,6 @@
 [package]
 name = "craft-triage"
-description = "The triage of review findings as the craft binary will run it: the pure sift, verdict, ledger, plan banners and run record of triage-findings, held to the engine's by content/parity/triage-cases.json."
+description = "The triage of review findings as the craft binary runs it on the step protocol: its state, steps, prompts, sift, verdicts, ledger, plan banners and run record, held to triage-findings by content/parity/triage-cases.json."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
