@@ -29,7 +29,7 @@
     { "id": "maintainability", "brief": "lens-briefs/general-maintainability", "model": "opus", "conditional": true, "signal": "new-or-large-file", "rounds": 1 },
     {
       "id": "compat", "brief": "lens-briefs/general-compat", "model": "opus", "surface": "wireForm", "wholeDiff": true,
-      "catalogue": { "label": "COMPATIBILITY CATALOGUE", "file": "skills/compatibility/catalogue.md", "fallback": "C1–C4, C8, C9 and C11–C13" }
+      "catalogue": { "label": "COMPATIBILITY CATALOGUE", "file": "skills/compatibility/catalogue.md", "fallback": "C1–C13" }
     },
     { "id": "invariants", "brief": "lens-briefs/general-invariants", "model": "opus", "surface": "invariantType", "wholeDiff": true },
     { "id": "design", "brief": "lens-briefs/general-design", "model": "opus", "optional": true, "conditional": true, "wholeDiff": true },
