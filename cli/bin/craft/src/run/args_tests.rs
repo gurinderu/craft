@@ -68,3 +68,11 @@ fn the_lens_agent_budget_is_a_start_flag_of_at_least_one() {
     );
     assert!(Cli::try_parse_from(["craft", "--backend", "codex", "--lens-agents", "0"]).is_err());
 }
+
+#[test]
+fn all_lenses_is_a_start_flag_the_hosts_run_takes() {
+    let cli = Cli::try_parse_from(["craft", "--backend", "codex", "--all-lenses"]).unwrap();
+    assert!(cli.run.start.all_lenses);
+    let plain = Cli::try_parse_from(["craft", "--backend", "codex"]).unwrap();
+    assert!(!plain.run.start.all_lenses);
+}

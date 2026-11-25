@@ -333,6 +333,18 @@ test("strict and the launcher's priorDecisions reach `craft review start`, the l
   assert.match(bad.report, /^## Verdict\n\n⚠️ INCOMPLETE — review: strict="yes" is not true or false\. Nothing ran\.$/, bad.report)
 })
 
+test('allLenses reaches `craft review start` as --all-lenses only when true; anything but a boolean is refused', async () => {
+  const on = await cliRun({ args: { allLenses: true } })
+  assert.match(startOf(on.engine), /review start --cwd '[^']+' --all-lenses --record-root '\/opt\/plugin' --record '[^']+' --paged$/m)
+  const off = await cliRun({ args: { allLenses: false } })
+  assert.doesNotMatch(startOf(off.engine), /--all-lenses/)
+  const bad = await runEngine('review', {
+    args: { craftBin: '/opt/craft', allLenses: 'yes' },
+    script: { 'log-run': { ok: true, output: ['wrote /store/r.json'] } },
+  })
+  assert.match(bad.report, /^## Verdict\n\n⚠️ INCOMPLETE — review: allLenses="yes" is not true or false\. Nothing ran\.$/, bad.report)
+})
+
 test('unitScope reaches `craft review start` as --unit-scope only when true; anything but a boolean is refused', async () => {
   const on = await cliRun({ args: { unitScope: true } })
   assert.match(startOf(on.engine), /review start --cwd '[^']+' --unit-scope --record-root '\/opt\/plugin' --record '[^']+' --paged$/m)

@@ -168,6 +168,7 @@ fn each_profile_counts_its_own_new_findings_and_holes() {
         light_skipped: Vec::new(),
         metrics_dropped: Vec::new(),
         signal_skipped: Vec::new(),
+        profile_off: Vec::new(),
         data_skipped: Vec::new(),
         data_files: Vec::new(),
     };
@@ -234,6 +235,7 @@ fn a_lens_shown_consumer_lines_must_mark_them() {
         light_skipped: Vec::new(),
         metrics_dropped: Vec::new(),
         signal_skipped: Vec::new(),
+        profile_off: Vec::new(),
         data_skipped: Vec::new(),
         data_files: Vec::new(),
     };

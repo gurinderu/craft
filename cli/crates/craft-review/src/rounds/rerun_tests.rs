@@ -54,6 +54,7 @@ fn plan_of(lenses: &[&str]) -> Plan {
         light_skipped: Vec::new(),
         metrics_dropped: Vec::new(),
         signal_skipped: Vec::new(),
+        profile_off: Vec::new(),
         data_skipped: Vec::new(),
         data_files: Vec::new(),
     }

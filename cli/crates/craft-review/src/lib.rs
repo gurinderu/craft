@@ -12,6 +12,7 @@ pub mod blocked;
 pub mod cancel;
 pub mod chain;
 pub mod complexity;
+pub mod composition;
 pub mod consumers;
 pub mod content;
 pub mod coverage;

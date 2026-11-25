@@ -167,6 +167,13 @@ pub async fn run(args: RunArgs) -> Result<ExitCode> {
     let sink = Sink {
         json: args.events == Some(EventFormat::Json),
     };
+    if args.run.is_some() && args.start.all_lenses {
+        // A resume keeps the lenses its start chose: the flag would read as taken and not be.
+        return refused(
+            sink,
+            "--all-lenses goes with a start: a resumed run keeps the lenses it started with",
+        );
+    }
     let repo = std::path::absolute(&args.start.cwd)?;
     let (concurrency, host, root) = match ready(&args, &repo, sink) {
         Ok(s) => s,
