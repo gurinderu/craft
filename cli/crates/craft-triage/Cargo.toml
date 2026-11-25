@@ -1,6 +1,6 @@
 [package]
 name = "craft-triage"
-description = "The triage of review findings as the craft binary will run it: the pure sift, verdict, ledger, plan banners and run record of triage-findings, held to the engine's by content/parity/triage-cases.json."
+description = "The triage of review findings as the craft binary runs it on the step protocol: its state, steps, prompts, sift, verdicts, ledger, plan banners and run record, held to triage-findings by content/parity/triage-cases.json."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -8,9 +8,14 @@ publish.workspace = true
 
 [dependencies]
 craft-review.workspace = true
+craft-step.workspace = true
 craft-store.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
 
 [lints]
 workspace = true

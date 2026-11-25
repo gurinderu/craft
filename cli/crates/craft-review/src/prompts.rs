@@ -168,10 +168,17 @@ fn plugin_candidates(ctx: &PromptContext, file: &str) -> String {
 
 /// Every prompt starts here: the agents run where the host session runs, not in the repository.
 pub(crate) fn repo_directive(repo: &str) -> String {
+    work_directive(repo, "review")
+}
+
+/// The directive pointing an agent of `work` (the review, the triage) at the repository `repo`,
+/// as `repoDirective` in `integrations/shared/repo-arg.mjs` words it.
+#[must_use]
+pub fn work_directive(repo: &str, work: &str) -> String {
     format!(
-        "WORKING DIRECTORY: this review targets the repository at {} — NOT the directory you start \
+        "WORKING DIRECTORY: this {work} targets the repository at {} — NOT the directory you start \
          in. Before ANY git / cargo / nix / file command, `cd` there (or pass `git -C`). Every file \
-         path in this review is relative to that root. If that directory does not exist or is not a \
+         path in this {work} is relative to that root. If that directory does not exist or is not a \
          git repository, say so and stop rather than reviewing whatever repo you happen to be \
          sitting in.\n\n",
         shq(repo)

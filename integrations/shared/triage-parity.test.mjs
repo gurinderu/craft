@@ -14,6 +14,9 @@ const FILE = new URL('../../content/parity/triage-cases.json', import.meta.url)
 // The recall every case answers unless it scripts its own: read, nothing recalled.
 const MEMORY = { backend: 'mcp iskron', why: 'recalled', decisions: [] }
 
+// The labels of the memory's agents whose prompts the port renders.
+const MEMORY_LABELS = ['memory-recall', 'decision-match', 'rule-match']
+
 /** The answers a case scripts, as the harness takes them: a validator by the stable id its prompt names. @param {any} answers */
 const scriptOf = answers => ({
   'log-run': { ok: true },
@@ -51,6 +54,8 @@ async function expectedOf(c) {
       gather: of(l => l.startsWith('gather:')),
       validate: Object.fromEntries(validates.map(x => [/stable_id MUST be exactly: (.*)/.exec(x.prompt)?.[1], x.prompt])),
       plan: plan?.prompt ?? null,
+      // The memory's agents in the order asked; the scope check is git in the port (realm @nick/craft, node #616).
+      memory: r.calls.filter(x => MEMORY_LABELS.includes(x.label)).map(x => ({ label: x.label, prompt: x.prompt })),
     },
     ...planBlocks(plan?.prompt ?? ''),
     record: filedRecord(r),

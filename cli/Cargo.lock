@@ -331,6 +331,7 @@ dependencies = [
  "craft-agent",
  "craft-review",
  "craft-store",
+ "craft-triage",
  "craft-tui",
  "jsonschema",
  "nix 0.31.3",
@@ -406,8 +407,11 @@ name = "craft-triage"
 version = "0.60.0"
 dependencies = [
  "craft-review",
+ "craft-step",
  "craft-store",
+ "serde",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.21",
 ]
 

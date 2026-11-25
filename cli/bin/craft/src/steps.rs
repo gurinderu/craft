@@ -262,7 +262,7 @@ pub(crate) fn stamped(mut step: Value, began: Instant) -> Value {
 }
 
 /// A fresh run directory under `~/.craft/runs/cli`, named by the time and this process.
-fn default_run_dir() -> Result<PathBuf> {
+pub(crate) fn default_run_dir() -> Result<PathBuf> {
     run_dir_in(craft_store::read::home())
 }
 
@@ -447,7 +447,7 @@ fn installed_copy(config: Option<PathBuf>, home: Option<PathBuf>) -> Option<Path
 }
 
 /// A JSON value the host passes, as a file or `-` for stdin.
-fn json_input(path: &Path) -> Result<Value> {
+pub(crate) fn json_input(path: &Path) -> Result<Value> {
     let text = if path.as_os_str() == "-" {
         let mut s = String::new();
         std::io::stdin()
@@ -461,7 +461,7 @@ fn json_input(path: &Path) -> Result<Value> {
 }
 
 /// The answers a host passes itself (`--answers`), as a JSON object by task id.
-fn given_answers(path: &Path) -> Result<Map<String, Value>> {
+pub(crate) fn given_answers(path: &Path) -> Result<Map<String, Value>> {
     serde_json::from_value(json_input(path)?).context("the answers are not a JSON object")
 }
 
