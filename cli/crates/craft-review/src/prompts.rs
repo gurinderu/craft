@@ -69,6 +69,10 @@ pub struct PromptContext {
     /// `integrations/shared/review-run-args.mjs`). Optional, so a state written before it reads as a default review.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub strict: bool,
+    /// The binary runs the change's mutants beside the lens rounds ([`crate::gate::mutants`]): the
+    /// tests lens is told so. Optional, so a state written before it reads as a run without them.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub mutants: bool,
     /// The integration points' sources the run prepared, for the lenses and verifiers that read
     /// them. Optional, so a state written before it reads as a run with none.
     #[serde(default, skip_serializing_if = "Sources::is_empty")]

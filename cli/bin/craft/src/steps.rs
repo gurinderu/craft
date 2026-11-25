@@ -324,6 +324,7 @@ pub(crate) fn start_step(args: &StartArgs, cancel: &craft_review::cancel::Cancel
             projects: crate::init::projects_dir(),
             ..craft_review::gate::GateSetup::default()
         }),
+        mutants: (!args.no_gate).then(|| mutants_setup(&args.cwd)).flatten(),
         gate_from: args
             .gate_from
             .as_deref()
@@ -592,6 +593,25 @@ fn recall_note(s: &str) -> Result<String, String> {
     } else {
         Err("a blank note: say why the launcher's recall may not have read the whole store".into())
     }
+}
+
+/// How a review's mutants run: this binary as their worker, for the budget the reviewer's profile
+/// names, or the default (realm @nick/craft, node #645).
+fn mutants_setup(cwd: &std::path::Path) -> Option<craft_review::gate::mutants::MutantsSetup> {
+    use craft_review::project::{mutants, profile_path};
+    let path = crate::init::projects_dir().and_then(|p| profile_path(&p, cwd).ok());
+    let (section, note) = match path.map(|(p, _)| mutants::of(&p)) {
+        Some(Ok(s)) => (s, String::new()),
+        Some(Err(e)) => (mutants::MutantsSection::default(), e),
+        None => (mutants::MutantsSection::default(), String::new()),
+    };
+    Some(craft_review::gate::mutants::MutantsSetup {
+        exe: std::env::current_exe().ok()?,
+        budget: section.budget(craft_review::gate::mutants::BUDGET),
+        off: section.off,
+        cargo: "cargo".into(),
+        note,
+    })
 }
 
 #[cfg(test)]

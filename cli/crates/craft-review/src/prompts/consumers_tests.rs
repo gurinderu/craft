@@ -19,6 +19,7 @@ fn site(file: &str, line: u32) -> Site {
 
 fn ctx() -> PromptContext {
     PromptContext {
+        mutants: false,
         repo: "/work/repo".into(),
         base: "origin/main".into(),
         spec: String::new(),

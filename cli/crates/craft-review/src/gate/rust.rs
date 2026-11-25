@@ -45,6 +45,7 @@ pub(super) fn gate(cx: &Cx<'_>, acc: &mut Acc) {
     } else {
         shell(cx, acc)
     };
+    acc.dev_shell = shell == Shell::Inside;
     if shell == Shell::Broken {
         // No build ran: CI may stand for it, as for any build this machine could not make.
         acc.unbuilt = true;

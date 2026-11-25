@@ -51,6 +51,7 @@ mod ci_tests;
 mod code_graph;
 #[cfg(test)]
 mod code_graph_tests;
+pub mod mutants;
 mod point;
 mod reusable;
 #[cfg(test)]

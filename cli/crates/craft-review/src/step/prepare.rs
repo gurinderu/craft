@@ -132,6 +132,38 @@ pub(super) fn prepare(
         }
         None => run.gate = gate::Gate::not_asked(),
     }
+    // A red gate ends the run before any lens: its mutants would run for no one.
+    if run.gate.exit().is_none() {
+        launch_mutants(cwd, dir, opts, run);
+    }
+}
+
+/// The mutants of the change, launched to run beside the lens rounds once the Rust gate passed
+/// (realm @nick/craft, node #648); a run that will not run them says why.
+fn launch_mutants(cwd: &Path, dir: &Path, opts: &StartOptions, run: &mut RunState) {
+    let rust: &[String] = run
+        .tracks
+        .iter()
+        .find(|t| t.profile == "rust")
+        .map_or(&[], |t| t.files.as_slice());
+    let top = crate::git::toplevel(cwd).unwrap_or_else(|_| cwd.to_owned());
+    // A run that took another's gate ran none of its own: it runs no mutants either.
+    let setup = opts
+        .mutants
+        .as_ref()
+        .filter(|_| opts.gate_from.is_none() && opts.gate.is_some());
+    let (mutants, line) = crate::gate::mutants::launch(&crate::gate::mutants::Launch {
+        run_dir: dir,
+        top: &top,
+        base: &run.diff.base,
+        rust_files: rust,
+        other_profiles: run.tracks.iter().any(|t| t.profile != "rust"),
+        gate: &run.gate,
+        setup,
+    });
+    run.context.mutants = mutants.running();
+    run.gate.mutants = mutants;
+    run.notes.extend(line);
 }
 
 /// One scout per profile taking part of the change, each over its own files.

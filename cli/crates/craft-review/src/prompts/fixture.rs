@@ -10,6 +10,7 @@ impl PromptContext {
     /// consumers or scope.
     pub(crate) fn fixture(repo: &str, base: &str) -> Self {
         Self {
+            mutants: false,
             repo: repo.into(),
             base: base.into(),
             spec: String::new(),

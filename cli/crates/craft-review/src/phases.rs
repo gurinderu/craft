@@ -304,6 +304,7 @@ fn next_round(dir: &Path, run: &mut RunState, profiles: &[Profile]) -> Result<()
 /// then the unit-mode coordinators when there are any, else the pool to the dedup.
 fn end_rounds(dir: &Path, run: &mut RunState, profiles: &[Profile]) -> Result<(), Error> {
     extra::join(run);
+    join_mutants(run);
     file_holes(run, profiles);
     let coordinators = units::seam_tasks(run, profiles)?;
     if !coordinators.is_empty() {
@@ -312,6 +313,18 @@ fn end_rounds(dir: &Path, run: &mut RunState, profiles: &[Profile]) -> Result<()
         return Ok(());
     }
     to_pool(dir, run, profiles)
+}
+
+/// The mutants that ran beside the rounds into the pool, each survivor a tool's finding (realm
+/// @nick/craft, node #648), and the line the report says of them.
+fn join_mutants(run: &mut RunState) {
+    let (found, line) = crate::gate::mutants::join_now(&mut run.gate.mutants);
+    run.rounds.pool.extend(
+        found
+            .into_iter()
+            .map(|f| crate::dedup::stamped(f, crate::dedup::GATE, None)),
+    );
+    run.notes.extend(line);
 }
 
 /// The pool to the dedup; an empty one straight to the critic.
@@ -429,6 +442,8 @@ fn file_round(dir: &Path, run: &mut RunState) -> Result<(), Error> {
 /// # Errors
 /// When the report cannot be written.
 pub(crate) fn finish(dir: &Path, run: &mut RunState) -> Result<(), Error> {
+    // A run that ended before its rounds did leaves no worker running past it.
+    crate::gate::mutants::abandon(&mut run.gate.mutants);
     run.chain.ledger = rereview::ledger(&run.chain, &run.settled);
     run.chain.ledger.extend(run.memory.ledger_rows());
     file_round(dir, run)?;
