@@ -87,6 +87,7 @@ fn request(top: &Path, run: &Path, cargo: &str, budget_secs: u64) -> std::path::
         inside: false,
         budget_secs,
         cargo: cargo.into(),
+        nix: "nix".into(),
     };
     std::fs::write(
         dir.join(worker::REQUEST),
@@ -441,6 +442,7 @@ fn setup(cargo: String) -> MutantsSetup {
         budget: Duration::from_secs(1),
         off: false,
         cargo,
+        nix: "nix".into(),
         note: String::new(),
     }
 }
@@ -457,6 +459,10 @@ type Case<'a> = (
 fn said(c: &Case<'_>) -> (Mutants, Vec<String>) {
     let (top, run) = (repo(), tempfile::tempdir().unwrap());
     let &(files, other, gate, setup, stopped, _) = c;
+    let cancel = crate::cancel::Cancel::default();
+    if stopped {
+        cancel.cancel();
+    }
     launch(&Launch {
         run_dir: run.path(),
         top: top.path(),
@@ -465,7 +471,7 @@ fn said(c: &Case<'_>) -> (Mutants, Vec<String>) {
         other_profiles: other,
         gate,
         setup,
-        stopped,
+        cancel: &cancel,
     })
 }
 
@@ -591,11 +597,108 @@ fn a_launch_names_the_workspaces_it_leaves_out() {
         other_profiles: false,
         gate: &passed(false),
         setup: Ok(&s),
-        stopped: false,
+        cancel: &crate::cancel::Cancel::default(),
     });
     assert!(m.running());
     assert!(
         lines.join(" ").contains("got none") && lines.join(" ").contains("`tool`"),
         "{lines:?}"
     );
+}
+
+#[test]
+fn the_probe_and_the_worker_run_inside_the_dev_shell_when_the_gate_did() {
+    let (top, run, bin) = (
+        repo(),
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+    );
+    let cargo = cargo(bin.path(), MISSED_BIG, 0, 2);
+    let (log, nix) = (bin.path().join("nix.log"), bin.path().join("nix"));
+    // A stand-in nix: logs its arguments and runs what follows `-c`.
+    let script = format!(
+        "#!/bin/sh\necho \"$*\" >> '{}'\nwhile [ \"$1\" != -c ]; do shift; done; shift; exec \"$@\"\n",
+        log.display()
+    );
+    exe::write_executable(&nix, &script).unwrap();
+    let worker = bin.path().join("worker");
+    exe::write_executable(&worker, "#!/bin/sh\nexit 0\n").unwrap();
+    let s = MutantsSetup {
+        exe: worker,
+        nix: nix.display().to_string(),
+        ..setup(cargo.clone())
+    };
+    let files = ["src/lib.rs".to_owned()];
+    let (m, lines) = launch(&Launch {
+        run_dir: run.path(),
+        top: top.path(),
+        base: "main",
+        rust_files: &files,
+        other_profiles: false,
+        gate: &passed(true),
+        setup: Ok(&s),
+        cancel: &crate::cancel::Cancel::default(),
+    });
+    assert!(m.running(), "{lines:?}");
+    let req: worker::Request = serde_json::from_str(
+        &std::fs::read_to_string(run.path().join("mutants").join(worker::REQUEST)).unwrap(),
+    )
+    .unwrap();
+    assert!(req.inside && req.nix == s.nix);
+    worker::work(&run.path().join("mutants")).unwrap();
+    let calls = std::fs::read_to_string(&log).unwrap();
+    let develop = format!("develop --no-write-lock-file . -c {cargo} mutants");
+    let lines: Vec<&str> = calls.lines().collect();
+    assert_eq!(lines.len(), 2, "the probe and the run: {calls}");
+    assert!(lines.iter().all(|l| l.contains(&develop)), "{calls}");
+    assert!(
+        lines[0].ends_with("mutants --version") && lines[1].contains("--in-diff"),
+        "{calls}"
+    );
+}
+
+#[test]
+fn a_nested_workspace_is_its_own_root_and_a_dotted_table_declares_one() {
+    let top = tempfile::tempdir().unwrap();
+    let d = top.path();
+    std::fs::create_dir_all(d.join("crates/inner/src")).unwrap();
+    std::fs::create_dir_all(d.join("lib/src")).unwrap();
+    std::fs::write(d.join("Cargo.toml"), "[workspace]\nmembers = [\"lib\"]\n").unwrap();
+    std::fs::write(
+        d.join("crates/inner/Cargo.toml"),
+        "[package]\nname = \"inner\"\n\n[workspace.dependencies]\n",
+    )
+    .unwrap();
+    std::fs::write(d.join("lib/Cargo.toml"), "[package]\nname = \"lib\"\n").unwrap();
+    let inner = ["crates/inner/src/lib.rs".to_owned()];
+    assert_eq!(
+        super::launch::workspaces_of(d, &inner),
+        ["crates/inner"],
+        "nearest, not topmost"
+    );
+    assert_eq!(
+        super::launch::workspaces_of(d, &["lib/src/lib.rs".to_owned()]),
+        [""],
+        "a member's root is its workspace's"
+    );
+}
+
+#[test]
+fn a_workspace_below_the_top_gets_its_paths_from_its_root_whatever_the_user_git_config_says() {
+    let dir = tempfile::tempdir().unwrap();
+    let d = dir.path();
+    git(d, &["init", "-q", "-b", "main"]);
+    std::fs::create_dir_all(d.join("cli/src")).unwrap();
+    std::fs::write(d.join("cli/src/lib.rs"), "pub fn f() {}\n").unwrap();
+    git(d, &["add", "."]);
+    git(d, &["commit", "-qm", "init"]);
+    git(d, &["config", "diff.mnemonicPrefix", "true"]);
+    git(d, &["config", "diff.noprefix", "true"]);
+    std::fs::write(d.join("cli/src/lib.rs"), "pub fn f() { g(); }\n").unwrap();
+    let diff = crate::git::relative_diff(d, "HEAD", "cli").unwrap();
+    assert!(
+        diff.contains("--- a/src/lib.rs") && diff.contains("+++ b/src/lib.rs"),
+        "{diff}"
+    );
+    assert!(!diff.contains("cli/"), "{diff}");
 }

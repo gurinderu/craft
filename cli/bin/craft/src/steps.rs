@@ -613,6 +613,7 @@ fn mutants_setup(cwd: &std::path::Path) -> Option<craft_review::gate::mutants::M
         budget: section.budget(craft_review::gate::mutants::BUDGET),
         off: section.off,
         cargo: "cargo".into(),
+        nix: "nix".into(),
         note,
     })
 }

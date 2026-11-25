@@ -26,8 +26,8 @@ pub(crate) struct Launch<'a> {
     pub gate: &'a Gate,
     /// How they run, or why the run has nothing to run them with.
     pub setup: Result<&'a MutantsSetup, &'a str>,
-    /// A stop was asked of the start.
-    pub stopped: bool,
+    /// A stop asked of the start: none launches once it is, and it cuts the probe short.
+    pub cancel: &'a crate::cancel::Cancel,
 }
 
 /// Launches the mutants when the change and its gate allow it: the state to keep, and the lines
@@ -95,6 +95,9 @@ fn plan<'a>(at: &Launch<'a>) -> Result<Plan<'a>, Option<String>> {
         .next()
         .ok_or_else(|| Some("no Cargo package holds the changed Rust files".to_owned()))?;
     probe(at, setup, track.dev_shell).map_err(Some)?;
+    if at.cancel.is_cancelled() {
+        return Err(Some("the run was stopped before they started".into()));
+    }
     Ok(Plan {
         workspace,
         others: roots.collect(),
@@ -105,7 +108,7 @@ fn plan<'a>(at: &Launch<'a>) -> Result<Plan<'a>, Option<String>> {
 
 /// The setup, when the run may launch them at all.
 fn allowed<'a>(at: &Launch<'a>) -> Result<&'a MutantsSetup, Option<String>> {
-    if at.stopped {
+    if at.cancel.is_cancelled() {
         return Err(Some("the run was stopped before they started".into()));
     }
     let setup = at.setup.map_err(|why| Some(why.to_owned()))?;
@@ -129,12 +132,13 @@ fn status_word(s: Status) -> &'static str {
 
 /// Whether `cargo mutants --version` answers where the gate's cargo ran; `Err` why not.
 fn probe(at: &Launch<'_>, setup: &MutantsSetup, inside: bool) -> Result<(), String> {
-    let runner = Runner::new(PROBE_MAX, None, at.run_dir.join(DIR).join("probe"));
+    let runner = Runner::new(PROBE_MAX, None, at.run_dir.join(DIR).join("probe"))
+        .stopped_by(at.cancel.clone());
     let args = ["mutants", "--version"];
     let ran = if inside {
         runner.run(
             at.top,
-            "nix",
+            &setup.nix,
             &super::super::devshell::inside(&setup.cargo, &args),
         )
     } else {
@@ -145,7 +149,10 @@ fn probe(at: &Launch<'_>, setup: &MutantsSetup, inside: bool) -> Result<(), Stri
         Ran::Exited { err, .. } if err.contains("no such command") => {
             Err("cargo-mutants is not installed where the gate's cargo runs".into())
         }
-        Ran::Missing => Err("cargo is not on the PATH the gate's cargo ran on".into()),
+        Ran::Missing => Err(format!(
+            "{} is not on the PATH the gate's cargo ran on",
+            if inside { &setup.nix } else { &setup.cargo }
+        )),
         Ran::Exited { err, .. } => Err(format!(
             "`cargo mutants --version` failed: {}",
             super::super::check::last_line(&err)
@@ -206,6 +213,7 @@ fn start(at: &Launch<'_>, p: &Plan<'_>) -> Result<Mutants, MutantsError> {
         inside: p.inside,
         budget_secs: p.setup.budget.as_secs(),
         cargo: p.setup.cargo.clone(),
+        nix: p.setup.nix.clone(),
     };
     let text = serde_json::to_string(&req).map_err(|source| MutantsError::Json {
         what: "the worker's request".into(),

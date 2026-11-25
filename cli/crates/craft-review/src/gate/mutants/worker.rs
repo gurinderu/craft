@@ -34,6 +34,13 @@ pub(crate) struct Request {
     pub budget_secs: u64,
     /// The program cargo is: `cargo`, or a stand-in under test.
     pub cargo: String,
+    /// The program nix is, for the dev shell: `nix`, or a stand-in under test.
+    #[serde(default = "nix")]
+    pub nix: String,
+}
+
+fn nix() -> String {
+    "nix".into()
 }
 
 /// What the worker came to.
@@ -122,7 +129,7 @@ fn run(dir: &Path, req: &Request) -> Came {
         "never",
     ];
     let (program, all): (&str, Vec<&str>) = if req.inside {
-        ("nix", super::super::devshell::inside(&req.cargo, &args))
+        (&req.nix, super::super::devshell::inside(&req.cargo, &args))
     } else {
         (&req.cargo, args.to_vec())
     };

@@ -41,6 +41,8 @@ pub struct MutantsSetup {
     pub off: bool,
     /// The program cargo is: `cargo`, or a stand-in under test.
     pub cargo: String,
+    /// The program nix is, for the dev shell: `nix`, or a stand-in under test.
+    pub nix: String,
     /// Why the reviewer's profile's `[mutants]` section could not be read, the defaults taken; ''
     /// when it was.
     pub note: String,

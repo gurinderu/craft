@@ -87,9 +87,13 @@ fn why_none(came: Option<&Came>, dir: &Path) -> String {
         Some(Came::Broken { message }) => message.clone(),
         Some(Came::Exited { code }) => format!("cargo-mutants exited ({code:?}) without outcomes"),
         None => {
-            let err = std::fs::read_to_string(dir.join(worker::ERR)).unwrap_or_default();
-            let last = super::super::check::last_line(&err);
-            format!("the worker wrote no result and did not answer a stop (its last word: {last})")
+            let log = dir.join(worker::ERR);
+            let last =
+                super::super::check::last_line(&std::fs::read_to_string(&log).unwrap_or_default());
+            format!(
+                "the worker wrote no result and did not answer a stop (its last word: {last}; its log: {})",
+                log.display()
+            )
         }
     }
 }

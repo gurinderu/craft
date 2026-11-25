@@ -164,7 +164,7 @@ fn launch_mutants(cwd: &Path, dir: &Path, opts: &StartOptions, run: &mut RunStat
         other_profiles: run.tracks.iter().any(|t| t.profile != "rust"),
         gate: &run.gate,
         setup,
-        stopped: opts.cancel.is_cancelled(),
+        cancel: &opts.cancel,
     });
     run.context.mutants = mutants.running();
     run.gate.mutants = mutants;
