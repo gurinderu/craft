@@ -1,7 +1,7 @@
 {
   "name": "craft",
   "version": "0.60.0",
-  "description": "Opinionated engineering skills for Codex — a broad Rust skill set, language-agnostic engineering skills and a Nix skill set — with craft's start and work-moment hooks, and craft's review through the craft binary with its Codex backend (the codex-review skill, each review agent its own codex exec) — new, not yet observed running in a real Codex session. The other workflow engines are Claude Code only. Its hooks run only after you trust them in /hooks.",
+  "description": "AI code review and code-quality skills for Codex — craft's review through the craft binary with its Codex backend (the codex-review skill, each review agent its own codex exec; new, not yet observed running in a real Codex session), a broad Rust skill set, a Nix skill set and language-agnostic engineering skills, with craft's start and work-moment hooks. The other workflow engines are Claude Code only. Its hooks run only after you trust them in /hooks.",
   "author": {
     "name": "gurinderu",
     "email": "gurinderu@gmail.com"
@@ -10,17 +10,19 @@
   "license": "MIT",
   "keywords": [
     "codex",
+    "ai-code-review",
+    "code-review",
+    "code-quality",
     "skills",
     "rust",
     "nix",
-    "code-review",
     "craft"
   ],
   "skills": "./skills/",
   "hooks": "./integrations/claude-code/hooks/hooks.json",
   "interface": {
     "displayName": "craft",
-    "shortDescription": "Engineering skills: Rust, Nix, review, specs, debugging",
+    "shortDescription": "AI code review and code-quality skills: Rust, Nix",
     "developerName": "gurinderu",
     "category": "Developer Tools"
   }
