@@ -110,3 +110,50 @@ fn the_binarys_bounded_writer_lands_a_built_record_in_the_run_store_under_home()
     assert_eq!(index.lines().count(), 1, "{index}");
     assert!(index.contains("\"name\":\"triage-findings\""), "{index}");
 }
+
+fn submit(home: &Path, run: &Path, extra: &[&str]) -> Value {
+    let out = Command::new(env!("CARGO_BIN_EXE_craft"))
+        .args(["triage", "submit", "--run"])
+        .arg(run)
+        .args(extra)
+        .env("HOME", home)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    serde_json::from_slice(&out.stdout).unwrap()
+}
+
+#[test]
+fn submit_takes_the_hosts_limit_a_resume_and_an_abandoned_task() {
+    let d = tempfile::tempdir().unwrap();
+    let (home, repo, run) = (
+        d.path().join("home"),
+        d.path().join("repo"),
+        d.path().join("run"),
+    );
+    std::fs::create_dir_all(&repo).unwrap();
+    let first = start(&home, &repo, &run, &[]);
+    let id = first["tasks"][0]["id"].as_str().unwrap().to_owned();
+    let stopped = submit(&home, &run, &["--limit", "the limit"]);
+    assert_eq!(stopped["stopped"]["text"], "the limit", "{stopped}");
+    let resumed = submit(&home, &run, &["--resume"]);
+    assert!(resumed.get("stopped").is_none(), "{resumed}");
+    submit(&home, &run, &["--abandoned", &id, "--resume"]);
+    let state: Value =
+        serde_json::from_str(&std::fs::read_to_string(run.join("state.json")).unwrap()).unwrap();
+    let task = state["tasks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["id"] == id.as_str())
+        .unwrap();
+    assert_eq!(
+        (&task["state"], &task["abandoned"]),
+        (&Value::from("failed"), &Value::Bool(true)),
+        "{task}"
+    );
+}

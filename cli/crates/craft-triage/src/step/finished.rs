@@ -91,13 +91,17 @@ fn with_degraded(mut plan: Js, degraded: &[String], lead: &str) -> Js {
     plan
 }
 
-/// What the host said and what the run noted, on a step or a status: `degraded`, `notes`.
+/// What the host said and what the run noted, on a step or a status: `degraded`, `notes`, and the
+/// stop of a stopped run with how to resume it.
 pub(super) fn said(out: &mut Value, s: &TriageState) {
     let Some(o) = out.as_object_mut() else { return };
     for (k, v) in [("degraded", &s.degraded), ("notes", &s.notes)] {
         if !v.is_empty() {
             o.insert(k.into(), json!(v));
         }
+    }
+    if let Some(stop) = &s.stopped {
+        o.insert("stopped".into(), json!(stop));
     }
 }
 

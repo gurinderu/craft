@@ -37,6 +37,7 @@ fn run(record: Option<Recording>) -> TriageState {
         seen: Seen::default(),
         degraded: Vec::new(),
         notes: Vec::new(),
+        stopped: None,
     }
 }
 

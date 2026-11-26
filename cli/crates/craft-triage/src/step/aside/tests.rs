@@ -40,6 +40,7 @@ fn run(phase: Phase, counted: Option<bool>) -> TriageState {
         seen: Seen::default(),
         degraded: Vec::new(),
         notes: Vec::new(),
+        stopped: None,
     }
 }
 

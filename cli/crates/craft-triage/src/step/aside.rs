@@ -19,8 +19,8 @@ fn pending<'a>(s: &'a TriageState, id: &str) -> Option<&'a crate::state::Task> {
 }
 
 /// Moves the refused answers aside, notes each it could not move and saves the run again. Where
-/// only settled tasks' files stay, or the run is done, the note is information alone: a failed save
-/// of it is let go, so the step is still returned.
+/// only settled tasks' files stay, or the run is done or stopped, the note is information alone: a
+/// failed save of it is let go, so the step is still returned.
 ///
 /// # Errors
 /// When that save fails while a pending task's file stays in place.
@@ -29,7 +29,8 @@ pub(super) fn set_aside(dir: &Path, s: &mut TriageState, aside: Aside) -> Result
     if unmoved.is_empty() {
         return Ok(());
     }
-    let (notes, goes_on) = craft_step::left::left(&unmoved, |id| pending(s, id));
+    let (notes, pending_left) = craft_step::left::left(&unmoved, |id| pending(s, id));
+    let goes_on = s.stopped.is_none() && pending_left;
     take::note(&mut s.notes, &notes);
     match state::save(dir, s) {
         Err(e) if goes_on => Err(e.into()),

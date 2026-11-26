@@ -9,72 +9,33 @@ mod answers;
 mod aside;
 mod filing;
 mod finished;
+mod halt;
+mod open;
 mod refuse;
+mod status;
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use craft_review::filing::Writer;
 use craft_step::{Aside, Hold, take};
 use serde_json::{Map, Value, json};
 
 use crate::TriageError;
-use crate::run::{Args, Phase};
-use crate::state::{self, STATE_VERSION, Task, TriageState};
+use crate::run::Phase;
+use crate::state::{self, Task, TriageState};
 
 use advance::advance;
 use aside::set_aside;
-use refuse::refuse;
 
-/// What a triage run is opened with.
-#[derive(Debug, Clone)]
-pub struct StartOptions {
-    /// The checkout the session runs in; `args.repo` names another.
-    pub cwd: PathBuf,
-    pub run_dir: PathBuf,
-    pub args: Args,
-}
-
-/// Opens a run in `opts.run_dir` and hands out its first tasks; `w` files its record when it
-/// records and ends.
-///
-/// # Errors
-/// When the repository cannot be read, the run directory holds a run already, or the state or a
-/// task's files cannot be written.
-pub fn start(opts: &StartOptions, w: &dyn Writer) -> Result<Value, TriageError> {
-    refuse(&opts.args)?;
-    let repo = if opts.args.repo.is_empty() {
-        opts.cwd.clone()
-    } else {
-        PathBuf::from(&opts.args.repo)
-    };
-    let cwd = repo
-        .canonicalize()
-        .map_err(|source| TriageError::NoRepo { path: repo, source })?;
-    let dir = &opts.run_dir;
-    // A directory a run filed from is not a new run's: its kept filing would answer for this one.
-    if state::state_path(dir).exists() || filing::filing_path(dir).exists() {
-        return Err(TriageError::RunExists(dir.clone()));
-    }
-    std::fs::create_dir_all(dir).map_err(|source| TriageError::NoDir {
-        path: dir.clone(),
-        source,
-    })?;
-    let mut s = TriageState {
-        version: STATE_VERSION,
-        cwd,
-        args: opts.args.clone(),
-        phase: Phase::Gather,
-        tasks: Vec::new(),
-        seen: state::Seen::default(),
-        degraded: Vec::new(),
-        notes: Vec::new(),
-    };
-    step(dir, &mut s, Aside::default(), w)
-}
+pub use halt::Said;
+pub use open::{StartOptions, start};
+pub use status::status;
 
 /// Takes the answers to the pending tasks of the run in `dir` — from their files, or `given` by
-/// task id — and hands out what comes next; `degraded` says how the host ran them weaker than
-/// asked; `w` files the record of a run that records once it ends.
+/// task id — with what the host `said` of them, and hands out what comes next; `w` files the record
+/// of a run that records once it ends. A stopped run goes on by a submit without `--limit`, its
+/// held tasks handed out again; a finished one only by `--resume`, to file a record that did not
+/// land ([`halt`]).
 ///
 /// # Errors
 /// When the run is done, a given answer names no pending task, or the state or a file cannot be
@@ -82,47 +43,41 @@ pub fn start(opts: &StartOptions, w: &dyn Writer) -> Result<Value, TriageError> 
 pub fn submit(
     dir: &Path,
     given: Option<&Map<String, Value>>,
-    degraded: &[String],
+    said: &Said<'_>,
     w: &dyn Writer,
 ) -> Result<Value, TriageError> {
     let mut s = state::load(dir)?;
     if s.phase == Phase::Done {
-        return Err(TriageError::Done(dir.to_owned()));
+        return halt::finished_again(dir, &mut s, said, w);
+    }
+    if s.stopped.is_some() && said.limit.is_some() {
+        return Ok(halt::stopped(dir, &s));
+    }
+    take::note(&mut s.degraded, said.degraded);
+    if s.stopped.take().is_some() && given.is_none() {
+        return step(dir, &mut s, Aside::default(), w);
     }
     if let Some(id) = take::unknown(&s.tasks, given) {
         return Err(TriageError::UnknownTask(id.clone()));
     }
-    take::note(&mut s.degraded, degraded);
     let mut aside = Aside::default();
-    take::take_pending(dir, &mut s.tasks, given, Hold::Nothing, &mut aside)?;
+    take::abandon(dir, &mut s.tasks, said.abandoned, &mut aside)?;
+    let hold = Hold::of(said.limit.is_some(), said.resume);
+    take::take_pending(dir, &mut s.tasks, given, hold, &mut aside)?;
+    halt::on_limit(&mut s, said.limit);
     step(dir, &mut s, aside, w)
 }
 
-/// Where the run in `dir` stands: its phase and each task's line.
-///
-/// # Errors
-/// When its state cannot be read.
-pub fn status(dir: &Path) -> Result<Value, TriageError> {
-    let s = state::load(dir)?;
-    let tasks: Vec<Value> = s.tasks.iter().map(craft_step::wire::status_line).collect();
-    let mut out = json!({"run": dir.display().to_string(), "phase": s.phase, "done": s.phase == Phase::Done, "tasks": tasks});
-    finished::said(&mut out, &s);
-    if s.phase == Phase::Done {
-        finished::files(&mut out, dir);
-    }
-    Ok(out)
-}
-
-/// Moves the run on when none of its tasks is pending, saves it, sets the refused answers aside,
-/// and says what comes next. A finished run files its record first, so a record that did not land
-/// leads its plan.
+/// Moves the run on when it is not stopped and none of its tasks is pending, saves it, sets the
+/// refused answers aside, and says what comes next. A finished run files its record first, so a
+/// record that did not land leads its plan.
 fn step(
     dir: &Path,
     s: &mut TriageState,
     aside: Aside,
     w: &dyn Writer,
 ) -> Result<Value, TriageError> {
-    let finished = if s.tasks.iter().any(Task::pending) {
+    let finished = if s.stopped.is_some() || s.tasks.iter().any(Task::pending) {
         None
     } else {
         advance(s)?
@@ -133,6 +88,9 @@ fn step(
     craft_step::handoff::write_pending(dir, &s.tasks, |t| Ok::<_, TriageError>(t.prompt_text()))?;
     state::save(dir, s)?;
     set_aside(dir, s, aside)?;
+    if s.stopped.is_some() {
+        return Ok(halt::stopped(dir, s));
+    }
     if let Some(plan) = plan {
         return finished::step(dir, &plan, s);
     }
