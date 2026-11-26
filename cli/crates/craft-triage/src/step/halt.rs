@@ -18,7 +18,8 @@ pub struct Said<'a> {
     /// How it ran them weaker than asked, one note each.
     pub degraded: &'a [String],
     /// The account's usage limit, as an agent's error or short answer said it: the run keeps the
-    /// answers that came in and stops, its unanswered tasks held.
+    /// answers that came in and moves on as far as they carry it, then stops where it still needs
+    /// agents, its pending tasks held; a run they finish ends.
     pub limit: Option<&'a str>,
     /// The host resumes a run it lost: an answer missing now is handed out again, not counted
     /// as a failed attempt.

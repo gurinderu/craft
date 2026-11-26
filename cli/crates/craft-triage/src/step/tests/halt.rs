@@ -108,30 +108,37 @@ fn a_limit_with_every_answer_in_moves_on_and_the_last_one_finishes_the_run() {
     let mut s = state::load(dir.path()).unwrap();
     s.seen = seen_of(&c);
     state::save(dir.path(), &s).unwrap();
-    let mut stops = 0;
+    let (mut stops, mut last_limited) = (0, false);
     for _ in 0..40 {
         if step.get("plan").is_some() {
             break;
         }
         let given = answers(dir.path(), &a);
         // The limit comes with a step whose answers are all in; a dead agent's is missing.
-        let pending = state::load(dir.path())
-            .unwrap()
-            .tasks
-            .iter()
-            .filter(|t| t.pending())
-            .count();
-        let said = if given.len() == pending {
+        let before = state::load(dir.path()).unwrap();
+        let all_in = given.len() == before.tasks.iter().filter(|t| t.pending()).count();
+        let said = if all_in {
             limited("limit")
         } else {
             Said::default()
         };
         step = submit(dir.path(), Some(&given), &said, &Unused).unwrap();
+        last_limited = all_in;
         if step.get("stopped").is_some() {
             stops += 1;
+            let after = state::load(dir.path()).unwrap().phase;
+            assert_ne!(
+                after, before.phase,
+                "a limit with every answer in moves on before it stops"
+            );
             step = submit(dir.path(), None, &Said::default(), &Unused).unwrap();
+            last_limited = false;
         }
     }
+    assert!(
+        last_limited,
+        "the plan came from a submit that carried the limit"
+    );
     assert!(stops > 0, "a phase that still needs agents stops");
     assert!(step.get("stopped").is_none(), "{step}");
     assert_eq!(step["done"], true, "{step}");

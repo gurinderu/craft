@@ -27,7 +27,7 @@ pub fn filing_path(dir: &Path) -> PathBuf {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Filed {
-    /// `filed` or `failed`; `attempted` while the write has not answered.
+    /// `filed` or `failed`; `attempted` until the write answered and the plan it leads is written.
     pub record: String,
     pub file: String,
     pub lost: Vec<String>,
@@ -37,7 +37,7 @@ pub struct Filed {
 /// the filing did for the caller to [`keep`]; `None` when it does not record.
 ///
 /// # Errors
-/// When the attempt or what it did cannot be kept beside the state.
+/// When the attempt cannot be kept beside the state.
 pub(super) fn file(
     dir: &Path,
     s: &TriageState,
