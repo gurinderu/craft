@@ -16,12 +16,12 @@
 //     compaction summary, stay — what the summarizer quoted, it quoted.
 //   • `tools`: a record is left the four the agent reads a repository with; a list is not read as one.
 // A request the hook cannot read costs the host nothing: its shape is left as it came, and a throw is caught and
-// said once per reason, never to the request (node #698). What this is worth is measured by the REALITY.md row's run
+// said once per reason, never to the request (node #697). What this is worth is measured by the REALITY.md row's run
 // on each 2.x bump (node #699).
 import type { V2Context, V2ContextHookInput, V2Registration } from './opencode-v2.js'
 import { TASK_AGENT } from './review-children.ts'
 
-/** A section of the instructions part as 2.2.7 names it under `metadata.experimental.instructions` (node #697). */
+/** A section of the instructions part as 2.2.7 names it under `metadata.experimental.instructions` (node #698). */
 type Section = { key: string; text: string }
 
 /** What became of one system part: cut to the host's own sections, removed, or left as it came. */
@@ -33,7 +33,7 @@ const ENV_HEAD = 'Here is some useful information about the environment you are 
 /** The environment block ends the part's text, a trailing newline allowed: what follows it is not known to be the host's. */
 const ENV_END = /\n<\/env>\n?$/
 const DATE_LINE = /^Today's date: \w{3} \w{3} \d{1,2} \d{4}$/
-/** How a rule file the host loaded on the way begins (node #697). */
+/** How a rule file the host loaded on the way begins (node #698). */
 const LOADED_RULES = 'Instructions from: '
 /** What the light agent reads a repository with; a request is left these four whatever the agent's file denies (node #694). */
 const TOOLS = new Set(['glob', 'grep', 'read', 'shell'])
@@ -62,7 +62,7 @@ function sectionsOf(part: Record<string, unknown>): Section[] | undefined {
   return sections
 }
 
-/** Whether the part's text is exactly its sections joined by blank lines, as 2.2.7 writes it (node #697). */
+/** Whether the part's text is exactly its sections joined by blank lines, as 2.2.7 writes it (node #698). */
 function faithful(list: Section[], text: string): boolean {
   return list.map(section => section.text).join('\n\n') === text
 }
@@ -191,7 +191,7 @@ const REQUEST_HOOKS: readonly ['context', 'compaction', 'generate'] = ['context'
 /**
  * The 2.x plugin's hooks for the light agent: the same lightening on `context`, `compaction` and `generate`, disposed
  * with the plugin. It never costs the host a request: a throw inside a hook is caught and said once per reason on
- * `log`; a 2.x that refuses one registration is said the same way, naming the hook, and the others stand (node #698).
+ * `log`; a 2.x that refuses one registration is said the same way, naming the hook, and the others stand (node #697).
  */
 export async function hookLightAgent(ctx: V2Context, log: (line: string) => void = console.error): Promise<() => Promise<void>> {
   const say = oncePerReason(log)

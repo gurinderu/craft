@@ -68,7 +68,7 @@ export interface V2PromptHookInput {
 // A system part of a model request as 2.2.7 hands it to the `context` hook (observed by a probe, realm @nick/craft,
 // node #697): the agent's prompt, a `# Your Model` note, the repository's instructions and a worktree note. Only the
 // instructions part carried metadata: each of its sections under `experimental.instructions` as `{key, text}`, its text
-// their texts joined by blank lines.
+// their texts joined by blank lines (node #698).
 export interface V2SystemPart {
   type: string
   text: string
