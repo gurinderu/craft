@@ -272,6 +272,7 @@ fn heard(r: &mut Running, res: RoundResult) -> (Said, Option<String>) {
     let said = Said {
         degraded: res.degraded,
         abandoned: res.abandoned,
+        died: res.died,
         limit: res.limit,
         resume: false,
         agents: r.agents,

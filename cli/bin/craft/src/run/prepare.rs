@@ -47,8 +47,14 @@ pub(crate) fn prepare(tasks: &[Task], ctx: &RoundCtx<'_>) -> Prepared {
                 p.ran.push(i);
             }
             Err(why) => {
-                p.outcomes
-                    .insert(i, Outcome::Unanswered { why, said: None });
+                p.outcomes.insert(
+                    i,
+                    Outcome::Unanswered {
+                        why,
+                        said: None,
+                        wrote: None,
+                    },
+                );
             }
         }
     }

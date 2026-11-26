@@ -95,6 +95,7 @@ fn weaker_parts_ride_the_brief(run: &std::path::Path) {
     held.stopped = Some(craft_review::stop::Stop {
         cause: craft_review::stop::Cause::Limit,
         text: "resets 5pm".into(),
+        told: false,
     });
     held.degraded = vec!["round 1: 2 task(s) on `x` ran on the default agent type instead".into()];
     held.chain.worktree = Some("reviewed in craft's own worktree /w".into());

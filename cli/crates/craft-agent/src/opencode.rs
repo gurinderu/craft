@@ -92,6 +92,7 @@ impl AgentBackend for OpenCode {
                 code: output.status.code(),
                 stderr: String::from_utf8_lossy(&output.stderr).trim().to_owned(),
                 stdout: said(&read.errors, &output.stdout),
+                errors: read.errors.clone(),
             });
         }
         let Some(answer) = answer else {

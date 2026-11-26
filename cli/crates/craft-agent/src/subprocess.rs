@@ -65,6 +65,7 @@ pub(crate) fn quit(output: &Output) -> AgentError {
         code: output.status.code(),
         stderr: String::from_utf8_lossy(&output.stderr).trim().to_owned(),
         stdout: String::from_utf8_lossy(&output.stdout).trim().to_owned(),
+        errors: Vec::new(),
     }
 }
 

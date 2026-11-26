@@ -23,7 +23,7 @@ pub(super) fn move_on(dir: &Path, run: &mut RunState, said: &Said<'_>) -> Result
         return Ok(());
     }
     match stop::round_died(run).filter(|_| !said.resume) {
-        Some(why) => stop::hold(run, stop::deaths(why)),
+        Some(stop) => stop::hold(run, stop),
         None => advance(dir, run)?,
     }
     Ok(())

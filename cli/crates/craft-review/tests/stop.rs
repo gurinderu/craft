@@ -6,7 +6,7 @@ mod common;
 use common::{fixture, ids, lens, prompt_of, small_run, submit, titled, verdict, write_answer};
 use craft_review::status;
 use craft_review::step::{self, Said};
-use serde_json::json;
+use serde_json::{Value, json};
 
 const LENSES: [&str; 3] = [
     "lens-rust-errors-r1",
@@ -353,4 +353,59 @@ fn a_limit_stop_in_verification_reports_every_finding_under_its_honest_tier() {
         report.contains("verification stopped before it finished"),
         "{report}"
     );
+}
+
+/// A whole round dead names what its agents said, the ids in it folded so one cause counts once,
+/// a task asked again counted by its last line — not the guess (realm @nick/craft, node #666).
+#[test]
+fn a_dead_round_names_what_its_agents_said_rather_than_a_guess() {
+    let repo = fixture(true);
+    let out = tempfile::tempdir().unwrap();
+    let (run, _) = small_run(repo.path(), out.path());
+    let said = |n: u32| -> Vec<String> {
+        LENSES
+            .iter()
+            .enumerate()
+            .map(|(i, id)| {
+                let line = if i == 2 && n == 2 {
+                    "OpenCode exited 1: rate limited".to_owned()
+                } else {
+                    format!("Insufficient Balance (request_id: 01622139-b88f-4332-bc4d-c5d3d97{n}{i}ac97)")
+                };
+                format!("{id}={line}")
+            })
+            .collect()
+    };
+    let mut s = Value::Null;
+    for n in 0..3 {
+        let mut died = said(n);
+        // No task id, no `=`, no line, an id no task has: each passed over.
+        died.extend([
+            "=a stray line".to_owned(),
+            "no separator".to_owned(),
+            "lens-rust-errors-r1=".to_owned(),
+            "not-a-task=OpenCode exited 1: rate limited".to_owned(),
+        ]);
+        s = step::submit_with(
+            &run,
+            Some(&serde_json::Map::new()),
+            &Said {
+                died: &died,
+                ..Said::default()
+            },
+        )
+        .unwrap();
+    }
+    assert_eq!(s["verdict"], json!("INCOMPLETE"), "{s}");
+    let line = s["line"].as_str().unwrap();
+    assert!(
+        line.contains("stopped: every agent dispatched in lens round 1 died with no answer; of 3 agent(s), 2 said `Insufficient Balance (request_id: …)`, 1 said `OpenCode exited 1: rate limited`. Resume"),
+        "{line}"
+    );
+    assert!(!line.contains("most likely"), "{line}");
+    assert!(
+        !line.contains("stray") && !line.contains("separator"),
+        "{line}"
+    );
+    assert_eq!(s["stopped"]["told"], json!(true));
 }
