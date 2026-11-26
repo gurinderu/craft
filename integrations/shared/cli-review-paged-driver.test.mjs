@@ -219,7 +219,7 @@ test('a status whose page step stopped on the usage limit asks no brief status: 
     run.calls.map(c => c.label),
     ['step:root', 'step:start', 'lens:a', 'step:submit:1', 'step:status', 'step:status:page', 'log-run'],
   )
-  assert.match(run.report, /review stopped: the command printed no JSON: Error: the output was cut\. The run is in .*\. To resume /)
+  assert.match(run.report, /review stopped: the command printed no JSON: Error: the output was cut\. The run is in .*\. To resume .*`craft:review run=/)
 })
 
 test('a publication whose page step the harness refused says its outcome is unknown: the comment itself ran', async () => {
