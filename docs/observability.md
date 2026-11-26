@@ -1,9 +1,8 @@
 # Observability — craft run records
 
-Every `review` / `rust-audit` / `triage-findings` run, and every directly-dispatched review agent,
-writes a structured record to a global per-user store so runs can be studied later. A `review` run's
-record is filed by the `craft` binary the workflow drives, under the name `review` with
-`driver: 'cli'`; a store also keeps what retired engines filed — the JS `review` (no `driver`),
+Every `review` / `rust-audit` / `triage-findings` run writes a structured record to a global
+per-user store so runs can be studied later. A `review` run's record is filed by the `craft`
+binary the workflow drives, under the name `review` with `driver: 'cli'`; a store also keeps what retired engines filed — the JS `review` (no `driver`),
 `cli-review`, `rust-review`, `nix-review`, `adversarial-review` — and the readers still read them.
 
 ## Store
@@ -110,12 +109,14 @@ rejectedBefore, deferred, covered, conflict, reraised}` counts what the memory s
 again before validation; `issues` the findings deferred to an issue as not the PR's) and `memory`
 (where the sift's records came from, as `review` records it); `notRun[]` lists requested sources that
 failed to gather. It has no `scout`/`dimensions`/`verification`/`outputTokens`.
-The `rust-security-scanner` agent additionally records `toolsRun[]` (which cargo tools actually ran).
+A review agent dispatched on its own records nothing. A store may still hold the `kind: "agent"` index
+lines such agents once appended themselves (the `rust-security-scanner`'s carried `toolsRun[]`); the
+readers list them, and no report is built on them.
 Records of the retired rust-review also carry `gate {status, provenance}` (always) and `failedChecks[]`
 (gate-fail path only); these summary-only extras are NOT carried into the `index.jsonl` projection.
 
-Records carry a `runtime` field — `"claude-code"` for the Claude Code workflows/agents,
-`"opencode"` for the opencode adapter. opencode records are a deterministic subset: `findings`
+Records carry a `runtime` field — `"claude-code"` for the Claude Code workflows (and the agent
+lines of old stores), `"opencode"` for the opencode adapter. opencode records are a deterministic subset: `findings`
 is `null` (no structured findings), and there is no `outputTokens` (no token meter) — so
 `findingsTotal` is `null` in their index projection.
 
@@ -232,8 +233,8 @@ under the same index lock, with no logger agent and no node (`content/parity/sto
 together); a logger agent files only the INCOMPLETE record of a run the binary never
 finished. A write that does not land is asserted, not
 inferred: the agent returns `{ok, error}`, and the engine puts the loss in its own report. The shaping helpers are tested in `integrations/shared/run-record.mjs`; the engines import them and the build
-bundles them in (the sandbox can't `import`). Standalone agents self-log via their `.md` Observability
-section, suppressed when run as a workflow sub-agent.
+bundles them in (the sandbox can't `import`). A review agent dispatched on its own writes nothing
+to the store: no line of the index is assembled by a model.
 
 Concurrent writers use `.index-writers/` admission before `index.jsonl.lock`. They must share
 one local filesystem and process namespace; a live process is never displaced merely because
