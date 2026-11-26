@@ -199,7 +199,7 @@ a model). Tune by task — strongest model + high effort where reasoning is heav
 The plugin registers the workflow tools and narrow hooks: craft's hook at the moment of work, and — on
 2.x, for the `review-task` agent only — the `context`, `compaction` and `generate` hooks that edit its
 model requests in place (`light-agent.ts`); no other agent's request is touched.
-It only remembers which sessions are subagents' and notes compactions, and adds a few short lines
+The work hook only remembers which sessions are subagents' and notes compactions, and adds a few short lines
 to a message asking for review work (findings, PR comments, a review), in a repo that declares its
 own agents or work rules, once per request kind (findings, review) per session. On 1.x the lines
 arrive as a synthetic part after the message (`chat.message`). 2.x has no such hook, so they are
