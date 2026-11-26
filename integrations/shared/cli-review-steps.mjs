@@ -669,8 +669,8 @@ async function rounds(sb, bin, first, serve, recorder) {
  * whose record did not land has it filed again (`--resume`), and ends as it stands if that cannot be read; a run it
  * did not finish comes back as where it stands, as its status says (`standing`), which the driver then files
  * INCOMPLETE; a run it finished without keeping the step to file its record from is said so, and filed by no one.
- * A status that ran but could not be read — empty, missing, too large to copy whole, its page step refused by the
- * harness — is asked again in brief (briefly).
+ * A status that ran but could not be read — empty, missing, too large to copy whole, its page step failed or refused
+ * by the harness — is asked again in brief (briefly).
  * @param {Watched} sb @param {string} bin @param {string} run @param {Serve} serve @param {Recorder} recorder
  * @returns {Promise<{ finished: Finished } | { unrecorded: string } | { standing: string } | { unread: Brief }>}
  */

@@ -182,8 +182,8 @@ test('a status command the harness refused asks no brief status: the review stop
     },
   })
   // The status command itself was not run, so nothing says whether the run finished; the refusal does not speak for
-  // the brief status, another command, which is not asked in its place. The review stops as on a status that said
-  // nothing: on the reason its submit was lost, with the run to resume.
+  // the brief status, another command, which is not asked in its place. The review stops as on a status command that
+  // failed or was refused: on the reason its submit was lost, with the run to resume.
   assert.deepEqual(
     run.calls.map(c => c.label),
     ['step:root', 'step:start', 'lens:a', 'step:submit:1', 'step:status', 'log-run'],
