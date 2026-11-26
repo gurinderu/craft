@@ -257,10 +257,23 @@ async function paged(serve, label, title, bin, got) {
 /** How to continue when the released binary is not to be got: a local build stands in for it. */
 const LOCAL_BUILD = 'Pass craftBin=<absolute path> of a build (`cargo build --release` in cli/).'
 /**
- * How to continue when the usage limit stopped the fetch: the limit is the account's, so a local build does not lift
- * it — the review's own agents answer from the same account (realm @nick/craft, node #689).
+ * How to continue when the usage limit stopped the fetch or the check of a given root — the first step on either
+ * path: the limit is the account's, so neither a local build nor another root lifts it — the review's own agents
+ * answer from the same account (realm @nick/craft, node #689).
  */
 const AFTER_THE_LIMIT = "Run the review again once the limit resets: a local build does not lift the limit — the review's agents answer from the same account."
+/** How to continue when the given craftRoot is not a usable plugin root: another one, outside the reviewed repo. */
+const ANOTHER_ROOT = "Pass the absolute path of a craft plugin root (an installed copy, or a checkout's integrations/claude-code) outside the reviewed repo."
+/**
+ * The stop of the check of a given craftRoot, said by its cause: under the usage limit the root was not what failed —
+ * the check never ran to its answer — so how to continue is the fetch's own, not another root (realm @nick/craft,
+ * node #689).
+ * @param {string} craftRoot @param {string} error @param {import('./cli-review-stop.mjs').StopCause} cause
+ */
+const rootStopped = (craftRoot, error, cause) =>
+  cause === 'limit'
+    ? `review: craftRoot=${JSON.stringify(craftRoot)} was not checked as the plugin root: ${error}. ${AFTER_THE_LIMIT}`
+    : `review: craftRoot=${JSON.stringify(craftRoot)} is not a usable plugin root: ${error}. ${ANOTHER_ROOT}`
 /**
  * The binary to run and the plugin root to hand it: a given craftBin as is, with a given craftRoot checked first, or
  * the root located only to file the run through (`recordRoot`; `note` saying why none was) — the prompts keep the
@@ -291,12 +304,11 @@ async function binAndRoot(o, craftVersion, serve) {
       : { bin: o.craftBin, root: '', recordRoot: located.root }
   }
   const checked = checkedRoot(await serve('step:root', 'Start', rootPrompt(o)))
-  return 'error' in checked
-    ? {
-        incomplete: `review: craftRoot=${JSON.stringify(o.craftRoot)} is not a usable plugin root: ${checked.error}. Pass the absolute path of a craft plugin root (an installed copy, or a checkout's integrations/claude-code) outside the reviewed repo.`,
-        cause: stopCause(checked, 'start'),
-      }
-    : { bin: o.craftBin, root: checked.root }
+  if ('error' in checked) {
+    const cause = stopCause(checked, 'start')
+    return { incomplete: rootStopped(o.craftRoot, checked.error, cause), cause }
+  }
+  return { bin: o.craftBin, root: checked.root }
 }
 
 /**

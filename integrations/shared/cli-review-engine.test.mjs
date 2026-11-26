@@ -440,6 +440,22 @@ test('a fetch the usage limit stopped says to run the review again after the res
   assert.deepEqual(work(limited), ['step:resolve'])
 })
 
+test('a craftRoot check the usage limit stopped says the root was not checked and to run the review again after the reset, never to pass another root', async () => {
+  // Both craftBin and craftRoot given: no fetch runs, so the root check is the first step the limit meets — the
+  // fetch's sibling (realm @nick/craft, node #689).
+  const limited = await runEngine('review', {
+    args: { repo: '/work/repo', craftBin: '/opt/craft', craftRoot: '/opt/craft-plugin' },
+    script: { 'step:root': "You've hit your weekly limit" },
+  })
+  const line = verdictOf(limited)
+  assert.match(
+    line,
+    /^⚠️ INCOMPLETE — review: craftRoot="\/opt\/craft-plugin" was not checked as the plugin root: stopped: usage limit reached \(You've hit your weekly limit\)\. Run the review again once the limit resets: a local build does not lift the limit — the review's agents answer from the same account\.$/,
+  )
+  assert.doesNotMatch(line, /is not a usable plugin root|Pass the absolute path/, 'the root is not what failed')
+  assert.deepEqual(work(limited), ['step:root'], 'nothing runs past it')
+})
+
 test('with craftBin, start gets --craft-root when craftRoot is given and checked, else --record-root: the plugin root located like the logger, for filing only', async () => {
   const given = await runEngine('review', {
     args: { repo: '/work/repo', craftBin: '/opt/craft', craftRoot: '/opt/craft-plugin' },
@@ -463,6 +479,11 @@ test('with craftBin, start gets --craft-root when craftRoot is given and checked
   assert.match(
     verdictOf(refused),
     /^⚠️ INCOMPLETE — review: craftRoot="\/work\/repo\/craft" is not a usable plugin root: the command exited 1: inside the reviewed repo /,
+  )
+  assert.match(
+    verdictOf(refused),
+    /\) in \/work\/repo\)\. Pass the absolute path of a craft plugin root \(an installed copy, or a checkout's integrations\/claude-code\) outside the reviewed repo\.$/,
+    'the root is what failed, so another one is the way on — never the limit’s advice',
   )
   assert.deepEqual(work(refused), ['step:root'], 'nothing runs past a refused root')
   const silent = await runEngine('review', { args: { craftBin: '/opt/craft', craftRoot: '/opt/p' }, script: { 'step:root': ran('ok\n') } })
