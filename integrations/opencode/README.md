@@ -151,9 +151,11 @@ hosts only, not yet seen in a real OpenCode 2.x.
   step's request, the compaction's, one the host asks the session outside its steps — edit that agent's
   model requests in place, leaving out the repository's instructions however they reach the
   context (its rule files, one loaded on the way by a read, a change's notice) and every tool but glob,
-  grep, read and shell (`light-agent.ts`). The agent's file denies the calls; the hooks remove the
-  offers and the texts, which a deny does not. A compaction's summary passes as the summarizer wrote
-  it, and 1.x has no such hook: there `review-task` still receives the repository's instructions.
+  grep, read and shell (`light-agent.ts`). The agent's file denies the calls of the tools it names,
+  craft's own `review`, `rust-audit` and `triage-findings` not among them — its `"*_*"` reaches a name
+  with an underscore only — and the hooks remove every offer but the four, and the texts, which a deny
+  does not. A compaction's summary passes as the summarizer wrote it, and 1.x has no such hook: there
+  `review-task` still receives the repository's instructions and is offered those three tools.
 - Models: every tier runs on the calling session's model — the one that session recorded: on 1.x its
   newest message's, on 2.x the model set on the session; when it recorded none, OpenCode's default —
   unless the flags name `--models`: one `provider/model` for all, or

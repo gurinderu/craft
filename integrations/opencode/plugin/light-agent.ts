@@ -3,8 +3,9 @@
 // host stored it; and `generate`, a request the session is asked outside its steps — the host's cache warming among
 // them, and the session's `generate` route. Each sees its request before it goes out; the host keeps what the hook
 // changes in place and drops what it returns (2.2.7, realm @nick/craft, node #697). For the review-task agent's
-// requests all three leave the repository's instructions out of what the provider gets, closing what the agent's file
-// cannot: a permission denies a call, not the offer (node #694). Every other agent's request passes as it came.
+// requests all three leave the repository's instructions and every tool but four out of what the provider gets,
+// closing what the agent's file cannot: a permission denies a call, not the offer, and its "*_*" reaches no name
+// without an underscore, craft's own tools among them (node #694). Every other agent's request passes as it came.
 //   • `system`: the part that carries the instructions keeps the host's own sections only, the date and the
 //     environment (node #695). It is read by the list of sections beside its text when the list accounts for the text
 //     exactly, else by the text's end — its last environment block must end the text, a trailing newline allowed.
@@ -34,7 +35,7 @@ const ENV_END = /\n<\/env>\n?$/
 const DATE_LINE = /^Today's date: \w{3} \w{3} \d{1,2} \d{4}$/
 /** How a rule file the host loaded on the way begins (node #697). */
 const LOADED_RULES = 'Instructions from: '
-/** What the light agent reads a repository with; the agent's file denies the rest (node #694). */
+/** What the light agent reads a repository with; a request is left these four whatever the agent's file denies (node #694). */
 const TOOLS = new Set(['glob', 'grep', 'read', 'shell'])
 
 function isRecord(v: unknown): v is Record<string, unknown> {

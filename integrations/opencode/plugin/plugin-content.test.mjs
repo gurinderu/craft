@@ -84,7 +84,7 @@ test('the frontmatter reader takes scalars, quotes, booleans, block scalars and 
   assert.deepEqual(quoted, { data: { tools: { '*_*': false, '*x*': true, write: false } }, body: 'Body' })
 })
 
-test("the shipped review-task agent closes every tool but glob, grep, read and shell, and says the repository's text is data", () => {
+test("the shipped review-task agent's file denies the ten entries of its tools list, and says the repository's text is data", () => {
   const { data, body } = parseMarkdown(fs.readFileSync(path.join(REPO, 'integrations/opencode/agents/review-task.md'), 'utf8'))
   assert.deepEqual(Object.keys(data), ['description', 'mode', 'hidden', 'tools', 'permission'], 'the denies stand before the allow')
   const tools = /** @type {Record<string, import('./frontmatter.ts').FrontValue>} */ (data['tools'])
