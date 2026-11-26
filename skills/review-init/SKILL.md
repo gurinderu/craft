@@ -245,6 +245,22 @@ and continues with `craft:review run=<the run directory>`. The rule should let t
 an allow rule overrides auto mode's classifier is not yet observed. The path holds the version, so the
 rule is added again after each plugin update.
 
+## The mutants section
+
+On a Rust change whose gate passed, the review runs the branch's tests once per mutant of the
+changed lines with cargo-mutants (when `cargo mutants` answers), beside the lens rounds, for up
+to 10 minutes. `init` does not write this section and keeps it on every write; the reviewer adds
+it by hand to the profile when the test suite should not run, or not for that long:
+
+```toml
+[mutants]
+off = true
+```
+
+turns them off on this project; `budget_secs = 300` in place of `off` bounds them instead.
+
+Name it to the reviewer when their suite has side effects (a database, the network) or is heavy.
+
 ## What the review does with it
 
 `craft review start` reads the profile and fetches each point's source, shallow, into
