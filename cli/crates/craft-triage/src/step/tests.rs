@@ -6,7 +6,7 @@ use std::path::Path;
 use craft_store::js::Js;
 use serde_json::{Map, Value};
 
-use super::{StartOptions, start, status, submit};
+use super::{Said, StartOptions, start, status, submit};
 use crate::TriageError;
 use crate::field::At;
 use crate::parity::answers::{CaseAnswers, args_of};
@@ -134,12 +134,24 @@ fn run_recording(
             return (c, dir, step);
         }
         let given = answers(dir.path(), &a);
-        step = submit(dir.path(), Some(&given), degraded, w).unwrap();
+        step = submit(
+            dir.path(),
+            Some(&given),
+            &Said {
+                degraded,
+                ..Said::default()
+            },
+            w,
+        )
+        .unwrap();
     }
     panic!("{name}: the run did not end");
 }
 
+mod banners;
+mod halt;
 mod recording;
+mod refile;
 
 fn file(path: &Path) -> String {
     craft_store::js::parse(&std::fs::read_to_string(path).unwrap())
@@ -173,7 +185,7 @@ fn every_case_run_on_the_protocol_ends_with_the_engines_plan_and_record() {
         );
         assert_eq!(named("recordFile"), Some(record_path(dir.path())), "{name}");
         assert!(matches!(
-            submit(dir.path(), None, &[], &Unused),
+            submit(dir.path(), None, &Said::default(), &Unused),
             Err(TriageError::Done(_))
         ));
     }
@@ -263,7 +275,7 @@ fn an_answer_for_no_pending_task_is_refused() {
     let mut given = Map::new();
     given.insert("plan".into(), Value::Null);
     assert!(
-        matches!(submit(dir.path(), Some(&given), &[], &Unused), Err(TriageError::UnknownTask(id)) if id == "plan")
+        matches!(submit(dir.path(), Some(&given), &Said::default(), &Unused), Err(TriageError::UnknownTask(id)) if id == "plan")
     );
 }
 
@@ -274,7 +286,7 @@ fn a_refused_answer_file_is_moved_aside_and_its_task_asked_again() {
     let step = start(&opts_of(&c, repo.path(), dir.path()), &Unused).unwrap();
     let file = std::path::PathBuf::from(step["tasks"][0]["answerFile"].as_str().unwrap());
     std::fs::write(&file, "{}").unwrap();
-    let again = submit(dir.path(), None, &[], &Unused).unwrap();
+    let again = submit(dir.path(), None, &Said::default(), &Unused).unwrap();
     assert!(!file.exists(), "the refused file is moved aside");
     let aside = file.with_file_name("gather-report.rejected-0.json");
     assert!(aside.exists(), "{aside:?}");
@@ -293,7 +305,7 @@ fn a_refused_answer_file_that_cannot_be_moved_is_noted_with_what_its_next_read_d
     std::fs::write(&file, "{}").unwrap();
     let answers = file.parent().unwrap().to_owned();
     std::fs::set_permissions(&answers, std::fs::Permissions::from_mode(0o555)).unwrap();
-    let again = submit(dir.path(), None, &[], &Unused);
+    let again = submit(dir.path(), None, &Said::default(), &Unused);
     std::fs::set_permissions(&answers, std::fs::Permissions::from_mode(0o755)).unwrap();
     let again = again.unwrap();
     if !file.exists() {

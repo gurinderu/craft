@@ -68,6 +68,9 @@ pub struct TriageState {
     /// What the run noted of its own handling: a refused answer file it could not move aside.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub notes: Vec<String>,
+    /// Why the run stopped before its end, its unanswered tasks held for a resume.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stopped: Option<craft_step::stop::Stop>,
 }
 
 /// A state's format, read before its shape.

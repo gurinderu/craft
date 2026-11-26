@@ -1,8 +1,9 @@
 //! The finished run's record filed in the store by the binary (`start --record`; realm @nick/craft,
-//! node #616): the attempt is marked before the write and what it did kept after it, atomically.
-//! A run that finishes again files nothing more once its filing is kept `filed`; an attempt that
-//! never answered goes out again as a retry, which the store answers `already filed` when the
-//! first landed. A write that did not land is one line of `lost`, `<what> — <why>`, as
+//! node #616): the attempt is marked before the write, and what it did is kept, atomically, once
+//! the plan and record it leads are written ([`keep`]). A run that finishes again files nothing
+//! more once its filing is kept `filed`; any other — an attempt kept alone, or a filing kept
+//! `failed` — goes out again as a retry, which the store answers `already filed` when the first
+//! landed. A write that did not land is one line of `lost`, `<what> — <why>`, as
 //! `triage-findings.js` notes it.
 
 use std::path::{Path, PathBuf};
@@ -26,16 +27,17 @@ pub fn filing_path(dir: &Path) -> PathBuf {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Filed {
-    /// `filed` or `failed`; `attempted` while the write has not answered.
+    /// `filed` or `failed`; `attempted` until the write answered and the plan it leads is written.
     pub record: String,
     pub file: String,
     pub lost: Vec<String>,
 }
 
-/// Files `record` for the run in `dir` when it records; `None` when it does not.
+/// Files `record` for the run in `dir` when it records, the attempt kept first, and returns what
+/// the filing did for the caller to [`keep`]; `None` when it does not record.
 ///
 /// # Errors
-/// When the attempt or what it did cannot be kept beside the state.
+/// When the attempt cannot be kept beside the state.
 pub(super) fn file(
     dir: &Path,
     s: &TriageState,
@@ -58,7 +60,6 @@ pub(super) fn file(
         Ok(rec) => answered(send(dir, s, at, &rec, retry, w)),
         Err(e) => failed(&format!("the record holds text JSON cannot carry: {e}"), ""),
     };
-    keep(dir, &filed)?;
     Ok(Some(filed))
 }
 
@@ -69,7 +70,12 @@ pub fn read(dir: &Path) -> Option<Filed> {
     serde_json::from_str(&text).ok()
 }
 
-fn keep(dir: &Path, filed: &Filed) -> Result<(), TriageError> {
+/// Keeps what the filing did beside the state, once the plan and record it leads are written: a
+/// run that fails before has only its attempt kept, and finishing again files it as a retry.
+///
+/// # Errors
+/// When it cannot be written.
+pub(super) fn keep(dir: &Path, filed: &Filed) -> Result<(), TriageError> {
     let path = filing_path(dir);
     let text = serde_json::to_string_pretty(filed).unwrap_or_default();
     craft_store::write::write_atomically(&path, format!("{text}\n")).map_err(|e| {

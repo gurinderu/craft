@@ -1,4 +1,4 @@
-//! The record filed once per attempt, sent again as a retry once an attempt is kept, and each
+//! The record filed once per attempt, sent again as a retry while no filing is kept `filed`, and each
 //! answer of the writer read into what the run says it lost.
 
 use std::cell::RefCell;
@@ -37,6 +37,7 @@ fn run(record: Option<Recording>) -> TriageState {
         seen: Seen::default(),
         degraded: Vec::new(),
         notes: Vec::new(),
+        stopped: None,
     }
 }
 
@@ -57,7 +58,11 @@ fn a_first_filing_marks_its_attempt_and_sends_the_record_as_built() {
         (&json!("/repo"), &json!(false))
     );
     assert_eq!(asked[0]["during"], "attempted");
-    assert_eq!(read(d.path()).unwrap().record, "filed");
+    assert_eq!(
+        read(d.path()).unwrap().record,
+        "attempted",
+        "kept only once its plan is written"
+    );
 }
 
 #[test]
@@ -66,13 +71,14 @@ fn a_run_whose_filing_is_kept_filed_files_nothing_more() {
     let w = Asked(RefCell::new(Vec::new()));
     let s = run(Some(Recording::default()));
     let first = file(d.path(), &s, &rec(), &w).unwrap();
+    super::keep(d.path(), first.as_ref().unwrap()).unwrap();
     let again = file(d.path(), &s, &rec(), &w).unwrap();
     assert_eq!(w.0.borrow().len(), 1, "one write");
     assert_eq!(again, first);
 }
 
 #[test]
-fn an_attempt_that_never_answered_goes_out_again_as_a_retry() {
+fn a_filing_not_kept_filed_goes_out_again_as_a_retry() {
     let s = run(Some(Recording::default()));
     for left in [
         "{\"record\": \"attempted\"}\n",

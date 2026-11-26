@@ -39,10 +39,13 @@ pub(super) fn end(
     w: &dyn Writer,
 ) -> Result<Js, TriageError> {
     let filed = super::filing::file(dir, s, &done.record, w)?;
-    let lost = filed.map(|f| f.lost).unwrap_or_default();
+    let lost = filed.as_ref().map(|f| f.lost.clone()).unwrap_or_default();
     let lead = craft_store::lost::section(&lost);
     let plan = with_degraded(done.plan(&lost), &s.degraded, &lead);
     write(dir, &plan, &done.record)?;
+    if let Some(f) = &filed {
+        super::filing::keep(dir, f)?;
+    }
     Ok(plan)
 }
 
@@ -91,13 +94,17 @@ fn with_degraded(mut plan: Js, degraded: &[String], lead: &str) -> Js {
     plan
 }
 
-/// What the host said and what the run noted, on a step or a status: `degraded`, `notes`.
+/// What the host said and what the run noted, on a step or a status: `degraded`, `notes`, and the
+/// stop of a stopped run with how to resume it.
 pub(super) fn said(out: &mut Value, s: &TriageState) {
     let Some(o) = out.as_object_mut() else { return };
     for (k, v) in [("degraded", &s.degraded), ("notes", &s.notes)] {
         if !v.is_empty() {
             o.insert(k.into(), json!(v));
         }
+    }
+    if let Some(stop) = &s.stopped {
+        o.insert("stopped".into(), json!(stop));
     }
 }
 
