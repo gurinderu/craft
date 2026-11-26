@@ -57,8 +57,9 @@ export function candidatesToCheck(findings, decisions) {
  * `missing`. A decision naming no commit but a pull request of this repository is compared the same way
  * against that request's merge on the trunk, the line printing `merge <N>` after the status, and `between` after
  * that when its scope changed on the trunk outside that request before the merge — from where the merge's second
- * parent leaves the trunk, or from its date's base, to the merge's first parent; a squash or a rebase merge has the
- * date's window alone (mergeLine; realm @nick/craft, node #682) —, `missing` or `unreadable` when its date names no
+ * parent leaves the trunk, or from its date's base, to the merge's first parent; a squash has the date's window
+ * alone, and a second parent a shallow clone cut off counts as a change (mergeLine; realm @nick/craft, nodes #682,
+ * #701) —, `missing` or `unreadable` when its date names no
  * trunk commit before it, as the date's line prints; its merge not found, by its date as below, or with none
  * `unmerged`. A
  * decision naming no commit but a date is compared the same way against the last commit

@@ -40,8 +40,9 @@ export function datedLine(d, day) {
  * The comparison against the merge `$m` of pull request `$n` on the trunk `$t`: the status of `git diff --quiet`
  * against it, then `merge <n>`. The scope unchanged since the merge must also be unchanged on the trunk outside the
  * pull request before it, else the line prints status 1 and `merge <n> between`: from the merge's second parent `p`
- * (its parents read by `git rev-parse "$m^@"`, git failing counting as a change; a squash or a rebase merge has
- * none) and, with a date, from its base `b`, each to the merge's first parent — diffed from their merge-base, so
+ * (its parents read from the `parent` lines of `git cat-file commit "$m"`'s header, not from `git rev-parse
+ * "$m^@"`, which prints none past a shallow clone's boundary; git failing, or a second parent that boundary cut off,
+ * counting as a change — realm @nick/craft, node #701; a squash has none) and, with a date, from its base `b`, each to the merge's first parent — diffed from their merge-base, so
  * from `p` only the trunk's changes the branch lacked count, and nothing when `b` is the merge or after it. A date
  * later than today leaves the merge alone; one the trunk has no commit before prints `missing`, and git failing to
  * list the trunk before it `unreadable`, as the date's line does.
@@ -49,7 +50,9 @@ export function datedLine(d, day) {
  */
 function sinceMerge(d, day) {
   const [id, scope] = [shellWord(d.id), shellWord(d.scope)]
-  const branch = `p=$(git rev-parse "$m^@" 2>/dev/null) && p=$(printf '%s\\n' "$p" | sed -n 2p) && { [ -z "$p" ] || git diff --quiet "$p...$m^1" -- ${scope}; }`
+  const branch =
+    `p=$(git cat-file commit "$m" 2>/dev/null) && p=$(printf '%s\\n' "$p" | sed -n -e '/^$/q' -e 's/^parent //p' | sed -n 2p) && ` +
+    `{ [ -z "$p" ] || { git cat-file -e "$p^{commit}" 2>/dev/null && git diff --quiet "$p...$m^1" -- ${scope}; }; }`
   /** @type {Array<[string, string]>} */
   const dated = day
     ? [

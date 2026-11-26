@@ -37,7 +37,8 @@ const landed = (dir, file, text, date, subject) => {
  * A trunk on origin `git@github.com:owner/repo.git`: its root on 2026-05-01 08:00 UTC, before 2026-05-02 began
  * anywhere; #7 opened off it at 09:00 changing src/p.rs; #8 squashed on 2026-05-02 09:00 UTC, before 2026-05-03
  * began anywhere, changing src/a.rs; then #7 landing on 2026-05-04 as `how` says: `stale`, a merge commit of its
- * branch as it was opened; `rebased`, a merge commit of its branch rebased onto #8; `squashed`, one parent.
+ * branch as it was opened; `rebased`, a merge commit of its branch rebased onto #8; `squashed`, one parent, its
+ * message's body a line `parent of #9`.
  * @param {'stale' | 'rebased' | 'squashed'} how @param {(dir: string) => void} body
  */
 function inRepo(how, body) {
@@ -63,7 +64,8 @@ function inRepo(how, body) {
     }
     if (how === 'squashed') {
       git(dir, ['merge', '-q', '--squash', 'feat7'], merged)
-      git(dir, ['commit', '-qm', 'feat: p (#7)'], merged)
+      // A body line spelled like a parent header: only the header names parents.
+      git(dir, ['commit', '-q', '-m', 'feat: p (#7)', '-m', 'parent of #9'], merged)
     } else git(dir, ['merge', '-q', '--no-ff', '-m', 'Merge pull request #7 from owner/feat7', 'feat7'], merged)
     git(dir, ['update-ref', 'refs/remotes/origin/main', 'HEAD'], merged)
     body(dir)
@@ -153,9 +155,50 @@ test('scope script: git failing to list the trunk before a merged record’s dat
 
 test('scope script: git failing to read a merge’s parents counts as a change outside the pull request', () => {
   inRepo('stale', dir => {
-    failingGit("*'^@'*", env => {
+    failingGit('cat-file\\ commit\\ *', env => {
       const ds = records().filter(d => d.id.startsWith('p-'))
       assert.deepEqual(run(scopeCheckScript(ds), dir, env), ['p-dated 1 merge 7 between', 'p-after 1 merge 7 between'])
+    })
+  })
+})
+
+/**
+ * A `git clone --depth 1` of `dir`, its tip the landing of #7 and every commit before it cut off, origin named back
+ * to GitHub: what CI checks out right after a merge (realm @nick/craft, node #701).
+ * @param {string} dir @param {(clone: string) => void} body
+ */
+function shallow(dir, body) {
+  const parent = mkdtempSync(join(tmpdir(), 'craft-shallow-'))
+  try {
+    const late = '2026-05-11T00:00:00+0000'
+    const clone = join(parent, 'c')
+    git(parent, ['clone', '-q', '--depth', '1', `file://${dir}`, clone], late)
+    git(clone, ['remote', 'set-url', 'origin', 'git@github.com:owner/repo.git'], late)
+    body(clone)
+  } finally {
+    rmSync(parent, { recursive: true, force: true })
+  }
+}
+
+/** The records of a shallow clone: undated, dated after today, and dated after the merge. */
+const shallowRecords = () => records().filter(d => ['a-ahead', 'a-undated', 'p-after'].includes(d.id))
+
+test('scope script: in a shallow clone a merge whose second parent was cut off is changed outside the pull request', () => {
+  inRepo('stale', dir => {
+    shallow(dir, clone => {
+      assert.deepEqual(run(scopeCheckScript(shallowRecords()), clone), [
+        'a-ahead 1 merge 7 between',
+        'a-undated 1 merge 7 between',
+        'p-after 1 merge 7 between',
+      ])
+    })
+  })
+})
+
+test('scope script: in a shallow clone a squash has no branch, as in a full one, and its cut-off first parent is a change of its date’s window', () => {
+  inRepo('squashed', dir => {
+    shallow(dir, clone => {
+      assert.deepEqual(run(scopeCheckScript(shallowRecords()), clone), ['a-ahead 0 merge 7', 'a-undated 0 merge 7', 'p-after 1 merge 7 between'])
     })
   })
 })
