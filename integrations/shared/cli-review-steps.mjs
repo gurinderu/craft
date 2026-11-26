@@ -318,8 +318,8 @@ const BINARY_REFUSED = 1
 /**
  * Why the run stopped, where it stood only as the binary reports it (`standing`, '' when it reports none: the driver's
  * own count of steps is no round of the review; realm @nick/craft, node #485), and, whenever a run directory is known,
- * where it is and how to resume it: the account's limit often leaves no text at all, so no error but the harness's
- * refusal is told apart here.
+ * where it is and how to resume it: the account's limit often leaves no text at all, so no error is told apart here but
+ * the harness's refusal and the limit's note, which already says the run stopped.
  * @param {string} standing @param {{ error: string, harness?: string }} read @param {string} run  the run directory,
  *   '' when none is known @param {string} bin  the binary as the commands spell it
  * @returns {string}
