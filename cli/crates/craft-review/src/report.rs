@@ -485,7 +485,8 @@ fn skills_note(state: &RunState) -> Option<String> {
 fn degraded(state: &RunState, out: &mut String) {
     let skills = skills_note(state);
     let memory = state.memory.source.degraded_notes();
-    if state.degraded.is_empty() && skills.is_none() && memory.is_empty() {
+    let mutants = state.gate.mutants.degraded_note();
+    if state.degraded.is_empty() && skills.is_none() && memory.is_empty() && mutants.is_none() {
         return;
     }
     out.push_str("## Degraded\n\nThe host ran part of this review weaker than it asked:\n\n");
@@ -494,6 +495,7 @@ fn degraded(state: &RunState, out: &mut String) {
         .iter()
         .chain(skills.iter())
         .chain(memory.iter())
+        .chain(mutants.iter())
     {
         out.push_str(&format!("- {}\n", one_line(d)));
     }

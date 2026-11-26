@@ -55,8 +55,8 @@ pub(crate) enum Came {
     TimedOut { secs: u64 },
     /// The join asked it to stop.
     Stopped,
-    /// cargo-mutants found no mutant in the change's lines: it exits 0 and writes no
-    /// `mutants.out/` (27.1.0: `INFO No mutants to filter`).
+    /// cargo-mutants found no mutant in the change: it exits 0 and writes no `mutants.out/`
+    /// ([`NO_MUTANTS`]).
     NoMutants,
     /// It could not be started, or the request or the diff not read.
     Broken { message: String },
@@ -67,8 +67,14 @@ pub(crate) const RESULT: &str = "result.json";
 pub(crate) const STOP: &str = "stop";
 pub(crate) const ERR: &str = "worker.err";
 pub(crate) const DIFF: &str = "change.diff";
-/// What cargo-mutants 27.1.0 says on stderr when the diff holds no mutant.
-const NO_MUTANTS: &str = "No mutants to filter";
+/// What cargo-mutants 27.1.0 says on stderr, exiting 0 with no `mutants.out/`, when the diff
+/// holds no mutant: no mutant in its lines, no Rust source in it (a manifest-only change), or no
+/// line at all.
+const NO_MUTANTS: [&str; 3] = [
+    "No mutants to filter",
+    "Diff changes no Rust source files",
+    "Diff file is empty",
+];
 
 /// Runs the request in `dir` (the run's mutants directory) to its end and writes what it came to.
 ///
@@ -198,7 +204,7 @@ fn exited(code: Option<i32>, dir: &Path) -> Came {
     if err.contains("no such command") {
         return Came::Missing;
     }
-    if code == Some(0) && err.contains(NO_MUTANTS) {
+    if code == Some(0) && NO_MUTANTS.iter().any(|said| err.contains(said)) {
         return Came::NoMutants;
     }
     let last = super::super::check::last_line(&err);

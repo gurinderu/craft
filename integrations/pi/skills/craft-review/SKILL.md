@@ -42,7 +42,8 @@ How it runs:
 - It runs long (minutes to an hour on a large diff): give a bash call no timeout, or the longest
   one you can.
 - It writes under `~/.craft`, may fetch the craft binary from GitHub, builds and runs the
-  branch's code for the mechanical gate (`--no-gate` turns that off for a branch you do not
+  branch's code for the mechanical gate — on a Rust change also its test suite, once per mutant
+  of the changed lines, up to 10 minutes (`--no-gate` turns both off for a branch you do not
   trust), and starts `pi -p` processes that call the model with this pi installation's login.
   Those processes get no write or edit tool, but pi has no sandbox: their bash runs with your
   permissions.

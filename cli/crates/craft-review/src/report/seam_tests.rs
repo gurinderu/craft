@@ -130,6 +130,12 @@ fn a_mutants_run_that_fell_short_is_a_degraded_note() {
                 && n.contains("budget ran out after 600s")),
         "{notes:?}"
     );
+    let report = markdown(&s, "Warning");
+    let section = report.split("## Degraded").nth(1).unwrap_or_default();
+    assert!(
+        section.contains("the tests lens left to the mutants"),
+        "{report}"
+    );
 }
 
 const CUT: &str = "- 1 line(s) cut from every lens's prompt by its budget, in the whole list's file only: tools/z.rs:3\n";
