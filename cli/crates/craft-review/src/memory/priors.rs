@@ -7,13 +7,12 @@
 //! pairs it is asked about, and the scopes git observed for them, are kept in the run's state when
 //! its task is handed out ([`super::Asked`]) and read back with its answer, so git is asked once.
 
-use std::cell::OnceCell;
 use std::collections::BTreeSet;
 use std::path::Path;
 
 use serde_json::Value;
 
-use super::anchor::today;
+use super::anchor::{Repo, today};
 use super::{Memory, PriorDecision, RecordKind, apply, matching, rules};
 use crate::content::ContentError;
 use crate::git;
@@ -246,25 +245,30 @@ pub(super) fn scope_check(repo: &Path, ds: &[&PriorDecision]) -> apply::Scope {
     scope_check_on(repo, ds, &today())
 }
 
-/// [`scope_check`] with `today` the UTC date; the trunk resolved once, for the first dated record.
+/// [`scope_check`] with `today` the UTC date; the trunk and the origin resolved once, for the first
+/// record that needs them. A record whose base was its pull request's merge is named with it, so
+/// a changed scope is said to have changed since that merge (realm @nick/craft, node #682).
 pub(super) fn scope_check_on(repo: &Path, ds: &[&PriorDecision], today: &str) -> apply::Scope {
     let mut out = apply::Scope::default();
-    let trunk = OnceCell::new();
+    let repo = Repo::new(repo);
     for d in ds {
         let Some(anchor) = d.anchor() else {
             out.missing.insert(d.id.clone());
             continue;
         };
-        let resolved = || trunk.get_or_init(|| git::trunk(repo)).as_deref();
-        match anchor.base(repo, today, resolved) {
+        let base = match anchor.base(&repo, today) {
             Err(why) => {
                 out.missing.insert(d.id.clone());
                 out.why_missing.insert(d.id.clone(), anchor.unusable(why));
+                continue;
             }
-            Ok(base) if git::unchanged_since(repo, &base, &d.scope) => {
-                out.unchanged.insert(d.id.clone());
-            }
-            Ok(_) => {}
+            Ok(base) => base,
+        };
+        if let Some(n) = base.pull {
+            out.merged.insert(d.id.clone(), n);
+        }
+        if git::unchanged_since(repo.path, &base.commit, &d.scope) {
+            out.unchanged.insert(d.id.clone());
         }
     }
     out

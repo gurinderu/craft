@@ -69,7 +69,7 @@ pub(super) fn reraise_reason(f: &Value, d: &PriorDecision, scope: &Scope) -> Str
         return format!(
             "the code in {} changed since {} (or that could not be checked)",
             d.scope,
-            anchor.since()
+            scope.since(d, &anchor)
         );
     }
     String::new()

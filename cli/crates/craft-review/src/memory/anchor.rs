@@ -1,20 +1,52 @@
 //! What a record's scope check compares against (`decisionDate` in
-//! `integrations/shared/prior-decision-anchor.mjs`): its commit, else the UTC day its `when`
-//! names — a record written where no commit may be named still sets a finding aside when the
-//! code in its scope is unchanged since that day (realm @nick/craft, node #676).
-
-use std::path::Path;
+//! `integrations/shared/prior-decision-anchor.mjs`): its commit, else the merge on the trunk of
+//! the pull request of this repository it links (node #682), else the UTC day its `when` names — a
+//! record written where no commit may be named still sets a finding aside when the code in its
+//! scope is unchanged since that day (realm @nick/craft, node #676).
 
 use super::PriorDecision;
 use super::oppose::moment;
 use crate::git;
 
-/// A record's anchor: the commit it names, or the UTC day it was made.
+mod pull;
+
+pub use pull::Pull;
+pub(crate) use pull::Repo;
+pub(super) use pull::pulls;
+
+/// A record's anchor: the commit it names; with none, the pull requests it links, its UTC day
+/// beside them when it names one; or that day alone.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Anchor<'a> {
     Commit(&'a str),
+    Merge {
+        pulls: &'a [Pull],
+        day: Option<String>,
+    },
     Date(String),
 }
+
+/// The commit a record's scope is diffed against, and the pull request whose merge it is.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Base {
+    pub(crate) commit: String,
+    pub(crate) pull: Option<u64>,
+}
+
+impl Base {
+    fn at(commit: String) -> Self {
+        Self { commit, pull: None }
+    }
+}
+
+/// What a scope is said to have changed since when its base was the merge of pull request `n`.
+pub(crate) fn since_merge(n: u64) -> String {
+    format!("the merge of PR #{n}")
+}
+
+/// Why a record anchored by its pull requests alone names nothing to compare against.
+const UNMERGED: &str = "no pull request of this repository it links is merged on the trunk, and \
+                        it records no date — raised normally";
 
 /// Why a record's anchor names no commit to diff its scope against, each as the scope-check line
 /// of `scopeCheckScript` prints it after the record's id.
@@ -28,6 +60,8 @@ pub(crate) enum Unusable {
     NoTrunk,
     /// git failed listing the trunk's commits.
     Unreadable,
+    /// No pull request it links was merged on the trunk, and it names no date to fall back on.
+    Unmerged,
 }
 
 impl Unusable {
@@ -39,27 +73,37 @@ impl Unusable {
             "future" => Some(Self::Future),
             "no-trunk" => Some(Self::NoTrunk),
             "unreadable" => Some(Self::Unreadable),
+            "unmerged" => Some(Self::Unmerged),
             _ => None,
         }
     }
 }
 
 impl PriorDecision {
-    /// What its scope is compared against; `None` when it names no commit and no calendar date.
+    /// What its scope is compared against; `None` when it names no commit, links no pull request
+    /// and names no calendar date.
     pub(crate) fn anchor(&self) -> Option<Anchor<'_>> {
         if !self.commit.is_empty() {
             return Some(Anchor::Commit(&self.commit));
         }
-        calendar_date(&self.when).map(Anchor::Date)
+        let day = calendar_date(&self.when);
+        if !self.pulls.is_empty() {
+            let pulls = &self.pulls;
+            return Some(Anchor::Merge { pulls, day });
+        }
+        day.map(Anchor::Date)
     }
 }
 
 impl Anchor<'_> {
-    /// What the scope is said to have changed since.
+    /// What the scope is said to have changed since when its base was not a pull request's merge.
     pub(crate) fn since(&self) -> String {
         match self {
             Anchor::Commit(c) => (*c).to_owned(),
-            Anchor::Date(day) => format!("the decision date {day}"),
+            Anchor::Date(day) | Anchor::Merge { day: Some(day), .. } => {
+                format!("the decision date {day}")
+            }
+            Anchor::Merge { day: None, .. } => "a merge on the trunk".into(),
         }
     }
 
@@ -74,7 +118,8 @@ impl Anchor<'_> {
             Anchor::Commit(c) => {
                 return format!("commit {c} not found in this repo — raised normally");
             }
-            Anchor::Date(day) => day,
+            Anchor::Date(day) | Anchor::Merge { day: Some(day), .. } => day,
+            Anchor::Merge { day: None, .. } => return UNMERGED.into(),
         };
         match why {
             Unusable::Missing => {
@@ -91,38 +136,43 @@ impl Anchor<'_> {
                 "git could not list the trunk's commits before the decision date {day} — raised \
                  normally"
             ),
+            Unusable::Unmerged => UNMERGED.into(),
         }
     }
 
     /// The commit the scope is diffed against in `repo`, `today` being the UTC date: the anchor's
-    /// own when the repository has it. For a date, the last commit before that day began anywhere
-    /// (00:00 at +14:00) on the first-parent line of the trunk's tip, `trunk` resolving it when
-    /// asked — not over `HEAD`'s history nor from where `HEAD` forks from the trunk, where a
-    /// branch's backdated commit, or a side branch's commit dated before the day but merged after
-    /// it, would be the base and hide a later change of the scope. Diffed against the working
-    /// tree, the change's own edits of the scope and any trunk commit the checkout lacks thus count
-    /// as after the record (realm @nick/craft, node #676). A date later than `today` anchors
-    /// nothing.
-    pub(crate) fn base<'t>(
-        &self,
-        repo: &Path,
-        today: &str,
-        trunk: impl FnOnce() -> Option<&'t str>,
-    ) -> Result<String, Unusable> {
+    /// own when the repository has it. For pull requests, the merge on the trunk of the first of
+    /// this repository ([`Repo::merge`]); none found, the date beside them as for a date (realm
+    /// @nick/craft, node #682). For a date, the last commit before that day began anywhere (00:00
+    /// at +14:00) on the first-parent line of the trunk's tip — not over `HEAD`'s history nor from
+    /// where `HEAD` forks from the trunk, where a branch's backdated commit, or a side branch's
+    /// commit dated before the day but merged after it, would be the base and hide a later change
+    /// of the scope. Diffed against the working tree, the change's own edits of the scope and any
+    /// trunk commit the checkout lacks thus count as after the record (realm @nick/craft, node
+    /// #676). A date later than `today` anchors nothing.
+    pub(crate) fn base(&self, repo: &Repo<'_>, today: &str) -> Result<Base, Unusable> {
         let day = match self {
             Anchor::Commit(c) => {
-                return git::has_commit(repo, c)
-                    .then(|| (*c).to_owned())
+                return git::has_commit(repo.path, c)
+                    .then(|| Base::at((*c).to_owned()))
                     .ok_or(Unusable::Missing);
+            }
+            Anchor::Merge { pulls, day } => {
+                if let Some((commit, n)) = repo.merge(pulls) {
+                    let pull = Some(n);
+                    return Ok(Base { commit, pull });
+                }
+                day.as_ref().ok_or(Unusable::Unmerged)?
             }
             Anchor::Date(day) => day,
         };
         if day.as_str() > today {
             return Err(Unusable::Future);
         }
-        let tip = trunk().ok_or(Unusable::NoTrunk)?;
-        git::last_before(repo, tip, day)
+        let tip = repo.trunk().ok_or(Unusable::NoTrunk)?;
+        git::last_before(repo.path, tip, day)
             .map_err(|_said_by_git| Unusable::Unreadable)?
+            .map(Base::at)
             .ok_or(Unusable::Missing)
     }
 }

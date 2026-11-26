@@ -24,7 +24,9 @@ SKILL.md's ("Choosing the backend"); this file only says how to write and search
   (`craft_kind:decision`) or observations, whichever the tool accepts, never under another name;
   `links` as relations when the tool has them, else as text. `craft_date` is the record's `date`,
   written by each record or re-record and by nothing else: the server's own modified time moves
-  with any edit of the item, and a review checks a record that names no commit against its date.
+  with any edit of the item, and a review checks a record that names no commit against the merge of
+  the pull request its `links` give, else against its date — so a record of a pull request's
+  finding keeps that pull request's URL among its links.
 - **Recall searches both spellings**: records written before these keys were fixed may carry them
   bare (`kind`, `id`, `scope`, `status`, …). Search and filter by the `craft_` key **and** the bare
   one (`craft_kind:decision` or `kind:decision`), never by one alone, and hand the record on with the

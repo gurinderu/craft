@@ -177,8 +177,8 @@ test('scope agent: its schema requires the unusable anchors with their word, and
   assert.ok(SCOPE_CHECK_SCHEMA.required.includes('unusable'))
   const items = SCOPE_CHECK_SCHEMA.properties.unusable.items
   assert.deepEqual(items.required, ['id', 'word'])
-  assert.deepEqual(items.properties.word.enum, ['future', 'no-trunk', 'unreadable'])
+  assert.deepEqual(items.properties.word.enum, ['future', 'no-trunk', 'unreadable', 'unmerged'])
   const prompt = scopeCheckPrompt(parsed({}))
-  assert.match(prompt, /unusable: \[\{id, word\} for every id printed with the word future, no-trunk or unreadable\]/)
+  assert.match(prompt, /unusable: \[\{id, word\} for every id printed with the word future, no-trunk, unreadable or unmerged\]/)
   assert.ok(prompt.includes(scopeCheckScript(parsed({}))), 'the prompt carries the lines to run')
 })

@@ -1,7 +1,7 @@
 use super::{Anchor, Unusable, calendar_date};
 use crate::memory::PriorDecision;
 
-mod repo;
+pub(in crate::memory::anchor) mod repo;
 
 pub(super) fn record(id: &str, scope: &str, commit: &str, when: &str) -> PriorDecision {
     PriorDecision {
@@ -190,4 +190,77 @@ fn a_date_no_commit_precedes_is_named_once_however_many_findings_it_answers() {
     assert_eq!(out.reraised, 3);
     let ahead = out.kept.last().unwrap()["why"].as_str().unwrap();
     assert!(ahead.ends_with("raised again: the decision date 2099-01-01 is in the future, so no commit precedes it — raised normally."), "{ahead}");
+}
+
+#[test]
+fn a_pull_request_it_links_anchors_a_record_without_a_commit_its_date_beside_it() {
+    let raw = serde_json::json!({"id": "decision-p", "title": "t", "reason": "r", "scope": "src", "when": "2026-05-01", "links": ["https://github.com/o/r/pull/7#r1", "https://github.com/o/r/pull/8"]});
+    let d = crate::memory::record::read(&raw, "decision #0").unwrap();
+    let pulls = [
+        super::Pull {
+            repo: "o/r".into(),
+            number: 7,
+        },
+        super::Pull {
+            repo: "o/r".into(),
+            number: 8,
+        },
+    ];
+    assert_eq!(d.pulls, pulls);
+    let day = Some("2026-05-01".to_owned());
+    assert_eq!(d.anchor(), Some(Anchor::Merge { pulls: &pulls, day }));
+    let undated = PriorDecision {
+        when: "soon".into(),
+        ..d.clone()
+    };
+    assert_eq!(
+        undated.anchor(),
+        Some(Anchor::Merge {
+            pulls: &pulls,
+            day: None
+        })
+    );
+    let committed = PriorDecision {
+        commit: "abc1234".into(),
+        ..d.clone()
+    };
+    assert_eq!(committed.anchor(), Some(Anchor::Commit("abc1234")));
+    // Read back from a run's state as it was written, and absent from one with no pull request.
+    let back: PriorDecision = serde_json::from_value(serde_json::to_value(&d).unwrap()).unwrap();
+    assert_eq!(back, d);
+    let plain = record("x", "src", "", "2026-05-01");
+    assert!(serde_json::to_value(&plain).unwrap().get("pulls").is_none());
+}
+
+#[test]
+fn a_pull_request_anchor_says_its_dates_words_where_no_merge_is_found_and_with_no_date_why() {
+    let pulls = [super::Pull {
+        repo: "o/r".into(),
+        number: 7,
+    }];
+    let day = Some("2026-05-01".to_owned());
+    let dated = Anchor::Merge { pulls: &pulls, day };
+    assert_eq!(dated.since(), "the decision date 2026-05-01");
+    let date = Anchor::Date("2026-05-01".into());
+    for why in [
+        Unusable::Missing,
+        Unusable::Future,
+        Unusable::NoTrunk,
+        Unusable::Unreadable,
+    ] {
+        assert_eq!(dated.unusable(why), date.unusable(why));
+    }
+    let unmerged = "no pull request of this repository it links is merged on the trunk, and it \
+                    records no date — raised normally";
+    let bare = Anchor::Merge {
+        pulls: &pulls,
+        day: None,
+    };
+    for why in [Unusable::Missing, Unusable::Unmerged] {
+        assert_eq!(bare.unusable(why), unmerged);
+    }
+    assert_eq!(dated.unusable(Unusable::Unmerged), unmerged);
+    assert_eq!(bare.since(), "a merge on the trunk");
+    assert_eq!(Unusable::from_word("unmerged"), Some(Unusable::Unmerged));
+    assert_eq!(super::since_merge(7), "the merge of PR #7");
 }

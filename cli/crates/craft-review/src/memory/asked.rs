@@ -27,7 +27,8 @@ impl Asked {
 
 /// The match stage as it was prepared: the records git saw unchanged in their scope since their
 /// anchor, those whose anchor the repository holds no commit for, why where that is other than
-/// missing ([`super::Scope`]), and the (finding, record) pairs asked.
+/// missing, the pull request whose merge a record was compared against ([`super::Scope`]), and
+/// the (finding, record) pairs asked.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct MatchAsked {
@@ -35,5 +36,7 @@ pub struct MatchAsked {
     pub missing: BTreeSet<String>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub why_missing: BTreeMap<String, String>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub merged: BTreeMap<String, u64>,
     pub pairs: Vec<(usize, usize)>,
 }

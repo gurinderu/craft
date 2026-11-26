@@ -105,3 +105,44 @@ fn why_a_dated_record_is_missing_is_kept_for_it_and_handed_only_with_it() {
     assert_eq!(again.why_missing.get("decision-d"), Some(&why));
     assert!(seen.scope(d.path(), &[&kept]).why_missing.is_empty());
 }
+
+#[test]
+fn the_pull_request_whose_merge_a_record_was_checked_since_is_kept_for_it_and_handed_only_with_it()
+{
+    let d = tempfile::tempdir().unwrap();
+    git(d.path(), &["init", "-q"]);
+    git(
+        d.path(),
+        &["remote", "add", "origin", "git@github.com:o/r.git"],
+    );
+    std::fs::create_dir(d.path().join("src")).unwrap();
+    std::fs::write(d.path().join("src/a.rs"), "fn a() {}\n").unwrap();
+    git(d.path(), &["add", "."]);
+    git(d.path(), &["commit", "-qm", "feat: a (#3)"]);
+    git(
+        d.path(),
+        &["update-ref", "refs/remotes/origin/main", "HEAD"],
+    );
+    let linked = PriorDecision {
+        pulls: vec![craft_review::memory::Pull {
+            repo: "o/r".into(),
+            number: 3,
+        }],
+        ..record("decision-p", "")
+    };
+    let other = record("decision-a", &git(d.path(), &["rev-parse", "HEAD"]));
+    let mut seen = Seen::default();
+    let s = seen.scope(d.path(), &[&linked, &other]);
+    assert_eq!(s.merged.get("decision-p"), Some(&3));
+    assert!(s.unchanged.contains("decision-p"));
+    let state = serde_json::to_value(&seen).unwrap();
+    assert_eq!(state["merged"], serde_json::json!({"decision-p": 3}));
+    let mut back: Seen = serde_json::from_value(state).unwrap();
+    assert_eq!(
+        back.scope(d.path(), &[&linked]).merged.get("decision-p"),
+        Some(&3)
+    );
+    assert!(back.scope(d.path(), &[&other]).merged.is_empty());
+    let none = serde_json::to_value(Seen::default()).unwrap();
+    assert!(none.get("merged").is_none(), "{none}");
+}

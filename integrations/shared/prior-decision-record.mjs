@@ -34,7 +34,10 @@ export const DECISION_FIELD_MAX = { id: 80, title: 200, scope: 300, reason: 1200
  * `toolRule`: the gate tool's own rule name its finding fired (a clippy lint, a semgrep rule id…), beside them (realm @nick/craft, node #236).
  * `overrides`: the ids of the successors an overriding passed record was applied over (realm
  * @nick/craft, node #229) — set by the engine's merge, so the record is tried before them.
- * @typedef {{ id: string, title: string, scope: string, reason: string, who: string, when: string, link: string, commit: string, kind: 'decision' | 'question' | 'rule', deferred: boolean, supersedes: string[], stores?: string[], derived?: true, line?: number, lens?: string, toolRule?: string, overrides?: string[], decidedBy?: string }} PriorDecision
+ * `pulls`: the GitHub pull requests its links name, in their order (pullLinks; realm @nick/craft, node #682);
+ * present only when there is one.
+ * @typedef {{ repo: string, number: number }} Pull
+ * @typedef {{ id: string, title: string, scope: string, reason: string, who: string, when: string, link: string, commit: string, kind: 'decision' | 'question' | 'rule', deferred: boolean, supersedes: string[], stores?: string[], pulls?: Pull[], derived?: true, line?: number, lens?: string, toolRule?: string, overrides?: string[], decidedBy?: string }} PriorDecision
  */
 
 // The longest lens a record may name, and the longest toolRule.
@@ -128,6 +131,22 @@ export function linkedIds(links, re) {
   })
 }
 
+// A GitHub pull request URL: owner, name and number, whatever follows after `/`, `#` or `?`.
+const PULL_URL = /^https:\/\/github\.com\/([a-z0-9._-]+)\/([a-z0-9._-]+)\/pull\/([1-9]\d{0,8})(?:[/#?]|$)/i
+
+/**
+ * The pull requests a record's links name, in their order: each `https://github.com/<owner>/<name>/pull/<N>`,
+ * its repository `owner/name` lower-cased — what anchors a record naming no commit at the request's merge on
+ * the trunk when origin names that repository (realm @nick/craft, node #682).
+ * @param {unknown[]} links @returns {Pull[]}
+ */
+export function pullLinks(links) {
+  return links.flatMap(l => {
+    const m = PULL_URL.exec(decisionText(l))
+    return m ? [{ repo: `${m[1]}/${m[2]}`.toLowerCase(), number: Number(m[3]) }] : []
+  })
+}
+
 /**
  * The decision's fields as strings, trimmed. A memory record (skills/memory) is read as it is
  * recalled: `body`, `date` and `author` stand in for `reason`, `when` and `who`, and the first
@@ -142,6 +161,7 @@ export function decisionFields(o) {
   const url = decisionText(links.find(l => /^https?:\/\//.test(decisionText(l))))
   const derived = derivedRecordId(o)
   const stores = linkedIds(links, /^store:\s*(\S+)$/i)
+  const pulls = pullLinks(links)
   const split = scopeLine(f('scope'))
   return {
     id: f('id') || derived,
@@ -156,6 +176,7 @@ export function decisionFields(o) {
     deferred: o['deferred'] === true,
     supersedes: supersededIds(links),
     ...(stores.length ? { stores } : {}),
+    ...(pulls.length ? { pulls } : {}),
     ...(derived ? { derived: /** @type {const} */ (true) } : {}),
     ...recordAnchor(o, split.line),
     ...(decisionText(o['decidedBy']) ? { decidedBy: decisionText(o['decidedBy']) } : {}),

@@ -57,14 +57,20 @@ that import — every active `external` record, every scope — and never pass t
 **A decision on a review finding** carries all of `author`, `decidedBy`, `commit` and a link to where it was
 made (the PR thread, the review comment): the review engine names them when it sets the finding
 aside, and it sets a finding aside only while the code in `scope` is unchanged since `commit`. A
-decision without a `commit` (a store that allows no commit hashes) is checked against its `date`
-instead: the code in `scope` unchanged since the last commit on the trunk (`origin/HEAD`, else
-`origin/main`, else `origin/master`), walked along first parents from its tip, before that day began
-anywhere (`YYYY-MM-DD`; a timestamp with a zone is taken as its UTC day). A commit made the same day,
-every commit of the change under review, and any trunk commit the checkout lacks count as after it; a
-date later than today, or a repository with no `origin/HEAD`, `origin/main` or `origin/master`, checks
-nothing. With
-neither a `commit` nor a `date`, a review raises its finding again every time.
+record of a finding raised on a pull request carries that pull request's URL in `links`
+(`https://github.com/<owner>/<repo>/pull/<N>`, a `#…` or `/files` after it as you found it). A
+decision without a `commit` (a store that allows no commit hashes) is anchored, in this order: at the
+merge of the first pull request of this repository (the one `origin` names) its `links` give — the
+newest commit on the trunk (`origin/HEAD`, else `origin/main`, else `origin/master`), walked along
+first parents from its tip, whose subject is GitHub's `Merge pull request #<N> from …` or ends
+`(#<N>)` —, so a rejection of a finding in code that pull request itself adds holds once it is merged
+and until that code changes; with no such merge on the trunk (not merged yet, merged elsewhere,
+history cut short), at its `date`: the code in `scope` unchanged since the last commit on the trunk,
+walked the same way, before that day began anywhere (`YYYY-MM-DD`; a timestamp with a zone is taken
+as its UTC day). A commit made the same day, every commit of the change under review, and any trunk
+commit the checkout lacks count as after it; a date later than today, or a repository with no
+`origin/HEAD`, `origin/main` or `origin/master`, checks nothing. With neither a `commit`, a merged
+pull request nor a `date`, a review raises its finding again every time.
 The title is the finding's title as the review printed it — for a gate tool's finding without `toolRule`, as the report lists it under **Tool finding titles (verbatim)** at its `file:line` (none listed: the review ledger row's title only when it holds exactly one live such row at that `file:line` (live: `disposition` other than `closed` — a `closed` row is a tombstone and does not count), never a pick between several; else the report line, which then goes to the judge each round) — never from a refusal note, which clips it; `line`, `lens` and `toolRule` are the
 finding's anchor. The review rewords titles every round, so the engine matches a record to a finding by its
 file inside `scope`, its line and its lens: within 3 lines and the same lens it matches outright;
@@ -265,10 +271,11 @@ passing to stand in for the engine's recall.
    decision (`decidedBy: "human"` on a decision that records no deferral; an `agent` decision, one
    without the field — every record written before it — and a deferral never set a High aside) or a
    project rule (above), when the code in
-   the decision's scope changed since its `commit` (with no `commit`, since the trunk's last commit
-   before its `date`), when the decision has neither, or when the repository does not know that
-   `commit` (a squash-merged branch, another clone), holds no trunk commit before that `date`, has no
-   `origin/HEAD`, `origin/main` or `origin/master`, or the `date` is later than today — each named
+   the decision's scope changed since its `commit` (with no `commit`, since the merge of the pull
+   request its `links` give, else since the trunk's last commit before its `date`), when the decision
+   has none of them, or when the repository does not know that `commit` (a squash-merged branch,
+   another clone), holds no trunk commit before that `date`, has no `origin/HEAD`, `origin/main` or
+   `origin/master`, or the `date` is later than today — each named
    under **Prior decisions not applied**. A High a human's decision sets aside, its code unchanged since
    that `commit`, is listed under its own **High rejected by a human** section with who, when, why
    and the link, outside the verdict.

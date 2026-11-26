@@ -16,7 +16,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::{Value, json};
 
-use super::anchor::Anchor;
+use super::anchor::{Anchor, since_merge};
 use super::judge;
 use super::matching::{self, Match};
 use super::{PriorDecision, RecordKind};
@@ -34,15 +34,25 @@ pub(super) use section::{refused_section, section};
 
 /// What the scope check observed: the records whose scope is unchanged since their anchor, those
 /// whose anchor the repository holds no commit for, and, by id, why where that is other than the
-/// commit or a commit before the date missing (a future date, no trunk, git failing).
+/// commit or a commit before the date missing (a future date, no trunk, git failing), and the pull
+/// request whose merge a record's scope was compared against (realm @nick/craft, node #682).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Scope {
     pub unchanged: BTreeSet<String>,
     pub missing: BTreeSet<String>,
     pub why_missing: BTreeMap<String, String>,
+    pub merged: BTreeMap<String, u64>,
 }
 
 impl Scope {
+    /// What `d`'s scope, anchored at `a`, is said to have changed since: the merge it was compared
+    /// against, else what the anchor names.
+    fn since(&self, d: &PriorDecision, a: &Anchor<'_>) -> String {
+        self.merged
+            .get(&d.id)
+            .map_or_else(|| a.since(), |n| since_merge(*n))
+    }
+
     /// Why `d`, anchored at `a`, is missing.
     fn missing_why(&self, d: &PriorDecision, a: &Anchor<'_>) -> String {
         self.why_missing

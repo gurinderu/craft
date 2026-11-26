@@ -188,6 +188,43 @@ pub fn last_before(cwd: &Path, tip: &str, day: &str) -> Result<Option<String>, G
     Ok((!commit.is_empty()).then(|| commit.to_owned()))
 }
 
+/// The newest commit on `tip`'s first-parent line whose subject names pull request `pr` as GitHub
+/// merges it — `Merge pull request #<pr> from …`, or a squash or rebase subject ending `(#<pr>)` —
+/// as `git log --first-parent --no-show-signature --format='%H %s' <tip>` lists them; `None` when
+/// none does (realm @nick/craft, node #682).
+///
+/// # Errors
+/// When `tip` is spelled as an option or `git` fails.
+pub fn merge_of(cwd: &Path, tip: &str, pr: u64) -> Result<Option<String>, GitError> {
+    not_an_option(cwd, &[tip])?;
+    let args = [
+        "log",
+        "--first-parent",
+        "--no-show-signature",
+        "--format=%H %s",
+        tip,
+    ];
+    let out = git_bytes(cwd, &args)?;
+    let (merged, squashed) = (
+        format!("Merge pull request #{pr} from "),
+        format!("(#{pr})"),
+    );
+    Ok(String::from_utf8_lossy(&out).lines().find_map(|l| {
+        let (hash, subject) = l.split_once(' ')?;
+        let hex = hash.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'));
+        (hex && (subject.starts_with(&merged) || subject.ends_with(&squashed)))
+            .then(|| hash.to_owned())
+    }))
+}
+
+/// The URL of the `origin` remote, lower-cased, as `git remote get-url origin` prints it; `None`
+/// when there is none.
+#[must_use]
+pub fn origin_url(cwd: &Path) -> Option<String> {
+    let url = git(cwd, &["remote", "get-url", "origin"]).ok()?;
+    Some(url.trim_end_matches('\n').to_ascii_lowercase())
+}
+
 /// Whether the code in `scope`, a repository-relative path, is unchanged since `commit`, the
 /// working tree included, as `git diff --quiet <commit> -- <scope>` answers from the repository's
 /// top level — a pathspec git reads from a subdirectory would name another path; false when git
