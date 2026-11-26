@@ -1,5 +1,5 @@
-// The run store's writes as the JavaScript writer makes them — the binary's three requests (checkpoint, finalize,
-// publication) answered by integrations/shared/binary-filing-replay.mjs over integrations/shared/craft-log-run.mjs — held to the Rust writer
+// The run store's writes as the JavaScript writer makes them — the binary's four requests (checkpoint, finalize, a
+// record filed as its run built it, publication) answered by integrations/shared/binary-filing-replay.mjs over integrations/shared/craft-log-run.mjs — held to the Rust writer
 // (cli/crates/craft-store/tests/parity.rs) by one shared file, content/parity/store-cases.json: each case's requests in
 // a fresh repository and store, the answers, and every file the store holds afterwards, byte for byte, with the paths,
 // the commits and the writer's own commit put back as placeholders. Regenerate it with
@@ -115,6 +115,25 @@ const STEPS = [
 
 /** The run's identity as the binary kept it, its working copy gone: what a checkpoint names its branch by. */
 const KEPT = { repo: '<repo>-gone', gitDir: '<repo>/.git', head: '<head>' }
+
+// A record in the triage engine's fields (integrations/claude-code/src/triage-findings.js, whose shape
+// cli/crates/craft-triage/src/record.rs builds), its counts made up: the binary files it as is, the writer's own fields
+// stamped over it (realm @nick/craft, node #616).
+const TRIAGE_RECORD = {
+  schemaVersion: 1,
+  runtime: 'claude-code',
+  craftVersion: '0.55.0',
+  kind: 'workflow',
+  name: 'triage-findings',
+  verdict: '',
+  findings: { total: 2, Critical: 0, High: 1, Medium: 1, Low: 0, Info: 0 },
+  nested: false,
+  via: null,
+  sources: [{ source: 'report', count: 2 }],
+  triage: { gathered: 2, validated: 2, accepted: 1, rejected: 1, sifted: { repeats: 0, decided: 0, deferred: 0, rule: 0 }, issues: 0 },
+  memory: { source: 'none', count: 0, why: 'no store' },
+  notRun: [],
+}
 
 /**
  * The cases: each a repository kind and its requests, `<runDir>` the directory the last checkpoint named.
@@ -257,6 +276,17 @@ const CASES = [
       ['checkpoint', { start: true, steps: [] }],
       ['write', { path: '<runDir>/.recovered-live', text: '<store>/2026-03-04T05-00-00Z-workflow-review.json\n' }],
       ['finalize', { step: STEP, steps: STEPS, dir: '<runDir>', retry: false }],
+    ],
+  },
+  {
+    name: "a triage's record filed as built, sent again as a retry, and a request with no record",
+    repo: 'dirty',
+    calls: [
+      ['record', { record: TRIAGE_RECORD, retry: false }],
+      ['record', { record: TRIAGE_RECORD, retry: true }],
+      // Another run's identical record, not a retry: filed again, its own detail and index line.
+      ['record', { record: TRIAGE_RECORD, retry: false }],
+      ['record', { retry: false }],
     ],
   },
   {

@@ -387,7 +387,7 @@ pub fn gate(args: &GateArgs) -> Result<ExitCode> {
 }
 
 /// The harness session the host runs in, stamped on the run's telemetry.
-fn session() -> String {
+pub(crate) fn session() -> String {
     std::env::var("CLAUDE_CODE_SESSION_ID").unwrap_or_default()
 }
 

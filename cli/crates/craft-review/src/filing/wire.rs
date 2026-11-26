@@ -107,7 +107,7 @@ pub struct Call<'a> {
     pub run: &'a Path,
     /// craft's plugin root, whose commit the record is stamped with; `""` when the run knows none.
     pub root: &'a str,
-    /// `checkpoint`, `finalize` or `publication`.
+    /// `checkpoint`, `finalize`, `record` (a record filed as its run built it) or `publication`.
     pub command: &'a str,
     pub request: &'a Value,
 }

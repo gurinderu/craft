@@ -1,15 +1,17 @@
 //! `craft triage start | submit | status`: the triage of review findings on the step protocol
-//! (`craft_triage::step`; realm @nick/craft, node #616), each step printed as one JSON line.
+//! (`craft_triage::step`; realm @nick/craft, node #616), each step printed as one JSON line; a
+//! run started with `--record` files its record in the run store itself when it ends.
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use clap::Subcommand;
-use craft_triage::run::Args;
+use craft_triage::run::{Args, Recording};
 use craft_triage::step::{self, StartOptions};
 
-use crate::steps::{default_run_dir, given_answers, json_input, print};
+use crate::filing_worker::BoundedWriter;
+use crate::steps::{default_run_dir, filing_root, given_answers, json_input, print, session};
 
 #[derive(Subcommand)]
 pub enum TriageCommand {
@@ -50,6 +52,15 @@ pub struct StartArgs {
     /// The launcher's records (`priorDecisions`), as a file or `-`.
     #[arg(long)]
     pub prior_decisions: Option<PathBuf>,
+    /// File the run's record under this craft version, as the triage engine's own run: written
+    /// into the run store (`~/.craft/runs`) by the binary itself when the run ends. Absent,
+    /// nothing is filed.
+    #[arg(long, value_name = "CRAFT_VERSION")]
+    pub record: Option<String>,
+    /// The craft plugin root the record is stamped with (`craftCommit`), when it is not the one
+    /// above the binary.
+    #[arg(long, requires = "record")]
+    pub record_root: Option<PathBuf>,
 }
 
 #[derive(Debug, clap::Args)]
@@ -77,7 +88,12 @@ pub fn triage(cmd: &TriageCommand) -> Result<ExitCode> {
         TriageCommand::Start(a) => start(a)?,
         TriageCommand::Submit(a) => {
             let given = a.answers.as_deref().map(given_answers).transpose()?;
-            step::submit(&absolute(&a.run)?, given.as_ref(), &a.degraded)?
+            step::submit(
+                &absolute(&a.run)?,
+                given.as_ref(),
+                &a.degraded,
+                &BoundedWriter,
+            )?
         }
         TriageCommand::Status(a) => step::status(&absolute(&a.run)?)?,
     })
@@ -120,12 +136,22 @@ fn start(a: &StartArgs) -> Result<serde_json::Value> {
             .prior_decisions
             .as_deref()
             .map(|p| json_input(p).map_err(|e| format!("{e:#}"))),
-        craft_version: env!("CARGO_PKG_VERSION").into(),
+        craft_version: a
+            .record
+            .clone()
+            .unwrap_or_else(|| env!("CARGO_PKG_VERSION").into()),
+        record: a.record.as_ref().map(|_| Recording {
+            root: filing_root(a.record_root.as_deref()).unwrap_or_default(),
+            session: session(),
+        }),
     };
     let run_dir = absolute(&run_dir)?;
-    Ok(step::start(&StartOptions {
-        cwd: a.cwd.clone(),
-        run_dir,
-        args,
-    })?)
+    Ok(step::start(
+        &StartOptions {
+            cwd: a.cwd.clone(),
+            run_dir,
+            args,
+        },
+        &BoundedWriter,
+    )?)
 }

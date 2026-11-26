@@ -43,6 +43,18 @@ pub struct Args {
     pub prior_decisions: Option<Result<Value, String>>,
     /// The craft release that runs it, for its record.
     pub craft_version: String,
+    /// Where the binary files its record (`start --record`); none, and nothing is filed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub record: Option<Recording>,
+}
+
+/// What the binary files the run's record with: the craft plugin root its `craftCommit` is read
+/// off ("" none) and the host session it names ("" none).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Recording {
+    pub root: String,
+    pub session: String,
 }
 
 /// Where a run stands: the phase whose agents it waits on.

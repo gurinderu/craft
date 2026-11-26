@@ -1,5 +1,5 @@
 //! The run's end: the ledger the record tallies pins every row this side settled; the plan is led
-//! by its banners.
+//! by its banners, the record that did not land among them once it was filed.
 
 use craft_store::js::Js;
 
@@ -15,12 +15,32 @@ use super::plan::facts;
 use super::sift::Sift;
 use super::validate::Validated;
 
-/// The finished run: the record it files and the plan it returns — the plan agent's answer led by
-/// its banners, or the failure's text when the plan agent gave none.
+/// The finished run: the record it files and what its plan is built from — the plan agent's answer
+/// and its banners, or none when the plan agent gave none.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Finished {
     pub record: Js,
-    pub plan: Js,
+    planned: Option<Plan>,
+    banners: Banners,
+}
+
+impl Finished {
+    /// The plan it returns, `lost` the run's telemetry writes that did not land (`<what> — <why>`):
+    /// the plan agent's answer led by its banners — a lost write's section above them all — or the
+    /// failure's text after that section, as `triage-findings.js` files the record before it.
+    #[must_use]
+    pub fn plan(&self, lost: &[String]) -> Js {
+        let section = craft_store::lost::section(lost);
+        let Some(p) = &self.planned else {
+            return Js::str(banner::failed(&section));
+        };
+        let b = Banners {
+            lost_section: section,
+            telemetry_lost: lost.to_vec(),
+            ..self.banners.clone()
+        };
+        Js::Obj(banner::bannered(p.clone(), &b).0)
+    }
 }
 
 /// The finished run from what its phases found and the plan agent's `answer`.
@@ -59,7 +79,8 @@ pub(super) fn finish(
     let Some(mut p) = planned else {
         return Finished {
             record,
-            plan: Js::str(banner::failed("")),
+            planned: None,
+            banners: Banners::default(),
         };
     };
     if p.rows().is_some() {
@@ -82,6 +103,7 @@ pub(super) fn finish(
     };
     Finished {
         record,
-        plan: Js::Obj(banner::bannered(p, &b).0),
+        planned: Some(p),
+        banners: b,
     }
 }
