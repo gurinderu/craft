@@ -233,6 +233,51 @@ mod tests {
         );
     }
 
+    /// Set when this test's binary runs again as a child: there the test writes one event through the process's
+    /// stderr, for the parent to read.
+    const WRITES_EVENT: &str = "CRAFT_TEST_EVENT_STREAM";
+
+    /// The child's side: one event, written as the binary writes it under `--delegate`.
+    fn writes_event() {
+        assert!(
+            Sink { json: true }.emitted(&Event::TaskCancelled { key: 1 }),
+            "the process's stderr took the event"
+        );
+    }
+
+    #[test]
+    fn an_event_leaves_through_the_process_stderr() {
+        if std::env::var_os(WRITES_EVENT).is_some() {
+            writes_event();
+            return;
+        }
+        // A write through the stderr handle passes the harness's capture, so only this test's own process has its
+        // bytes to read: the test runs again as a child. Its name spells no event's kind, which the harness prints.
+        let child = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "run::events::tests::an_event_leaves_through_the_process_stderr",
+            ])
+            .env(WRITES_EVENT, "1")
+            .output()
+            .unwrap();
+        let out = String::from_utf8_lossy(&child.stdout);
+        assert!(
+            child.status.success(),
+            "the child writing its event: {}\n{out}",
+            child.status
+        );
+        assert_eq!(
+            child.stderr.as_slice(),
+            b"{\"type\":\"task_cancelled\",\"key\":1}\n".as_slice(),
+            "the event, whole, on stderr"
+        );
+        assert!(
+            !out.contains("task_cancelled"),
+            "stdout is left to the answer:\n{out}"
+        );
+    }
+
     /// An event stream that takes `n` bytes more, then is gone: its reader stopped reading.
     struct GoneAfter(usize);
 
