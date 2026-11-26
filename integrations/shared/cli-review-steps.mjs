@@ -19,7 +19,7 @@ import { runClock } from './cli-review-clock.mjs'
 import { VALUE_REFUSED_CLASS, argumentProblem, viaName } from './cli-review-keys.mjs'
 import { readOptions } from './cli-review-options.mjs'
 import { MAX_ROUNDS, briefStatusCommand, commentCommand, startCommand, statusCommand, submitCommand } from './cli-review-commands.mjs'
-import { absolutePath, argumentRefused, commandOutput, isObject, readStep } from './cli-review-step.mjs'
+import { STOPPED, absolutePath, argumentRefused, commandOutput, isObject, readStep } from './cli-review-step.mjs'
 import { briefOf, endedOf, standingOf, statusUnreadable } from './cli-review-ended.mjs'
 import { harnessRefused, harnessStop } from './cli-review-refusal.mjs'
 import { gateAnswer, gateCommand, gateShell } from './cli-review-gate.mjs'
@@ -318,16 +318,19 @@ const BINARY_REFUSED = 1
 /**
  * Why the run stopped, where it stood only as the binary reports it (`standing`, '' when it reports none: the driver's
  * own count of steps is no round of the review; realm @nick/craft, node #485), and, whenever a run directory is known,
- * where it is and how to resume it: the account's limit often leaves no text at all, so no error but the harness's
- * refusal is told apart here.
+ * where it is and how to resume it: the account's limit often leaves no text at all, so no error is told apart here but
+ * the harness's refusal and the limit's note, which already says the run stopped.
  * @param {string} standing @param {{ error: string, harness?: string }} read @param {string} run  the run directory,
  *   '' when none is known @param {string} bin  the binary as the commands spell it
  * @returns {string}
  */
 function stoppedAt(standing, read, run, bin) {
-  const at = `review stopped${standing ? ` (the binary reports ${standing})` : ''}`
-  if (read.harness !== undefined) return `${at}: ${harnessStop(read.harness, bin, run)}`
-  return `${at}: ${read.error}.${run ? ` The run is in ${run}. ${resumeHint(run)}` : ''}`
+  const reports = standing ? ` (the binary reports ${standing})` : ''
+  if (read.harness !== undefined) return `review stopped${reports}: ${harnessStop(read.harness, bin, run)}`
+  // The limit's note says itself that the run stopped, in the words a parent reads a nested run's stop by
+  // (limitInReport): it is told once, as the binary's own line tells it (realm @nick/craft, node #688).
+  const said = read.error.startsWith(STOPPED) ? `${read.error}${reports}` : `review stopped${reports}: ${read.error}`
+  return `${said}.${run ? ` The run is in ${run}. ${resumeHint(run)}` : ''}`
 }
 
 /** @typedef {import('./cli-review-ended.mjs').Brief} Brief */

@@ -45,6 +45,9 @@ function isTask(t) {
 /** Why a service step's answer is no command output: it carried none. */
 export const NO_OUTPUT = 'the service agent returned no command output'
 
+/** How the limit's note opens: it says itself that the run stopped. */
+export const STOPPED = 'stopped: '
+
 /**
  * The command's output from a service answer, or why there is none; `harness` the refused command ('' unquoted) when
  * the harness's permission layer refused it before it ran (realm @nick/craft, node #479).
@@ -52,7 +55,7 @@ export const NO_OUTPUT = 'the service agent returned no command output'
  */
 export function commandOutput(got) {
   // The note a parent reads a nested run's stop by (limitInReport, integrations/shared/limit-report.mjs).
-  if (isObject(got) && typeof got['limit'] === 'string') return { error: `stopped: usage limit reached (${got['limit']})` }
+  if (isObject(got) && typeof got['limit'] === 'string') return { error: `${STOPPED}usage limit reached (${got['limit']})` }
   const refused = harnessRefusal(got)
   if (refused)
     return { error: `the harness's permission check refused the command, not craft: ${refused.command || 'it quoted none'}`, harness: refused.command }
