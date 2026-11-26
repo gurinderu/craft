@@ -254,11 +254,18 @@ async function paged(serve, label, title, bin, got) {
   })
 }
 
+/** How to continue when the released binary is not to be got: a local build stands in for it. */
+const LOCAL_BUILD = 'Pass craftBin=<absolute path> of a build (`cargo build --release` in cli/).'
+/**
+ * How to continue when the usage limit stopped the fetch: the limit is the account's, so a local build does not lift
+ * it — the review's own agents answer from the same account (realm @nick/craft, node #689).
+ */
+const AFTER_THE_LIMIT = "Run the review again once the limit resets: a local build does not lift the limit — the review's agents answer from the same account."
 /**
  * The binary to run and the plugin root to hand it: a given craftBin as is, with a given craftRoot checked first, or
  * the root located only to file the run through (`recordRoot`; `note` saying why none was) — the prompts keep the
  * binary's own, so a local build is not run with another plugin's content; otherwise this version's released binary
- * fetched, with the root its fetcher was found in.
+ * fetched, with the root its fetcher was found in — or why it was not got, with how to continue by its cause.
  * @param {Options} o @param {string} craftVersion @param {Serve} serve
  * @returns {Promise<{ bin: string, root: string, recordRoot?: string, note?: string } | { incomplete: string, cause: import('./cli-review-stop.mjs').StopCause }>}
  */
@@ -267,12 +274,14 @@ async function binAndRoot(o, craftVersion, serve) {
     const fetched = resolvedBin(await serve('step:resolve', 'Start', resolvePrompt(o, craftVersion)))
     if ('harness' in fetched)
       return { incomplete: `review could not get the craft binary ${craftVersion}: ${harnessRefused(fetched.harness, null)}`, cause: 'harness' }
-    return 'error' in fetched
-      ? {
-          incomplete: `review could not get the craft binary ${craftVersion}: ${fetched.error}. Pass craftBin=<absolute path> of a build (\`cargo build --release\` in cli/).`,
-          cause: stopCause(fetched, 'start'),
-        }
-      : fetched
+    if ('error' in fetched) {
+      const cause = stopCause(fetched, 'start')
+      return {
+        incomplete: `review could not get the craft binary ${craftVersion}: ${fetched.error}. ${cause === 'limit' ? AFTER_THE_LIMIT : LOCAL_BUILD}`,
+        cause,
+      }
+    }
+    return fetched
   }
   if (!o.craftRoot) {
     const located = checkedRoot(await serve('step:locate', 'Start', locatePrompt(o, craftVersion)))

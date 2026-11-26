@@ -428,6 +428,18 @@ test('a fetch that fails or prints no absolute path ends the run INCOMPLETE befo
   assert.match(verdictOf(rootless), /^⚠️ INCOMPLETE — .*no absolute root= and bin= lines/, 'a binary path without the root is not enough')
 })
 
+test('a fetch the usage limit stopped says to run the review again after the reset, never to pass a local build (realm @nick/craft, node #689)', async () => {
+  // The service agent's own answer, as the limit watch reads it: seen on the first call, so nothing else is dispatched.
+  const limited = await runEngine('review', { args: {}, script: { 'step:resolve': "You've hit your weekly limit" } })
+  const line = verdictOf(limited)
+  assert.match(
+    line,
+    /^⚠️ INCOMPLETE — review could not get the craft binary [\d.]+: stopped: usage limit reached \(You've hit your weekly limit\)\. Run the review again once the limit resets: a local build does not lift the limit — the review's agents answer from the same account\.$/,
+  )
+  assert.doesNotMatch(line, /craftBin=/, 'a local build does not lift the limit')
+  assert.deepEqual(work(limited), ['step:resolve'])
+})
+
 test('with craftBin, start gets --craft-root when craftRoot is given and checked, else --record-root: the plugin root located like the logger, for filing only', async () => {
   const given = await runEngine('review', {
     args: { repo: '/work/repo', craftBin: '/opt/craft', craftRoot: '/opt/craft-plugin' },
