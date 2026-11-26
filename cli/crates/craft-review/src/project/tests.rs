@@ -139,3 +139,33 @@ fn a_lens_composition_this_binary_cannot_read_never_hides_the_points() {
     std::fs::write(&path, bad).unwrap();
     assert_eq!(load(&path).unwrap().unwrap().integrations, [kube_ovn()]);
 }
+
+#[test]
+fn a_write_replaces_the_mutants_section_and_a_review_reads_what_it_wrote() {
+    use super::mutants::{self, MutantsSection};
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("review.toml");
+    let mut p = ProjectProfile::new("/r/.git".into(), vec![kube_ovn()], Vec::new()).unwrap();
+    p.mutants = MutantsSection {
+        off: false,
+        budget_secs: Some(900),
+    };
+    save(&path, &p).unwrap();
+    assert_eq!(mutants::of(&path).unwrap().budget_secs, Some(900));
+    p.mutants = MutantsSection::default();
+    save(&path, &p).unwrap();
+    assert_eq!(
+        mutants::of(&path).unwrap(),
+        MutantsSection::default(),
+        "a write naming none leaves the defaults, not the held budget"
+    );
+    let text = std::fs::read_to_string(&path).unwrap();
+    let bad = text.replace("[mutants]", "[mutants]\nskip = true");
+    assert_ne!(bad, text, "{text}");
+    std::fs::write(&path, bad).unwrap();
+    assert_eq!(
+        load(&path).unwrap().unwrap().integrations,
+        [kube_ovn()],
+        "a mutants section this binary cannot read never hides the points"
+    );
+}

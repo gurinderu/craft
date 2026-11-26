@@ -6,19 +6,19 @@
 use std::path::Path;
 use std::time::Duration;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 pub use super::section::SectionError;
 
 /// The section as the reviewer confirmed it.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MutantsSection {
     /// The mutants do not run on this project.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub off: bool,
     /// How long they may run, in seconds; the review's default when absent.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub budget_secs: Option<u64>,
 }
 

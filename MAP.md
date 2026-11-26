@@ -345,7 +345,7 @@ lens, seeded with what it adds and, for Rust, the crate graph's new edges and th
 for Rust, nix flake check, statix and deadnix for Nix: a red check blocks, a diagnostic on a changed line is a seed the
 lenses and verifiers see, a tool not installed is named), the change's mutants once the Rust gate passed (`src/gate/mutants.rs`
 and `src/gate/mutants/`: `cargo mutants --in-diff` in a worker process of the same binary, `__craft-mutants`, that runs beside the
-lens rounds within its budget — the reviewer's profile's `[mutants]` section can name it or turn them off (`src/project/mutants.rs`) —;
+lens rounds within its budget — the reviewer's profile's `[mutants]` section can name it or turn them off (`src/project/mutants.rs`; `craft init` shows it and writes it with `--mutants` and `--mutants-budget`, `cli/bin/craft/src/init/mutants.rs`) —;
 joined when the rounds end, each mutant that survived in a function the change touched pooled as a tool's finding, and the report
 saying what came of them or why they did not run), the reviewer's profile's `[lenses]` composition (`src/composition.rs`, read by `src/project/lenses.rs`: a lens
 turned off leaves the plan, one held runs its first round only, the report naming each; never the security or a profile's safety lens,
