@@ -132,9 +132,12 @@ impl Sink {
     /// An event written to the event stream: whether it was — what a delegated task's dispatch
     /// stands on (`delegate.rs`).
     pub(crate) fn emitted(self, event: &Event) -> bool {
-        self.json
-            && serde_json::to_string(event)
-                .is_ok_and(|line| writeln!(std::io::stderr().lock(), "{line}").is_ok())
+        self.written(&mut std::io::stderr().lock(), event)
+    }
+
+    /// An event written as one line to `out`, whole or not at all: whether it was written.
+    fn written(self, out: &mut dyn Write, event: &Event) -> bool {
+        self.json && serde_json::to_string(event).is_ok_and(|line| writeln!(out, "{line}").is_ok())
     }
 }
 
@@ -228,6 +231,89 @@ mod tests {
             !Sink { json: false }.emitted(&event),
             "without --events json no event is written, so no task can be handed out"
         );
+    }
+
+    /// Set when this test's binary runs again as a child: there the test writes one event through the process's
+    /// stderr, for the parent to read.
+    const WRITES_EVENT: &str = "CRAFT_TEST_EVENT_STREAM";
+
+    /// The child's side: one event, written as the binary writes it under `--delegate`.
+    fn writes_event() {
+        assert!(
+            Sink { json: true }.emitted(&Event::TaskCancelled { key: 1 }),
+            "the process's stderr took the event"
+        );
+    }
+
+    #[test]
+    fn an_event_leaves_through_the_process_stderr() {
+        if std::env::var_os(WRITES_EVENT).is_some() {
+            writes_event();
+            return;
+        }
+        // A write through the stderr handle passes the harness's capture, so only this test's own process has its
+        // bytes to read: the test runs again as a child. Its name spells no event's kind, which the harness prints.
+        let child = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "run::events::tests::an_event_leaves_through_the_process_stderr",
+            ])
+            .env(WRITES_EVENT, "1")
+            .output()
+            .unwrap();
+        let out = String::from_utf8_lossy(&child.stdout);
+        assert!(
+            child.status.success(),
+            "the child writing its event: {}\n{out}",
+            child.status
+        );
+        assert_eq!(
+            child.stderr.as_slice(),
+            b"{\"type\":\"task_cancelled\",\"key\":1}\n".as_slice(),
+            "the event, whole, on stderr"
+        );
+        assert!(
+            !out.contains("task_cancelled"),
+            "stdout is left to the answer:\n{out}"
+        );
+    }
+
+    /// An event stream that takes `n` bytes more, then is gone: its reader stopped reading.
+    struct GoneAfter(usize);
+
+    impl std::io::Write for GoneAfter {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            if self.0 == 0 {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::BrokenPipe,
+                    "the reader is gone",
+                ));
+            }
+            let take = self.0.min(buf.len());
+            self.0 -= take;
+            Ok(take)
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn an_event_that_could_not_be_written_whole_is_not_said_written() {
+        let event = Event::TaskCancelled { key: 1 };
+        let mut out = Vec::new();
+        assert!(Sink { json: true }.written(&mut out, &event));
+        assert_eq!(
+            out.as_slice(),
+            b"{\"type\":\"task_cancelled\",\"key\":1}\n".as_slice()
+        );
+        for taken in [0, 4] {
+            assert!(
+                !Sink { json: true }.written(&mut GoneAfter(taken), &event),
+                "a stream that took {taken} bytes and is gone did not get the event"
+            );
+        }
     }
 
     #[test]

@@ -11,6 +11,7 @@
 //! stops the run, resumable: no later task could answer either.
 
 use std::collections::HashMap;
+use std::io::BufRead;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
@@ -78,16 +79,25 @@ impl Delegate {
         }))
     }
 
-    /// A delegate whose replies are read from this process's stdin, on a thread of their own;
-    /// once stdin ends, every dispatch still waiting fails, and every later one at once.
-    pub(crate) fn on_stdin(
+    /// A delegate whose replies are read from the input `input` opens on a thread of their own;
+    /// once the input ends, every dispatch still waiting fails, and every later one at once.
+    pub(crate) fn reading<I: BufRead + 'static>(
+        input: impl FnOnce() -> I + Send + 'static,
         emit: impl Fn(Event) -> bool + Send + Sync + 'static,
         log: impl Fn(&str) + Send + Sync + 'static,
     ) -> Self {
         let delegate = Self::new(emit, log);
         let reader = delegate.clone();
-        std::thread::spawn(move || reader.read_replies(std::io::stdin().lock()));
+        std::thread::spawn(move || reader.read_replies(input()));
         delegate
+    }
+
+    /// A delegate whose replies are read from this process's stdin ([`Delegate::reading`]).
+    pub(crate) fn on_stdin(
+        emit: impl Fn(Event) -> bool + Send + Sync + 'static,
+        log: impl Fn(&str) + Send + Sync + 'static,
+    ) -> Self {
+        Self::reading(|| std::io::stdin().lock(), emit, log)
     }
 
     /// Names the round's tasks, so each `task` event carries its label.
