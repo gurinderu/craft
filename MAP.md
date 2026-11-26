@@ -384,8 +384,8 @@ plan's panel bought only when those two disagree — each finding's severity cap
 (strict mode spares a maintainability finding and blocks on a confirmed one at Medium or above), a finding the project's
 memory already rejected or deferred — recalled by one agent beside the scouts, plus the launcher's own records — set aside
 under its own section when the code in its record's scope is unchanged since the record's commit — or, for a record
-naming no commit, since the merge on the trunk of the pull request its links give and, with a date, unchanged on the trunk
-between that date and the merge too (`cli/crates/craft-review/src/memory/anchor/pull.rs`; its shell line in
+naming no commit, since the merge on the trunk of the pull request its links give and unchanged on the trunk
+outside that pull request before its merge too — where its branch lacked a trunk change, and after a date it names (`cli/crates/craft-review/src/memory/anchor/pull.rs`, `pull/outside.rs`; its shell line in
 `integrations/shared/prior-decision-scope-lines.mjs`), else since the trunk's last commit before its date (`cli/crates/craft-review/src/memory/anchor.rs` and its
 JavaScript twin `integrations/shared/prior-decision-anchor.mjs`) — a near miss between a
 record and a finding decided by a match judge, then a finding a project rule covers set aside under its own,

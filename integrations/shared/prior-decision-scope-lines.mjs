@@ -38,22 +38,31 @@ export function datedLine(d, day) {
 
 /**
  * The comparison against the merge `$m` of pull request `$n` on the trunk `$t`: the status of `git diff --quiet`
- * against it, then `merge <n>`. With a date whose base `b` the trunk has, the scope unchanged since the merge must
- * also be unchanged from `b` to the merge's first parent — diffed from their merge-base, so nothing lies between
- * when `b` is the merge or after it —, else the line prints status 1 and `merge <n> between`. A date later than
- * today, or one the trunk has no commit before, leaves the merge alone; git failing to list the trunk before it
- * prints `unreadable`, as the date's line does.
+ * against it, then `merge <n>`. The scope unchanged since the merge must also be unchanged on the trunk outside the
+ * pull request before it, else the line prints status 1 and `merge <n> between`: from the merge's second parent `p`
+ * (its parents read by `git rev-parse "$m^@"`, git failing counting as a change; a squash or a rebase merge has
+ * none) and, with a date, from its base `b`, each to the merge's first parent — diffed from their merge-base, so
+ * from `p` only the trunk's changes the branch lacked count, and nothing when `b` is the merge or after it. A date
+ * later than today leaves the merge alone; one the trunk has no commit before prints `missing`, and git failing to
+ * list the trunk before it `unreadable`, as the date's line does.
  * @param {import('./prior-decisions.mjs').PriorDecision} d @param {string} day @returns {string}
  */
 function sinceMerge(d, day) {
   const [id, scope] = [shellWord(d.id), shellWord(d.scope)]
-  if (!day) return `git diff --quiet "$m" -- ${scope}; echo ${id} $? merge "$n"`
-  return (
-    `b=; if ! ${future(day)} && ! b=$(${dateBase(day)}); then echo ${id} unreadable; ` +
-    `elif ! git diff --quiet "$m" -- ${scope}; then echo ${id} 1 merge "$n"; ` +
-    `elif [ -n "$b" ] && ! git diff --quiet "$b...$m^1" -- ${scope}; then echo ${id} 1 merge "$n" between; ` +
-    `else echo ${id} 0 merge "$n"; fi`
-  )
+  const branch = `p=$(git rev-parse "$m^@" 2>/dev/null) && p=$(printf '%s\\n' "$p" | sed -n 2p) && { [ -z "$p" ] || git diff --quiet "$p...$m^1" -- ${scope}; }`
+  /** @type {Array<[string, string]>} */
+  const dated = day
+    ? [
+        [`! ${future(day)} && ! b=$(${dateBase(day)})`, 'unreadable'],
+        [`! ${future(day)} && [ -z "$b" ]`, 'missing'],
+      ]
+    : []
+  /** @type {Array<[string, string]>} */
+  const window = day ? [[`[ -n "$b" ] && ! git diff --quiet "$b...$m^1" -- ${scope}`, '1 merge "$n" between']] : []
+  /** @type {Array<[string, string]>} */
+  const clauses = [...dated, [`! git diff --quiet "$m" -- ${scope}`, '1 merge "$n"'], [`! { ${branch}; }`, '1 merge "$n" between'], ...window]
+  const tests = clauses.map(([test, said], i) => `${i ? 'elif' : 'if'} ${test}; then echo ${id} ${said}; `).join('')
+  return `b=; ${tests}else echo ${id} 0 merge "$n"; fi`
 }
 
 /**

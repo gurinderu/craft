@@ -6,54 +6,23 @@ use std::cell::OnceCell;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
-use super::super::record::text;
 use super::{Base, Unusable};
 use crate::git;
+
+mod link;
+mod origin;
+mod outside;
+
+pub(in crate::memory) use link::pulls;
+
+use origin::named;
 
 /// A pull request a record links: its repository, `owner/name` lower-cased, and its number.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Pull {
     pub repo: String,
     pub number: u64,
-}
-
-/// The pull requests `links` name, in their order: each `https://github.com/<owner>/<name>/pull/<N>`,
-/// whatever follows it after `/`, `#` or `?`, the host and the path case-insensitive.
-pub(in crate::memory) fn pulls(links: &[Value]) -> Vec<Pull> {
-    links.iter().filter_map(|l| pull(&text(Some(l)))).collect()
-}
-
-fn pull(link: &str) -> Option<Pull> {
-    let head = "https://github.com/";
-    let rest = link
-        .get(..head.len())
-        .filter(|h| h.eq_ignore_ascii_case(head))
-        .and_then(|_| link.get(head.len()..))?;
-    let mut parts = rest.splitn(4, '/');
-    let (owner, name) = (parts.next()?, parts.next()?);
-    let named = |s: &str| {
-        !s.is_empty()
-            && s.bytes()
-                .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
-    };
-    let pull = parts.next().filter(|p| p.eq_ignore_ascii_case("pull"));
-    if !(named(owner) && named(name)) || pull.is_none() {
-        return None;
-    }
-    let tail = parts.next()?;
-    let digits = tail.bytes().take_while(u8::is_ascii_digit).count();
-    let rest = tail.get(digits..)?;
-    let fits = (1..=9).contains(&digits) && !tail.starts_with('0');
-    let ends = rest.is_empty() || rest.starts_with(['/', '#', '?']);
-    if !(fits && ends) {
-        return None;
-    }
-    Some(Pull {
-        repo: format!("{owner}/{name}").to_ascii_lowercase(),
-        number: tail.get(..digits)?.parse().ok()?,
-    })
 }
 
 /// The repository a scope check runs in, its trunk and its origin each asked of git once, when
@@ -105,7 +74,8 @@ impl<'p> Repo<'p> {
     /// `Ok(None)` when no merge is found.
     ///
     /// # Errors
-    /// [`Unusable::Unreadable`] when git fails listing the trunk before that day.
+    /// [`Unusable::Unreadable`] when git fails listing the trunk before that day,
+    /// [`Unusable::Missing`] when the trunk holds no commit before it.
     pub(super) fn merged(
         &self,
         pulls: &[Pull],
@@ -126,12 +96,12 @@ impl<'p> Repo<'p> {
 
 /// A merge's `base` with its decision date's base `dated` beside it, when the record names a day:
 /// the scope must not have changed on the trunk between that day and the merge either (realm
-/// @nick/craft, node #682). A day naming no base — in the future, or the trunk holding no commit
-/// before it — leaves the merge alone to compare against; git failing to list the trunk raises the
+/// @nick/craft, node #682). A day in the future leaves the merge alone to compare against; the
+/// trunk holding no commit before the day (a shallow clone) or git failing to list it raises the
 /// record, as it raises one anchored by its date alone.
 fn with_date(mut base: Base, dated: Option<Result<String, Unusable>>) -> Result<Base, Unusable> {
     match dated {
-        Some(Err(Unusable::Unreadable)) => Err(Unusable::Unreadable),
+        Some(Err(why @ (Unusable::Unreadable | Unusable::Missing))) => Err(why),
         Some(Ok(b)) => {
             base.dated = Some(b);
             Ok(base)
@@ -140,29 +110,15 @@ fn with_date(mut base: Base, dated: Option<Result<String, Unusable>>) -> Result<
     }
 }
 
-/// The `owner/name` after origin's GitHub prefix, `.git` after it or not; `None` for a URL of
-/// another host or form.
-fn named(url: &str) -> Option<&str> {
-    let https = url.strip_prefix("https://").map(|r| {
-        let host = r.find('/').map_or(r, |end| r.get(..end).unwrap_or(r));
-        host.rfind('@').and_then(|at| r.get(at + 1..)).unwrap_or(r)
-    });
-    let rest = https
-        .and_then(|r| r.strip_prefix("github.com/"))
-        .or_else(|| url.strip_prefix("git@github.com:"))
-        .or_else(|| url.strip_prefix("ssh://git@github.com/"))?;
-    Some(rest.strip_suffix('/').unwrap_or(rest))
-}
-
 /// What a scope is said to have changed since when its base was the merge of pull request `n`.
 pub(crate) fn since_merge(n: u64) -> String {
     format!("the merge of PR #{n}")
 }
 
-/// Where a scope is said to have changed when it changed on the trunk between the decision date
-/// `day` and the merge of pull request `n`.
-pub(crate) fn before_merge(day: &str, n: u64) -> String {
-    format!("on the trunk between the decision date {day} and the merge of PR #{n}")
+/// Where a scope is said to have changed when it changed on the trunk outside pull request `n`
+/// before its merge: after the decision date, or where the request's branch lacked it.
+pub(crate) fn before_merge(n: u64) -> String {
+    format!("on the trunk outside the pull request before the merge of PR #{n}")
 }
 
 /// Why a record anchored by its pull requests alone names nothing to compare against.

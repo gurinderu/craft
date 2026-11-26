@@ -9,7 +9,8 @@ use serde::{Deserialize, Serialize};
 /// What git observed of the records' scopes, each record checked once: those whose scope is
 /// unchanged since their anchor, those whose anchor the repository holds no commit for, why
 /// where that is other than missing, the pull request whose merge a record was compared
-/// against, and the records whose scope changed on the trunk between their date and that merge.
+/// against, and the records whose scope changed on the trunk outside the pull request before that
+/// merge.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Seen {

@@ -239,17 +239,18 @@ fn take_prior(f: &Value) -> Option<(usize, Value)> {
 
 /// The scope check of `ds`, by git in `repo` (`scopeCheckScript`, run here rather than by an
 /// agent): a record whose anchor the repository holds no commit for is missing, with why; one
-/// whose scope `git diff --quiet` shows untouched since that commit, the working tree included, is
-/// unchanged.
+/// whose scope `git diff --quiet` shows untouched since that commit, the working tree included,
+/// and for a pull request's merge on the trunk outside that request before it too, is unchanged.
 pub(super) fn scope_check(repo: &Path, ds: &[&PriorDecision]) -> apply::Scope {
     scope_check_on(repo, ds, &today())
 }
 
 /// [`scope_check`] with `today` the UTC date; the trunk and the origin resolved once, for the first
 /// record that needs them. A record whose base was its pull request's merge is named with it, so
-/// a changed scope is said to have changed since that merge; one with a date beside it is
-/// unchanged only when its scope also did not change on the trunk between that date's base and
-/// the merge's first parent, and is named apart when it did (realm @nick/craft, node #682).
+/// a changed scope is said to have changed since that merge; it is unchanged only when its scope
+/// also did not change on the trunk outside the pull request before the merge — where the
+/// request's branch lacked it, or after the date beside it (`Base::unchanged_outside`) —, and is
+/// named apart when it did (realm @nick/craft, node #682).
 pub(super) fn scope_check_on(repo: &Path, ds: &[&PriorDecision], today: &str) -> apply::Scope {
     let mut out = apply::Scope::default();
     let repo = Repo::new(repo);
@@ -272,8 +273,7 @@ pub(super) fn scope_check_on(repo: &Path, ds: &[&PriorDecision], today: &str) ->
         if !git::unchanged_since(repo.path, &base.commit, &d.scope) {
             continue;
         }
-        let before = |b: &String| git::unchanged_before_merge(repo.path, b, &base.commit, &d.scope);
-        if base.dated.as_ref().is_none_or(before) {
+        if base.unchanged_outside(repo.path, &d.scope) {
             out.unchanged.insert(d.id.clone());
         } else {
             out.between.insert(d.id.clone());

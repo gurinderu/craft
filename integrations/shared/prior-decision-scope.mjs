@@ -1,7 +1,9 @@
 // The scope check of recalled prior decisions (integrations/shared/prior-decisions.mjs): which decisions need it, the
 // one shell line per decision the scope-check agent runs — whether the decision's commit is known to
 // this repo (for a decision naming no commit, the merge of the pull request it links, else whether a commit
-// precedes its date), and if so whether the code in its scope changed since — and the agent's answer read.
+// precedes its date), and if so whether the code in its scope changed since — for a merge, also whether it changed
+// on the trunk outside that request before the merge: where the request's branch lacked a trunk change, and after
+// the decision's date (realm @nick/craft, node #682) — and the agent's answer read.
 // Imported by integrations/claude-code/src/triage-findings.js.
 import { reraisedByRank } from './prior-decisions.mjs'
 import { decisionDate, hasAnchor } from './prior-decision-anchor.mjs'
@@ -54,8 +56,11 @@ export function candidatesToCheck(findings, decisions) {
  * working tree included); when it does not (a squash-merged branch, another clone), the id and
  * `missing`. A decision naming no commit but a pull request of this repository is compared the same way
  * against that request's merge on the trunk, the line printing `merge <N>` after the status, and `between` after
- * that when its scope changed on the trunk between its date and the merge (mergeLine; realm @nick/craft, node
- * #682); its merge not found, by its date as below, or with none `unmerged`. A
+ * that when its scope changed on the trunk outside that request before the merge — from where the merge's second
+ * parent leaves the trunk, or from its date's base, to the merge's first parent; a squash or a rebase merge has the
+ * date's window alone (mergeLine; realm @nick/craft, node #682) —, `missing` or `unreadable` when its date names no
+ * trunk commit before it, as the date's line prints; its merge not found, by its date as below, or with none
+ * `unmerged`. A
  * decision naming no commit but a date is compared the same way against the last commit
  * before that day began anywhere (00:00 at +14:00) on the first-parent line of the trunk's tip — not
  * over HEAD's history nor from where HEAD forks from the trunk, where a branch's backdated commit, or a
@@ -122,7 +127,7 @@ export const SCOPE_CHECK_SCHEMA = {
 
 /** The scope-check agent's prompt. @param {PriorDecision[]} decisions @returns {string} */
 export function scopeCheckPrompt(decisions) {
-  return `Run these lines in the repository under review, exactly as written (shell only, read only). Each prints a decision id and, right after it, the exit status of \`git diff --quiet\` against that decision's commit (or, for a decision naming a pull request, that request's merge on the trunk, the status then followed by merge and the request's number, and by the word between when the code changed on the trunk between the decision's date and that merge; for one naming only a date, the trunk's last commit before that date), or the word missing when the repository does not have that commit — or, for a date, future, no-trunk or unreadable when it cannot be compared, and unmerged when a pull request's merge is not found and there is no date.
+  return `Run these lines in the repository under review, exactly as written (shell only, read only). Each prints a decision id and, right after it, the exit status of \`git diff --quiet\` against that decision's commit (or, for a decision naming a pull request, that request's merge on the trunk, the status then followed by merge and the request's number, and by the word between when the code changed on the trunk outside that pull request before its merge; for one naming only a date, the trunk's last commit before that date), or the word missing when the repository does not have that commit — or, for a date, future, no-trunk or unreadable when it cannot be compared, and unmerged when a pull request's merge is not found and there is no date.
 ${scopeCheckScript(decisions)}
 Return {unchanged: [every id whose status, printed right after it, was 0, whether or not merge and a number follow], missing: [every id printed with the word missing], unusable: [{id, word} for every id printed with the word future, no-trunk, unreadable or unmerged], merged: [{id, pr, between} for every id whose status was followed by merge and a number, pr that number, between true when the word between followed it], reason: one line on anything that did not run — a tool a line needs that is missing goes here}.`
 }
@@ -130,7 +135,7 @@ Return {unchanged: [every id whose status, printed right after it, was 0, whethe
 /**
  * The ids a scope-check answer names unchanged and missing, the word it names each unusable one by, and the
  * pull request whose merge it names each merged one compared against (with whether its scope changed on the trunk
- * between the decision's date and that merge), or null when the answer is absent or
+ * outside that request before the merge), or null when the answer is absent or
  * its `unchanged` unreadable — then no decision is shown unchanged and nothing is set aside. An answer
  * without `unusable` or `merged`, which the schema requires, names none.
  * @param {unknown} ans
@@ -165,7 +170,7 @@ export function readScopeCheck(ans) {
  * reported — realm @nick/craft, node #184): the ids observed unchanged since their commit, pull request merge
  * or date; those whose anchor names no commit to compare, each with the word its line printed (`missing`,
  * `future`, `no-trunk`, `unreadable`, `unmerged`); and those compared against a pull request's merge, each
- * with that request's number and whether its scope changed on the trunk between the decision's date and that merge
+ * with that request's number and whether its scope changed on the trunk outside that request before the merge
  * — one the decision links, else none (realm @nick/craft, node #682). A dead or
  * unreadable answer shows nothing unchanged (said in `notes`).
  * @param {PriorDecision[]} toCheck @param {(toCheck: PriorDecision[]) => Promise<unknown>} checkScopes @param {string[]} notes
@@ -202,7 +207,7 @@ function missingWord(d, ids, missing) {
 
 /**
  * Notes in `merged` the pull request whose merge the answer `ids` says decision `d`'s scope was compared
- * against, and whether its scope changed on the trunk between its date and that merge, when `d` names no commit
+ * against, and whether its scope changed on the trunk outside that request before the merge, when `d` names no commit
  * and links that request.
  * @param {PriorDecision} d @param {NonNullable<ReturnType<typeof readScopeCheck>>} ids @param {Map<string, Merged>} merged
  */

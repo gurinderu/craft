@@ -227,6 +227,17 @@ pub fn merge_of(cwd: &Path, tip: &str, pr: u64) -> Result<Option<String>, GitErr
     Ok(by_merge.or(by_squash))
 }
 
+/// The second parent of `commit`, from `git rev-parse <commit>^@`, which prints its parents one per
+/// line; `None` for a commit of one parent or none — a squash or a rebase merge, a root.
+///
+/// # Errors
+/// When `commit` is spelled as an option or `git` fails.
+pub fn second_parent(cwd: &Path, commit: &str) -> Result<Option<String>, GitError> {
+    not_an_option(cwd, &[commit])?;
+    let out = git(cwd, &["rev-parse", &format!("{commit}^@")])?;
+    Ok(out.lines().nth(1).map(str::to_owned))
+}
+
 /// The URL of the `origin` remote, lower-cased, as `git remote get-url origin` prints it; `None`
 /// when there is none.
 #[must_use]
@@ -249,7 +260,8 @@ pub fn unchanged_since(cwd: &Path, commit: &str, scope: &str) -> bool {
 
 /// Whether the code in `scope` is unchanged on the trunk from `from` to the first parent of
 /// `merge`, as `git diff --quiet <from>...<merge>^1 -- <scope>` answers from the top level: diffed
-/// from their merge-base, so nothing lies between when `from` is `merge` or after it; false when
+/// from their merge-base, so nothing lies between when `from` is `merge` or after it, and from
+/// `merge`'s second parent only the trunk's changes its branch lacked; false when
 /// git cannot tell, or `from` is spelled as an option, which would spell the whole range as one
 /// (realm @nick/craft, node #682).
 #[must_use]

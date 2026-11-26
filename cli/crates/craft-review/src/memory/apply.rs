@@ -36,8 +36,8 @@ pub(super) use section::{refused_section, section};
 /// whose anchor the repository holds no commit for, and, by id, why where that is other than the
 /// commit or a commit before the date missing (a future date, no trunk, git failing), the pull
 /// request whose merge a record's scope was compared against, and the records whose scope is
-/// unchanged since that merge but changed on the trunk between their decision date and it (realm
-/// @nick/craft, node #682).
+/// unchanged since that merge but changed on the trunk outside the pull request before it — after
+/// their decision date, or where the request's branch lacked it (realm @nick/craft, node #682).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Scope {
     pub unchanged: BTreeSet<String>,
@@ -48,15 +48,14 @@ pub struct Scope {
 }
 
 impl Scope {
-    /// How `d`'s scope, anchored at `a`, is said to have changed: on the trunk between its date and
-    /// the merge it was compared against, since that merge, else since what the anchor names.
+    /// How `d`'s scope, anchored at `a`, is said to have changed: on the trunk outside the pull
+    /// request before the merge it was compared against, since that merge, else since what the
+    /// anchor names.
     fn changed(&self, d: &PriorDecision, a: &Anchor<'_>) -> String {
-        match (self.merged.get(&d.id), a) {
-            (Some(n), Anchor::Merge { day: Some(day), .. }) if self.between.contains(&d.id) => {
-                before_merge(day, *n)
-            }
-            (Some(n), _) => format!("since {}", since_merge(*n)),
-            (None, _) => format!("since {}", a.since()),
+        match self.merged.get(&d.id) {
+            Some(n) if self.between.contains(&d.id) => before_merge(*n),
+            Some(n) => format!("since {}", since_merge(*n)),
+            None => format!("since {}", a.since()),
         }
     }
 

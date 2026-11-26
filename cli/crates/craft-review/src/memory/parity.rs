@@ -72,7 +72,7 @@ fn the_judges_prompts_render_as_the_engines_render_them() {
 
 /// What the case's scope check sees: the records whose anchor — the commit, else the first pull
 /// request `#N` it links that `merged` names (its merge found on the trunk, realm @nick/craft,
-/// node #682; under `between` when its scope changed on the trunk between the record's date and
+/// node #682; under `between` when its scope changed on the trunk outside the pull request before
 /// that merge), else the UTC day, else the first pull request — it names unchanged or missing, and,
 /// under `unusable`, the anchors it names unusable by the word the scope-check line prints
 /// (`future`, `no-trunk`, `unreadable`, `unmerged`).

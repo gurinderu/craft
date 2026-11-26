@@ -42,7 +42,9 @@ impl Ask {
 /// The scope check by git in `repo`, as the review runs it: a record whose anchor — its commit,
 /// else the merge of the pull request it links, else its date — the repository holds no commit
 /// for is missing; one whose scope `git diff --quiet` shows untouched since that commit, the
-/// working tree included, is unchanged.
+/// working tree included, is unchanged — for a merge, also untouched on the trunk outside the pull
+/// request before it: from where the merge's second parent leaves the trunk, and from the base of
+/// the record's date, each to the merge's first parent (realm @nick/craft, node #682).
 pub fn git_scope(repo: &Path) -> impl Fn(&[&PriorDecision]) -> Scope + '_ {
     move |ds| super::priors::scope_check(repo, ds)
 }

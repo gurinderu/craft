@@ -28,7 +28,7 @@ impl Asked {
 /// The match stage as it was prepared: the records git saw unchanged in their scope since their
 /// anchor, those whose anchor the repository holds no commit for, why where that is other than
 /// missing, the pull request whose merge a record was compared against, the records whose scope
-/// changed on the trunk between their date and that merge ([`super::Scope`]), and the (finding,
+/// changed on the trunk outside the pull request before that merge ([`super::Scope`]), and the (finding,
 /// record) pairs asked.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]

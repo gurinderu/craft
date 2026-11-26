@@ -104,7 +104,7 @@ fn a_pull_request_is_of_this_repository_when_origin_names_it_over_https_or_ssh()
 }
 
 #[test]
-fn a_merge_takes_its_dates_base_beside_it_and_git_failing_on_that_date_raises_it() {
+fn a_merge_takes_its_dates_base_beside_it_and_no_base_or_git_failing_on_that_date_raises_it() {
     let merge = Base {
         commit: "m".into(),
         pull: Some(7),
@@ -116,11 +116,10 @@ fn a_merge_takes_its_dates_base_beside_it_and_git_failing_on_that_date_raises_it
     };
     assert_eq!(with_date(merge.clone(), Some(Ok("b".into()))), Ok(dated));
     assert_eq!(with_date(merge.clone(), None), Ok(merge.clone()));
-    for none in [Unusable::Missing, Unusable::Future, Unusable::NoTrunk] {
+    for none in [Unusable::Future, Unusable::NoTrunk] {
         assert_eq!(with_date(merge.clone(), Some(Err(none))), Ok(merge.clone()));
     }
-    assert_eq!(
-        with_date(merge, Some(Err(Unusable::Unreadable))),
-        Err(Unusable::Unreadable)
-    );
+    for raised in [Unusable::Unreadable, Unusable::Missing] {
+        assert_eq!(with_date(merge.clone(), Some(Err(raised))), Err(raised));
+    }
 }

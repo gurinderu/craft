@@ -1,7 +1,9 @@
 // What a record's scope check compares against: its commit, else the merge on the trunk of the pull request
-// of this repository it links (realm @nick/craft, node #682), else the UTC day its `when` names — a record
-// written where no commit may be named still sets a finding aside when the code in its scope is unchanged
-// since the trunk's last commit before that day began (realm @nick/craft, node #676).
+// of this repository it links — its scope also unchanged on the trunk outside that request before the merge:
+// where the request's branch lacked a trunk change (a merge commit's second parent), and after the record's date
+// (realm @nick/craft, node #682) —, else the UTC day its `when` names — a record written where no commit may be
+// named still sets a finding aside when the code in its scope is unchanged since the trunk's last commit before
+// that day began (realm @nick/craft, node #676).
 // Imported by integrations/shared/prior-decision-scope.mjs and integrations/shared/prior-decision-apply.mjs.
 
 import { isoMoment } from './memory-recall.mjs'
@@ -9,7 +11,8 @@ import { isoMoment } from './memory-recall.mjs'
 /**
  * @typedef {import('./prior-decisions.mjs').PriorDecision} PriorDecision
  * @typedef {{ pr: number, between: boolean }} Merged  the pull request whose merge a scope was compared against,
- *   and whether it changed on the trunk between the record's date and that merge (realm @nick/craft, node #682)
+ *   and whether it changed on the trunk outside that request before the merge — after the record's date, or where
+ *   the request's branch lacked it (realm @nick/craft, node #682)
  */
 
 /**
@@ -41,13 +44,12 @@ export function anchorSince(d, pr) {
 }
 
 /**
- * How a record's scope is said to have changed: on the trunk between its decision date and the merge `merged`
+ * How a record's scope is said to have changed: on the trunk outside the pull request before the merge `merged`
  * names when it changed there, since that merge, else since its commit or date (anchorSince).
  * @param {PriorDecision} d @param {Merged} [merged] @returns {string}
  */
 export function anchorChanged(d, merged) {
-  const day = decisionDate(d)
-  if (merged?.between && day) return `on the trunk between the decision date ${day} and the merge of PR #${merged.pr}`
+  if (merged?.between) return `on the trunk outside the pull request before the merge of PR #${merged.pr}`
   return `since ${anchorSince(d, merged?.pr)}`
 }
 

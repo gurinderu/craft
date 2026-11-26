@@ -93,7 +93,7 @@ export function severityReason(f, d) {
  * does not know (a squash-merged branch, another clone), or whose date names no trunk commit to compare,
  * each with the word its scope-check line printed — named apart from a changed scope. `merged`: ids
  * whose scope was compared against a pull request's merge, each with its number and whether the scope changed on
- * the trunk between the decision's date and that merge, which a changed scope names (realm @nick/craft, node #682).
+ * the trunk outside that request before the merge, which a changed scope names (realm @nick/craft, node #682).
  * @param {DecidableFinding} f @param {PriorDecision} d @param {Set<string>} unchanged @param {Map<string, string>} [missing]
  * @param {Map<string, import('./prior-decision-anchor.mjs').Merged>} [merged] @returns {string}
  */
@@ -130,7 +130,8 @@ export function reraisedFinding(f, note, noteField, violationOf) {
  * @param {Map<string, string>} [missing]  ids whose anchor names no commit to compare, with the word their scope-check line printed
  * @param {(f: DecidableFinding) => PriorMatch | undefined} [matchOf]  the record answering a finding (default: the sure matches)
  * @param {(f: DecidableFinding) => { d: PriorDecision, why: string } | undefined} [violationOf]  the record a re-raised finding's code goes against (node #282)
- * @param {Map<string, import('./prior-decision-anchor.mjs').Merged>} [merged]  ids whose scope was compared against a pull request's merge, with its number (node #682)
+ * @param {Map<string, import('./prior-decision-anchor.mjs').Merged>} [merged]  ids whose scope was compared against a pull request's merge, with its number and whether
+ *   it changed on the trunk outside that request before the merge — where the request's branch lacked a trunk change, or after the decision's date (node #682)
  * @returns {{ kept: F[], setAside: Array<SetAside<F>>, reraised: number }}
  */
 export function splitByDecisions(

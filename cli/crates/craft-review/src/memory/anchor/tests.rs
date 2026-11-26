@@ -265,7 +265,7 @@ fn a_pull_request_anchor_says_its_dates_words_where_no_merge_is_found_and_with_n
     assert_eq!(Unusable::from_word("unmerged"), Some(Unusable::Unmerged));
     assert_eq!(super::since_merge(7), "the merge of PR #7");
     assert_eq!(
-        super::before_merge("2026-05-01", 7),
-        "on the trunk between the decision date 2026-05-01 and the merge of PR #7"
+        super::before_merge(7),
+        "on the trunk outside the pull request before the merge of PR #7"
     );
 }

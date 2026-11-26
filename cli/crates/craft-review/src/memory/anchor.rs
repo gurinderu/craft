@@ -29,8 +29,9 @@ pub(crate) enum Anchor<'a> {
 }
 
 /// The commit a record's scope is diffed against, the pull request whose merge it is, and for a
-/// merge, the decision date's base when the record names a day the trunk has a commit before: the
-/// scope must also be unchanged on the trunk from it to the merge's first parent.
+/// merge, the decision date's base when the record names a day not in the future: the scope must
+/// also be unchanged on the trunk from it, and from where the merge's second parent leaves the
+/// trunk, to the merge's first parent ([`Base::unchanged_outside`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Base {
     pub(crate) commit: String,
@@ -143,8 +144,8 @@ impl Anchor<'_> {
 
     /// The commit the scope is diffed against in `repo`, `today` being the UTC date: the anchor's
     /// own when the repository has it. For pull requests, the merge on the trunk of the first of
-    /// this repository, the date's base beside it, git failing to list the trunk for that date
-    /// raising the record ([`Repo::merged`]); none found, the date's base alone, as for a date
+    /// this repository, the date's base beside it, git failing to list the trunk for that date or
+    /// the trunk holding no commit before it raising the record ([`Repo::merged`]); none found, the date's base alone, as for a date
     /// (realm @nick/craft, node #682). A date's base is [`dated`]'s.
     pub(crate) fn base(&self, repo: &Repo<'_>, today: &str) -> Result<Base, Unusable> {
         let day = match self {

@@ -1339,7 +1339,7 @@
       }
     },
     {
-      "name": "a record with no commit linking a pull request of this repository is checked since that request's merge on the trunk, a squash merge's too: unchanged sets aside; changed raises, naming the merge, and a dated one whose scope the trunk changed between its date and the merge raises naming both, and one git cannot list the trunk before its date for raises as the date's line does; a request of another repository or not merged on the trunk falls back to the date; with no date and no merge it raises, named",
+      "name": "a record with no commit linking a pull request of this repository is checked since that request's merge on the trunk, a squash merge's too: unchanged sets aside; changed raises, naming the merge, and one whose scope the trunk changed outside the pull request before the merge (after its date, or where its branch lacked it) raises naming that, and one git cannot list the trunk before its date for raises as the date's line does; a request of another repository or not merged on the trunk falls back to the date; with no date and no merge it raises, named",
       "recall": {
         "backend": "repo",
         "why": "the .craft/memory directory",
@@ -1576,7 +1576,7 @@
           },
           {
             "title": "unwrap in the cache",
-            "why": "w · Rejected before (decision decision-f7f7f7f7f7, nick, 2026-05-02) — raised again: the code in src/w.rs changed on the trunk between the decision date 2026-05-02 and the merge of PR #13 (or that could not be checked)."
+            "why": "w · Rejected before (decision decision-f7f7f7f7f7, nick, 2026-05-02) — raised again: the code in src/w.rs changed on the trunk outside the pull request before the merge of PR #13 (or that could not be checked)."
           },
           {
             "title": "lock held across await",
