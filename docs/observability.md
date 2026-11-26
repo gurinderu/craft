@@ -233,8 +233,8 @@ under the same index lock, with no logger agent and no node (`content/parity/sto
 together); a logger agent files only the INCOMPLETE record of a run the binary never
 finished. A write that does not land is asserted, not
 inferred: the agent returns `{ok, error}`, and the engine puts the loss in its own report. The shaping helpers are tested in `integrations/shared/run-record.mjs`; the engines import them and the build
-bundles them in (the sandbox can't `import`). Standalone agents self-log via their `.md` Observability
-section, suppressed when run as a workflow sub-agent.
+bundles them in (the sandbox can't `import`). A review agent dispatched on its own writes nothing
+to the store: no line of the index is assembled by a model.
 
 Concurrent writers use `.index-writers/` admission before `index.jsonl.lock`. They must share
 one local filesystem and process namespace; a live process is never displaced merely because

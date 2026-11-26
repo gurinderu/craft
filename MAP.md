@@ -202,7 +202,7 @@ What craft says into a session on its own, and when. The Claude Code hooks file 
 ## Documentation
 
 - `docs/LESSONS.md` — operational lessons not derivable from the code: stable-numbered evidence entries folded into principles. Add one when something was learned at a cost.
-- `docs/observability.md` — run-record store (`~/.craft/runs/`) emitted by the `review` / `rust-audit` / `triage-findings` workflows (the review's through the craft binary) and the review agents.
+- `docs/observability.md` — run-record store (`~/.craft/runs/`) emitted by the `review` / `rust-audit` / `triage-findings` workflows (the review's through the craft binary).
 
 ## Cross-cutting skills (language-agnostic)
 
