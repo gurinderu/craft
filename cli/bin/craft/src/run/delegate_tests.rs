@@ -679,9 +679,11 @@ const READS_STDIN: &str = "CRAFT_TEST_DELEGATE_READS_STDIN";
 /// says the key of each task it gives out, and fails the one waiting when that input ends.
 fn reads_stdin() {
     fn said(key: u64) {
-        // Straight out, past the test harness's own capture of `println!`.
+        // Straight out, past the test harness's own capture of `println!`, and on a line of its own: run with one
+        // test thread, the harness prints `test <name> ... ` and no newline before the test, and the parent takes a
+        // key only from the start of a line.
         std::io::stdout()
-            .write_all(format!("KEY {key}\n").as_bytes())
+            .write_all(format!("\nKEY {key}\n").as_bytes())
             .unwrap();
     }
     let (events, lines) = nothing_kept();
