@@ -88,3 +88,20 @@ fn only_the_records_asked_about_are_answered() {
     let s = seen.scope(d.path(), &[&a]);
     assert_eq!(s.unchanged.into_iter().collect::<Vec<_>>(), ["decision-a"]);
 }
+
+#[test]
+fn why_a_dated_record_is_missing_is_kept_for_it_and_handed_only_with_it() {
+    let (d, head) = repo();
+    let dated = PriorDecision {
+        when: "2026-05-02".into(),
+        ..record("decision-d", "")
+    };
+    let kept = record("decision-a", &head);
+    let mut seen = Seen::default();
+    let s = seen.scope(d.path(), &[&dated, &kept]);
+    let why = s.why_missing.get("decision-d").cloned().unwrap_or_default();
+    assert!(why.starts_with("the trunk this change forks from"), "{why}");
+    let again = seen.scope(d.path(), &[&dated]);
+    assert_eq!(again.why_missing.get("decision-d"), Some(&why));
+    assert!(seen.scope(d.path(), &[&kept]).why_missing.is_empty());
+}
