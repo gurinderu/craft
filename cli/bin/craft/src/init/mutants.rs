@@ -45,8 +45,8 @@ pub fn confirmed(switch: Option<Switch>, budget: Option<u64>) -> Result<MutantsS
     })
 }
 
-/// The flags that write `s` again, as a review reads it: a budget beside `off`, or of no seconds,
-/// runs nothing and is left out — a write would refuse it.
+/// The flags that write `s` again, as a review reads it: a budget beside `off` runs nothing, one of
+/// no seconds is the default; both are left out — a write would refuse them.
 fn flags(s: &MutantsSection) -> Vec<String> {
     if s.off {
         return vec!["--mutants".to_owned(), "off".to_owned()];

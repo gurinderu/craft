@@ -126,11 +126,11 @@ fn a_budget_beside_off_or_of_no_seconds_is_refused_and_nothing_is_written() {
         &["--mutants", "on", "--mutants-budget", "60"],
     ));
     assert_eq!(held(t, &repo)["flags"], json!(["--mutants-budget", "60"]));
-    assert_ne!(
-        write(t, &repo, &["--mutants-budget", "99999999999999999999"])
-            .status
-            .code(),
-        Some(0)
+    let huge = write(t, &repo, &["--mutants-budget", "9223372036854775808"]);
+    assert_eq!(
+        huge.status.code(),
+        Some(2),
+        "past what the profile can hold, refused as an argument: {huge:?}"
     );
 }
 

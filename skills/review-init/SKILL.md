@@ -205,7 +205,7 @@ On a Rust change whose gate passed, a review runs `cargo mutants --in-diff` over
 its lenses, where the gate's cargo runs, and its report says whether they ran and why not —
 cargo-mutants not installed included. `init` does not look for cargo-mutants itself. `mutants`
 says what the profile holds: `off` (they do not run on this repository), `budgetSecs` (how long
-they may run; `null` is the review's `defaultBudgetSecs`), `flags` (the `--mutants` and
+they may run; `null` or `0` is the review's `defaultBudgetSecs`), `flags` (the `--mutants` and
 `--mutants-budget` that write it again) and `unread` (why the section could not be read; a review
 then takes the defaults, and the next write replaces what is stored — say so before writing). Ask the reviewer in one line whether to keep it, turn the mutants off, or
 give them another budget; with nothing held and nothing asked for, say so and go on.
