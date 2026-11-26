@@ -74,10 +74,9 @@ fn with_degraded(mut plan: Js, degraded: &[String], lead: &str) -> Js {
     lines.extend(degraded.iter().map(|d| format!("> - {d}")));
     lines.push(String::new());
     let body = field::or_empty(o, "plan_markdown");
-    let (top, rest) = match body.strip_prefix(lead) {
-        Some(rest) if !lead.is_empty() => (lead, rest),
-        _ => ("", body.as_str()),
-    };
+    let (top, rest) = body
+        .strip_prefix(lead)
+        .map_or(("", body.as_str()), |rest| (lead, rest));
     o.set(
         "plan_markdown",
         Js::str(format!("{top}{}\n{rest}", lines.join("\n"))),
