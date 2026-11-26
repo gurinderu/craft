@@ -380,6 +380,7 @@ dependencies = [
 name = "craft-step"
 version = "0.60.0"
 dependencies = [
+ "craft-store",
  "jsonschema",
  "serde",
  "serde_json",

@@ -27,45 +27,11 @@ use crate::report;
 use crate::state::{self, Phase, RunState, TaskState};
 use crate::step::StepError;
 
-/// How much of the host's limit text the run keeps, as `usageLimitText` cuts it.
-const LIMIT_TEXT_MAX: usize = 200;
-/// What a dead round most likely was, as the engines say it, when no dead agent said why.
-const DEATHS_LIKELY: &str = "most likely the account's usage limit or an outage";
+use craft_step::stop::TEXT_MAX as LIMIT_TEXT_MAX;
+pub use craft_step::stop::{Cause, Stop, deaths, limit};
+
 /// How many of the dead agents' lines a stop names, the most said first.
 const SAID_SHOWN: usize = 3;
-
-/// What stopped the run.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Cause {
-    /// The host saw the limit's text.
-    Limit,
-    /// A whole dispatch round died with no answer.
-    Deaths,
-}
-
-/// The run's stop: its cause and what it saw.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Stop {
-    pub cause: Cause,
-    pub text: String,
-    /// The text names what the dead agents said, so no guess follows it.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub told: bool,
-}
-
-impl Stop {
-    /// The stop as a parent reads it back from a report (`limitInReport`, `deathsInReport` in
-    /// `integrations/shared/limit-report.mjs`).
-    #[must_use]
-    pub fn note(&self) -> String {
-        match self.cause {
-            Cause::Limit => format!("stopped: usage limit reached ({})", self.text),
-            Cause::Deaths if self.told => format!("stopped: {}", self.text),
-            Cause::Deaths => format!("stopped: {}, {DEATHS_LIKELY}", self.text),
-        }
-    }
-}
 
 /// The dispatch round the run is in and whether any task of it answered: a lens round, the
 /// verification (all its waves one round, as the engine watches it), or none — the scouts, the dedup and the judges are single
@@ -184,50 +150,18 @@ pub(crate) fn round_died(run: &RunState) -> Option<Stop> {
     })
 }
 
-/// The host's limit text as one line, capped.
-#[must_use]
-pub fn limit(text: &str) -> Stop {
-    let one = text.js_split_whitespace().collect::<Vec<_>>().join(" ");
-    Stop {
-        cause: Cause::Limit,
-        text: one.chars().take(LIMIT_TEXT_MAX).collect(),
-        told: false,
-    }
-}
-
-/// A stop on a dead round.
-#[must_use]
-pub fn deaths(text: String) -> Stop {
-    Stop {
-        cause: Cause::Deaths,
-        text,
-        told: false,
-    }
-}
-
 /// Stops the run: every task not answered is held as first handed out, to be handed out again —
 /// but one abandoned at its deadline, which stays failed. Its counted refused file (`counted`) is
 /// kept, so one still in place is not read as a new answer on the resume.
 pub(crate) fn hold(run: &mut RunState, stop: Stop) {
-    for t in run
-        .tasks
-        .iter_mut()
-        .filter(|t| t.state != TaskState::Answered && !t.abandoned)
-    {
-        t.state = TaskState::Pending;
-        t.retries = 0;
-        t.error = None;
-        t.refused = None;
-        // `counted` stays: a refused file still in place is no new answer on the resume.
-    }
+    craft_step::stop::hold(&mut run.tasks);
     run.watch = Watch::default();
     run.stopped = Some(stop);
 }
 
 /// How to resume the run in `dir`.
 fn resume(dir: &Path) -> String {
-    let d = dir.display().to_string().replace('\'', r"'\''");
-    format!("craft review submit --run '{d}' --resume")
+    craft_step::stop::resume("review", dir)
 }
 
 /// The step of the stopped run in `dir`: done for the host, INCOMPLETE, its report written with
@@ -239,11 +173,7 @@ pub(crate) fn step(dir: &Path, run: &RunState) -> Result<Value, Error> {
     let Some(stop) = &run.stopped else {
         return Ok(Value::Null);
     };
-    let when = match stop.cause {
-        Cause::Limit => "once the limit resets",
-        Cause::Deaths => "once agents answer again",
-    };
-    let line = format!("{}. Resume {when}: `{}`", stop.note(), resume(dir));
+    let line = format!("{}. Resume {}: `{}`", stop.note(), stop.when(), resume(dir));
     let mut shown = run.clone();
     shown.not_run.push(line.clone());
     crate::verify::stood(&mut shown);
