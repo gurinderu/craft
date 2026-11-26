@@ -55,7 +55,7 @@ export function candidatesToCheck(findings, decisions) {
  * forks from it — not over all of HEAD's history, where a branch's backdated commit, or a side branch's
  * commit dated before the day but merged after it, would be the base and hide a later change of the
  * scope (realm @nick/craft, node #676) — printing `future` for a date later than today in UTC,
- * `no-trunk` when origin/HEAD or its merge-base with HEAD cannot be resolved, `unreadable` when git
+ * `no-trunk` when no trunk resolves (origin/HEAD, else origin/main, else origin/master) or its merge-base with HEAD does not, `unreadable` when git
  * fails listing the trunk, and `missing` when the trunk holds no commit before the day. Arguments
  * single-quoted.
  * @param {PriorDecision[]} decisions @returns {string}
@@ -68,7 +68,7 @@ export function scopeCheckScript(decisions) {
     const [day, id] = [decisionDate(d), q(d.id)]
     return (
       `if [ ${q(day.replace(/-/g, ''))} -gt "$(date -u +%F | tr -d -)" ]; then echo ${id} future; ` +
-      `elif ! f=$(git merge-base HEAD refs/remotes/origin/HEAD 2>/dev/null); then echo ${id} no-trunk; ` +
+      `elif ! t=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || for r in origin/main origin/master; do git rev-parse -q --verify "$r^{commit}" >/dev/null && echo "$r" && break; done | grep .) || ! f=$(git merge-base HEAD "$t" 2>/dev/null); then echo ${id} no-trunk; ` +
       `elif ! b=$(git rev-list -1 --first-parent ${q(`--before=${day} 00:00:00 +1400`)} "$f" 2>/dev/null); then echo ${id} unreadable; ` +
       `elif [ -n "$b" ]; then git diff --quiet "$b" -- ${q(d.scope)}; echo ${id} $?; else echo ${id} missing; fi`
     )

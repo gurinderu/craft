@@ -142,3 +142,19 @@ fn with_no_trunk_a_dated_record_anchors_nothing_and_a_commit_still_does() {
         "a.rs changed since the first commit"
     );
 }
+
+#[test]
+fn with_no_origin_head_the_trunk_is_origin_main() {
+    let (t, _) = repo(false);
+    let d = t.path();
+    let main = at(d, "2026-05-04T00:00:00+0000", &["rev-parse", "main"]);
+    at(
+        d,
+        "2026-05-04T00:00:00+0000",
+        &["update-ref", "refs/remotes/origin/main", &main],
+    );
+    let ds = [record("b-2nd", "src/b.rs", "", "2026-05-02")];
+    let refs: Vec<&PriorDecision> = ds.iter().collect();
+    let s = scope_check_on(d, &refs, "2026-05-04");
+    assert_eq!(ids(&s.unchanged), ["b-2nd"], "{:?}", s.why_missing);
+}

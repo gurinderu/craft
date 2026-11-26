@@ -90,7 +90,7 @@ test('scope script: a dated record is diffed against the trunk before its day be
     assert.equal(
       script.split('\n')[0],
       `if [ '20260502' -gt "$(date -u +%F | tr -d -)" ]; then echo 'a-2nd'\\''s' future; ` +
-        `elif ! f=$(git merge-base HEAD refs/remotes/origin/HEAD 2>/dev/null); then echo 'a-2nd'\\''s' no-trunk; ` +
+        `elif ! t=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || for r in origin/main origin/master; do git rev-parse -q --verify "$r^{commit}" >/dev/null && echo "$r" && break; done | grep .) || ! f=$(git merge-base HEAD "$t" 2>/dev/null); then echo 'a-2nd'\\''s' no-trunk; ` +
         `elif ! b=$(git rev-list -1 --first-parent '--before=2026-05-02 00:00:00 +1400' "$f" 2>/dev/null); then echo 'a-2nd'\\''s' unreadable; ` +
         `elif [ -n "$b" ]; then git diff --quiet "$b" -- 'src/a.rs'; echo 'a-2nd'\\''s' $?; else echo 'a-2nd'\\''s' missing; fi`,
     )
@@ -107,6 +107,14 @@ test('scope script: with no origin/HEAD a dated record prints no-trunk, a commit
     const first = git(dir, ['rev-list', '--max-parents=0', 'HEAD'], '2026-05-04T00:00:00+0000')
     const ds = parsed({ id: 'dated', scope: 'src/b.rs' }, { id: 'by-commit', commit: first })
     assert.deepEqual(run(scopeCheckScript(ds), dir), ['dated no-trunk', 'by-commit 1'])
+  })
+})
+
+test('scope script: with no origin/HEAD the trunk is origin/main', () => {
+  inRepo(false, dir => {
+    git(dir, ['update-ref', 'refs/remotes/origin/main', 'main'], '2026-05-04T00:00:00+0000')
+    const ds = parsed({ id: 'b-2nd', scope: 'src/b.rs', when: '2026-05-02' })
+    assert.deepEqual(run(scopeCheckScript(ds), dir), ['b-2nd 0'])
   })
 })
 

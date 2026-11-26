@@ -165,11 +165,14 @@ pub fn has_commit(cwd: &Path, commit: &str) -> bool {
     !commit.starts_with('-') && verifies(cwd, commit)
 }
 
-/// Where `HEAD` forks from the trunk, `git merge-base HEAD refs/remotes/origin/HEAD`; `None` when
-/// origin names no default branch, the two share no history, or git cannot tell.
+/// Where `HEAD` forks from the trunk — origin's default branch as [`default_base`] resolves it
+/// (`origin/HEAD`, else `origin/main`, else `origin/master`) — by `git merge-base HEAD <trunk>`;
+/// `None` when no trunk resolves, the two share no history, or git cannot tell.
 #[must_use]
 pub fn trunk_fork(cwd: &Path) -> Option<String> {
-    let out = git(cwd, &["merge-base", "HEAD", "refs/remotes/origin/HEAD"]).ok()?;
+    let trunk = default_base(cwd).ok()?;
+    not_an_option(cwd, &[&trunk]).ok()?;
+    let out = git(cwd, &["merge-base", "HEAD", &trunk]).ok()?;
     let fork = out.trim();
     (!fork.is_empty()).then(|| fork.to_owned())
 }
