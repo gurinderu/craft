@@ -28,12 +28,11 @@ pub struct Said<'a> {
     pub abandoned: &'a [String],
 }
 
-/// Stops the run on the host's `limit`, every task not answered held for a resume.
-pub(super) fn on_limit(s: &mut TriageState, limit: Option<&str>) {
-    if let Some(text) = limit {
-        craft_step::stop::hold(&mut s.tasks);
-        s.stopped = Some(craft_step::stop::limit(text));
-    }
+/// Stops the run on the host's limit `text`, its pending tasks held for a resume; the tasks of the
+/// phases it finished are left as they settled.
+pub(super) fn on_limit(s: &mut TriageState, text: &str) {
+    craft_step::stop::hold_pending(&mut s.tasks);
+    s.stopped = Some(craft_step::stop::limit(text));
 }
 
 /// The step of the stopped run in `dir`: done for the host, with the stop, the line saying it and

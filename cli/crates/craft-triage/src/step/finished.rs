@@ -39,10 +39,13 @@ pub(super) fn end(
     w: &dyn Writer,
 ) -> Result<Js, TriageError> {
     let filed = super::filing::file(dir, s, &done.record, w)?;
-    let lost = filed.map(|f| f.lost).unwrap_or_default();
+    let lost = filed.as_ref().map(|f| f.lost.clone()).unwrap_or_default();
     let lead = craft_store::lost::section(&lost);
     let plan = with_degraded(done.plan(&lost), &s.degraded, &lead);
     write(dir, &plan, &done.record)?;
+    if let Some(f) = &filed {
+        super::filing::keep(dir, f)?;
+    }
     Ok(plan)
 }
 

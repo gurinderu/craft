@@ -58,5 +58,5 @@ pub fn start(opts: &StartOptions, w: &dyn Writer) -> Result<Value, TriageError> 
         notes: Vec::new(),
         stopped: None,
     };
-    step(dir, &mut s, Aside::default(), w)
+    step(dir, &mut s, Aside::default(), None, w)
 }

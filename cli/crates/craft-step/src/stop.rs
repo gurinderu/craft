@@ -78,16 +78,26 @@ pub fn deaths(text: String) -> Stop {
     }
 }
 
-/// Holds every task not answered as it was first handed out, to be handed out again — but one
-/// abandoned at its deadline, which stays failed: pending, its retries, error and refusal cleared.
-/// Its counted refused file (`counted`) is kept, so one still in place is not read as a new answer
-/// on the resume.
+/// Holds every task not answered, other than one abandoned at its deadline (which stays failed), as
+/// it was first handed out: pending, its retries, error and refusal cleared. Its counted refused
+/// file (`counted`) is kept, so one still in place is not read as a new answer on the resume.
 pub fn hold<K: Kind>(tasks: &mut [Task<K>]) {
     for t in tasks
         .iter_mut()
         .filter(|t| t.state != TaskState::Answered && !t.abandoned)
     {
         t.state = TaskState::Pending;
+        t.retries = 0;
+        t.error = None;
+        t.refused = None;
+    }
+}
+
+/// Holds the pending tasks alone as they were first handed out, for a kind that keeps the tasks
+/// of the phases it finished beside the current ones (the triage): a task failed in an earlier
+/// phase stays failed, its answer already read into what came after.
+pub fn hold_pending<K: Kind>(tasks: &mut [Task<K>]) {
+    for t in tasks.iter_mut().filter(|t| t.pending()) {
         t.retries = 0;
         t.error = None;
         t.refused = None;

@@ -138,22 +138,31 @@ fn submit_takes_the_hosts_limit_a_resume_and_an_abandoned_task() {
     std::fs::create_dir_all(&repo).unwrap();
     let first = start(&home, &repo, &run, &[]);
     let id = first["tasks"][0]["id"].as_str().unwrap().to_owned();
+    let task = |run: &Path| {
+        let state: Value =
+            serde_json::from_str(&std::fs::read_to_string(run.join("state.json")).unwrap())
+                .unwrap();
+        state["tasks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| t["id"] == id.as_str())
+            .cloned()
+            .unwrap()
+    };
+    // No answer written: a resume hands it out again uncounted, a plain submit counts a retry.
+    submit(&home, &run, &["--resume"]);
+    assert_eq!(task(&run)["retries"], 0, "{}", task(&run));
+    submit(&home, &run, &[]);
+    assert_eq!(task(&run)["retries"], 1, "{}", task(&run));
     let stopped = submit(&home, &run, &["--limit", "the limit"]);
     assert_eq!(stopped["stopped"]["text"], "the limit", "{stopped}");
-    let resumed = submit(&home, &run, &["--resume"]);
-    assert!(resumed.get("stopped").is_none(), "{resumed}");
-    submit(&home, &run, &["--abandoned", &id, "--resume"]);
-    let state: Value =
-        serde_json::from_str(&std::fs::read_to_string(run.join("state.json")).unwrap()).unwrap();
-    let task = state["tasks"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|t| t["id"] == id.as_str())
-        .unwrap();
+    let gone = submit(&home, &run, &["--abandoned", &id]);
+    assert!(gone.get("stopped").is_none(), "{gone}");
+    let t = task(&run);
     assert_eq!(
-        (&task["state"], &task["abandoned"]),
+        (&t["state"], &t["abandoned"]),
         (&Value::from("failed"), &Value::Bool(true)),
-        "{task}"
+        "{t}"
     );
 }

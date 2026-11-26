@@ -54,34 +54,40 @@ pub fn submit(
         return Ok(halt::stopped(dir, &s));
     }
     take::note(&mut s.degraded, said.degraded);
-    if s.stopped.take().is_some() && given.is_none() {
-        return step(dir, &mut s, Aside::default(), w);
-    }
     if let Some(id) = take::unknown(&s.tasks, given) {
         return Err(TriageError::UnknownTask(id.clone()));
     }
     let mut aside = Aside::default();
     take::abandon(dir, &mut s.tasks, said.abandoned, &mut aside)?;
+    // A stopped run goes on: given no answers, its held tasks are handed out again, none counted.
+    let was_stopped = s.stopped.take().is_some();
+    if was_stopped && given.is_none() {
+        return step(dir, &mut s, aside, None, w);
+    }
     let hold = Hold::of(said.limit.is_some(), said.resume);
     take::take_pending(dir, &mut s.tasks, given, hold, &mut aside)?;
-    halt::on_limit(&mut s, said.limit);
-    step(dir, &mut s, aside, w)
+    step(dir, &mut s, aside, said.limit, w)
 }
 
-/// Moves the run on when it is not stopped and none of its tasks is pending, saves it, sets the
-/// refused answers aside, and says what comes next. A finished run files its record first, so a
-/// record that did not land leads its plan.
+/// Moves the run on when none of its tasks is pending, saves it, sets the refused answers aside,
+/// and says what comes next. On the host's `limit` a run that still needs agents stops, as the
+/// review stops after moving on; one whose answers are all in finishes. A finished run files its
+/// record first, so a record that did not land leads its plan.
 fn step(
     dir: &Path,
     s: &mut TriageState,
     aside: Aside,
+    limit: Option<&str>,
     w: &dyn Writer,
 ) -> Result<Value, TriageError> {
-    let finished = if s.stopped.is_some() || s.tasks.iter().any(Task::pending) {
+    let finished = if s.tasks.iter().any(Task::pending) {
         None
     } else {
         advance(s)?
     };
+    if let (Some(text), None) = (limit, &finished) {
+        halt::on_limit(s, text);
+    }
     let plan = finished
         .map(|done| finished::end(dir, s, &done, w))
         .transpose()?;
