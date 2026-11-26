@@ -409,8 +409,8 @@ fn set_aside(dir: &Path, run: &mut RunState, aside: Aside, save: Save<'_>) -> Re
     if unmoved.is_empty() {
         return Ok(());
     }
-    let notes: Vec<String> = unmoved.iter().map(|u| unmoved_note(run, u)).collect();
-    let goes_on = run.stopped.is_none() && unmoved.iter().any(|u| pending(run, &u.id).is_some());
+    let (notes, pending_left) = craft_step::left::left(&unmoved, |id| pending(run, id));
+    let goes_on = run.stopped.is_none() && pending_left;
     take::note(&mut run.notes, &notes);
     match save(dir, run) {
         Err(e) if goes_on => Err(e.into()),
@@ -424,21 +424,6 @@ fn pending<'a>(run: &'a RunState, id: &str) -> Option<&'a state::Task> {
         .iter()
         .find(|t| t.id == id)
         .filter(|t| run.phase != Phase::Done && t.pending())
-}
-
-/// The run's note on a refused answer file `u` left in place, saying what its next read does.
-fn unmoved_note(run: &RunState, u: &craft_step::Unmoved) -> String {
-    let then = match pending(run, &u.id) {
-        None => "its task is settled, so it stays there",
-        Some(_) if !u.known => "read again, it is taken as a new answer",
-        Some(t) if t.counted.as_ref().is_some_and(|c| c.again) => {
-            "found there again after a round that ran, it counts as a missing answer"
-        }
-        Some(_) => {
-            "read again, it is set aside uncounted, and found there once more after a round that ran it counts as a missing answer"
-        }
-    };
-    format!("{}: left in place; {then}", crate::sources::chain(&u.error))
 }
 
 /// What the host is to do next: the pending tasks, or the finished run's report, verdict and what

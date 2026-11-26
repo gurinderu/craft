@@ -407,7 +407,7 @@ into the run store through `crates/craft-store`, which writes the checkpoints, t
 record has not landed, which every `--resume` files again first; `craft review status` carries that `filing` — the
 record, its file and the step the run ended with — for a host that lost the step that said it), `crates/craft-step` (the step protocol
 every kind of run shares, review now: the task and its kind, its prompt, schema and answer files, the answer checked against
-its schema and asked for again, the pending step and a task's status line; the review is its first kind, its phases, lenses,
+its schema and asked for again, the notes on a refused answer file left in place (`src/left.rs`), the pending step and a task's status line; the review is its first kind, its phases, lenses,
 memory and verification its own), `crates/craft-store` (the run store's writer and its streaming reader, its output held to
 the JavaScript writer's by `content/parity/store-cases.json`), `crates/craft-triage` (the triage of findings as the binary
 runs it — `craft triage start | submit | status` on the step protocol (`src/step.rs`, `src/state.rs`), its run derived

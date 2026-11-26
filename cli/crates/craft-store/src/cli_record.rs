@@ -245,7 +245,7 @@ pub fn cli_record(step: &Obj, stats: Obj, at: &At<'_>) -> Obj {
         r.set("unattributedConfirmed", Js::Num(n));
     }
     r.set("runtimeStats", Js::Obj(stats));
-    r.set("memory", obj_or_null(step.get("memory")));
+    r.set("memory", crate::memory::field(step.get("memory")));
     r.set("strict", Js::Bool(at.strict));
     r.spread(&publication_kept(step));
     r.set("outputTokens", at.output_tokens.map_or(Js::Null, Js::Num));

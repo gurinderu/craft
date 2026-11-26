@@ -18,6 +18,7 @@ pub mod gap;
 pub mod git;
 pub mod js;
 pub mod lock;
+pub mod memory;
 pub mod parts;
 pub mod posthoc;
 pub mod process_identity;

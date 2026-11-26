@@ -2,7 +2,7 @@
 
 use craft_step::{Aside, Counted, HandoffError, Model, Unmoved};
 
-use super::{set_aside, unmoved_note};
+use super::{pending, set_aside};
 use crate::kind::TriageKind;
 use crate::run::{Args, Phase};
 use crate::state::{STATE_VERSION, Seen, Task, TriageState};
@@ -51,8 +51,10 @@ fn unmoved(id: &str, known: bool) -> Unmoved {
     }
 }
 
+/// What the note on `u` says its next read does, its task found as this kind finds it.
 fn then(s: &TriageState, u: &Unmoved) -> String {
-    unmoved_note(s, u).rsplit("); ").next().unwrap().to_owned()
+    let n = craft_step::left::note(pending(s, &u.id), u);
+    n.rsplit("; ").next().unwrap().to_owned()
 }
 
 #[test]
@@ -81,10 +83,6 @@ fn the_note_says_what_the_next_read_of_the_file_does() {
     assert_eq!(
         then(&run(Phase::Done, None), &unmoved("plan", false)),
         "its task is settled, so it stays there"
-    );
-    assert!(
-        unmoved_note(&live, &unmoved("plan", false))
-            .starts_with("plan: a refused answer file left in place (task id")
     );
 }
 
