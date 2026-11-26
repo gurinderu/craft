@@ -55,6 +55,9 @@ pub(crate) enum Came {
     TimedOut { secs: u64 },
     /// The join asked it to stop.
     Stopped,
+    /// cargo-mutants found no mutant in the change's lines: it exits 0 and writes no
+    /// `mutants.out/` (27.1.0: `INFO No mutants to filter`).
+    NoMutants,
     /// It could not be started, or the request or the diff not read.
     Broken { message: String },
 }
@@ -64,6 +67,8 @@ pub(crate) const RESULT: &str = "result.json";
 pub(crate) const STOP: &str = "stop";
 pub(crate) const ERR: &str = "worker.err";
 pub(crate) const DIFF: &str = "change.diff";
+/// What cargo-mutants 27.1.0 says on stderr when the diff holds no mutant.
+const NO_MUTANTS: &str = "No mutants to filter";
 
 /// Runs the request in `dir` (the run's mutants directory) to its end and writes what it came to.
 ///
@@ -192,6 +197,9 @@ fn exited(code: Option<i32>, dir: &Path) -> Came {
     let err = std::fs::read_to_string(dir.join("cargo-mutants.err")).unwrap_or_default();
     if err.contains("no such command") {
         return Came::Missing;
+    }
+    if code == Some(0) && err.contains(NO_MUTANTS) {
+        return Came::NoMutants;
     }
     let last = super::super::check::last_line(&err);
     Came::Broken {

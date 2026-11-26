@@ -73,6 +73,7 @@ fn launched(top: &Path, run: &Path) -> Mutants {
         workspace: String::new(),
         base: "main".into(),
         joined: false,
+        short: String::new(),
     }
 }
 
@@ -154,7 +155,9 @@ fn a_survivor_in_the_changed_function_is_pooled_and_one_in_its_neighbour_is_coun
         ),
         Came::Exited { code: Some(2) }
     );
-    let (found, line) = join(&mut launched(top.path(), run.path()), Duration::ZERO);
+    let mut m = launched(top.path(), run.path());
+    let (found, line) = join(&mut m, Duration::ZERO);
+    assert_eq!(m.degraded_note(), None, "a whole answer degrades nothing");
     assert_eq!(found.len(), 1, "{found:?}");
     assert_eq!(
         (found[0]["file"].as_str(), found[0]["line"].as_u64()),
@@ -193,12 +196,45 @@ fn a_worker_past_its_budget_stops_cargo_mutants_and_says_how_long_it_ran() {
     assert!(gone(
         &std::fs::read_to_string(bin.path().join("cargo.pid")).unwrap()
     ));
-    let (found, line) = join(&mut launched(top.path(), run.path()), Duration::ZERO);
+    let mut m = launched(top.path(), run.path());
+    let (found, line) = join(&mut m, Duration::ZERO);
     assert!(found.is_empty());
     assert!(
         line.unwrap().contains("budget ran out"),
         "a stopped run is said, not silent"
     );
+    let degraded = m
+        .degraded_note()
+        .expect("a run with no outcome degrades the review");
+    assert!(degraded.contains("budget ran out"), "{degraded}");
+}
+
+#[test]
+fn a_change_with_no_mutant_in_its_lines_is_an_answer_not_a_broken_run() {
+    let (top, run, bin) = (
+        repo(),
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+    );
+    let path = bin.path().join("cargo");
+    exe::write_executable(
+        &path,
+        "#!/bin/sh\n[ \"$2\" = --version ] && { echo 'cargo-mutants 27.1.0'; exit 0; }\necho 'INFO No mutants to filter' >&2\nexit 0\n",
+    )
+    .unwrap();
+    assert_eq!(
+        work(top.path(), run.path(), &path.display().to_string(), 30),
+        Came::NoMutants
+    );
+    let mut m = launched(top.path(), run.path());
+    let (found, line) = join(&mut m, Duration::ZERO);
+    assert!(found.is_empty());
+    let line = line.unwrap();
+    assert!(
+        line.contains("found no mutant in the change's lines") && !line.contains("did not run"),
+        "{line}"
+    );
+    assert_eq!(m.degraded_note(), None);
 }
 
 #[test]

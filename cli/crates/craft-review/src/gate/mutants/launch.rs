@@ -237,6 +237,7 @@ fn start(at: &Launch<'_>, p: &Plan<'_>) -> Result<Mutants, MutantsError> {
         workspace: p.workspace.clone(),
         base: at.base.to_owned(),
         joined: false,
+        short: String::new(),
     })
 }
 
