@@ -94,9 +94,8 @@ fn a_date_anchor_names_the_date_where_a_commit_anchor_names_the_commit() {
         ),
         (
             Unusable::NoTrunk,
-            "the trunk this change forks from could not be resolved (no origin/HEAD, or no \
-             merge-base of it with HEAD), so nothing anchors the decision date 2026-05-01 — raised \
-             normally",
+            "no trunk could be resolved (no origin/HEAD, origin/main or origin/master), so nothing \
+             anchors the decision date 2026-05-01 — raised normally",
         ),
         (
             Unusable::Unreadable,

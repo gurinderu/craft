@@ -58,10 +58,12 @@ that import — every active `external` record, every scope — and never pass t
 made (the PR thread, the review comment): the review engine names them when it sets the finding
 aside, and it sets a finding aside only while the code in `scope` is unchanged since `commit`. A
 decision without a `commit` (a store that allows no commit hashes) is checked against its `date`
-instead: the code in `scope` unchanged since the last commit, on the trunk the change forks from
-(`origin/HEAD`, along first parents), before that day began anywhere (`YYYY-MM-DD`; a timestamp with a
-zone is taken as its UTC day). A commit made the same day, and every commit of the change under review,
-count as after it; a date later than today, or a repository with no `origin/HEAD`, checks nothing. With
+instead: the code in `scope` unchanged since the last commit on the trunk (`origin/HEAD`, else
+`origin/main`, else `origin/master`), walked along first parents from its tip, before that day began
+anywhere (`YYYY-MM-DD`; a timestamp with a zone is taken as its UTC day). A commit made the same day,
+every commit of the change under review, and any trunk commit the checkout lacks count as after it; a
+date later than today, or a repository with no `origin/HEAD`, `origin/main` or `origin/master`, checks
+nothing. With
 neither a `commit` nor a `date`, a review raises its finding again every time.
 The title is the finding's title as the review printed it — for a gate tool's finding without `toolRule`, as the report lists it under **Tool finding titles (verbatim)** at its `file:line` (none listed: the review ledger row's title only when it holds exactly one live such row at that `file:line` (live: `disposition` other than `closed` — a `closed` row is a tombstone and does not count), never a pick between several; else the report line, which then goes to the judge each round) — never from a refusal note, which clips it; `line`, `lens` and `toolRule` are the
 finding's anchor. The review rewords titles every round, so the engine matches a record to a finding by its
@@ -265,9 +267,9 @@ passing to stand in for the engine's recall.
    project rule (above), when the code in
    the decision's scope changed since its `commit` (with no `commit`, since the trunk's last commit
    before its `date`), when the decision has neither, or when the repository does not know that
-   `commit`, holds no trunk commit before that `date`, has no `origin/HEAD`, or the `date` is later than
-   today (a squash-merged branch, another clone — named under
-   **Prior decisions not applied**). A High a human's decision sets aside, its code unchanged since
+   `commit` (a squash-merged branch, another clone), holds no trunk commit before that `date`, has no
+   `origin/HEAD`, `origin/main` or `origin/master`, or the `date` is later than today — each named
+   under **Prior decisions not applied**. A High a human's decision sets aside, its code unchanged since
    that `commit`, is listed under its own **High rejected by a human** section with who, when, why
    and the link, outside the verdict.
    More than 100 decisions keep the 100 closest to the reviewed paths (a scope naming a changed file,

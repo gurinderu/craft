@@ -7,6 +7,7 @@ use crate::memory::PriorDecision;
 use crate::memory::priors::scope_check_on;
 
 mod failing;
+mod fork;
 
 /// Runs git in `dir` with author and committer dated `date`, its stdout trimmed.
 pub(super) fn at(dir: &Path, date: &str, args: &[&str]) -> String {
@@ -132,8 +133,7 @@ fn with_no_trunk_a_dated_record_anchors_nothing_and_a_commit_still_does() {
     let s = scope_check_on(t.path(), &refs, "2026-05-04");
     assert_eq!(ids(&s.missing), ["dated"]);
     assert!(
-        s.why_missing["dated"]
-            .starts_with("the trunk this change forks from could not be resolved"),
+        s.why_missing["dated"].starts_with("no trunk could be resolved"),
         "{:?}",
         s.why_missing
     );
@@ -155,6 +155,15 @@ fn with_no_origin_head_the_trunk_is_origin_main() {
     );
     let ds = [record("b-2nd", "src/b.rs", "", "2026-05-02")];
     let refs: Vec<&PriorDecision> = ds.iter().collect();
+    let s = scope_check_on(d, &refs, "2026-05-04");
+    assert_eq!(ids(&s.unchanged), ["b-2nd"], "{:?}", s.why_missing);
+    // The default branch renamed and pruned: origin/HEAD dangles, origin/main still resolves.
+    let dangling = [
+        "symbolic-ref",
+        "refs/remotes/origin/HEAD",
+        "refs/remotes/origin/gone",
+    ];
+    at(d, "2026-05-04T00:00:00+0000", &dangling);
     let s = scope_check_on(d, &refs, "2026-05-04");
     assert_eq!(ids(&s.unchanged), ["b-2nd"], "{:?}", s.why_missing);
 }

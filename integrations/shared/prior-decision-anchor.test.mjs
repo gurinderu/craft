@@ -6,7 +6,15 @@ import assert from 'node:assert/strict'
 import { parsePriorDecisions } from './prior-decisions.mjs'
 import { anchorMissingReason, anchorSince, decisionDate, hasAnchor } from './prior-decision-anchor.mjs'
 import { applyPriorDecisions, recordsDeferral, reraiseReason } from './prior-decision-apply.mjs'
-import { candidatesToCheck, decisionsToCheck, readScopeCheck, runScopeCheck } from './prior-decision-scope.mjs'
+import {
+  SCOPE_CHECK_SCHEMA,
+  candidatesToCheck,
+  decisionsToCheck,
+  readScopeCheck,
+  runScopeCheck,
+  scopeCheckPrompt,
+  scopeCheckScript,
+} from './prior-decision-scope.mjs'
 
 const record = (/** @type {Record<string, unknown>} */ over = {}) => ({
   id: 'decision-d1d1d1d1d1',
@@ -71,7 +79,7 @@ test('anchor: the commit before the date, the date when there is no commit, and 
   assert.equal(anchorMissingReason(dated, 'future'), 'the decision date 2026-05-02 is in the future, so no commit precedes it — raised normally')
   assert.equal(
     anchorMissingReason(dated, 'no-trunk'),
-    'the trunk this change forks from could not be resolved (no origin/HEAD, or no merge-base of it with HEAD), so nothing anchors the decision date 2026-05-02 — raised normally',
+    'no trunk could be resolved (no origin/HEAD, origin/main or origin/master), so nothing anchors the decision date 2026-05-02 — raised normally',
   )
   assert.equal(anchorMissingReason(dated, 'unreadable'), "git could not list the trunk's commits before the decision date 2026-05-02 — raised normally")
   assert.equal(anchorSince(parsed({ when: '2026-05-01T23:30:00-02:00' })[0]), 'the decision date 2026-05-02')
@@ -157,4 +165,20 @@ test('apply: a date in the future or with no trunk raises its finding and names 
   assert.equal(r.setAside.length, 0)
   assert.deepEqual(r.refused, [`decision ${d.id}: the decision date 2099-01-01 is in the future, so no commit precedes it — raised normally`])
   assert.match(String(r.tiers['confirmed']?.[0]?.why), /raised again: the decision date 2099-01-01 is in the future/)
+  const [n] = parsed({})
+  const noTrunk = async () => ({ unchanged: [n.id], missing: [], unusable: [{ id: n.id, word: 'no-trunk' }], reason: '' })
+  const t = await applyPriorDecisions({ confirmed: [finding()] }, [n], noTrunk)
+  assert.equal(t.setAside.length, 0)
+  assert.deepEqual(t.refused, [`decision ${n.id}: ${anchorMissingReason(n, 'no-trunk')}`])
+  assert.match(String(t.tiers['confirmed']?.[0]?.why), /raised again: no trunk could be resolved/)
+})
+
+test('scope agent: its schema requires the unusable anchors with their word, and its prompt asks for them', () => {
+  assert.ok(SCOPE_CHECK_SCHEMA.required.includes('unusable'))
+  const items = SCOPE_CHECK_SCHEMA.properties.unusable.items
+  assert.deepEqual(items.required, ['id', 'word'])
+  assert.deepEqual(items.properties.word.enum, ['future', 'no-trunk', 'unreadable'])
+  const prompt = scopeCheckPrompt(parsed({}))
+  assert.match(prompt, /unusable: \[\{id, word\} for every id printed with the word future, no-trunk or unreadable\]/)
+  assert.ok(prompt.includes(scopeCheckScript(parsed({}))), 'the prompt carries the lines to run')
 })

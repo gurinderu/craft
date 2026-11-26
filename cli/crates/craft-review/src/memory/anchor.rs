@@ -24,7 +24,7 @@ pub(crate) enum Unusable {
     Missing,
     /// The date is later than today in UTC.
     Future,
-    /// No trunk: no `origin/HEAD`, or no merge-base of it with `HEAD`.
+    /// No trunk: no `origin/HEAD`, `origin/main` or `origin/master` names a commit.
     NoTrunk,
     /// git failed listing the trunk's commits.
     Unreadable,
@@ -84,9 +84,8 @@ impl Anchor<'_> {
                 "the decision date {day} is in the future, so no commit precedes it — raised normally"
             ),
             Unusable::NoTrunk => format!(
-                "the trunk this change forks from could not be resolved (no origin/HEAD, or no \
-                 merge-base of it with HEAD), so nothing anchors the decision date {day} — raised \
-                 normally"
+                "no trunk could be resolved (no origin/HEAD, origin/main or origin/master), so \
+                 nothing anchors the decision date {day} — raised normally"
             ),
             Unusable::Unreadable => format!(
                 "git could not list the trunk's commits before the decision date {day} — raised \
@@ -97,12 +96,19 @@ impl Anchor<'_> {
 
     /// The commit the scope is diffed against in `repo`, `today` being the UTC date: the anchor's
     /// own when the repository has it. For a date, the last commit before that day began anywhere
-    /// (00:00 at +14:00) on the trunk's first-parent line from where `HEAD` forks from it — not
-    /// over all of `HEAD`'s history, where a branch's backdated commit, or a side branch's commit
-    /// dated before the day but merged after it, would be the base and hide a later change of the
-    /// scope; the change's own edits of the scope thus always count as after the record (realm
-    /// @nick/craft, node #676). A date later than `today` anchors nothing.
-    pub(crate) fn base(&self, repo: &Path, today: &str) -> Result<String, Unusable> {
+    /// (00:00 at +14:00) on the first-parent line of the trunk's tip, `trunk` resolving it when
+    /// asked — not over `HEAD`'s history nor from where `HEAD` forks from the trunk, where a
+    /// branch's backdated commit, or a side branch's commit dated before the day but merged after
+    /// it, would be the base and hide a later change of the scope. Diffed against the working
+    /// tree, the change's own edits of the scope and any trunk commit the checkout lacks thus count
+    /// as after the record (realm @nick/craft, node #676). A date later than `today` anchors
+    /// nothing.
+    pub(crate) fn base<'t>(
+        &self,
+        repo: &Path,
+        today: &str,
+        trunk: impl FnOnce() -> Option<&'t str>,
+    ) -> Result<String, Unusable> {
         let day = match self {
             Anchor::Commit(c) => {
                 return git::has_commit(repo, c)
@@ -114,8 +120,8 @@ impl Anchor<'_> {
         if day.as_str() > today {
             return Err(Unusable::Future);
         }
-        let fork = git::trunk_fork(repo).ok_or(Unusable::NoTrunk)?;
-        git::last_before(repo, &fork, day)
+        let tip = trunk().ok_or(Unusable::NoTrunk)?;
+        git::last_before(repo, tip, day)
             .map_err(|_said_by_git| Unusable::Unreadable)?
             .ok_or(Unusable::Missing)
     }

@@ -90,8 +90,8 @@ test('scope script: a dated record is diffed against the trunk before its day be
     assert.equal(
       script.split('\n')[0],
       `if [ '20260502' -gt "$(date -u +%F | tr -d -)" ]; then echo 'a-2nd'\\''s' future; ` +
-        `elif ! t=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || for r in origin/main origin/master; do git rev-parse -q --verify "$r^{commit}" >/dev/null && echo "$r" && break; done | grep .) || ! f=$(git merge-base HEAD "$t" 2>/dev/null); then echo 'a-2nd'\\''s' no-trunk; ` +
-        `elif ! b=$(git rev-list -1 --first-parent '--before=2026-05-02 00:00:00 +1400' "$f" 2>/dev/null); then echo 'a-2nd'\\''s' unreadable; ` +
+        `elif ! t=$(for r in "$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null)" origin/main origin/master; do [ -n "$r" ] && git rev-parse -q --verify "$r^{commit}" >/dev/null && echo "$r" && break; done | grep .); then echo 'a-2nd'\\''s' no-trunk; ` +
+        `elif ! b=$(git rev-list -1 --first-parent '--before=2026-05-02 00:00:00 +1400' "$t" 2>/dev/null); then echo 'a-2nd'\\''s' unreadable; ` +
         `elif [ -n "$b" ]; then git diff --quiet "$b" -- 'src/a.rs'; echo 'a-2nd'\\''s' $?; else echo 'a-2nd'\\''s' missing; fi`,
     )
     const seen = ["a-2nd's 1", 'b-2nd 0', 'c-2nd 1', 'd-2nd 1', 'b-zoned-2nd 0', 'b-zoned-1st missing', 'a-4th 0', 'a-ahead future']
@@ -110,12 +110,49 @@ test('scope script: with no origin/HEAD a dated record prints no-trunk, a commit
   })
 })
 
-test('scope script: with no origin/HEAD the trunk is origin/main', () => {
+test('scope script: with no origin/HEAD, or one naming no commit, the trunk is origin/main', () => {
   inRepo(false, dir => {
     git(dir, ['update-ref', 'refs/remotes/origin/main', 'main'], '2026-05-04T00:00:00+0000')
     const ds = parsed({ id: 'b-2nd', scope: 'src/b.rs', when: '2026-05-02' })
     assert.deepEqual(run(scopeCheckScript(ds), dir), ['b-2nd 0'])
+    // The default branch renamed and pruned: origin/HEAD dangles, origin/main still resolves.
+    git(dir, ['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/gone'], '2026-05-04T00:00:00+0000')
+    assert.deepEqual(run(scopeCheckScript(ds), dir), ['b-2nd 0'])
   })
+})
+
+test('scope script: a record dated today is not in the future', () => {
+  inRepo(true, dir => {
+    const today = new Date().toISOString().slice(0, 10)
+    assert.deepEqual(run(scopeCheckScript(parsed({ id: 'a-today', when: today })), dir), ['a-today 0'])
+  })
+})
+
+test('scope script: the trunk is walked from its tip, not from where HEAD forks from it', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'craft-anchor-'))
+  try {
+    const start = '2026-04-30T12:00:00+0000'
+    git(dir, ['init', '-q', '-b', 'main'], start)
+    mkdirSync(join(dir, 'src'))
+    for (const f of ['s', 't', 'u']) writeFileSync(join(dir, `src/${f}.rs`), '0\n')
+    const root = commit(dir, 'src/u.rs', '0\n', start)
+    git(dir, ['checkout', '-qb', 'side', root], start)
+    // HEAD forks from this side commit, dated before the 2nd and merged into the trunk after it.
+    const side = commit(dir, 'src/s.rs', 'side\n', '2026-05-01T08:00:00+0000')
+    git(dir, ['checkout', '-q', 'main'], start)
+    commit(dir, 'src/t.rs', '1\n', '2026-05-01T09:00:00+0000')
+    const merged = '2026-05-03T12:00:00+0000'
+    git(dir, ['merge', '-q', '--no-ff', '-m', 'side', 'side'], merged)
+    git(dir, ['update-ref', 'refs/remotes/origin/main', 'HEAD'], merged)
+    git(dir, ['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main'], merged)
+    git(dir, ['checkout', '-qb', 'feat', side], merged)
+    commit(dir, 'src/f.rs', 'feat\n', '2026-05-03T13:00:00+0000')
+    const ds = parsed({ id: 's-2nd', scope: 'src/s.rs' }, { id: 't-2nd', scope: 'src/t.rs' }, { id: 'u-2nd', scope: 'src/u.rs' })
+    // From the fork (the side commit) or from HEAD, s.rs and t.rs would read unchanged.
+    assert.deepEqual(run(scopeCheckScript(ds), dir), ['s-2nd 1', 't-2nd 1', 'u-2nd 0'])
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 })
 
 test('scope script: a trunk git cannot walk prints unreadable', () => {

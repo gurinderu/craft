@@ -59,6 +59,40 @@ fn the_match_judges_answer_is_read_against_the_scopes_kept_when_it_was_asked() {
 }
 
 #[test]
+fn why_a_dated_record_is_missing_is_kept_with_the_asked_judge_and_read_back_with_its_answer() {
+    let d = PriorDecision {
+        when: "2026-05-02".into(),
+        tool_rule: "redundant_clone".into(),
+        ..decision("decision-a", "needless clone")
+    };
+    let repo = std::path::Path::new(NO_REPO);
+    let mut chain = Chain::default();
+    let mut m = Memory {
+        decisions: vec![d],
+        ..Memory::default()
+    };
+    let settled = vec![tool_finding()];
+    assert!(m.match_task(repo, &settled, &chain, &[]).unwrap().is_some());
+    let kept = m.asked.matched.take().unwrap();
+    let why = "no trunk could be resolved (no origin/HEAD, origin/main or origin/master), so \
+               nothing anchors the decision date 2026-05-02 — raised normally";
+    assert_eq!(
+        kept.why_missing.get("decision-a").map(String::as_str),
+        Some(why)
+    );
+    // Through the run's state between the step that asks and the one that reads the answer.
+    let state = serde_json::to_string(&kept).unwrap();
+    m.asked.matched = Some(serde_json::from_str(&state).unwrap());
+    let (mut out, mut notes) = (settled, Vec::new());
+    m.apply(repo, &mut out, &mut chain, &mut notes, (None, &[]));
+    assert!(m.asked.matched.is_none(), "read from what was kept");
+    let refusal = format!("decision decision-a: {why}");
+    assert!(m.refused.contains(&refusal), "{:?}", m.refused);
+    let reraised = out[0]["why"].as_str().unwrap();
+    assert!(reraised.contains(why), "{reraised}");
+}
+
+#[test]
 fn the_rule_judges_answer_is_read_against_the_pairs_kept_when_it_was_asked() {
     let rule = |id: &str| PriorDecision {
         kind: RecordKind::Rule,

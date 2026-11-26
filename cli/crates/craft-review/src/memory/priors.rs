@@ -7,6 +7,7 @@
 //! pairs it is asked about, and the scopes git observed for them, are kept in the run's state when
 //! its task is handed out ([`super::Asked`]) and read back with its answer, so git is asked once.
 
+use std::cell::OnceCell;
 use std::collections::BTreeSet;
 use std::path::Path;
 
@@ -245,15 +246,17 @@ pub(super) fn scope_check(repo: &Path, ds: &[&PriorDecision]) -> apply::Scope {
     scope_check_on(repo, ds, &today())
 }
 
-/// [`scope_check`] with `today` the UTC date.
+/// [`scope_check`] with `today` the UTC date; the trunk resolved once, for the first dated record.
 pub(super) fn scope_check_on(repo: &Path, ds: &[&PriorDecision], today: &str) -> apply::Scope {
     let mut out = apply::Scope::default();
+    let trunk = OnceCell::new();
     for d in ds {
         let Some(anchor) = d.anchor() else {
             out.missing.insert(d.id.clone());
             continue;
         };
-        match anchor.base(repo, today) {
+        let resolved = || trunk.get_or_init(|| git::trunk(repo)).as_deref();
+        match anchor.base(repo, today, resolved) {
             Err(why) => {
                 out.missing.insert(d.id.clone());
                 out.why_missing.insert(d.id.clone(), anchor.unusable(why));

@@ -1304,7 +1304,7 @@
           },
           {
             "title": "lock held across await",
-            "why": "w · Rejected before (decision decision-d7d7d7d7d7, nick, 2026-05-05) — raised again: the trunk this change forks from could not be resolved (no origin/HEAD, or no merge-base of it with HEAD), so nothing anchors the decision date 2026-05-05 — raised normally."
+            "why": "w · Rejected before (decision decision-d7d7d7d7d7, nick, 2026-05-05) — raised again: no trunk could be resolved (no origin/HEAD, origin/main or origin/master), so nothing anchors the decision date 2026-05-05 — raised normally."
           }
         ],
         "setAside": [
@@ -1335,7 +1335,7 @@
           "backend": "repo",
           "questions": 1
         },
-        "report": "\n\n## Rejected before (set aside — not in the verdict)\n- Medium · `src/a.rs:11` · clone in the hot loop · w · REJECTED BEFORE: measured cold — nick, 2026-05-01, no link (decision decision-d1d1d1d1d1) · matched by file:line+lens\n\n## Known and deferred (open question — not in the verdict)\n- Medium · `src/e.rs:50` · timeout of the fetch · w · KNOWN AND DEFERRED: decide after the load test — nick, 2026-05-04, no link (question question-e5e5e5e5e5) · matched by file:line+lens\n\n## Memory\n- memory: recalled 6 decision(s) and 1 open question(s) from repo (the .craft/memory directory)\n\n\n## Prior decisions not applied\n- ⚠️ the match judge died or answered unreadably — 5 re-raised match(es) not asked whether the code goes against the record\n- ⚠️ decision decision-d3d3d3d3d3: no commit in this repo before the decision date 2026-05-03 — raised normally\n- ⚠️ decision decision-d6d6d6d6d6: the decision date 2099-01-01 is in the future, so no commit precedes it — raised normally\n- ⚠️ decision decision-d7d7d7d7d7: the trunk this change forks from could not be resolved (no origin/HEAD, or no merge-base of it with HEAD), so nothing anchors the decision date 2026-05-05 — raised normally\n"
+        "report": "\n\n## Rejected before (set aside — not in the verdict)\n- Medium · `src/a.rs:11` · clone in the hot loop · w · REJECTED BEFORE: measured cold — nick, 2026-05-01, no link (decision decision-d1d1d1d1d1) · matched by file:line+lens\n\n## Known and deferred (open question — not in the verdict)\n- Medium · `src/e.rs:50` · timeout of the fetch · w · KNOWN AND DEFERRED: decide after the load test — nick, 2026-05-04, no link (question question-e5e5e5e5e5) · matched by file:line+lens\n\n## Memory\n- memory: recalled 6 decision(s) and 1 open question(s) from repo (the .craft/memory directory)\n\n\n## Prior decisions not applied\n- ⚠️ the match judge died or answered unreadably — 5 re-raised match(es) not asked whether the code goes against the record\n- ⚠️ decision decision-d3d3d3d3d3: no commit in this repo before the decision date 2026-05-03 — raised normally\n- ⚠️ decision decision-d6d6d6d6d6: the decision date 2099-01-01 is in the future, so no commit precedes it — raised normally\n- ⚠️ decision decision-d7d7d7d7d7: no trunk could be resolved (no origin/HEAD, origin/main or origin/master), so nothing anchors the decision date 2026-05-05 — raised normally\n"
       }
     }
   ]

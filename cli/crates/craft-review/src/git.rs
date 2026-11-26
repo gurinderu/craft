@@ -165,28 +165,25 @@ pub fn has_commit(cwd: &Path, commit: &str) -> bool {
     !commit.starts_with('-') && verifies(cwd, commit)
 }
 
-/// Where `HEAD` forks from the trunk — origin's default branch as [`default_base`] resolves it
-/// (`origin/HEAD`, else `origin/main`, else `origin/master`) — by `git merge-base HEAD <trunk>`;
-/// `None` when no trunk resolves, the two share no history, or git cannot tell.
+/// The trunk: origin's default branch as [`default_base`] resolves it (`origin/HEAD` when it names
+/// a commit, else `origin/main`, else `origin/master`); `None` when none resolves.
 #[must_use]
-pub fn trunk_fork(cwd: &Path) -> Option<String> {
+pub fn trunk(cwd: &Path) -> Option<String> {
     let trunk = default_base(cwd).ok()?;
     not_an_option(cwd, &[&trunk]).ok()?;
-    let out = git(cwd, &["merge-base", "HEAD", &trunk]).ok()?;
-    let fork = out.trim();
-    (!fork.is_empty()).then(|| fork.to_owned())
+    Some(trunk)
 }
 
-/// The last commit on `fork`'s first-parent line committed before `day` (`YYYY-MM-DD`) began
+/// The last commit on `tip`'s first-parent line committed before `day` (`YYYY-MM-DD`) began
 /// anywhere, at 00:00 +14:00, as `git rev-list -1 --first-parent --before='<day> 00:00:00 +1400'
-/// <fork>` names it; `None` when that line starts after it.
+/// <tip>` names it; `None` when that line starts after it.
 ///
 /// # Errors
-/// When `fork` is spelled as an option or `git` fails.
-pub fn last_before(cwd: &Path, fork: &str, day: &str) -> Result<Option<String>, GitError> {
-    not_an_option(cwd, &[fork])?;
+/// When `tip` is spelled as an option or `git` fails.
+pub fn last_before(cwd: &Path, tip: &str, day: &str) -> Result<Option<String>, GitError> {
+    not_an_option(cwd, &[tip])?;
     let before = format!("--before={day} 00:00:00 +1400");
-    let out = git(cwd, &["rev-list", "-1", "--first-parent", &before, fork])?;
+    let out = git(cwd, &["rev-list", "-1", "--first-parent", &before, tip])?;
     let commit = out.trim();
     Ok((!commit.is_empty()).then(|| commit.to_owned()))
 }

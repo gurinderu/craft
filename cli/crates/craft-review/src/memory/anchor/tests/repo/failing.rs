@@ -5,22 +5,17 @@ use crate::memory::PriorDecision;
 use crate::memory::priors::scope_check_on;
 
 #[test]
-fn the_trunk_fork_and_the_commit_before_a_day_come_from_git_or_fail_with_its_error() {
+fn the_trunk_and_the_commit_before_a_day_come_from_git_or_fail_with_its_error() {
     let (t, _) = repo(true);
     let d = t.path();
-    let fork = crate::git::trunk_fork(d).unwrap();
-    let tip = at(
-        d,
-        "2026-05-04T00:00:00+0000",
-        &["rev-parse", "refs/remotes/origin/HEAD"],
-    );
-    assert_eq!(fork, tip);
+    let trunk = crate::git::trunk(d).unwrap();
+    assert_eq!(trunk, "origin/main");
     assert_eq!(
-        crate::git::last_before(d, &fork, "2026-04-30").unwrap(),
+        crate::git::last_before(d, &trunk, "2026-04-30").unwrap(),
         None
     );
     assert!(
-        crate::git::last_before(d, &fork, "2026-05-02")
+        crate::git::last_before(d, &trunk, "2026-05-02")
             .unwrap()
             .is_some()
     );
@@ -29,7 +24,7 @@ fn the_trunk_fork_and_the_commit_before_a_day_come_from_git_or_fail_with_its_err
     let absent = crate::git::last_before(d, "nosuchref", "2026-05-02").unwrap_err();
     assert!(matches!(absent, GitError::Failed { .. }), "{absent}");
     let (none, _) = repo(false);
-    assert_eq!(crate::git::trunk_fork(none.path()), None);
+    assert_eq!(crate::git::trunk(none.path()), None);
 }
 
 #[test]

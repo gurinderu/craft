@@ -51,13 +51,15 @@ export function candidatesToCheck(findings, decisions) {
  * `git diff --quiet` against it, printing the id and the exit status (0 = unchanged since the commit,
  * working tree included); when it does not (a squash-merged branch, another clone), the id and
  * `missing`. A decision naming no commit but a date is compared the same way against the last commit
- * before that day began anywhere (00:00 at +14:00) on the trunk's first-parent line from where HEAD
- * forks from it — not over all of HEAD's history, where a branch's backdated commit, or a side branch's
- * commit dated before the day but merged after it, would be the base and hide a later change of the
- * scope (realm @nick/craft, node #676) — printing `future` for a date later than today in UTC,
- * `no-trunk` when no trunk resolves (origin/HEAD, else origin/main, else origin/master) or its merge-base with HEAD does not, `unreadable` when git
- * fails listing the trunk, and `missing` when the trunk holds no commit before the day. Arguments
- * single-quoted.
+ * before that day began anywhere (00:00 at +14:00) on the first-parent line of the trunk's tip — not
+ * over HEAD's history nor from where HEAD forks from the trunk, where a branch's backdated commit, or a
+ * side branch's commit dated before the day but merged after it, would be the base and hide a later
+ * change of the scope; diffed against the working tree, the change's own edits and any trunk commit the
+ * checkout lacks count as after the record (realm @nick/craft, node #676) — printing `future` for a date
+ * later than today in UTC, `no-trunk` when no trunk resolves (origin/HEAD when it names a commit, else
+ * origin/main, else origin/master), `unreadable` when git fails listing the trunk, and `missing` when the
+ * trunk holds no commit before the day. Each line resolves the trunk itself, so it stands alone for the
+ * agent that runs it. Arguments single-quoted.
  * @param {PriorDecision[]} decisions @returns {string}
  */
 export function scopeCheckScript(decisions) {
@@ -68,8 +70,8 @@ export function scopeCheckScript(decisions) {
     const [day, id] = [decisionDate(d), q(d.id)]
     return (
       `if [ ${q(day.replace(/-/g, ''))} -gt "$(date -u +%F | tr -d -)" ]; then echo ${id} future; ` +
-      `elif ! t=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || for r in origin/main origin/master; do git rev-parse -q --verify "$r^{commit}" >/dev/null && echo "$r" && break; done | grep .) || ! f=$(git merge-base HEAD "$t" 2>/dev/null); then echo ${id} no-trunk; ` +
-      `elif ! b=$(git rev-list -1 --first-parent ${q(`--before=${day} 00:00:00 +1400`)} "$f" 2>/dev/null); then echo ${id} unreadable; ` +
+      `elif ! t=$(for r in "$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null)" origin/main origin/master; do [ -n "$r" ] && git rev-parse -q --verify "$r^{commit}" >/dev/null && echo "$r" && break; done | grep .); then echo ${id} no-trunk; ` +
+      `elif ! b=$(git rev-list -1 --first-parent ${q(`--before=${day} 00:00:00 +1400`)} "$t" 2>/dev/null); then echo ${id} unreadable; ` +
       `elif [ -n "$b" ]; then git diff --quiet "$b" -- ${q(d.scope)}; echo ${id} $?; else echo ${id} missing; fi`
     )
   }
@@ -89,7 +91,7 @@ const UNUSABLE_WORDS = ['future', 'no-trunk', 'unreadable']
 export const SCOPE_CHECK_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['unchanged', 'missing', 'reason'],
+  required: ['unchanged', 'missing', 'unusable', 'reason'],
   properties: {
     unchanged: { type: 'array', items: { type: 'string' }, description: 'ids whose line ended in exit status 0, exactly as printed' },
     missing: { type: 'array', items: { type: 'string' }, description: 'ids whose line ended in the word missing, exactly as printed' },
@@ -117,7 +119,7 @@ Return {unchanged: [every id whose printed status was 0], missing: [every id pri
 /**
  * The ids a scope-check answer names unchanged and missing, and the word it names each unusable one by,
  * or null when the answer is absent or its `unchanged` unreadable — then no decision is shown unchanged
- * and nothing is set aside.
+ * and nothing is set aside. An answer without `unusable`, which the schema requires, names none unusable.
  * @param {unknown} ans @returns {{ unchanged: string[], missing: string[], unusable: Array<{ id: string, word: string }> } | null}
  */
 export function readScopeCheck(ans) {

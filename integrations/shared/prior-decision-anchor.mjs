@@ -40,7 +40,7 @@ export function anchorMissingReason(d, said = 'missing') {
   const day = decisionDate(d)
   if (said === 'future') return `the decision date ${day} is in the future, so no commit precedes it — raised normally`
   if (said === 'no-trunk')
-    return `the trunk this change forks from could not be resolved (no origin/HEAD, or no merge-base of it with HEAD), so nothing anchors the decision date ${day} — raised normally`
+    return `no trunk could be resolved (no origin/HEAD, origin/main or origin/master), so nothing anchors the decision date ${day} — raised normally`
   if (said === 'unreadable') return `git could not list the trunk's commits before the decision date ${day} — raised normally`
   return `no commit in this repo before the decision date ${day} — raised normally`
 }
