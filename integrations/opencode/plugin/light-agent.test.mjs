@@ -150,6 +150,25 @@ test('a part whose list no longer accounts for its text is read by its text, and
   assert.equal(part.metadata?.experimental?.instructions, list, 'a list that was not trusted is not rewritten')
 })
 
+test('an environment block followed by one newline still ends the text: the allowance is one newline, not seen on 2.2.7', () => {
+  // Every part recorded on 2.2.7 ended at `</env>`. One newline after it is allowed so that a formatting change does
+  // not leave the rules in a request read by its text; a second is not the block's end, and a part that names sections goes.
+  const text = `${RULES}\n\n${DATE}\n\n${ENV}\n`
+  const byUntrustedList = request()
+  byUntrustedList.system?.splice(2, 1, { ...contexts(KEYS, [RULES, DATE, ENV]), text })
+  const byText = request()
+  byText.system?.splice(2, 1, { type: 'text', text })
+  const doubled = request()
+  doubled.system?.splice(2, 1, { ...contexts(KEYS, [RULES, DATE, ENV]), text: `${text}\n` })
+  for (const input of [byUntrustedList, byText]) {
+    lighten(input)
+    assert.equal(instructionsPart(input).text, `${OWN}\n`)
+    assert.equal(input.system?.length, 4)
+  }
+  lighten(doubled)
+  assert.equal(doubled.system?.length, 3)
+})
+
 test('an instructions part that cannot be cut is removed from the request, not sent with the rules', () => {
   const rulesLast = request()
   instructionsPart(rulesLast).text = `${ENV}\n\n${RULES}`
