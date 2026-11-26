@@ -70,9 +70,10 @@ pub fn submit(
 }
 
 /// Moves the run on when none of its tasks is pending, saves it, sets the refused answers aside,
-/// and says what comes next. On the host's `limit` a run that still needs agents stops, as the
-/// review stops after moving on; one whose answers are all in finishes. A finished run files its
-/// record first, so a record that did not land leads its plan.
+/// and says what comes next. On the host's `limit` the run moves on as far as its answers carry
+/// it and stops where it still needs agents, as the review stops after moving on; one its answers
+/// finish ends. A finished run files its record first, so a record that did not land leads its
+/// plan.
 fn step(
     dir: &Path,
     s: &mut TriageState,
