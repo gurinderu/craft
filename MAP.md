@@ -408,13 +408,15 @@ record has not landed, which every `--resume` files again first; `craft review s
 record, its file and the step the run ended with — for a host that lost the step that said it), `crates/craft-step` (the step protocol
 every kind of run shares, review now: the task and its kind, its prompt, schema and answer files, the answer checked against
 its schema and asked for again, the notes on a refused answer file left in place (`src/left.rs`), the pending step and a task's status line; the review is its first kind, its phases, lenses,
-memory and verification its own), `crates/craft-store` (the run store's writer and its streaming reader, its output held to
-the JavaScript writer's by `content/parity/store-cases.json`), `crates/craft-triage` (the triage of findings as the binary
+memory and verification its own), `crates/craft-store` (the run store's writer and its streaming reader — a record filed as its
+run built it, a triage's (`src/ready.rs`), and the section a run's answer leads with when a telemetry write did not land
+(`src/lost.rs`) among them — its output held to the JavaScript writer's by `content/parity/store-cases.json`), `crates/craft-triage` (the triage of findings as the binary
 runs it — `craft triage start | submit | status` on the step protocol (`src/step.rs`, `src/state.rs`), its run derived
 at every step from its arguments and its agents' answers (`src/run.rs`, `run/`): the gatherers, repeats collapsed, the
 batch sifted by the review's memory, the validators, the plan agent, their prompts (`src/prompts.rs`), a prior ledger's
 settled verdicts carried, the noise classes and the issue class 1 files, the plan's ledger pinned, the plan's banners and
-the run record — held to `triage-findings` by `content/parity/triage-cases.json`, which
+the run record, which `start --record` files in the run store itself before the plan is built, what it did kept in the
+run's `filing.json` (`src/step/filing.rs`) — held to `triage-findings` by `content/parity/triage-cases.json`, which
 `integrations/shared/triage-parity.test.mjs` writes; the Claude Code engine still runs the JavaScript triage)
 and `crates/craft-tui` (progress as a phases → agents tree
 on a terminal, one line per event otherwise); `test-support/` holds the one copy of a helper every crate's tests

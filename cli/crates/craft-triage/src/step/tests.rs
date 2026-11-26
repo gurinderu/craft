@@ -15,6 +15,21 @@ use crate::run::Answers;
 use crate::state;
 use crate::step::finished::{plan_path, record_path};
 
+/// The writer of a run that does not record: refuses every call, so a run that filed anyway says
+/// so in its step's `filing`.
+struct Unused;
+
+impl craft_review::filing::Writer for Unused {
+    fn write(
+        &self,
+        _: &craft_review::filing::Call<'_>,
+    ) -> Result<Value, craft_review::filing::WriteError> {
+        Err(craft_review::filing::WriteError::Broken(
+            "a run that does not record filed its record".into(),
+        ))
+    }
+}
+
 fn case(name: &str) -> Js {
     cases()
         .into_iter()
@@ -94,10 +109,22 @@ fn opts_of(c: &Js, repo: &Path, dir: &Path) -> StartOptions {
 
 /// Runs `name` to its end, the answers handed in by task id, `degraded` said at every submit.
 fn run_case(name: &str, degraded: &[String]) -> (Js, tempfile::TempDir, Value) {
+    run_recording(name, degraded, None, &Unused)
+}
+
+/// [`run_case`] with the run started recording `record`, its record filed through `w`.
+fn run_recording(
+    name: &str,
+    degraded: &[String],
+    record: Option<crate::run::Recording>,
+    w: &dyn craft_review::filing::Writer,
+) -> (Js, tempfile::TempDir, Value) {
     let c = case(name);
     let (repo, dir) = (git_repo(), tempfile::tempdir().unwrap());
     let a = CaseAnswers::new(&c, None);
-    let mut step = start(&opts_of(&c, repo.path(), dir.path())).unwrap();
+    let mut opts = opts_of(&c, repo.path(), dir.path());
+    opts.args.record = record;
+    let mut step = start(&opts, w).unwrap();
     let mut s = state::load(dir.path()).unwrap();
     s.seen = seen_of(&c);
     state::save(dir.path(), &s).unwrap();
@@ -106,10 +133,12 @@ fn run_case(name: &str, degraded: &[String]) -> (Js, tempfile::TempDir, Value) {
             return (c, dir, step);
         }
         let given = answers(dir.path(), &a);
-        step = submit(dir.path(), Some(&given), degraded).unwrap();
+        step = submit(dir.path(), Some(&given), degraded, w).unwrap();
     }
     panic!("{name}: the run did not end");
 }
+
+mod recording;
 
 fn file(path: &Path) -> String {
     craft_store::js::parse(&std::fs::read_to_string(path).unwrap())
@@ -143,7 +172,7 @@ fn every_case_run_on_the_protocol_ends_with_the_engines_plan_and_record() {
         );
         assert_eq!(named("recordFile"), Some(record_path(dir.path())), "{name}");
         assert!(matches!(
-            submit(dir.path(), None, &[]),
+            submit(dir.path(), None, &[], &Unused),
             Err(TriageError::Done(_))
         ));
     }
@@ -190,12 +219,12 @@ fn a_triage_with_no_source_or_a_relative_repository_is_refused_before_any_agent(
     opts.args.report.clear();
     opts.args.pr.clear();
     assert!(
-        matches!(start(&opts), Err(TriageError::Refused(why)) if why.contains("needs a source"))
+        matches!(start(&opts, &Unused), Err(TriageError::Refused(why)) if why.contains("needs a source"))
     );
     let mut opts = opts_of(&c, repo.path(), dir.path());
     opts.args.repo = "some/where".into();
     assert!(
-        matches!(start(&opts), Err(TriageError::Refused(why)) if why.contains("absolute path"))
+        matches!(start(&opts, &Unused), Err(TriageError::Refused(why)) if why.contains("absolute path"))
     );
     assert!(
         !state::state_path(dir.path()).exists(),
@@ -208,8 +237,11 @@ fn a_run_directory_holding_a_triage_is_refused() {
     let c = case("repeats collapsed");
     let (repo, dir) = (git_repo(), tempfile::tempdir().unwrap());
     let opts = opts_of(&c, repo.path(), dir.path());
-    start(&opts).unwrap();
-    assert!(matches!(start(&opts), Err(TriageError::RunExists(_))));
+    start(&opts, &Unused).unwrap();
+    assert!(matches!(
+        start(&opts, &Unused),
+        Err(TriageError::RunExists(_))
+    ));
 }
 
 #[test]
@@ -217,11 +249,11 @@ fn an_answer_for_no_pending_task_is_refused() {
     let c = case("repeats collapsed");
     let (repo, dir) = (git_repo(), tempfile::tempdir().unwrap());
     let opts = opts_of(&c, repo.path(), dir.path());
-    start(&opts).unwrap();
+    start(&opts, &Unused).unwrap();
     let mut given = Map::new();
     given.insert("plan".into(), Value::Null);
     assert!(
-        matches!(submit(dir.path(), Some(&given), &[]), Err(TriageError::UnknownTask(id)) if id == "plan")
+        matches!(submit(dir.path(), Some(&given), &[], &Unused), Err(TriageError::UnknownTask(id)) if id == "plan")
     );
 }
 
@@ -229,10 +261,10 @@ fn an_answer_for_no_pending_task_is_refused() {
 fn a_refused_answer_file_is_moved_aside_and_its_task_asked_again() {
     let c = case("repeats collapsed");
     let (repo, dir) = (git_repo(), tempfile::tempdir().unwrap());
-    let step = start(&opts_of(&c, repo.path(), dir.path())).unwrap();
+    let step = start(&opts_of(&c, repo.path(), dir.path()), &Unused).unwrap();
     let file = std::path::PathBuf::from(step["tasks"][0]["answerFile"].as_str().unwrap());
     std::fs::write(&file, "{}").unwrap();
-    let again = submit(dir.path(), None, &[]).unwrap();
+    let again = submit(dir.path(), None, &[], &Unused).unwrap();
     assert!(!file.exists(), "the refused file is moved aside");
     let aside = file.with_file_name("gather-report.rejected-0.json");
     assert!(aside.exists(), "{aside:?}");
@@ -246,12 +278,12 @@ fn a_refused_answer_file_that_cannot_be_moved_is_noted_with_what_its_next_read_d
     use std::os::unix::fs::PermissionsExt;
     let c = case("repeats collapsed");
     let (repo, dir) = (git_repo(), tempfile::tempdir().unwrap());
-    let step = start(&opts_of(&c, repo.path(), dir.path())).unwrap();
+    let step = start(&opts_of(&c, repo.path(), dir.path()), &Unused).unwrap();
     let file = std::path::PathBuf::from(step["tasks"][0]["answerFile"].as_str().unwrap());
     std::fs::write(&file, "{}").unwrap();
     let answers = file.parent().unwrap().to_owned();
     std::fs::set_permissions(&answers, std::fs::Permissions::from_mode(0o555)).unwrap();
-    let again = submit(dir.path(), None, &[]);
+    let again = submit(dir.path(), None, &[], &Unused);
     std::fs::set_permissions(&answers, std::fs::Permissions::from_mode(0o755)).unwrap();
     let again = again.unwrap();
     if !file.exists() {

@@ -18,6 +18,7 @@ pub mod gap;
 pub mod git;
 pub mod js;
 pub mod lock;
+pub mod lost;
 pub mod memory;
 pub mod parts;
 pub mod posthoc;
@@ -25,6 +26,7 @@ pub mod process_identity;
 pub mod proof;
 mod publication;
 pub mod read;
+mod ready;
 pub mod record;
 pub mod retro;
 pub mod sorting;
@@ -60,8 +62,8 @@ impl From<js::Utf16Error> for StoreError {
     }
 }
 
-/// Answers one of the binary's writes — `checkpoint`, `finalize`, `publication`, `sorting-choice` or
-/// `develop-cycle` — over the
+/// Answers one of the binary's writes — `checkpoint`, `finalize`, `record` (a record filed as its run
+/// built it), `publication`, `sorting-choice` or `develop-cycle` — over the
 /// request it built, as the JavaScript adapter answered it.
 ///
 /// # Errors
@@ -94,6 +96,7 @@ pub fn answer_js(command: &str, req: &js::Obj, env: &adapter::Env) -> Result<js:
     Ok(match command {
         "checkpoint" => adapter::checkpoint(req, env),
         "finalize" => adapter::record(req, env),
+        "record" => ready::record(req, env),
         "publication" => publication::answer(req),
         other => posthoc::answer_request(other, req, env)
             .ok_or_else(|| StoreError::Refused(format!("no write is called {other}")))?,

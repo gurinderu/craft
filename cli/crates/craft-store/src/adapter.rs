@@ -264,7 +264,7 @@ fn request_text(req: &Obj) -> Result<(), crate::js::Utf16Error> {
 }
 
 /// `logRunOutcome` over what the finalize said, with the file it filed.
-fn outcome(done: Result<(), crate::StoreError>, said: &Said) -> Obj {
+pub(crate) fn outcome(done: Result<(), crate::StoreError>, said: &Said) -> Obj {
     let file = said
         .out
         .iter()

@@ -1,16 +1,19 @@
 //! The triage on the step protocol (realm @nick/craft, nodes #453, #610, #616): `start` opens a
 //! run and hands out its first tasks, `submit` takes their answers and hands out what comes next,
 //! `status` says where it stands. The finished step names the plan and the record, written beside
-//! the state with their keys in the engine's order.
+//! the state with their keys in the engine's order, and — when the run records — what filing the
+//! record in the store did.
 
 mod advance;
 mod answers;
 mod aside;
+mod filing;
 mod finished;
 mod refuse;
 
 use std::path::{Path, PathBuf};
 
+use craft_review::filing::Writer;
 use craft_step::{Aside, Hold, take};
 use serde_json::{Map, Value, json};
 
@@ -31,12 +34,13 @@ pub struct StartOptions {
     pub args: Args,
 }
 
-/// Opens a run in `opts.run_dir` and hands out its first tasks.
+/// Opens a run in `opts.run_dir` and hands out its first tasks; `w` files its record when it
+/// records and ends.
 ///
 /// # Errors
 /// When the repository cannot be read, the run directory holds a run already, or the state or a
 /// task's files cannot be written.
-pub fn start(opts: &StartOptions) -> Result<Value, TriageError> {
+pub fn start(opts: &StartOptions, w: &dyn Writer) -> Result<Value, TriageError> {
     refuse(&opts.args)?;
     let repo = if opts.args.repo.is_empty() {
         opts.cwd.clone()
@@ -64,12 +68,12 @@ pub fn start(opts: &StartOptions) -> Result<Value, TriageError> {
         degraded: Vec::new(),
         notes: Vec::new(),
     };
-    step(dir, &mut s, Aside::default())
+    step(dir, &mut s, Aside::default(), w)
 }
 
 /// Takes the answers to the pending tasks of the run in `dir` — from their files, or `given` by
 /// task id — and hands out what comes next; `degraded` says how the host ran them weaker than
-/// asked.
+/// asked; `w` files the record of a run that records once it ends.
 ///
 /// # Errors
 /// When the run is done, a given answer names no pending task, or the state or a file cannot be
@@ -78,6 +82,7 @@ pub fn submit(
     dir: &Path,
     given: Option<&Map<String, Value>>,
     degraded: &[String],
+    w: &dyn Writer,
 ) -> Result<Value, TriageError> {
     let mut s = state::load(dir)?;
     if s.phase == Phase::Done {
@@ -89,7 +94,7 @@ pub fn submit(
     take::note(&mut s.degraded, degraded);
     let mut aside = Aside::default();
     take::take_pending(dir, &mut s.tasks, given, Hold::Nothing, &mut aside)?;
-    step(dir, &mut s, aside)
+    step(dir, &mut s, aside, w)
 }
 
 /// Where the run in `dir` stands: its phase and each task's line.
@@ -108,22 +113,27 @@ pub fn status(dir: &Path) -> Result<Value, TriageError> {
 }
 
 /// Moves the run on when none of its tasks is pending, saves it, sets the refused answers aside,
-/// and says what comes next.
-fn step(dir: &Path, s: &mut TriageState, aside: Aside) -> Result<Value, TriageError> {
+/// and says what comes next. A finished run files its record first, so a record that did not land
+/// leads its plan.
+fn step(
+    dir: &Path,
+    s: &mut TriageState,
+    aside: Aside,
+    w: &dyn Writer,
+) -> Result<Value, TriageError> {
     let finished = if s.tasks.iter().any(Task::pending) {
         None
     } else {
         advance(s)?
     };
-    let finished = finished.map(|done| finished::with_degraded(done, &s.degraded));
-    if let Some(done) = &finished {
-        finished::write(dir, done)?;
-    }
+    let plan = finished
+        .map(|done| finished::end(dir, s, &done, w))
+        .transpose()?;
     craft_step::handoff::write_pending(dir, &s.tasks, |t| Ok::<_, TriageError>(t.prompt_text()))?;
     state::save(dir, s)?;
     set_aside(dir, s, aside)?;
-    if let Some(done) = finished {
-        return finished::step(dir, &done, s);
+    if let Some(plan) = plan {
+        return finished::step(dir, &plan, s);
     }
     let mut out = craft_step::wire::pending_step(dir, &s.tasks)?;
     if let Some(o) = out.as_object_mut() {

@@ -179,6 +179,10 @@ fn the_record_and_the_plan_are_the_engines_to_the_byte() {
             text(want.at("record")),
             "{name}: the record"
         );
-        assert_eq!(text(&done.plan), text(want.at("plan")), "{name}: the plan");
+        assert_eq!(
+            text(&done.plan(&[])),
+            text(want.at("plan")),
+            "{name}: the plan"
+        );
     }
 }
