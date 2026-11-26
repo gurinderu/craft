@@ -51,7 +51,8 @@ pub fn start(opts: &StartOptions, w: &dyn Writer) -> Result<Value, TriageError> 
         .canonicalize()
         .map_err(|source| TriageError::NoRepo { path: repo, source })?;
     let dir = &opts.run_dir;
-    if state::state_path(dir).exists() {
+    // A directory a run filed from is not a new run's: its kept filing would answer for this one.
+    if state::state_path(dir).exists() || filing::filing_path(dir).exists() {
         return Err(TriageError::RunExists(dir.clone()));
     }
     std::fs::create_dir_all(dir).map_err(|source| TriageError::NoDir {

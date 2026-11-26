@@ -8,10 +8,10 @@ use serde_json::{Value, json};
 
 use craft_store::js::Js;
 
-use crate::TriageError;
-use crate::field;
 use craft_review::filing::Writer;
 
+use crate::TriageError;
+use crate::field;
 use crate::run::Finished;
 use crate::state::TriageState;
 
@@ -40,7 +40,8 @@ pub(super) fn end(
 ) -> Result<Js, TriageError> {
     let filed = super::filing::file(dir, s, &done.record, w)?;
     let lost = filed.map(|f| f.lost).unwrap_or_default();
-    let plan = with_degraded(done.plan(&lost), &s.degraded);
+    let lead = craft_store::lost::section(&lost);
+    let plan = with_degraded(done.plan(&lost), &s.degraded, &lead);
     write(dir, &plan, &done.record)?;
     Ok(plan)
 }
@@ -57,10 +58,11 @@ fn write(dir: &Path, plan: &Js, record: &Js) -> Result<(), TriageError> {
     Ok(())
 }
 
-/// `plan` with the host's notes on how it ran tasks weaker than asked leading it: a banner, a
-/// `DEGRADED:` lead on its summary and a `degraded` list, so the plan never reads as a full triage that was not one. A failed
-/// plan (text) is left as it is; the step names the notes beside it.
-fn with_degraded(mut plan: Js, degraded: &[String]) -> Js {
+/// `plan` with the host's notes on how it ran tasks weaker than asked leading it, below `lead` — the
+/// section of a write that did not land, which leads every plan: a banner, a `DEGRADED:` lead on
+/// its summary and a `degraded` list, so the plan never reads as a full triage that was not one. A
+/// failed plan (text) is left as it is; the step names the notes beside it.
+fn with_degraded(mut plan: Js, degraded: &[String], lead: &str) -> Js {
     let Js::Obj(o) = &mut plan else {
         return plan;
     };
@@ -72,9 +74,13 @@ fn with_degraded(mut plan: Js, degraded: &[String]) -> Js {
     lines.extend(degraded.iter().map(|d| format!("> - {d}")));
     lines.push(String::new());
     let body = field::or_empty(o, "plan_markdown");
+    let (top, rest) = match body.strip_prefix(lead) {
+        Some(rest) if !lead.is_empty() => (lead, rest),
+        _ => ("", body.as_str()),
+    };
     o.set(
         "plan_markdown",
-        Js::str(format!("{}\n{body}", lines.join("\n"))),
+        Js::str(format!("{top}{}\n{rest}", lines.join("\n"))),
     );
     let summary = format!(
         "DEGRADED: {}\n\n{}",

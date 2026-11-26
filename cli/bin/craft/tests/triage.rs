@@ -1,6 +1,7 @@
 //! `craft triage start` as a host runs it: the run opened with its first tasks, and `--record`
 //! kept in the run's arguments — the craft version its record is filed under and the session it
-//! names — so the run files its record once it ends (realm @nick/craft, node #616).
+//! names (realm @nick/craft, node #616) — and the bounded store writer the binary files a triage's
+//! record through, landing it in the run store under HOME.
 #![expect(
     clippy::unwrap_used,
     reason = "fixture setup and JSON assertions fail loudly"
@@ -70,4 +71,42 @@ fn a_triage_started_without_record_files_nothing_under_this_binarys_version() {
     let args = args_of(&run);
     assert_eq!(args["craftVersion"], env!("CARGO_PKG_VERSION"));
     assert!(args.get("record").is_none(), "{args}");
+}
+
+#[test]
+fn the_binarys_bounded_writer_lands_a_built_record_in_the_run_store_under_home() {
+    use std::io::Write;
+    let d = tempfile::tempdir().unwrap();
+    let (home, repo) = (d.path().join("home"), d.path().join("repo"));
+    std::fs::create_dir_all(&repo).unwrap();
+    let call = serde_json::json!({
+        "run": d.path(),
+        "root": "",
+        "command": "record",
+        "request": {"repo": repo, "session": "", "retry": false,
+            "record": {"kind": "workflow", "name": "triage-findings", "verdict": ""}},
+    });
+    let mut child = Command::new(env!("CARGO_BIN_EXE_craft"))
+        .arg("__craft-file-run")
+        .env("HOME", &home)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(call.to_string().as_bytes())
+        .unwrap();
+    let out = child.wait_with_output().unwrap();
+    let said: Value = serde_json::from_slice(&out.stdout).unwrap();
+    let answer = said.get("Ok").unwrap();
+    assert_eq!(answer.get("ok"), Some(&Value::Bool(true)), "{said}");
+    let store = home.join(".craft/runs");
+    let file = answer.get("file").and_then(Value::as_str).unwrap();
+    assert!(Path::new(file).starts_with(&store), "{file}");
+    let index = std::fs::read_to_string(store.join("index.jsonl")).unwrap();
+    assert_eq!(index.lines().count(), 1, "{index}");
+    assert!(index.contains("\"name\":\"triage-findings\""), "{index}");
 }

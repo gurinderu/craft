@@ -1,7 +1,9 @@
 //! The finished run's record filed in the store by the binary (`start --record`; realm @nick/craft,
-//! node #616): the attempt is marked before the write, so a run that finishes again sends it as a
-//! retry and the store answers `already filed`; a write that did not land is one line of `lost`,
-//! `<what> — <why>`, as `triage-findings.js` notes it.
+//! node #616): the attempt is marked before the write and what it did kept after it, atomically.
+//! A run that finishes again files nothing more once its filing is kept `filed`; an attempt that
+//! never answered goes out again as a retry, which the store answers `already filed` when the
+//! first landed. A write that did not land is one line of `lost`, `<what> — <why>`, as
+//! `triage-findings.js` notes it.
 
 use std::path::{Path, PathBuf};
 
@@ -43,7 +45,10 @@ pub(super) fn file(
     let Some(at) = &s.args.record else {
         return Ok(None);
     };
-    let retry = read(dir).is_some();
+    if let Some(kept) = read(dir).filter(|f| f.record == "filed") {
+        return Ok(Some(kept));
+    }
+    let retry = filing_path(dir).exists();
     let attempted = Filed {
         record: "attempted".into(),
         ..Filed::default()
@@ -67,8 +72,12 @@ pub fn read(dir: &Path) -> Option<Filed> {
 fn keep(dir: &Path, filed: &Filed) -> Result<(), TriageError> {
     let path = filing_path(dir);
     let text = serde_json::to_string_pretty(filed).unwrap_or_default();
-    std::fs::write(&path, format!("{text}\n"))
-        .map_err(|source| TriageError::Unwritable { path, source })
+    craft_store::write::write_atomically(&path, format!("{text}\n")).map_err(|e| {
+        TriageError::Unwritable {
+            path,
+            source: std::io::Error::other(e.to_string()),
+        }
+    })
 }
 
 fn send(

@@ -40,22 +40,51 @@ fn run(record: Option<Recording>) -> TriageState {
     }
 }
 
+fn rec() -> Js {
+    Js::Obj(craft_store::js::Obj::new().with("name", Js::str("triage-findings")))
+}
+
 #[test]
-fn a_run_that_finishes_again_sends_its_record_as_a_retry() {
+fn a_first_filing_marks_its_attempt_and_sends_the_record_as_built() {
+    let d = tempfile::tempdir().unwrap();
+    let w = Asked(RefCell::new(Vec::new()));
+    file(d.path(), &run(Some(Recording::default())), &rec(), &w).unwrap();
+    let asked = w.0.borrow();
+    assert_eq!(asked.len(), 1);
+    assert_eq!(asked[0]["record"], json!({"name": "triage-findings"}));
+    assert_eq!(
+        (&asked[0]["repo"], &asked[0]["retry"]),
+        (&json!("/repo"), &json!(false))
+    );
+    assert_eq!(asked[0]["during"], "attempted");
+    assert_eq!(read(d.path()).unwrap().record, "filed");
+}
+
+#[test]
+fn a_run_whose_filing_is_kept_filed_files_nothing_more() {
     let d = tempfile::tempdir().unwrap();
     let w = Asked(RefCell::new(Vec::new()));
     let s = run(Some(Recording::default()));
-    let record = Js::Obj(craft_store::js::Obj::new().with("name", Js::str("triage-findings")));
-    for _ in 0..2 {
-        file(d.path(), &s, &record, &w).unwrap();
+    let first = file(d.path(), &s, &rec(), &w).unwrap();
+    let again = file(d.path(), &s, &rec(), &w).unwrap();
+    assert_eq!(w.0.borrow().len(), 1, "one write");
+    assert_eq!(again, first);
+}
+
+#[test]
+fn an_attempt_that_never_answered_goes_out_again_as_a_retry() {
+    let s = run(Some(Recording::default()));
+    for left in [
+        "{\"record\": \"attempted\"}\n",
+        "{\"rec",
+        "{\"record\": \"failed\"}\n",
+    ] {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::write(super::filing_path(d.path()), left).unwrap();
+        let w = Asked(RefCell::new(Vec::new()));
+        file(d.path(), &s, &rec(), &w).unwrap();
+        assert_eq!(w.0.borrow()[0]["retry"], json!(true), "{left}");
     }
-    let asked = w.0.borrow();
-    let retries: Vec<&Value> = asked.iter().map(|r| &r["retry"]).collect();
-    assert_eq!(retries, [&json!(false), &json!(true)]);
-    assert_eq!(asked[0]["record"], json!({"name": "triage-findings"}));
-    assert_eq!(asked[0]["repo"], "/repo");
-    assert_eq!(asked[0]["during"], "attempted");
-    assert_eq!(read(d.path()).unwrap().record, "filed");
 }
 
 #[test]
@@ -87,8 +116,10 @@ fn each_answer_of_the_writer_is_read_into_what_the_run_lost() {
         )
     );
     assert_eq!(
-        answered(Ok(json!({"ok": false, "reason": "refused", "file": ""}))),
-        filed("failed", "", &["the run record — refused"])
+        answered(Ok(
+            json!({"ok": false, "reason": "refused", "file": "/f.json"})
+        )),
+        filed("failed", "/f.json", &["the run record — refused"])
     );
     assert_eq!(
         answered(Ok(json!({"reason": ""}))),

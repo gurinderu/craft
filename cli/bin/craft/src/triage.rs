@@ -11,7 +11,7 @@ use craft_triage::run::{Args, Recording};
 use craft_triage::step::{self, StartOptions};
 
 use crate::filing_worker::BoundedWriter;
-use crate::steps::{default_run_dir, filing_root, given_answers, json_input, print};
+use crate::steps::{default_run_dir, filing_root, given_answers, json_input, print, session};
 
 #[derive(Subcommand)]
 pub enum TriageCommand {
@@ -142,7 +142,7 @@ fn start(a: &StartArgs) -> Result<serde_json::Value> {
             .unwrap_or_else(|| env!("CARGO_PKG_VERSION").into()),
         record: a.record.as_ref().map(|_| Recording {
             root: filing_root(a.record_root.as_deref()).unwrap_or_default(),
-            session: std::env::var("CLAUDE_CODE_SESSION_ID").unwrap_or_default(),
+            session: session(),
         }),
     };
     let run_dir = absolute(&run_dir)?;

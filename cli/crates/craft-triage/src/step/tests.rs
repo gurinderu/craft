@@ -242,6 +242,15 @@ fn a_run_directory_holding_a_triage_is_refused() {
         start(&opts, &Unused),
         Err(TriageError::RunExists(_))
     ));
+    // A directory a run filed from, its state gone: its kept filing would answer for a new run.
+    let filed = tempfile::tempdir().unwrap();
+    std::fs::write(super::filing::filing_path(filed.path()), "{}").unwrap();
+    let mut other = opts;
+    other.run_dir = filed.path().into();
+    assert!(matches!(
+        start(&other, &Unused),
+        Err(TriageError::RunExists(_))
+    ));
 }
 
 #[test]

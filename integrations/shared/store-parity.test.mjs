@@ -116,8 +116,9 @@ const STEPS = [
 /** The run's identity as the binary kept it, its working copy gone: what a checkpoint names its branch by. */
 const KEPT = { repo: '<repo>-gone', gitDir: '<repo>/.git', head: '<head>' }
 
-// A triage's record as its run built it (cli/crates/craft-triage/src/record.rs, the engine's record): the binary files
-// it as is, the writer's own fields stamped over it (realm @nick/craft, node #616).
+// A record in the triage engine's fields (integrations/claude-code/src/triage-findings.js, whose shape
+// cli/crates/craft-triage/src/record.rs builds), its counts made up: the binary files it as is, the writer's own fields
+// stamped over it (realm @nick/craft, node #616).
 const TRIAGE_RECORD = {
   schemaVersion: 1,
   runtime: 'claude-code',
@@ -283,6 +284,8 @@ const CASES = [
     calls: [
       ['record', { record: TRIAGE_RECORD, retry: false }],
       ['record', { record: TRIAGE_RECORD, retry: true }],
+      // Another run's identical record, not a retry: filed again, its own detail and index line.
+      ['record', { record: TRIAGE_RECORD, retry: false }],
       ['record', { retry: false }],
     ],
   },

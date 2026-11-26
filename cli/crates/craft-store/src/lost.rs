@@ -86,10 +86,10 @@ mod tests {
 
     #[test]
     fn a_line_is_flattened_and_cut_at_300_characters() {
-        let long = format!("a\nb{}", "c".repeat(400));
+        let long = format!("a\nb\rd{}", "c".repeat(400));
         let got = section(&[long]);
         let item = got.lines().nth(2).unwrap();
         assert_eq!(item.chars().count(), 2 + 300, "{item}");
-        assert!(item.starts_with("- a b"), "{item}");
+        assert!(item.starts_with("- a b d"), "{item}");
     }
 }
