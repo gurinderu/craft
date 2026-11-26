@@ -1,24 +1,25 @@
 //! The profile's `[mutants]` section (realm @nick/craft, node #645): whether the mutants of a
 //! change run on this project and for how long. No command line: the review runs cargo-mutants on
-//! its own diff and nothing a profile names. Read on its own, as a section the profile's format
-//! keeps on every write, so a profile without it reads as before.
+//! its own diff and nothing a profile names. Read on its own, so a section this binary cannot read
+//! never hides the rest of the profile, and one absent reads as the defaults; `craft init --write`
+//! writes it whole, as the reviewer confirmed it.
 
 use std::path::Path;
 use std::time::Duration;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 pub use super::section::SectionError;
 
 /// The section as the reviewer confirmed it.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MutantsSection {
     /// The mutants do not run on this project.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub off: bool,
     /// How long they may run, in seconds; the review's default when absent.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub budget_secs: Option<u64>,
 }
 

@@ -122,6 +122,11 @@ pub struct ProjectProfile {
     /// which a review reads leniently, never here.
     #[serde(default, skip_deserializing)]
     pub lenses: std::collections::BTreeMap<String, crate::composition::State>,
+    /// The `[mutants]` section the reviewer confirmed (realm @nick/craft, nodes #645, #647): written
+    /// on every write, the defaults as an empty one, so a write replaces the one it held; read by
+    /// [`mutants::of`] when a review starts, never here.
+    #[serde(default, skip_deserializing)]
+    pub mutants: mutants::MutantsSection,
 }
 
 impl ProjectProfile {
@@ -142,6 +147,7 @@ impl ProjectProfile {
             ci,
             code_graph: None,
             lenses: std::collections::BTreeMap::new(),
+            mutants: mutants::MutantsSection::default(),
         };
         p.check().map_err(ProjectError::Invalid)?;
         Ok(p)

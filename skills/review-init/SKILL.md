@@ -47,7 +47,7 @@ them. With nothing recalled, drop the heredoc and `--memory-externals -`. A loca
 --release` in craft's `cli/`) can stand for `$CRAFT_BIN`. It prints one JSON object: `profile`
 (the file's path, outside the repository), `exists`, `integrations` (what the profile holds now:
 `name`, `repo`, `ref`), `memory`, `discovery`, `ci` (the CI map the profile holds now),
-`ciCandidates`, `lenses`, `codeGraph` (the code graph the profile holds) and `codeGraphSays`. It writes
+`ciCandidates`, `lenses`, `mutants`, `codeGraph` (the code graph the profile holds) and `codeGraphSays`. It writes
 nothing. Tell the user `codeGraphSays` as it is, in one line: whether codebase-memory answers,
 so the review indexes the checkout it reads and adds the graph's callers to the consumers list.
 
@@ -199,6 +199,17 @@ drop a held one. Nothing is written without their word. A review started with `-
 (`allLenses: true` in the Claude Code engine) sets the composition aside, so what they turn off
 is still checked by a release's full review.
 
+## 3d. The mutants of a change: show, then ask
+
+On a Rust change whose gate passed, a review runs `cargo mutants --in-diff` over the change beside
+its lenses, where the gate's cargo runs, and its report says whether they ran and why not —
+cargo-mutants not installed included. `init` does not look for cargo-mutants itself. `mutants`
+says what the profile holds: `off` (they do not run on this repository), `budgetSecs` (how long
+they may run; `null` or `0` is the review's `defaultBudgetSecs`), `flags` (the `--mutants` and
+`--mutants-budget` that write it again) and `unread` (why the section could not be read; a review
+then takes the defaults, and the next write replaces what is stored — say so before writing). Ask the reviewer in one line whether to keep it, turn the mutants off, or
+give them another budget; with nothing held and nothing asked for, say so and go on.
+
 ## 4. Write
 
 ```sh
@@ -207,11 +218,13 @@ is still checked by a release's full review.
   --point 'linstor=git@github.com:LINBIT/linstor-server.git@v1.29.0' \
   --ci '{"check":"Rust","signal":"clippy","command":"cargo clippy --all-targets -- -D warnings","workflow":".github/workflows/ci.yml","sources":[]}' \
   --ci '{"check":"lint","signal":"clippy","command":"cargo clippy --workspace -- -D warnings","workflow":".github/workflows/ci.yml","sources":["justfile"]}' \
-  --lens 'rust:money=off' --lens 'general:concurrency=first-round'
+  --lens 'rust:money=off' --lens 'general:concurrency=first-round' \
+  --mutants-budget 900
 ```
 
 `--write` replaces the whole list: pass every point to keep, the ones already there included.
-The same holds for the CI map, one `--ci` per entry to keep, and for the lenses: one `--lens` per
+The same holds for the CI map, one `--ci` per entry to keep, and for the mutants — `mutants.flags` as printed to keep them, none for the defaults; a budget
+beside `--mutants off` is refused — and for the lenses: one `--lens` per
 entry to keep, a held one as `held` prints it — a write with none leaves the profile with no
 composition. A lens entry a review would refuse (the security or a safety lens, the concurrency
 lens off, a lens no profile has) or a lens named twice is named on stderr and nothing is written. A fresh confirmation is a resolved
@@ -229,7 +242,7 @@ local `uses:` it does not list, or whose `hashes` miss one of its files, is refu
 is written.
 At most 8; a name is letters, digits, `.`, `_` or `-`. A confirmed memory record goes in as its
 `point`, as printed. A refused point is named on stderr and nothing is written; so is a profile
-written by a craft of another format. Report the file's path, the points, the CI map entries and the lenses written,
+written by a craft of another format. Report the file's path, the points, the CI map entries, the lenses and the mutants written,
 and `codeGraphSays` in one line.
 
 ## Allowing the review's commands

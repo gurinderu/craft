@@ -10,7 +10,8 @@
 //! with the reviewer (node #483), and `--write --ci` records them ([`ci`]). And the lens
 //! composition (node #647): `--propose` prints each lens's yield over the repository's runs and the
 //! lenses it offers to hold or turn off, `--write --lens` records what the reviewer confirmed
-//! ([`lenses`]).
+//! ([`lenses`]); beside it the `[mutants]` section, shown as held and written by `--mutants` and
+//! `--mutants-budget` ([`mutants`]).
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -27,6 +28,7 @@ mod ci;
 mod graph;
 mod lenses;
 mod memory;
+mod mutants;
 mod paths;
 
 #[derive(Debug, clap::Args)]
@@ -44,27 +46,52 @@ pub struct InitArgs {
     #[arg(long)]
     pub write: bool,
     /// An integration point: `<name>=<git url>@<tag or full commit>`; repeatable.
-    #[arg(long = "point", requires = "write", value_name = "NAME=URL@REF")]
+    #[arg(
+        long = "point",
+        conflicts_with = "propose",
+        value_name = "NAME=URL@REF"
+    )]
     pub points: Vec<String>,
     /// A CI map entry as JSON: a fresh confirmation `{"check","signal","command","workflow",
     /// "sources"}`, its files hashed at the write, or a held entry exactly as `--propose` prints it
     /// in `ci`, its hashes kept (one printed with `unusable` is dropped or replaced, never passed
     /// back); repeatable. The map is replaced like the points.
-    #[arg(long = "ci", requires = "write", value_name = "JSON")]
+    #[arg(long = "ci", conflicts_with = "propose", value_name = "JSON")]
     pub ci: Vec<String>,
     /// A lens of the composition: `<profile:lens>=<always|first-round|off>`, a held one as
     /// `--propose` prints it in `lenses.held`; repeatable. The section is replaced like the points:
     /// none names an empty one. Refused whole as a review would refuse it.
-    #[arg(long = "lens", requires = "write", value_name = "PROFILE:LENS=STATE")]
+    #[arg(
+        long = "lens",
+        conflicts_with = "propose",
+        value_name = "PROFILE:LENS=STATE"
+    )]
     pub lenses: Vec<String>,
+    /// Whether the change's mutants run on this repository; absent, they run (`on`). The section
+    /// is replaced like the points: neither this nor `--mutants-budget` writes the defaults.
+    #[arg(
+        long = "mutants",
+        conflicts_with = "propose",
+        value_enum,
+        value_name = "ON|OFF"
+    )]
+    pub mutants: Option<mutants::Switch>,
+    /// How long the change's mutants may run, in seconds; absent, the review's default.
+    #[arg(
+        long = "mutants-budget",
+        conflicts_with = "propose",
+        value_name = "SECONDS",
+        value_parser = clap::value_parser!(u64).range(1..=i64::MAX.unsigned_abs())
+    )]
+    pub mutants_budget: Option<u64>,
     /// The project memory's `external` records as JSON on stdin (`-`, the only value): each one is
     /// proposed as an integration point with the revision its version file names now.
-    #[arg(long = "memory-externals", requires = "propose", value_name = "-")]
+    #[arg(long = "memory-externals", conflicts_with = "write", value_name = "-")]
     pub memory_externals: Option<String>,
     /// A deployment manifest to read, relative to the repository's top or absolute inside it;
     /// repeatable, at most 24. Named, they are read in the order given in place of the walk:
     /// the way to a manifest past its bound.
-    #[arg(long = "path", requires = "propose", value_name = "MANIFEST")]
+    #[arg(long = "path", conflicts_with = "write", value_name = "MANIFEST")]
     pub paths: Vec<String>,
     /// Accepted for older callers; native proposal discovery does not need a plugin root.
     #[arg(long, env = "CRAFT_ROOT")]
@@ -118,6 +145,7 @@ pub fn init(args: &InitArgs) -> Result<ExitCode> {
         let entries = ci::confirmed(&args.ci, &args.cwd)?;
         let mut profile = ProjectProfile::new(common, points, entries)?;
         profile.lenses = lenses::confirmed(&args.lenses)?;
+        profile.mutants = mutants::confirmed(args.mutants, args.mutants_budget)?;
         let held = project::load(&path)
             .map(|p| p.and_then(|p| p.code_graph))
             .map_err(|e| e.to_string());
@@ -129,6 +157,7 @@ pub fn init(args: &InitArgs) -> Result<ExitCode> {
             "integrations": profile.integrations,
             "ci": profile.ci,
             "lenses": profile.lenses,
+            "mutants": mutants::proposed(&path),
             "codeGraph": graph,
             "codeGraphSays": says,
         }));
@@ -156,12 +185,13 @@ pub fn init(args: &InitArgs) -> Result<ExitCode> {
         "ci": ci::held(&held_ci, &args.cwd),
         "ciCandidates": ci::proposed(&args.cwd),
         "lenses": lenses::proposed(&args.cwd, &path)?,
+        "mutants": mutants::proposed(&path),
         "codeGraph": held.as_ref().and_then(|p| p.code_graph.clone()),
         "codeGraphSays": graph::live_says(
             cbm::look(cbm::TOOL, &args.cwd),
             held.as_ref().and_then(|p| p.code_graph.as_ref()),
         ),
-        "write": "craft init --write --point <name>=<git url>@<tag or full commit> … --ci '<entry JSON>' … --lens <profile:lens>=<state> … (every point, CI entry and lens to keep, a held lens as `lenses.held` prints it, a held entry as `ci` prints it, one with `unusable` dropped or replaced; a branch is refused when a review prepares the sources)",
+        "write": "craft init --write --point <name>=<git url>@<tag or full commit> … --ci '<entry JSON>' … --lens <profile:lens>=<state> … [--mutants off] [--mutants-budget <seconds>] (every point, CI entry and lens to keep, a held lens as `lenses.held` prints it, the mutants as `mutants.flags` prints them, a held entry as `ci` prints it, one with `unusable` dropped or replaced; a branch is refused when a review prepares the sources)",
     }))
 }
 
