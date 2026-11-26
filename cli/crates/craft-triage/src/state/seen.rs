@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 
 /// What git observed of the records' scopes, each record checked once: those whose scope is
 /// unchanged since their anchor, those whose anchor the repository holds no commit for, why
-/// where that is other than missing, and the pull request whose merge a record was compared
-/// against.
+/// where that is other than missing, the pull request whose merge a record was compared
+/// against, and the records whose scope changed on the trunk between their date and that merge.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Seen {
@@ -20,6 +20,8 @@ pub struct Seen {
     pub why_missing: BTreeMap<String, String>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub merged: BTreeMap<String, u64>,
+    #[serde(skip_serializing_if = "BTreeSet::is_empty")]
+    pub between: BTreeSet<String>,
 }
 
 impl Seen {
@@ -37,6 +39,7 @@ impl Seen {
             self.missing.extend(s.missing);
             self.why_missing.extend(s.why_missing);
             self.merged.extend(s.merged);
+            self.between.extend(s.between);
         }
         let of = |set: &BTreeSet<String>| {
             ds.iter()
@@ -60,6 +63,7 @@ impl Seen {
                 .filter(|(id, _)| given(id))
                 .map(|(id, n)| (id.clone(), *n))
                 .collect(),
+            between: of(&self.between),
         }
     }
 }

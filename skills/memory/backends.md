@@ -22,7 +22,9 @@ SKILL.md's ("Choosing the backend"); this file only says how to write and search
   below — `craft_kind`, `craft_id`, `craft_scope`, `craft_status`, `craft_date`, `craft_author`, `craft_commit`,
   `craft_deferred`, `craft_line`, `craft_lens`, `craft_tool_rule` — as attributes, tags
   (`craft_kind:decision`) or observations, whichever the tool accepts, never under another name;
-  `links` as relations when the tool has them, else as text. `craft_date` is the record's `date`,
+  `links` as relations when the tool has them and they can hold a URL; else each link as a
+  `Links: <link>` line at the end of the item's text, one line per link — the harness files'
+  `Links:` lines — and recall rebuilds `links` from those lines. `craft_date` is the record's `date`,
   written by each record or re-record and by nothing else: the server's own modified time moves
   with any edit of the item, and a review checks a record that names no commit against the merge of
   the pull request its `links` give, else against its date — so a record of a pull request's
@@ -35,7 +37,8 @@ SKILL.md's ("Choosing the backend"); this file only says how to write and search
   (to a subagent, or to a review as `priorDecisions`) is rebuilt as the SKILL.md shape — an active
   record's `date` from `craft_date` (or the field the server's instructions named), never the server's
   modified time (an inactive one's `date` stays the store's last write, SKILL.md "Recall", step 4), `author`,
-  `commit`, `deferred`, `line`, `lens` and `toolRule` included when the item carries them, and an
+  `commit`, `deferred`, `line`, `lens`, `toolRule` and `links` (from its relations, or its text's
+  `Links:` lines) included when the item carries them, and an
   `external` record's `system`, `repo`, and `versionFrom` and `versionMatch` or a stated `version`.
 - **Ids — the convention for a server with its own ids**: `id` is the skill-rule id (SKILL.md,
   from kind + title + scope), and the server's own id goes into `links` as `store: <id>`. `kind`,

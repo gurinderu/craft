@@ -60,12 +60,18 @@ aside, and it sets a finding aside only while the code in `scope` is unchanged s
 record of a finding raised on a pull request carries that pull request's URL in `links`
 (`https://github.com/<owner>/<repo>/pull/<N>`, a `#…` or `/files` after it as you found it). A
 decision without a `commit` (a store that allows no commit hashes) is anchored, in this order: at the
-merge of the first pull request of this repository (the one `origin` names) its `links` give — on
-the trunk (`origin/HEAD`, else `origin/main`, else `origin/master`), walked along first parents from
-its tip, the newest commit whose subject is GitHub's `Merge pull request #<N> from …`, else the oldest
-whose subject ends `(#<N>)`, the squash itself and not a later commit citing it —, so a rejection of a finding in code that pull request itself adds holds once it is merged
-and until that code changes; with no such merge on the trunk (not merged yet, merged elsewhere,
-history cut short), at its `date`: the code in `scope` unchanged since the last commit on the trunk,
+merge of the first pull request of this repository (the one `origin` names — `https://github.com/`,
+`git@github.com:` or `ssh://git@github.com/`, credentials in an `https` URL and a trailing `/` aside)
+its `links` give — on the trunk (`origin/HEAD`, else `origin/main`, else `origin/master`), walked
+along first parents from its tip, the newest commit whose subject is GitHub's `Merge pull request
+#<N> from …`, else the oldest whose subject ends `(#<N>)`, the squash itself and not a later commit
+citing it —, so a rejection of a finding in code that pull request itself adds holds once it is
+merged and until that code changes; with a `date` beside it, the code in `scope` must also be
+unchanged on the trunk between that date (its base, as below) and the merge, so another pull request
+changing it in between raises the finding. With no such merge on the trunk (not merged yet, merged
+elsewhere, history cut short, a rebase merge, which leaves no `(#<N>)`, a merge or squash subject
+edited, an `origin` named by an ssh host alias or `www.github.com`), at its `date`. On a fork whose
+trunk carries upstream's merges, a pull request number may name upstream's merge. At a `date`: the code in `scope` unchanged since the last commit on the trunk,
 walked the same way, before that day began anywhere (`YYYY-MM-DD`; a timestamp with a zone is taken
 as its UTC day). A commit made the same day, every commit of the change under review, and any trunk
 commit the checkout lacks count as after it; a date later than today, or a repository with no
@@ -111,7 +117,8 @@ finding of its class.
 `question` record with the same anchors — title = the finding's title (from the same source as a decision's), scope = its file, body = what
 would answer it, `author`, `commit`, `line`, `lens` and `toolRule` = the finding's, links = the PR and the comment — and `deferred: true`, the field
 that makes it a deferral. A question without `deferred: true` (a needs-decision question) is context
-only: a review sets nothing aside by it. A deferral without a `commit` sets nothing aside either —
+only: a review sets nothing aside by it. A deferral without a `commit`, a pull request in its `links`
+or a `date` sets nothing aside either —
 its finding is raised again and the review names why. A review lists its finding under
 **Known and deferred** by the same rules as a decision (below); an answer later becomes a `decision`
 that supersedes it. A deferral recorded earlier as a `decision` keeps working as a decision.
@@ -266,13 +273,14 @@ passing to stand in for the engine's recall.
    question answers, under **Known and deferred** with what would answer it, the author, date and
    link, also outside the verdict (the review ledger keeps it `deferred`, and a re-review carries it
    like a rejection); one a project rule covers, under **Covered by project rules** (above). A question without `deferred: true` records no deferral: it sets nothing aside
-   and labels nothing; a deferral without a `commit` or a `date` is raised again and named. Either is raised
+   and labels nothing; a deferral without a `commit`, a pull request it links or a `date` is raised again and named. Either is raised
    again as a normal finding when it is Critical, when it is High and its record is not a human's
    decision (`decidedBy: "human"` on a decision that records no deferral; an `agent` decision, one
    without the field — every record written before it — and a deferral never set a High aside) or a
    project rule (above), when the code in
    the decision's scope changed since its `commit` (with no `commit`, since the merge of the pull
-   request its `links` give, else since the trunk's last commit before its `date`), when the decision
+   request its `links` give, or between its `date` and that merge, else since the trunk's last commit
+   before its `date`), when the decision
    has none of them, or when the repository does not know that `commit` (a squash-merged branch,
    another clone), holds no trunk commit before that `date`, has no `origin/HEAD`, `origin/main` or
    `origin/master`, or the `date` is later than today — each named

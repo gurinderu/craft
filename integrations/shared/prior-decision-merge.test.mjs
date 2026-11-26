@@ -7,14 +7,15 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { parsePriorDecisions } from './prior-decisions.mjs'
 import { pullLinks } from './prior-decision-record.mjs'
-import { anchorMissingReason, anchorSince, decisionDate, hasAnchor } from './prior-decision-anchor.mjs'
+import { anchorChanged, anchorMissingReason, anchorSince, decisionDate, hasAnchor } from './prior-decision-anchor.mjs'
 import { applyPriorDecisions } from './prior-decision-apply.mjs'
 import { SCOPE_CHECK_SCHEMA, readScopeCheck, runScopeCheck, scopeCheckPrompt } from './prior-decision-scope.mjs'
 
 const parsed = (/** @type {Array<Record<string, unknown>>} */ ...over) =>
   /** @type {any[]} */ (parsePriorDecisions(over.map(o => ({ title: 't', reason: 'r', scope: 'src/a.rs', ...o }))).decisions)
 
-const UNMERGED = 'no pull request of this repository it links is merged on the trunk, and it records no date — raised normally'
+const UNMERGED =
+  'no merge of a pull request of this repository it links was found on the trunk (not merged, origin not matched, no trunk, or git failed), and it records no date — raised normally'
 
 test('links: a pull request is a GitHub pull URL, its repository lower-cased, and nothing else is', () => {
   const links = [
@@ -66,6 +67,10 @@ test('anchor: a pull request it links anchors a record with no commit and no dat
   assert.equal(anchorSince(linked), 'the decision date 2026-05-01')
   assert.equal(anchorSince(undated), 'a merge on the trunk')
   assert.equal(anchorSince(committed), 'abc1234')
+  assert.equal(anchorChanged(linked, { pr: 7, between: true }), 'on the trunk between the decision date 2026-05-01 and the merge of PR #7')
+  assert.equal(anchorChanged(linked, { pr: 7, between: false }), 'since the merge of PR #7')
+  assert.equal(anchorChanged(undated, { pr: 7, between: true }), 'since the merge of PR #7')
+  assert.equal(anchorChanged(linked), 'since the decision date 2026-05-01')
   assert.equal(anchorMissingReason(linked, 'future'), 'the decision date 2026-05-01 is in the future, so no commit precedes it — raised normally')
   assert.equal(anchorMissingReason(linked, 'unmerged'), UNMERGED)
   for (const said of ['missing', 'unmerged']) assert.equal(anchorMissingReason(undated, said), UNMERGED)
@@ -78,9 +83,10 @@ test('scope answer: a merge is read with its number only for a record with no co
     missing: [],
     unusable: [{ id: 'u', word: 'unmerged' }],
     merged: [
-      { id: 'a', pr: 7 },
-      { id: 'b', pr: 8 },
+      { id: 'a', pr: 7, between: true },
+      { id: 'b', pr: 8, between: false },
       { id: 'c', pr: 7 },
+      { id: 'f', pr: 7, between: 'true' },
       { id: 7, pr: 7 },
       { id: 'd', pr: '7' },
       { id: 'e', pr: 7.5 },
@@ -88,33 +94,54 @@ test('scope answer: a merge is read with its number only for a record with no co
     reason: '',
   }
   assert.deepEqual(readScopeCheck(ans)?.merged, [
-    { id: 'a', pr: 7 },
-    { id: 'b', pr: 8 },
-    { id: 'c', pr: 7 },
+    { id: 'a', pr: 7, between: true },
+    { id: 'b', pr: 8, between: false },
+    { id: 'c', pr: 7, between: false },
+    { id: 'f', pr: 7, between: false },
   ])
   assert.deepEqual(readScopeCheck({ unchanged: [], merged: 'x' })?.merged, [])
   const pr7 = ['https://github.com/o/r/pull/7']
   const ds = parsed({ id: 'a', links: pr7 }, { id: 'b', links: pr7 }, { id: 'c', commit: 'abc1234', links: pr7 }, { id: 'u', links: pr7 })
   const { merged, missing } = await runScopeCheck(ds, async () => ans, [])
-  assert.deepEqual([...merged], [['a', 7]])
+  assert.deepEqual([...merged], [['a', { pr: 7, between: true }]])
   assert.deepEqual([...missing], [['u', 'unmerged']])
   assert.ok(SCOPE_CHECK_SCHEMA.required.includes('merged'))
-  assert.deepEqual(SCOPE_CHECK_SCHEMA.properties.merged.items.required, ['id', 'pr'])
-  assert.match(scopeCheckPrompt(ds), /merged: \[\{id, pr\} for every id whose status was followed by merge and a number, pr that number\]/)
+  assert.deepEqual(SCOPE_CHECK_SCHEMA.properties.merged.items.required, ['id', 'pr', 'between'])
+  assert.equal(SCOPE_CHECK_SCHEMA.properties.merged.items.properties.between.type, 'boolean')
+  assert.match(
+    scopeCheckPrompt(ds),
+    /merged: \[\{id, pr, between\} for every id whose status was followed by merge and a number, pr that number, between true when the word between followed it\]/,
+  )
 })
+
+test('scope answer: a merged line `<id> 0 merge 7` is unchanged — the status is the word right after the id', () => {
+  const desc = SCOPE_CHECK_SCHEMA.properties.unchanged.description
+  assert.equal(desc, 'ids printed with the status 0 right after them, whatever follows it (merge and a number), exactly as printed')
+  const prompt = scopeCheckPrompt(parsed({ id: 'a', links: ['https://github.com/o/r/pull/7'] }))
+  assert.match(prompt, /prints a decision id and, right after it, the exit status/)
+  assert.match(prompt, /unchanged: \[every id whose status, printed right after it, was 0, whether or not merge and a number follow\]/)
+  assert.match(prompt, /a tool a line needs that is missing goes here/)
+  assert.equal(SCOPE_CHECK_SCHEMA.properties.reason.description, 'one line: anything that did not run, a missing tool included')
+  const read = readScopeCheck({ unchanged: ['a'], missing: [], unusable: [], merged: [{ id: 'a', pr: 7, between: false }], reason: '' })
+  assert.deepEqual(read, { unchanged: ['a'], missing: [], unusable: [], merged: [{ id: 'a', pr: 7, between: false }] })
+})
+
+/** The case's merged entry of record `id` for pull request `pr`. @param {Record<string, any>} c @param {string} id @param {number} pr */
+const mergedAnswer = (c, id, pr) => ({ id, pr, between: (c['between'] ?? []).includes(`#${pr}`) })
 
 /**
  * What the case's scope check answers, as the Rust port's `scope_seen` reads it: each record's anchor named by the
- * first pull request `#N` the case's `merged` lists, else its day, else its first pull request.
+ * first pull request `#N` the case's `merged` lists (`between` when the case's `between` lists it too), else its
+ * day, else its first pull request.
  * @param {Record<string, any>} c @param {any[]} ds
  */
 function caseAnswer(c, ds) {
-  /** @type {{ unchanged: string[], missing: string[], unusable: Array<{ id: string, word: string }>, merged: Array<{ id: string, pr: number }> }} */
+  /** @type {{ unchanged: string[], missing: string[], unusable: Array<{ id: string, word: string }>, merged: Array<{ id: string, pr: number, between: boolean }> }} */
   const out = { unchanged: [], missing: [], unusable: [], merged: [] }
   for (const d of ds) {
     const pulls = /** @type {Array<{ number: number }>} */ (d.pulls ?? [])
     const merged = pulls.find(p => c['merged'].includes(`#${p.number}`))
-    if (merged) out.merged.push({ id: d.id, pr: merged.number })
+    if (merged) out.merged.push(mergedAnswer(c, d.id, merged.number))
     const name = merged ? `#${merged.number}` : decisionDate(d) || `#${pulls[0]?.number}`
     if (c['unchanged'].includes(name)) out.unchanged.push(d.id)
     if (c['missing'].includes(name)) out.missing.push(d.id)

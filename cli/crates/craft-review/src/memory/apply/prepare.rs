@@ -59,7 +59,8 @@ fn applicable(records: &[PriorDecision], notes: &mut Vec<String>) -> Vec<PriorDe
 }
 
 /// The records whose scope is checked: every one that could answer a finding a record may set
-/// aside and that names a commit or a date (realm @nick/craft, node #676), each once.
+/// aside and that names a commit, a pull request or a date (realm @nick/craft, nodes #676, #682),
+/// each once.
 fn to_check<'a>(
     findings: &[Value],
     ds: &'a [PriorDecision],
@@ -133,6 +134,7 @@ pub(in crate::memory) fn prepare(
     scope.missing.retain(was_checked);
     scope.why_missing.retain(|id, _| was_checked(id));
     scope.merged.retain(|id, _| was_checked(id));
+    scope.between.retain(was_checked);
     let reraised = |fi: usize, di: usize| match (findings.get(fi), ds.get(di)) {
         (Some(f), Some(d)) => !reraise_reason(f, d, &scope).is_empty(),
         _ => false,
@@ -160,6 +162,7 @@ pub(in crate::memory) fn prepare_asked(
         missing: saved.missing.clone(),
         why_missing: saved.why_missing.clone(),
         merged: saved.merged.clone(),
+        between: saved.between.clone(),
     };
     let mut p = prepare(findings, records, &|_| seen.clone(), focus);
     p.asked.pairs.clone_from(&saved.pairs);
@@ -174,6 +177,7 @@ impl Prepared {
             missing: self.scope.missing.clone(),
             why_missing: self.scope.why_missing.clone(),
             merged: self.scope.merged.clone(),
+            between: self.scope.between.clone(),
             pairs: self.asked.pairs.clone(),
         }
     }

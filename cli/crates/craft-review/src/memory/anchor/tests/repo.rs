@@ -6,6 +6,7 @@ use super::record;
 use crate::memory::PriorDecision;
 use crate::memory::priors::scope_check_on;
 
+mod between;
 mod failing;
 mod fork;
 mod merge;

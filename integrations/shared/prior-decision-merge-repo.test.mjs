@@ -39,8 +39,9 @@ const landed = (dir, file, text, date, subject) => {
 /**
  * A trunk on origin `https://github.com/Owner/Repo.git`: pull request #7 adding src/m.rs merged by a merge
  * commit, a side branch's commit naming #7 merged after it, #8 adding src/s.rs squashed, #9 adding src/n.rs and the scope changed after its merge, then two near
- * misses of #7 — `(#77)` changing src/keep.rs, then `Merge pull request #70 from …` changing src/k2.rs — and HEAD
- * on a branch off it. @param {(dir: string, root: string) => void} body
+ * misses of #7 — `(#77)` changing src/keep.rs, then `Merge pull request #70 from …` changing src/k2.rs —, a side
+ * branch's commit `wip: u (#14)` dated before everything and setting src/u.rs to `side`, merged by #15, then #14
+ * squashed setting it to `u`, and HEAD on a branch off it. @param {(dir: string, root: string) => void} body
  */
 function inRepo(body) {
   const dir = mkdtempSync(join(tmpdir(), 'craft-merge-'))
@@ -66,6 +67,14 @@ function inRepo(body) {
     landed(dir, 'src/n.rs', 'n2\n', '2026-05-04T10:00:00+0000', 'chore: n')
     landed(dir, 'src/keep.rs', '1\n', '2026-05-04T11:00:00+0000', 'fix: k (#77)')
     landed(dir, 'src/k2.rs', '1\n', '2026-05-04T12:00:00+0000', 'Merge pull request #70 from owner/x')
+    // Older than the squash of #14 and naming it too, off the first-parent line: only a walk of every parent
+    // would take it, the oldest, for #14's squash.
+    const early = '2026-05-01T09:00:00+0000'
+    git(dir, ['checkout', '-qb', 'side2'], early)
+    landed(dir, 'src/u.rs', 'side\n', early, 'wip: u (#14)')
+    git(dir, ['checkout', '-q', 'main'], early)
+    git(dir, ['merge', '-q', '--no-ff', '-m', 'Merge pull request #15 from owner/side2', 'side2'], '2026-05-04T13:00:00+0000')
+    landed(dir, 'src/u.rs', 'u\n', '2026-05-04T14:00:00+0000', 'feat: u (#14)')
     git(dir, ['update-ref', 'refs/remotes/origin/main', 'HEAD'])
     git(dir, ['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main'])
     git(dir, ['checkout', '-qb', 'feat'])
@@ -98,6 +107,7 @@ test('scope script: a record linking its pull request is diffed against that req
       { id: 'near77', scope: 'src/keep.rs', links: [ours(7)] },
       { id: 'near70', scope: 'src/k2.rs', links: [ours(7)] },
       { id: 'side7', scope: 'src/t.rs', links: [ours(7)] },
+      { id: 'squash14', scope: 'src/u.rs', links: [ours(14)] },
       { id: 'by-commit', scope: 'src/m.rs', commit: root, links: [ours(7)] },
     )
     const seen = [
@@ -114,6 +124,7 @@ test('scope script: a record linking its pull request is diffed against that req
       'near77 1 merge 7',
       'near70 1 merge 7',
       'side7 1 merge 7',
+      'squash14 0 merge 14',
       'by-commit 1',
     ]
     assert.deepEqual(run(scopeCheckScript(ds), dir), seen)
@@ -126,7 +137,7 @@ test('scope script: a record linking its pull request is diffed against that req
   })
 })
 
-test('scope script: origin names this repository over https or ssh, any case, with .git or not', () => {
+test('scope script: origin names this repository over https (credentials and a trailing slash aside) or ssh, any case, with .git or not', () => {
   inRepo(dir => {
     const ds = parsed({ id: 'pr7', scope: 'src/m.rs', when: '2026-05-02', links: [ours(7)] })
     for (const [url, line] of [
@@ -135,7 +146,15 @@ test('scope script: origin names this repository over https or ssh, any case, wi
       ['git@GitHub.com:OWNER/repo', 'pr7 0 merge 7'],
       ['ssh://git@github.com/owner/repo.git', 'pr7 0 merge 7'],
       ['https://github.com/owner/repo2', 'pr7 1'],
-      ['https://github.com/owner/repo/', 'pr7 1'],
+      ['https://github.com/owner/repo/', 'pr7 0 merge 7'],
+      ['https://github.com/owner/repo.git/', 'pr7 0 merge 7'],
+      ['https://x-access-token:t0k@github.com/owner/repo.git', 'pr7 0 merge 7'],
+      ['https://user@github.com/owner/repo', 'pr7 0 merge 7'],
+      ['https://a@b@github.com/owner/repo', 'pr7 0 merge 7'],
+      ['https://user@gitlab.com/owner/repo', 'pr7 1'],
+      ['https://github.com/owner/repo//', 'pr7 1'],
+      ['git@github-work:owner/repo.git', 'pr7 1'],
+      ['https://www.github.com/owner/repo', 'pr7 1'],
       ['https://github.com/owner/repo.git.git', 'pr7 1'],
       ['https://gitlab.com/owner/repo', 'pr7 1'],
       ['owner/repo', 'pr7 1'],
@@ -155,24 +174,37 @@ test('scope script: with no trunk a record linking its pull request falls back t
   })
 })
 
-test('scope script: a later commit citing a pull request is not its merge', () => {
+test('scope script: a later commit citing a pull request is not its merge, and of two merge subjects the newest is', () => {
   const dir = mkdtempSync(join(tmpdir(), 'craft-merge-order-'))
   try {
     const start = '2026-05-01T08:00:00+0000'
     git(dir, ['init', '-q', '-b', 'main'], start)
     git(dir, ['remote', 'add', 'origin', 'git@github.com:owner/repo.git'], start)
     mkdirSync(join(dir, 'src'))
+    const file = (/** @type {string} */ f, /** @type {string} */ text) => writeFileSync(join(dir, f), text)
     landed(dir, 'src/a.rs', '0\n', start, 'src/a.rs')
+    file('src/x.rs', 'x\n')
     landed(dir, 'src/q.rs', 'q\n', '2026-05-02T10:00:00+0000', 'feat: q (#12)')
+    file('src/x.rs', 'x2\n')
     landed(dir, 'src/q.rs', 'q2\n', '2026-05-03T10:00:00+0000', 'fix: q again (#12)')
+    file('src/y.rs', 'y\n')
     landed(dir, 'src/r.rs', 'r\n', '2026-05-02T11:00:00+0000', 'Merge pull request #13 from owner/r')
-    const tip = landed(dir, 'src/r.rs', 'r2\n', '2026-05-03T11:00:00+0000', 'docs: r (#13)')
+    file('src/y.rs', 'y2\n')
+    landed(dir, 'src/r.rs', 'r2\n', '2026-05-03T11:00:00+0000', 'docs: r (#13)')
+    file('src/x.rs', 'x\n')
+    landed(dir, 'src/y.rs', 'y\n', '2026-05-03T12:00:00+0000', 'chore: back')
+    landed(dir, 'src/v.rs', 'v\n', '2026-05-03T13:00:00+0000', 'Merge pull request #16 from owner/a')
+    const tip = landed(dir, 'src/v.rs', 'v2\n', '2026-05-03T14:00:00+0000', 'Merge pull request #16 from owner/b')
     git(dir, ['update-ref', 'refs/remotes/origin/main', tip])
     const ds = parsed(
-      { id: 'pr12', scope: 'src/q.rs', links: ['https://github.com/owner/repo/pull/12'] },
-      { id: 'pr13', scope: 'src/r.rs', links: ['https://github.com/owner/repo/pull/13'] },
+      { id: 'pr12', scope: 'src/q.rs', links: [ours(12)] },
+      { id: 'pr12-back', scope: 'src/x.rs', links: [ours(12)] },
+      { id: 'pr13', scope: 'src/r.rs', links: [ours(13)] },
+      { id: 'pr13-back', scope: 'src/y.rs', links: [ours(13)] },
+      { id: 'pr16', scope: 'src/v.rs', links: [ours(16)] },
     )
-    assert.deepEqual(run(scopeCheckScript(ds), dir), ['pr12 1 merge 12', 'pr13 1 merge 13'])
+    // Each scope set back after a later citing commit changed it is unchanged only since the right one.
+    assert.deepEqual(run(scopeCheckScript(ds), dir), ['pr12 1 merge 12', 'pr12-back 0 merge 12', 'pr13 1 merge 13', 'pr13-back 0 merge 13', 'pr16 0 merge 16'])
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

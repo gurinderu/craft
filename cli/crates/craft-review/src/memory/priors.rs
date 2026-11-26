@@ -247,7 +247,9 @@ pub(super) fn scope_check(repo: &Path, ds: &[&PriorDecision]) -> apply::Scope {
 
 /// [`scope_check`] with `today` the UTC date; the trunk and the origin resolved once, for the first
 /// record that needs them. A record whose base was its pull request's merge is named with it, so
-/// a changed scope is said to have changed since that merge (realm @nick/craft, node #682).
+/// a changed scope is said to have changed since that merge; one with a date beside it is
+/// unchanged only when its scope also did not change on the trunk between that date's base and
+/// the merge's first parent, and is named apart when it did (realm @nick/craft, node #682).
 pub(super) fn scope_check_on(repo: &Path, ds: &[&PriorDecision], today: &str) -> apply::Scope {
     let mut out = apply::Scope::default();
     let repo = Repo::new(repo);
@@ -267,8 +269,14 @@ pub(super) fn scope_check_on(repo: &Path, ds: &[&PriorDecision], today: &str) ->
         if let Some(n) = base.pull {
             out.merged.insert(d.id.clone(), n);
         }
-        if git::unchanged_since(repo.path, &base.commit, &d.scope) {
+        if !git::unchanged_since(repo.path, &base.commit, &d.scope) {
+            continue;
+        }
+        let before = |b: &String| git::unchanged_before_merge(repo.path, b, &base.commit, &d.scope);
+        if base.dated.as_ref().is_none_or(before) {
             out.unchanged.insert(d.id.clone());
+        } else {
+            out.between.insert(d.id.clone());
         }
     }
     out

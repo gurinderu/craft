@@ -247,6 +247,20 @@ pub fn unchanged_since(cwd: &Path, commit: &str, scope: &str) -> bool {
     !commit.starts_with('-') && git(&top, &["diff", "--quiet", commit, "--", scope]).is_ok()
 }
 
+/// Whether the code in `scope` is unchanged on the trunk from `from` to the first parent of
+/// `merge`, as `git diff --quiet <from>...<merge>^1 -- <scope>` answers from the top level: diffed
+/// from their merge-base, so nothing lies between when `from` is `merge` or after it; false when
+/// git cannot tell, or `from` is spelled as an option, which would spell the whole range as one
+/// (realm @nick/craft, node #682).
+#[must_use]
+pub fn unchanged_before_merge(cwd: &Path, from: &str, merge: &str, scope: &str) -> bool {
+    let Ok(top) = toplevel(cwd) else {
+        return false;
+    };
+    let range = format!("{from}...{merge}^1");
+    !from.starts_with('-') && git(&top, &["diff", "--quiet", &range, "--", scope]).is_ok()
+}
+
 /// The change against `base` with no context lines, from the merge-base to the working tree, as
 /// `git diff -U0 --merge-base <base>` prints it from the top level with its paths unquoted and
 /// prefixed `a/` and `b/` whatever `diff.noprefix` or `diff.mnemonicPrefix` says, renames found

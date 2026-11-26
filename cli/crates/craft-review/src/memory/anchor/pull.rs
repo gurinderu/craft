@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::super::record::text;
+use super::Base;
 use crate::git;
 
 /// A pull request a record links: its repository, `owner/name` lower-cased, and its number.
@@ -77,19 +78,13 @@ impl<'p> Repo<'p> {
         self.trunk.get_or_init(|| git::trunk(self.path)).as_deref()
     }
 
-    /// The first of `pulls` whose repository origin names: its URL, lower-cased, is
-    /// `https://github.com/`, `git@github.com:` or `ssh://git@github.com/` followed by the
-    /// repository, `.git` after it or not.
+    /// The first of `pulls` whose repository origin names: its URL, lower-cased, credentials
+    /// before an `@` in an `https://` host and one trailing `/` dropped, is `https://github.com/`,
+    /// `git@github.com:` or `ssh://git@github.com/` followed by the repository, `.git` after it or
+    /// not. An ssh host alias or `www.github.com` names none: the record falls back to its date.
     fn ours<'a>(&self, pulls: &'a [Pull]) -> Option<&'a Pull> {
         let url = self.origin.get_or_init(|| git::origin_url(self.path));
-        let url = url.as_deref()?;
-        let rest = [
-            "https://github.com/",
-            "git@github.com:",
-            "ssh://git@github.com/",
-        ]
-        .iter()
-        .find_map(|p| url.strip_prefix(p))?;
+        let rest = named(url.as_deref()?)?;
         pulls
             .iter()
             .find(|p| rest == p.repo || rest.strip_suffix(".git") == Some(p.repo.as_str()))
@@ -104,7 +99,52 @@ impl<'p> Repo<'p> {
         let commit = git::merge_of(self.path, tip, pull.number).ok()??;
         Some((commit, pull.number))
     }
+
+    /// The base of a record anchored by `pulls`: the merge of the first of this repository
+    /// ([`Repo::merge`]) and, when `day` names a day the trunk has a commit before
+    /// ([`super::dated`]), that commit beside it — the scope must not have changed on the trunk
+    /// between the decision date and the merge either (realm @nick/craft, node #682); `None` when
+    /// no merge is found.
+    pub(super) fn merged(&self, pulls: &[Pull], day: Option<&str>, today: &str) -> Option<Base> {
+        let (commit, n) = self.merge(pulls)?;
+        let dated = day.and_then(|d| super::dated(self, d, today).ok());
+        Some(Base {
+            commit,
+            pull: Some(n),
+            dated,
+        })
+    }
 }
+
+/// The `owner/name` after origin's GitHub prefix, `.git` after it or not; `None` for a URL of
+/// another host or form.
+fn named(url: &str) -> Option<&str> {
+    let https = url.strip_prefix("https://").map(|r| {
+        let host = r.find('/').map_or(r, |end| r.get(..end).unwrap_or(r));
+        host.rfind('@').and_then(|at| r.get(at + 1..)).unwrap_or(r)
+    });
+    let rest = https
+        .and_then(|r| r.strip_prefix("github.com/"))
+        .or_else(|| url.strip_prefix("git@github.com:"))
+        .or_else(|| url.strip_prefix("ssh://git@github.com/"))?;
+    Some(rest.strip_suffix('/').unwrap_or(rest))
+}
+
+/// What a scope is said to have changed since when its base was the merge of pull request `n`.
+pub(crate) fn since_merge(n: u64) -> String {
+    format!("the merge of PR #{n}")
+}
+
+/// Where a scope is said to have changed when it changed on the trunk between the decision date
+/// `day` and the merge of pull request `n`.
+pub(crate) fn before_merge(day: &str, n: u64) -> String {
+    format!("on the trunk between the decision date {day} and the merge of PR #{n}")
+}
+
+/// Why a record anchored by its pull requests alone names nothing to compare against.
+pub(super) const UNMERGED: &str = "no merge of a pull request of this repository it links was \
+                                   found on the trunk (not merged, origin not matched, no trunk, \
+                                   or git failed), and it records no date — raised normally";
 
 #[cfg(test)]
 mod tests;

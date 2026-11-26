@@ -6,7 +6,11 @@
 
 import { isoMoment } from './memory-recall.mjs'
 
-/** @typedef {import('./prior-decisions.mjs').PriorDecision} PriorDecision */
+/**
+ * @typedef {import('./prior-decisions.mjs').PriorDecision} PriorDecision
+ * @typedef {{ pr: number, between: boolean }} Merged  the pull request whose merge a scope was compared against,
+ *   and whether it changed on the trunk between the record's date and that merge (realm @nick/craft, node #682)
+ */
 
 /**
  * The UTC day of the ISO date a record's `when` is (a timestamp's zone applied, isoMoment), or of the
@@ -36,8 +40,20 @@ export function anchorSince(d, pr) {
   return d.commit || (day ? `the decision date ${day}` : 'a merge on the trunk')
 }
 
+/**
+ * How a record's scope is said to have changed: on the trunk between its decision date and the merge `merged`
+ * names when it changed there, since that merge, else since its commit or date (anchorSince).
+ * @param {PriorDecision} d @param {Merged} [merged] @returns {string}
+ */
+export function anchorChanged(d, merged) {
+  const day = decisionDate(d)
+  if (merged?.between && day) return `on the trunk between the decision date ${day} and the merge of PR #${merged.pr}`
+  return `since ${anchorSince(d, merged?.pr)}`
+}
+
 // Why a record anchored by its pull requests alone names nothing to compare against.
-const UNMERGED = 'no pull request of this repository it links is merged on the trunk, and it records no date — raised normally'
+const UNMERGED =
+  'no merge of a pull request of this repository it links was found on the trunk (not merged, origin not matched, no trunk, or git failed), and it records no date — raised normally'
 
 /**
  * Why a record did not apply when its anchor names no commit to compare against (realm @nick/craft, node

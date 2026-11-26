@@ -1339,7 +1339,7 @@
       }
     },
     {
-      "name": "a record with no commit linking a pull request of this repository is checked since that request's merge on the trunk, a squash merge's too: unchanged sets aside; changed raises, naming the merge; a request of another repository or not merged on the trunk falls back to the date; with no date and no merge it raises, named",
+      "name": "a record with no commit linking a pull request of this repository is checked since that request's merge on the trunk, a squash merge's too: unchanged sets aside; changed raises, naming the merge, and a dated one whose scope the trunk changed between its date and the merge raises naming both; a request of another repository or not merged on the trunk falls back to the date; with no date and no merge it raises, named",
       "recall": {
         "backend": "repo",
         "why": "the .craft/memory directory",
@@ -1432,6 +1432,21 @@
             "links": [
               "https://GitHub.com/Owner/Repo/pull/8/files"
             ]
+          },
+          {
+            "id": "decision-f7f7f7f7f7",
+            "kind": "decision",
+            "title": "unwrap in the cache",
+            "body": "never empty",
+            "scope": "src/w.rs",
+            "status": "active",
+            "date": "2026-05-02",
+            "author": "nick",
+            "line": 70,
+            "lens": "errors",
+            "links": [
+              "https://github.com/owner/repo/pull/13"
+            ]
           }
         ],
         "questions": [],
@@ -1491,12 +1506,25 @@
           "why": "w",
           "source": "errors",
           "tier": "confirmed"
+        },
+        {
+          "severity": "Medium",
+          "title": "unwrap in the cache",
+          "file": "src/w.rs",
+          "line": 70,
+          "why": "w",
+          "source": "errors",
+          "tier": "confirmed"
         }
       ],
       "merged": [
         "#7",
         "#9",
-        "#8"
+        "#8",
+        "#13"
+      ],
+      "between": [
+        "#13"
       ],
       "unchanged": [
         "#7",
@@ -1519,7 +1547,11 @@
           },
           {
             "title": "panic on bad config",
-            "why": "w · Rejected before (decision decision-f5f5f5f5f5, nick, date not recorded) — raised again: no pull request of this repository it links is merged on the trunk, and it records no date — raised normally."
+            "why": "w · Rejected before (decision decision-f5f5f5f5f5, nick, date not recorded) — raised again: no merge of a pull request of this repository it links was found on the trunk (not merged, origin not matched, no trunk, or git failed), and it records no date — raised normally."
+          },
+          {
+            "title": "unwrap in the cache",
+            "why": "w · Rejected before (decision decision-f7f7f7f7f7, nick, 2026-05-02) — raised again: the code in src/w.rs changed on the trunk between the decision date 2026-05-02 and the merge of PR #13 (or that could not be checked)."
           }
         ],
         "setAside": [
@@ -1549,15 +1581,15 @@
           }
         ],
         "notes": [
-          "6 decision(s) given, 3 finding(s) set aside as rejected before, 3 raised again"
+          "7 decision(s) given, 3 finding(s) set aside as rejected before, 4 raised again"
         ],
         "memory": {
           "source": "recalled",
-          "count": 6,
+          "count": 7,
           "why": "repo (the .craft/memory directory)",
           "backend": "repo"
         },
-        "report": "\n\n## Rejected before (set aside — not in the verdict)\n- Medium · `src/m.rs:10` · unwrap in the new parser · w · REJECTED BEFORE: validated by the caller — nick, 2026-05-02, https://github.com/owner/repo/pull/7#discussion_r1 (decision decision-f1f1f1f1f1) · matched by file:line+lens\n- Medium · `src/q.rs:40` · global lock in init · w · REJECTED BEFORE: runs once — nick, 2026-05-04, https://github.com/owner/repo/pull/10 (decision decision-f4f4f4f4f4) · matched by file:line+lens\n- Medium · `src/s.rs:60` · sleep in the poller · w · REJECTED BEFORE: backoff is wanted — nick, date not recorded, https://GitHub.com/Owner/Repo/pull/8/files (decision decision-f6f6f6f6f6) · matched by file:line+lens\n\n## Memory\n- memory: recalled 6 decision(s) from repo (the .craft/memory directory)\n\n\n## Prior decisions not applied\n- ⚠️ the match judge died or answered unreadably — 3 re-raised match(es) not asked whether the code goes against the record\n- ⚠️ decision decision-f5f5f5f5f5: no pull request of this repository it links is merged on the trunk, and it records no date — raised normally\n"
+        "report": "\n\n## Rejected before (set aside — not in the verdict)\n- Medium · `src/m.rs:10` · unwrap in the new parser · w · REJECTED BEFORE: validated by the caller — nick, 2026-05-02, https://github.com/owner/repo/pull/7#discussion_r1 (decision decision-f1f1f1f1f1) · matched by file:line+lens\n- Medium · `src/q.rs:40` · global lock in init · w · REJECTED BEFORE: runs once — nick, 2026-05-04, https://github.com/owner/repo/pull/10 (decision decision-f4f4f4f4f4) · matched by file:line+lens\n- Medium · `src/s.rs:60` · sleep in the poller · w · REJECTED BEFORE: backoff is wanted — nick, date not recorded, https://GitHub.com/Owner/Repo/pull/8/files (decision decision-f6f6f6f6f6) · matched by file:line+lens\n\n## Memory\n- memory: recalled 7 decision(s) from repo (the .craft/memory directory)\n\n\n## Prior decisions not applied\n- ⚠️ the match judge died or answered unreadably — 4 re-raised match(es) not asked whether the code goes against the record\n- ⚠️ decision decision-f5f5f5f5f5: no merge of a pull request of this repository it links was found on the trunk (not merged, origin not matched, no trunk, or git failed), and it records no date — raised normally\n"
       }
     }
   ]

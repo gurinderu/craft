@@ -20,7 +20,9 @@ fn landed(dir: &Path, file: &str, text: &str, date: &str, subject: &str) -> Stri
 /// merged by a merge commit, a side branch's commit naming #7 merged after it, #8 adding `src/s.rs`
 /// squashed, #9 adding `src/n.rs` and the scope changed after its merge, then two near misses of
 /// #7 — `(#77)` changing `src/keep.rs`, then `Merge pull request #70 from …` changing
-/// `src/k2.rs` — and `HEAD` on a branch off it.
+/// `src/k2.rs` —, a side branch's commit `wip: u (#14)` dated before everything and setting
+/// `src/u.rs` to `side`, merged by #15, then #14 squashed setting it to `u`, and `HEAD` on a branch
+/// off it.
 fn repo() -> (tempfile::TempDir, String) {
     let t = tempfile::tempdir().unwrap();
     let d = t.path();
@@ -79,7 +81,26 @@ fn repo() -> (tempfile::TempDir, String) {
         "fix: k (#77)",
     );
     let seventy = "Merge pull request #70 from owner/x";
-    let tip = landed(d, "src/k2.rs", "1\n", "2026-05-04T12:00:00+0000", seventy);
+    landed(d, "src/k2.rs", "1\n", "2026-05-04T12:00:00+0000", seventy);
+    // Older than the squash of #14 and naming it too, off the first-parent line: only a walk of
+    // every parent would take it, the oldest, for #14's squash.
+    let early = "2026-05-01T09:00:00+0000";
+    at(d, early, &["checkout", "-qb", "side2"]);
+    landed(d, "src/u.rs", "side\n", early, "wip: u (#14)");
+    at(d, early, &["checkout", "-q", "main"]);
+    let fifteen = "Merge pull request #15 from owner/side2";
+    at(
+        d,
+        "2026-05-04T13:00:00+0000",
+        &["merge", "-q", "--no-ff", "-m", fifteen, "side2"],
+    );
+    let tip = landed(
+        d,
+        "src/u.rs",
+        "u\n",
+        "2026-05-04T14:00:00+0000",
+        "feat: u (#14)",
+    );
     let late = "2026-05-05T00:00:00+0000";
     at(d, late, &["update-ref", "refs/remotes/origin/main", &tip]);
     let head = [
@@ -142,6 +163,7 @@ fn a_record_linking_its_pull_request_is_checked_since_that_requests_merge_on_the
         linked("near77", "src/keep.rs", "", &json!([ours(7)])),
         linked("near70", "src/k2.rs", "", &json!([ours(7)])),
         linked("side7", "src/t.rs", "", &json!([ours(7)])),
+        linked("squash14", "src/u.rs", "", &json!([ours(14)])),
         PriorDecision {
             pulls: pulls(json!([ours(7)]).as_array().unwrap()),
             ..record("by-commit", "src/m.rs", &root, "")
@@ -151,7 +173,14 @@ fn a_record_linking_its_pull_request_is_checked_since_that_requests_merge_on_the
     let s = scope_check_on(d, &refs, "2026-05-05");
     assert_eq!(
         ids(&s.unchanged),
-        ["first-ours", "pr7", "pr8", "undated", "unmerged"],
+        [
+            "first-ours",
+            "pr7",
+            "pr8",
+            "squash14",
+            "undated",
+            "unmerged"
+        ],
         "{:?}",
         s.why_missing
     );
@@ -166,6 +195,7 @@ fn a_record_linking_its_pull_request_is_checked_since_that_requests_merge_on_the
             ("pr8", 8),
             ("pr9", 9),
             ("side7", 7),
+            ("squash14", 14),
             ("undated", 7)
         ]
     );
@@ -176,13 +206,17 @@ fn a_record_linking_its_pull_request_is_checked_since_that_requests_merge_on_the
     );
     assert_eq!(
         s.why_missing["unmerged-undated"],
-        "no pull request of this repository it links is merged on the trunk, and it records no \
-         date — raised normally"
+        "no merge of a pull request of this repository it links was found on the trunk (not \
+         merged, origin not matched, no trunk, or git failed), and it records no date — raised \
+         normally"
     );
     // The working tree counts as a change since the merge, as it does since a commit.
     std::fs::write(d.join("src/s.rs"), "edited\n").unwrap();
     let s = scope_check_on(d, &refs, "2026-05-05");
-    assert_eq!(ids(&s.unchanged), ["pr7", "undated", "unmerged"]);
+    assert_eq!(
+        ids(&s.unchanged),
+        ["pr7", "squash14", "undated", "unmerged"]
+    );
 }
 
 #[test]
@@ -247,6 +281,7 @@ fn the_merge_of_a_pull_request_is_the_newest_first_parent_commit_whose_subject_n
     assert_eq!(subject(log(7)), "Merge pull request #7 from owner/feat7");
     assert_eq!(subject(log(8)), "feat: s (#8)");
     assert_eq!(subject(log(77)), "fix: k (#77)");
+    assert_eq!(subject(log(14)), "feat: u (#14)");
     assert_eq!(log(10), None);
     // The branch's own commit is off the first-parent line.
     assert_eq!(crate::git::merge_of(d, "feat7", 7).unwrap(), None);
@@ -292,7 +327,9 @@ fn a_finding_in_a_merged_pull_requests_code_is_raised_naming_that_merge_when_its
 }
 
 /// A later commit citing a pull request is never its merge: the merge commit wins over a citing
-/// squash-style subject, and among squash-style subjects the oldest — the squash itself — wins.
+/// squash-style subject, among squash-style subjects the oldest — the squash itself — wins, and
+/// among `Merge pull request` subjects the newest. Each scope set back after a later citing
+/// commit changed it is unchanged only since the right one.
 #[test]
 fn a_later_commit_citing_a_pull_request_is_not_its_merge() {
     let t = tempfile::tempdir().unwrap();
@@ -306,36 +343,63 @@ fn a_later_commit_citing_a_pull_request_is_not_its_merge() {
     );
     std::fs::create_dir_all(d.join("src")).unwrap();
     commit(d, "src/a.rs", "0\n", start);
-    landed(
-        d,
-        "src/q.rs",
-        "q\n",
-        "2026-05-02T10:00:00+0000",
-        "feat: q (#12)",
-    );
-    landed(
-        d,
-        "src/q.rs",
-        "q2\n",
-        "2026-05-03T10:00:00+0000",
-        "fix: q again (#12)",
-    );
+    let file = |f: &str, text: &str| std::fs::write(d.join(f), text).unwrap();
+    file("src/x.rs", "x\n");
+    let q = "2026-05-02T10:00:00+0000";
+    landed(d, "src/q.rs", "q\n", q, "feat: q (#12)");
+    file("src/x.rs", "x2\n");
+    let again = "2026-05-03T10:00:00+0000";
+    landed(d, "src/q.rs", "q2\n", again, "fix: q again (#12)");
+    file("src/y.rs", "y\n");
     let merge = "Merge pull request #13 from owner/r";
     landed(d, "src/r.rs", "r\n", "2026-05-02T11:00:00+0000", merge);
-    let tip = landed(
+    file("src/y.rs", "y2\n");
+    landed(
         d,
         "src/r.rs",
         "r2\n",
         "2026-05-03T11:00:00+0000",
         "docs: r (#13)",
     );
+    file("src/x.rs", "x\n");
+    landed(
+        d,
+        "src/y.rs",
+        "y\n",
+        "2026-05-03T12:00:00+0000",
+        "chore: back",
+    );
+    let older = "Merge pull request #16 from owner/a";
+    landed(d, "src/v.rs", "v\n", "2026-05-03T13:00:00+0000", older);
+    let newer = "Merge pull request #16 from owner/b";
+    let tip = landed(d, "src/v.rs", "v2\n", "2026-05-03T14:00:00+0000", newer);
     let late = "2026-05-04T00:00:00+0000";
     at(d, late, &["update-ref", "refs/remotes/origin/main", &tip]);
     let ds = [
         linked("pr12", "src/q.rs", "", &json!([ours(12)])),
+        linked("pr12-back", "src/x.rs", "", &json!([ours(12)])),
         linked("pr13", "src/r.rs", "", &json!([ours(13)])),
+        linked("pr13-back", "src/y.rs", "", &json!([ours(13)])),
+        linked("pr16", "src/v.rs", "", &json!([ours(16)])),
     ];
     let refs: Vec<&PriorDecision> = ds.iter().collect();
     let s = scope_check_on(d, &refs, "2026-05-04");
-    assert!(ids(&s.unchanged).is_empty(), "{:?}", s.merged);
+    let merged: Vec<(&str, u64)> = s.merged.iter().map(|(k, v)| (k.as_str(), *v)).collect();
+    assert_eq!(
+        merged,
+        [
+            ("pr12", 12),
+            ("pr12-back", 12),
+            ("pr13", 13),
+            ("pr13-back", 13),
+            ("pr16", 16)
+        ]
+    );
+    assert_eq!(
+        ids(&s.unchanged),
+        ["pr12-back", "pr13-back", "pr16"],
+        "{:?}",
+        s.why_missing
+    );
+    assert!(s.missing.is_empty(), "{:?}", s.why_missing);
 }
