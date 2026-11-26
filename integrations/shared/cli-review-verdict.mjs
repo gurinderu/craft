@@ -9,7 +9,7 @@
 // stop by (limitInReport, integrations/shared/limit-report.mjs).
 
 /** @typedef {import('./cli-review-record.mjs').Finding} Finding */
-/** @typedef {{ run: string, report: string, verdict: string, line: string, degraded: boolean, degradedNotes?: string[], memorySections?: string, stopped?: boolean, stopNote?: string, worktree?: string, findings?: Finding[], sorting?: Record<string, unknown> | null, prComments?: Record<string, unknown> | null }} Finished  stopNote: the binary's stop as a parent reads it, '' when none; worktree: the line naming craft's own worktree of the PR given the run reviewed in (realm @nick/craft, node #517) */
+/** @typedef {{ run: string, report: string, verdict: string, line: string, degraded: boolean, degradedNotes?: string[], memorySections?: string, stopped?: boolean, stopNote?: string, worktree?: string, findings?: Finding[], unverifiedLow?: { count: number, file: string } | null, sorting?: Record<string, unknown> | null, prComments?: Record<string, unknown> | null }} Finished  stopNote: the binary's stop as a parent reads it, '' when none; worktree: the line naming craft's own worktree of the PR given the run reviewed in (realm @nick/craft, node #517) */
 
 /**
  * The line with the glyph of its verdict, unless it opens with one already: a red verdict ⛔, a clean one ✅, any
@@ -79,7 +79,7 @@ export function finishedAnswer(step, driver) {
   // The report's memory part, verbatim and before the findings list, so a parent lifts what memory set aside and the
   // nested memory line as it lifts a review's (integrations/shared/prior-decision-report.mjs; realm @nick/craft, node #196).
   const memory = (step.memorySections ?? '').trim()
-  return `${verdict}\n\n${memory ? `${memory}\n\n` : ''}${findingsList(step.findings ?? [])}`
+  return `${verdict}\n\n${memory ? `${memory}\n\n` : ''}${findingsList(step.findings ?? [], step.unverifiedLow ?? null)}`
 }
 
 /** `text` as the answer's one sentence, none when empty. @param {string | undefined} text @returns {string[]} */
@@ -102,16 +102,25 @@ const oneLine = v =>
     .replace(/\s+/g, ' ')
     .trim()
 
+/** Whether `f` is a finding the binary holds apart: unverified, at Low or Info severity. @param {Finding} f */
+const isHeld = f => f.tier === 'unverified' && (f.severity === 'Low' || f.severity === 'Info')
+
 /**
- * The reported findings, one line each: severity, `file:line`, title and tier, as the binary's finished step names them.
- * @param {Finding[]} findings @returns {string}
+ * The reported findings, one line each: severity, `file:line`, title and tier, as the binary's finished step names them —
+ * the unverified Low and Info ones the binary held apart (`held`) left out, one sentence naming how many and their file
+ * (realm @nick/craft, node #636), as the binary's own driver writes it (cli/bin/craft/src/run/findings.rs).
+ * @param {Finding[]} findings @param {{ count: number, file: string } | null} [held] @returns {string}
  */
-export function findingsList(findings) {
-  const rows = findings.map(
-    f =>
-      `- [${oneLine(f.severity) || 'unrated'}] ${oneLine(f.file)}${f.line ? `:${f.line}` : ''} — ${oneLine(f.title)}${f.tier ? ` (${oneLine(f.tier)})` : ''}`,
-  )
-  return ['## Findings', '', ...(rows.length ? rows : ['None reported.'])].join('\n')
+export function findingsList(findings, held = null) {
+  const rows = findings
+    .filter(f => !held || !isHeld(f))
+    .map(
+      f =>
+        `- [${oneLine(f.severity) || 'unrated'}] ${oneLine(f.file)}${f.line ? `:${f.line}` : ''} — ${oneLine(f.title)}${f.tier ? ` (${oneLine(f.tier)})` : ''}`,
+    )
+  const apart = held ? [`${String(held.count)} Low or Info finding(s) no verifier checked are not listed: they are in ${oneLine(held.file)}.`] : []
+  const body = [...rows, ...apart]
+  return ['## Findings', '', ...(body.length ? body : ['None reported.'])].join('\n')
 }
 
 /**

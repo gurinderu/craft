@@ -16,8 +16,7 @@ use serde_json::{Value, json};
 use crate::Error;
 use crate::gate::lines::Lines;
 use crate::report::Tier;
-use crate::state::{self, Phase, RunState};
-use crate::step::StepError;
+use crate::state::{Phase, RunState};
 use gh::Moved;
 
 mod after;
@@ -189,9 +188,7 @@ pub(crate) fn write_report(dir: &Path, run: &RunState) -> Result<(), Error> {
     let Some(verdict) = &run.verdict else {
         return Ok(());
     };
-    let path = state::report_path(dir);
-    std::fs::write(&path, crate::report::markdown(run, verdict))
-        .map_err(|source| StepError::NoReport { path, source }.into())
+    crate::report::write(dir, run, verdict).map_err(Into::into)
 }
 
 /// What the finished step and the run record carry: the sorting (null when not asked), the memory

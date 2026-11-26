@@ -24,6 +24,16 @@ export const findingsOf = v =>
   }))
 
 /**
+ * How many unverified Low and Info findings the binary held apart from its report and the file they are in (realm @nick/craft,
+ * node #636), null when it held none.
+ * @param {unknown} v @returns {{ count: number, file: string } | null}
+ */
+export const heldOf = v =>
+  isObject(v) && Number.isInteger(v['count']) && Number(v['count']) > 0 && typeof v['file'] === 'string' && v['file']
+    ? { count: Number(v['count']), file: v['file'] }
+    : null
+
+/**
  * The binary's stop as a parent reads it back from the answer (integrations/shared/limit-report.mjs: limitInReport, deathsInReport),
  * '' when the run did not stop.
  * @param {unknown} s @returns {string}

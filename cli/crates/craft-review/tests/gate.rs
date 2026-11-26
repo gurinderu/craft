@@ -156,8 +156,14 @@ fn a_gate_seed_reaches_the_lenses_the_report_and_the_ledger_with_its_tool_rule()
         &[
             "## Gate\n\n- **rust**: pass — `cargo clippy --manifest-path Cargo.toml --all-targets`: pass",
             "2 tool finding(s) seeded for the lenses and the verifiers",
-            "unneeded `return` statement (clippy)",
+            "no verifier checked are not listed here",
         ],
+    );
+    // The unverified Low seed is held apart from the report, in the file the step names.
+    let held = std::fs::read_to_string(done["unverifiedLow"]["file"].as_str().unwrap()).unwrap();
+    assert!(
+        held.contains("unneeded `return` statement (clippy)"),
+        "{held}"
     );
     assert!(
         !r.contains("the gate and its tool seeds"),
