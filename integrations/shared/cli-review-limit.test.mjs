@@ -148,9 +148,24 @@ test('a submit that dies on the limit itself stops the run with the limit note, 
     },
   })
   assert.equal(limitInReport(run.report), LIMIT, run.report)
+  // The limit's note already says the run stopped: the line tells it once, as the binary's own line does.
+  assert.ok(run.report.includes(`INCOMPLETE — stopped: usage limit reached (${LIMIT})`), run.report)
+  assert.doesNotMatch(run.report, /stopped: stopped:/)
   assert.ok(run.report.includes(`The run is in ${RUN}.`), run.report)
   assert.ok(run.report.includes(hint()), run.report)
 })
+
+for (const [name, at] of /** @type {const} */ ([
+  ['the start step', { 'step:start': () => LIMIT }],
+  ['a resume step', { 'step:resume': () => LIMIT }],
+])) {
+  test(`${name} whose service agent answers the limit's text says the stop once, in the words a parent reads it by`, async () => {
+    const run = await runEngine('review', { args: 'step:resume' in at ? { ...args, run: RUN } : args, script: at })
+    assert.equal(limitInReport(run.report), LIMIT, run.report)
+    assert.ok(run.report.includes(`INCOMPLETE — stopped: usage limit reached (${LIMIT})`), run.report)
+    assert.doesNotMatch(run.report, /stopped: stopped:/)
+  })
+}
 
 test("a submit whose service agent comes back null — the limit's live form, no text — names the run and how to resume it", async () => {
   const run = await runEngine('review', {
