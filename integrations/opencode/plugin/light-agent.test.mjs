@@ -224,6 +224,7 @@ test('only a user message that begins as a rule file goes: one that quotes the m
   })
   const input = request()
   const task = input.messages?.[0]
+  assert.ok(task, 'the request carries the task')
   input.messages = [task, quoting, reply]
   lighten(input)
   assert.deepEqual(input.messages, [task, quoting, reply])
