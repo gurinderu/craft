@@ -1,9 +1,8 @@
 # Observability — craft run records
 
-Every `review` / `rust-audit` / `triage-findings` run, and every directly-dispatched review agent,
-writes a structured record to a global per-user store so runs can be studied later. A `review` run's
-record is filed by the `craft` binary the workflow drives, under the name `review` with
-`driver: 'cli'`; a store also keeps what retired engines filed — the JS `review` (no `driver`),
+Every `review` / `rust-audit` / `triage-findings` run writes a structured record to a global
+per-user store so runs can be studied later. A `review` run's record is filed by the `craft`
+binary the workflow drives, under the name `review` with `driver: 'cli'`; a store also keeps what retired engines filed — the JS `review` (no `driver`),
 `cli-review`, `rust-review`, `nix-review`, `adversarial-review` — and the readers still read them.
 
 ## Store
@@ -110,12 +109,14 @@ rejectedBefore, deferred, covered, conflict, reraised}` counts what the memory s
 again before validation; `issues` the findings deferred to an issue as not the PR's) and `memory`
 (where the sift's records came from, as `review` records it); `notRun[]` lists requested sources that
 failed to gather. It has no `scout`/`dimensions`/`verification`/`outputTokens`.
-The `rust-security-scanner` agent additionally records `toolsRun[]` (which cargo tools actually ran).
+A review agent dispatched on its own records nothing. A store may still hold the `kind: "agent"` index
+lines such agents once appended themselves (the `rust-security-scanner`'s carried `toolsRun[]`); the
+readers list them, and no report is built on them.
 Records of the retired rust-review also carry `gate {status, provenance}` (always) and `failedChecks[]`
 (gate-fail path only); these summary-only extras are NOT carried into the `index.jsonl` projection.
 
-Records carry a `runtime` field — `"claude-code"` for the Claude Code workflows/agents,
-`"opencode"` for the opencode adapter. opencode records are a deterministic subset: `findings`
+Records carry a `runtime` field — `"claude-code"` for the Claude Code workflows (and the agent
+lines of old stores), `"opencode"` for the opencode adapter. opencode records are a deterministic subset: `findings`
 is `null` (no structured findings), and there is no `outputTokens` (no token meter) — so
 `findingsTotal` is `null` in their index projection.
 
