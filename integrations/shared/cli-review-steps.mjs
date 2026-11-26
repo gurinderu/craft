@@ -178,7 +178,10 @@ ${pluginRootCheck(o.craftRoot, o.repo)}\`\`\``,
     'one line, root=<the plugin root>,',
   )
 
-/** The checked root, or why it is not one. @param {unknown} got @returns {{ root: string } | { error: string }} */
+/**
+ * The checked root, or why it is not one — a harness refusal among the reasons, as commandOutput says it.
+ * @param {unknown} got @returns {{ root: string } | { error: string, harness?: string }}
+ */
 function checkedRoot(got) {
   const out = commandOutput(got)
   if ('error' in out) return out
@@ -265,15 +268,25 @@ const AFTER_THE_LIMIT = "Run the review again once the limit resets: a local bui
 /** How to continue when the given craftRoot is not a usable plugin root: another one, outside the reviewed repo. */
 const ANOTHER_ROOT = "Pass the absolute path of a craft plugin root (an installed copy, or a checkout's integrations/claude-code) outside the reviewed repo."
 /**
- * The stop of the check of a given craftRoot, said by its cause: under the usage limit the root was not what failed —
- * the check never ran to its answer — so how to continue is the fetch's own, not another root (realm @nick/craft,
- * node #689).
- * @param {string} craftRoot @param {string} error @param {import('./cli-review-stop.mjs').StopCause} cause
+ * Why the check of a given craftRoot stopped, said by the cause the run record carries (stopCause): under the usage
+ * limit or a harness refusal the root was not what failed — the check never ran to its answer — so how to continue is
+ * the fetch's own: run the review again after the reset, or allow the command; only otherwise is the root not a usable
+ * one, and another the way on (realm @nick/craft, node #689).
+ * @param {string} craftRoot @param {{ error: string, harness?: string }} checked
+ * @returns {{ incomplete: string, cause: import('./cli-review-stop.mjs').StopCause }}
  */
-const rootStopped = (craftRoot, error, cause) =>
-  cause === 'limit'
-    ? `review: craftRoot=${JSON.stringify(craftRoot)} was not checked as the plugin root: ${error}. ${AFTER_THE_LIMIT}`
-    : `review: craftRoot=${JSON.stringify(craftRoot)} is not a usable plugin root: ${error}. ${ANOTHER_ROOT}`
+const rootStopped = (craftRoot, checked) => {
+  const notChecked = `review: craftRoot=${JSON.stringify(craftRoot)} was not checked as the plugin root: `
+  if (checked.harness !== undefined) return { incomplete: `${notChecked}${harnessRefused(checked.harness, null)}`, cause: 'harness' }
+  const cause = stopCause(checked, 'start')
+  return {
+    incomplete:
+      cause === 'limit'
+        ? `${notChecked}${checked.error}. ${AFTER_THE_LIMIT}`
+        : `review: craftRoot=${JSON.stringify(craftRoot)} is not a usable plugin root: ${checked.error}. ${ANOTHER_ROOT}`,
+    cause,
+  }
+}
 /**
  * The binary to run and the plugin root to hand it: a given craftBin as is, with a given craftRoot checked first, or
  * the root located only to file the run through (`recordRoot`; `note` saying why none was) — the prompts keep the
@@ -304,10 +317,7 @@ async function binAndRoot(o, craftVersion, serve) {
       : { bin: o.craftBin, root: '', recordRoot: located.root }
   }
   const checked = checkedRoot(await serve('step:root', 'Start', rootPrompt(o)))
-  if ('error' in checked) {
-    const cause = stopCause(checked, 'start')
-    return { incomplete: rootStopped(o.craftRoot, checked.error, cause), cause }
-  }
+  if ('error' in checked) return rootStopped(o.craftRoot, checked)
   return { bin: o.craftBin, root: checked.root }
 }
 
