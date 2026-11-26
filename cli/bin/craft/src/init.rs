@@ -7,7 +7,10 @@
 //! commit, then `--write` stores exactly those. Beside them, the CI map (node #482): the checks
 //! of the repository's workflows that carry clippy, test, fmt or build, which the gate reads when
 //! it cannot build the head itself; `--propose` prints their candidates, the session confirms each
-//! with the reviewer (node #483), and `--write --ci` records them ([`ci`]).
+//! with the reviewer (node #483), and `--write --ci` records them ([`ci`]). And the lens
+//! composition (node #647): `--propose` prints each lens's yield over the repository's runs and the
+//! lenses it offers to hold or turn off, `--write --lens` records what the reviewer confirmed
+//! ([`lenses`]).
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -22,6 +25,7 @@ use serde_json::{Value, json};
 
 mod ci;
 mod graph;
+mod lenses;
 mod memory;
 mod paths;
 
@@ -48,6 +52,11 @@ pub struct InitArgs {
     /// back); repeatable. The map is replaced like the points.
     #[arg(long = "ci", requires = "write", value_name = "JSON")]
     pub ci: Vec<String>,
+    /// A lens of the composition: `<profile:lens>=<always|first-round|off>`, a held one as
+    /// `--propose` prints it in `lenses.held`; repeatable. The section is replaced like the points:
+    /// none names an empty one. Refused whole as a review would refuse it.
+    #[arg(long = "lens", requires = "write", value_name = "PROFILE:LENS=STATE")]
+    pub lenses: Vec<String>,
     /// The project memory's `external` records as JSON on stdin (`-`, the only value): each one is
     /// proposed as an integration point with the revision its version file names now.
     #[arg(long = "memory-externals", requires = "propose", value_name = "-")]
@@ -108,6 +117,7 @@ pub fn init(args: &InitArgs) -> Result<ExitCode> {
             .collect::<Result<Vec<_>>>()?;
         let entries = ci::confirmed(&args.ci, &args.cwd)?;
         let mut profile = ProjectProfile::new(common, points, entries)?;
+        profile.lenses = lenses::confirmed(&args.lenses)?;
         let held = project::load(&path)
             .map(|p| p.and_then(|p| p.code_graph))
             .map_err(|e| e.to_string());
@@ -118,6 +128,7 @@ pub fn init(args: &InitArgs) -> Result<ExitCode> {
             "profile": path,
             "integrations": profile.integrations,
             "ci": profile.ci,
+            "lenses": profile.lenses,
             "codeGraph": graph,
             "codeGraphSays": says,
         }));
@@ -144,12 +155,13 @@ pub fn init(args: &InitArgs) -> Result<ExitCode> {
         "discovery": discovery,
         "ci": ci::held(&held_ci, &args.cwd),
         "ciCandidates": ci::proposed(&args.cwd),
+        "lenses": lenses::proposed(&args.cwd, &path)?,
         "codeGraph": held.as_ref().and_then(|p| p.code_graph.clone()),
         "codeGraphSays": graph::live_says(
             cbm::look(cbm::TOOL, &args.cwd),
             held.as_ref().and_then(|p| p.code_graph.as_ref()),
         ),
-        "write": "craft init --write --point <name>=<git url>@<tag or full commit> … --ci '<entry JSON>' … (every point and CI entry to keep, a held entry as `ci` prints it, one with `unusable` dropped or replaced; a branch is refused when a review prepares the sources)",
+        "write": "craft init --write --point <name>=<git url>@<tag or full commit> … --ci '<entry JSON>' … --lens <profile:lens>=<state> … (every point, CI entry and lens to keep, a held lens as `lenses.held` prints it, a held entry as `ci` prints it, one with `unusable` dropped or replaced; a branch is refused when a review prepares the sources)",
     }))
 }
 

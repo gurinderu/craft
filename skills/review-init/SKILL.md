@@ -1,7 +1,7 @@
 ---
 name: review-init
 description: >-
-  Your own review profile of a repository for the craft CLI review — `craft init` — kept outside it (~/.craft/projects/<id>/review.toml), never committed. Integration points: the external systems this code talks to over the network or through their API (kube-ovn, LINSTOR, a cloud API), each with its source git URL and deployed tag or commit, which the review reads; it proposes the project memory's `external` records for you to confirm. CI map: which GitHub CI check runs clippy, tests, fmt or the build, on a command quoted from the workflow or the recipe it calls — if the gate cannot build: red blocks, green informs, never passes. Use before a repository's first review, on `not recorded: <system>`, when a deployed version changes, or when the gate's build signal is unknown or its CI map missing or stale. Triggers: craft init, set up my review profile, integration points, the deployed version changed, CI map. Not for library dependencies (a review finds those itself), nor the project's shared memory (memory).
+  Your own review profile of a repository for the craft CLI review — `craft init` — kept outside it (~/.craft/projects/<id>/review.toml), never committed. Integration points: the external systems this code talks to over the network or its API (kube-ovn, a cloud API), each with its source git URL and deployed tag or commit; it proposes the project memory's `external` records to confirm. CI map: which GitHub CI check runs clippy, tests, fmt or the build, on a command quoted from the workflow or its recipe — read when the gate cannot build. Lens composition: lenses held to the first round or turned off, offered by what they found here. Use before a repository's first review, on `not recorded: <system>`, when a deployed version changes, when the gate's build signal is unknown or its CI map missing or stale, or to turn off a lens that finds nothing. Triggers: craft init, set up my review profile, integration points, CI map, turn off a lens. Not for library dependencies, nor the project's shared memory (memory).
 ---
 
 # review-init — your review profile of a repository
@@ -47,7 +47,7 @@ them. With nothing recalled, drop the heredoc and `--memory-externals -`. A loca
 --release` in craft's `cli/`) can stand for `$CRAFT_BIN`. It prints one JSON object: `profile`
 (the file's path, outside the repository), `exists`, `integrations` (what the profile holds now:
 `name`, `repo`, `ref`), `memory`, `discovery`, `ci` (the CI map the profile holds now),
-`ciCandidates`, `codeGraph` (the code graph the profile holds) and `codeGraphSays`. It writes
+`ciCandidates`, `lenses`, `codeGraph` (the code graph the profile holds) and `codeGraphSays`. It writes
 nothing. Tell the user `codeGraphSays` as it is, in one line: whether codebase-memory answers,
 so the review indexes the checkout it reads and adds the graph's callers to the consumers list.
 
@@ -174,6 +174,31 @@ job's path, or the entry's command is no longer run by its files, the gate skips
 says the CI map is stale, naming the file — come back here. The gate reads CI only for a working tree
 with no uncommitted changes to tracked files: CI built the head's commit, not your edits.
 
+## 3c. The lens composition: show, then ask
+
+`lenses` says which review lenses this repository needs, by what they found here alone — never by
+what the project is about:
+
+- `held` — the composition the profile holds, each as the `--lens` that writes it again
+  (`rust:money=off`); `heldUnread` says why the section could not be read, and then a review runs
+  every lens.
+- `yield` — each lens (`profile:lens`) over this repository's finished reviews: `runs` it went in,
+  `dead` it was planned for and did not run, and `confirmed` findings by severity.
+- `candidates` — the lenses with `passes` runs or more and no confirmed Medium or above, each with
+  the `states` it may take: `first-round` (it reads the change once, never in a later round) and
+  `off` (it does not run). The security lens and a profile's safety lens are never candidates; the
+  concurrency lens is offered `first-round` only, and a state the profile already holds is not
+  offered again. `yieldUnread` says why the run store could not be read, and then there is no
+  yield; `unreadRecords` counts the records passed over, so the yield covers fewer reviews — say
+  so.
+
+With `yieldUnread` set, give its reason: the store was not read, so this is no finding of no candidates. With no candidates and nothing held, say so in one line and go on. Otherwise ask the reviewer in
+words, one numbered list: for each candidate, its runs and what it confirmed, and the states it
+may take; for each held entry, whether to keep it. They confirm a state, keep it as it runs, or
+drop a held one. Nothing is written without their word. A review started with `--all-lenses`
+(`allLenses: true` in the Claude Code engine) sets the composition aside, so what they turn off
+is still checked by a release's full review.
+
 ## 4. Write
 
 ```sh
@@ -181,11 +206,15 @@ with no uncommitted changes to tracked files: CI built the head's commit, not yo
   --point 'kube-ovn=https://github.com/kubeovn/kube-ovn.git@v1.12.3' \
   --point 'linstor=git@github.com:LINBIT/linstor-server.git@v1.29.0' \
   --ci '{"check":"Rust","signal":"clippy","command":"cargo clippy --all-targets -- -D warnings","workflow":".github/workflows/ci.yml","sources":[]}' \
-  --ci '{"check":"lint","signal":"clippy","command":"cargo clippy --workspace -- -D warnings","workflow":".github/workflows/ci.yml","sources":["justfile"]}'
+  --ci '{"check":"lint","signal":"clippy","command":"cargo clippy --workspace -- -D warnings","workflow":".github/workflows/ci.yml","sources":["justfile"]}' \
+  --lens 'rust:money=off' --lens 'general:concurrency=first-round'
 ```
 
 `--write` replaces the whole list: pass every point to keep, the ones already there included.
-The same holds for the CI map: one `--ci` per entry to keep. A fresh confirmation is a resolved
+The same holds for the CI map, one `--ci` per entry to keep, and for the lenses: one `--lens` per
+entry to keep, a held one as `held` prints it — a write with none leaves the profile with no
+composition. A lens entry a review would refuse (the security or a safety lens, the concurrency
+lens off, a lens no profile has) or a lens named twice is named on stderr and nothing is written. A fresh confirmation is a resolved
 candidate's `ci` as printed, or the same JSON with the command line you quoted from the recipe
 and the recipe files in `sources`; its files are hashed at the write. An entry already held is
 passed back exactly as `ci` prints it, `hashes` included: those are kept as recorded, so a
@@ -200,7 +229,7 @@ local `uses:` it does not list, or whose `hashes` miss one of its files, is refu
 is written.
 At most 8; a name is letters, digits, `.`, `_` or `-`. A confirmed memory record goes in as its
 `point`, as printed. A refused point is named on stderr and nothing is written; so is a profile
-written by a craft of another format. Report the file's path, the points and the CI map entries written,
+written by a craft of another format. Report the file's path, the points, the CI map entries and the lenses written,
 and `codeGraphSays` in one line.
 
 ## Allowing the review's commands

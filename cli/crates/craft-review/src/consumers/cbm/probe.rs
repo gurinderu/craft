@@ -7,9 +7,9 @@ use super::Cbm;
 use crate::project::{CodeGraph, GraphState};
 
 /// How a graph newly indexing this repository is recorded so a review asks it: a write keeps
-/// only the points and CI entries it is given.
-pub const RECORD: &str = "record it with `craft init --write` and every point and CI entry to keep \
-                          (`craft init --propose` lists them)";
+/// only the points, CI entries and lenses it is given.
+pub const RECORD: &str = "record it with `craft init --write` and every point, CI entry and lens to \
+                          keep (`craft init --propose` lists them)";
 
 /// What `craft init` finds for the repository whose roots (its top level, and its main checkout
 /// for a linked worktree) are `roots`: whether `tool` answers and which project indexes it.

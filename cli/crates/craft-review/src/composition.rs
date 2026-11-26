@@ -128,6 +128,7 @@ pub fn apply(profiles: &mut [Profile], c: &Composition) {
     }
 }
 
+pub mod candidates;
 mod hold;
 pub(crate) use hold::hold;
 

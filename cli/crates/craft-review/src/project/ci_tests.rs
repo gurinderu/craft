@@ -80,7 +80,7 @@ fn the_ci_map_round_trips_is_replaced_by_a_write_and_keeps_unknown_sections() {
         "{text}"
     );
     assert_eq!(load(&path).unwrap(), Some(p));
-    std::fs::write(&path, format!("{text}\n[lenses]\nskip = [\"compat\"]\n")).unwrap();
+    std::fs::write(&path, format!("{text}\n[future]\nskip = [\"compat\"]\n")).unwrap();
     save(
         &path,
         &ProjectProfile::new("/r/.git".into(), Vec::new(), Vec::new()).unwrap(),
@@ -88,7 +88,7 @@ fn the_ci_map_round_trips_is_replaced_by_a_write_and_keeps_unknown_sections() {
     .unwrap();
     let held = load(&path).unwrap().unwrap();
     assert!(held.ci.is_empty(), "replaced");
-    assert!(std::fs::read_to_string(&path).unwrap().contains("[lenses]"));
+    assert!(std::fs::read_to_string(&path).unwrap().contains("[future]"));
 }
 
 #[test]

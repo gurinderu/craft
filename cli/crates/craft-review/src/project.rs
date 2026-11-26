@@ -117,6 +117,11 @@ pub struct ProjectProfile {
         skip_serializing_if = "Option::is_none"
     )]
     pub code_graph: Option<CodeGraph>,
+    /// The lens composition the reviewer confirmed (realm @nick/craft, node #647): written on
+    /// every write, an empty one too, so a write replaces the one it held; read by [`lenses::of`],
+    /// which a review reads leniently, never here.
+    #[serde(default, skip_deserializing)]
+    pub lenses: std::collections::BTreeMap<String, crate::composition::State>,
 }
 
 impl ProjectProfile {
@@ -136,6 +141,7 @@ impl ProjectProfile {
             integrations,
             ci,
             code_graph: None,
+            lenses: std::collections::BTreeMap::new(),
         };
         p.check().map_err(ProjectError::Invalid)?;
         Ok(p)
