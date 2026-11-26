@@ -9,7 +9,7 @@ test("the 1.x entry, called, registers craft's tools through the 1.x host", asyn
   assert.deepEqual(Object.keys(hooks.tool ?? {}).sort(), ['review', 'rust-audit', 'triage-findings'])
 })
 
-test("the 2.x entry registers the light agent's two hooks beside the work hook, and its disposer disposes all of them", async () => {
+test("the 2.x entry registers the light agent's three hooks beside the work hook, and its disposer disposes all of them", async () => {
   /** @type {string[]} */
   const hooks = []
   let disposed = 0
@@ -45,7 +45,7 @@ test("the 2.x entry registers the light agent's two hooks beside the work hook, 
     },
   })
   const dispose = await craft.setup(ctx)
-  assert.deepEqual(hooks, ['prompt', 'context', 'compaction'])
+  assert.deepEqual(hooks, ['prompt', 'context', 'compaction', 'generate'])
   await dispose()
-  assert.equal(disposed, 4, 'the tools, the work hook and the two of the light agent')
+  assert.equal(disposed, 5, 'the tools, the work hook and the three of the light agent')
 })

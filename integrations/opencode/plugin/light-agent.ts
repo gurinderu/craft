@@ -1,9 +1,10 @@
-// The light review-task agent's context on OpenCode 2.x. Two hooks carry this agent's model requests: `context`, the
-// request of a step, and `compaction`, the request that summarizes the conversation for the agent with the context as
-// the host stored it. Each sees its request before it goes out; the host keeps what the hook changes in place and drops
-// what it returns (2.2.7, realm @nick/craft, node #697). For the review-task agent's requests both leave the
-// repository's instructions out of what the provider gets, closing what the agent's file cannot: a permission denies a
-// call, not the offer (node #694). Every other agent's request passes as it came.
+// The light review-task agent's context on OpenCode 2.x. Three hooks carry this agent's model requests: `context`, the
+// request of a step; `compaction`, the request that summarizes the conversation for the agent with the context as the
+// host stored it; and `generate`, a request the session is asked outside its steps — the host's cache warming among
+// them, and the session's `generate` route. Each sees its request before it goes out; the host keeps what the hook
+// changes in place and drops what it returns (2.2.7, realm @nick/craft, node #697). For the review-task agent's
+// requests all three leave the repository's instructions out of what the provider gets, closing what the agent's file
+// cannot: a permission denies a call, not the offer (node #694). Every other agent's request passes as it came.
 //   • `system`: the part that carries the instructions keeps the host's own sections only, the date and the
 //     environment (node #695). It is read by the list of sections beside its text when the list accounts for the text
 //     exactly, else by the text's end — its last environment block must end the text, a trailing newline allowed.
@@ -180,13 +181,16 @@ function oncePerReason(log: (line: string) => void): (reason: string) => void {
   }
 }
 
-/** The 2.x hooks that carry the review-task agent's model requests: a step's own and the compaction's (node #697). */
-const REQUEST_HOOKS: readonly ['context', 'compaction'] = ['context', 'compaction']
+/**
+ * The 2.x hooks that carry the review-task agent's model requests: a step's own, the compaction's and a `generate`
+ * request's (node #697).
+ */
+const REQUEST_HOOKS: readonly ['context', 'compaction', 'generate'] = ['context', 'compaction', 'generate']
 
 /**
- * The 2.x plugin's hooks for the light agent: the same lightening on `context` and on `compaction`, disposed with the
- * plugin. It never costs the host a request: a throw inside a hook is caught and said once per reason on `log`; a 2.x
- * that refuses one registration is said the same way, naming the hook, and the other stands (node #698).
+ * The 2.x plugin's hooks for the light agent: the same lightening on `context`, `compaction` and `generate`, disposed
+ * with the plugin. It never costs the host a request: a throw inside a hook is caught and said once per reason on
+ * `log`; a 2.x that refuses one registration is said the same way, naming the hook, and the others stand (node #698).
  */
 export async function hookLightAgent(ctx: V2Context, log: (line: string) => void = console.error): Promise<() => Promise<void>> {
   const say = oncePerReason(log)

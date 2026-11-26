@@ -9,7 +9,8 @@
 //     compactions, and adds lines to a review request in a repo that declares its roles or work rules —
 //     silent elsewhere, off with CRAFT_ROLE_HOOK=0 (realm @nick/craft, node #288)
 //   • intercepts NO permission and no tool call; on 2.x it edits the review-task agent's model requests in place,
-//     the compaction's among them, leaving the repository's instructions out of them (light-agent.ts)
+//     the compaction's and a `generate` request's among them, leaving the repository's instructions out of them
+//     (light-agent.ts)
 //   • talks only to the local opencode server; opens no ports, no outbound network, no telemetry; the hook
 //     writes one line per firing to ~/.craft/hooks.jsonl
 //   • the 5 review subagents stay hidden (their own frontmatter: hidden: true)

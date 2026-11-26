@@ -84,9 +84,9 @@ export interface V2ModelMessage {
   content: string | { type: string; text?: string }[]
 }
 
-// The `context` hook's input, and the `compaction` hook's with the same keys (2.2.7, node #697): a model request on its
-// way out. Mutable, and only that: the host keeps what the hook changes in place and drops what it returns (2.2.7,
-// node #697). `tools` is a record of name → definition.
+// The `context` hook's input, and the `compaction` and `generate` hooks' with the same keys (2.2.7, node #697): a
+// model request on its way out. Mutable, and only that: the host keeps what the hook changes in place and drops what
+// it returns (2.2.7, node #697). `tools` is a record of name → definition.
 export interface V2ContextHookInput {
   sessionID: string
   agent: string
@@ -150,10 +150,10 @@ export interface V2Context {
     interrupt(input: { sessionID: string }): Promise<unknown>
     context(input: { sessionID: string }): Promise<V2Message[]>
     hook(name: 'prompt', callback: (input: V2PromptHookInput) => Promise<void> | void): Promise<V2Registration>
-    // Experimental in 2.2.7: the agent's own model requests (`context`) and the request that summarizes a session for the
-    // agent (`compaction`), before they go out, changed in place; the summarizer's instruction is appended after the hook
-    // (light-agent.ts, node #697).
-    hook(name: 'context' | 'compaction', callback: (input: V2ContextHookInput) => Promise<void> | void): Promise<V2Registration>
+    // Experimental in 2.2.7: the agent's own model requests (`context`), the request that summarizes a session for the
+    // agent (`compaction`) and a request the session is asked outside its steps (`generate`), before they go out, changed
+    // in place; the summarizer's instruction is appended after the hook (light-agent.ts, node #697).
+    hook(name: 'context' | 'compaction' | 'generate', callback: (input: V2ContextHookInput) => Promise<void> | void): Promise<V2Registration>
   }
   event: {
     // Returned synchronously; an async iterable of the location's events, filtered by type.

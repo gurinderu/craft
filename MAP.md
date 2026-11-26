@@ -299,7 +299,7 @@ gives the `rust-audit` and `triage-findings` workflows, the `review` tool (`bin/
 through `integrations/shared/craft-review-run.mjs`, on the calling session's model, each task on 1.x its own `opencode run` on `review-task`,
 without `--archived` and with subagent tasks on `review-task`; on 2.x `--delegate`, each task handed back to the plugin and run as a child
 session of the calling session (`review-children.ts`, `child-run.ts`, the binary's `run/delegate.rs` and `run/delegate_read.rs`); the tool is not yet seen in a real OpenCode session) and craft's work hook one surface on either runtime; on 2.x `light-agent.ts` keeps
-`review-task` light, its `context` and `compaction` hooks cutting the repository's instructions and every tool but four out of that agent's
+`review-task` light, its `context`, `compaction` and `generate` hooks cutting the repository's instructions and every tool but four out of that agent's
 model requests; on 2.x the review's progress also
 reaches the TUI's prompt footer through the `craft.review` RPC — `progress-rpc.ts` emits it, `review-footer.mjs` draws it, loaded by the TUI
 from `plugin/tui/`, the directory `install.sh` links as `plugins/craft-review-footer`;

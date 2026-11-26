@@ -1,6 +1,6 @@
 // The light review-task agent's context on OpenCode 2.x (light-agent.ts), over model requests shaped as opencode 2.2.7
-// handed them to a probe plugin's `context` and `compaction` hooks (realm @nick/craft, node #697): four system parts,
-// the messages, and `tools` as a record — changed in place, the one change the host keeps.
+// handed them to a probe plugin's `context`, `compaction` and `generate` hooks (realm @nick/craft, node #697): four
+// system parts, the messages, and `tools` as a record — changed in place, the one change the host keeps.
 import { test } from 'vitest'
 import assert from 'node:assert/strict'
 import { hookLightAgent, lighten } from './light-agent.ts'
@@ -252,10 +252,10 @@ test('four tools are offered by the same record; a list of tools is not read as 
   assert.equal(listed.tools?.['length'], 2)
 })
 
-test("the hook lightens review-task's requests on `context`, passes every other agent's, and is disposed with the plugin", async () => {
+test("the hooks sit on `context`, `compaction` and `generate`; `context` lightens review-task's requests, passes every other agent's, and all are disposed with the plugin", async () => {
   const f = fakeHooks()
   const dispose = await hookLightAgent(f.ctx, () => {})
-  assert.deepEqual(Object.keys(f.callbacks), ['context', 'compaction'])
+  assert.deepEqual(Object.keys(f.callbacks), ['context', 'compaction', 'generate'])
   const light = request()
   const other = request('general')
   const otherBefore = JSON.stringify(other)
@@ -265,7 +265,7 @@ test("the hook lightens review-task's requests on `context`, passes every other 
   assert.deepEqual(Object.keys(light.tools ?? {}).sort(), ['glob', 'grep', 'read', 'shell'])
   assert.equal(JSON.stringify(other), otherBefore)
   await dispose()
-  assert.equal(f.disposed(), 2)
+  assert.equal(f.disposed(), 3)
 })
 
 test('a compaction request is lightened the same way: the rule file the host stored and the notices go, the rest of the conversation stays', async () => {
@@ -308,18 +308,47 @@ test('a compaction request is lightened the same way: the rule file the host sto
   await dispose()
 })
 
-test('a 2.x that refuses the compaction hook keeps the context one, and says the refusal once', async () => {
+test('a `generate` request is lightened the same way: the rule file the host stored and the notices go, the request stays', async () => {
+  const f = fakeHooks()
+  const dispose = await hookLightAgent(f.ctx, () => {})
+  const SUB_RULES = 'Instructions from: /probe/proj/sub/AGENTS.md\n# Sub project rules\n\nPROBE-SUB-RULES-MARKER-9c1d'
+  // Shaped as the probe recorded the `generate` hook's input (the host's cache warming, and the session's `generate`
+  // route): the conversation as the host stored it, no token limit in `options`, the eight tools a step offers, and
+  // the request's own prompt last, a user message without an id (node #697).
+  const generate = request()
+  generate.options = {}
+  generate.tools = { glob: TOOL, grep: TOOL, read: TOOL, review: TOOL, 'rust-audit': TOOL, shell: TOOL, skill: TOOL, 'triage-findings': TOOL }
+  const task = textMessage('user', 'Read the note in sub/ and report it.', { id: 'msg_1' })
+  const answer = textMessage('assistant', 'DONE-SUB', { id: 'msg_3' })
+  const ask = { role: 'user', content: [{ type: 'text', text: 'This is a keep-alive request. Reply with exactly: OK' }] }
+  generate.messages = [task, textMessage('user', SUB_RULES, { id: 'msg_2' }), answer, ask]
+  f.callbacks['generate']?.(generate)
+  assert.equal(instructionsPart(generate).text, OWN)
+  assert.deepEqual(Object.keys(generate.tools ?? {}).sort(), ['glob', 'grep', 'read', 'shell'])
+  assert.deepEqual(generate.messages, [task, answer, ask])
+  assert.equal(generate.options['maxTokens'], undefined, 'the request is left without a token limit, as it came')
+  for (const text of textsOf(generate)) assert.doesNotMatch(text, RULES_OF_THE_REPOSITORY)
+  const other = request('general')
+  const otherBefore = JSON.stringify(other)
+  f.callbacks['generate']?.(other)
+  assert.equal(JSON.stringify(other), otherBefore, "another agent's generate request passes as it came")
+  await dispose()
+})
+
+test('a 2.x that refuses one of the hooks keeps the other two, and says the refusal once', async () => {
   /** @type {string[]} */
   const logged = []
   const f = fakeHooks('compaction')
   const dispose = await hookLightAgent(f.ctx, line => logged.push(line))
-  assert.deepEqual(Object.keys(f.callbacks), ['context'])
+  assert.deepEqual(Object.keys(f.callbacks), ['context', 'generate'])
   assert.deepEqual(logged, ["craft: could not lighten the review-task agent's context on this OpenCode: compaction hook: session.hook is not a function"])
-  const light = request()
-  f.callbacks['context']?.(light)
-  assert.equal(instructionsPart(light).text, OWN)
+  for (const name of ['context', 'generate']) {
+    const light = request()
+    f.callbacks[name]?.(light)
+    assert.equal(instructionsPart(light).text, OWN, name)
+  }
   await dispose()
-  assert.equal(f.disposed(), 1)
+  assert.equal(f.disposed(), 2)
 })
 
 test('a request that cannot be read costs the host nothing, and each reason is logged once', async () => {
@@ -363,7 +392,11 @@ test('a refusal to register a hook is logged once per hook and leaves a disposer
   const f = fakeHooks(true)
   const dispose = await hookLightAgent(f.ctx, line => logged.push(line))
   const line = "craft: could not lighten the review-task agent's context on this OpenCode: "
-  assert.deepEqual(logged, [`${line}context hook: session.hook is not a function`, `${line}compaction hook: session.hook is not a function`])
+  assert.deepEqual(logged, [
+    `${line}context hook: session.hook is not a function`,
+    `${line}compaction hook: session.hook is not a function`,
+    `${line}generate hook: session.hook is not a function`,
+  ])
   await dispose()
   assert.equal(f.disposed(), 0)
 })

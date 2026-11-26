@@ -147,8 +147,9 @@ hosts only, not yet seen in a real OpenCode 2.x.
   every other on `review-task` (both have write and edit off), with the matching Claude Code agent's
   prompt (or the reviewed repository's own `.claude/agents/<name>.md`) before the task. A task still
   runs read-only commands (git, grep, the build's own checks) through bash.
-- On 2.x `review-task` is kept light as well: the plugin's `context` and `compaction` hooks edit that
-  agent's model requests in place, leaving out the repository's instructions however they reach the
+- On 2.x `review-task` is kept light as well: the plugin's `context`, `compaction` and `generate` hooks — a
+  step's request, the compaction's, one the host asks the session outside its steps — edit that agent's
+  model requests in place, leaving out the repository's instructions however they reach the
   context (its rule files, one loaded on the way by a read, a change's notice) and every tool but glob,
   grep, read and shell (`light-agent.ts`). The agent's file denies the calls; the hooks remove the
   offers and the texts, which a deny does not. A compaction's summary passes as the summarizer wrote
@@ -194,8 +195,8 @@ a model). Tune by task — strongest model + high effort where reasoning is heav
 ## Containment
 
 The plugin registers the workflow tools and narrow hooks: craft's hook at the moment of work, and — on
-2.x, for the `review-task` agent only — the `context` and `compaction` hooks that edit its model
-requests in place (`light-agent.ts`); no other agent's request is touched.
+2.x, for the `review-task` agent only — the `context`, `compaction` and `generate` hooks that edit its
+model requests in place (`light-agent.ts`); no other agent's request is touched.
 It only remembers which sessions are subagents' and notes compactions, and adds a few short lines
 to a message asking for review work (findings, PR comments, a review), in a repo that declares its
 own agents or work rules, once per request kind (findings, review) per session. On 1.x the lines
