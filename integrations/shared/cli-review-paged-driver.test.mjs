@@ -1,8 +1,8 @@
 // The review driver over paged steps (integrations/shared/cli-review-steps.mjs, integrations/shared/cli-review-paged.mjs):
 // a paged start and submit read through `craft review page --run`; and a page step that fails — whatever it exits with —
 // read as a step not read whole on every path: a status falls back to the brief status when its page step failed or
-// the harness refused it (not when the harness refused the status command itself), a resume keeps its run and resume
-// hint, a publication's outcome is unknown, and a start names the run it made.
+// the harness refused it (not when the harness refused the status command itself or the page step stopped on the usage
+// limit), a resume keeps its run and resume hint, a publication's outcome is unknown, and a start names the run it made.
 import { afterEach, beforeEach, test } from 'vitest'
 import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
@@ -11,6 +11,8 @@ import { join } from 'node:path'
 import { runEngine } from './engine-harness.mjs'
 
 let RUN = ''
+/** The account's usage limit as a task agent says it (integrations/shared/cli-review-limit.mjs). */
+const LIMIT = "You've hit your limit · resets 3am (Europe/Berlin)"
 beforeEach(() => {
   RUN = mkdtempSync(join(tmpdir(), 'craft-run-'))
 })
@@ -189,6 +191,35 @@ test('a status command the harness refused asks no brief status: the review stop
     ['step:root', 'step:start', 'lens:a', 'step:submit:1', 'step:status', 'log-run'],
   )
   assert.match(run.report, /review stopped: the command printed no JSON: Error: the output was cut\. The run is in .*\. To resume .*`craft:review run=/)
+})
+
+test('a status whose page step stopped on the usage limit asks no brief status: the review stops on the lost submit', async () => {
+  const status = JSON.stringify({ run: RUN, done: true, filing: { record: 'filed' } })
+  const run = await runEngine('review', {
+    args: ARGS,
+    script: {
+      ...BASE(),
+      'step:start': ran(JSON.stringify({ run: RUN, done: false, tasks: [TASK()] })),
+      lens: () => {
+        throw new Error(LIMIT)
+      },
+      'step:submit:1': ran('Error: the output was cut'),
+      'step:status': page(status, 0, 5),
+      // The service agent answers nothing once the limit is seen: the page step comes back as the limit's stop.
+      'step:status:page': () => null,
+    },
+  })
+  assert.ok(
+    run.logs.some(l => l.startsWith(`⛔ usage limit reached (${LIMIT})`)),
+    run.logs.join('\n'),
+  )
+  // The limit's stop on a page step is no status that said nothing: the brief status, another command, is not asked
+  // in its place. The review stops as on a status command that failed: on the reason its submit was lost.
+  assert.deepEqual(
+    run.calls.map(c => c.label),
+    ['step:root', 'step:start', 'lens:a', 'step:submit:1', 'step:status', 'step:status:page', 'log-run'],
+  )
+  assert.match(run.report, /review stopped: the command printed no JSON: Error: the output was cut\. The run is in .*\. To resume /)
 })
 
 test('a publication whose page step the harness refused says its outcome is unknown: the comment itself ran', async () => {
