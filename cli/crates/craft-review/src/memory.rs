@@ -10,6 +10,7 @@
 //! what was not applied; the ledger carries what was set aside as the author's word, so the next
 //! round carries it.
 
+mod anchor;
 mod apply;
 mod asked;
 mod bounds;

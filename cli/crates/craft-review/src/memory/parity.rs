@@ -6,6 +6,7 @@
 
 use serde_json::{Value, json};
 
+use super::anchor::{Anchor, Unusable};
 use super::apply::{self, Scope};
 use super::judge::{self, Judge};
 use super::{Memory, PriorDecision, merge, recall, rules};
@@ -69,16 +70,28 @@ fn the_judges_prompts_render_as_the_engines_render_them() {
     }
 }
 
-/// What the case's scope check sees: the records whose commit it names unchanged or missing.
+/// What the case's scope check sees: the records whose anchor — the commit, else the UTC day — it
+/// names unchanged or missing, and, under `unusable`, the anchors it names unusable by the word the
+/// scope-check line prints (`future`, `no-trunk`, `unreadable`).
 fn scope_seen(case: &Value, ds: &[&PriorDecision]) -> Scope {
-    let named = |k: &str, commit: &str| case[k].as_array().unwrap().iter().any(|c| c == commit);
+    let named = |k: &str, anchor: &str| case[k].as_array().unwrap().iter().any(|c| c == anchor);
     let mut s = Scope::default();
     for d in ds {
-        if named("unchanged", &d.commit) {
+        let Some(a) = d.anchor() else { continue };
+        let name = match &a {
+            Anchor::Commit(c) => (*c).to_owned(),
+            Anchor::Date(day) => day.clone(),
+        };
+        if named("unchanged", &name) {
             s.unchanged.insert(d.id.clone());
         }
-        if named("missing", &d.commit) {
+        if named("missing", &name) {
             s.missing.insert(d.id.clone());
+        }
+        let word = case["unusable"].get(&name).and_then(Value::as_str);
+        if let Some(why) = word.and_then(Unusable::from_word) {
+            s.missing.insert(d.id.clone());
+            s.why_missing.insert(d.id.clone(), a.unusable(why));
         }
     }
     s

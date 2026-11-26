@@ -326,7 +326,7 @@ fn utc_seconds(t: &str) -> Option<f64> {
 
 /// An ISO date read by hand (`isoMoment`): its UTC day and, for a timestamp, its seconds into
 /// that day; `None` when it is no ISO date or names a day or time the calendar lacks.
-fn moment(v: &str) -> Option<(String, Option<f64>)> {
+pub(super) fn moment(v: &str) -> Option<(String, Option<f64>)> {
     let (year, month, day) = (num(v, 0, 4)?, num(v, 5, 7)?, num(v, 8, 10)?);
     if v.get(4..5) != Some("-")
         || v.get(7..8) != Some("-")

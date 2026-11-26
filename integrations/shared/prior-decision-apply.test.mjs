@@ -32,7 +32,7 @@ test('split: unchanged scope sets a Medium aside, marked with reason, who, when,
 })
 
 test('split: a Critical, a changed scope, and a missing commit are raised again, with why', () => {
-  const [d, noCommit] = /** @type {any[]} */ (parsePriorDecisions([decision(), decision({ id: 'd2', commit: '', scope: 'lib' })]).decisions)
+  const [d, noCommit] = /** @type {any[]} */ (parsePriorDecisions([decision(), decision({ id: 'd2', commit: '', when: '', scope: 'lib' })]).decisions)
   const f = (/** @type {string} */ sev, file = 'src/parse.rs') => ({ file, title: 'unwrap in parser may panic', severity: sev, why: 'w' })
   const critical = splitByDecisions([f('Critical')], [d], new Set([d.id]), 'confirmed')
   assert.equal(critical.setAside.length, 0)
@@ -43,7 +43,7 @@ test('split: a Critical, a changed scope, and a missing commit are raised again,
   assert.match(String(changed.kept[0]?.why), /changed since abc1234/)
   const nc = splitByDecisions([f('Low', 'lib/a.rs')], [noCommit], new Set(['d2']), 'unverified')
   assert.equal(nc.setAside.length, 0)
-  assert.match(String(nc.kept[0]?.why), /records no commit/)
+  assert.match(String(nc.kept[0]?.why), /records no commit and no date/)
 })
 
 test("split: a High is set aside only by a human's decision (decidedBy: human) whose code is unchanged since its commit (node #196)", () => {
@@ -73,8 +73,8 @@ test("split: a High is set aside only by a human's decision (decidedBy: human) w
   assert.deepEqual(decisionsToCheck([high], [anonymous]), [], 'a decision not saying decidedBy: human cannot set a High aside, so nothing to check')
 })
 
-test('check list: only decisions that could set a finding aside and recorded a commit', () => {
-  const ds = /** @type {any[]} */ (parsePriorDecisions([decision(), decision({ id: 'd2', commit: '' })]).decisions)
+test('check list: only decisions that could set a finding aside and recorded a commit or a date', () => {
+  const ds = /** @type {any[]} */ (parsePriorDecisions([decision(), decision({ id: 'd2', commit: '', when: '' })]).decisions)
   const fs = [
     { file: 'src/parse.rs', title: 'unwrap in parser may panic', severity: 'Low' },
     { file: 'src/parse.rs', title: 'unwrap in parser may panic', severity: 'Critical' },
@@ -97,8 +97,8 @@ test('scope script: one quoted line per decision, printing id and status — or 
 test('scope check answer: a missing or unreadable answer shows nothing unchanged', () => {
   assert.equal(readScopeCheck(null), null)
   assert.equal(readScopeCheck({ unchanged: 'decision-1' }), null)
-  assert.deepEqual(readScopeCheck({ unchanged: ['a', 7, 'b'], reason: '' }), { unchanged: ['a', 'b'], missing: [] })
-  assert.deepEqual(readScopeCheck({ unchanged: [], missing: ['c', null], reason: '' }), { unchanged: [], missing: ['c'] })
+  assert.deepEqual(readScopeCheck({ unchanged: ['a', 7, 'b'], reason: '' }), { unchanged: ['a', 'b'], missing: [], unusable: [] })
+  assert.deepEqual(readScopeCheck({ unchanged: [], missing: ['c', null], reason: '' }), { unchanged: [], missing: ['c'], unusable: [] })
 })
 
 test('apply: a commit the repo does not know raises the finding normally and is named apart from a changed scope', async () => {
@@ -139,20 +139,20 @@ const question = (over = {}) => ({
   ...over,
 })
 
-test('deferral: only a question carrying `deferred: true` and a commit records a deferral; a decision always applies', () => {
+test('deferral: only a question carrying `deferred: true` and a commit or a date records a deferral; a decision always applies', () => {
   const [d, q, noFlag, noCommit, strFlag] = /** @type {any[]} */ (
     parsePriorDecisions([
       decision(),
       question(),
       question({ id: 'question-2', deferred: undefined }),
-      question({ id: 'question-3', commit: '' }),
+      question({ id: 'question-3', commit: '', date: '' }),
       question({ id: 'question-4', deferred: 'true' }),
     ]).decisions
   )
   assert.equal(recordsDeferral(d), true)
   assert.equal(recordsDeferral(q), true)
   assert.equal(recordsDeferral(noFlag), false, 'a question without `deferred: true` is context only, commit or not')
-  assert.equal(recordsDeferral(noCommit), false, 'a deferral needs a commit for the scope check')
+  assert.equal(recordsDeferral(noCommit), false, 'a deferral needs a commit or a date for the scope check')
   assert.equal(recordsDeferral(strFlag), false, '`deferred` is a boolean, not a string')
 })
 
@@ -170,13 +170,18 @@ test('apply: a question without `deferred: true` sets nothing aside and labels n
   assert.match(r.notes.join('\n'), /1 open question\(s\) record no deferral — context only/)
 })
 
-test('apply: a deferral without a commit is raised again and named', async () => {
-  const [q] = /** @type {any[]} */ (parsePriorDecisions([question({ commit: '' })]).decisions)
+test('apply: a deferral without a commit or a date is raised again and named', async () => {
+  const [q] = /** @type {any[]} */ (parsePriorDecisions([question({ commit: '', date: '' })]).decisions)
   const f = { file: 'src/parse.rs', title: 'unwrap in parser may panic', severity: 'Medium', why: 'w' }
   const r = await applyPriorDecisions({ confirmed: [f] }, [q], async () => ({ unchanged: [], missing: [], reason: '' }))
   assert.equal(r.setAside.length, 0)
-  assert.match(String(r.tiers['confirmed']?.[0]?.why), /Deferred before \(question question-1a2b3c4d5e[^)]*\) — raised again: the question records no commit/)
-  assert.deepEqual(r.refused, ['question question-1a2b3c4d5e: records a deferral but no commit, so an unchanged scope cannot be established — raised normally'])
+  assert.match(
+    String(r.tiers['confirmed']?.[0]?.why),
+    /Deferred before \(question question-1a2b3c4d5e[^)]*\) — raised again: the question records no commit and no date/,
+  )
+  assert.deepEqual(r.refused, [
+    'question question-1a2b3c4d5e: records a deferral but no commit and no date, so an unchanged scope cannot be established — raised normally',
+  ])
 })
 
 test('apply: a record another given record supersedes sets nothing aside', async () => {

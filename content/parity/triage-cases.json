@@ -2129,7 +2129,7 @@
           ],
           "memory": "memory: none — not recalled — no gathered finding names a file; plus 2 passed by the launcher",
           "priorDecisionsNotApplied": [
-            "question question-ffffffffff: records a deferral but no commit, so an unchanged scope cannot be established — raised normally"
+            "question question-ffffffffff: records a deferral but no commit and no date, so an unchanged scope cannot be established — raised normally"
           ]
         }
       }

@@ -165,6 +165,29 @@ pub fn has_commit(cwd: &Path, commit: &str) -> bool {
     !commit.starts_with('-') && verifies(cwd, commit)
 }
 
+/// The trunk: origin's default branch as [`default_base`] resolves it (`origin/HEAD` when it names
+/// a commit, else `origin/main`, else `origin/master`); `None` when none resolves.
+#[must_use]
+pub fn trunk(cwd: &Path) -> Option<String> {
+    let trunk = default_base(cwd).ok()?;
+    not_an_option(cwd, &[&trunk]).ok()?;
+    Some(trunk)
+}
+
+/// The last commit on `tip`'s first-parent line committed before `day` (`YYYY-MM-DD`) began
+/// anywhere, at 00:00 +14:00, as `git rev-list -1 --first-parent --before='<day> 00:00:00 +1400'
+/// <tip>` names it; `None` when that line starts after it.
+///
+/// # Errors
+/// When `tip` is spelled as an option or `git` fails.
+pub fn last_before(cwd: &Path, tip: &str, day: &str) -> Result<Option<String>, GitError> {
+    not_an_option(cwd, &[tip])?;
+    let before = format!("--before={day} 00:00:00 +1400");
+    let out = git(cwd, &["rev-list", "-1", "--first-parent", &before, tip])?;
+    let commit = out.trim();
+    Ok((!commit.is_empty()).then(|| commit.to_owned()))
+}
+
 /// Whether the code in `scope`, a repository-relative path, is unchanged since `commit`, the
 /// working tree included, as `git diff --quiet <commit> -- <scope>` answers from the repository's
 /// top level — a pathspec git reads from a subdirectory would name another path; false when git

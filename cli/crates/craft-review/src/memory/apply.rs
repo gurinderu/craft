@@ -3,18 +3,20 @@
 //! #230, #282): a finding a decision answers leaves the verdict and is listed under Rejected before
 //! with who, when, why and a link, never dropped; one a deferred question answers under Known and
 //! deferred. It is raised again when it is Critical, when it is High and its record is not a human's
-//! decision (`decidedBy: "human"`, no deferral; node #196), when its record names no commit, when the
-//! repository lacks that commit, or when the code in the record's scope changed since it; a High a
-//! human's decision sets aside is listed under its own section. Which
+//! decision (`decidedBy: "human"`, no deferral; node #196), when its record names no commit and no
+//! date, when the repository holds no commit for that anchor, or when the code in the record's
+//! scope changed since it (node #676); a High a human's decision sets aside is listed under its
+//! own section. Which
 //! record answers a finding a near miss leaves open, the match judge decides ([`judged`]): the run
 //! is [`prepare`]d, the judge asked about its pairs, then [`apply`] reads its answer. A kept
 //! finding the judge says goes against a record is marked with it. A project rule covers a class of
 //! findings, not one, and is applied after this split (`memory::rules`).
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::{Value, json};
 
+use super::anchor::Anchor;
 use super::judge;
 use super::matching::{self, Match};
 use super::{PriorDecision, RecordKind};
@@ -27,15 +29,27 @@ mod section;
 pub(super) use prepare::{Prepared, prepare, prepare_asked};
 
 pub(super) use mark::noted;
-use mark::{commit_missing, reraise_reason, reraised_note, set_aside};
+use mark::{reraise_reason, reraised_note, set_aside};
 pub(super) use section::{refused_section, section};
 
-/// What the scope check observed: the records whose scope is unchanged since their commit, and
-/// those whose commit the repository lacks.
+/// What the scope check observed: the records whose scope is unchanged since their anchor, those
+/// whose anchor the repository holds no commit for, and, by id, why where that is other than the
+/// commit or a commit before the date missing (a future date, no trunk, git failing).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Scope {
     pub unchanged: BTreeSet<String>,
     pub missing: BTreeSet<String>,
+    pub why_missing: BTreeMap<String, String>,
+}
+
+impl Scope {
+    /// Why `d`, anchored at `a`, is missing.
+    fn missing_why(&self, d: &PriorDecision, a: &Anchor<'_>) -> String {
+        self.why_missing
+            .get(&d.id)
+            .cloned()
+            .unwrap_or_else(|| a.missing())
+    }
 }
 
 /// The findings split: those kept in the verdict (a re-raised one with its note), those set aside
@@ -50,17 +64,18 @@ pub struct Applied {
     pub refused: Vec<String>,
 }
 
-/// Whether a record can set a finding aside: a deferral needs a commit to check its scope against.
+/// Whether a record can set a finding aside: a deferral needs a commit or a date to check its
+/// scope against (realm @nick/craft, node #676).
 fn records_deferral(d: &PriorDecision) -> bool {
-    d.kind != RecordKind::Question || (d.deferred && !d.commit.is_empty())
+    d.kind != RecordKind::Question || (d.deferred && d.anchor().is_some())
 }
 
 fn or<'a>(s: &'a str, none: &'a str) -> &'a str {
     if s.is_empty() { none } else { s }
 }
 
-/// What could not be applied: a deferral without a commit, and a matched record whose commit the
-/// repository lacks.
+/// What could not be applied: a deferral without a commit or a date, and a matched record whose
+/// anchor the repository holds no commit for.
 fn refusals(
     findings: &[Value],
     ds: &[PriorDecision],
@@ -70,7 +85,7 @@ fn refusals(
     let mut out: Vec<String> = ds
         .iter()
         .filter(|d| !records_deferral(d))
-        .map(|d| format!("question {}: records a deferral but no commit, so an unchanged scope cannot be established — raised normally", d.id))
+        .map(|d| format!("question {}: records a deferral but no commit and no date, so an unchanged scope cannot be established — raised normally", d.id))
         .collect();
     let mut seen: Vec<usize> = Vec::new();
     for (f, m) in findings.iter().zip(matched) {
@@ -80,18 +95,14 @@ fn refusals(
         }) else {
             continue;
         };
-        if ds.get(m.at).is_some_and(|d| !d.commit.is_empty()) && !seen.contains(&m.at) {
+        if ds.get(m.at).is_some_and(|d| d.anchor().is_some()) && !seen.contains(&m.at) {
             seen.push(m.at);
         }
     }
     for d in seen.into_iter().filter_map(|i| ds.get(i)) {
-        if scope.missing.contains(&d.id) {
-            out.push(format!(
-                "{} {}: {}",
-                d.kind.label(),
-                d.id,
-                commit_missing(d)
-            ));
+        if let Some(a) = d.anchor().filter(|_| scope.missing.contains(&d.id)) {
+            let why = scope.missing_why(d, &a);
+            out.push(format!("{} {}: {why}", d.kind.label(), d.id));
         }
     }
     out

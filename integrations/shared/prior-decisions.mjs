@@ -4,8 +4,8 @@
 // decision answers — it sets it aside under its own section, marked with who rejected it, when, why
 // and where. A finding is raised again normally when it is Critical, when it is High and no human's
 // decision (`decidedBy: "human"`) answers it (realm @nick/craft, node #196), when the code in the
-// decision's scope changed since the commit the decision was recorded at, or when that cannot be
-// established. The engine recalls them itself on every launch and a passed list adds to that recall
+// decision's scope changed since the commit the decision was recorded at — or, for one naming no commit,
+// since the trunk's last commit before its date (node #676) — or when that cannot be established. The engine recalls them itself on every launch and a passed list adds to that recall
 // (integrations/shared/memory-recall.mjs; realm @nick/craft, node #218); a malformed one applies nothing and is named.
 // This module reads the argument and matches; one decision is read by integrations/shared/prior-decision-record.mjs,
 // scopes are checked by integrations/shared/prior-decision-scope.mjs and findings split by integrations/shared/prior-decision-apply.mjs.

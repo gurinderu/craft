@@ -7,11 +7,13 @@
 //! pairs it is asked about, and the scopes git observed for them, are kept in the run's state when
 //! its task is handed out ([`super::Asked`]) and read back with its answer, so git is asked once.
 
+use std::cell::OnceCell;
 use std::collections::BTreeSet;
 use std::path::Path;
 
 use serde_json::Value;
 
+use super::anchor::today;
 use super::{Memory, PriorDecision, RecordKind, apply, matching, rules};
 use crate::content::ContentError;
 use crate::git;
@@ -237,15 +239,32 @@ fn take_prior(f: &Value) -> Option<(usize, Value)> {
 }
 
 /// The scope check of `ds`, by git in `repo` (`scopeCheckScript`, run here rather than by an
-/// agent): a record whose commit the repository lacks is missing; one whose scope `git diff
-/// --quiet` shows untouched since its commit, the working tree included, is unchanged.
+/// agent): a record whose anchor the repository holds no commit for is missing, with why; one
+/// whose scope `git diff --quiet` shows untouched since that commit, the working tree included, is
+/// unchanged.
 pub(super) fn scope_check(repo: &Path, ds: &[&PriorDecision]) -> apply::Scope {
+    scope_check_on(repo, ds, &today())
+}
+
+/// [`scope_check`] with `today` the UTC date; the trunk resolved once, for the first dated record.
+pub(super) fn scope_check_on(repo: &Path, ds: &[&PriorDecision], today: &str) -> apply::Scope {
     let mut out = apply::Scope::default();
+    let trunk = OnceCell::new();
     for d in ds {
-        if !git::has_commit(repo, &d.commit) {
+        let Some(anchor) = d.anchor() else {
             out.missing.insert(d.id.clone());
-        } else if git::unchanged_since(repo, &d.commit, &d.scope) {
-            out.unchanged.insert(d.id.clone());
+            continue;
+        };
+        let resolved = || trunk.get_or_init(|| git::trunk(repo)).as_deref();
+        match anchor.base(repo, today, resolved) {
+            Err(why) => {
+                out.missing.insert(d.id.clone());
+                out.why_missing.insert(d.id.clone(), anchor.unusable(why));
+            }
+            Ok(base) if git::unchanged_since(repo, &base, &d.scope) => {
+                out.unchanged.insert(d.id.clone());
+            }
+            Ok(_) => {}
         }
     }
     out
