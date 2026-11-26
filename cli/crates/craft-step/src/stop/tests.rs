@@ -58,3 +58,20 @@ fn held_tasks_go_pending_again_and_answered_or_abandoned_ones_stay() {
     assert_eq!(a.state, TaskState::Answered);
     assert_eq!(g.state, TaskState::Failed);
 }
+
+#[test]
+fn hold_pending_clears_the_pending_tasks_ladders_and_leaves_failed_ones_failed() {
+    let mut pending = task();
+    pending.retries = 2;
+    pending.error = Some("e".into());
+    pending.refused = Some(serde_json::json!({}));
+    let mut failed = task();
+    failed.state = TaskState::Failed;
+    failed.retries = 3;
+    let mut tasks = [pending, failed];
+    super::hold_pending(&mut tasks);
+    let [p, f] = &tasks;
+    assert_eq!((p.state, p.retries), (TaskState::Pending, 0));
+    assert!(p.error.is_none() && p.refused.is_none());
+    assert_eq!((f.state, f.retries), (TaskState::Failed, 3));
+}
