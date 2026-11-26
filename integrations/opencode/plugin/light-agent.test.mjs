@@ -197,6 +197,30 @@ test("an instruction change's notice is dropped; a system message that is not on
   assert.deepEqual(input.messages, [task, call, result, effort, summary])
 })
 
+test('with no date line before the environment, the last line of the rules is not taken for the date', () => {
+  const text = `${RULES}\n\n${ENV}`
+  const untrustedList = request()
+  untrustedList.system?.splice(2, 1, { ...contexts(KEYS, [RULES, DATE, ENV]), text })
+  const byText = request()
+  byText.system?.splice(2, 1, { type: 'text', text })
+  for (const input of [untrustedList, byText]) {
+    lighten(input)
+    assert.equal(instructionsPart(input).text, ENV)
+  }
+})
+
+test('only a user message that begins as a rule file goes: one that quotes the marker, and a reply that begins with it, stay', () => {
+  const quoting = textMessage('user', 'The file says "Instructions from: /probe/proj/sub/AGENTS.md" at its top.', { id: 'msg_7' })
+  const reply = textMessage('assistant', 'Instructions from: /probe/proj/sub/AGENTS.md was loaded; the note says KIWI.', {
+    id: 'msg_8',
+  })
+  const input = request()
+  const task = input.messages?.[0]
+  input.messages = [task, quoting, reply]
+  lighten(input)
+  assert.deepEqual(input.messages, [task, quoting, reply])
+})
+
 test("another agent's request passes as it came", () => {
   const input = request('general')
   const before = structuredClone(input)
