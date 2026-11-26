@@ -154,3 +154,26 @@ test('scope script: with no trunk a record linking its pull request falls back t
     assert.deepEqual(run(scopeCheckScript(ds), dir), ['pr7 no-trunk', 'pr7-undated unmerged'])
   })
 })
+
+test('scope script: a later commit citing a pull request is not its merge', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'craft-merge-order-'))
+  try {
+    const start = '2026-05-01T08:00:00+0000'
+    git(dir, ['init', '-q', '-b', 'main'], start)
+    git(dir, ['remote', 'add', 'origin', 'git@github.com:owner/repo.git'], start)
+    mkdirSync(join(dir, 'src'))
+    landed(dir, 'src/a.rs', '0\n', start, 'src/a.rs')
+    landed(dir, 'src/q.rs', 'q\n', '2026-05-02T10:00:00+0000', 'feat: q (#12)')
+    landed(dir, 'src/q.rs', 'q2\n', '2026-05-03T10:00:00+0000', 'fix: q again (#12)')
+    landed(dir, 'src/r.rs', 'r\n', '2026-05-02T11:00:00+0000', 'Merge pull request #13 from owner/r')
+    const tip = landed(dir, 'src/r.rs', 'r2\n', '2026-05-03T11:00:00+0000', 'docs: r (#13)')
+    git(dir, ['update-ref', 'refs/remotes/origin/main', tip])
+    const ds = parsed(
+      { id: 'pr12', scope: 'src/q.rs', links: ['https://github.com/owner/repo/pull/12'] },
+      { id: 'pr13', scope: 'src/r.rs', links: ['https://github.com/owner/repo/pull/13'] },
+    )
+    assert.deepEqual(run(scopeCheckScript(ds), dir), ['pr12 1 merge 12', 'pr13 1 merge 13'])
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})

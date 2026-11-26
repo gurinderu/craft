@@ -60,10 +60,10 @@ aside, and it sets a finding aside only while the code in `scope` is unchanged s
 record of a finding raised on a pull request carries that pull request's URL in `links`
 (`https://github.com/<owner>/<repo>/pull/<N>`, a `#…` or `/files` after it as you found it). A
 decision without a `commit` (a store that allows no commit hashes) is anchored, in this order: at the
-merge of the first pull request of this repository (the one `origin` names) its `links` give — the
-newest commit on the trunk (`origin/HEAD`, else `origin/main`, else `origin/master`), walked along
-first parents from its tip, whose subject is GitHub's `Merge pull request #<N> from …` or ends
-`(#<N>)` —, so a rejection of a finding in code that pull request itself adds holds once it is merged
+merge of the first pull request of this repository (the one `origin` names) its `links` give — on
+the trunk (`origin/HEAD`, else `origin/main`, else `origin/master`), walked along first parents from
+its tip, the newest commit whose subject is GitHub's `Merge pull request #<N> from …`, else the oldest
+whose subject ends `(#<N>)`, the squash itself and not a later commit citing it —, so a rejection of a finding in code that pull request itself adds holds once it is merged
 and until that code changes; with no such merge on the trunk (not merged yet, merged elsewhere,
 history cut short), at its `date`: the code in `scope` unchanged since the last commit on the trunk,
 walked the same way, before that day began anywhere (`YYYY-MM-DD`; a timestamp with a zone is taken

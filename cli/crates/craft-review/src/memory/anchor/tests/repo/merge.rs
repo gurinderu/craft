@@ -290,3 +290,52 @@ fn a_finding_in_a_merged_pull_requests_code_is_raised_naming_that_merge_when_its
     let none = serde_json::to_value(crate::memory::MatchAsked::default()).unwrap();
     assert!(none.get("merged").is_none(), "{none}");
 }
+
+/// A later commit citing a pull request is never its merge: the merge commit wins over a citing
+/// squash-style subject, and among squash-style subjects the oldest — the squash itself — wins.
+#[test]
+fn a_later_commit_citing_a_pull_request_is_not_its_merge() {
+    let t = tempfile::tempdir().unwrap();
+    let d = t.path();
+    let start = "2026-05-01T08:00:00+0000";
+    at(d, start, &["init", "-q", "-b", "main"]);
+    at(
+        d,
+        start,
+        &["remote", "add", "origin", "git@github.com:owner/repo.git"],
+    );
+    std::fs::create_dir_all(d.join("src")).unwrap();
+    commit(d, "src/a.rs", "0\n", start);
+    landed(
+        d,
+        "src/q.rs",
+        "q\n",
+        "2026-05-02T10:00:00+0000",
+        "feat: q (#12)",
+    );
+    landed(
+        d,
+        "src/q.rs",
+        "q2\n",
+        "2026-05-03T10:00:00+0000",
+        "fix: q again (#12)",
+    );
+    let merge = "Merge pull request #13 from owner/r";
+    landed(d, "src/r.rs", "r\n", "2026-05-02T11:00:00+0000", merge);
+    let tip = landed(
+        d,
+        "src/r.rs",
+        "r2\n",
+        "2026-05-03T11:00:00+0000",
+        "docs: r (#13)",
+    );
+    let late = "2026-05-04T00:00:00+0000";
+    at(d, late, &["update-ref", "refs/remotes/origin/main", &tip]);
+    let ds = [
+        linked("pr12", "src/q.rs", "", &json!([ours(12)])),
+        linked("pr13", "src/r.rs", "", &json!([ours(13)])),
+    ];
+    let refs: Vec<&PriorDecision> = ds.iter().collect();
+    let s = scope_check_on(d, &refs, "2026-05-04");
+    assert!(ids(&s.unchanged).is_empty(), "{:?}", s.merged);
+}

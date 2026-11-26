@@ -72,8 +72,9 @@ function datedLine(d, day) {
 
 /**
  * The line of a decision naming no commit but pull requests (realm @nick/craft, node #682): `n` is the number of
- * the first whose repository origin names, lower-cased; its merge `m` the newest commit on the trunk tip's
- * first-parent line whose subject is GitHub's `Merge pull request #<n> from …` or ends `(#<n>)`. Found, the
+ * the first whose repository origin names, lower-cased; its merge `m` on the trunk tip's first-parent line
+ * the newest commit whose subject is GitHub's `Merge pull request #<n> from …`, else the oldest whose subject
+ * ends `(#<n>)` — the squash itself, not a later commit citing the request. Found, the
  * scope is diffed against it and the line says `merge <n>` after the status; not, the date's line runs, or
  * with no date the line prints `unmerged`.
  * @param {PriorDecision} d @param {import('./prior-decision-record.mjs').Pull[]} pulls @param {string} day @returns {string}
@@ -82,8 +83,10 @@ function mergeLine(d, pulls, day) {
   /** @param {import('./prior-decision-record.mjs').Pull} p */
   const forms = p => ORIGIN_FORMS.flatMap(f => [`${f}${shellWord(p.repo)}`, `${f}${shellWord(p.repo)}.git`]).join('|')
   const pick = pulls.map(p => `${forms(p)}) n=${String(p.number)};;`).join(' ')
-  const subject = `"^[0-9a-f]+ (Merge pull request #$n from |.*\\(#$n\\)\\$)"`
-  const log = `git log --first-parent --no-show-signature --format='%H %s' "$t" 2>/dev/null | grep -m1 -E ${subject} | cut -d' ' -f1`
+  const pickMerge =
+    `'{ s = substr($0, index($0, " ") + 1) } m == "" && index(s, "Merge pull request #" n " from ") == 1 { m = $1; next } ` +
+    `s ~ ("\\\\(#" n "\\\\)$") { q = $1 } END { print (m != "" ? m : q) }'`
+  const log = `git log --first-parent --no-show-signature --format='%H %s' "$t" 2>/dev/null | awk -v n="$n" ${pickMerge}`
   return (
     `u=$(git remote get-url origin 2>/dev/null | tr '[:upper:]' '[:lower:]'); case "$u" in ${pick} *) n=;; esac; ` +
     `if [ -n "$n" ] && t=${TRUNK} && m=$(${log}) && [ -n "$m" ]; then git diff --quiet "$m" -- ${shellWord(d.scope)}; echo ${shellWord(d.id)} $? merge "$n"; ` +

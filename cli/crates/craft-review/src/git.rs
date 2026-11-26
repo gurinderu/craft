@@ -188,10 +188,10 @@ pub fn last_before(cwd: &Path, tip: &str, day: &str) -> Result<Option<String>, G
     Ok((!commit.is_empty()).then(|| commit.to_owned()))
 }
 
-/// The newest commit on `tip`'s first-parent line whose subject names pull request `pr` as GitHub
-/// merges it — `Merge pull request #<pr> from …`, or a squash or rebase subject ending `(#<pr>)` —
-/// as `git log --first-parent --no-show-signature --format='%H %s' <tip>` lists them; `None` when
-/// none does (realm @nick/craft, node #682).
+/// The commit on `tip`'s first-parent line that merged pull request `pr`, from `git log
+/// --first-parent --no-show-signature --format='%H %s' <tip>`: the newest whose subject is GitHub's
+/// `Merge pull request #<pr> from …`, else the oldest whose subject ends `(#<pr>)` — the squash
+/// itself, not a later commit citing the PR; `None` when none does (realm @nick/craft, node #682).
 ///
 /// # Errors
 /// When `tip` is spelled as an option or `git` fails.
@@ -209,12 +209,22 @@ pub fn merge_of(cwd: &Path, tip: &str, pr: u64) -> Result<Option<String>, GitErr
         format!("Merge pull request #{pr} from "),
         format!("(#{pr})"),
     );
-    Ok(String::from_utf8_lossy(&out).lines().find_map(|l| {
+    let text = String::from_utf8_lossy(&out);
+    let rows = text.lines().filter_map(|l| {
         let (hash, subject) = l.split_once(' ')?;
-        let hex = hash.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'));
-        (hex && (subject.starts_with(&merged) || subject.ends_with(&squashed)))
-            .then(|| hash.to_owned())
-    }))
+        hash.bytes()
+            .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+            .then_some((hash, subject))
+    });
+    let (mut by_merge, mut by_squash) = (None, None);
+    for (hash, subject) in rows {
+        if by_merge.is_none() && subject.starts_with(&merged) {
+            by_merge = Some(hash.to_owned());
+        } else if subject.ends_with(&squashed) {
+            by_squash = Some(hash.to_owned());
+        }
+    }
+    Ok(by_merge.or(by_squash))
 }
 
 /// The URL of the `origin` remote, lower-cased, as `git remote get-url origin` prints it; `None`
