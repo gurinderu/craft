@@ -11,11 +11,15 @@ use super::{Filed, answered, file, read};
 use crate::run::{Args, Phase, Recording};
 use crate::state::{STATE_VERSION, Seen, TriageState};
 
+/// Keeps each request, and what the run said of its filing while the write was out.
 struct Asked(RefCell<Vec<Value>>);
 
 impl Writer for Asked {
     fn write(&self, call: &Call<'_>) -> Result<Value, WriteError> {
-        self.0.borrow_mut().push(call.request.clone());
+        let during = read(call.run).map(|f| f.record).unwrap_or_default();
+        let mut req = call.request.clone();
+        req["during"] = Value::String(during);
+        self.0.borrow_mut().push(req);
         Ok(json!({"ok": true, "reason": "", "file": "/s/r.json"}))
     }
 }
@@ -50,6 +54,7 @@ fn a_run_that_finishes_again_sends_its_record_as_a_retry() {
     assert_eq!(retries, [&json!(false), &json!(true)]);
     assert_eq!(asked[0]["record"], json!({"name": "triage-findings"}));
     assert_eq!(asked[0]["repo"], "/repo");
+    assert_eq!(asked[0]["during"], "attempted");
     assert_eq!(read(d.path()).unwrap().record, "filed");
 }
 

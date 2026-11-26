@@ -43,3 +43,53 @@ pub fn section(lost: &[String]) -> String {
     out.push(String::new());
     out.join("\n")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::section;
+
+    fn lines(l: &[&str]) -> Vec<String> {
+        l.iter().map(|s| (*s).to_owned()).collect()
+    }
+
+    #[test]
+    fn nothing_lost_says_nothing_and_a_blank_line_counts_as_nothing() {
+        assert_eq!(section(&[]), "");
+        assert_eq!(section(&lines(&["  "])), "");
+    }
+
+    #[test]
+    fn each_unconfirmed_write_is_counted_and_a_landed_record_beside_it_is_listed() {
+        let got = section(&lines(&[
+            "the run record — x",
+            "the run directory (the record itself landed) — y",
+            "phase checkpoint 'start' — z",
+        ]));
+        assert_eq!(
+            got,
+            "## ⚠️ Telemetry lost\n2 record write(s)/read(s) for this run could not be confirmed, so the run store may be missing or incomplete for it. Read the verdict below — not the store — for what this run actually did.\n- the run record — x\n- the run directory (the record itself landed) — y\n- phase checkpoint 'start' — z\n\n"
+        );
+    }
+
+    #[test]
+    fn only_landed_records_read_incomplete_counting_their_directories() {
+        let one = section(&lines(&[
+            "the run directory (the record itself landed) — y",
+        ]));
+        assert!(one.starts_with("## ⚠️ Telemetry incomplete\nThis run's record is in the store, but 1 run directory could"), "{one}");
+        let two = section(&lines(&[
+            "the run directory (the record itself landed) — a",
+            "the run directory (the record itself landed) — b",
+        ]));
+        assert!(two.contains("but 2 run directories could"), "{two}");
+    }
+
+    #[test]
+    fn a_line_is_flattened_and_cut_at_300_characters() {
+        let long = format!("a\nb{}", "c".repeat(400));
+        let got = section(&[long]);
+        let item = got.lines().nth(2).unwrap();
+        assert_eq!(item.chars().count(), 2 + 300, "{item}");
+        assert!(item.starts_with("- a b"), "{item}");
+    }
+}
