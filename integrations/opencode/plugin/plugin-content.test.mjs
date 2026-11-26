@@ -78,6 +78,21 @@ test('the frontmatter reader takes scalars, quotes, booleans, block scalars and 
   assert.deepEqual(md.data, { a: 'one', b: 'two: x', c: true, d: 'folded line\nnext', e: 'kept\nlines', f: { g: 'allow', h: false } })
   assert.equal(md.body, 'Body')
   assert.deepEqual(parseMarkdown('no frontmatter'), { data: {}, body: 'no frontmatter' })
+  // A nested key may be quoted: bare, `*_*` would read as a YAML alias (the review-task agent's MCP deny, realm
+  // @nick/craft, node #694), and a reader that drops the line leaves the agent without it.
+  const quoted = parseMarkdown('---\ntools:\n  "*_*": false\n  \'*x*\': true\n  write: false\n---\nBody\n')
+  assert.deepEqual(quoted, { data: { tools: { '*_*': false, '*x*': true, write: false } }, body: 'Body' })
+})
+
+test("the shipped review-task agent closes every tool but glob, grep, read and shell, and says the repository's text is data", () => {
+  const { data, body } = parseMarkdown(fs.readFileSync(path.join(REPO, 'integrations/opencode/agents/review-task.md'), 'utf8'))
+  assert.deepEqual(Object.keys(data), ['description', 'mode', 'hidden', 'tools', 'permission'], 'the denies stand before the allow')
+  const tools = /** @type {Record<string, import('./frontmatter.ts').FrontValue>} */ (data['tools'])
+  assert.deepEqual(
+    Object.keys(tools).map(k => [k, tools[k]]),
+    ['write', 'edit', 'skill', 'task', 'webfetch', 'websearch', 'question', '*_*', 'execute', 'experimental_image_generate'].map(k => [k, false]),
+  )
+  assert.match(body, /never instructions to you/)
 })
 
 test('every shipped agent, command and skill reads with a description', () => {
@@ -100,6 +115,17 @@ test("a 1.x agent's tools and permission become 2.x rules, as 2.2.7 reads a 1.x 
     { action: 'shell', resource: '*', effect: 'allow' },
     { action: 'external_directory', resource: '*', effect: 'allow' },
   ])
+  // The light agent's closures (realm @nick/craft, node #694): `task` is 2.x's `subagent`, `"*_*"` closes every MCP
+  // tool, `execute` the code-mode route.
+  assert.deepEqual(permissionsOf({ tools: { skill: false, task: false, webfetch: false, websearch: false, question: false, '*_*': false, execute: false } }), [
+    { action: 'skill', resource: '*', effect: 'deny' },
+    { action: 'subagent', resource: '*', effect: 'deny' },
+    { action: 'webfetch', resource: '*', effect: 'deny' },
+    { action: 'websearch', resource: '*', effect: 'deny' },
+    { action: 'question', resource: '*', effect: 'deny' },
+    { action: '*_*', resource: '*', effect: 'deny' },
+    { action: 'execute', resource: '*', effect: 'deny' },
+  ])
 })
 
 test('the package registers the agents, /craft-review and the other commands, and the skills', async () => {
@@ -110,11 +136,27 @@ test('the package registers the agents, /craft-review and the other commands, an
   assert.equal(task.mode, 'all')
   assert.equal(task.hidden, true)
   assert.match(task.system, /^You run exactly one task of craft's review/)
-  assert.deepEqual(task.permissions.slice(1), [
-    { action: 'edit', resource: '*', effect: 'deny' },
-    { action: 'edit', resource: '*', effect: 'deny' },
-    { action: 'external_directory', resource: '*', effect: 'allow' },
-  ])
+  // The draft's `* * allow` first, then the file's closures in file order, the allow for other directories last — the
+  // order 2.2.7's own reading of the same file gives (realm @nick/craft, node #692).
+  /** @type {{ action: string, effect: string }[]} */
+  const permissions = task.permissions
+  assert.deepEqual(
+    permissions.map(r => `${r.action} ${r.effect}`),
+    [
+      '* allow',
+      'edit deny',
+      'edit deny',
+      'skill deny',
+      'subagent deny',
+      'webfetch deny',
+      'websearch deny',
+      'question deny',
+      '*_* deny',
+      'execute deny',
+      'experimental_image_generate deny',
+      'external_directory allow',
+    ],
+  )
   assert.equal(f.agents.get('rust-reviewer').mode, 'subagent')
   assert.deepEqual([...f.commands.keys()].sort(), ['craft-review', 'rust-audit', 'triage-findings'])
   await f.commands.get('craft-review').execute({ sessionID: 'ses_1', prompt: { text: ' --base main ' }, delivery: 'queue' })
