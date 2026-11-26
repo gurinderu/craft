@@ -211,6 +211,17 @@ fn a_worker_past_its_budget_stops_cargo_mutants_and_says_how_long_it_ran() {
 
 #[test]
 fn a_change_with_no_mutant_in_its_lines_is_an_answer_not_a_broken_run() {
+    for said in [
+        "No mutants to filter",
+        "Diff changes no Rust source files",
+        "Diff file is empty",
+    ] {
+        no_mutant_is_an_answer(said);
+    }
+}
+
+/// A cargo-mutants that says `said` on stderr, exits 0 and writes no `mutants.out/`.
+fn no_mutant_is_an_answer(said: &str) {
     let (top, run, bin) = (
         repo(),
         tempfile::tempdir().unwrap(),
@@ -219,7 +230,7 @@ fn a_change_with_no_mutant_in_its_lines_is_an_answer_not_a_broken_run() {
     let path = bin.path().join("cargo");
     exe::write_executable(
         &path,
-        "#!/bin/sh\n[ \"$2\" = --version ] && { echo 'cargo-mutants 27.1.0'; exit 0; }\necho 'INFO No mutants to filter' >&2\nexit 0\n",
+        &format!("#!/bin/sh\n[ \"$2\" = --version ] && {{ echo 'cargo-mutants 27.1.0'; exit 0; }}\necho 'INFO {said}' >&2\nexit 0\n"),
     )
     .unwrap();
     assert_eq!(
@@ -231,7 +242,7 @@ fn a_change_with_no_mutant_in_its_lines_is_an_answer_not_a_broken_run() {
     assert!(found.is_empty());
     let line = line.unwrap();
     assert!(
-        line.contains("found no mutant in the change's lines") && !line.contains("did not run"),
+        line.contains("found no mutant in the change") && !line.contains("did not run"),
         "{line}"
     );
     assert_eq!(m.degraded_note(), None);
@@ -371,8 +382,10 @@ fn a_run_cut_short_is_said_short() {
         &cargo(bin.path(), &unended, 0, 2),
         30,
     );
-    let (_, line) = join(&mut launched(top.path(), run.path()), Duration::ZERO);
+    let mut m = launched(top.path(), run.path());
+    let (_, line) = join(&mut m, Duration::ZERO);
     assert!(line.unwrap().contains("run short: 2 of 2 tested"));
+    assert!(m.degraded_note().is_some_and(|n| n.contains("run short")));
 }
 
 #[test]
@@ -384,7 +397,12 @@ fn a_baseline_that_failed_in_the_copy_is_said_with_its_cause_and_log() {
     );
     let failed = r#"{"outcomes":[{"scenario":"Baseline","summary":"Failure"}],"total_mutants":3,"end_time":"t"}"#;
     work(top.path(), run.path(), &cargo(bin.path(), failed, 0, 4), 30);
-    let (found, line) = join(&mut launched(top.path(), run.path()), Duration::ZERO);
+    let mut m = launched(top.path(), run.path());
+    let (found, line) = join(&mut m, Duration::ZERO);
+    assert!(
+        m.degraded_note()
+            .is_some_and(|n| n.contains("baseline.log"))
+    );
     let line = line.unwrap();
     assert!(found.is_empty());
     assert!(

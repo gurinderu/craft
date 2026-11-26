@@ -73,8 +73,9 @@ fn joined(m: &Mutants, wait: Duration) -> (Vec<Value>, Option<String>, bool) {
 }
 
 /// The line of a change in which cargo-mutants found no mutant: an answer, not a shortfall.
-const NONE_IN_CHANGE: &str =
-    "mutants of the change: cargo-mutants found no mutant in the change's lines";
+/// cargo-mutants says the same when the diff's paths miss the workspace root (node #624), so the
+/// line names that check for a change that rewrote function bodies.
+const NONE_IN_CHANGE: &str = "mutants of the change: cargo-mutants found no mutant in the change — if it rewrote function bodies, check the diff's paths against the workspace root (node #624)";
 
 /// The join the rounds' end makes: [`JOIN_MAX`].
 pub(crate) fn join_now(m: &mut Mutants) -> (Vec<Value>, Option<String>) {
