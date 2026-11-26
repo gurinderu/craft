@@ -207,7 +207,7 @@ cargo-mutants not installed included. `init` does not look for cargo-mutants its
 says what the profile holds: `off` (they do not run on this repository), `budgetSecs` (how long
 they may run; `null` is the review's `defaultBudgetSecs`), `flags` (the `--mutants` and
 `--mutants-budget` that write it again) and `unread` (why the section could not be read; a review
-then takes the defaults). Ask the reviewer in one line whether to keep it, turn the mutants off, or
+then takes the defaults, and the next write replaces what is stored — say so before writing). Ask the reviewer in one line whether to keep it, turn the mutants off, or
 give them another budget; with nothing held and nothing asked for, say so and go on.
 
 ## 4. Write

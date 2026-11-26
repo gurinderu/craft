@@ -1,7 +1,8 @@
 //! The profile's `[mutants]` section (realm @nick/craft, node #645): whether the mutants of a
 //! change run on this project and for how long. No command line: the review runs cargo-mutants on
-//! its own diff and nothing a profile names. Read on its own, as a section the profile's format
-//! keeps on every write, so a profile without it reads as before.
+//! its own diff and nothing a profile names. Read on its own, so a section this binary cannot read
+//! never hides the rest of the profile, and one absent reads as the defaults; `craft init --write`
+//! writes it whole, as the reviewer confirmed it.
 
 use std::path::Path;
 use std::time::Duration;
