@@ -188,6 +188,64 @@ pub fn last_before(cwd: &Path, tip: &str, day: &str) -> Result<Option<String>, G
     Ok((!commit.is_empty()).then(|| commit.to_owned()))
 }
 
+/// The commit on `tip`'s first-parent line that merged pull request `pr`, from `git log
+/// --first-parent --no-show-signature --format='%H %s' <tip>`: the newest whose subject is GitHub's
+/// `Merge pull request #<pr> from …`, else the oldest whose subject ends `(#<pr>)` — the squash
+/// itself, not a later commit citing the PR; `None` when none does (realm @nick/craft, node #682).
+///
+/// # Errors
+/// When `tip` is spelled as an option or `git` fails.
+pub fn merge_of(cwd: &Path, tip: &str, pr: u64) -> Result<Option<String>, GitError> {
+    not_an_option(cwd, &[tip])?;
+    let args = [
+        "log",
+        "--first-parent",
+        "--no-show-signature",
+        "--format=%H %s",
+        tip,
+    ];
+    let out = git_bytes(cwd, &args)?;
+    let (merged, squashed) = (
+        format!("Merge pull request #{pr} from "),
+        format!("(#{pr})"),
+    );
+    let text = String::from_utf8_lossy(&out);
+    let rows = text.lines().filter_map(|l| {
+        let (hash, subject) = l.split_once(' ')?;
+        hash.bytes()
+            .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+            .then_some((hash, subject))
+    });
+    let (mut by_merge, mut by_squash) = (None, None);
+    for (hash, subject) in rows {
+        if by_merge.is_none() && subject.starts_with(&merged) {
+            by_merge = Some(hash.to_owned());
+        } else if subject.ends_with(&squashed) {
+            by_squash = Some(hash.to_owned());
+        }
+    }
+    Ok(by_merge.or(by_squash))
+}
+
+/// The second parent of `commit`, from `git rev-parse <commit>^@`, which prints its parents one per
+/// line; `None` for a commit of one parent or none — a squash or a rebase merge, a root.
+///
+/// # Errors
+/// When `commit` is spelled as an option or `git` fails.
+pub fn second_parent(cwd: &Path, commit: &str) -> Result<Option<String>, GitError> {
+    not_an_option(cwd, &[commit])?;
+    let out = git(cwd, &["rev-parse", &format!("{commit}^@")])?;
+    Ok(out.lines().nth(1).map(str::to_owned))
+}
+
+/// The URL of the `origin` remote, lower-cased, as `git remote get-url origin` prints it; `None`
+/// when there is none.
+#[must_use]
+pub fn origin_url(cwd: &Path) -> Option<String> {
+    let url = git(cwd, &["remote", "get-url", "origin"]).ok()?;
+    Some(url.trim_end_matches('\n').to_ascii_lowercase())
+}
+
 /// Whether the code in `scope`, a repository-relative path, is unchanged since `commit`, the
 /// working tree included, as `git diff --quiet <commit> -- <scope>` answers from the repository's
 /// top level — a pathspec git reads from a subdirectory would name another path; false when git
@@ -198,6 +256,21 @@ pub fn unchanged_since(cwd: &Path, commit: &str, scope: &str) -> bool {
         return false;
     };
     !commit.starts_with('-') && git(&top, &["diff", "--quiet", commit, "--", scope]).is_ok()
+}
+
+/// Whether the code in `scope` is unchanged on the trunk from `from` to the first parent of
+/// `merge`, as `git diff --quiet <from>...<merge>^1 -- <scope>` answers from the top level: diffed
+/// from their merge-base, so nothing lies between when `from` is `merge` or after it, and from
+/// `merge`'s second parent only the trunk's changes its branch lacked; false when
+/// git cannot tell, or `from` is spelled as an option, which would spell the whole range as one
+/// (realm @nick/craft, node #682).
+#[must_use]
+pub fn unchanged_before_merge(cwd: &Path, from: &str, merge: &str, scope: &str) -> bool {
+    let Ok(top) = toplevel(cwd) else {
+        return false;
+    };
+    let range = format!("{from}...{merge}^1");
+    !from.starts_with('-') && git(&top, &["diff", "--quiet", &range, "--", scope]).is_ok()
 }
 
 /// The change against `base` with no context lines, from the merge-base to the working tree, as

@@ -36,6 +36,7 @@ mod tests;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+pub use anchor::Pull;
 pub use apply::{Applied, Scope};
 pub use asked::{Asked, MatchAsked};
 pub use matching::SURE_WINDOW;

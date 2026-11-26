@@ -67,9 +67,9 @@ pub(super) fn reraise_reason(f: &Value, d: &PriorDecision, scope: &Scope) -> Str
     }
     if !scope.unchanged.contains(&d.id) {
         return format!(
-            "the code in {} changed since {} (or that could not be checked)",
+            "the code in {} changed {} (or that could not be checked)",
             d.scope,
-            anchor.since()
+            scope.changed(d, &anchor)
         );
     }
     String::new()

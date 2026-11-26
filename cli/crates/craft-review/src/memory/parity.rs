@@ -70,22 +70,46 @@ fn the_judges_prompts_render_as_the_engines_render_them() {
     }
 }
 
-/// What the case's scope check sees: the records whose anchor — the commit, else the UTC day — it
-/// names unchanged or missing, and, under `unusable`, the anchors it names unusable by the word the
-/// scope-check line prints (`future`, `no-trunk`, `unreadable`).
+/// What the case's scope check sees: the records whose anchor — the commit, else the first pull
+/// request `#N` it links that `merged` names (its merge found on the trunk, realm @nick/craft,
+/// node #682; under `between` when its scope changed on the trunk outside the pull request before
+/// that merge), else the UTC day, else the first pull request — it names unchanged or missing, and,
+/// under `unusable`, the anchors it names unusable by the word the scope-check line prints
+/// (`future`, `no-trunk`, `unreadable`, `unmerged`).
 fn scope_seen(case: &Value, ds: &[&PriorDecision]) -> Scope {
-    let named = |k: &str, anchor: &str| case[k].as_array().unwrap().iter().any(|c| c == anchor);
+    let listed = |k: &str, anchor: &str| {
+        case.get(k)
+            .and_then(Value::as_array)
+            .is_some_and(|l| l.iter().any(|c| c == anchor))
+    };
     let mut s = Scope::default();
     for d in ds {
         let Some(a) = d.anchor() else { continue };
         let name = match &a {
             Anchor::Commit(c) => (*c).to_owned(),
+            Anchor::Merge { pulls, day } => {
+                let merged = pulls
+                    .iter()
+                    .find(|p| listed("merged", &format!("#{}", p.number)));
+                if let Some(p) = merged {
+                    s.merged.insert(d.id.clone(), p.number);
+                    if listed("between", &format!("#{}", p.number)) {
+                        s.between.insert(d.id.clone());
+                    }
+                }
+                let first = || pulls.first().map(|p| format!("#{}", p.number));
+                merged
+                    .map(|p| format!("#{}", p.number))
+                    .or_else(|| day.clone())
+                    .or_else(first)
+                    .unwrap_or_default()
+            }
             Anchor::Date(day) => day.clone(),
         };
-        if named("unchanged", &name) {
+        if listed("unchanged", &name) {
             s.unchanged.insert(d.id.clone());
         }
-        if named("missing", &name) {
+        if listed("missing", &name) {
             s.missing.insert(d.id.clone());
         }
         let word = case["unusable"].get(&name).and_then(Value::as_str);

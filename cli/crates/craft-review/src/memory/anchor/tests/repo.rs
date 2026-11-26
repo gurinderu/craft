@@ -6,11 +6,13 @@ use super::record;
 use crate::memory::PriorDecision;
 use crate::memory::priors::scope_check_on;
 
+mod between;
 mod failing;
 mod fork;
+mod merge;
 
 /// Runs git in `dir` with author and committer dated `date`, its stdout trimmed.
-pub(super) fn at(dir: &Path, date: &str, args: &[&str]) -> String {
+pub(in crate::memory::anchor) fn at(dir: &Path, date: &str, args: &[&str]) -> String {
     let out = Command::new("git")
         .arg("-C")
         .arg(dir)
@@ -28,7 +30,7 @@ pub(super) fn at(dir: &Path, date: &str, args: &[&str]) -> String {
 }
 
 /// Commits `text` into `file` at `date`, returning the commit.
-pub(super) fn commit(dir: &Path, file: &str, text: &str, date: &str) -> String {
+pub(in crate::memory::anchor) fn commit(dir: &Path, file: &str, text: &str, date: &str) -> String {
     std::fs::write(dir.join(file), text).unwrap();
     at(dir, date, &["add", "."]);
     at(dir, date, &["commit", "-qm", file]);

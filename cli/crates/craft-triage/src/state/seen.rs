@@ -7,8 +7,10 @@ use craft_review::memory::{PriorDecision, Scope, git_scope};
 use serde::{Deserialize, Serialize};
 
 /// What git observed of the records' scopes, each record checked once: those whose scope is
-/// unchanged since their anchor, those whose anchor the repository holds no commit for, and why
-/// where that is other than missing.
+/// unchanged since their anchor, those whose anchor the repository holds no commit for, why
+/// where that is other than missing, the pull request whose merge a record was compared
+/// against, and the records whose scope changed on the trunk outside the pull request before that
+/// merge.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Seen {
@@ -17,6 +19,10 @@ pub struct Seen {
     pub missing: BTreeSet<String>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub why_missing: BTreeMap<String, String>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub merged: BTreeMap<String, u64>,
+    #[serde(skip_serializing_if = "BTreeSet::is_empty")]
+    pub between: BTreeSet<String>,
 }
 
 impl Seen {
@@ -33,6 +39,8 @@ impl Seen {
             self.unchanged.extend(s.unchanged);
             self.missing.extend(s.missing);
             self.why_missing.extend(s.why_missing);
+            self.merged.extend(s.merged);
+            self.between.extend(s.between);
         }
         let of = |set: &BTreeSet<String>| {
             ds.iter()
@@ -40,15 +48,23 @@ impl Seen {
                 .map(|d| d.id.clone())
                 .collect()
         };
+        let given = |id: &String| ds.iter().any(|d| &d.id == id);
         Scope {
             unchanged: of(&self.unchanged),
             missing: of(&self.missing),
             why_missing: self
                 .why_missing
                 .iter()
-                .filter(|(id, _)| ds.iter().any(|d| &d.id == *id))
+                .filter(|(id, _)| given(id))
                 .map(|(id, why)| (id.clone(), why.clone()))
                 .collect(),
+            merged: self
+                .merged
+                .iter()
+                .filter(|(id, _)| given(id))
+                .map(|(id, n)| (id.clone(), *n))
+                .collect(),
+            between: of(&self.between),
         }
     }
 }

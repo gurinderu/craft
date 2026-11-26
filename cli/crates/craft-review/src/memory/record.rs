@@ -14,6 +14,7 @@ mod list;
 use check::problem;
 pub(super) use list::{Parsed, parse, plain_label};
 
+use super::anchor::{Pull, pulls};
 use super::id::{memory_record_id, split_scope_line};
 
 /// What a record is to a review.
@@ -70,6 +71,9 @@ pub struct PriorDecision {
     pub lens: String,
     pub tool_rule: String,
     pub overrides: Vec<String>,
+    /// The GitHub pull requests its links name, in their order (realm @nick/craft, node #682).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub pulls: Vec<Pull>,
     /// Who made the call a decision records, `human` or `agent` (`decidedBy`; realm @nick/craft,
     /// node #196); '' when the record does not say.
     #[serde(skip_serializing_if = "String::is_empty")]
@@ -232,6 +236,7 @@ fn fields(o: &Map<String, Value>) -> PriorDecision {
         deferred: o.get("deferred") == Some(&Value::Bool(true)),
         supersedes: linked_ids(ls, &["supersedes", "answers"]),
         stores: linked_ids(ls, &["store"]),
+        pulls: pulls(ls),
         derived: !derived.is_empty(),
         line: u64::try_from(line).unwrap_or(0),
         lens: text(o.get("lens")),

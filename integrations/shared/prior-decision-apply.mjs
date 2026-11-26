@@ -16,7 +16,7 @@ import { reraisedByRank } from './prior-decisions.mjs'
 import { matchFindings, sureMatchOf } from './prior-decision-match.mjs'
 import { candidatesToCheck, decisionsToCheck, runScopeCheck } from './prior-decision-scope.mjs'
 import { deferralOf } from './ledger-deferral.mjs'
-import { anchorMissingReason, anchorSince, hasAnchor } from './prior-decision-anchor.mjs'
+import { anchorChanged, anchorMissingReason, hasAnchor } from './prior-decision-anchor.mjs'
 import { markContradicting } from './memory-contradiction.mjs'
 
 /**
@@ -48,8 +48,8 @@ export function matchesFindings(d) {
 
 /**
  * Whether a record can set a finding aside: every decision; a question only when it records a deferral
- * (`deferred: true`) AND a commit or a date, which the scope check compares against (realm @nick/craft,
- * node #676). A deferral without either is still matched (matchesFindings) so its finding is raised
+ * (`deferred: true`) AND a commit, a pull request it links or a date, which the scope check compares against
+ * (realm @nick/craft, nodes #676, #682). A deferral without any is still matched (matchesFindings) so its finding is raised
  * again and named, never silently.
  * @param {PriorDecision} d
  */
@@ -91,14 +91,17 @@ export function severityReason(f, d) {
 /**
  * Why decision `d` cannot set finding `f` aside; '' when it can. `missing`: ids whose commit the repo
  * does not know (a squash-merged branch, another clone), or whose date names no trunk commit to compare,
- * each with the word its scope-check line printed — named apart from a changed scope.
- * @param {DecidableFinding} f @param {PriorDecision} d @param {Set<string>} unchanged @param {Map<string, string>} [missing] @returns {string}
+ * each with the word its scope-check line printed — named apart from a changed scope. `merged`: ids
+ * whose scope was compared against a pull request's merge, each with its number and whether the scope changed on
+ * the trunk outside that request before the merge, which a changed scope names (realm @nick/craft, node #682).
+ * @param {DecidableFinding} f @param {PriorDecision} d @param {Set<string>} unchanged @param {Map<string, string>} [missing]
+ * @param {Map<string, import('./prior-decision-anchor.mjs').Merged>} [merged] @returns {string}
  */
-export function reraiseReason(f, d, unchanged, missing = new Map()) {
+export function reraiseReason(f, d, unchanged, missing = new Map(), merged = new Map()) {
   if (reraisedByRank(f.severity, d)) return severityReason(f, d)
   if (!hasAnchor(d)) return `the ${priorKindLabel(d)} records no commit and no date, so an unchanged scope cannot be established`
   if (missing.has(d.id)) return anchorMissingReason(d, missing.get(d.id))
-  if (!unchanged.has(d.id)) return `the code in ${d.scope} changed since ${anchorSince(d)} (or that could not be checked)`
+  if (!unchanged.has(d.id)) return `the code in ${d.scope} changed ${anchorChanged(d, merged.get(d.id))} (or that could not be checked)`
   return ''
 }
 
@@ -120,16 +123,28 @@ export function reraisedFinding(f, note, noteField, violationOf) {
 
 /**
  * Split one tier's findings by the decisions. `unchanged` holds the ids of decisions whose scope was
- * observed unchanged since their commit or date; every other decision cannot set a finding aside. The mark
+ * observed unchanged since their commit, pull request merge or date; every other decision cannot set a finding aside. The mark
  * is appended to `noteField` — `why` in a review finding.
  * @template {DecidableFinding} F
  * @param {F[]} findings @param {PriorDecision[]} decisions @param {Set<string>} unchanged @param {string} tier @param {string} [noteField]
  * @param {Map<string, string>} [missing]  ids whose anchor names no commit to compare, with the word their scope-check line printed
  * @param {(f: DecidableFinding) => PriorMatch | undefined} [matchOf]  the record answering a finding (default: the sure matches)
  * @param {(f: DecidableFinding) => { d: PriorDecision, why: string } | undefined} [violationOf]  the record a re-raised finding's code goes against (node #282)
+ * @param {Map<string, import('./prior-decision-anchor.mjs').Merged>} [merged]  ids whose scope was compared against a pull request's merge, with its number and whether
+ *   it changed on the trunk outside that request before the merge — where the request's branch lacked a trunk change, or after the decision's date (node #682)
  * @returns {{ kept: F[], setAside: Array<SetAside<F>>, reraised: number }}
  */
-export function splitByDecisions(findings, decisions, unchanged, tier, noteField = 'why', missing = new Map(), matchOf = sureMatchOf(decisions), violationOf) {
+export function splitByDecisions(
+  findings,
+  decisions,
+  unchanged,
+  tier,
+  noteField = 'why',
+  missing = new Map(),
+  matchOf = sureMatchOf(decisions),
+  violationOf,
+  merged,
+) {
   /** @type {F[]} */
   const kept = []
   /** @type {Array<SetAside<F>>} */
@@ -142,7 +157,7 @@ export function splitByDecisions(findings, decisions, unchanged, tier, noteField
       continue
     }
     const d = m.d
-    const why = reraiseReason(f, d, unchanged, missing)
+    const why = reraiseReason(f, d, unchanged, missing, merged)
     const note = `${String(f[noteField] ?? '')} · `
     if (!why) {
       const deferral = d.kind === 'question' ? { deferral: deferralOf(d) } : {}
@@ -195,8 +210,8 @@ export async function applyPriorDecisions(tiers, records, checkScopes, noteField
   const all = Object.values(tiers).flat()
   // The scope check runs first, over every candidate, so the one judge call can also be asked about the sure
   // matches it re-raises (realm @nick/craft, node #282).
-  const { unchanged, missing } = await runScopeCheck(candidatesToCheck(all, decisions), checkScopes, notes)
-  const matched = await matchFindings(all, decisions, judge, (f, d) => reraiseReason(f, d, unchanged, missing) !== '')
+  const { unchanged, missing, merged } = await runScopeCheck(candidatesToCheck(all, decisions), checkScopes, notes)
+  const matched = await matchFindings(all, decisions, judge, (f, d) => reraiseReason(f, d, unchanged, missing, merged) !== '')
   notes.push(...matched.notes)
   const applied = decisionsToCheck(all, decisions, matched.matchOf)
   const refused = matched.refused.concat(
@@ -209,7 +224,7 @@ export async function applyPriorDecisions(tiers, records, checkScopes, noteField
   /** @type {Record<string, F[]>} */
   const out = {}
   for (const [tier, list] of Object.entries(tiers)) {
-    const r = splitByDecisions(list, decisions, unchanged, tier, noteField, missing, matched.matchOf, matched.violationOf)
+    const r = splitByDecisions(list, decisions, unchanged, tier, noteField, missing, matched.matchOf, matched.violationOf, merged)
     out[tier] = r.kept.map(f => markContradicting(f, matched.contradictionOf(f)))
     setAside = setAside.concat(r.setAside)
     reraised += r.reraised

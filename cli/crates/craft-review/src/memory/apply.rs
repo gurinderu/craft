@@ -16,7 +16,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::{Value, json};
 
-use super::anchor::Anchor;
+use super::anchor::{Anchor, before_merge, since_merge};
 use super::judge;
 use super::matching::{self, Match};
 use super::{PriorDecision, RecordKind};
@@ -34,15 +34,31 @@ pub(super) use section::{refused_section, section};
 
 /// What the scope check observed: the records whose scope is unchanged since their anchor, those
 /// whose anchor the repository holds no commit for, and, by id, why where that is other than the
-/// commit or a commit before the date missing (a future date, no trunk, git failing).
+/// commit or a commit before the date missing (a future date, no trunk, git failing), the pull
+/// request whose merge a record's scope was compared against, and the records whose scope is
+/// unchanged since that merge but changed on the trunk outside the pull request before it — after
+/// their decision date, or where the request's branch lacked it (realm @nick/craft, node #682).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Scope {
     pub unchanged: BTreeSet<String>,
     pub missing: BTreeSet<String>,
     pub why_missing: BTreeMap<String, String>,
+    pub merged: BTreeMap<String, u64>,
+    pub between: BTreeSet<String>,
 }
 
 impl Scope {
+    /// How `d`'s scope, anchored at `a`, is said to have changed: on the trunk outside the pull
+    /// request before the merge it was compared against, since that merge, else since what the
+    /// anchor names.
+    fn changed(&self, d: &PriorDecision, a: &Anchor<'_>) -> String {
+        match self.merged.get(&d.id) {
+            Some(n) if self.between.contains(&d.id) => before_merge(*n),
+            Some(n) => format!("since {}", since_merge(*n)),
+            None => format!("since {}", a.since()),
+        }
+    }
+
     /// Why `d`, anchored at `a`, is missing.
     fn missing_why(&self, d: &PriorDecision, a: &Anchor<'_>) -> String {
         self.why_missing
@@ -64,8 +80,8 @@ pub struct Applied {
     pub refused: Vec<String>,
 }
 
-/// Whether a record can set a finding aside: a deferral needs a commit or a date to check its
-/// scope against (realm @nick/craft, node #676).
+/// Whether a record can set a finding aside: a deferral needs a commit, a pull request it links or
+/// a date to check its scope against (realm @nick/craft, nodes #676, #682).
 fn records_deferral(d: &PriorDecision) -> bool {
     d.kind != RecordKind::Question || (d.deferred && d.anchor().is_some())
 }
@@ -74,8 +90,8 @@ fn or<'a>(s: &'a str, none: &'a str) -> &'a str {
     if s.is_empty() { none } else { s }
 }
 
-/// What could not be applied: a deferral without a commit or a date, and a matched record whose
-/// anchor the repository holds no commit for.
+/// What could not be applied: a deferral without a commit, a pull request or a date, and a matched
+/// record whose anchor the repository holds no commit for.
 fn refusals(
     findings: &[Value],
     ds: &[PriorDecision],

@@ -7,13 +7,12 @@
 //! pairs it is asked about, and the scopes git observed for them, are kept in the run's state when
 //! its task is handed out ([`super::Asked`]) and read back with its answer, so git is asked once.
 
-use std::cell::OnceCell;
 use std::collections::BTreeSet;
 use std::path::Path;
 
 use serde_json::Value;
 
-use super::anchor::today;
+use super::anchor::{Repo, today};
 use super::{Memory, PriorDecision, RecordKind, apply, matching, rules};
 use crate::content::ContentError;
 use crate::git;
@@ -240,31 +239,44 @@ fn take_prior(f: &Value) -> Option<(usize, Value)> {
 
 /// The scope check of `ds`, by git in `repo` (`scopeCheckScript`, run here rather than by an
 /// agent): a record whose anchor the repository holds no commit for is missing, with why; one
-/// whose scope `git diff --quiet` shows untouched since that commit, the working tree included, is
-/// unchanged.
+/// whose scope `git diff --quiet` shows untouched since that commit, the working tree included,
+/// and for a pull request's merge on the trunk outside that request before it too, is unchanged.
 pub(super) fn scope_check(repo: &Path, ds: &[&PriorDecision]) -> apply::Scope {
     scope_check_on(repo, ds, &today())
 }
 
-/// [`scope_check`] with `today` the UTC date; the trunk resolved once, for the first dated record.
+/// [`scope_check`] with `today` the UTC date; the trunk and the origin resolved once, for the first
+/// record that needs them. A record whose base was its pull request's merge is named with it, so
+/// a changed scope is said to have changed since that merge; it is unchanged only when its scope
+/// also did not change on the trunk outside the pull request before the merge — where the
+/// request's branch lacked it, or after the date beside it (`Base::unchanged_outside`) —, and is
+/// named apart when it did (realm @nick/craft, node #682).
 pub(super) fn scope_check_on(repo: &Path, ds: &[&PriorDecision], today: &str) -> apply::Scope {
     let mut out = apply::Scope::default();
-    let trunk = OnceCell::new();
+    let repo = Repo::new(repo);
     for d in ds {
         let Some(anchor) = d.anchor() else {
             out.missing.insert(d.id.clone());
             continue;
         };
-        let resolved = || trunk.get_or_init(|| git::trunk(repo)).as_deref();
-        match anchor.base(repo, today, resolved) {
+        let base = match anchor.base(&repo, today) {
             Err(why) => {
                 out.missing.insert(d.id.clone());
                 out.why_missing.insert(d.id.clone(), anchor.unusable(why));
+                continue;
             }
-            Ok(base) if git::unchanged_since(repo, &base, &d.scope) => {
-                out.unchanged.insert(d.id.clone());
-            }
-            Ok(_) => {}
+            Ok(base) => base,
+        };
+        if let Some(n) = base.pull {
+            out.merged.insert(d.id.clone(), n);
+        }
+        if !git::unchanged_since(repo.path, &base.commit, &d.scope) {
+            continue;
+        }
+        if base.unchanged_outside(repo.path, &d.scope) {
+            out.unchanged.insert(d.id.clone());
+        } else {
+            out.between.insert(d.id.clone());
         }
     }
     out
