@@ -132,6 +132,14 @@ test('a date and an environment quoted inside the rules are not kept, whichever 
   }
 })
 
+test("an environment block read by the text is the host's own wherever on its line the heading starts", () => {
+  // A rule file that ends with an env-like block is cut to it the same way: refusing the block left the rules whole.
+  const inline = request()
+  inline.system?.splice(2, 1, { type: 'text', text: `${RULES}\nThe environment, for comparison: ${ENV}` })
+  lighten(inline)
+  assert.equal(instructionsPart(inline).text, ENV)
+})
+
 test('a part whose list no longer accounts for its text is read by its text, and the list is left alone', () => {
   const input = request()
   const part = instructionsPart(input)

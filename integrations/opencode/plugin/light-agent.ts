@@ -66,13 +66,13 @@ function faithful(list: Section[], text: string): boolean {
 }
 
 /**
- * The host's own tail of an instructions part read by its text: its last environment block, which must begin a line
- * and end the text, with the date line before it when there is one. Anything after the block makes the tail
- * unreadable: what a newer host adds there is not known to be its own (node #695).
+ * The host's own tail of an instructions part read by its text: its last environment block, which must end the text,
+ * with the date line before it when there is one. Anything after the block makes the tail unreadable: what a newer
+ * host adds there is not known to be its own (node #695).
  */
 function ownTail(text: string): string | undefined {
   const at = text.lastIndexOf(ENV_HEAD)
-  if (at < 0 || (at > 0 && text[at - 1] !== '\n')) return undefined
+  if (at < 0) return undefined
   const block = text.slice(at)
   if (!ENV_END.test(block)) return undefined
   const head = text.slice(0, at).trimEnd()
