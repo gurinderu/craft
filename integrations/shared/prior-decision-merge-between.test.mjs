@@ -88,3 +88,31 @@ test('scope script: a dated record linking its pull request is changed when the 
     )
   })
 })
+
+test('scope script: git failing to list the trunk before a merged record’s date raises it unreadable, as the date’s line does', () => {
+  inRepo(dir => {
+    const shim = mkdtempSync(join(tmpdir(), 'craft-git-shim-'))
+    try {
+      const real = execFileSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).trim()
+      writeFileSync(join(shim, 'git'), `#!/bin/sh\n[ "$1" = rev-list ] && exit 1\nexec '${real}' "$@"\n`, { mode: 0o755 })
+      const links = ['https://github.com/owner/repo/pull/7']
+      const ds = /** @type {any[]} */ (
+        parsePriorDecisions(
+          [
+            { id: 'p-dated', scope: 'src/p.rs', when: '2026-05-02', links },
+            { id: 'p-undated', scope: 'src/p.rs', links },
+            { id: 'p-ahead', scope: 'src/p.rs', when: '2099-01-01', links },
+            { id: 'day', scope: 'src/p.rs', when: '2026-05-02' },
+          ].map(o => ({ title: 't', reason: 'r', ...o })),
+        ).decisions
+      )
+      const env = { ...process.env, PATH: `${shim}:${process.env['PATH'] ?? ''}` }
+      const out = execFileSync('sh', ['-c', scopeCheckScript(ds)], { cwd: dir, encoding: 'utf8', env })
+        .trim()
+        .split('\n')
+      assert.deepEqual(out, ['p-dated unreadable', 'p-undated 0 merge 7', 'p-ahead 0 merge 7', 'day unreadable'])
+    } finally {
+      rmSync(shim, { recursive: true, force: true })
+    }
+  })
+})

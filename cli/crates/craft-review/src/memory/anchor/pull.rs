@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::super::record::text;
-use super::Base;
+use super::{Base, Unusable};
 use crate::git;
 
 /// A pull request a record links: its repository, `owner/name` lower-cased, and its number.
@@ -101,18 +101,42 @@ impl<'p> Repo<'p> {
     }
 
     /// The base of a record anchored by `pulls`: the merge of the first of this repository
-    /// ([`Repo::merge`]) and, when `day` names a day the trunk has a commit before
-    /// ([`super::dated`]), that commit beside it — the scope must not have changed on the trunk
-    /// between the decision date and the merge either (realm @nick/craft, node #682); `None` when
-    /// no merge is found.
-    pub(super) fn merged(&self, pulls: &[Pull], day: Option<&str>, today: &str) -> Option<Base> {
-        let (commit, n) = self.merge(pulls)?;
-        let dated = day.and_then(|d| super::dated(self, d, today).ok());
-        Some(Base {
+    /// ([`Repo::merge`]) with the base of its decision date `day` beside it ([`with_date`]);
+    /// `Ok(None)` when no merge is found.
+    ///
+    /// # Errors
+    /// [`Unusable::Unreadable`] when git fails listing the trunk before that day.
+    pub(super) fn merged(
+        &self,
+        pulls: &[Pull],
+        day: Option<&str>,
+        today: &str,
+    ) -> Result<Option<Base>, Unusable> {
+        let Some((commit, n)) = self.merge(pulls) else {
+            return Ok(None);
+        };
+        let base = Base {
             commit,
             pull: Some(n),
-            dated,
-        })
+            dated: None,
+        };
+        with_date(base, day.map(|d| super::dated(self, d, today))).map(Some)
+    }
+}
+
+/// A merge's `base` with its decision date's base `dated` beside it, when the record names a day:
+/// the scope must not have changed on the trunk between that day and the merge either (realm
+/// @nick/craft, node #682). A day naming no base — in the future, or the trunk holding no commit
+/// before it — leaves the merge alone to compare against; git failing to list the trunk raises the
+/// record, as it raises one anchored by its date alone.
+fn with_date(mut base: Base, dated: Option<Result<String, Unusable>>) -> Result<Base, Unusable> {
+    match dated {
+        Some(Err(Unusable::Unreadable)) => Err(Unusable::Unreadable),
+        Some(Ok(b)) => {
+            base.dated = Some(b);
+            Ok(base)
+        }
+        Some(Err(_)) | None => Ok(base),
     }
 }
 

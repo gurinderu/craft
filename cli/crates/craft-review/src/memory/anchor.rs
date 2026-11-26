@@ -143,8 +143,9 @@ impl Anchor<'_> {
 
     /// The commit the scope is diffed against in `repo`, `today` being the UTC date: the anchor's
     /// own when the repository has it. For pull requests, the merge on the trunk of the first of
-    /// this repository, the date's base beside it ([`Repo::merged`]); none found, the date's base
-    /// alone, as for a date (realm @nick/craft, node #682). A date's base is [`dated`]'s.
+    /// this repository, the date's base beside it, git failing to list the trunk for that date
+    /// raising the record ([`Repo::merged`]); none found, the date's base alone, as for a date
+    /// (realm @nick/craft, node #682). A date's base is [`dated`]'s.
     pub(crate) fn base(&self, repo: &Repo<'_>, today: &str) -> Result<Base, Unusable> {
         let day = match self {
             Anchor::Commit(c) => {
@@ -153,7 +154,7 @@ impl Anchor<'_> {
                     .ok_or(Unusable::Missing);
             }
             Anchor::Merge { pulls, day } => {
-                if let Some(base) = repo.merged(pulls, day.as_deref(), today) {
+                if let Some(base) = repo.merged(pulls, day.as_deref(), today)? {
                     return Ok(base);
                 }
                 day.as_ref().ok_or(Unusable::Unmerged)?

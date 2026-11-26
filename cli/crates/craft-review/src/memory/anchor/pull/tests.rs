@@ -1,7 +1,8 @@
 use serde_json::json;
 
-use super::{Pull, Repo, pulls};
+use super::{Pull, Repo, pulls, with_date};
 use crate::memory::anchor::tests::repo::at;
+use crate::memory::anchor::{Base, Unusable};
 
 fn p(repo: &str, number: u64) -> Pull {
     Pull {
@@ -100,4 +101,26 @@ fn a_pull_request_is_of_this_repository_when_origin_names_it_over_https_or_ssh()
         Some(4)
     );
     assert_eq!(Repo::new(d).ours(&[p("o/x", 5)]).map(|p| p.number), Some(5));
+}
+
+#[test]
+fn a_merge_takes_its_dates_base_beside_it_and_git_failing_on_that_date_raises_it() {
+    let merge = Base {
+        commit: "m".into(),
+        pull: Some(7),
+        dated: None,
+    };
+    let dated = Base {
+        dated: Some("b".into()),
+        ..merge.clone()
+    };
+    assert_eq!(with_date(merge.clone(), Some(Ok("b".into()))), Ok(dated));
+    assert_eq!(with_date(merge.clone(), None), Ok(merge.clone()));
+    for none in [Unusable::Missing, Unusable::Future, Unusable::NoTrunk] {
+        assert_eq!(with_date(merge.clone(), Some(Err(none))), Ok(merge.clone()));
+    }
+    assert_eq!(
+        with_date(merge, Some(Err(Unusable::Unreadable))),
+        Err(Unusable::Unreadable)
+    );
 }

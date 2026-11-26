@@ -19,6 +19,9 @@ const ORIGIN_FORMS = ['https://github.com/', 'git@github.com:', 'ssh://git@githu
  */
 const dateBase = day => `git rev-list -1 --first-parent ${shellWord(`--before=${day} 00:00:00 +1400`)} "$t" 2>/dev/null`
 
+/** The test that the decision date `day` is later than today in UTC. @param {string} day @returns {string} */
+const future = day => `[ ${shellWord(day.replace(/-/g, ''))} -gt "$(date -u +%F | tr -d -)" ]`
+
 /**
  * The line of a decision naming no commit but a date: compared against the trunk's last commit before that day.
  * @param {import('./prior-decisions.mjs').PriorDecision} d @param {string} day @returns {string}
@@ -26,7 +29,7 @@ const dateBase = day => `git rev-list -1 --first-parent ${shellWord(`--before=${
 export function datedLine(d, day) {
   const id = shellWord(d.id)
   return (
-    `if [ ${shellWord(day.replace(/-/g, ''))} -gt "$(date -u +%F | tr -d -)" ]; then echo ${id} future; ` +
+    `if ${future(day)}; then echo ${id} future; ` +
     `elif ! t=${TRUNK}; then echo ${id} no-trunk; ` +
     `elif ! b=$(${dateBase(day)}); then echo ${id} unreadable; ` +
     `elif [ -n "$b" ]; then git diff --quiet "$b" -- ${shellWord(d.scope)}; echo ${id} $?; else echo ${id} missing; fi`
@@ -37,15 +40,18 @@ export function datedLine(d, day) {
  * The comparison against the merge `$m` of pull request `$n` on the trunk `$t`: the status of `git diff --quiet`
  * against it, then `merge <n>`. With a date whose base `b` the trunk has, the scope unchanged since the merge must
  * also be unchanged from `b` to the merge's first parent — diffed from their merge-base, so nothing lies between
- * when `b` is the merge or after it —, else the line prints status 1 and `merge <n> between`.
+ * when `b` is the merge or after it —, else the line prints status 1 and `merge <n> between`. A date later than
+ * today, or one the trunk has no commit before, leaves the merge alone; git failing to list the trunk before it
+ * prints `unreadable`, as the date's line does.
  * @param {import('./prior-decisions.mjs').PriorDecision} d @param {string} day @returns {string}
  */
 function sinceMerge(d, day) {
   const [id, scope] = [shellWord(d.id), shellWord(d.scope)]
   if (!day) return `git diff --quiet "$m" -- ${scope}; echo ${id} $? merge "$n"`
   return (
-    `if ! git diff --quiet "$m" -- ${scope}; then echo ${id} 1 merge "$n"; ` +
-    `elif b=$(${dateBase(day)}) && [ -n "$b" ] && ! git diff --quiet "$b...$m^1" -- ${scope}; then echo ${id} 1 merge "$n" between; ` +
+    `b=; if ! ${future(day)} && ! b=$(${dateBase(day)}); then echo ${id} unreadable; ` +
+    `elif ! git diff --quiet "$m" -- ${scope}; then echo ${id} 1 merge "$n"; ` +
+    `elif [ -n "$b" ] && ! git diff --quiet "$b...$m^1" -- ${scope}; then echo ${id} 1 merge "$n" between; ` +
     `else echo ${id} 0 merge "$n"; fi`
   )
 }
