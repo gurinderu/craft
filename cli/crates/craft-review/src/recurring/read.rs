@@ -2,20 +2,26 @@ use std::path::Path;
 
 use craft_store::js::{Js, JsString, Obj, parse};
 
-use super::text::{text, touched};
+use super::text::text;
 use super::{Error, RUNS_MAX, number};
 
 pub(super) struct Row {
     pub file: JsString,
     pub title: JsString,
     pub severity: JsString,
+    pub line: u32,
 }
 
 pub(super) struct Run {
     pub file: JsString,
     pub ts: JsString,
     pub branch: JsString,
+    pub head: JsString,
+    /// Whether the working copy had changes when the record was filed (untracked files count):
+    /// the review may then have read uncommitted work, which `head` alone does not name.
+    pub dirty: bool,
     pub rows: Vec<Row>,
+    pub unverified: Vec<Row>,
 }
 
 #[derive(Default)]
@@ -96,42 +102,17 @@ fn add(out: &mut Read, rec: &Obj, name: &str, project: &str, paths: &[String]) {
     } else if text(rec, "branch").is_empty() {
         skipped.no_branch += 1;
     } else if let Some(ledger) = rec.get("ledger").and_then(Js::as_arr) {
+        let (rows, unverified) = super::select::rows(ledger, paths);
         out.runs.push(Run {
             file: name.into(),
             ts: text(rec, "ts"),
             branch: text(rec, "branch"),
-            rows: rows(ledger, paths),
+            head: text(rec, "head"),
+            dirty: rec.get("dirty").is_some_and(Js::truthy),
+            rows,
+            unverified,
         });
     } else {
         skipped.no_ledger += 1;
     }
-}
-
-fn rows(ledger: &[Js], paths: &[String]) -> Vec<Row> {
-    ledger
-        .iter()
-        .filter_map(Js::as_obj)
-        .filter_map(|o| {
-            let row = Row {
-                file: text(o, "file"),
-                title: text(o, "title"),
-                severity: text(o, "severity"),
-            };
-            (!row.file.is_empty()
-                && !row.title.is_empty()
-                && was_real(o)
-                && touched(&row.file, paths))
-            .then_some(row)
-        })
-        .collect()
-}
-
-fn was_real(o: &Obj) -> bool {
-    let disposition = text(o, "disposition");
-    let settled = ["rejected", "justified", "covered", "deferred"]
-        .iter()
-        .any(|d| disposition == *d);
-    !settled
-        && text(o, "tier") == "confirmed"
-        && !(disposition == "closed" && text(o, "why").starts_with("dismissed "))
 }

@@ -315,7 +315,8 @@ that shaped this layer has been removed.
 ## Rust CLI
 
 `craft runs recurring` reads up to 500 newest detail files and emits one JSON object of findings
-confirmed on at least two branches of one repository. Selection and grouping are in
+confirmed on at least two branches of one repository; with `--unverified` it adds the unverified ones, grouped apart and
+each held to its line at the project's `HEAD`. Selection and grouping are in
 `cli/crates/craft-review/src/recurring.rs` and `recurring/`, reached by `cli/bin/craft/src/runs.rs` and tested through the
 built binary in `cli/bin/craft/tests/recurring.rs` and `cli/bin/craft/tests/recurring/`. The addressing-findings and develop skills resolve
 that binary by the package's existing downloader and call the native command. Equal groups use UTF-16 code-unit order,

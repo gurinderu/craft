@@ -103,7 +103,8 @@ pub enum RunsCommand {
     Check,
     /// A version's retro: its finished runs per workflow, engine and lens, and what did not run.
     Retro { version: String },
-    /// Confirmed findings recurring across branches of this project; always one JSON object.
+    /// Confirmed findings recurring across branches of this project, and with `--unverified` the
+    /// unverified ones apart; always one JSON object.
     Recurring {
         /// The repository (default: the working directory); linked worktrees share its key.
         #[arg(long, value_parser = path_value())]
@@ -111,6 +112,10 @@ pub enum RunsCommand {
         /// Only findings within this file or directory; repeat to include more paths.
         #[arg(long = "path")]
         paths: Vec<String>,
+        /// Also group unverified findings, apart, under `unverified`; one whose line changed
+        /// since its run's head is set aside.
+        #[arg(long)]
+        unverified: bool,
     },
     /// Once a Workflow run has ended, folds its real cost — counted from the harness's per-agent
     /// transcripts — into each record it filed, each record its own slice of the run's agents.
@@ -246,12 +251,16 @@ fn printed(args: &RunsArgs) -> Result<ExitCode> {
             render::retro(&mut out, version, &retro, args.at.json)?;
             ExitCode::SUCCESS
         }
-        RunsCommand::Recurring { project, paths } => {
+        RunsCommand::Recurring {
+            project,
+            paths,
+            unverified,
+        } => {
             let project = project
                 .clone()
                 .filter(|p| !p.as_os_str().is_empty())
                 .map_or_else(std::env::current_dir, Ok)?;
-            let result = craft_review::recurring::recurring(&store, &project, paths)?;
+            let result = craft_review::recurring::recurring(&store, &project, paths, *unverified)?;
             writeln!(out, "{}", result.pretty())?;
             ExitCode::SUCCESS
         }
