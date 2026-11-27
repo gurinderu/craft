@@ -325,6 +325,15 @@ test('recordFromJournal rebuilds a dead run and never passes candidates off as c
   assert.deepEqual(rec.scout, [{ size: 'medium', lenses: ['safety'] }])
 })
 
+test('recordFromJournal: a scout the engine told its size gives it none, and the record says so', () => {
+  const dir = tmpStore()
+  fakeJournal(dir, [
+    { type: 'started', agentId: 'a1' },
+    { type: 'result', agentId: 'a1', result: { lenses: ['errors'], isLibrary: false, securitySensitive: false } },
+  ])
+  assert.deepEqual(recordFromJournal(dir).scout, [{ size: null, lenses: ['errors'] }])
+})
+
 // The verify/verify-batch `result` entry carries no finding identity of its own (no fingerprint, no
 // label) — only `agentId`. The identity survives in the verifier's OWN transcript, which the harness
 // persists alongside the journal as agent-<agentId>.jsonl; its first user message is the verify

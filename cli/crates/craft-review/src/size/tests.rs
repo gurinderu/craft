@@ -111,4 +111,10 @@ fn the_scout_must_name_the_size_only_where_the_binary_does_not_set_it() {
         scout_schema(schema(), None)["required"],
         serde_json::json!(["sizeBucket", "lenses"])
     );
+    let held = serde_json::json!({"required": ["sizeBucket"]});
+    assert_eq!(
+        scout_schema(held, None)["required"],
+        serde_json::json!(["sizeBucket"]),
+        "never twice"
+    );
 }

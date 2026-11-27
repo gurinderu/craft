@@ -47,12 +47,14 @@ pub fn told(profile: &str, changed_lines: Option<u64>) -> Option<u64> {
 /// where the scout is the one to name it, so an answer without it is retried, not read as medium.
 #[must_use]
 pub fn scout_schema(mut schema: serde_json::Value, told: Option<u64>) -> serde_json::Value {
+    let size = serde_json::Value::from("sizeBucket");
     if told.is_none()
         && let Some(required) = schema
             .get_mut("required")
             .and_then(serde_json::Value::as_array_mut)
+        && !required.contains(&size)
     {
-        required.insert(0, serde_json::Value::from("sizeBucket"));
+        required.insert(0, size);
     }
     schema
 }
