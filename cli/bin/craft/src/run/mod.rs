@@ -28,6 +28,9 @@ mod report;
 mod round;
 mod task;
 mod telemetry;
+#[cfg(test)]
+#[path = "mod_tests.rs"]
+mod tests;
 mod there;
 mod watch;
 
@@ -121,15 +124,24 @@ fn say(out: &mut dyn Write, text: &str) -> Result<()> {
     Ok(())
 }
 
+/// How a run ends, refused or driven: its answer on stdout, its last event offered to the queue
+/// with the rest, and the exit once what was offered is written or the exit wait is over (realm
+/// @nick/craft, node #690).
+fn ended(sink: &Sink, answer: &str, result: Event, code: u8) -> Result<ExitCode> {
+    say(&mut std::io::stdout().lock(), answer)?;
+    sink.emit(result);
+    sink.finish();
+    Ok(ExitCode::from(code))
+}
+
 /// A refusal before anything ran: its answer and the last event, exit 2.
 fn refused(sink: &Sink, why: &str) -> Result<ExitCode> {
-    say(
-        &mut std::io::stdout().lock(),
+    ended(
+        sink,
         &report::stopped_answer(&format!("review: {why}. Nothing ran.")),
-    )?;
-    sink.emit(Event::result(None, None, 2));
-    sink.finish();
-    Ok(ExitCode::from(2))
+        Event::result(None, None, 2),
+        2,
+    )
 }
 
 /// The host and what it runs with, or why it cannot be used: opencode is asked first which
@@ -238,9 +250,11 @@ pub async fn run(mut args: RunArgs) -> Result<ExitCode> {
         again: &again,
     };
     let answer = ending::drive(&driver, args.run.as_deref().map(Path::new), comment).await;
-    say(&mut std::io::stdout().lock(), &answer.text)?;
     let code = (*stop.borrow()).unwrap_or(u8::from(!answer.finished));
-    sink.emit(Event::result(answer.step.as_ref(), answer.run, code));
-    sink.finish();
-    Ok(ExitCode::from(code))
+    ended(
+        &sink,
+        &answer.text,
+        Event::result(answer.step.as_ref(), answer.run, code),
+        code,
+    )
 }
