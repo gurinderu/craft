@@ -7,7 +7,7 @@ import { triageResumeHint } from './cli-triage-answer.mjs'
 import { servicePrompt } from './cli-step-service.mjs'
 import { dispatchTasks } from './cli-step-loop.mjs'
 import { harnessRefused } from './cli-review-refusal.mjs'
-import { stopCause, stopRead } from './cli-review-stop.mjs'
+import { recoveryFailure, stopCause, stopRead } from './cli-review-stop.mjs'
 
 /** @typedef {import('./cli-step-service.mjs').Serve} Serve @typedef {import('./cli-review-steps.mjs').Sandbox} Sandbox */
 /** @typedef {import('./cli-triage-step.mjs').TriagePending} TriagePending @typedef {import('./cli-triage-step.mjs').TriageFinished} TriageFinished */
@@ -56,14 +56,19 @@ export function roundsOf(sb, serve, bin, runDir, { tasks, limit }) {
  * @returns {Promise<Ending>}
  */
 export async function recovered(serve, bin, runDir, lostRead, limit) {
-  const status = readTriageStatus(await runCommand(serve, 'step:status', 'Submit', triageStatus(bin, runDir), SUBMIT_TIMEOUT))
+  const command = triageStatus(bin, runDir)
+  const got = await runCommand(serve, 'step:status', 'Submit', command, SUBMIT_TIMEOUT)
+  const status = readTriageStatus(got)
   if (!('error' in status) && status.done) return { finished: await refiled(serve, bin, status.step) }
   const standing = 'error' in status ? '' : ` (the binary reports the ${status.phase || 'current'} phase)`
   const why = stopRead(lostRead, limit.seen())
   const note = failureOf(why)
   const stopped = note.startsWith('stopped: ') ? `${note}${standing}` : `triage stopped${standing}: ${note}`
+  const text = `${stopped}. The run is in ${runDir}. ${triageResumeHint(runDir)}`
+  const failed = recoveryFailure(got, command)
+  if (failed) return { unknown: `${text}\n\nStatus recovery failed: ${failureOf(failed)}` }
   return {
-    stopped: `${stopped}. The run is in ${runDir}. ${triageResumeHint(runDir)}`,
+    stopped: text,
     cause: stopCause(why, 'step'),
   }
 }

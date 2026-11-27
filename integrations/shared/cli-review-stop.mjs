@@ -2,6 +2,22 @@
 // node #638): `notRun` is tallied by exact line, so a cause is one of a few fixed lines, not the stop's own text, which
 // names paths. The same lines the binary's own driver files (content/parity/stop-causes.json,
 // cli/crates/craft-review/src/filing/unfinished.rs).
+import { commandOutput } from './cli-review-step.mjs'
+
+/** A failed recovery says nothing about the binary's completion (realm @nick/craft, nodes #667, #731). */
+export const UNKNOWN_COMPLETION = 'No run record was filed: whether the binary finished the run is unknown.'
+
+/**
+ * A status command's own refusal or failed exit, with the issued command preserved. An unread answer or the usage
+ * limit keeps the lost-step path; a failed page is handled by the caller's brief fallback first.
+ * @param {unknown} got @param {string} command @returns {{ error: string, harness?: string } | null}
+ */
+export function recoveryFailure(got, command) {
+  const read = commandOutput(got)
+  if (!('error' in read)) return null
+  if (read.harness !== undefined) return read
+  return read.error.startsWith('the command exited ') ? { error: `\`${command}\`: ${read.error}` } : null
+}
 
 /** The first `notRun` line of such a run. */
 export const UNFINISHED = 'the craft binary did not finish the run'
