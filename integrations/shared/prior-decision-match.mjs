@@ -4,7 +4,7 @@
 // `lens`); a candidate is a record whose scope holds the finding's file AND whose line is within
 // MATCH_LINE_WINDOW of the finding's, or whose lens is the finding's, or whose title shares
 // MATCH_CANDIDATE_OVERLAP of the words — an old record without an anchor included. The same lens with
-// a line within MATCH_SURE_WINDOW matches without a judge. Every other candidate is disputed: ONE cheap
+// a line within MATCH_SURE_WINDOW matches without a judge (for a tool finding of the same toolRule, any tool lens, #718). Every other candidate is disputed: ONE cheap
 // judge per run decides at most MATCH_JUDGE_PAIRS_MAX of them. A pair the judge gave no verdict (cut by
 // the bound, left unjudged, put to a dead judge) falls back to the title rule (decisionAnswers, #187):
 // a near-verbatim title still matches, anything else is raised normally and the cause named — except a
@@ -160,8 +160,8 @@ export function findingLine(f) {
 }
 
 /**
- * How record `d` stands to finding `f`: `anchored` (file, line within MATCH_SURE_WINDOW, lens, and for
- * a tool finding the same toolRule, for a rule-less tool's the same normalized title — isRulelessToolFinding),
+ * How record `d` stands to finding `f`: `anchored` (file, line within MATCH_SURE_WINDOW, lens — any tool lens
+ * for a tool finding of the same toolRule, #718 — and for a tool finding the same toolRule, for a rule-less tool's the same normalized title — isRulelessToolFinding),
  * `disputed` (a candidate for the judge), '' (none).
  * @param {DecidableFinding} f @param {PriorDecision} d @returns {'anchored' | 'disputed' | ''}
  */

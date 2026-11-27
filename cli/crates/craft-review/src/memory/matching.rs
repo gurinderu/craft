@@ -1,7 +1,8 @@
 //! Which remembered record answers a finding, as `integrations/shared/prior-decision-match.mjs` matches them
 //! without its judge (realm @nick/craft, nodes #187, #230, #236): a record whose scope holds the
 //! finding's file, of the finding's lens, its line within a few lines of the finding's (and, for a
-//! gate tool's finding, the same tool rule) answers it outright; any other candidate answers it
+//! gate tool's finding, the same tool rule, any tool lens then counting as its lens — #718) answers
+//! it outright; any other candidate answers it
 //! only by the title rule — titles sharing most of their words — or, for a tool finding naming no
 //! rule, only by the same title — unless the match judge gave that pair a verdict ([`resolve`]).
 //! A record that overrides another is tried before it.
