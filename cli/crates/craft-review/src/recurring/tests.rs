@@ -9,6 +9,7 @@ fn run(branch: &str, file: &str, title: &str) -> Run {
         ts: "2026".into(),
         branch: branch.into(),
         head: "h".into(),
+        dirty: false,
         rows: vec![Row {
             file: file.into(),
             title: title.into(),

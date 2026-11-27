@@ -18,7 +18,7 @@ const RUNS_MAX: usize = 500;
 const GROUPS_MAX: usize = 20;
 const TITLES_MAX: usize = 5;
 const REAL_FINDING_RULE: &str = "rejected, refuted, justified, covered, deferred and dismissed findings are not counted, nor unverified and suspected ones — only findings verified real and not already settled";
-const UNVERIFIED_RULE: &str = "unverified findings group apart under `unverified`, never with confirmed ones: one whose line changed since its run's head is set aside (`changed`), one whose head this clone lacks is kept (`unchecked`)";
+const UNVERIFIED_RULE: &str = "unverified findings group apart under `unverified`, never with confirmed ones: one whose line changed since its run's head is set aside (`changed`), one of a run that read uncommitted work or whose head this clone lacks is kept (`unchecked`)";
 
 /// Errors from listing the store or representing its paths.
 #[derive(Debug, thiserror::Error)]

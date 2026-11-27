@@ -11,6 +11,8 @@ mod selection;
 mod support;
 #[path = "recurring/unverified.rs"]
 mod unverified;
+#[path = "recurring/unverified_git.rs"]
+mod unverified_git;
 #[path = "recurring/utf16.rs"]
 mod utf16;
 

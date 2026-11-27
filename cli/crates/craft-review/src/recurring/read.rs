@@ -17,6 +17,8 @@ pub(super) struct Run {
     pub ts: JsString,
     pub branch: JsString,
     pub head: JsString,
+    /// Whether the review read uncommitted work, which `head` alone does not name.
+    pub dirty: bool,
     pub rows: Vec<Row>,
     pub unverified: Vec<Row>,
 }
@@ -105,6 +107,7 @@ fn add(out: &mut Read, rec: &Obj, name: &str, project: &str, paths: &[String]) {
             ts: text(rec, "ts"),
             branch: text(rec, "branch"),
             head: text(rec, "head"),
+            dirty: rec.get("dirty").is_some_and(Js::truthy),
             rows,
             unverified,
         });

@@ -11,7 +11,8 @@ use super::read::{Row, Run};
 use super::{number, text};
 
 /// Only the rows of groups already on two branches are held to their lines, then regrouped in
-/// the runs' order; a row whose head this clone lacks is kept and counted unchecked.
+/// the runs' order; a row of a run that read uncommitted work (its lines are not `head`'s) or
+/// whose head this clone lacks is kept and counted unchecked.
 pub(super) fn unverified(runs: &[Run], project: &Path) -> Js {
     let rows = || {
         runs.iter()
@@ -72,6 +73,9 @@ struct Lines<'p> {
 
 impl Lines<'_> {
     fn changed(&mut self, run: &Run, row: &Row) -> Option<bool> {
+        if run.dirty {
+            return None;
+        }
         let project = self.project;
         let hunks = self
             .hunks
@@ -84,7 +88,7 @@ impl Lines<'_> {
 fn diff(project: &Path, head: &JsString, file: &JsString) -> Option<Vec<Hunk>> {
     let head = head
         .as_str()
-        .filter(|h| !h.is_empty() && !h.starts_with('-'))?;
+        .filter(|h| h.len() >= 7 && h.bytes().all(|b| b.is_ascii_hexdigit()))?;
     let file = text::parts(file)
         .iter()
         .map(|p| p.as_str().map(str::to_owned))
@@ -97,6 +101,7 @@ fn diff(project: &Path, head: &JsString, file: &JsString) -> Option<Vec<Hunk>> {
         "--no-ext-diff",
         "--no-textconv",
         "--no-renames",
+        "--no-relative",
         "--text",
         "--unified=0",
         head,
@@ -104,8 +109,14 @@ fn diff(project: &Path, head: &JsString, file: &JsString) -> Option<Vec<Hunk>> {
         "--",
         &spec,
     ];
-    let out = crate::git::git(project, &args).ok()?;
-    Some(out.lines().filter_map(hunk).collect())
+    // Only the ASCII hunk headers are read; content lines may be in any encoding.
+    let out = crate::git::git_bytes(project, &args).ok()?;
+    Some(
+        String::from_utf8_lossy(&out)
+            .lines()
+            .filter_map(hunk)
+            .collect(),
+    )
 }
 
 /// The old side of a `@@ -start[,count] +… @@` line; a missing count is one line.

@@ -4,9 +4,9 @@ use serde_json::{Value, json};
 
 use super::support::{Store, row};
 
-const ABSENT_HEAD: &str = "0123456789abcdef0123456789abcdef01234567";
+pub(super) const ABSENT_HEAD: &str = "0123456789abcdef0123456789abcdef01234567";
 
-fn git(s: &Store, args: &[&str]) -> String {
+pub(super) fn git(s: &Store, args: &[&str]) -> String {
     let out = std::process::Command::new("git")
         .arg("-C")
         .arg(&s.project)
@@ -29,20 +29,20 @@ fn git(s: &Store, args: &[&str]) -> String {
     String::from_utf8(out.stdout).unwrap().trim().to_owned()
 }
 
-fn repo() -> Store {
+pub(super) fn repo() -> Store {
     let s = Store::new();
     git(&s, &["init", "-q", "-b", "main"]);
     s
 }
 
-fn commit(s: &Store, text: &str) -> String {
+pub(super) fn commit(s: &Store, text: &str) -> String {
     std::fs::write(s.project.join("a.rs"), text).unwrap();
     git(s, &["add", "a.rs"]);
     git(s, &["commit", "-qm", "c"]);
     git(s, &["rev-parse", "HEAD"])
 }
 
-fn unverified(line: u32) -> Value {
+pub(super) fn unverified(line: u32) -> Value {
     let mut r = row("a.rs", "unwrap in parser may panic");
     let o = r.as_object_mut().unwrap();
     for (k, v) in [
@@ -55,12 +55,12 @@ fn unverified(line: u32) -> Value {
     r
 }
 
-fn record(s: &Store, branch: &str, head: &str, ledger: &Value) {
+pub(super) fn record(s: &Store, branch: &str, head: &str, ledger: &Value) {
     let rec = json!({"project": s.project, "branch": branch, "ts": branch, "head": head, "ledger": ledger});
     s.write(branch, &rec);
 }
 
-fn branches(out: &Value) -> Vec<Value> {
+pub(super) fn branches(out: &Value) -> Vec<Value> {
     let groups = out
         .pointer("/unverified/groups")
         .unwrap()
