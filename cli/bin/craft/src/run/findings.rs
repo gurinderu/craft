@@ -1,5 +1,5 @@
 //! The answer's `## Findings` list, one line per reported finding: severity, `file:line`, title and
-//! tier, as `findingsList` in integrations/shared/cli-review-verdict.mjs writes it. The unverified Low
+//! tier, as `findingsList` in integrations/shared/cli-review-findings.mjs writes it. The unverified Low
 //! and Info findings the binary held apart are left out, one sentence naming how many and the file
 //! they are in (realm @nick/craft, node #636); the finished step keeps them all.
 

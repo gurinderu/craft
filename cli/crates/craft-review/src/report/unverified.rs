@@ -128,4 +128,13 @@ mod tests {
         );
         assert!(step_field(dir.path(), &none).is_none());
     }
+
+    #[test]
+    fn a_held_file_that_cannot_be_written_leaves_no_report_naming_it() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(path(dir.path())).unwrap();
+        let held = run(&[finding("Low", "unverified", "naming")]);
+        assert!(crate::report::write(dir.path(), &held, "Warning").is_err());
+        assert!(!crate::state::report_path(dir.path()).exists());
+    }
 }
