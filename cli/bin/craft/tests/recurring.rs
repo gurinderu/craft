@@ -9,6 +9,8 @@ mod flags;
 mod selection;
 #[path = "recurring/support.rs"]
 mod support;
+#[path = "recurring/unverified.rs"]
+mod unverified;
 #[path = "recurring/utf16.rs"]
 mod utf16;
 
