@@ -69,6 +69,26 @@ test('review progress stays visible during a quiet child and expires after its f
   assert.equal(vi.getTimerCount(), 0)
 })
 
+test.each([0, 1, 2, 3, 4, 5, 6, 7])('the final notice survives completion %i microtasks after the previous delivery', async delay => {
+  const f = fixture()
+  /** @type {(value: unknown) => void} */
+  let delivered = () => {}
+  f.showToast.mockImplementationOnce(
+    () =>
+      new Promise(resolve => {
+        delivered = resolve
+      }),
+  )
+  const running = f.start()
+  f.progress('running')
+  delivered({ data: true })
+  for (let i = 0; i < delay; i++) await Promise.resolve()
+  f.resolve({ title: 'end', output: 'ok' })
+  await running
+  assert.equal(f.showToast.mock.lastCall?.[0].body.message, 'end')
+  assert.equal(vi.getTimerCount(), 0)
+})
+
 test('a stalled UI request is bounded, coalesces progress and cannot hold the review result', async () => {
   const f = fixture()
   f.showToast.mockImplementationOnce(() => new Promise(() => {}))

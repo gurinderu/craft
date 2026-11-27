@@ -45,12 +45,12 @@ function notifier(tui: V1Toast, log: (line: string) => void) {
         warned = true
       }
     }
+    // Release with the empty check: a later promise callback leaves an enqueue gap.
+    flight = undefined
   }
   const enqueue = (message: string, duration: number) => {
     pending = { message, duration }
-    flight ??= drain().finally(() => {
-      flight = undefined
-    })
+    flight ??= drain()
     return flight
   }
   return {

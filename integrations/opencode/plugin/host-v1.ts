@@ -6,14 +6,12 @@ import type { Hooks, PluginInput } from '@opencode-ai/plugin'
 import { tool } from '@opencode-ai/plugin'
 import type { Part, TextPart } from '@opencode-ai/sdk'
 import type { Host, ToolSpec, WorkHook } from './host.ts'
-import { agentNames, extractText, lastModel } from './host-v1-read.ts'
+import { agentNames, lastModel } from './host-v1-read.ts'
 import { runV1Child } from './host-v1-child.ts'
 import { runV1Tool, type V1Toast } from './host-v1-progress.ts'
 import { lightenSystem } from './light-agent-v1.ts'
 import { oncePerReason, reasonOf } from './light-agent-shared.ts'
 import { shellIn } from './shell.mjs'
-
-export { extractText, lastModel }
 
 type TextIn = { type: 'text'; text: string }
 export interface V1Client {

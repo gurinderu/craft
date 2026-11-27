@@ -6,7 +6,8 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseMarkdown } from './frontmatter.ts'
 import { ChildSessionFailed } from './host.ts'
-import { extractText, lastModel, v1Host, v1Hooks } from './host-v1.ts'
+import { v1Host, v1Hooks } from './host-v1.ts'
+import { extractText, lastModel } from './host-v1-read.ts'
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 
