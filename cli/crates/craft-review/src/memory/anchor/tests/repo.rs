@@ -12,7 +12,7 @@ mod fork;
 mod merge;
 
 /// Runs git in `dir` with author and committer dated `date`, its stdout trimmed.
-pub(in crate::memory::anchor) fn at(dir: &Path, date: &str, args: &[&str]) -> String {
+pub(in crate::memory) fn at(dir: &Path, date: &str, args: &[&str]) -> String {
     let out = Command::new("git")
         .arg("-C")
         .arg(dir)
@@ -30,7 +30,7 @@ pub(in crate::memory::anchor) fn at(dir: &Path, date: &str, args: &[&str]) -> St
 }
 
 /// Commits `text` into `file` at `date`, returning the commit.
-pub(in crate::memory::anchor) fn commit(dir: &Path, file: &str, text: &str, date: &str) -> String {
+pub(in crate::memory) fn commit(dir: &Path, file: &str, text: &str, date: &str) -> String {
     std::fs::write(dir.join(file), text).unwrap();
     at(dir, date, &["add", "."]);
     at(dir, date, &["commit", "-qm", file]);
@@ -44,7 +44,7 @@ pub(super) fn ids(set: &BTreeSet<String>) -> Vec<&str> {
 /// A trunk whose last commits straddle the start of 2026-05-02 anywhere (2026-05-01 10:00 UTC),
 /// a side branch dated before that day merged into it after, and `HEAD` on a branch off the trunk
 /// with a backdated commit — `origin/HEAD` naming the trunk unless `trunk` is false.
-pub(super) fn repo(trunk: bool) -> (tempfile::TempDir, String) {
+pub(in crate::memory) fn repo(trunk: bool) -> (tempfile::TempDir, String) {
     let t = tempfile::tempdir().unwrap();
     let d = t.path();
     at(d, "2026-04-30T12:00:00+0000", &["init", "-q", "-b", "main"]);

@@ -91,7 +91,7 @@ fn fate_of(row: &LedgerRow, answer: Option<&Value>) -> (Fate, String) {
 /// `integrations/shared/review-adjudicate-priors.mjs`; realm @nick/craft, node #204) once the memory is recalled:
 /// one whose question still `holds` stays deferred, out of the verdict; one a record releases counts
 /// again, kept still open until the next round adjudicates it. A deferred prior whose code changed
-/// since its question's commit was never carried: it is adjudicated and counted by its answer.
+/// since its question's anchor was never carried: it is adjudicated and counted by its answer.
 /// Returns the notes of the released.
 pub fn hold_deferrals(chain: &mut Chain, holds: &dyn Fn(&LedgerRow) -> bool) -> Vec<String> {
     let mut notes = Vec::new();

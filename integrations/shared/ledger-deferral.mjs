@@ -5,16 +5,34 @@
 
 /**
  * A question's deferral as a structured field on the ledger row: its id, reason, author, date, link and
- * commit. A carried row is read by this field, never by the mark in its `why` — the between-round
- * transport cuts every `why` at its cap, and the mark sits at the tail.
- * @typedef {{ id: string, reason: string, who: string, when: string, link: string, commit: string }} Deferral
+ * commit, and the pull requests its links name when it links any — the next round anchors it by them
+ * where it names no commit (realm @nick/craft, node #680). A carried row is read by this field, never
+ * by the mark in its `why` — the between-round transport cuts every `why` at its cap, and the mark
+ * sits at the tail.
+ * @typedef {{ repo: string, number: number }} DeferralPull
+ * @typedef {{ id: string, reason: string, who: string, when: string, link: string, commit: string, pulls?: DeferralPull[] }} Deferral
  */
 /**
  * The deferral a question record (a PriorDecision of kind `question`) sets on the finding it sets aside.
  * @param {Deferral} d @returns {Deferral}
  */
 export function deferralOf(d) {
-  return { id: d.id, reason: d.reason, who: d.who, when: d.when, link: d.link, commit: d.commit }
+  const pulls = d.pulls?.length ? { pulls: d.pulls.map(p => ({ repo: p.repo, number: p.number })) } : {}
+  return { id: d.id, reason: d.reason, who: d.who, when: d.when, link: d.link, commit: d.commit, ...pulls }
+}
+
+/**
+ * The pull requests a ledger row's deferral names, each a repository and a positive number; the
+ * others dropped.
+ * @param {unknown} v @returns {DeferralPull[]}
+ */
+function pullsOn(v) {
+  if (!Array.isArray(v)) return []
+  return /** @type {unknown[]} */ (v).flatMap(p => {
+    if (!p || typeof p !== 'object') return []
+    const { repo, number } = /** @type {Record<string, unknown>} */ (p)
+    return typeof repo === 'string' && Number.isSafeInteger(number) && Number(number) > 0 ? [{ repo, number: Number(number) }] : []
+  })
 }
 
 /**
@@ -27,5 +45,7 @@ export function deferralOn(v) {
   const o = /** @type {Record<string, unknown>} */ (v)
   /** @param {string} k */
   const s = k => (typeof o[k] === 'string' ? /** @type {string} */ (o[k]) : '')
-  return s('id') ? { id: s('id'), reason: s('reason'), who: s('who'), when: s('when'), link: s('link'), commit: s('commit') } : null
+  if (!s('id')) return null
+  const pulls = pullsOn(o['pulls'])
+  return { id: s('id'), reason: s('reason'), who: s('who'), when: s('when'), link: s('link'), commit: s('commit'), ...(pulls.length ? { pulls } : {}) }
 }

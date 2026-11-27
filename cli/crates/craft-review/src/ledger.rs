@@ -6,6 +6,7 @@ use craft_store::js::JsStr;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::memory::Pull;
 use crate::report::Tier;
 use crate::tool;
 
@@ -49,6 +50,11 @@ pub struct Deferral {
     pub when: String,
     pub link: String,
     pub commit: String,
+    /// The pull requests the question's links name, whose merge anchors it where it names no
+    /// commit, as it anchors the question (realm @nick/craft, nodes #680, #682); absent when it
+    /// links none, and in a row written before it, whose `link` alone is read for one.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub pulls: Vec<Pull>,
 }
 
 impl Deferral {
@@ -323,6 +329,28 @@ mod tests {
         );
         let plain = serde_json::to_value(LedgerRow::default()).unwrap();
         assert!(plain.get("toolRule").is_none() && plain.get("sources").is_none());
+    }
+
+    #[test]
+    fn a_deferrals_pull_requests_ride_its_row_and_a_row_written_before_them_reads() {
+        let pulled = json!({"id": "q-1", "link": "https://x/issues/3",
+                            "pulls": [{"repo": "owner/repo", "number": 7}]});
+        let f = json!({"file": "a.rs", "deferral": pulled});
+        let filed = serde_json::to_string(&LedgerRow::open(&f)).unwrap();
+        let back: LedgerRow = serde_json::from_str(&filed).unwrap();
+        let d = back.deferral.clone().unwrap();
+        let pulls = [Pull {
+            repo: "owner/repo".into(),
+            number: 7,
+        }];
+        assert_eq!(d.pulls, pulls);
+        assert_eq!(back.finding()["deferral"]["pulls"], json!(pulled["pulls"]));
+        let old =
+            r#"{"id":"q-1","reason":"r","who":"w","when":"2026-05-01","link":"l","commit":""}"#;
+        let old: Deferral = serde_json::from_str(old).unwrap();
+        assert!(old.pulls.is_empty() && old.when == "2026-05-01");
+        let none = serde_json::to_value(&old).unwrap();
+        assert!(none.get("pulls").is_none(), "{none}");
     }
 
     #[test]

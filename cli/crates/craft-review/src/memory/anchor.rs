@@ -203,4 +203,4 @@ fn calendar_date(when: &str) -> Option<String> {
 }
 
 #[cfg(test)]
-mod tests;
+pub(super) mod tests;

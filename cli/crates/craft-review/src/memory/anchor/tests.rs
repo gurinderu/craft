@@ -1,7 +1,7 @@
 use super::{Anchor, Unusable, calendar_date};
 use crate::memory::PriorDecision;
 
-pub(in crate::memory::anchor) mod repo;
+pub(in crate::memory) mod repo;
 
 pub(super) fn record(id: &str, scope: &str, commit: &str, when: &str) -> PriorDecision {
     PriorDecision {
