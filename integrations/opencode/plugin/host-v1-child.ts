@@ -86,7 +86,9 @@ export async function runV1Child(client: V1Client, req: ChildRequest): Promise<s
   try {
     const sessionID = await untilAbort(create, req.signal)
     req.onSession?.(sessionID)
-    return await prompted(client, sessionID, req)
+    const text = await prompted(client, sessionID, req)
+    if (!text) await stop()
+    return text
   } catch (e) {
     // A failed agent loop already ended. Every other failure stops the known child before a retry can start.
     if (!(e instanceof ChildSessionFailed)) await stop()
