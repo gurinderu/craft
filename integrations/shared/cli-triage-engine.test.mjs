@@ -300,6 +300,44 @@ test('a failed resume reads a limit-stopped status without driver filing', async
   assert.ok(!run.calls.some(c => c.label === 'step:refile'))
 })
 
+for (const resume of [false, true])
+  test(`a lost ${resume ? 'resume' : 'submit'} keeps a limit first seen while reading status`, async () => {
+    const run = await runEngine('triage-findings', {
+      args: resume ? { run: RUN, repo: '/work/repo' } : { report: '/r/report.md' },
+      script: {
+        'step:resolve': RESOLVED,
+        'step:start': pending([PLAN()]),
+        plan: writes({ plan_markdown: 'BODY', summary: 'S', ledger: [] }),
+        'step:submit:1': ran('cut JSON'),
+        'step:resume': ran('cut JSON'),
+        'step:status': () => {
+          throw new Error("You've hit your limit · resets 3am (Europe/Berlin)")
+        },
+        'log-run': { ok: true },
+      },
+    })
+    assert.match(run.report, /stopped: usage limit reached \(You've hit your limit/)
+    assert.ok(run.report.includes(`craft:triage-findings run=${RUN}`), run.report)
+    assert.deepEqual(filedRecord(run)?.notRun, ['the craft binary did not finish the run', 'stopped: the usage limit was reached'])
+  })
+
+test('a recovered triage plan takes precedence over the limit the driver saw', async () => {
+  const run = await runEngine('triage-findings', {
+    args: { report: '/r/report.md' },
+    script: {
+      'step:resolve': RESOLVED,
+      'step:start': pending([PLAN()]),
+      plan: () => {
+        throw new Error("You've hit your limit")
+      },
+      'step:submit:1': ran('cut JSON'),
+      'step:status': done(),
+    },
+  })
+  assert.match(run.report, /^## Triage\n\nThe plan is /)
+  assert.deepEqual(logged(run), [], 'no driver record over the binary’s plan')
+})
+
 for (const lands of [true, false])
   test(`a lost resume retries the failed filing; refile readable=${lands}`, async () => {
     const run = await runEngine('triage-findings', {

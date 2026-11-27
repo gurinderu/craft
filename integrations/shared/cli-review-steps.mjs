@@ -29,7 +29,7 @@ import { telemetryLostSection } from './review-coverage.mjs'
 import { argumentRefusal } from './run-record.mjs'
 import { normalizeArgs } from './workflow-args.mjs'
 import { runBudget } from './run-budget.mjs'
-import { stopCause, stopNotRun } from './cli-review-stop.mjs'
+import { stopCause, stopNotRun, stopRead } from './cli-review-stop.mjs'
 
 /** @typedef {import('./cli-review-options.mjs').Options} Options */
 /** @typedef {import('./cli-review-step.mjs').Step} Step */
@@ -448,7 +448,9 @@ async function rounds(sb, bin, first, serve, recorder) {
     },
     lost: async read => {
       const truth = await recovered(sb, bin, first.run, serve, recorder)
-      return 'standing' in truth ? { stopped: stoppedAt(truth.standing, read, first.run, bin), cause: stopCause(read, 'step') } : truth
+      if (!('standing' in truth)) return truth
+      const why = stopRead(read, sb.limit.seen())
+      return { stopped: stoppedAt(truth.standing, why, first.run, bin), cause: stopCause(why, 'step') }
     },
     gaveUp: step => ({ stopped: `review gave up after ${MAX_ROUNDS} rounds; the run is in ${step.run}. ${resumeHint(step.run)}`, cause: 'rounds' }),
     finished: step => ({ finished: step }),
