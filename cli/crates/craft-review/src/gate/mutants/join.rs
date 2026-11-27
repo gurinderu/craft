@@ -19,16 +19,33 @@ const POLL: Duration = Duration::from_millis(200);
 
 /// Joins a launched worker: waits at most `wait`, asks it to stop past that, and returns the
 /// survivors' findings and the line the report says of the run. Nothing when none was launched.
+/// A run that fell short of a whole answer is kept in [`Mutants::short`] as well.
 pub(crate) fn join(m: &mut Mutants, wait: Duration) -> (Vec<Value>, Option<String>) {
     if !m.running() {
         return (Vec::new(), None);
     }
     m.joined = true;
+    let (found, line, short) = joined(m, wait);
+    if let (true, Some(line)) = (short, &line) {
+        m.short.clone_from(line);
+    }
+    (found, line)
+}
+
+/// What a launched run came to, and whether it fell short of a whole answer.
+fn joined(m: &Mutants, wait: Duration) -> (Vec<Value>, Option<String>, bool) {
     let dir = PathBuf::from(&m.dir);
     let came = wait_for(&dir, wait).or_else(|| stop(&dir));
     let read = std::fs::read_to_string(dir.join("mutants.out").join("outcomes.json"));
     let Ok(text) = read else {
-        return (Vec::new(), Some(not_run(&why_none(came.as_ref(), &dir))));
+        if matches!(came, Some(Came::NoMutants)) {
+            return (Vec::new(), Some(NONE_IN_CHANGE.into()), false);
+        }
+        return (
+            Vec::new(),
+            Some(not_run(&why_none(came.as_ref(), &dir))),
+            true,
+        );
     };
     let lines = match crate::git::zero_context_diff(Path::new(&m.top), &m.base) {
         Ok(d) => Lines::parse(&d),
@@ -38,6 +55,7 @@ pub(crate) fn join(m: &mut Mutants, wait: Duration) -> (Vec<Value>, Option<Strin
                 Some(format!(
                     "mutants of the change wrote outcomes, but the change's lines could not be read ({e}): no survivor was kept"
                 )),
+                true,
             );
         }
     };
@@ -49,9 +67,15 @@ pub(crate) fn join(m: &mut Mutants, wait: Duration) -> (Vec<Value>, Option<Strin
             Some(format!(
                 "mutants of the change ran, but their outcomes could not be read: outcomes.json: {e}"
             )),
+            true,
         ),
     }
 }
+
+/// The line of a change in which cargo-mutants found no mutant: an answer, not a shortfall.
+/// cargo-mutants says the same when the diff's paths miss the workspace root (node #624), so the
+/// line names that check for a change that rewrote function bodies.
+const NONE_IN_CHANGE: &str = "mutants of the change: cargo-mutants found no mutant in the change — if it rewrote function bodies, check the diff's paths against the workspace root (node #624)";
 
 /// The join the rounds' end makes: [`JOIN_MAX`].
 pub(crate) fn join_now(m: &mut Mutants) -> (Vec<Value>, Option<String>) {
@@ -84,40 +108,45 @@ fn why_none(came: Option<&Came>, dir: &Path) -> String {
             format!("their budget ran out after {secs}s before any outcome")
         }
         Some(Came::Stopped) => "stopped at the join before cargo-mutants wrote anything".into(),
+        Some(Came::NoMutants) => "cargo-mutants found no mutant in the change's lines".into(),
         Some(Came::Broken { message }) => message.clone(),
         Some(Came::Exited { code }) => format!("cargo-mutants exited ({code:?}) without outcomes"),
         None => {
             let log = dir.join(worker::ERR);
             let last =
                 super::super::check::last_line(&std::fs::read_to_string(&log).unwrap_or_default());
+            // cargo-mutants runs in a session of its own, which only the worker stops: with the
+            // worker gone it may outlive the review, and no process id is signalled from here.
             format!(
-                "the worker wrote no result and did not answer a stop (its last word: {last}; its log: {})",
-                log.display()
+                "the worker wrote no result and did not answer a stop (its last word: {last}; its log: {}), so cargo-mutants may still be running, unwatched and with no budget, writing into {}",
+                log.display(),
+                dir.display()
             )
         }
     }
 }
 
-/// What the run came to: the survivors kept and the report's line.
+/// What the run came to: the survivors kept, the report's line, and whether it fell short.
 fn said(
     o: &outcomes::Outcomes,
     (workspace, dir): (&str, &Path),
     lines: &Lines,
     stopped: bool,
-) -> (Vec<Value>, Option<String>) {
+) -> (Vec<Value>, Option<String>, bool) {
     if !o.baseline_ok {
         let log = dir.join("mutants.out").join("log").join("baseline.log");
         let why = format!(
             "the unmutated workspace did not build or pass its tests in cargo-mutants' copy of it, so no mutant's outcome means anything — a crate that reads files outside its workspace fails there (realm @nick/craft, node #653); its log: {}",
             log.display()
         );
-        return (Vec::new(), Some(not_run(&why)));
+        return (Vec::new(), Some(not_run(&why)), true);
     }
     if o.total == 0 {
-        return (Vec::new(), Some("mutants of the change: cargo-mutants chose none on a diff that touches Rust — check the diff's paths against the workspace root (node #624) before reading it as clean".into()));
+        return (Vec::new(), Some("mutants of the change: cargo-mutants chose none on a diff that touches Rust — check the diff's paths against the workspace root (node #624) before reading it as clean".into()), false);
     }
     let (found, neighbours) = findings::of(&o.missed, workspace, lines);
-    let short = if o.complete && !stopped {
+    let whole = o.complete && !stopped;
+    let short = if whole {
         String::new()
     } else {
         format!(
@@ -140,7 +169,7 @@ fn said(
         o.timeout,
         o.unviable
     );
-    (found, Some(line))
+    (found, Some(line), !whole)
 }
 
 /// The worker's result, once it wrote one within `wait`.

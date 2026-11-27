@@ -465,13 +465,14 @@ pub fn capped(state: &RunState) -> Vec<String> {
 /// The host's notes, the rubric skills no path was found for, a recall that may not have read the
 /// store (its query failed, its agent died or gave no list, its answer was truncated, or the
 /// launcher's recall was so), the gate's
-/// unread changed lines, then the CONSUMERS lines no lens marked per line and no seam pass read (realm @nick/craft, node #531).
+/// unread changed lines, a mutants run that fell short of a whole answer, then the CONSUMERS lines no lens marked per line and no seam pass read (realm @nick/craft, node #531).
 #[must_use]
 pub fn degraded_notes(state: &RunState) -> Vec<String> {
     let mut notes = state.degraded.clone();
     notes.extend(skills_note(state));
     notes.extend(state.memory.source.degraded_notes());
     notes.extend(state.gate.unread_note());
+    notes.extend(state.gate.mutants.degraded_note());
     notes.extend(
         consumer_lines::all(state)
             .into_iter()
@@ -502,7 +503,8 @@ fn skills_note(state: &RunState) -> Option<String> {
 fn degraded(state: &RunState, out: &mut String) {
     let skills = skills_note(state);
     let memory = state.memory.source.degraded_notes();
-    if state.degraded.is_empty() && skills.is_none() && memory.is_empty() {
+    let mutants = state.gate.mutants.degraded_note();
+    if state.degraded.is_empty() && skills.is_none() && memory.is_empty() && mutants.is_none() {
         return;
     }
     out.push_str("## Degraded\n\nThe host ran part of this review weaker than it asked:\n\n");
@@ -511,6 +513,7 @@ fn degraded(state: &RunState, out: &mut String) {
         .iter()
         .chain(skills.iter())
         .chain(memory.iter())
+        .chain(mutants.iter())
     {
         out.push_str(&format!("- {}\n", one_line(d)));
     }
