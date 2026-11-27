@@ -102,7 +102,9 @@ fn an_unread_stderr_does_not_hang_the_run() {
         .spawn()
         .unwrap();
     let answer = drained(child.stdout.take().unwrap());
-    // Time for the run to come up and hand out a task: what ends it is a task in flight.
+    // Time for the run to come up and hand out its first task, so that the input closes on a
+    // task in flight. Nothing here sees that it was handed out — its event is in the stderr
+    // nobody reads — and a first hand-out after the closing fails with the same answer.
     std::thread::sleep(Duration::from_millis(1500));
     drop(child.stdin.take());
     let status = settled("the run", &mut child, Duration::from_secs(20));
