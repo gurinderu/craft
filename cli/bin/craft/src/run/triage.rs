@@ -80,7 +80,6 @@ impl Protocol for InProcess {
 }
 
 pub(crate) async fn run(args: RunArgs) -> Result<ExitCode> {
-    let stop = super::stopping();
     let sink = Sink {
         json: args.host.events == Some(EventFormat::Json),
     };
@@ -101,6 +100,8 @@ pub(crate) async fn run(args: RunArgs) -> Result<ExitCode> {
             return Ok(ExitCode::from(2));
         }
     };
+    // (realm @nick/craft, node #735)
+    let stop = super::stopping();
     let p = prepared;
     let backend = p
         .host

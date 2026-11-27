@@ -1,7 +1,83 @@
+use std::io::Write;
+use std::os::unix::process::ExitStatusExt;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use super::fixture::{Bench, read};
+
+#[test]
+fn sigterm_interrupts_ledger_stdin_before_start() {
+    interrupt_stdin("--prior-ledger", "-TERM", 15);
+}
+
+#[test]
+fn sigint_interrupts_ledger_stdin_before_start() {
+    interrupt_stdin("--prior-ledger", "-INT", 2);
+}
+
+#[test]
+fn sigterm_interrupts_decisions_stdin_before_start() {
+    interrupt_stdin("--prior-decisions", "-TERM", 15);
+}
+
+#[test]
+fn sigint_interrupts_decisions_stdin_before_start() {
+    interrupt_stdin("--prior-decisions", "-INT", 2);
+}
+
+#[expect(clippy::unwrap_used, reason = "fixture failures must fail the test")]
+fn interrupt_stdin(flag: &str, signal: &str, number: i32) {
+    let b = Bench::new();
+    let mut child = b
+        .command("codex", "ok")
+        .arg("--repo")
+        .arg(b.path("repo"))
+        .arg("--report")
+        .arg(b.path("report.md"))
+        .arg("--run-dir")
+        .arg(b.path("run"))
+        .args([flag, "-"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child.stdin.as_mut().unwrap().write_all(b"[").unwrap();
+    let wchan = format!("/proc/{}/wchan", child.id());
+    let bound = Instant::now() + Duration::from_secs(10);
+    let reading = loop {
+        if std::fs::read_to_string(&wchan).is_ok_and(|s| s.trim() == "pipe_read") {
+            break true;
+        }
+        if child.try_wait().unwrap().is_some() || Instant::now() >= bound {
+            break false;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    let sent = reading
+        && Command::new("kill")
+            .args([signal, &child.id().to_string()])
+            .status()
+            .unwrap()
+            .success();
+    let bound = Instant::now() + Duration::from_secs(3);
+    while child.try_wait().unwrap().is_none() && Instant::now() < bound {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let exited = child.try_wait().unwrap().is_some();
+    if !exited {
+        child.kill().unwrap();
+    }
+    // Keep the input pipe open until after observing the signal's effect.
+    let out = child.wait_with_output().unwrap();
+    assert!(reading, "{flag}: never reached pipe_read: {out:?}");
+    assert!(sent, "{flag}: failed to send {signal}");
+    assert!(exited, "{flag}: still reading stdin after {signal}");
+    assert_eq!(out.status.signal(), Some(number), "{out:?}");
+    assert!(b.calls().is_empty(), "no host may run during input");
+    assert!(!b.path("run").exists(), "no plan or state before start");
+    assert!(b.index().is_empty(), "no record before start");
+}
 
 #[test]
 fn a_signal_stops_the_host_group_without_filing_a_review_then_resumes() {
