@@ -43,7 +43,7 @@ OpenCode 2.x:
 
 <!-- x-release-please-start-version -->
 ```bash
-opencode plugin add git+https://github.com/gurinderu/craft#opencode-v0.60.0
+opencode plugin add git+https://github.com/gurinderu/craft#opencode-v0.61.0
 ```
 <!-- x-release-please-end -->
 
@@ -54,7 +54,7 @@ model strategy and what differs from Claude Code: [integrations/opencode/README.
 
 <!-- x-release-please-start-version -->
 ```
-codex plugin marketplace add gurinderu/craft --ref v0.60.0
+codex plugin marketplace add gurinderu/craft --ref v0.61.0
 codex plugin add craft@craft
 ```
 <!-- x-release-please-end -->
@@ -66,7 +66,7 @@ To move to a new release, remove the marketplace first — Codex refuses to add 
 <!-- x-release-please-start-version -->
 ```
 codex plugin marketplace remove craft
-codex plugin marketplace add gurinderu/craft --ref v0.60.0
+codex plugin marketplace add gurinderu/craft --ref v0.61.0
 codex plugin add craft@craft
 ```
 <!-- x-release-please-end -->
@@ -78,7 +78,7 @@ Why the tag is pinned, and the sandbox fix for Ubuntu 24.04:
 
 <!-- x-release-please-start-version -->
 ```sh
-pi install git:github.com/gurinderu/craft@v0.60.0
+pi install git:github.com/gurinderu/craft@v0.61.0
 ```
 <!-- x-release-please-end -->
 
