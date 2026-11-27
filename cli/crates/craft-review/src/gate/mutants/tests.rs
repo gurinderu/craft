@@ -319,8 +319,22 @@ fn a_worker_that_never_answers_is_said_with_its_last_word() {
         "error: unrecognized subcommand '__craft-mutants'\n",
     )
     .unwrap();
-    let (_, line) = join(&mut launched(top.path(), run.path()), Duration::ZERO);
-    assert!(line.unwrap().contains("unrecognized subcommand"));
+    let mut m = launched(top.path(), run.path());
+    let (_, line) = join(&mut m, Duration::ZERO);
+    let line = line.unwrap();
+    assert!(line.contains("unrecognized subcommand"), "{line}");
+    assert!(
+        line.contains(&format!(
+            "cargo-mutants may still be running, unwatched and with no budget, writing into {}",
+            dir.display()
+        )),
+        "{line}"
+    );
+    assert!(
+        m.degraded_note()
+            .is_some_and(|n| n.contains("may still be running")),
+        "a worker that never answered is a run short"
+    );
 }
 
 #[test]

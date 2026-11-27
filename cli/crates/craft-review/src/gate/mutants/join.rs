@@ -115,9 +115,12 @@ fn why_none(came: Option<&Came>, dir: &Path) -> String {
             let log = dir.join(worker::ERR);
             let last =
                 super::super::check::last_line(&std::fs::read_to_string(&log).unwrap_or_default());
+            // cargo-mutants runs in a session of its own, which only the worker stops: with the
+            // worker gone it may outlive the review, and no process id is signalled from here.
             format!(
-                "the worker wrote no result and did not answer a stop (its last word: {last}; its log: {})",
-                log.display()
+                "the worker wrote no result and did not answer a stop (its last word: {last}; its log: {}), so cargo-mutants may still be running, unwatched and with no budget, writing into {}",
+                log.display(),
+                dir.display()
             )
         }
     }
