@@ -383,8 +383,21 @@ fn a_run_cut_short_is_said_short() {
         30,
     );
     let mut m = launched(top.path(), run.path());
-    let (_, line) = join(&mut m, Duration::ZERO);
-    assert!(line.unwrap().contains("run short: 2 of 2 tested"));
+    let (found, line) = join(&mut m, Duration::ZERO);
+    assert_eq!(
+        found.len(),
+        1,
+        "what survived before the cut is kept: {found:?}"
+    );
+    assert_eq!(
+        (found[0]["file"].as_str(), found[0]["line"].as_u64()),
+        (Some("src/lib.rs"), Some(2))
+    );
+    let line = line.unwrap();
+    assert!(
+        line.contains("1 survived of 2 tested") && line.contains("run short: 2 of 2 tested"),
+        "{line}"
+    );
     assert!(m.degraded_note().is_some_and(|n| n.contains("run short")));
 }
 
