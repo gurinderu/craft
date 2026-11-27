@@ -1,7 +1,8 @@
 //! Which remembered record answers a finding, as `integrations/shared/prior-decision-match.mjs` matches them
 //! without its judge (realm @nick/craft, nodes #187, #230, #236): a record whose scope holds the
 //! finding's file, of the finding's lens, its line within a few lines of the finding's (and, for a
-//! gate tool's finding, the same tool rule) answers it outright; any other candidate answers it
+//! gate tool's finding, the same tool rule, any tool lens then counting as its lens — #718) answers
+//! it outright; any other candidate answers it
 //! only by the title rule — titles sharing most of their words — or, for a tool finding naming no
 //! rule, only by the same title — unless the match judge gave that pair a verdict ([`resolve`]).
 //! A record that overrides another is tried before it.
@@ -177,7 +178,7 @@ fn class(f: &Value, d: &PriorDecision) -> Class {
         return Class::Neither;
     }
     let a = anchor_of(f, d);
-    if a.sure && a.same && rule != Rule::Unknown {
+    if a.sure && (a.same || tool_peers(rule, d)) && rule != Rule::Unknown {
         return Class::Anchored;
     }
     if a.near || a.same || overlap(text(f, "title"), &d.title) >= CANDIDATE_OVERLAP {
@@ -185,6 +186,13 @@ fn class(f: &Value, d: &PriorDecision) -> Class {
     } else {
         Class::Neither
     }
+}
+
+/// Whether a record of a gate tool's lens meets a tool finding of the same tool rule: any two tool
+/// lenses are one lens then — the memory writes `tool` where the gate prints the tool's name
+/// (realm @nick/craft, node #718).
+fn tool_peers(rule: Rule, d: &PriorDecision) -> bool {
+    rule == Rule::Same && lens_words(&d.lens).iter().any(|l| is_tool_lens(l))
 }
 
 /// How an outright match was established.
@@ -312,3 +320,6 @@ pub(super) fn tried_order(ds: &[PriorDecision]) -> Vec<usize> {
         (0..ds.len()).partition(|&i| ds.get(i).is_some_and(|d| !d.overrides.is_empty()));
     first.into_iter().chain(rest).collect()
 }
+
+#[cfg(test)]
+mod tests;
