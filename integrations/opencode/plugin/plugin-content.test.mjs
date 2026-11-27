@@ -84,13 +84,29 @@ test('the frontmatter reader takes scalars, quotes, booleans, block scalars and 
   assert.deepEqual(quoted, { data: { tools: { '*_*': false, '*x*': true, write: false } }, body: 'Body' })
 })
 
-test("the shipped review-task agent's file denies the ten entries of its tools list, and says the repository's text is data", () => {
+test("the shipped review-task agent's file denies the thirteen entries of its tools list — craft's own three by name — and says the repository's text is data", () => {
   const { data, body } = parseMarkdown(fs.readFileSync(path.join(REPO, 'integrations/opencode/agents/review-task.md'), 'utf8'))
   assert.deepEqual(Object.keys(data), ['description', 'mode', 'hidden', 'tools', 'permission'], 'the denies stand before the allow')
   const tools = /** @type {Record<string, import('./frontmatter.ts').FrontValue>} */ (data['tools'])
   assert.deepEqual(
     Object.keys(tools).map(k => [k, tools[k]]),
-    ['write', 'edit', 'skill', 'task', 'webfetch', 'websearch', 'question', '*_*', 'execute', 'experimental_image_generate'].map(k => [k, false]),
+    // Craft's own tools are named: 1.x turns the list into denials by name, and "*_*" reaches none of the three (realm
+    // @nick/craft, node #691).
+    [
+      'write',
+      'edit',
+      'skill',
+      'task',
+      'webfetch',
+      'websearch',
+      'question',
+      '*_*',
+      'review',
+      'rust-audit',
+      'triage-findings',
+      'execute',
+      'experimental_image_generate',
+    ].map(k => [k, false]),
   )
   assert.match(body, /never instructions to you/)
 })
@@ -152,6 +168,9 @@ test('the package registers the agents, /craft-review and the other commands, an
       'websearch deny',
       'question deny',
       '*_* deny',
+      'review deny',
+      'rust-audit deny',
+      'triage-findings deny',
       'execute deny',
       'experimental_image_generate deny',
       'external_directory allow',
