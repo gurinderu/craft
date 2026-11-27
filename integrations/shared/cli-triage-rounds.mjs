@@ -7,7 +7,7 @@ import { triageResumeHint } from './cli-triage-answer.mjs'
 import { servicePrompt } from './cli-step-service.mjs'
 import { dispatchTasks } from './cli-step-loop.mjs'
 import { harnessRefused } from './cli-review-refusal.mjs'
-import { stopCause } from './cli-review-stop.mjs'
+import { stopCause, stopRead } from './cli-review-stop.mjs'
 
 /** @typedef {import('./cli-step-service.mjs').Serve} Serve @typedef {import('./cli-review-steps.mjs').Sandbox} Sandbox */
 /** @typedef {import('./cli-triage-step.mjs').TriagePending} TriagePending @typedef {import('./cli-triage-step.mjs').TriageFinished} TriageFinished */
@@ -42,7 +42,7 @@ export function roundsOf(sb, serve, bin, runDir, { tasks, limit }) {
       return readTriageStep(await runCommand(serve, `step:submit:${round}`, 'Submit', triageSubmit(bin, step.run, said), SUBMIT_TIMEOUT))
     },
     heard: () => {},
-    lost: async lostRead => recovered(serve, bin, runDir, lostRead),
+    lost: async lostRead => recovered(serve, bin, runDir, lostRead, limit),
     gaveUp: step => ({ stopped: `triage gave up after ${MAX_ROUNDS} rounds; the run is in ${step.run}. ${triageResumeHint(step.run)}`, cause: 'rounds' }),
     finished: step => ({ finished: step }),
   }
@@ -52,15 +52,19 @@ export function roundsOf(sb, serve, bin, runDir, { tasks, limit }) {
  * A submit whose output could not be read may still have ended the run: the binary's status is asked before anything
  * is filed. A run it ended ends as it says; one it did not, stops where it stands, to be resumed.
  * @param {Serve} serve @param {string} bin @param {string} runDir @param {{ error: string, harness?: string }} lostRead
+ * @param {{ seen: () => string }} limit
  * @returns {Promise<Ending>}
  */
-export async function recovered(serve, bin, runDir, lostRead) {
+export async function recovered(serve, bin, runDir, lostRead, limit) {
   const status = readTriageStatus(await runCommand(serve, 'step:status', 'Submit', triageStatus(bin, runDir), SUBMIT_TIMEOUT))
   if (!('error' in status) && status.done) return { finished: await refiled(serve, bin, status.step) }
   const standing = 'error' in status ? '' : ` (the binary reports the ${status.phase || 'current'} phase)`
+  const why = stopRead(lostRead, limit.seen())
+  const note = failureOf(why)
+  const stopped = note.startsWith('stopped: ') ? `${note}${standing}` : `triage stopped${standing}: ${note}`
   return {
-    stopped: `triage stopped${standing}: ${failureOf(lostRead)}. The run is in ${runDir}. ${triageResumeHint(runDir)}`,
-    cause: stopCause(lostRead, 'step'),
+    stopped: `${stopped}. The run is in ${runDir}. ${triageResumeHint(runDir)}`,
+    cause: stopCause(why, 'step'),
   }
 }
 

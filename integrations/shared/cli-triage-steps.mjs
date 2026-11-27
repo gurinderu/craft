@@ -84,7 +84,7 @@ async function drive(sb, o, craftVersion, at) {
   sb.log(`triage-findings ${craftVersion}: ${o.craftBin ?? `the released binary ${craftVersion}`} over ${o.repo || 'the session checkout'}`)
   const where = await binaryOf(sb, o, craftVersion, serve, at)
   if ('stopped' in where) return where
-  const first = await opening(serve, where.bin, o, craftVersion, where.recordRoot || where.root)
+  const first = await opening(serve, where.bin, o, craftVersion, where.recordRoot || where.root, limit)
   if (!('step' in first)) return first
   // A resumed run's repository, when none was given, is the one the binary names.
   if (!first.step.done && first.step.repo) at.repo ||= first.step.repo
@@ -110,9 +110,10 @@ async function binaryOf(sb, o, craftVersion, serve, at) {
  * The run's first step — a resume's or a start's —, or how the run ended before any: an argument the binary refused,
  * or a step that could not be read.
  * @param {Serve} serve @param {string} bin @param {TriageOptions} o @param {string} craftVersion @param {string} recordRoot
+ * @param {{ seen: () => string }} limit
  * @returns {Promise<{ step: TriagePending | TriageFinished } | Ending>}
  */
-async function opening(serve, bin, o, craftVersion, recordRoot) {
+async function opening(serve, bin, o, craftVersion, recordRoot, limit) {
   const got = o.run
     ? await runCommand(serve, 'step:resume', 'Start', triageSubmit(bin, o.run, { resume: true }), SUBMIT_TIMEOUT)
     : await runCommand(
@@ -126,6 +127,6 @@ async function opening(serve, bin, o, craftVersion, recordRoot) {
   if (argument) return { argument }
   const first = readTriageStep(got)
   if (!('error' in first)) return first
-  if (o.run) return recovered(serve, bin, o.run, first)
+  if (o.run) return recovered(serve, bin, o.run, first, limit)
   return { stopped: `triage stopped: ${failureOf(first)}`, cause: stopCause(first, 'start') }
 }

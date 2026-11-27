@@ -21,6 +21,13 @@ export const STOP_CAUSES = {
 const LIMIT = 'stopped: usage limit reached'
 
 /**
+ * The failed read after recovery found no binary ending (realm @nick/craft, node #731).
+ * @param {{ error: string, harness?: string }} read @param {string} limit  the limit the driver saw, '' when none
+ * @returns {{ error: string, harness?: string }}
+ */
+export const stopRead = (read, limit) => (limit && read.harness === undefined ? { error: `${LIMIT} (${limit})` } : read)
+
+/**
  * The cause of a stop on a read that failed: the harness's refusal, the usage limit, or else `otherwise`.
  * @param {{ error: string, harness?: string }} read @param {StopCause} otherwise @returns {StopCause}
  */
