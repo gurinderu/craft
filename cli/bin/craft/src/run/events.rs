@@ -82,6 +82,13 @@ pub(crate) enum Event {
         findings: usize,
         exit_code: u8,
     },
+    TriageResult {
+        plan_file: Option<String>,
+        summary: Option<String>,
+        run: Option<String>,
+        stopped: Option<Value>,
+        exit_code: u8,
+    },
 }
 
 impl Event {

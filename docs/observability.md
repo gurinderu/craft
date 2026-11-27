@@ -16,7 +16,7 @@ binary the workflow drives, under the name `review` with `driver: 'cli'`; a stor
 
 ## Record schema (`schemaVersion: 1`)
 
-Common: `ts`, `runtime` (`"claude-code"` | `"opencode"`), `kind` (`workflow`|`agent`), `name`, `project`, `commit`, `dirty`, `verdict`,
+Common: `ts`, `runtime` (`"claude-code"` | `"codex"` | `"pi"` | `"opencode"`), `kind` (`workflow`|`agent`), `name`, `project`, `commit`, `dirty`, `verdict`,
 `findings: {total, bySeverity:{Critical,High,Medium,Low,Info}}`, `nested`, `via`.
 
 **`branch` and `head` are computed, not carried.** `integrations/shared/craft-log-run.mjs` reads them itself
@@ -109,6 +109,9 @@ rejectedBefore, deferred, covered, conflict, reraised}` counts what the memory s
 again before validation; `issues` the findings deferred to an issue as not the PR's) and `memory`
 (where the sift's records came from, as `review` records it); `notRun[]` lists requested sources that
 failed to gather. It has no `scout`/`dimensions`/`verification`/`outputTokens`.
+Native `craft triage run` keeps this record shape and uses `runtime` to name the starting host:
+`codex`, `pi` or `opencode`. Continuing a run keeps its recorded runtime, even with a different
+backend; the step commands and older state without that field keep `claude-code`.
 A review agent dispatched on its own records nothing. A store may still hold the `kind: "agent"` index
 lines such agents once appended themselves (the `rust-security-scanner`'s carried `toolsRun[]`); the
 readers list them, and no report is built on them.
@@ -116,7 +119,8 @@ Records of the retired rust-review also carry `gate {status, provenance}` (alway
 (gate-fail path only); these summary-only extras are NOT carried into the `index.jsonl` projection.
 
 Records carry a `runtime` field — `"claude-code"` for the Claude Code workflows (and the agent
-lines of old stores), `"opencode"` for the opencode adapter. opencode records are a deterministic subset: `findings`
+lines of old stores), and `"codex"`, `"pi"` or `"opencode"` for native runs on those hosts.
+The legacy opencode adapter's records are a deterministic subset: `findings`
 is `null` (no structured findings), and there is no `outputTokens` (no token meter) — so
 `findingsTotal` is `null` in their index projection.
 

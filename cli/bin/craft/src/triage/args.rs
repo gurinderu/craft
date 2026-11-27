@@ -33,7 +33,7 @@ pub struct StartArgs {
     pub prior_decisions: Option<PathBuf>,
     /// File the run's record under this craft version, as the triage engine's own run: written
     /// into the run store (`~/.craft/runs`) by the binary itself when the run ends. Absent,
-    /// nothing is filed.
+    /// `triage start` files nothing; `triage run` uses the binary's own version.
     #[arg(long, value_name = "CRAFT_VERSION")]
     pub record: Option<String>,
     /// The craft plugin root the record is stamped with (`craftCommit`), when it is not the one

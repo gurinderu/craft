@@ -29,6 +29,7 @@ mod round;
 mod task;
 mod telemetry;
 mod there;
+pub(crate) mod triage;
 mod watch;
 
 // The workspace's one way to write an executable a test then runs.
@@ -72,15 +73,22 @@ pub enum EventFormat {
 
 #[derive(Debug, clap::Args)]
 pub struct RunArgs {
-    /// The host CLI each task runs in; its login is the host's own.
-    #[arg(long, value_enum)]
-    pub backend: HostKind,
+    #[command(flatten)]
+    pub host: HostArgs,
     #[command(flatten)]
     pub start: StartArgs,
     /// Resume the run in this directory rather than start one — or, with `--comment`, publish
     /// that finished run on its pull request.
     #[arg(long, conflicts_with = "run_dir")]
     pub run: Option<PathBuf>,
+}
+
+/// Host execution shared by native review and triage (realm @nick/craft, node #616).
+#[derive(Debug, clap::Args)]
+pub struct HostArgs {
+    /// The host CLI each task runs in; its login is the host's own.
+    #[arg(long, value_enum)]
+    pub backend: HostKind,
     /// At most this many task processes at once, 1 to 16; absent, `CRAFT_<HOST>_CONCURRENCY`
     /// (`CODEX`, `PI`, `OPENCODE`), else 4.
     #[arg(long, value_parser = clap::value_parser!(u8).range(1..=16))]
@@ -133,9 +141,14 @@ fn refused(sink: Sink, why: &str) -> Result<ExitCode> {
 
 /// The host and what it runs with, or why it cannot be used: opencode is asked first which
 /// agents it has — or, with `--delegate`, takes those `--agents` names and runs no opencode.
-fn ready(args: &RunArgs, repo: &Path, sink: Sink) -> Result<(NonZeroUsize, Host, PathBuf), String> {
+fn ready(
+    args: &HostArgs,
+    root: Option<&Path>,
+    repo: &Path,
+    sink: Sink,
+) -> Result<(NonZeroUsize, Host, PathBuf), String> {
     let (concurrency, mut host, root) =
-        concurrency_of(args).and_then(|c| Ok((c, host_of(args)?, root_of(args)?)))?;
+        concurrency_of(args).and_then(|c| Ok((c, host_of(args)?, root_of(root)?)))?;
     if args.delegate {
         if host.kind != HostKind::OpenCode || !sink.json {
             return Err("--delegate is opencode's alone, with --events json".into());
@@ -154,10 +167,10 @@ fn ready(args: &RunArgs, repo: &Path, sink: Sink) -> Result<(NonZeroUsize, Host,
     Ok((concurrency, host, root))
 }
 
-pub async fn run(args: RunArgs) -> Result<ExitCode> {
+fn stopping() -> tokio::sync::watch::Receiver<Option<u8>> {
     // Before any task starts, so no stopping signal finds craft without a handler while a task's
-    // process group is up: the round in flight stops its tasks, and the run is filed INCOMPLETE
-    // with how to resume it (realm @nick/craft, node #40).
+    // process group is up: the round in flight stops its tasks; the lifecycle chooses its ending
+    // and recording policy (realm @nick/craft, nodes #40, #616).
     let signal = crate::review::stop_signal();
     let (stopping, stop) = tokio::sync::watch::channel(None);
     tokio::spawn(async move {
@@ -165,8 +178,13 @@ pub async fn run(args: RunArgs) -> Result<ExitCode> {
             let _gone = stopping.send(Some(code));
         }
     });
+    stop
+}
+
+pub async fn run(args: RunArgs) -> Result<ExitCode> {
+    let stop = stopping();
     let sink = Sink {
-        json: args.events == Some(EventFormat::Json),
+        json: args.host.events == Some(EventFormat::Json),
     };
     if args.run.is_some() && args.start.all_lenses {
         // A resume keeps the lenses its start chose: the flag would read as taken and not be.
@@ -176,10 +194,11 @@ pub async fn run(args: RunArgs) -> Result<ExitCode> {
         );
     }
     let repo = std::path::absolute(&args.start.cwd)?;
-    let (concurrency, host, root) = match ready(&args, &repo, sink) {
-        Ok(s) => s,
-        Err(why) => return refused(sink, &why),
-    };
+    let (concurrency, host, root) =
+        match ready(&args.host, args.start.craft_root.as_deref(), &repo, sink) {
+            Ok(s) => s,
+            Err(why) => return refused(sink, &why),
+        };
     let comment = args.start.comment;
     let mut start = args.start;
     start
@@ -187,6 +206,7 @@ pub async fn run(args: RunArgs) -> Result<ExitCode> {
         .get_or_insert_with(|| env!("CARGO_PKG_VERSION").to_owned());
     start.craft_root = Some(root.clone());
     start.runtime = args
+        .host
         .backend
         .to_possible_value()
         .map(|v| v.get_name().to_owned());
@@ -199,7 +219,7 @@ pub async fn run(args: RunArgs) -> Result<ExitCode> {
         host.command.display(),
         repo.display()
     ));
-    let backend = args.backend;
+    let backend = args.host.backend;
     let again = move |run: &str| {
         let name = backend
             .to_possible_value()
