@@ -178,3 +178,51 @@ fn up_to_the_bound_of_security_directories_each_is_offered() {
     let files: Vec<(&str, &str)> = names.iter().map(|f| (f.as_str(), "")).collect();
     assert_eq!(of(&files).security_paths.len(), 8);
 }
+
+#[test]
+fn a_member_takes_the_publish_of_its_innermost_workspace_root_only() {
+    let root = |p: &str| format!("[workspace]\n[workspace.package]\npublish = {p}\n");
+    let member = "[package]\nname = \"x\"\npublish.workspace = true\n";
+    let (open, closed) = (root("true"), root("false"));
+    let nested = of(&[
+        ("Cargo.toml", &open),
+        ("a/Cargo.toml", &closed),
+        ("a/x/Cargo.toml", member),
+        ("a/x/src/lib.rs", ""),
+    ]);
+    assert_eq!(
+        nested.library.map(|l| l.value),
+        Some(false),
+        "the innermost root wins"
+    );
+    let outer_closed = of(&[
+        ("Cargo.toml", &closed),
+        ("a/Cargo.toml", &open),
+        ("a/x/Cargo.toml", member),
+        ("a/x/src/lib.rs", ""),
+    ]);
+    assert_eq!(outer_closed.library.map(|l| l.value), Some(true));
+    let sibling = of(&[
+        ("a/Cargo.toml", &closed),
+        ("ab/x/Cargo.toml", member),
+        ("ab/x/src/lib.rs", ""),
+    ]);
+    assert_eq!(
+        sibling.library.map(|l| l.value),
+        Some(true),
+        "a/ is no root of ab/x/"
+    );
+    let itself = format!("{closed}[package]\nname = \"r\"\npublish.workspace = true\n");
+    let o = of(&[("Cargo.toml", &itself), ("src/lib.rs", "")]);
+    assert_eq!(
+        o.library.map(|l| l.value),
+        Some(false),
+        "a root that is its own member"
+    );
+}
+
+#[test]
+fn only_a_directory_named_as_vendored_sets_code_aside() {
+    let o = of(&[("vendors/auth/a.go", ""), ("my-vendor/auth/b.go", "")]);
+    assert_eq!(o.security_paths, ["my-vendor/auth", "vendors/auth"]);
+}
