@@ -10,6 +10,8 @@ use crate::memory::PriorDecision;
 use crate::memory::anchor::{Base, pulls};
 use crate::memory::priors::scope_check_on;
 
+mod shallow;
+
 /// How pull request #7 reached the trunk.
 #[derive(Clone, Copy)]
 enum Landed {
@@ -17,7 +19,7 @@ enum Landed {
     Stale,
     /// A merge commit of its branch rebased onto #8.
     Rebased,
-    /// A squash: one parent.
+    /// A squash: one parent, its message's body a line `parent of #9`.
     Squashed,
 }
 
@@ -57,7 +59,9 @@ fn repo(how: Landed) -> tempfile::TempDir {
     }
     if matches!(how, Landed::Squashed) {
         at(d, merged, &["merge", "-q", "--squash", "feat7"]);
-        at(d, merged, &["commit", "-qm", "feat: p (#7)"]);
+        // A body line spelled like a parent header: only the header names parents.
+        let message = ["commit", "-q", "-m", "feat: p (#7)", "-m", "parent of #9"];
+        at(d, merged, &message);
     } else {
         let subject = "Merge pull request #7 from owner/feat7";
         let merge = ["merge", "-q", "--no-ff", "-m", subject, "feat7"];

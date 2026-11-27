@@ -69,10 +69,10 @@ citing it —, so a rejection of a finding in code that pull request itself adds
 merged and until that code changes. The code in `scope` must also be unchanged on the trunk outside
 that pull request before its merge, so another pull request changing it raises the finding: for a
 merge commit, the trunk's changes its branch lacked (from where the branch left the trunk, or was last
-rebased onto it, to the merge's first parent); with a `date` beside it, the trunk's changes from that
-date (its base, as below; none before it — a shallow clone — raises the finding) to the merge. A squash
-or a rebase merge leaves no branch to read, so there the `date` is the only bound, and with no `date`
-none. With no such merge on the trunk (not merged yet, merged
+rebased onto it, to the merge's first parent; a branch a shallow clone cut off raises the finding);
+with a `date` beside it, the trunk's changes from that date (its base, as below; none before it — a
+shallow clone — raises the finding) to the merge. A squash leaves no branch to read, so there the
+`date` is the only bound, and with no `date` none. With no such merge on the trunk (not merged yet, merged
 elsewhere, history cut short, a rebase merge, which leaves no `(#<N>)`, a merge or squash subject
 edited, an `origin` named by an ssh host alias or `www.github.com`), at its `date`. On a fork whose
 trunk carries upstream's merges, a pull request number may name upstream's merge. At a `date`: the code in `scope` unchanged since the last commit on the trunk,

@@ -227,15 +227,28 @@ pub fn merge_of(cwd: &Path, tip: &str, pr: u64) -> Result<Option<String>, GitErr
     Ok(by_merge.or(by_squash))
 }
 
-/// The second parent of `commit`, from `git rev-parse <commit>^@`, which prints its parents one per
-/// line; `None` for a commit of one parent or none — a squash or a rebase merge, a root.
+/// The second parent of `commit`, from the `parent` lines of its header as `git cat-file commit
+/// <commit>` prints it; `None` for a commit of one parent or none — a squash, a root. Read from the
+/// object, not from `git rev-parse <commit>^@`, which prints no parent past a shallow clone's
+/// boundary, so a merge there would read as a squash (realm @nick/craft, node #701).
 ///
 /// # Errors
-/// When `commit` is spelled as an option or `git` fails.
+/// When `commit` is spelled as an option, `git` fails, or the second parent is not a commit this
+/// repository has — beyond a shallow clone's boundary (realm @nick/craft, node #701).
 pub fn second_parent(cwd: &Path, commit: &str) -> Result<Option<String>, GitError> {
     not_an_option(cwd, &[commit])?;
-    let out = git(cwd, &["rev-parse", &format!("{commit}^@")])?;
-    Ok(out.lines().nth(1).map(str::to_owned))
+    let out = git(cwd, &["cat-file", "commit", commit])?;
+    let header = out.lines().take_while(|l| !l.is_empty());
+    let Some(parent) = header.filter_map(|l| l.strip_prefix("parent ")).nth(1) else {
+        return Ok(None);
+    };
+    if !verifies(cwd, parent) {
+        return Err(GitError::NotACommit {
+            base: parent.to_owned(),
+            repo: cwd.to_owned(),
+        });
+    }
+    Ok(Some(parent.to_owned()))
 }
 
 /// The URL of the `origin` remote, lower-cased, as `git remote get-url origin` prints it; `None`

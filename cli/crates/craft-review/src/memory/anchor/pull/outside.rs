@@ -10,9 +10,10 @@ impl Base {
     /// Whether `scope` is unchanged on the trunk outside the pull request whose merge this is,
     /// before that merge ([`git::unchanged_before_merge`]): from where the merge's second parent
     /// leaves the trunk — the trunk's changes the request's branch lacked — and from the decision
-    /// date's base, each to the merge's first parent. A merge of one parent (a squash, a rebase
-    /// merge) has the date's window alone; git failing to read the parents counts as a change; a
-    /// base that is no merge has nothing outside it (realm @nick/craft, node #682).
+    /// date's base, each to the merge's first parent. A merge of one parent (a squash) has the
+    /// date's window alone; git failing to read the parents counts as a change, as does a second
+    /// parent beyond a shallow clone's boundary (realm @nick/craft, node #701); a base that is no
+    /// merge has nothing outside it (realm @nick/craft, node #682).
     pub(crate) fn unchanged_outside(&self, path: &Path, scope: &str) -> bool {
         if self.pull.is_none() {
             return true;
