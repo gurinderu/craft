@@ -8,7 +8,7 @@
 import { normalizeArgs } from './workflow-args.mjs'
 import { readTriageOptions } from './cli-triage-options.mjs'
 import { triageStart, triageSubmit } from './cli-triage-commands.mjs'
-import { START_TIMEOUT, SUBMIT_TIMEOUT, failureOf, roundsOf, runCommand } from './cli-triage-rounds.mjs'
+import { START_TIMEOUT, SUBMIT_TIMEOUT, failureOf, recovered, roundsOf, runCommand } from './cli-triage-rounds.mjs'
 import { readTriageStep } from './cli-triage-step.mjs'
 import { finishedTriageAnswer, incompleteAnswer, withNotes } from './cli-triage-answer.mjs'
 import { triageRecorder } from './cli-triage-record.mjs'
@@ -18,7 +18,6 @@ import { stepRounds } from './cli-step-loop.mjs'
 import { taskRunner } from './cli-review-task.mjs'
 import { argumentRefused } from './cli-review-step.mjs'
 import { stopCause } from './cli-review-stop.mjs'
-import { runClock } from './cli-review-clock.mjs'
 
 /** @typedef {import('./cli-review-steps.mjs').Sandbox} Sandbox @typedef {import('./cli-step-service.mjs').Serve} Serve */
 /** @typedef {import('./cli-triage-options.mjs').TriageOptions} TriageOptions */
@@ -85,15 +84,12 @@ async function drive(sb, o, craftVersion, at) {
   sb.log(`triage-findings ${craftVersion}: ${o.craftBin ?? `the released binary ${craftVersion}`} over ${o.repo || 'the session checkout'}`)
   const where = await binaryOf(sb, o, craftVersion, serve, at)
   if ('stopped' in where) return where
-  const clock = runClock()
-  /** @type {Spent} */
-  const spent = () => ({ agents: clock.stats().agents, tokens: sb.budget?.spent() ?? null })
-  const first = await opening(serve, where.bin, o, craftVersion, where.recordRoot || where.root, spent)
+  const first = await opening(serve, where.bin, o, craftVersion, where.recordRoot || where.root)
   if (!('step' in first)) return first
   // A resumed run's repository, when none was given, is the one the binary names.
   if (!first.step.done && first.step.repo) at.repo ||= first.step.repo
-  const tasks = taskRunner({ ...sb, agent: limit.tasks(clock.counted(sb.agent)) }, () => !!limit.seen())
-  return stepRounds(first.step, roundsOf(sb, serve, where.bin, first.step.run, { tasks, limit, spent }))
+  const tasks = taskRunner({ ...sb, agent: limit.tasks(sb.agent) }, () => !!limit.seen())
+  return stepRounds(first.step, roundsOf(sb, serve, where.bin, first.step.run, { tasks, limit }))
 }
 
 /**
@@ -110,17 +106,15 @@ async function binaryOf(sb, o, craftVersion, serve, at) {
   return where
 }
 
-/** @typedef {() => { agents: number, tokens: number | null }} Spent  the task agents dispatched so far and the output tokens spent */
-
 /**
  * The run's first step — a resume's or a start's —, or how the run ended before any: an argument the binary refused,
  * or a step that could not be read.
- * @param {Serve} serve @param {string} bin @param {TriageOptions} o @param {string} craftVersion @param {string} recordRoot @param {Spent} spent
+ * @param {Serve} serve @param {string} bin @param {TriageOptions} o @param {string} craftVersion @param {string} recordRoot
  * @returns {Promise<{ step: TriagePending | TriageFinished } | Ending>}
  */
-async function opening(serve, bin, o, craftVersion, recordRoot, spent) {
+async function opening(serve, bin, o, craftVersion, recordRoot) {
   const got = o.run
-    ? await runCommand(serve, 'step:resume', 'Start', triageSubmit(bin, o.run, { resume: true }, spent()), SUBMIT_TIMEOUT)
+    ? await runCommand(serve, 'step:resume', 'Start', triageSubmit(bin, o.run, { resume: true }), SUBMIT_TIMEOUT)
     : await runCommand(
         serve,
         'step:start',
@@ -132,5 +126,6 @@ async function opening(serve, bin, o, craftVersion, recordRoot, spent) {
   if (argument) return { argument }
   const first = readTriageStep(got)
   if (!('error' in first)) return first
-  return { stopped: `triage stopped: ${failureOf(first)}${o.run ? `. The run is in ${o.run}.` : ''}`, cause: stopCause(first, 'start') }
+  if (o.run) return recovered(serve, bin, o.run, first)
+  return { stopped: `triage stopped: ${failureOf(first)}`, cause: stopCause(first, 'start') }
 }

@@ -422,7 +422,7 @@ batch sifted by the review's memory, the validators, the plan agent, their promp
 settled verdicts carried, the noise classes and the issue class 1 files, the plan's ledger pinned, the plan's banners and
 the run record, which `start --record` files in the run store itself before the plan is built, what it did kept in the
 run's `filing.json` (`src/step/filing.rs`) — held to the JavaScript engine it replaced by `content/parity/triage-cases.json`, frozen golden data edited by hand;
-the Claude Code engine drives it, `integrations/shared/cli-triage-steps.mjs`)
+the Claude Code engine drives it, `integrations/shared/cli-triage-steps.mjs`; `bin/craft/tests/triage_driver.rs` runs its JavaScript-generated commands through the real binary to a plan, including resume and re-filing; `bin/craft/tests/triage_refused.rs` and `triage_refused/stdin.rs` exercise exit-code boundaries and stdin)
 and `crates/craft-tui` (progress as a phases → agents tree
 on a terminal, one line per event otherwise); `test-support/` holds the one copy of a helper every crate's tests
 include by path (an executable a test writes and runs). In `craft-store`, `js/string.rs` holds lossless JavaScript

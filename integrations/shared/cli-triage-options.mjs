@@ -16,6 +16,15 @@ export const TRIAGE_KEYS = Object.freeze(['pr', 'report', 'base', 'prBase', 'pri
 /** Why a path argument cannot be quoted to an agent. */
 const PATH_REFUSED_CLASS = 'a path argument refused — not an absolute path an agent can quote, nothing ran'
 
+/** Start-only arguments cannot change the saved run (realm @nick/craft, node #616). @param {Record<string, unknown>} a */
+function startOnlyBesideRun(a) {
+  if (!a['run']) return ''
+  const given = ['pr', 'report', 'base', 'prBase', 'priorLedger', 'priorDecisions'].filter(k => a[k] !== undefined)
+  return given.length
+    ? `triage-findings cannot honour ${given.map(k => `\`${k}\``).join(', ')} beside run=: a resumed run keeps its start options. Drop them to resume it, or start a new triage to change them. Nothing ran.`
+    : ''
+}
+
 /** A text argument: its string form when given (truthy), else ''. @param {unknown} v @returns {string} */
 const textArg = v => (v ? String(v) : '')
 
@@ -44,6 +53,7 @@ export function readTriageOptions(a) {
   /** @type {Array<[string, string]>} */
   const all = [
     [unknownOptionsRefusal(a, TRIAGE_KEYS, 'triage-findings'), UNKNOWN_OPTION_CLASS],
+    [startOnlyBesideRun(a), 'start options beside run= were refused, nothing ran'],
     [repo.refused, REPO_REFUSED_CLASS],
     ...Object.values(paths).map(p => /** @type {[string, string]} */ (['refused' in p ? p.refused : '', PATH_REFUSED_CLASS])),
   ]

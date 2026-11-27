@@ -10,13 +10,22 @@
 use std::path::Path;
 use std::process::{Command, Output, Stdio};
 
-fn triage_start(args: &[&str], cwd: &Path, run: &Path, home: &Path) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_craft"))
+#[path = "triage_refused/stdin.rs"]
+mod stdin;
+
+fn start_command(args: &[&str], cwd: &Path, run: &Path, home: &Path) -> Command {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_craft"));
+    command
         .args(["triage", "start", "--run-dir"])
         .arg(run)
         .args(args)
         .current_dir(cwd)
-        .env("HOME", home)
+        .env("HOME", home);
+    command
+}
+
+fn triage_start(args: &[&str], cwd: &Path, run: &Path, home: &Path) -> Output {
+    start_command(args, cwd, run, home)
         .stdin(Stdio::null())
         .output()
         .unwrap()
@@ -70,19 +79,78 @@ fn each_refused_argument_exits_2_with_its_reason_and_makes_no_run() {
     }
 }
 
-#[test]
-fn one_list_read_from_stdin_is_no_refusal_of_both() {
-    let (cwd, home, tmp) = (
-        tempfile::tempdir().unwrap(),
-        tempfile::tempdir().unwrap(),
-        tempfile::tempdir().unwrap(),
-    );
-    let out = triage_start(
-        &["--report", "/r.md", "--prior-ledger", "-"],
-        cwd.path(),
-        &tmp.path().join("run"),
-        home.path(),
-    );
+fn submit(run: &Path, home: &Path) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_craft"))
+        .args(["triage", "submit", "--run"])
+        .arg(run)
+        .env("HOME", home)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap()
+}
+
+fn failure(out: &Output, why: &str) {
     let said = String::from_utf8_lossy(&out.stderr);
-    assert!(!said.contains("cannot both be read from stdin"), "{said}");
+    assert_eq!(out.status.code(), Some(1), "{said}");
+    assert!(said.contains(why), "{said}");
+    assert!(
+        out.stdout.is_empty(),
+        "{}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+}
+
+#[test]
+fn existing_runs_and_paths_that_cannot_be_created_exit_1_not_argument_refusal() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path();
+    let run = home.join("run");
+    let first = triage_start(&["--report", "/r.md"], home, &run, home);
+    assert!(first.status.success(), "{first:?}");
+    failure(
+        &triage_start(&["--report", "/r.md"], home, &run, home),
+        "holds a triage already",
+    );
+    let file = home.join("file");
+    std::fs::write(&file, "not a directory").unwrap();
+    failure(
+        &triage_start(&["--report", "/r.md"], home, &file.join("run"), home),
+        "creating",
+    );
+}
+
+#[test]
+fn an_unwritable_plan_and_a_finished_run_exit_1_not_argument_refusal() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path();
+    let run = home.join("run");
+    let first = triage_start(&["--report", "/r.md"], home, &run, home);
+    answer(&first, r#"{"source":"review","findings":[]}"#);
+    let pending = submit(&run, home);
+    answer(
+        &pending,
+        r#"{"plan_markdown":"BODY","summary":"SUM","ledger":[]}"#,
+    );
+    let plan = run.join("plan.json");
+    std::fs::create_dir(&plan).unwrap();
+    failure(&submit(&run, home), "writing");
+    std::fs::remove_dir(&plan).unwrap();
+    let finished = submit(&run, home);
+    assert!(finished.status.success(), "{finished:?}");
+    let step: serde_json::Value = serde_json::from_slice(&finished.stdout).unwrap();
+    assert_eq!(step["done"], true);
+    failure(&submit(&run, home), "is done");
+}
+
+fn answer(out: &Output, text: &str) {
+    assert!(out.status.success(), "{out:?}");
+    let step: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    std::fs::write(
+        step.pointer("/tasks/0/answerFile")
+            .unwrap()
+            .as_str()
+            .unwrap(),
+        text,
+    )
+    .unwrap();
 }

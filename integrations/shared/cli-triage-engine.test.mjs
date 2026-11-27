@@ -86,7 +86,7 @@ test('a run gets the binary, starts with the engine’s arguments, runs each ste
     " --record-root '/p/craft'",
   ])
     assert.ok(start.includes(part), `${part} in ${start}`)
-  assert.match(command(run, 'step:submit:2'), /^\/b\/craft triage submit --run '.+' --agents 2/)
+  assert.equal(command(run, 'step:submit:2'), `/b/craft triage submit --run '${RUN}'`)
   assert.equal(run.calls.find(c => c.label === 'plan')?.opts.model, 'opus', 'the task runs on the model the binary named')
   assert.match(run.report, new RegExp(`^## Triage\\n\\nThe plan is ${PLAN_FILE()} — read that file for the plan`))
   assert.ok(run.report.includes('Two accepted, one deferred.'), run.report)
@@ -96,7 +96,7 @@ test('a run gets the binary, starts with the engine’s arguments, runs each ste
 
 test('run= resumes the run with the binary’s submit --resume, never a start', async () => {
   const run = await runEngine('triage-findings', { args: { run: '/r/run-1', repo: '/work/repo' }, script: { 'step:resolve': RESOLVED, 'step:resume': done() } })
-  assert.match(command(run, 'step:resume'), /^\/b\/craft triage submit --run '\/r\/run-1' --resume --agents 0/)
+  assert.equal(command(run, 'step:resume'), "/b/craft triage submit --run '/r/run-1' --resume")
   assert.ok(!run.calls.some(c => c.label === 'step:start'))
   assert.match(run.report, /^## Triage\n\nThe plan is /)
 })
@@ -255,3 +255,83 @@ test('a resumed run keys its record to the repository the binary names', async (
   const write = run.calls.find(c => /^log-run/.test(c.label))
   assert.ok(write && write.prompt.includes("cd '/work/named'"), String(write?.prompt).slice(0, 400))
 })
+
+for (const [key, value] of Object.entries({ pr: 7, report: '/r.md', base: 'HEAD', prBase: 'main', priorLedger: [], priorDecisions: [] })) {
+  test(`run= refuses ${key} before any service or task agent`, async () => {
+    const run = await runEngine('triage-findings', { args: { run: '/r/run', [key]: value }, script: { 'log-run': { ok: true } } })
+    assert.deepEqual(
+      run.calls.map(c => c.label.replace(/:.*$/, '')),
+      ['log-run'],
+    )
+    assert.match(run.report, /beside run=/)
+    assert.equal(filedRecord(run)?.verdict, 'INCOMPLETE (argument refused)')
+  })
+}
+
+for (const [name, reply] of Object.entries({
+  'already done': ran('', 1, 'craft: the triage is done'),
+  'lost completion': null,
+  'unreadable completion': ran('cut JSON'),
+})) {
+  test(`resume ${name} reads status and returns the filed plan without a second record`, async () => {
+    const run = await runEngine('triage-findings', {
+      args: { run: RUN, repo: '/work/repo' },
+      script: { 'step:resolve': RESOLVED, 'step:resume': reply, 'step:status': done(), 'log-run': { ok: true } },
+    })
+    assert.match(command(run, 'step:status'), /triage status --run/)
+    assert.match(run.report, /^## Triage\n\nThe plan is /)
+    assert.deepEqual(logged(run), [])
+    assert.ok(!run.calls.some(c => c.label === 'step:refile'), 'a filed record is not retried')
+  })
+}
+
+test('a failed resume reads a limit-stopped status without driver filing', async () => {
+  const run = await runEngine('triage-findings', {
+    args: { run: RUN, repo: '/work/repo' },
+    script: {
+      'step:resolve': RESOLVED,
+      'step:resume': null,
+      'step:status': ran({ run: RUN, done: false, phase: 'validate', stopped: { cause: 'limit', text: 'weekly limit' } }),
+      'log-run': { ok: true },
+    },
+  })
+  assert.match(run.report, /stopped: usage limit reached \(weekly limit\)/)
+  assert.deepEqual(logged(run), [])
+  assert.ok(!run.calls.some(c => c.label === 'step:refile'))
+})
+
+for (const lands of [true, false])
+  test(`a lost resume retries the failed filing; refile readable=${lands}`, async () => {
+    const run = await runEngine('triage-findings', {
+      args: { run: RUN, repo: '/work/repo' },
+      script: {
+        'step:resolve': RESOLVED,
+        'step:resume': null,
+        'step:status': done({ filing: { record: 'failed', lost: ['transient failure'] } }),
+        'step:refile': lands ? done() : null,
+        'log-run': { ok: true },
+      },
+    })
+    assert.equal(command(run, 'step:refile'), `/b/craft triage submit --run '${RUN}' --resume`)
+    assert.match(run.report, /^## Triage\n\nThe plan is /)
+    assert.equal(run.report.includes('Telemetry lost'), !lands)
+    assert.deepEqual(logged(run), [])
+  })
+
+for (const [name, status] of Object.entries({
+  pending: ran({ run: '/r/run', done: false, phase: 'validate', tasks: [] }),
+  failed: ran('', 1, 'cannot read state'),
+  unreadable: ran('cut'),
+})) {
+  test(`a failed resume with ${name} status stops honestly after checking status`, async () => {
+    const run = await runEngine('triage-findings', {
+      args: { run: '/r/run', repo: '/work/repo' },
+      script: { 'step:resolve': RESOLVED, 'step:resume': null, 'step:status': status, 'log-run': { ok: true } },
+    })
+    assert.match(command(run, 'step:status'), /triage status --run/)
+    assert.match(run.report, /INCOMPLETE — triage stopped/)
+    assert.equal(logged(run).length, 1)
+    assert.equal(filedRecord(run)?.verdict, 'INCOMPLETE')
+    assert.ok(!run.calls.some(c => c.label === 'step:refile'))
+  })
+}

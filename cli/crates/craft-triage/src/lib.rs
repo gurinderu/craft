@@ -109,4 +109,31 @@ mod refusal_tests {
         assert!(!TriageError::UnknownTask("t".into()).refuses_argument());
         assert!(!TriageError::Stuck(crate::run::Phase::Gather).refuses_argument());
     }
+
+    #[test]
+    fn storage_and_run_failures_are_not_argument_refusals() {
+        for error in [
+            TriageError::NoDir {
+                path: "/x".into(),
+                source: std::io::Error::other("no directory"),
+            },
+            TriageError::Unwritable {
+                path: "/x".into(),
+                source: std::io::Error::other("unwritable"),
+            },
+            TriageError::RunExists("/x".into()),
+            TriageError::Done("/x".into()),
+            TriageError::Answer {
+                what: "task".into(),
+                why: "invalid".into(),
+            },
+            TriageError::PlanNotJson("invalid".into()),
+            TriageError::State(crate::state::StateError::Version {
+                path: "/x".into(),
+                found: 99,
+            }),
+        ] {
+            assert!(!error.refuses_argument(), "{error}");
+        }
+    }
 }

@@ -11,7 +11,7 @@ import { stopCause } from './cli-review-stop.mjs'
 
 /** @typedef {import('./cli-step-service.mjs').Serve} Serve @typedef {import('./cli-review-steps.mjs').Sandbox} Sandbox */
 /** @typedef {import('./cli-triage-step.mjs').TriagePending} TriagePending @typedef {import('./cli-triage-step.mjs').TriageFinished} TriageFinished */
-/** @typedef {import('./cli-triage-steps.mjs').Ending} Ending @typedef {import('./cli-triage-steps.mjs').Spent} Spent */
+/** @typedef {import('./cli-triage-steps.mjs').Ending} Ending */
 /** @typedef {import('./cli-review-task.mjs').taskRunner} TaskRunner */
 
 // A start reads the report and asks gh for the PR's threads; a submit may file the record, waiting at most 45 s on the
@@ -29,20 +29,20 @@ export const failureOf = read => (read.harness === undefined ? read.error : harn
  * The triage's part of the step rounds: its tasks dispatched, their answers submitted with what the host saw of them,
  * a lost step recovered by the binary's status.
  * @param {Sandbox} sb @param {Serve} serve @param {string} bin @param {string} runDir
- * @param {{ tasks: ReturnType<TaskRunner>, limit: { seen: () => string }, spent: Spent }} with_
+ * @param {{ tasks: ReturnType<TaskRunner>, limit: { seen: () => string } }} with_
  * @returns {import('./cli-step-loop.mjs').Rounds<TriagePending, TriageFinished, Ending>}
  */
-export function roundsOf(sb, serve, bin, runDir, { tasks, limit, spent }) {
+export function roundsOf(sb, serve, bin, runDir, { tasks, limit }) {
   return {
     maxRounds: MAX_ROUNDS,
     dispatch: (step, round) => dispatchTasks(sb, tasks, step, round, step.phase || 'triage'),
     submit: async (step, round) => {
       sb.phase('Submit')
       const said = { degraded: tasks.degraded(round), abandoned: tasks.abandoned(), limit: limit.seen() }
-      return readTriageStep(await runCommand(serve, `step:submit:${round}`, 'Submit', triageSubmit(bin, step.run, said, spent()), SUBMIT_TIMEOUT))
+      return readTriageStep(await runCommand(serve, `step:submit:${round}`, 'Submit', triageSubmit(bin, step.run, said), SUBMIT_TIMEOUT))
     },
     heard: () => {},
-    lost: async lostRead => recovered(serve, bin, runDir, lostRead, spent),
+    lost: async lostRead => recovered(serve, bin, runDir, lostRead),
     gaveUp: step => ({ stopped: `triage gave up after ${MAX_ROUNDS} rounds; the run is in ${step.run}. ${triageResumeHint(step.run)}`, cause: 'rounds' }),
     finished: step => ({ finished: step }),
   }
@@ -51,12 +51,12 @@ export function roundsOf(sb, serve, bin, runDir, { tasks, limit, spent }) {
 /**
  * A submit whose output could not be read may still have ended the run: the binary's status is asked before anything
  * is filed. A run it ended ends as it says; one it did not, stops where it stands, to be resumed.
- * @param {Serve} serve @param {string} bin @param {string} runDir @param {{ error: string, harness?: string }} lostRead @param {Spent} spent
+ * @param {Serve} serve @param {string} bin @param {string} runDir @param {{ error: string, harness?: string }} lostRead
  * @returns {Promise<Ending>}
  */
-async function recovered(serve, bin, runDir, lostRead, spent) {
+export async function recovered(serve, bin, runDir, lostRead) {
   const status = readTriageStatus(await runCommand(serve, 'step:status', 'Submit', triageStatus(bin, runDir), SUBMIT_TIMEOUT))
-  if (!('error' in status) && status.done) return { finished: await refiled(serve, bin, status.step, spent) }
+  if (!('error' in status) && status.done) return { finished: await refiled(serve, bin, status.step) }
   const standing = 'error' in status ? '' : ` (the binary reports the ${status.phase || 'current'} phase)`
   return {
     stopped: `triage stopped${standing}: ${failureOf(lostRead)}. The run is in ${runDir}. ${triageResumeHint(runDir)}`,
@@ -67,10 +67,10 @@ async function recovered(serve, bin, runDir, lostRead, spent) {
 /**
  * A finished run read back from its status, its record filed again when it did not land (`--resume`), as the binary's
  * re-file ends it; a re-file that cannot be read leaves the run as the status said, never filed a second way.
- * @param {Serve} serve @param {string} bin @param {TriageFinished} step @param {Spent} spent @returns {Promise<TriageFinished>}
+ * @param {Serve} serve @param {string} bin @param {TriageFinished} step @returns {Promise<TriageFinished>}
  */
-async function refiled(serve, bin, step, spent) {
+async function refiled(serve, bin, step) {
   if (step.stopped || !step.filing || step.filing.record === 'filed') return step
-  const again = readTriageStep(await runCommand(serve, 'step:refile', 'Submit', triageSubmit(bin, step.run, { resume: true }, spent()), SUBMIT_TIMEOUT))
+  const again = readTriageStep(await runCommand(serve, 'step:refile', 'Submit', triageSubmit(bin, step.run, { resume: true }), SUBMIT_TIMEOUT))
   return 'step' in again && again.step.done ? again.step : step
 }

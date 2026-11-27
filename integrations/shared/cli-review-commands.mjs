@@ -4,6 +4,7 @@
 import { shq } from './plugin-script.mjs'
 import { launchFlags } from './cli-review-keys.mjs'
 import { stepCommands } from './cli-step-commands.mjs'
+import { TURN_DELTA } from './run-record.mjs'
 
 /** @typedef {import('./cli-review-options.mjs').Options} Options */
 /** @typedef {{ bin: string, root: string, recordRoot?: string }} Where  the binary as a shell word; the plugin root its prompts name ('' to let it look above itself); the root the run is filed through when only that was located */
@@ -52,8 +53,14 @@ const reviewSteps = stepCommands('review')
 // `craft review submit`, `craft review status` and its `--brief` (realm @nick/craft, node #522), as every kind spells
 // them (integrations/shared/cli-step-commands.mjs).
 export const briefStatusCommand = reviewSteps.briefStatus
-/** @type {typeof reviewSteps.submit} */
-export const submitCommand = (...a) => `${reviewSteps.submit(...a)}${PAGED}`
+/**
+ * The review's submit, with its telemetry and record root after the shared task flags.
+ * @param {string} bin @param {string} run
+ * @param {import('./cli-step-commands.mjs').Said & { recordRoot?: string }} said
+ * @param {{ agents: number, tokens: number | null }} spent
+ */
+export const submitCommand = (bin, run, said, { agents, tokens }) =>
+  `${reviewSteps.submit(bin, run, said)}${said.recordRoot ? ` --record-root ${shq(said.recordRoot)}` : ''} --agents ${agents}${tokens === null ? '' : ` --output-tokens ${tokens} --output-tokens-scope ${TURN_DELTA}`}${PAGED}`
 /** @type {typeof reviewSteps.status} */
 export const statusCommand = (...a) => `${reviewSteps.status(...a)}${PAGED}`
 
