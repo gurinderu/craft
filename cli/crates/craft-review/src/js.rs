@@ -72,7 +72,7 @@ mod tests {
 
     use super::finding_line;
 
-    /// `findingLine` in `integrations/shared/prior-decision-match.mjs` gives these (computed with
+    /// `findingLine` in `prior-decision-match.mjs` (the JavaScript the binary replaced) gives these (computed with
     /// Node): `Number(line)` when a positive integer, else 0.
     #[test]
     fn a_findings_line_is_read_as_finding_line_reads_it() {

@@ -6,7 +6,6 @@ import { memoryRecordId, scopeLine } from './memory-record-id.mjs'
 import { readFileSync } from 'node:fs'
 import { readPriorDecision } from './prior-decision-record.mjs'
 import { parsePriorDecisions } from './prior-decisions.mjs'
-import { findingPlan, sureMatchOf, triedOrder } from './prior-decision-match.mjs'
 
 // The cases the CLI's split_scope_line is held to as well (cli/crates/craft-review/src/memory/id.rs).
 const CASES = new URL('../../content/parity/scope-line-cases.json', import.meta.url)
@@ -26,12 +25,10 @@ test('a scope that carries a line or a range splits as the CLI splits it', () =>
   for (const [given, scope, line] of cases) assert.deepEqual(scopeLine(given), { scope, line }, JSON.stringify(given))
 })
 
-test('an old range record is recalled as its path and start line and matches a finding there', () => {
+test('an old range record is recalled as its path and start line', () => {
   const d = readPriorDecision(old(), 0)
   if (typeof d === 'string') assert.fail(d)
   assert.deepEqual([d.scope, d.line, d.id], ['src/api/src/users.rs', 1230, old().id])
-  const f = { file: 'src/api/src/users.rs', line: 1231, title: 'index may panic', lens: 'correctness', severity: 'Medium' }
-  assert.equal(sureMatchOf([d])(f)?.how, 'matched by file:line+lens')
 })
 
 test("the record's own line wins over the one its scope carries", () => {
@@ -39,7 +36,7 @@ test("the record's own line wins over the one its scope carries", () => {
   assert.ok(typeof d !== 'string' && d.line === 1240)
 })
 
-test('two legacy records of one title at two ranges both apply, each at its own line and its id as written', () => {
+test('two legacy records of one title at two ranges are read each at its own line, its id as written', () => {
   /** @param {string} scope */
   const at = scope => ({
     kind: 'decision',
@@ -60,17 +57,6 @@ test('two legacy records of one title at two ranges both apply, each at its own 
       ['src/a.rs', 500, memoryRecordId('decision', 'unwrap may panic', 'src/a.rs:500-505')],
     ],
   )
-  // The record at the finding's own line is the sure match; the other range is at most a candidate the judge is asked about.
-  const ordered = triedOrder(decisions)
-  for (const [line, d] of /** @type {const} */ ([
-    [11, 0],
-    [501, 1],
-  ]))
-    assert.equal(
-      findingPlan({ file: 'src/a.rs', line, title: 'unwrap may panic', lens: 'correctness', severity: 'Medium' }, ordered).sure?.d,
-      decisions[d],
-      `finding at ${line}`,
-    )
 })
 
 test('a scope with any other colon is still refused', () => {

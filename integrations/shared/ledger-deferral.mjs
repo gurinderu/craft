@@ -1,7 +1,7 @@
 // The deferral a `deferred` review-ledger row carries: the question that set its finding aside (realm
 // @nick/craft, node #204). Its own module, with no imports, so the run logger (integrations/shared/craft-log-run.mjs),
 // which normalises every ledger row it loads, reads it without taking the prior-decision modules into
-// its closure. Imported by integrations/claude-code/src/triage-findings.js.
+// its closure.
 
 /**
  * A question's deferral as a structured field on the ledger row: its id, reason, author, date, link and
@@ -13,15 +13,6 @@
  * @typedef {{ repo: string, number: number }} DeferralPull
  * @typedef {{ id: string, reason: string, who: string, when: string, link: string, commit: string, pulls?: DeferralPull[], scope?: string }} Deferral
  */
-/**
- * The deferral a question record (a PriorDecision of kind `question`) sets on the finding it sets aside.
- * @param {Deferral} d @returns {Deferral}
- */
-export function deferralOf(d) {
-  const pulls = d.pulls?.length ? { pulls: d.pulls.map(p => ({ repo: p.repo, number: p.number })) } : {}
-  const scope = d.scope ? { scope: d.scope } : {}
-  return { id: d.id, reason: d.reason, who: d.who, when: d.when, link: d.link, commit: d.commit, ...pulls, ...scope }
-}
 
 /**
  * The pull requests a ledger row's deferral names, each a repository and a positive number; the

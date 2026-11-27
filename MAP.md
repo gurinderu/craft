@@ -122,15 +122,15 @@ the Rust and Nix profiles `extends`, each lens of their own replacing the genera
 added, `exclude` leaving out those that do not fit, `securityFloor` naming what the security floor adds —
 resolved once at load by
 `cli/crates/craft-review/src/profile/inherit.rs`) — is data under `content/`, compiled into the Rust CLI; the
-templates an engine still renders itself (memory recall among them, and `triage-findings`' gather, validate and plan
-prompts and answer schemas, `content/prompts/triage-*.md` and `content/schemas/triage-*.schema.json`, read through
-`integrations/shared/triage-content.mjs`) are inlined into it by the build.
+templates an engine still renders itself (rust-audit's memory recall among them) are inlined into it by the build;
+`triage-findings`' prompts and answer schemas (`content/prompts/triage-*.md`, `content/schemas/triage-*.schema.json`)
+are the binary's, as the review's are.
 
 | Workflow | Composes | Output |
 |---|---|---|
 | `review` | the review of a diff in any language, the driver of the Rust CLI's step protocol: the binary decides every step (each changed file to its profile — Rust, Nix, SQL or the general lenses —, the gate, the scouts, the lens rounds until dry or the run's agent budget, verification, memory, re-review rounds chained under `~/.craft/runs/cli`); the protocol was observed end to end in a live session (craft 0.41.0, a Rust diff, finished with Approve), the full-lens review that followed it not yet; by design `engine-service` runs `craft review start`/`submit`, the tasks each step hands out run in parallel, each reading its prompt file and writing its answer file in the run directory, and the engine holds no review logic of its own; the binary files the run's telemetry itself (`--record`: a checkpoint as each phase ends, the record when the run finishes, written by its own store writer, byte for byte as `integrations/shared/craft-log-run.mjs` writes them; not yet observed live), the engine only the INCOMPLETE record of a run the binary never finished | a `## Verdict` block with the verdict line the binary printed, and the path of the report it wrote |
 | `rust-audit` | gate once + per-crate CLI review (gate off) + inter-crate contracts + architecture + crate-decomposition + security + miri + semver + build-matrix + deps + unused-crates (verified) + tests-cov (parallel) | one synthesized severity-ranked report |
-| `triage-findings` | gather → sift by project memory → validate (parallel, per finding) → plan (barrier) | one ordered fix plan (writing-plans format) + triage ledger; no edits |
+| `triage-findings` | the driver of the Rust CLI's triage on the step protocol: the binary decides every step (gather → sift by project memory → validate, per finding → plan) and files the run's record itself; `engine-service` runs `craft triage start`/`submit`, the tasks each step hands out run in parallel, each reading its prompt file and writing its answer file in the run directory; not yet observed live | a `## Triage` block naming the plan file (`plan.json`: the ordered fix plan, the triage ledger, the issues to file) and the plan's summary; no edits |
 
 ### How each one runs
 
@@ -163,9 +163,10 @@ review, inter-crate contracts, architecture, crate-decomposition, security, Miri
 semver, build-matrix, deps, unused-crate detection (with verification), and test/doc health — and
 a final step synthesizes one severity-ranked report.
 
-`integrations/claude-code/workflows/triage-findings.js` gathers findings (craft agents + GitHub PR comments), sifts out what
+`integrations/claude-code/workflows/triage-findings.js` drives the craft binary's triage (`integrations/shared/cli-triage-*.mjs`): the
+binary gathers findings (craft agents + GitHub PR comments), sifts out what
 the project's memory already settled, validates the rest, dedups and conflict-checks them, and
-renders one ordered fix plan + a triage ledger (and the issues to file for findings the PR did not
+writes one ordered fix plan + a triage ledger to `plan.json`, which the engine names (and the issues to file for findings the PR did not
 introduce) — no edits. A finding counts as not introduced by the PR only when it was shown at the
 commit the PR forks from: pass that as `prBase` (`git merge-base origin/<trunk> <reviewed head>`)
 only when the reviewed head is a branch diverging from trunk, together with `base` = the reviewed
@@ -389,9 +390,8 @@ plan's panel bought only when those two disagree — each finding's severity cap
 memory already rejected or deferred — recalled by one agent beside the scouts, plus the launcher's own records — set aside
 under its own section when the code in its record's scope is unchanged since the record's commit — or, for a record
 naming no commit, since the merge on the trunk of the pull request its links give and unchanged on the trunk
-outside that pull request before its merge too — where its branch lacked a trunk change, and after a date it names (`cli/crates/craft-review/src/memory/anchor/pull.rs`, `pull/outside.rs`; its shell line in
-`integrations/shared/prior-decision-scope-lines.mjs`), else since the trunk's last commit before its date (`cli/crates/craft-review/src/memory/anchor.rs` and its
-JavaScript twin `integrations/shared/prior-decision-anchor.mjs`), and on the branch's next round a deferred finding whose
+outside that pull request before its merge too — where its branch lacked a trunk change, and after a date it names (`cli/crates/craft-review/src/memory/anchor/pull.rs`, `pull/outside.rs`), else since the trunk's last commit before its
+date (`cli/crates/craft-review/src/memory/anchor.rs`), and on the branch's next round a deferred finding whose
 file is unchanged since the same anchor carried without an adjudicator (`cli/crates/craft-review/src/memory/deferral.rs`) — a near miss between a
 record and a finding decided by a match judge, then a finding a project rule covers set aside under its own,
 decided by a rule judge — past their bounds (60 recalled paths, 100 records, 40 pairs per judge) the paths are
@@ -425,8 +425,8 @@ at every step from its arguments and its agents' answers (`src/run.rs`, `run/`):
 batch sifted by the review's memory, the validators, the plan agent, their prompts (`src/prompts.rs`), a prior ledger's
 settled verdicts carried, the noise classes and the issue class 1 files, the plan's ledger pinned, the plan's banners and
 the run record, which `start --record` files in the run store itself before the plan is built, what it did kept in the
-run's `filing.json` (`src/step/filing.rs`) — held to `triage-findings` by `content/parity/triage-cases.json`, which
-`integrations/shared/triage-parity.test.mjs` writes; the Claude Code engine still runs the JavaScript triage)
+run's `filing.json` (`src/step/filing.rs`) — held to the JavaScript engine it replaced by `content/parity/triage-cases.json`, frozen golden data edited by hand;
+the Claude Code engine drives it, `integrations/shared/cli-triage-steps.mjs`; `bin/craft/tests/triage_driver.rs` runs its JavaScript-generated commands through the real binary to a plan, including resume and re-filing; `bin/craft/tests/triage_refused.rs` and `triage_refused/stdin.rs` exercise exit-code boundaries and stdin)
 and `crates/craft-tui` (progress as a phases → agents tree
 on a terminal, one line per event otherwise); `test-support/` holds the one copy of a helper every crate's tests
 include by path (an executable a test writes and runs). In `craft-store`, `js/string.rs` holds lossless JavaScript

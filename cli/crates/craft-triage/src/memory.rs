@@ -1,4 +1,4 @@
-//! The memory's part of the sift, as `siftByMemory` in `integrations/shared/triage-sift.mjs` runs
+//! The memory's part of the sift, as `siftByMemory` in `triage-sift.mjs` (the JavaScript the binary replaced) runs
 //! it (realm @nick/craft, nodes #305, #309, #616): the batch's kept findings split by the records
 //! the review's memory holds — the decisions first, the match judge asked about their pairs, then
 //! the project rules, the rule judges asked about the findings in their scope — each mark appended

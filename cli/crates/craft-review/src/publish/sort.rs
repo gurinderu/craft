@@ -1,4 +1,4 @@
-//! The sorting before publication, as `integrations/shared/finding-sort.mjs` sorts (realm @nick/craft, nodes #270,
+//! The sorting before publication, as `finding-sort.mjs` (the JavaScript the binary replaced) sorts (realm @nick/craft, nodes #270,
 //! #277, #282, #423): each finding a PR comment could carry is a defect, posted as it is, or
 //! doubtful — not confirmed; raised by the compat, intent or api-boundary lens; speaking of
 //! rollback, rollout, old replicas, migration or a breaking change; its line outside the lines the

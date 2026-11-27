@@ -1,4 +1,4 @@
-//! The triage's prompts and answer schemas, as `integrations/shared/triage-content.mjs` renders
+//! The triage's prompts and answer schemas, as `triage-content.mjs` (the JavaScript the binary replaced) renders
 //! them from `content/prompts/triage-*.md` and `content/schemas/triage-*.schema.json` (realm
 //! @nick/craft, nodes #452, #616): the gatherers', each validator's and the plan agent's, and the
 //! directive pointing an agent at the triaged repository when one is named.

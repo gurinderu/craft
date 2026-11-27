@@ -41,3 +41,17 @@ export async function stepRounds(first, kind) {
  * @template {{ done: false }} P @template {{ done: true }} F @param {P | F} step @returns {step is F}
  */
 const binaryDone = step => step.done
+
+/**
+ * A pending step's tasks run in parallel through `runner`, in the Agents phase, the round logged with `what` the
+ * kind adds ('' none). No schema: the binary checks each answer file, and a dead agent leaves none, which the
+ * binary asks for again.
+ * @param {{ phase: (title: string) => void, log: (message: string) => void, parallel: <T>(thunks: Array<() => Promise<T>>) => Promise<Array<T | null>> }} sb
+ * @param {{ run: (t: import('./cli-review-step.mjs').Task) => Promise<unknown> }} runner
+ * @param {{ tasks: import('./cli-review-step.mjs').Task[] }} step @param {number} round @param {string} [what]
+ */
+export async function dispatchTasks(sb, runner, step, round, what = '') {
+  sb.phase('Agents')
+  sb.log(`round ${round}${what ? ` (${what})` : ''}: ${step.tasks.length} task(s) — ${step.tasks.map(t => t.label).join(', ')}`)
+  await sb.parallel(step.tasks.map(t => () => runner.run(t)))
+}

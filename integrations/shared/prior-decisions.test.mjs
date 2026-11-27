@@ -3,7 +3,7 @@
 // and the ledger say) in review-prior-decisions.test.mjs through the engine harness.
 import { test } from 'vitest'
 import assert from 'node:assert/strict'
-import { parsePriorDecisions, decisionAnswers, PRIOR_DECISIONS_MAX, DECISION_TITLE_OVERLAP } from './prior-decisions.mjs'
+import { parsePriorDecisions, PRIOR_DECISIONS_MAX } from './prior-decisions.mjs'
 import { DECISION_FIELD_MAX } from './prior-decision-record.mjs'
 
 const decision = (/** @type {Record<string, unknown>} */ over = {}) => ({
@@ -93,30 +93,11 @@ test('bound: project rules are counted apart, so decisions past the cap never pu
   )
 })
 
-test('match: scope containment by segments, and title overlap', () => {
-  const d = /** @type {any} */ (parsePriorDecisions([decision({ scope: 'src' })]).decisions[0])
-  assert.ok(decisionAnswers({ file: 'src/parse.rs', title: 'parser unwrap may panic' }, d))
-  assert.ok(decisionAnswers({ file: './src/./parse.rs', title: 'unwrap in parser may panic' }, d))
-  assert.ok(!decisionAnswers({ file: 'src-evil/parse.rs', title: 'unwrap in parser may panic' }, d), 'a sibling prefix is not inside')
-  assert.ok(!decisionAnswers({ file: 'lib/parse.rs', title: 'unwrap in parser may panic' }, d), 'outside the scope')
-  assert.ok(!decisionAnswers({ file: 'src/parse.rs', title: 'sql injection in query builder' }, d), 'a different defect in scope')
-  const whole = /** @type {any} */ (parsePriorDecisions([decision({ scope: '.' })]).decisions[0])
-  assert.ok(decisionAnswers({ file: 'any/where.rs', title: 'unwrap in parser may panic' }, whole), '`.` covers the repo')
-})
-
 test('parse: a repeated id is refused, the first kept', () => {
   const r = parsePriorDecisions([decision(), decision({ scope: 'lib' })])
   assert.equal(r.decisions.length, 1)
   assert.equal(r.decisions[0]?.scope, 'src/parse.rs')
   assert.match(String(r.refused[0]), /repeats an id already given/)
-})
-
-test('bound: the title overlap answers exactly at DECISION_TITLE_OVERLAP and not one word below', () => {
-  assert.equal(DECISION_TITLE_OVERLAP, 0.6)
-  // 5 words in the longer title: 3 shared = 0.6 (answers), 2 shared = 0.4 (does not).
-  const d = /** @type {any} */ (parsePriorDecisions([decision({ title: 'alpha beta gamma delta epsilon', scope: '.' })]).decisions[0])
-  assert.ok(decisionAnswers({ file: 'a.rs', title: 'alpha beta gamma zeta eta' }, d), '3 of 5 shared')
-  assert.ok(!decisionAnswers({ file: 'a.rs', title: 'alpha beta theta zeta eta' }, d), '2 of 5 shared')
 })
 
 test('parse: a memory record is read as recalled — body, date, author, links[]; a kind other than decision or question is refused', () => {

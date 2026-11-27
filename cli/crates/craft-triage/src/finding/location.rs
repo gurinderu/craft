@@ -1,5 +1,5 @@
 //! The file and line a gathered location names, as `locationParts` in
-//! `integrations/shared/triage-sift.mjs` reads them.
+//! `triage-sift.mjs` (the JavaScript the binary replaced) reads them.
 
 use craft_store::js::{JsStr, is_space};
 

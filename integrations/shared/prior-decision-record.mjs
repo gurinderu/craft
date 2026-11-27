@@ -1,21 +1,21 @@
 // One recalled prior decision, read and checked: its fields as strings (a memory record, realm @nick/craft node #177, read as it is
 // recalled), and what refuses it — a missing field, a field past its ceiling, or an anchor (scope,
-// commit, id) unfit for the shell line the scope check runs (integrations/shared/prior-decision-scope.mjs). The
+// commit, id) unfit for the shell line the scope check runs (prior-decision-scope.mjs, the JavaScript the binary replaced). The
 // argument as a whole and the matching are integrations/shared/prior-decisions.mjs.
 // A deferred finding is recorded as an open question, not a decision (realm @nick/craft, node #204):
 // a `question` record is read here the same way and carries its kind, so the same scope check and
-// matching apply and only its mark and its section differ (integrations/shared/prior-decision-apply.mjs).
+// matching apply and only its mark and its section differ (prior-decision-apply.mjs, the JavaScript the binary replaced).
 // A record that comes without an id gets the memory skill's id, derived from its kind, title and scope
 // (integrations/shared/memory-record-id.mjs; realm @nick/craft, node #222): a launcher that builds records by hand need
 // not hash them. One that lacks any of the three is still refused by name; a record WITH an id and no
 // scope reads as the whole repo (`.`). A refusal names only the fields that are missing.
 // A record may carry the finding's anchor, `line` and `lens` (realm @nick/craft, node #230): both
-// optional — an old record without them still matches by its title (integrations/shared/prior-decision-match.mjs) —
+// optional — an old record without them still matches by its title (prior-decision-match.mjs, the JavaScript the binary replaced) —
 // and a malformed one refuses the record by name. A gate tool's finding is anchored by its `toolRule` as
 // well (realm @nick/craft, node #236), optional and checked the same way.
 // A `rule` record is a project rule — a stance that covers a whole class of findings in its scope (realm
 // @nick/craft, node #273): read here the same way, but its scope is never defaulted — a rule without one
-// is refused by name; integrations/shared/project-rule-apply.mjs applies it after the review, apart from the decisions.
+// is refused by name; project-rule-apply.mjs (the JavaScript the binary replaced) applies it after the review, apart from the decisions.
 // Imported by integrations/claude-code/src/rust-audit.js and integrations/claude-code/src/triage-findings.js.
 // A scope that carries a line (`path:N`, `path:N-M`), as earlier runs wrote it, reads as the path and the
 // start line; a `line` the record gives itself wins (realm @nick/craft, node #606).

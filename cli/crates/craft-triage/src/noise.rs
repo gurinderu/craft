@@ -1,5 +1,5 @@
 //! The validator's noise classes read back from its answer (realm @nick/craft, node #303), as
-//! `integrations/shared/triage-noise-class.mjs`: "not this PR's" (class 1) on a real finding is a
+//! `triage-noise-class.mjs` (the JavaScript the binary replaced): "not this PR's" (class 1) on a real finding is a
 //! deferral carried by an issue, only when the premise names the code opened at exactly the PR's
 //! fork point the triage was given (node #309); "not decidable from the code" (class 5) is a
 //! `needs-decision`.

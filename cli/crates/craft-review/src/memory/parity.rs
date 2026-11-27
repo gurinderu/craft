@@ -1,6 +1,6 @@
 //! The project memory held to the engines' by `content/parity/memory-cases.json`, whose expected
 //! side `integrations/shared/memory-parity.test.mjs` computes with `integrations/shared/memory-recall.mjs`,
-//! `integrations/shared/prior-decision-apply.mjs` and `integrations/shared/project-rule-apply.mjs`: the same recall, launcher list,
+//! `prior-decision-apply.mjs` (the JavaScript the binary replaced) and `project-rule-apply.mjs` (the JavaScript the binary replaced): the same recall, launcher list,
 //! findings, scope check and judges' answers give the same findings kept (with their marks) and set
 //! aside, notes, source and report sections.
 
@@ -15,8 +15,8 @@ const CASES: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../../content/parity/memory-cases.json"
 ));
-/// The memory's prompts triage-findings renders too: the recall's and the judges', which
-/// `integrations/shared/judge-prompt-parity.test.mjs` writes.
+/// The memory's prompts triage-findings renders too: the recall's and the judges', frozen golden
+/// data the JavaScript sift wrote before the binary took it over, edited by hand.
 const PROMPTS: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../../content/parity/judge-prompt-cases.json"

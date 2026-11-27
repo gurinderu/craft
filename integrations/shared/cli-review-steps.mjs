@@ -23,7 +23,7 @@ import { STOPPED, absolutePath, argumentRefused, isObject, readStep } from './cl
 import { briefOf, endedOf, standingOf, statusUnreadable } from './cli-review-ended.mjs'
 import { harnessRefused, harnessStop } from './cli-review-refusal.mjs'
 import { gateAnswer, gateCommand, gateShell } from './cli-review-gate.mjs'
-import { stepRounds } from './cli-step-loop.mjs'
+import { dispatchTasks, stepRounds } from './cli-step-loop.mjs'
 import { pageCommand, readPaged, unreadRun } from './cli-review-paged.mjs'
 import { telemetryLostSection } from './review-coverage.mjs'
 import { argumentRefusal } from './run-record.mjs'
@@ -434,12 +434,7 @@ async function rounds(sb, bin, first, serve, recorder) {
   /** @type {Rounds} */
   const review = {
     maxRounds: MAX_ROUNDS,
-    dispatch: async (step, round) => {
-      sb.phase('Agents')
-      sb.log(`round ${round}: ${step.tasks.length} task(s) — ${step.tasks.map(t => t.label).join(', ')}`)
-      // No schema: the binary checks each answer file. A dead agent leaves no file, which the binary asks for again.
-      await sb.parallel(step.tasks.map(t => () => tasks.run(t)))
-    },
+    dispatch: (step, round) => dispatchTasks(sb, tasks, step, round),
     submit: async (step, round) => {
       sb.phase('Submit')
       if (sb.limit.seen())

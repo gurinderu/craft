@@ -1,5 +1,5 @@
 //! What the rule judge said of each finding (`ruleVerdicts`, `ruleContradictions` in
-//! `integrations/shared/project-rule-apply.mjs`).
+//! `project-rule-apply.mjs`, the JavaScript the binary replaced).
 
 use std::collections::BTreeMap;
 

@@ -1,5 +1,5 @@
 //! The report sections of what the remembered records did (`priorRejectedSection` in
-//! `integrations/shared/prior-decision-apply.mjs`, `priorDecisionsRefusedSection` in `integrations/shared/prior-decisions.mjs`): the
+//! `prior-decision-apply.mjs` (the JavaScript the binary replaced), `priorDecisionsRefusedSection` in `integrations/shared/prior-decisions.mjs`): the
 //! findings set aside, each with its mark and how it was matched, and what was not applied.
 
 use craft_store::js::JsStr;

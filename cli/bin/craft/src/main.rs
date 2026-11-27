@@ -226,7 +226,9 @@ fn report(outcome: anyhow::Result<ExitCode>) -> ExitCode {
             // failure (realm @nick/craft, node #523).
             let refused = e
                 .downcast_ref::<craft_review::Error>()
-                .is_some_and(craft_review::Error::refuses_argument);
+                .is_some_and(craft_review::Error::refuses_argument)
+                || e.downcast_ref::<craft_triage::TriageError>()
+                    .is_some_and(craft_triage::TriageError::refuses_argument);
             if refused {
                 ExitCode::from(2)
             } else {

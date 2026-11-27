@@ -1,4 +1,4 @@
-//! Which remembered record answers a finding, as `integrations/shared/prior-decision-match.mjs` matches them
+//! Which remembered record answers a finding, as `prior-decision-match.mjs` (the JavaScript the binary replaced) matches them
 //! without its judge (realm @nick/craft, nodes #187, #230, #236): a record whose scope holds the
 //! finding's file, of the finding's lens, its line within a few lines of the finding's (and, for a
 //! gate tool's finding, the same tool rule, any tool lens then counting as its lens — #718) answers

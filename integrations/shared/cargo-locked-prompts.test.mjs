@@ -8,7 +8,6 @@ import { test } from 'vitest'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { DEPENDENCY_SOURCE_HOW } from './dependency-source.mjs'
 
 // A backtick escaped inside an engine's template literal reads as a plain one.
 /** @param {string} rel */
@@ -25,9 +24,8 @@ const FILES = [
   'integrations/claude-code/src/review.js',
   'integrations/claude-code/src/rust-audit.js',
   'integrations/claude-code/src/triage-findings.js',
-  // triage-findings' prompts as content (integrations/shared/triage-content.mjs).
+  // triage-findings' prompts as content (triage-content.mjs, the JavaScript the binary replaced).
   ...listed('content/prompts', /^triage-.*\.md$/),
-  'integrations/shared/dependency-source.mjs',
   'skills/rust-review/SKILL.md',
   'skills/rust-architecture-review/SKILL.md',
   'skills/rust-ml/SKILL.md',
@@ -46,7 +44,9 @@ const FILES = [
 const INSTRUCTED_BARE = /\b(?:run|use|using|via|from|on|resolve[sd]?)\s+\(?`cargo (?:metadata|tree|fetch)`/gi
 // Inside a fenced code block every line is a command, flags or none.
 const FENCED_CALL = /^\s*cargo (metadata|tree|fetch)\b(.*)$/gm
-// The one unlocked call allowed: DEPENDENCY_SOURCE_HOW's throwaway copy of a checkout with no Cargo.lock.
+// The one unlocked call allowed: content/prompts/dependency-source.md's throwaway copy of a checkout with no Cargo.lock
+// (the binary renders it into the prompts that look up a pinned dependency's source).
+const DEPENDENCY_SOURCE_HOW = fs.readFileSync(fileURLToPath(new URL('../../content/prompts/dependency-source.md', import.meta.url)), 'utf8')
 const THROWAWAY_CLAUSE = 'resolve in a throwaway copy'
 const THROWAWAY_CALL = 'run `cargo metadata --format-version 1` there'
 
@@ -89,7 +89,7 @@ test('the checker catches a flagged unlocked call and a bare instructed one, not
   assert.deepEqual(unlockedCalls('```bash\ncargo tree            # inspect\ncargo tree --locked\n```', 'x'), ['x: cargo tree            # inspect'])
 })
 
-test('only the exact throwaway-copy clause of DEPENDENCY_SOURCE_HOW may resolve unlocked', () => {
+test('only the exact throwaway-copy clause of the dependency-source prompt may resolve unlocked', () => {
   assert.ok(DEPENDENCY_SOURCE_HOW.includes(THROWAWAY_CLAUSE) && DEPENDENCY_SOURCE_HOW.includes(THROWAWAY_CALL))
   assert.deepEqual(unlockedCalls(DEPENDENCY_SOURCE_HOW, 'x'), [])
   assert.deepEqual(unlockedCalls('in a throwaway copy, then run `cargo metadata --format-version 1` here', 'x'), ['x: cargo metadata --format-version 1'])

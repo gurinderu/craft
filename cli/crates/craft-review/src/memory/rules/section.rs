@@ -1,5 +1,5 @@
 //! The report section of what the project rules covered (`projectRuleSection` in
-//! `integrations/shared/project-rule-apply.mjs`).
+//! `project-rule-apply.mjs`, the JavaScript the binary replaced).
 
 use serde_json::Value;
 

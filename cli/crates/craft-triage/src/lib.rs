@@ -1,7 +1,6 @@
 //! The triage of review findings (`craft:triage-findings`) as the binary runs it, the second kind
-//! of the step protocol (realm @nick/craft, node #616), ported from
-//! `integrations/claude-code/src/triage-findings.js`, `integrations/shared/triage-sift.mjs` and
-//! `integrations/shared/triage-noise-class.mjs` and held to them by
+//! of the step protocol (realm @nick/craft, node #616), ported from the JavaScript triage engine
+//! it replaced (its `triage-sift.mjs` and `triage-noise-class.mjs`) and held to it by
 //! `content/parity/triage-cases.json` (the `parity` tests). Its steps on the protocol ([`step`]),
 //! its state between them ([`state`]), its tasks' kinds ([`kind`]), and its run derived at every
 //! step from its arguments and its agents' answers ([`run`]); the agents' prompts ([`prompts`]);
@@ -79,4 +78,62 @@ pub enum TriageError {
     /// The run asked again only agents it had asked: a defect, never a loop.
     #[error("the triage's {0:?} phase asked no agent it had not asked before")]
     Stuck(run::Phase),
+}
+
+impl TriageError {
+    /// Whether the run was refused for an argument it was given, before any work: the command
+    /// exits as a refused argument does, so a host tells it from a failure (realm @nick/craft,
+    /// node #523).
+    #[must_use]
+    pub fn refuses_argument(&self) -> bool {
+        matches!(self, Self::Refused(_) | Self::NoRepo { .. })
+    }
+}
+
+#[cfg(test)]
+mod refusal_tests {
+    use super::TriageError;
+
+    #[test]
+    fn an_argument_the_triage_refuses_and_a_repository_not_there_are_refusals_and_nothing_else_is()
+    {
+        assert!(TriageError::Refused("no source".into()).refuses_argument());
+        let gone = std::io::Error::new(std::io::ErrorKind::NotFound, "gone");
+        assert!(
+            TriageError::NoRepo {
+                path: "/x".into(),
+                source: gone
+            }
+            .refuses_argument()
+        );
+        assert!(!TriageError::UnknownTask("t".into()).refuses_argument());
+        assert!(!TriageError::Stuck(crate::run::Phase::Gather).refuses_argument());
+    }
+
+    #[test]
+    fn storage_and_run_failures_are_not_argument_refusals() {
+        for error in [
+            TriageError::NoDir {
+                path: "/x".into(),
+                source: std::io::Error::other("no directory"),
+            },
+            TriageError::Unwritable {
+                path: "/x".into(),
+                source: std::io::Error::other("unwritable"),
+            },
+            TriageError::RunExists("/x".into()),
+            TriageError::Done("/x".into()),
+            TriageError::Answer {
+                what: "task".into(),
+                why: "invalid".into(),
+            },
+            TriageError::PlanNotJson("invalid".into()),
+            TriageError::State(crate::state::StateError::Version {
+                path: "/x".into(),
+                found: 99,
+            }),
+        ] {
+            assert!(!error.refuses_argument(), "{error}");
+        }
+    }
 }

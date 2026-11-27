@@ -1,6 +1,6 @@
 // The memory-contradiction line of analyze-runs (realm @nick/craft, nodes #281, #282): the findings the
 // review runs marked as going against an active memory record (`memoryContradictions`,
-// integrations/shared/memory-contradiction.mjs), how many of them the doubt signs alone would have sent to the reviewer,
+// memory-contradiction.mjs, the JavaScript the binary replaced), how many of them the doubt signs alone would have sent to the reviewer,
 // how many went to the PR as defects (a finding of an engine that posts nothing, `toPr` null, is counted
 // apart, never as not sent), and what became of each where the store knows it — read off the
 // ledger of the NEWEST later round of the same engine (review, or cli-review), project and branch: closed (fixed), still open, set

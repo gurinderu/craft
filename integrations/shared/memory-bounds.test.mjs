@@ -2,9 +2,8 @@
 // `memory/bounds.rs` holds the same behaviour with the same cases.
 import { test } from 'vitest'
 import assert from 'node:assert/strict'
-import { keptRecords, pathEntries, spreadPairs } from './memory-bounds.mjs'
+import { keptRecords, pathEntries } from './memory-bounds.mjs'
 import { parsePriorDecisions, PRIOR_DECISIONS_MAX } from './prior-decisions.mjs'
-import { rulePairs, RULE_JUDGE_SENT_MAX } from './project-rule-judge.mjs'
 
 test('changed paths past the bound are listed by directory, as deep as still fits, not cut', () => {
   const few = ['src/a.rs', 'src/b.rs']
@@ -41,63 +40,6 @@ test('past the cap the records closest to the reviewed paths are kept', () => {
   assert.equal(parsed.decisions.length, PRIOR_DECISIONS_MAX)
   assert.equal(parsed.decisions.filter(d => delta.includes(d.scope)).length, 12)
   assert.match(String(parsed.refused[0]), /^60 decision\(s\) past the cap of 100 were not applied — kept are the records closest to the reviewed paths/)
-})
-
-const finding = (/** @type {string} */ file, severity = 'Medium') => ({ file, severity, title: `defect in ${file}`, line: 25 })
-
-test('past the judge’s bound each finding gets its best candidate first, the reviewed paths before the rest', () => {
-  const a = finding('a.rs', 'Low')
-  const b = finding('b.rs')
-  const ranked = [0, 1, 2, 3, 4].map(d => ({ f: a, d })).concat([{ f: b, d: 5 }])
-  assert.deepEqual(
-    spreadPairs(ranked, 6, [], () => 0),
-    ranked,
-    'under the bound unchanged',
-  )
-  const out = spreadPairs(ranked, 3, [], () => 0)
-  assert.deepEqual(
-    out.slice(0, 3).map(p => p.d),
-    [0, 1, 5],
-  )
-  assert.equal(out.length, 6, 'the cut pairs stay, after the sent ones')
-  const focused = spreadPairs(ranked, 1, ['b.rs'], () => 0)
-  assert.equal(focused[0]?.d, 5, 'a finding on the reviewed paths first')
-  const prior = { ...finding('z.rs'), priorIndex: 0 }
-  assert.equal(
-    spreadPairs([...ranked, { f: prior, d: 9 }], 2, ['b.rs'], () => 0)
-      .slice(0, 2)
-      .map(p => p.d)
-      .join(),
-    '5,9',
-    'a prior re-adjudicated is in focus',
-  )
-})
-
-test('the rule judge’s pairs past its bound spread over findings, each finding’s first rule before its second', () => {
-  const rule = (/** @type {string} */ id) =>
-    /** @type {import('./prior-decision-record.mjs').PriorDecision} */ (
-      /** @type {unknown} */ ({ id, kind: 'rule', title: 'clones are fine', scope: '.', reason: 'r', lens: '', links: [] })
-    )
-  const one = finding('a.rs')
-  const others = Array.from({ length: RULE_JUDGE_SENT_MAX }, (_, i) => finding(`o${i}.rs`))
-  const rules = [rule('rule-a'), rule('rule-b')]
-  const pairs = rulePairs([one, ...others], rules)
-  assert.equal(pairs.length, 2 * (RULE_JUDGE_SENT_MAX + 1))
-  const sent = pairs.slice(0, RULE_JUDGE_SENT_MAX)
-  assert.equal(new Set(sent.map(p => p.f)).size, RULE_JUDGE_SENT_MAX, 'no finding takes two of the bound while another has none')
-})
-
-test('past the rule judge’s bound a High is judged with the findings a rule can cover, only a Critical after them', () => {
-  const rule = /** @type {import('./prior-decision-record.mjs').PriorDecision} */ (
-    /** @type {unknown} */ ({ id: 'rule-a', kind: 'rule', title: 'clones are fine', scope: '.', reason: 'r', lens: '', links: [] })
-  )
-  const lows = Array.from({ length: RULE_JUDGE_SENT_MAX }, (_, i) => finding(`o${i}.rs`))
-  const high = { ...finding('h.rs'), severity: 'High' }
-  const critical = { ...finding('c.rs'), severity: 'Critical' }
-  const pairs = rulePairs([...lows, critical, high], [rule])
-  const sent = new Set(pairs.slice(0, RULE_JUDGE_SENT_MAX).map(p => p.f))
-  assert.ok(sent.has(high), 'a rule covers a High (realm @nick/craft, node #273), so it is not cut behind the Lows')
-  assert.ok(!sent.has(critical), 'a Critical is raised whatever the verdict: it goes last')
 })
 
 test('a path spelled with ./ or doubled slashes is covered by its directory entry', () => {

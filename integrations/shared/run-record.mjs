@@ -196,21 +196,6 @@ export function reviewVerdict(confirmed) {
   return 'Approve'
 }
 
-// Triage produces per-finding dispositions, not a severity verdict. Tally a ledger/validation list
-// (each entry `{verdict}`) into the fixed disposition buckets; unknown/malformed verdicts are dropped.
-/**
- * @param {unknown} entries
- * @returns {Record<TriageVerdict, number>}
- */
-export function tallyVerdicts(entries) {
-  const t = { accept: 0, reject: 0, defer: 0, 'needs-decision': 0, conflict: 0 }
-  for (const e of entryList(entries)) {
-    const verdict = /** @type {PropertyKey} */ (entryField(e, 'verdict'))
-    if (Object.prototype.hasOwnProperty.call(t, verdict)) t[/** @type {TriageVerdict} */ (verdict)] += 1
-  }
-  return t
-}
-
 // Normalized, word-order-independent word-set of a finding title. Used inside the fingerprint and
 // for fuzzy cross-round matching so a lightly reworded title still matches its prior-round twin.
 /**
@@ -279,20 +264,6 @@ export function fingerprint(f) {
   let h = 5381
   for (let i = 0; i < basis.length; i++) h = ((h << 5) + h + basis.charCodeAt(i)) >>> 0
   return h.toString(16).padStart(8, '0')
-}
-
-/**
- * @param {unknown} a
- * @param {unknown} b
- * @returns {number}
- */
-export function shingleOverlap(a, b) {
-  const sa = new Set(titleShingle(a).split(' ').filter(Boolean))
-  const sb = new Set(titleShingle(b).split(' ').filter(Boolean))
-  if (!sa.size || !sb.size) return 0
-  let inter = 0
-  for (const w of sa) if (sb.has(w)) inter++
-  return inter / Math.max(sa.size, sb.size)
 }
 
 // What the comment inside the function below must not be read as saying:
