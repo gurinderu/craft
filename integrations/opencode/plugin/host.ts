@@ -27,6 +27,22 @@ export interface ChildRequest {
   signal?: AbortSignal
 }
 
+/**
+ * A child session whose agent loop did not succeed: the runtime's error by its type and message when it failed
+ * (realm @nick/craft, node #626), else the outcome it ended with (2.x's `interrupted`, or one its reader does not know).
+ * Both sides throw it; the binary reads its wording (`cli/bin/craft/src/run/outcome.rs`), and a review's task that
+ * failed so is not tried again (review-children.ts).
+ */
+export class ChildSessionFailed extends Error {
+  constructor(
+    readonly type: string,
+    readonly detail: string,
+  ) {
+    super(`the child session failed (${type})${detail ? `: ${detail}` : ''}`)
+    this.name = 'ChildSessionFailed'
+  }
+}
+
 // Where the workflows run and how they read it. `sh` runs one read-only probe through `bash -lc` in
 // `directory` and returns its trimmed stdout, or "" when it failed (shell.mjs; both sides share it).
 export interface Workspace {
@@ -41,13 +57,13 @@ export interface Host extends Workspace {
   runChild(req: ChildRequest): Promise<string>
   // The model a session runs on, as the runtime records it; undefined when it records none (the runtime's default).
   callerModel(sessionID: string): Promise<ModelRef | undefined>
-  // The agents the runtime has, by id, where it lists them (2.x).
+  // The agents the runtime has, by id (2.x) or name (1.x).
   agents?(): Promise<string[]>
 }
 
 // The tool call as the runtime hands it over: the session that called the tool, the signal that aborts the call, and
-// where a running tool says how far it got (1.x shows it as the tool's title; 2.x as a line in the TUI's footer,
-// progress-rpc.ts).
+// where a running tool says how far it got (1.x shows a renewed TUI notification, host-v1-progress.ts;
+// 2.x a line in the TUI's footer, progress-rpc.ts).
 export interface ToolCall {
   sessionID?: string
   signal?: AbortSignal

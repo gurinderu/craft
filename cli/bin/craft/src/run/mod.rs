@@ -58,7 +58,7 @@ pub enum HostKind {
     Codex,
     /// `pi -p`, isolated and with read-only tools, one per task.
     Pi,
-    /// `opencode run` on craft's read-only agents, one per task.
+    /// Craft's read-only agents: one `opencode run` per task, or a child session with `--delegate`.
     #[value(name = "opencode")]
     OpenCode,
 }
@@ -105,7 +105,7 @@ pub struct RunArgs {
     pub events: Option<EventFormat>,
     /// opencode only, with `--events json`: hand each task to the process that runs this command
     /// as a `task` event and read its reply from stdin, one JSON line `{"key":n,"text":…}` or
-    /// `{"key":n,"error":…}` — the OpenCode 2.x plugin runs each as a child session. No `opencode`
+    /// `{"key":n,"error":…}` — the OpenCode plugin runs each as a child session. No `opencode`
     /// is run.
     #[arg(long)]
     pub delegate: bool,

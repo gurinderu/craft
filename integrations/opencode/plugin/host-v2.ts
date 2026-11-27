@@ -1,10 +1,12 @@
 // The 2.x side of the host (host.ts), on the surface opencode-v2.d.ts pins: `ctx.session` runs child sessions,
 // `ctx.tool` registers the tools with a JSON Schema input (no Effect, no zod: 2.2.7 accepts plain JSON Schema),
 // and the session `prompt` hook plus `ctx.event` feed the work hook.
-import { stringArgs, type ChildRequest, type Host, type ModelRef, type ToolSpec, type WorkHook } from './host.ts'
+import { ChildSessionFailed, stringArgs, type ChildRequest, type Host, type ModelRef, type ToolSpec, type WorkHook } from './host.ts'
 import type { V2Context, V2Event, V2Message, V2ModelRef, V2ToolDefinition } from './opencode-v2.js'
 import { shellIn } from './shell.mjs'
 import { progressChannel, withProgress, type Say } from './progress-rpc.ts'
+
+export { ChildSessionFailed }
 
 // How long to wait between reads of a child session that is not yet done, and how many reads before giving
 // up. The orchestrator's own deadline (orchestrator.ts) is the real bound; this only keeps the loop from
@@ -13,20 +15,6 @@ const POLL_MS = 500
 const MAX_POLLS = 3 * 60 * 60 * 2
 
 const pause = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
-
-/**
- * A child session whose agent loop did not succeed: the runtime's error by its type and message when it failed
- * (realm @nick/craft, node #626), else the outcome it ended with (`interrupted`, or one this reader does not know).
- */
-export class ChildSessionFailed extends Error {
-  constructor(
-    readonly type: string,
-    readonly detail: string,
-  ) {
-    super(`the child session failed (${type})${detail ? `: ${detail}` : ''}`)
-    this.name = 'ChildSessionFailed'
-  }
-}
 
 const textOf = (message: V2Message | undefined) =>
   (message?.content ?? [])

@@ -1,10 +1,11 @@
-// The 2.x review's delegated tasks as the plugin runs them: one child session each, under the caller, capped, a
-// child that gave nothing back tried once more alone.
+// The review's delegated tasks as the plugin runs them on both lines: one child session each, under the caller, capped,
+// a child that gave nothing back tried once more alone.
 import { test } from 'vitest'
 import assert from 'node:assert/strict'
 import os from 'node:os'
 import { ENGINE_SESSIONS } from './child-run.ts'
 import { ChildSessionFailed } from './host-v2.ts'
+import { v1Host } from './host-v1.ts'
 import { GIVEN_UP, childCap, childTasks, inRepository, modelRef, taskAgents, turns } from './review-children.ts'
 
 /** @param {(req: import('./host.ts').ChildRequest) => Promise<string>} runChild @returns {import('./host.ts').Host & { asked: import('./host.ts').ChildRequest[] }} */
@@ -117,6 +118,30 @@ test('a child that gave nothing back or broke is tried once more; a failed loop 
   const failed = fakeHost(() => Promise.reject(new ChildSessionFailed('provider.no-route', 'no route')))
   await assert.rejects(childTasks(failed, 'c')(task(), new AbortController().signal), /provider\.no-route/)
   assert.equal(failed.asked.length, 1, "the runtime's own error is the task's answer")
+})
+
+test("on 1.x a child whose turn failed with the provider's limit is the task's answer, not tried again", async () => {
+  // A 1.x reply whose assistant message carries the provider's error, as opencode 1.19.6 answers it (observed).
+  const limit = 'You have reached your usage limit, resets 5pm'
+  let prompts = 0
+  const client = {
+    app: { agents: () => Promise.resolve({ data: [] }) },
+    session: {
+      create: () => Promise.resolve({ data: { id: 'ses_child' } }),
+      prompt: () => {
+        prompts++
+        return Promise.resolve({ data: { info: { role: 'assistant', error: { name: 'APIError', data: { message: limit } } }, parts: [] } })
+      },
+      abort: () => Promise.resolve({ data: true }),
+      messages: () => Promise.resolve({ data: [] }),
+    },
+  }
+  const host = v1Host({ client, directory: os.tmpdir(), worktree: os.tmpdir() })
+  await assert.rejects(
+    childTasks(host, 'ses_caller')(task(), new AbortController().signal),
+    (/** @type {unknown} */ e) => e instanceof ChildSessionFailed && e.message === `the child session failed (APIError): ${limit}`,
+  )
+  assert.equal(prompts, 1)
 })
 
 test('a given-up task is never tried again, whether its child broke or gave nothing back', async () => {

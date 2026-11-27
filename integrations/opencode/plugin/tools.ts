@@ -15,12 +15,12 @@ export function nestedUnder(host: Host, parent: string | undefined): Host {
 }
 
 // The review is the craft binary's own driver with its opencode backend, run through the plugin's bin/craft
-// (integrations/shared/craft-review-run.mjs; realm @nick/craft, nodes #499, #503): each task an `opencode run` on craft's read-only
-// agents, every tier on the calling session's model unless the flags name `--models` or the environment
-// `CRAFT_OPENCODE_MODELS`, which the binary reads itself. integrations/shared/ is loaded from the
-// checkout the plugin is linked from when the tool runs, as the work hook loads its modules: a plugin copy without
-// integrations/shared/ keeps its other tools.
-// On 2.x the binary hands each task back to the plugin, which runs it as a child session (review-children.ts).
+// (integrations/shared/craft-review-run.mjs; realm @nick/craft, nodes #499, #503): the binary hands each task back to
+// the plugin, which runs it as a child session of the calling session on craft's read-only agents, on both lines
+// (review-children.ts; realm @nick/craft, nodes #627, #720), every tier on the calling session's model unless the flags
+// name `--models` or the environment `CRAFT_OPENCODE_MODELS`, which the binary reads itself. integrations/shared/ is
+// loaded from the checkout the plugin is linked from when the tool runs, as the work hook loads its modules: a plugin
+// copy without integrations/shared/ keeps its other tools.
 const hasModels = (words: string[]) => words.some(w => w === '--models' || w.startsWith('--models='))
 
 function stopPreflight(pid: number | undefined) {
@@ -99,28 +99,21 @@ async function callerOf(host: Host, sessionID: string | undefined): Promise<{ mo
   }
 }
 
-/** What a 2.x run adds: the agents listed, for the binary, and the runner of the tasks it hands back; nothing on 1.x. */
-function delegation(host: Host, call: ToolCall, agents: string[] | undefined, caller: ModelRef | undefined, words: string[]) {
-  if (!agents) return { flags: [] }
-  return { flags: ['--agents', agents.join(',')], onTask: childTasks(host, call.sessionID, caller, childCap(words)) }
-}
-
-async function runReview(host: Host, args: string, call: ToolCall, children = false): Promise<ToolAnswer> {
-  const listed: { agents?: string[] } | { refused: string } = children ? await taskAgents(host) : {}
+async function runReview(host: Host, args: string, call: ToolCall): Promise<ToolAnswer> {
+  const listed = await taskAgents(host)
   if ('refused' in listed) return { title: 'craft review: INCOMPLETE', output: listed.refused }
   const review = await import('../../shared/craft-review-run.mjs')
   const { forwarded, skip, resumed, cwd } = profileOptions(review.flagWords(args), host.directory)
   const why = skip || resumed ? undefined : await profilePreflight(review.WRAPPER, cwd, call.signal)
   if (why) return { title: 'craft review: profile', output: why }
   const caller = await callerOf(host, call.sessionID)
-  const { flags, onTask } = delegation(host, call, listed.agents, caller.model, forwarded)
   const outcome = await review.runReview({
     backend: 'opencode',
-    args: [...withCallerModel(forwarded, caller.model), ...flags],
+    args: [...withCallerModel(forwarded, caller.model), '--agents', listed.agents.join(',')],
     cwd: host.directory,
     ...(call.signal ? { signal: call.signal } : {}),
     onProgress: p => call.progress?.(review.progressLine(p)),
-    ...(onTask ? { onTask } : {}),
+    onTask: childTasks(host, call.sessionID, caller.model, childCap(forwarded)),
   })
   const answer = review.answerText(outcome)
   return { title: `craft review: ${review.summaryOf(outcome).verdict}`, output: caller.note ? `${answer}\n\n${caller.note}` : answer }
@@ -135,18 +128,13 @@ export function refusalOnV2(name: string): string {
 }
 
 /**
- * The tools as the 2.x entry (`setup`) registers them: the review runs each task as a child session of the caller
- * (childTasks); the audit and the triage refuse up front and say so in their description; all stay registered, to
- * answer a call with why.
+ * The tools as the 2.x entry (`setup`) registers them: the review as on 1.x; the audit and the triage refuse up front
+ * and say so in their description; all stay registered, to answer a call with why.
  */
 export const onV2 = (tools: readonly ToolSpec[]): ToolSpec[] =>
   tools.map(spec =>
     spec.name === 'review'
-      ? {
-          ...spec,
-          description: spec.description.replace(ONE_RUN_EACH, 'each task runs as a child session of this session'),
-          run: (host, args, call) => runReview(host, args['args'] ?? '', call, true),
-        }
+      ? spec
       : {
           ...spec,
           description: `Not available on OpenCode 2.x yet: craft's \`${spec.name}\` answers INCOMPLETE and runs nothing (use OpenCode 1.x, Claude Code, Codex or pi).`,
@@ -174,9 +162,6 @@ export const withoutContent = (tools: readonly ToolSpec[], reason: string): Tool
       : spec,
   )
 
-// How the 1.x review's description says its tasks run; 2.x says child sessions in its place.
-const ONE_RUN_EACH = 'each task runs as its own `opencode run`'
-
 export const TOOLS: readonly ToolSpec[] = [
   {
     name: 'rust-audit',
@@ -195,7 +180,7 @@ export const TOOLS: readonly ToolSpec[] = [
   {
     name: 'review',
     description:
-      "craft's review of the current change by the `craft` binary (`craft review run --backend opencode`): the mechanical gate, review lenses per language profile, verification, one report and the `## Verdict` block; each task runs as its own `opencode run` on craft's read-only agents, on this session's model. It runs long. When the profile is missing, ask the user to set it up with review-init or continue without it; pass --without-profile only on their choice. Arg `args` takes the review's flags as one string (for example `--base main`, `--depth light`, `--pr 123 --comment`, `--run <dir>` to resume, `--models <provider/model>`), or none.",
+      "craft's review of the current change by the `craft` binary (`craft review run --backend opencode`): the mechanical gate, review lenses per language profile, verification, one report and the `## Verdict` block; each task runs as a child session of this session on craft's read-only agents, on this session's model. It runs long. When the profile is missing, ask the user to set it up with review-init or continue without it; pass --without-profile only on their choice. Arg `args` takes the review's flags as one string (for example `--base main`, `--depth light`, `--pr 123 --comment`, `--run <dir>` to resume, `--models <provider/model>`), or none.",
     args: { args: { optional: true } },
     run: (host, args, call) => runReview(host, args['args'] ?? '', call),
   },
