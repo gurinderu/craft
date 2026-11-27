@@ -24,9 +24,8 @@ export interface V1Client {
   }
 }
 
-// The child's prompt, run to its reply; an abort (the caller's deadline) stops the session — `session.abort`, observed
-// on opencode 1.19.5 — and gives up on it. A prompt the server refused throws its error; a turn that failed inside throws
-// the runtime's, as 2.x does.
+// The child's prompt, run to its reply; an abort asks the server to stop the session through `session.abort`.
+// A prompt the server refused throws its error; a turn that failed inside throws the runtime's, as 2.x does.
 async function prompted(client: V1Client, id: unknown, req: ChildRequest): Promise<string> {
   const stop = () => {
     if (typeof id === 'string') client.session.abort({ path: { id } }).catch(() => undefined)

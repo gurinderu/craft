@@ -1,6 +1,6 @@
 // The review's tasks as the plugin runs them on both lines: the binary hands each back (`--delegate`, realm @nick/craft,
-// nodes #496, #626, #627, #720) and the plugin runs it as a child session of the calling session, so the tasks show as
-// its subagents, on the agent and model the binary names. The binary bounds each by its kind's deadline and says a task
+// nodes #496, #626, #627, #720) and the plugin runs it as a child session of the calling session,
+// on the agent and model the binary names. The binary bounds each by its kind's deadline and says a task
 // no longer awaited, which aborts that child.
 //   • The agents the runtime lists go to the binary (`--agents`), which places each task on the agent it names when it is listed —
 //     on 1.x subagents are not listed, so their tasks run on `review-task` (host-v1-read.ts) —

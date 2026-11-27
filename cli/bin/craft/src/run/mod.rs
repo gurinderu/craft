@@ -58,7 +58,7 @@ pub enum HostKind {
     Codex,
     /// `pi -p`, isolated and with read-only tools, one per task.
     Pi,
-    /// `opencode run` on craft's read-only agents, one per task.
+    /// Craft's read-only agents: one `opencode run` per task, or a child session with `--delegate`.
     #[value(name = "opencode")]
     OpenCode,
 }

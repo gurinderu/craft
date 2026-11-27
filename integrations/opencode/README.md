@@ -104,8 +104,10 @@ opencode. The links point into this checkout, but a checkout does not change wha
 plugin's version, downloaded from its GitHub release into `~/.craft/bin/<version>/` the first time
 (`CRAFT_BIN=<path>` runs a local build). The binary decides every step — the gate, the scouts, the
 lenses round after round, verification, the verdict. On both lines it hands each task back to the plugin
-(`--delegate`), which runs it as a child session of the calling session, so the tasks are that
-session's children (on 1.x not yet seen opened from it in a live TUI). On 1.x the tool's title is set to the run's progress, which the 1.19.6 TUI does not redraw while the tool runs; the answer is the binary's `## Verdict`
+(`--delegate`), which runs it as a child session of the calling session. Navigation into these review
+children on 1.x still needs a live TUI check. On 1.x the plugin sends progress through the tool's title;
+in a 1.19.6 TUI trial the review row appeared without visible progress, and the cause is unresolved.
+The answer is the binary's `## Verdict`
 block and findings, as markdown. The binary's own 1.19.5 path (`opencode run`, from a terminal) was seen
 reaching the model as `review-task`; the tool itself and its child sessions on either line are
 covered by tests against a fake binary and fake host, not yet seen in a real OpenCode session.
@@ -122,13 +124,17 @@ interrupted (2.x) by that outcome, in the run's log and, when every task of a ro
 stops the run INCOMPLETE with how to resume it. The plugin hands the binary the agents OpenCode lists:
 when they cannot be listed or `review-task` is not among them, the review refuses before anything runs;
 a task whose own agent is missing runs on `review-task`, and the report says the run was degraded.
-A child session is made where its parent is (OpenCode gives a child no directory of its own), so
+On 1.x agents with `mode: subagent` are left out of that list, preserving their placement on
+`review-task` with their own prompts. A failed listing now refuses the review on 1.x too; the former
+terminal path fell back to `review-task` when it could not list agents.
+A child session is made where its parent is: 2.x gives it no directory of its own, and on 1.x using
+the caller's directory keeps project-installed agents available. Thus
 each task's prompt names the repository it reviews by its absolute path — with `--pr`, craft's own
 worktree of the PR — and asks the agent to use absolute paths under it. That is an instruction to the
 model, not an enforced directory.
 
 On 2.x the review shows its progress as a line in the TUI's prompt footer of the session that runs it —
-the same line 1.x shows as the tool's title — and on the end clears it and shows the verdict as a toast;
+the same text sent to the tool's title on 1.x — and on the end clears it and shows the verdict as a toast;
 nothing of it reaches the model. The footer is a TUI plugin of its own: `install.sh` links the directory
 `plugin/tui/` as `plugins/craft-review-footer` (2.x loads a TUI plugin only from a directory; 1.x ignores
 directories there). Without that link, or on a 2.x that lacks the plugin RPC, the review runs as before
@@ -141,8 +147,8 @@ the reply reader fixed since (it reads past the session's `idle` entry and takes
 run's reply), which the audit and the triage would share, but neither has been run on it yet. The refusal itself is tested against fake
 hosts only, not yet seen in a real OpenCode 2.x.
 
-- Every task is read-only: one that names `rust-reviewer` runs on the hidden `rust-reviewer` agent,
-  every other on `review-task` (both have write and edit off), with the matching Claude Code agent's
+- Every task is read-only: on 2.x one that names `rust-reviewer` runs on the hidden `rust-reviewer` agent;
+  on 1.x it runs on `review-task`. Other built-in tasks run on `review-task` (both have write and edit off), with the matching Claude Code agent's
   prompt (or the reviewed repository's own `.claude/agents/<name>.md`) before the task. A task still
   runs read-only commands (git, grep, the build's own checks) through bash.
 - `review-task` is kept light on both lines, each by the hooks its host has. On 2.x the plugin's
