@@ -80,6 +80,14 @@ pub struct PromptContext {
         skip_serializing_if = "crate::composition::Composition::is_empty"
     )]
     pub composition: crate::composition::Composition,
+    /// The project's properties the reviewer's profile sets (realm @nick/craft, node #654), which
+    /// each plan reads beside its scout's answer. Optional, so a state written before it reads as a
+    /// run with none.
+    #[serde(
+        default,
+        skip_serializing_if = "crate::project::properties::Properties::is_empty"
+    )]
+    pub project: crate::project::properties::Properties,
     /// The integration points' sources the run prepared, for the lenses and verifiers that read
     /// them. Optional, so a state written before it reads as a run with none.
     #[serde(default, skip_serializing_if = "Sources::is_empty")]

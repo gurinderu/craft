@@ -181,7 +181,12 @@ fn stopping() -> tokio::sync::watch::Receiver<Option<u8>> {
     stop
 }
 
-pub async fn run(args: RunArgs) -> Result<ExitCode> {
+pub async fn run(mut args: RunArgs) -> Result<ExitCode> {
+    // Before the stop handler: a signal then ends an input held open, which no handler could
+    // interrupt (realm @nick/craft, node #737).
+    if args.run.is_none() {
+        args.start.prior_decisions_read = crate::steps::prior_decisions(&args.start);
+    }
     let stop = stopping();
     let sink = Sink {
         json: args.host.events == Some(EventFormat::Json),

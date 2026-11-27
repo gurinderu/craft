@@ -25,6 +25,8 @@ fn every_case_plans_as_the_engines_plan_it() {
         let files: Vec<String> = serde_json::from_value(c["changedFiles"].clone()).unwrap();
         let scout = Some(&c["scout"]).filter(|s| !s.is_null());
         let signals: Vec<String> = serde_json::from_value(c["signals"].clone()).unwrap_or_default();
+        let project: crate::project::properties::Properties =
+            serde_json::from_value(c["project"].clone()).unwrap_or_default();
         let got = plan(PlanInput {
             profile: &profile,
             scout,
@@ -40,6 +42,7 @@ fn every_case_plans_as_the_engines_plan_it() {
             design: c["design"] == json!(true),
             signals: Some(&signals),
             changed_lines: c["changedLines"].as_u64(),
+            project: &project,
         });
         let got_json = json!({
             "sizeBucket": got.size_bucket, "lenses": got.lenses, "maxRounds": got.max_rounds,
@@ -81,6 +84,7 @@ fn a_plan_names_the_model_its_lenses_run_on() {
         design: false,
         signals: Some(&[]),
         changed_lines: None,
+        project: &crate::project::properties::NONE,
     });
     assert_eq!(got.lens_model(&profile), crate::agent::Model::Sonnet);
     let none = super::Plan {
