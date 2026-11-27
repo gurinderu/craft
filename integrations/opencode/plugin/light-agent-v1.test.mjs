@@ -109,6 +109,7 @@ test('a shape not recorded is left as it came, and nothing throws', () => {
   const shapes = [undefined, null, 'Instructions from: /stand/proj/AGENTS.md', 7, {}, [], [null, 5, {}, [PROMPT]], [`${PROMPT}\n${RULES}`, null, 5]]
   for (const shape of shapes) {
     assert.doesNotThrow(() => lightenSystem(shape))
+    // The next request's pass: a text already lightened is left as it came.
     assert.doesNotThrow(() => lightenSystem(shape))
   }
   assert.deepEqual(shapes.at(-1), [`${PROMPT}\n`, null, 5], 'the strings are cut, the others are not read')
