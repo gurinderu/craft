@@ -3,7 +3,7 @@
 
 use serde_json::json;
 
-use super::{Composition, State, apply, hold};
+use super::{Composition, Refused, State, apply, hold};
 use crate::plan::Plan;
 use crate::profile::Profile;
 
@@ -14,7 +14,7 @@ fn profiles() -> Vec<Profile> {
         .collect()
 }
 
-fn of(entries: &[(&str, State)]) -> Result<Composition, String> {
+fn of(entries: &[(&str, State)]) -> Result<Composition, Refused> {
     let lenses: Vec<(String, State)> = entries.iter().map(|(l, s)| ((*l).to_owned(), *s)).collect();
     Composition::of(&lenses, &profiles())
 }
@@ -45,13 +45,14 @@ fn the_security_floor_is_never_touched_and_concurrency_never_off() {
     assert_eq!(rust.safety_lens, "safety");
     for lens in ["rust:security", "rust:safety", "general:security"] {
         for state in [State::Off, State::FirstRound] {
-            let e = of(&[(lens, state)]).unwrap_err();
+            let e = of(&[(lens, state)]).unwrap_err().to_string();
             assert!(e.contains("security lens"), "{lens}: {e}");
         }
     }
     assert!(
         of(&[("general:concurrency", State::Off)])
             .unwrap_err()
+            .to_string()
             .contains("first round at most")
     );
     assert_eq!(
@@ -67,16 +68,51 @@ fn a_name_that_is_no_profiles_lens_is_refused() {
     assert!(
         of(&[("rust:no-such-lens", State::Off)])
             .unwrap_err()
+            .to_string()
             .contains("no such lens")
     );
     for bad in ["money", "rust:", ":money"] {
-        let e = of(&[(bad, State::Off)]).unwrap_err();
+        let e = of(&[(bad, State::Off)]).unwrap_err().to_string();
         assert!(e.contains("profile:lens"), "{bad}: {e}");
     }
     assert!(
         of(&[("nope:money", State::Off)])
             .unwrap_err()
+            .to_string()
             .contains("no such lens")
+    );
+}
+
+#[test]
+fn each_refusal_is_its_own_kind_naming_the_entry() {
+    let cases = [
+        (
+            "money",
+            State::Off,
+            Refused::NotQualified("money".to_owned()),
+        ),
+        (
+            "rust:no-such-lens",
+            State::Off,
+            Refused::NoSuchLens("rust:no-such-lens".to_owned()),
+        ),
+        (
+            "rust:safety",
+            State::FirstRound,
+            Refused::Floor("rust:safety".to_owned()),
+        ),
+        (
+            "general:concurrency",
+            State::Off,
+            Refused::ConcurrencyOff("general:concurrency".to_owned()),
+        ),
+    ];
+    for (lens, state, want) in cases {
+        assert_eq!(of(&[(lens, state)]).unwrap_err(), want, "{lens}");
+    }
+    assert_eq!(
+        Refused::Floor("rust:safety".to_owned()).to_string(),
+        "rust:safety: a security lens is never held or turned off"
     );
 }
 
