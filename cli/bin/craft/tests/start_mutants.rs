@@ -50,12 +50,16 @@ fn package(t: &Path, mutants: &str) -> (PathBuf, PathBuf) {
     git(&code, &["update-ref", "refs/remotes/origin/main", "HEAD"]);
     std::fs::write(code.join("src/lib.rs"), "pub fn f() -> u8 { 1 }\n").unwrap();
     git(&code, &["commit", "-qam", "feat: f"]);
-    let out = craft(t, &["init", "--write", "--cwd", code.to_str().unwrap()]);
+    // `init --write` writes the `[mutants]` section itself, from its own flags.
+    let flags: &[&str] = match mutants {
+        "off = true" => &["--mutants", "off"],
+        "budget_secs = 77" => &["--mutants-budget", "77"],
+        _ => &[],
+    };
+    let mut args = vec!["init", "--write", "--cwd", code.to_str().unwrap()];
+    args.extend(flags);
+    let out = craft(t, &args);
     assert!(out.status.success(), "{out:?}");
-    let written: Value = serde_json::from_slice(&out.stdout).unwrap();
-    let profile = written.get("profile").and_then(Value::as_str).unwrap();
-    let text = std::fs::read_to_string(profile).unwrap();
-    std::fs::write(profile, format!("{text}\n[mutants]\n{mutants}\n")).unwrap();
     (code, home)
 }
 
