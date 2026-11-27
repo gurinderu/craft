@@ -90,7 +90,8 @@ match on its own. A line counts only
 when `scope` is the finding's own file: under a directory or `.` scope only the lens and the title
 words count, so give the file as scope whenever the finding has one. A gate tool's finding (lens
 `tool` or the tool's name — clippy-pedantic, semgrep, statix…) matches outright only when `toolRule`
-is the same as well: a record with another `toolRule` is not a candidate at all (two different lints a
+is the same as well — and then any two tool lenses count as one, so a record of lens `tool` meets
+the same rule's finding printed under `clippy-pedantic`: a record with another `toolRule` is not a candidate at all (two different lints a
 line apart are two findings, even under one catalog ruleId), and one without `toolRule` goes to the judge.
 A gate tool's finding without `toolRule` (deadnix and fmt always) is told apart by its title alone: when
 the judge gives no verdict, only a record from a tool lens (or with no lens) with the very

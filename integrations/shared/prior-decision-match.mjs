@@ -172,8 +172,17 @@ export function matchClass(f, d) {
   const rule = ruleOf(f, d)
   if (rule === 'other') return ''
   const { near, sure, same } = anchorOf(f, d)
-  if (sure && same && rule !== 'unknown') return 'anchored'
+  if (sure && (same || toolPeers(rule, d)) && rule !== 'unknown') return 'anchored'
   return near || same || titleOverlap(f.title, d.title) >= MATCH_CANDIDATE_OVERLAP ? 'disputed' : ''
+}
+
+/**
+ * Whether a record of a gate tool's lens meets a tool finding of the same tool rule: any two tool lenses are
+ * one lens then — the memory writes `tool` where the gate prints the tool's name (realm @nick/craft, node #718).
+ * @param {string} rule @param {PriorDecision} d @returns {boolean}
+ */
+function toolPeers(rule, d) {
+  return rule === 'same' && lensWords(d.lens).some(l => TOOL_LENSES.includes(l))
 }
 
 /**
