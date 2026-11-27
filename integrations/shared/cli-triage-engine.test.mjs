@@ -182,3 +182,13 @@ test('a write the binary could not land is said in the answer', async () => {
   })
   assert.match(run.report, /Telemetry lost[\s\S]*the run record — the index lock stayed taken/)
 })
+
+test('a resumed run with no repository named that stops files no record, and says why', async () => {
+  const run = await runEngine('triage-findings', {
+    args: { run: '/r/run-1' },
+    script: { 'step:resolve': RESOLVED, 'step:resume': null, 'log-run': { ok: true } },
+  })
+  assert.match(run.report, /^## Triage\n\n⚠️ INCOMPLETE — triage stopped: .+\. The run is in \/r\/run-1\./)
+  assert.ok(run.report.includes("No run record was filed: the resumed run's repository is unknown"), run.report)
+  assert.deepEqual(logged(run), [])
+})
