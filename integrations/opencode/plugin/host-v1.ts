@@ -5,8 +5,8 @@
 import type { Hooks, PluginInput } from '@opencode-ai/plugin'
 import { tool } from '@opencode-ai/plugin'
 import type { Part, TextPart } from '@opencode-ai/sdk'
-import { stringArgs, type ChildRequest, type Host, type ToolSpec, type WorkHook } from './host.ts'
-import { errorOf, extractText, field, lastModel } from './host-v1-read.ts'
+import { ChildSessionFailed, stringArgs, type ChildRequest, type Host, type ToolSpec, type WorkHook } from './host.ts'
+import { agentNames, errorOf, extractText, field, lastModel, turnError } from './host-v1-read.ts'
 import { lightenSystem } from './light-agent-v1.ts'
 import { oncePerReason, reasonOf } from './light-agent-shared.ts'
 import { shellIn } from './shell.mjs'
@@ -15,6 +15,7 @@ export { extractText, lastModel }
 
 type TextIn = { type: 'text'; text: string }
 export interface V1Client {
+  app: { agents(): Promise<unknown> }
   session: {
     create(req: { body: { title: string; parentID?: string } }): Promise<unknown>
     messages(req: { path: { id: string } }): Promise<unknown>
@@ -24,7 +25,8 @@ export interface V1Client {
 }
 
 // The child's prompt, run to its reply; an abort (the caller's deadline) stops the session — `session.abort`, observed
-// on opencode 1.19.5 — and gives up on it. A prompt the server refused throws its error.
+// on opencode 1.19.5 — and gives up on it. A prompt the server refused throws its error; a turn that failed inside throws
+// the runtime's, as 2.x does.
 async function prompted(client: V1Client, id: unknown, req: ChildRequest): Promise<string> {
   const stop = () => {
     if (typeof id === 'string') client.session.abort({ path: { id } }).catch(() => undefined)
@@ -39,6 +41,8 @@ async function prompted(client: V1Client, id: unknown, req: ChildRequest): Promi
     if (req.signal?.aborted) throw new Error('the child session was stopped at its deadline')
     const failed = errorOf(res)
     if (failed) throw new Error(failed)
+    const turn = turnError(res)
+    if (turn) throw new ChildSessionFailed(turn.type, turn.message)
     return extractText(res)
   } finally {
     req.signal?.removeEventListener('abort', stop)
@@ -59,6 +63,9 @@ export function v1Host(input: { client: V1Client; directory: string; worktree: s
     },
     async callerModel(sessionID) {
       return lastModel(await client.session.messages({ path: { id: sessionID } }))
+    },
+    async agents() {
+      return agentNames(await client.app.agents())
     },
   }
 }

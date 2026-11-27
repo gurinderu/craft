@@ -1,5 +1,5 @@
 ---
-description: craft's review of the current change — the craft binary runs it, each task its own `opencode run` on craft's read-only agents, the answer is its Verdict block.
+description: craft's review of the current change — the craft binary runs it, each task a child session of this session on craft's read-only agents, the answer is its Verdict block.
 ---
 
 Run craft's review by invoking the `review` tool.

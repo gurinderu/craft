@@ -1,5 +1,6 @@
 // The tools the plugin registers: the review runs the craft binary through bin/craft (here onto a fake binary named
-// by CRAFT_BIN) on the caller's model, and the audit and the triage nest their children under the caller.
+// by CRAFT_BIN) on the caller's model, its tasks child sessions of the caller on both lines, and the audit and the
+// triage nest their children under the caller.
 import { afterEach, test } from 'vitest'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
@@ -18,6 +19,7 @@ function fakeHost(model) {
     worktree: os.tmpdir(),
     sh: () => Promise.resolve(''),
     callerModel: () => Promise.resolve(model),
+    agents: () => Promise.resolve(['review-task']),
     runChild: req => {
       asked.push(req)
       return Promise.resolve('done')
@@ -60,7 +62,7 @@ test('a missing profile asks before review, and the user can continue without on
   assert.match(typeof asked === 'string' ? asked : asked.output, /No review profile exists/)
   assert.equal(fs.existsSync(argv), false)
   await review.run(fakeHost(), { args: '--without-profile --base main' }, {})
-  assert.equal(fs.readFileSync(argv, 'utf8').trim(), 'review run --backend opencode --events json --base main')
+  assert.equal(fs.readFileSync(argv, 'utf8').trim(), 'review run --backend opencode --events json --delegate --base main --agents review-task')
 })
 
 test('a profile check error does not look like a missing profile', async () => {
@@ -126,7 +128,7 @@ test("the review runs the binary with the opencode backend on the caller's model
     { args: '--base main' },
     { sessionID: 'ses_caller', progress: t => titles.push(t) },
   )
-  assert.equal(fs.readFileSync(argv, 'utf8').trim(), 'review run --backend opencode --events json --base main --models p/m')
+  assert.equal(fs.readFileSync(argv, 'utf8').trim(), 'review run --backend opencode --events json --delegate --base main --models p/m --agents review-task')
   assert.deepEqual(titles, ['craft review: lenses, round 1 — 0 running, 0 done'])
   assert.deepEqual(answer, { title: 'craft review: Approve', output: '## Verdict\n\n✅ Approve' })
 })
@@ -135,9 +137,9 @@ test("flags that name the models keep them, and a call with no session runs on o
   const argv = fakeBinary()
   const review = TOOLS.find(t => t.name === 'review')
   await review?.run(fakeHost({ providerID: 'p', modelID: 'm' }), { args: '--models=a/b' }, { sessionID: 'ses_caller' })
-  assert.equal(fs.readFileSync(argv, 'utf8').trim(), 'review run --backend opencode --events json --models=a/b')
+  assert.equal(fs.readFileSync(argv, 'utf8').trim(), 'review run --backend opencode --events json --delegate --models=a/b --agents review-task')
   await review?.run(fakeHost({ providerID: 'p', modelID: 'm' }), {}, {})
-  assert.equal(fs.readFileSync(argv, 'utf8').trim(), 'review run --backend opencode --events json')
+  assert.equal(fs.readFileSync(argv, 'utf8').trim(), 'review run --backend opencode --events json --delegate --agents review-task')
 })
 
 test('CRAFT_OPENCODE_MODELS keeps the session model off the flags: the binary maps the tiers from it', async () => {
@@ -145,7 +147,7 @@ test('CRAFT_OPENCODE_MODELS keeps the session model off the flags: the binary ma
   process.env['CRAFT_OPENCODE_MODELS'] = 'a/b'
   const review = TOOLS.find(t => t.name === 'review')
   await review?.run(fakeHost({ providerID: 'p', modelID: 'm' }), { args: '--base main' }, { sessionID: 'ses_caller' })
-  assert.equal(fs.readFileSync(argv, 'utf8').trim(), 'review run --backend opencode --events json --base main')
+  assert.equal(fs.readFileSync(argv, 'utf8').trim(), 'review run --backend opencode --events json --delegate --base main --agents review-task')
 })
 
 test('the plugin offers the review beside the audit and the triage', () => {
@@ -192,38 +194,46 @@ function delegatingBinary() {
   return argv
 }
 
-/** A 2.x host: it lists `agents` and records the caller on `model`. @param {string[]} agents @param {import('./host.ts').ModelRef} [model] */
+/** A host that lists `agents` and records the caller on `model`. @param {string[]} agents @param {import('./host.ts').ModelRef} [model] */
 const listing = (agents, model) => ({ ...fakeHost(model), agents: () => Promise.resolve(agents) })
 
-test('on 2.x the review hands the binary the agents listed and runs each task as a child session of the caller; 1.x does not', async () => {
-  const argv = delegatingBinary()
-  const review = onV2(TOOLS).find(t => t.name === 'review')
-  assert.ok(review)
-  assert.match(review.description, /each task runs as a child session of this session/)
-  assert.doesNotMatch(review.description, /opencode run` on/)
-  const host = listing(['build', 'review-task'], { providerID: 'p', modelID: 'm', variant: 'high' })
-  await review.run(host, { args: '--base main' }, { sessionID: 'ses_caller' })
-  assert.equal(
-    fs.readFileSync(argv, 'utf8').trim(),
-    'review run --backend opencode --events json --delegate --base main --models p/m#high --agents build,review-task',
-    "the caller's model goes to the binary with its variant",
-  )
-  const [child] = host.asked
-  assert.ok(child)
-  assert.equal(child.parentID, 'ses_caller')
-  assert.equal(child.agent, 'review-task')
-  assert.match(child.prompt, /^WORKING DIRECTORY: this task reviews the repository at the absolute path "\/wt"/)
-  assert.deepEqual(child.model, { providerID: 'p', modelID: 'm', variant: 'high' }, "a task naming no model runs on the caller's")
-  assert.equal(fs.readFileSync(path.join(path.dirname(argv), 'reply'), 'utf8').trim(), JSON.stringify({ key: 1, text: 'done' }))
-  const v1 = TOOLS.find(t => t.name === 'review')
-  assert.ok(v1)
-  await v1.run(fakeHost(), { args: '--base main' }, { sessionID: 'ses_caller' })
-  assert.equal(fs.readFileSync(argv, 'utf8').trim(), 'review run --backend opencode --events json --base main')
+test('on both lines the review hands the binary the agents listed and runs each task as a child session of the caller', async () => {
+  /** @type {[string, readonly import('./host.ts').ToolSpec[]][]} */
+  const lines = [
+    ['1.x', TOOLS],
+    ['2.x', onV2(TOOLS)],
+  ]
+  for (const [line, tools] of lines) {
+    const argv = delegatingBinary()
+    const review = tools.find(t => t.name === 'review')
+    assert.ok(review)
+    assert.match(review.description, /each task runs as a child session of this session/, line)
+    assert.doesNotMatch(review.description, /opencode run` on/, line)
+    const host = listing(['build', 'review-task'], { providerID: 'p', modelID: 'm', variant: 'high' })
+    await review.run(host, { args: '--base main' }, { sessionID: 'ses_caller' })
+    assert.equal(
+      fs.readFileSync(argv, 'utf8').trim(),
+      'review run --backend opencode --events json --delegate --base main --models p/m#high --agents build,review-task',
+      `${line}: the caller's model goes to the binary with its variant`,
+    )
+    const [child] = host.asked
+    assert.ok(child, line)
+    assert.equal(child.parentID, 'ses_caller', line)
+    assert.equal(child.agent, 'review-task', line)
+    assert.match(child.prompt, /^WORKING DIRECTORY: this task reviews the repository at the absolute path "\/wt"/, line)
+    assert.deepEqual(child.model, { providerID: 'p', modelID: 'm', variant: 'high' }, `${line}: a task naming no model runs on the caller's`)
+    assert.equal(fs.readFileSync(path.join(path.dirname(argv), 'reply'), 'utf8').trim(), JSON.stringify({ key: 1, text: 'done' }), line)
+  }
 })
 
-test('on 2.x the review refuses before anything runs when the agents cannot be listed or lack review-task', async () => {
+test('on both lines the review refuses before anything runs when the agents cannot be listed or lack review-task', async () => {
+  for (const tools of [TOOLS, onV2(TOOLS)]) await refusesWithoutAgents(tools)
+})
+
+/** @param {readonly import('./host.ts').ToolSpec[]} tools */
+async function refusesWithoutAgents(tools) {
   const argv = fakeBinary()
-  const review = onV2(TOOLS).find(t => t.name === 'review')
+  const review = tools.find(t => t.name === 'review')
   assert.ok(review)
   const refusedBy = async (/** @type {import('./host.ts').Host} */ host) => {
     fs.rmSync(argv, { force: true })
@@ -238,10 +248,12 @@ test('on 2.x the review refuses before anything runs when the agents cannot be l
     await refusedBy({ ...fakeHost(), agents: () => Promise.reject(new Error('agent editor gone')) }),
     /could not list this OpenCode's agents \(agent editor gone\).*Nothing ran\.$/,
   )
-  assert.match(await refusedBy(fakeHost()), /cannot list this OpenCode's agents/)
+  const unlisting = fakeHost()
+  delete unlisting.agents
+  assert.match(await refusedBy(unlisting), /cannot list this OpenCode's agents/)
   await review.run(listing(['review-task']), {}, { sessionID: 'ses_caller' })
   assert.equal(fs.existsSync(argv), true, 'with review-task listed, it runs')
-})
+}
 
 test('the 2.x audit and triage say they are not yet enabled, and why', async () => {
   for (const spec of onV2(TOOLS).filter(t => t.name !== 'review')) {
@@ -258,7 +270,7 @@ test("a caller whose model cannot be read is said in the answer; the review runs
   assert.ok(review)
   const host = { ...fakeHost(), callerModel: () => Promise.reject(new Error('session gone')) }
   const answer = await review.run(host, { args: '--base main' }, { sessionID: 'ses_caller' })
-  assert.equal(fs.readFileSync(argv, 'utf8').trim(), 'review run --backend opencode --events json --base main')
+  assert.equal(fs.readFileSync(argv, 'utf8').trim(), 'review run --backend opencode --events json --delegate --base main --agents review-task')
   assert.ok(typeof answer === 'object')
   assert.match(
     answer.output,

@@ -1,20 +1,19 @@
-// The 2.x review's tasks as the plugin runs them: the binary hands each back (`--delegate`, realm @nick/craft, nodes
-// #496, #626, #627) and the plugin runs it as a child session of the calling session, so the tasks show as its
-// subagents, on the agent and model the binary names. The binary bounds each by its kind's deadline and says a task no
-// longer awaited, which aborts that child.
+// The review's tasks as the plugin runs them on both lines: the binary hands each back (`--delegate`, realm @nick/craft,
+// nodes #496, #626, #627, #720) and the plugin runs it as a child session of the calling session, so the tasks show as
+// its subagents, on the agent and model the binary names. The binary bounds each by its kind's deadline and says a task
+// no longer awaited, which aborts that child.
 //   • The agents the runtime lists go to the binary (`--agents`), which places each task as it does for `opencode run`:
 //     a task whose own agent is missing runs on `review-task`, said degraded. The listing fails closed: no list, an
 //     error, or no `review-task` runs nothing, since a child named an agent the runtime lacks may run on its writable
 //     default.
-//   • A child is made where its parent is (opencode-v2.d.ts), so the repository the task reviews — craft's worktree of a
-//     PR, say — is named at the head of its prompt.
+//   • A child is made where its parent is (opencode-v2.d.ts; on 1.x, realm @nick/craft, node #719), so the repository the
+//     task reviews — craft's worktree of a PR, say — is named at the head of its prompt.
 //   • At most the cap of children run at once (`--concurrency`, else `CRAFT_OPENCODE_CONCURRENCY`, else 4), and a child
 //     that gave nothing back, or broke before its loop ended, is tried once more alone — no other child of this review
 //     running beside it: the plugin's own fan-out's mitigation of opencode's concurrent-child bugs (child-run.ts).
 import type { DelegatedTask } from '../../shared/craft-review-run.mjs'
 import { runChildSession } from './child-run.ts'
-import type { Host, ModelRef } from './host.ts'
-import { ChildSessionFailed } from './host-v2.ts'
+import { ChildSessionFailed, type Host, type ModelRef } from './host.ts'
 
 /** The read-only agent every review task runs on unless the binary names another. */
 export const TASK_AGENT = 'review-task'

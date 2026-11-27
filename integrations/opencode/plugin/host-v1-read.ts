@@ -44,3 +44,23 @@ export function errorOf(res: unknown): string {
   const message = field(field(error, 'data'), 'message') ?? field(error, 'message') ?? field(error, 'name')
   return typeof message === 'string' && message ? message : 'the prompt failed'
 }
+
+// How a turn failed inside, as opencode 1.19.6 answers one the provider refused (observed, realm @nick/craft, node
+// #719): the reply's assistant message carries `info.error` as `{ name, data: { message } }`; undefined when it has none.
+export function turnError(res: unknown): { type: string; message: string } | undefined {
+  const root: unknown = Array.isArray(res) ? res[res.length - 1] : res
+  const error = field(field(field(root, 'data') ?? root, 'info'), 'error')
+  if (error === undefined || error === null) return undefined
+  const type = field(error, 'name')
+  const message = field(field(error, 'data'), 'message')
+  return { type: typeof type === 'string' && type ? type : 'unknown', message: typeof message === 'string' ? message : '' }
+}
+
+// The agents' names in `app.agents()`'s answer (`GET /agent`); throws when it is refused or is not a list.
+export function agentNames(res: unknown): string[] {
+  const failed = errorOf(res)
+  if (failed) throw new Error(failed)
+  const list = field(res, 'data') ?? res
+  if (!Array.isArray(list)) throw new Error('the agent list OpenCode answered is not a list')
+  return list.map(a => field(a, 'name')).filter((name): name is string => typeof name === 'string' && name !== '')
+}

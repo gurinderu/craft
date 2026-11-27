@@ -296,8 +296,7 @@ live-data/news tooling (crate/docs/changelog fetchers). LSP navigation is now co
 (skills shared verbatim by symlink; 4 translated agent files and `review-task`, the read-only agent of the review's tasks; one TS plugin for OpenCode 1.x and 2.x —
 its default export carries both entries, and a host layer (`host.ts`, with `host-v1.ts` and `host-v2.ts`)
 gives the `rust-audit` and `triage-findings` workflows, the `review` tool (`bin/craft review run --backend opencode --events json`
-through `integrations/shared/craft-review-run.mjs`, on the calling session's model, each task on 1.x its own `opencode run` on `review-task`,
-without `--archived` and with subagent tasks on `review-task`; on 2.x `--delegate`, each task handed back to the plugin and run as a child
+through `integrations/shared/craft-review-run.mjs`, on the calling session's model, on both lines with `--delegate`, each task handed back to the plugin and run as a child
 session of the calling session (`review-children.ts`, `child-run.ts`, the binary's `run/delegate.rs` and `run/delegate_read.rs`); the tool is not yet seen in a real OpenCode session) and craft's work hook one surface on either runtime; `review-task` is kept light on both lines — on 2.x `light-agent.ts`, its
 `context`, `compaction` and `generate` hooks cutting the repository's instructions and every tool but four out of that agent's
 model requests; on 1.x `light-agent-v1.ts`, its `experimental.chat.system.transform` hook cutting the repository's instructions out of that agent's
