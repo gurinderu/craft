@@ -36,6 +36,27 @@ pub fn counted(profile: &str) -> bool {
     profile != BY_SCOUT
 }
 
+/// The lines that set the size of `profile`'s part, `changed_lines` as counted: `None` when its
+/// scout names the size instead — a profile sized by its scout, or lines git could not count.
+#[must_use]
+pub fn told(profile: &str, changed_lines: Option<u64>) -> Option<u64> {
+    changed_lines.filter(|_| counted(profile))
+}
+
+/// The scout's answer schema for a part whose size `told` gave, or `None`: `sizeBucket` required
+/// where the scout is the one to name it, so an answer without it is retried, not read as medium.
+#[must_use]
+pub fn scout_schema(mut schema: serde_json::Value, told: Option<u64>) -> serde_json::Value {
+    if told.is_none()
+        && let Some(required) = schema
+            .get_mut("required")
+            .and_then(serde_json::Value::as_array_mut)
+    {
+        required.insert(0, serde_json::Value::from("sizeBucket"));
+    }
+    schema
+}
+
 /// Each changed file's added and removed lines, by its new path, from `git diff --numstat -z`:
 /// `added\tremoved\tpath\0`, or `added\tremoved\t\0old\0new\0` for a rename; a binary file, `-`
 /// for both, changes no line.

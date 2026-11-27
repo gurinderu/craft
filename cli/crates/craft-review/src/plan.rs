@@ -216,10 +216,7 @@ pub fn plan(input: PlanInput<'_>) -> Plan {
         changed_files: files,
         ..
     } = input;
-    let counted = input
-        .changed_lines
-        .filter(|_| crate::size::counted(&p.id))
-        .map(crate::size::bucket);
+    let counted = crate::size::told(&p.id, input.changed_lines).map(crate::size::bucket);
     let size = counted
         .or_else(|| {
             scout_str(scout, "sizeBucket").filter(|s| matches!(*s, "small" | "medium" | "large"))

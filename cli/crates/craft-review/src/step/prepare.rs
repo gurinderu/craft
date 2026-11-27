@@ -213,7 +213,10 @@ pub(super) fn scouts(run: &RunState, profiles: &[Profile]) -> Result<Vec<Task>, 
             format!("scout:{}", p.id),
             prompts::scout_prompt(&run.context, p, &t.read_paths(), t.changed_lines)?,
             p.scout_model,
-            content::schema("scout")?,
+            crate::size::scout_schema(
+                content::schema("scout")?,
+                crate::size::told(&p.id, t.changed_lines),
+            ),
             TaskKind::Scout {
                 profile: p.id.clone(),
             },

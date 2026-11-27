@@ -50,6 +50,19 @@ fn a_runbook_goes_to_the_runbook_lens_and_prose_beside_it_does_not() {
     );
     assert!(p.contains("':(literal)docs/ovn-recovery.md'"), "{p}");
     assert!(!p.contains("README.md"), "prose is no runbook: {p}");
+    // Its lines are counted, yet its size is its steps: its scout names it, and must (node #655).
+    assert!(p.contains("Set sizeBucket"), "{p}");
+    let schema: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(out.path().join("run/tasks/scout-runbook.schema.json")).unwrap(),
+    )
+    .unwrap();
+    assert!(
+        schema["required"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("sizeBucket")),
+        "{schema}"
+    );
 
     let s = submit(
         &out.path().join("run"),

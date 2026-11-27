@@ -64,7 +64,7 @@ fn start_renders_the_scout_over_the_diff() {
         "the binary counts the size; the scout is not asked for it"
     );
     assert!(
-        prompt.contains("This part changed 1 lines: its size is small, counted by the engine"),
+        prompt.contains("counted by the engine over its files: 1 — its size is small"),
         "{prompt}"
     );
     assert_eq!(status::status(&run).unwrap()["phase"], json!("scout"));

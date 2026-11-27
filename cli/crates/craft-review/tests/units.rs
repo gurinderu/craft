@@ -286,6 +286,14 @@ fn without_the_flag_a_large_change_is_cut_by_directory_and_a_small_one_not_at_al
             "lens-rust-maintainability-r1"
         ]
     );
+    let state: Value =
+        serde_json::from_str(&std::fs::read_to_string(out.path().join("run/state.json")).unwrap())
+            .unwrap();
+    assert_eq!(
+        (&state["rounds"]["first"], &state["rounds"]["sent"]),
+        (&Value::Null, &json!(5)),
+        "every lens dispatch spends the budget; a small plan runs one round, so none of it makes the default base (realm @nick/craft, node #634)"
+    );
     let repo = workspace(7, 120);
     let out = tempfile::tempdir().unwrap();
     let run = out.path().join("run");

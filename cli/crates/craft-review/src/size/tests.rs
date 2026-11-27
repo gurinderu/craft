@@ -2,7 +2,7 @@
 
 use std::process::Command;
 
-use super::{LARGE_ABOVE, SMALL_BELOW, bucket, counted, mark, parse};
+use super::{LARGE_ABOVE, SMALL_BELOW, bucket, counted, mark, parse, scout_schema, told};
 use crate::state::Track;
 
 #[test]
@@ -95,4 +95,20 @@ fn each_track_counts_the_lines_its_own_files_changed() {
     let note = mark(d, &gone, &mut tracks).unwrap();
     assert!(note.contains("could not be counted"), "{note}");
     assert!(tracks.iter().all(|t| t.changed_lines.is_none()));
+}
+
+#[test]
+fn the_scout_must_name_the_size_only_where_the_binary_does_not_set_it() {
+    assert_eq!(told("rust", Some(12)), Some(12));
+    assert_eq!(told("runbook", Some(12)), None);
+    assert_eq!(told("rust", None), None);
+    let schema = || serde_json::json!({"required": ["lenses"]});
+    assert_eq!(
+        scout_schema(schema(), Some(12))["required"],
+        serde_json::json!(["lenses"])
+    );
+    assert_eq!(
+        scout_schema(schema(), None)["required"],
+        serde_json::json!(["sizeBucket", "lenses"])
+    );
 }

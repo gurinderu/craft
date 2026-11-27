@@ -12,8 +12,9 @@ use crate::profile::Profile;
 const DEDUP_WHY_MAX: usize = 160;
 
 /// The scout's prompt for `profile`'s part `files` of the diff: classify it and pick the lenses,
-/// without reviewing it. A part whose `changed_lines` were counted is told its size, which the
-/// binary sets (realm @nick/craft, node #655); otherwise the scout names it.
+/// without reviewing it. A part whose size the binary sets from its `changed_lines` is told it
+/// ([`crate::size::told`]; realm @nick/craft, node #655); otherwise — a runbook, or lines git could
+/// not count — the scout names it.
 ///
 /// # Errors
 /// When a content file is missing or a placeholder has no value.
@@ -25,7 +26,7 @@ pub fn scout_prompt(
 ) -> Result<String, ContentError> {
     let globs = profile.pathspec(files);
     let stat_range = format!("{}...HEAD", shq(&ctx.base));
-    let size_step = match changed_lines.filter(|_| crate::size::counted(&profile.id)) {
+    let size_step = match crate::size::told(&profile.id, changed_lines) {
         Some(n) => content::prompt(
             "scout-size-counted",
             &vars([

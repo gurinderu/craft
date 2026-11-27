@@ -277,6 +277,7 @@ test('classifyResult separates the agent result shapes a review actually produce
   assert.equal(classifyResult({ refuted: false, citedLineMatches: true, reachable: true, premiseSupported: true }), 'verify')
   assert.equal(classifyResult({ verdicts: [{ index: 0, refuted: true }] }), 'verify-batch')
   assert.equal(classifyResult({ sizeBucket: 'medium', lenses: ['safety'] }), 'scout')
+  assert.equal(classifyResult({ lenses: ['safety'], isLibrary: false }), 'scout', 'a scout told its size')
   assert.equal(classifyResult({ baseRef: 'origin/main', files: ['a.rs'] }), 'base')
   assert.equal(classifyResult({ status: 'pass', seedFindings: [] }), 'gate')
   assert.equal(classifyResult({ groups: [[0, 1]] }), 'dedup')
