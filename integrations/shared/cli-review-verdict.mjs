@@ -3,13 +3,15 @@
 // report is. The line is the binary's own (the finished step's `line`, the report's verdict line, which says why when
 // nothing or not everything was reviewed), marked with the glyph review's verdicts open with; with `comment`, what
 // landed on the PR and how many findings wait for the reviewer — the caller asked for comments, so whether they landed
-// is part of the answer. Then a `## Findings` list built from the binary's JSON, so a parent reading the answer
-// (rust-audit's reviewResult, integrations/shared/rust-audit-verdict.mjs) has each finding without any model copying the report; and a
+// is part of the answer. Then a `## Findings` list built from the binary's JSON (integrations/shared/cli-review-findings.mjs), so a
+// parent reading the answer (rust-audit's reviewResult, integrations/shared/rust-audit-verdict.mjs) has each finding the report
+// lists — and the count of those it holds apart — without any model copying the report; and a
 // run the binary held on the usage limit says `stopped: usage limit reached (<text>)`, the words a parent reads the
 // stop by (limitInReport, integrations/shared/limit-report.mjs).
+import { findingsList, oneLine } from './cli-review-findings.mjs'
 
 /** @typedef {import('./cli-review-record.mjs').Finding} Finding */
-/** @typedef {{ run: string, report: string, verdict: string, line: string, degraded: boolean, degradedNotes?: string[], memorySections?: string, stopped?: boolean, stopNote?: string, worktree?: string, findings?: Finding[], sorting?: Record<string, unknown> | null, prComments?: Record<string, unknown> | null }} Finished  stopNote: the binary's stop as a parent reads it, '' when none; worktree: the line naming craft's own worktree of the PR given the run reviewed in (realm @nick/craft, node #517) */
+/** @typedef {{ run: string, report: string, verdict: string, line: string, degraded: boolean, degradedNotes?: string[], memorySections?: string, stopped?: boolean, stopNote?: string, worktree?: string, findings?: Finding[], unverifiedLow?: { count: number, file: string } | null, sorting?: Record<string, unknown> | null, prComments?: Record<string, unknown> | null }} Finished  stopNote: the binary's stop as a parent reads it, '' when none; worktree: the line naming craft's own worktree of the PR given the run reviewed in (realm @nick/craft, node #517) */
 
 /**
  * The line with the glyph of its verdict, unless it opens with one already: a red verdict ⛔, a clean one ✅, any
@@ -79,7 +81,7 @@ export function finishedAnswer(step, driver) {
   // The report's memory part, verbatim and before the findings list, so a parent lifts what memory set aside and the
   // nested memory line as it lifts a review's (integrations/shared/prior-decision-report.mjs; realm @nick/craft, node #196).
   const memory = (step.memorySections ?? '').trim()
-  return `${verdict}\n\n${memory ? `${memory}\n\n` : ''}${findingsList(step.findings ?? [])}`
+  return `${verdict}\n\n${memory ? `${memory}\n\n` : ''}${findingsList(step.findings ?? [], step.unverifiedLow ?? null)}`
 }
 
 /** `text` as the answer's one sentence, none when empty. @param {string | undefined} text @returns {string[]} */
@@ -95,24 +97,6 @@ const degradedBlock = notes => [DEGRADED_LINE, ...notes.map(n => `- ${oneLine(n)
 
 /** The line a degraded run's answer says it by; its notes follow as bullets. */
 export const DEGRADED_LINE = "⚠️ Degraded: part of this review ran weaker than asked — the report's Degraded section says how."
-
-/** @param {unknown} v @returns {string} */
-const oneLine = v =>
-  String(v ?? '')
-    .replace(/\s+/g, ' ')
-    .trim()
-
-/**
- * The reported findings, one line each: severity, `file:line`, title and tier, as the binary's finished step names them.
- * @param {Finding[]} findings @returns {string}
- */
-export function findingsList(findings) {
-  const rows = findings.map(
-    f =>
-      `- [${oneLine(f.severity) || 'unrated'}] ${oneLine(f.file)}${f.line ? `:${f.line}` : ''} — ${oneLine(f.title)}${f.tier ? ` (${oneLine(f.tier)})` : ''}`,
-  )
-  return ['## Findings', '', ...(rows.length ? rows : ['None reported.'])].join('\n')
-}
 
 /**
  * How to resume the stopped run in `run`: the driver again with `run=` (`driver`, by default the Workflow), or the

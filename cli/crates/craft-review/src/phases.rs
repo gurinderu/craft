@@ -462,9 +462,7 @@ pub(crate) fn finish(dir: &Path, run: &mut RunState) -> Result<(), Error> {
     file_round(dir, run)?;
     crate::publish::settle(run);
     let verdict = report::verdict(run);
-    let path = state::report_path(dir);
-    std::fs::write(&path, report::markdown(run, &verdict))
-        .map_err(|source| StepError::NoReport { path, source })?;
+    report::write(dir, run, &verdict)?;
     run.verdict = Some(verdict);
     run.phase = Phase::Done;
     Ok(())

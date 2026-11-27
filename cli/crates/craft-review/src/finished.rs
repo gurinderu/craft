@@ -36,6 +36,9 @@ pub(crate) fn step(dir: &Path, run: &RunState, verdict: &str) -> Value {
             obj.insert("degraded".into(), json!(degraded));
         }
         obj.extend(telemetry::apart(run));
+        if let Some(apart) = report::unverified::step_field(dir, run) {
+            obj.insert("unverifiedLow".into(), apart);
+        }
         for (k, v) in crate::publish::finished(run) {
             obj.insert(k.into(), v);
         }

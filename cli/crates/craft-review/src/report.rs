@@ -22,6 +22,7 @@ mod rereview;
 mod seam_tests;
 #[cfg(test)]
 mod tests;
+pub mod unverified;
 
 use rereview::rereview_line;
 
@@ -360,6 +361,23 @@ pub fn memory_sections(state: &RunState) -> String {
     )
 }
 
+/// Writes the report of the run in `dir`, and beside it the findings it holds apart
+/// ([`unverified`]).
+///
+/// # Errors
+/// When a file cannot be written.
+pub(crate) fn write(
+    dir: &std::path::Path,
+    state: &RunState,
+    verdict: &str,
+) -> Result<(), crate::step::StepError> {
+    // The file first: a report never names one its write did not leave.
+    unverified::write(dir, state)?;
+    let path = crate::state::report_path(dir);
+    std::fs::write(&path, markdown(state, verdict))
+        .map_err(|source| crate::step::StepError::NoReport { path, source })
+}
+
 /// The Markdown report of a finished run: the verdict, then the findings grouped by tier, worst
 /// first in each.
 #[must_use]
@@ -511,17 +529,23 @@ fn findings(state: &RunState, out: &mut String) {
         let mut list: Vec<(usize, String)> = state
             .settled
             .iter()
-            .filter(|f| Tier::of(f) == want)
+            .filter(|f| Tier::of(f) == want && !unverified::held(f))
             .map(|f| (crate::dedup::sev_rank(f), entry(f)))
             .collect();
         list.sort_by_key(|(rank, _)| *rank);
         out.push_str(&format!("## {name} findings\n\n"));
-        if list.is_empty() {
+        let apart = if want == Tier::Unverified {
+            unverified::line(state)
+        } else {
+            String::new()
+        };
+        if list.is_empty() && apart.is_empty() {
             out.push_str("None.\n");
         }
         for (_, e) in list {
             out.push_str(&e);
         }
+        out.push_str(&apart);
         out.push('\n');
     }
     let [c, s, r, u] = tier_counts(state);

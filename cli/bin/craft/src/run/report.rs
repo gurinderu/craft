@@ -20,7 +20,7 @@ fn tally(v: Option<&Value>) -> u64 {
 }
 
 /// Whitespace runs as one space, trimmed.
-fn one_line(s: &str) -> String {
+pub(super) fn one_line(s: &str) -> String {
     s.js_split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
@@ -155,40 +155,11 @@ pub(crate) fn finished_answer(step: &Value, again: &str) -> String {
     } else {
         format!("{memory}\n\n")
     };
-    format!("{}\n\n{memory}{}", block(line, &rest), findings(step))
-}
-
-/// The reported findings, one line each: severity, `file:line`, title and tier.
-fn findings(step: &Value) -> String {
-    let rows: Vec<String> = step
-        .get("findings")
-        .and_then(Value::as_array)
-        .map(Vec::as_slice)
-        .unwrap_or_default()
-        .iter()
-        .map(|f| {
-            let severity = match one_line(text(f, "severity")) {
-                s if s.is_empty() => "unrated".to_owned(),
-                s => s,
-            };
-            let at = match f.get("line").and_then(Value::as_u64) {
-                Some(n) if n > 0 => format!(":{n}"),
-                _ => String::new(),
-            };
-            let tier = match one_line(text(f, "tier")) {
-                t if t.is_empty() => String::new(),
-                t => format!(" ({t})"),
-            };
-            let (file, title) = (one_line(text(f, "file")), one_line(text(f, "title")));
-            format!("- [{severity}] {file}{at} — {title}{tier}")
-        })
-        .collect();
-    let body = if rows.is_empty() {
-        "None reported.".to_owned()
-    } else {
-        rows.join("\n")
-    };
-    format!("## Findings\n\n{body}")
+    format!(
+        "{}\n\n{memory}{}",
+        block(line, &rest),
+        super::findings::list(step)
+    )
 }
 
 /// Whether a finished run's work was cut short: INCOMPLETE anywhere in its verdict, unless it
