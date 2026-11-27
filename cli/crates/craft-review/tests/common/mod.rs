@@ -88,6 +88,8 @@ pub fn opts(repo: &Path, run: &Path) -> StartOptions {
         all_lenses: false,
         lenses: Vec::new(),
         lenses_unread: String::new(),
+        project: craft_review::project::properties::Properties::new(),
+        project_unread: String::new(),
         prior_decisions: None,
         recall: false,
         recall_degraded: None,

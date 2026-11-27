@@ -54,6 +54,7 @@ mod code_graph_tests;
 pub mod lenses;
 pub mod mutants;
 mod point;
+pub mod properties;
 mod reusable;
 #[cfg(test)]
 mod reusable_tests;
