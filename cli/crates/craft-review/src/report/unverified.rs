@@ -74,3 +74,58 @@ pub(super) fn write(dir: &Path, state: &RunState) -> Result<(), StepError> {
     }
     std::fs::write(&path, out).map_err(|source| StepError::NoReport { path, source })
 }
+
+#[cfg(test)]
+mod tests {
+    use serde_json::{Value, json};
+
+    use super::{held, path, step_field, write};
+    use crate::state::RunState;
+
+    fn finding(severity: &str, tier: &str, title: &str) -> Value {
+        json!({"severity": severity, "tier": tier, "file": "src/lib.rs", "line": 1, "title": title, "why": "w", "source": "intent"})
+    }
+
+    fn run(settled: &[Value]) -> RunState {
+        serde_json::from_value(json!({
+            "version": crate::state::STATE_VERSION,
+            "context": {"repo": "/r", "base": "origin/main", "spec": "", "craftRoot": null, "craftVersion": null},
+            "diff": {"base": "origin/main", "mergeBase": "m", "head": "h", "dirty": false, "files": ["src/lib.rs"], "stat": "", "log": ""},
+            "tracks": [], "light": false, "phase": "done", "tasks": [],
+            "rounds": {"round": 1, "pool": [], "yields": [], "expected": [], "returned": [], "failures": {}},
+            "findings": [], "settled": settled, "notes": [], "notRun": []
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn an_unverified_low_or_info_is_held_and_nothing_else_is() {
+        assert!(held(&finding("Low", "unverified", "a")));
+        assert!(held(&finding("Info", "unverified", "a")));
+        assert!(!held(&finding("Medium", "unverified", "a")));
+        assert!(!held(&finding("Low", "confirmed", "a")));
+        assert!(!held(&finding("Info", "refuted", "a")));
+    }
+
+    #[test]
+    fn the_held_file_lists_them_worst_first_and_a_rewrite_holding_none_removes_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = run(&[
+            finding("Info", "unverified", "nit"),
+            finding("Low", "unverified", "naming"),
+            finding("High", "confirmed", "bug"),
+        ]);
+        write(dir.path(), &first).unwrap();
+        let text = std::fs::read_to_string(path(dir.path())).unwrap();
+        let (low, info) = (text.find("naming").unwrap(), text.find("nit").unwrap());
+        assert!(low < info && !text.contains("bug"), "{text}");
+        assert_eq!(step_field(dir.path(), &first).unwrap()["count"], json!(2));
+        let none = run(&[finding("High", "confirmed", "bug")]);
+        write(dir.path(), &none).unwrap();
+        assert!(
+            !path(dir.path()).exists(),
+            "a rewrite holding none leaves no stale file"
+        );
+        assert!(step_field(dir.path(), &none).is_none());
+    }
+}

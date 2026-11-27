@@ -3,10 +3,12 @@
 // report is. The line is the binary's own (the finished step's `line`, the report's verdict line, which says why when
 // nothing or not everything was reviewed), marked with the glyph review's verdicts open with; with `comment`, what
 // landed on the PR and how many findings wait for the reviewer — the caller asked for comments, so whether they landed
-// is part of the answer. Then a `## Findings` list built from the binary's JSON, so a parent reading the answer
-// (rust-audit's reviewResult, integrations/shared/rust-audit-verdict.mjs) has each finding without any model copying the report; and a
+// is part of the answer. Then a `## Findings` list built from the binary's JSON (integrations/shared/cli-review-findings.mjs), so a
+// parent reading the answer (rust-audit's reviewResult, integrations/shared/rust-audit-verdict.mjs) has each finding the report
+// lists — and the count of those it holds apart — without any model copying the report; and a
 // run the binary held on the usage limit says `stopped: usage limit reached (<text>)`, the words a parent reads the
 // stop by (limitInReport, integrations/shared/limit-report.mjs).
+import { findingsList, oneLine } from './cli-review-findings.mjs'
 
 /** @typedef {import('./cli-review-record.mjs').Finding} Finding */
 /** @typedef {{ run: string, report: string, verdict: string, line: string, degraded: boolean, degradedNotes?: string[], memorySections?: string, stopped?: boolean, stopNote?: string, worktree?: string, findings?: Finding[], unverifiedLow?: { count: number, file: string } | null, sorting?: Record<string, unknown> | null, prComments?: Record<string, unknown> | null }} Finished  stopNote: the binary's stop as a parent reads it, '' when none; worktree: the line naming craft's own worktree of the PR given the run reviewed in (realm @nick/craft, node #517) */
@@ -95,33 +97,6 @@ const degradedBlock = notes => [DEGRADED_LINE, ...notes.map(n => `- ${oneLine(n)
 
 /** The line a degraded run's answer says it by; its notes follow as bullets. */
 export const DEGRADED_LINE = "⚠️ Degraded: part of this review ran weaker than asked — the report's Degraded section says how."
-
-/** @param {unknown} v @returns {string} */
-const oneLine = v =>
-  String(v ?? '')
-    .replace(/\s+/g, ' ')
-    .trim()
-
-/** Whether `f` is a finding the binary holds apart: unverified, at Low or Info severity. @param {Finding} f */
-const isHeld = f => f.tier === 'unverified' && (f.severity === 'Low' || f.severity === 'Info')
-
-/**
- * The reported findings, one line each: severity, `file:line`, title and tier, as the binary's finished step names them —
- * the unverified Low and Info ones the binary held apart (`held`) left out, one sentence naming how many and their file
- * (realm @nick/craft, node #636), as the binary's own driver writes it (cli/bin/craft/src/run/findings.rs).
- * @param {Finding[]} findings @param {{ count: number, file: string } | null} [held] @returns {string}
- */
-export function findingsList(findings, held = null) {
-  const rows = findings
-    .filter(f => !held || !isHeld(f))
-    .map(
-      f =>
-        `- [${oneLine(f.severity) || 'unrated'}] ${oneLine(f.file)}${f.line ? `:${f.line}` : ''} — ${oneLine(f.title)}${f.tier ? ` (${oneLine(f.tier)})` : ''}`,
-    )
-  const apart = held ? [`${String(held.count)} Low or Info finding(s) no verifier checked are not listed: they are in ${oneLine(held.file)}.`] : []
-  const body = [...rows, ...apart]
-  return ['## Findings', '', ...(body.length ? body : ['None reported.'])].join('\n')
-}
 
 /**
  * How to resume the stopped run in `run`: the driver again with `run=` (`driver`, by default the Workflow), or the

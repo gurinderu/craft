@@ -371,10 +371,11 @@ pub(crate) fn write(
     state: &RunState,
     verdict: &str,
 ) -> Result<(), crate::step::StepError> {
+    // The file first: a report never names one its write did not leave.
+    unverified::write(dir, state)?;
     let path = crate::state::report_path(dir);
     std::fs::write(&path, markdown(state, verdict))
-        .map_err(|source| crate::step::StepError::NoReport { path, source })?;
-    unverified::write(dir, state)
+        .map_err(|source| crate::step::StepError::NoReport { path, source })
 }
 
 /// The Markdown report of a finished run: the verdict, then the findings grouped by tier, worst

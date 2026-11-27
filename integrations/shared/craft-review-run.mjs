@@ -8,6 +8,7 @@
 import { spawn } from 'node:child_process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { HELD_APART } from './cli-review-findings.mjs'
 
 /** The wrapper beside this plugin's integrations/shared/. */
 export const WRAPPER = path.join(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..'), 'bin', 'craft')
@@ -194,14 +195,14 @@ export function runReview({ backend, args, cwd, env = process.env, signal, onPro
   })
 }
 
-/** The `- …` lines of the answer's `## Findings` section. @param {string} answer */
+/** The `- …` lines of the answer's `## Findings` section, and its sentence on the findings held apart (HELD_APART). @param {string} answer */
 function findingLines(answer) {
   const lines = answer.split('\n')
   const from = lines.indexOf('## Findings')
   if (from < 0) return []
   const rest = lines.slice(from + 1)
   const end = rest.findIndex(l => l.startsWith('## '))
-  return (end < 0 ? rest : rest.slice(0, end)).filter(l => l.startsWith('- '))
+  return (end < 0 ? rest : rest.slice(0, end)).filter(l => l.startsWith('- ') || HELD_APART.test(l))
 }
 
 /** The verdict, the report, the run and the findings of an ended run. @param {Outcome} o @returns {Summary} */

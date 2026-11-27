@@ -29,7 +29,7 @@ export const findingsOf = v =>
  * @param {unknown} v @returns {{ count: number, file: string } | null}
  */
 export const heldOf = v =>
-  isObject(v) && Number.isInteger(v['count']) && Number(v['count']) > 0 && typeof v['file'] === 'string' && v['file']
+  isObject(v) && Number.isInteger(v['count']) && Number(v['count']) > 0 && typeof v['file'] === 'string' && v['file'].trim()
     ? { count: Number(v['count']), file: v['file'] }
     : null
 

@@ -4,6 +4,7 @@
 // audit's one `gate` dimension (integrations/shared/cli-review-gate.mjs; realm @nick/craft, node #150).
 import { reviewResult, verdictLine, verdictToken } from './rust-audit-verdict.mjs'
 import { DEGRADED_LINE, UNREAD_FINDINGS } from './cli-review-verdict.mjs'
+import { HELD_APART } from './cli-review-findings.mjs'
 
 /** @typedef {{ severity: string, title: string, location: string, detail: string }} Finding */
 
@@ -24,14 +25,26 @@ function under(answer, heading) {
 }
 
 /**
- * The findings a nested review answer lists, one per row; [] when it lists none.
+ * The findings a nested review answer lists, one per row, and one Info entry naming how many unverified Low and Info
+ * findings it held apart and where (realm @nick/craft, node #636); [] when it lists none.
  * @param {unknown} answer @returns {Finding[]}
  */
 export function cliFindings(answer) {
   const body = under(String(answer ?? ''), '## Findings') ?? ''
   return body.split('\n').flatMap(l => {
     const m = ROW.exec(l.trim())
-    return m ? [{ severity: String(m[1]), title: String(m[3]), location: String(m[2]), detail: 'reported by the nested CLI review' }] : []
+    if (m) return [{ severity: String(m[1]), title: String(m[3]), location: String(m[2]), detail: 'reported by the nested CLI review' }]
+    const held = HELD_APART.exec(l.trim())
+    return held
+      ? [
+          {
+            severity: 'Info',
+            title: `${String(held[1])} unverified Low or Info finding(s) held apart`,
+            location: String(held[2]),
+            detail: 'no verifier checked them; the nested CLI review lists them in that file',
+          },
+        ]
+      : []
   })
 }
 
