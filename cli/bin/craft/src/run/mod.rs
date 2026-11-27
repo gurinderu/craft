@@ -122,28 +122,34 @@ fn say(out: &mut dyn Write, text: &str) -> Result<()> {
 }
 
 /// A refusal before anything ran: its answer and the last event, exit 2.
-fn refused(sink: Sink, why: &str) -> Result<ExitCode> {
+fn refused(sink: &Sink, why: &str) -> Result<ExitCode> {
     say(
         &mut std::io::stdout().lock(),
         &report::stopped_answer(&format!("review: {why}. Nothing ran.")),
     )?;
-    sink.emit(&Event::result(None, None, 2));
+    sink.emit(Event::result(None, None, 2));
+    sink.finish();
     Ok(ExitCode::from(2))
 }
 
 /// The host and what it runs with, or why it cannot be used: opencode is asked first which
 /// agents it has — or, with `--delegate`, takes those `--agents` names and runs no opencode.
-fn ready(args: &RunArgs, repo: &Path, sink: Sink) -> Result<(NonZeroUsize, Host, PathBuf), String> {
+fn ready(
+    args: &RunArgs,
+    repo: &Path,
+    sink: &Sink,
+) -> Result<(NonZeroUsize, Host, PathBuf), String> {
     let (concurrency, mut host, root) =
         concurrency_of(args).and_then(|c| Ok((c, host_of(args)?, root_of(args)?)))?;
     if args.delegate {
-        if host.kind != HostKind::OpenCode || !sink.json {
+        if host.kind != HostKind::OpenCode || !sink.json() {
             return Err("--delegate is opencode's alone, with --events json".into());
         }
         host.agents = Some(opencode::delegated(args.agents.as_deref())?);
+        let (events, lines) = (sink.clone(), sink.clone());
         host.delegate = Some(delegate::Delegate::on_stdin(
-            move |e| sink.emitted(&e),
-            move |l| sink.log(l),
+            move |e| events.emitted(e),
+            move |l| lines.log(l),
         ));
         return Ok((concurrency, host, root));
     }
@@ -170,20 +176,18 @@ pub async fn run(mut args: RunArgs) -> Result<ExitCode> {
             let _gone = stopping.send(Some(code));
         }
     });
-    let sink = Sink {
-        json: args.events == Some(EventFormat::Json),
-    };
+    let sink = Sink::new(args.events == Some(EventFormat::Json));
     if args.run.is_some() && args.start.all_lenses {
         // A resume keeps the lenses its start chose: the flag would read as taken and not be.
         return refused(
-            sink,
+            &sink,
             "--all-lenses goes with a start: a resumed run keeps the lenses it started with",
         );
     }
     let repo = std::path::absolute(&args.start.cwd)?;
-    let (concurrency, host, root) = match ready(&args, &repo, sink) {
+    let (concurrency, host, root) = match ready(&args, &repo, &sink) {
         Ok(s) => s,
-        Err(why) => return refused(sink, &why),
+        Err(why) => return refused(&sink, &why),
     };
     let comment = args.start.comment;
     let mut start = args.start;
@@ -196,7 +200,7 @@ pub async fn run(mut args: RunArgs) -> Result<ExitCode> {
         .to_possible_value()
         .map(|v| v.get_name().to_owned());
     let log = |line: &str| sink.log(line);
-    let emit = |event: Event| sink.emit(&event);
+    let emit = |event: Event| sink.emit(event);
     log(&format!(
         "review {} in {}: {} over {}, up to {concurrency} task(s) at once",
         env!("CARGO_PKG_VERSION"),
@@ -236,6 +240,7 @@ pub async fn run(mut args: RunArgs) -> Result<ExitCode> {
     let answer = ending::drive(&driver, args.run.as_deref().map(Path::new), comment).await;
     say(&mut std::io::stdout().lock(), &answer.text)?;
     let code = (*stop.borrow()).unwrap_or(u8::from(!answer.finished));
-    sink.emit(&Event::result(answer.step.as_ref(), answer.run, code));
+    sink.emit(Event::result(answer.step.as_ref(), answer.run, code));
+    sink.finish();
     Ok(ExitCode::from(code))
 }

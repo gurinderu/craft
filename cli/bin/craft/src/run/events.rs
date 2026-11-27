@@ -1,8 +1,19 @@
 //! The progress of `craft review run --events json` as a stream a host's view reads (realm
 //! @nick/craft, node #506): one JSON object per line on stderr, stdout left to the answer. Without
 //! the flag, stderr carries the human progress lines as before and no event.
+//!
+//! One thread of the sink's own writes the stream (realm @nick/craft, node #690). An event is
+//! offered to a bounded queue and never waited for: one the queue has no room for is lost, and a
+//! delegated task whose event is lost is not handed out (`delegate.rs`). A line the stream did not
+//! take whole is the last — nothing is written after it. The run waits for what it offered only as
+//! it ends, and no longer than its exit wait.
 
 use std::io::Write;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
+use std::sync::{Arc, Condvar, Mutex, PoisonError};
+use std::thread;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -106,43 +117,311 @@ impl Event {
     }
 }
 
-/// Where the progress goes: human lines, or the event stream.
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct Sink {
-    pub(crate) json: bool,
+/// How many events may wait for the writer: not fewer than one round's dispatches.
+const CAPACITY: usize = 1024;
+/// How long a run waits, as it ends, for the events it offered and the writer has not written.
+const EXIT_WAIT: Duration = Duration::from_secs(2);
+
+/// What the writer has told, read by whoever offers an event or waits for one.
+#[derive(Debug, Default)]
+struct Told {
+    /// How many events the writer took off the queue, written or lost.
+    handled: Mutex<u64>,
+    /// Set once a line was not taken whole: the stream is over.
+    broken: AtomicBool,
+    /// Woken as each event is taken off the queue.
+    advanced: Condvar,
 }
 
-impl Sink {
-    /// A progress line: printed, or as a `log` event. A failed write loses only progress.
-    pub(crate) fn log(self, line: &str) {
-        if self.json {
-            self.emit(&Event::Log {
-                line: line.to_owned(),
-            });
-        } else {
-            let _unlogged = writeln!(std::io::stderr().lock(), "{line}");
+/// The event stream's queue and its one writer.
+#[derive(Debug)]
+struct Queue {
+    offered: SyncSender<Event>,
+    /// How many events the queue took.
+    queued: AtomicU64,
+    told: Arc<Told>,
+    wait: Duration,
+}
+
+impl Queue {
+    /// A queue of `capacity` events, at least one, and a thread of its own that writes each as
+    /// one line through `write`, which says whether the stream took it whole. A writer that could
+    /// not start takes the queue's other end with it: every event is then refused.
+    fn with(
+        capacity: usize,
+        wait: Duration,
+        write: impl FnMut(&str) -> bool + Send + 'static,
+    ) -> Self {
+        let (offered, taken) = sync_channel(capacity);
+        let told = Arc::new(Told::default());
+        // Detached: it ends with the stream, and a run that returns early does not wait for it.
+        let _writer = thread::Builder::new().name("craft-events".into()).spawn({
+            let told = Arc::clone(&told);
+            move || drain(&taken, &told, write)
+        });
+        Self {
+            offered,
+            queued: AtomicU64::new(0),
+            told,
+            wait,
         }
     }
 
-    /// An event, written only in the event stream. A failed write loses only progress.
-    pub(crate) fn emit(self, event: &Event) {
+    /// Offers an event: whether the queue took it. It never waits.
+    fn offer(&self, event: Event) -> bool {
+        if self.told.broken.load(Ordering::SeqCst) {
+            return false;
+        }
+        if self.offered.try_send(event).is_err() {
+            return false;
+        }
+        self.queued.fetch_add(1, Ordering::SeqCst);
+        true
+    }
+
+    /// Waits, no longer than `wait`, for the events the queue took to be written; a stream that
+    /// broke ends the wait at once.
+    fn finish(&self) {
+        let queued = self.queued.load(Ordering::SeqCst);
+        let deadline = Instant::now() + self.wait;
+        let told = &*self.told;
+        let mut handled = told.handled.lock().unwrap_or_else(PoisonError::into_inner);
+        while *handled < queued && !told.broken.load(Ordering::SeqCst) {
+            let left = deadline.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                return;
+            }
+            handled = told
+                .advanced
+                .wait_timeout(handled, left)
+                .unwrap_or_else(PoisonError::into_inner)
+                .0;
+        }
+    }
+}
+
+/// The writer's whole work: each event as one line, in the order offered, until one is not taken
+/// whole — nothing is written after it. The caller holds the queue's other end and drops it once
+/// this returns: every later offer is then refused.
+fn drain(taken: &Receiver<Event>, told: &Told, mut write: impl FnMut(&str) -> bool) {
+    while let Ok(event) = taken.recv() {
+        let line = serde_json::to_string(&event).map(|mut line| {
+            line.push('\n');
+            line
+        });
+        let whole = line.is_ok_and(|line| write(&line));
+        if !whole {
+            told.broken.store(true, Ordering::SeqCst);
+        }
+        // Said before the waking, so whoever wakes reads the break with the count.
+        *told.handled.lock().unwrap_or_else(PoisonError::into_inner) += 1;
+        told.advanced.notify_all();
+        if !whole {
+            return;
+        }
+    }
+}
+
+/// The process's stderr, one line at a time.
+fn to_stderr(line: &str) -> bool {
+    std::io::stderr().lock().write_all(line.as_bytes()).is_ok()
+}
+
+/// Where the progress goes: human lines, or the event stream.
+#[derive(Debug, Clone)]
+pub(crate) struct Sink(Mode);
+
+#[derive(Debug, Clone)]
+enum Mode {
+    Lines,
+    Events(Arc<Queue>),
+}
+
+impl Sink {
+    /// The process's sink: the event stream with `json`, human lines without.
+    pub(super) fn new(json: bool) -> Self {
+        Self::with(json, CAPACITY, EXIT_WAIT, to_stderr)
+    }
+
+    /// A sink whose event stream holds `capacity` events, at least one, waits `wait` as it ends
+    /// and writes each line through `write`, which says whether the stream took it whole.
+    pub(super) fn with(
+        json: bool,
+        capacity: usize,
+        wait: Duration,
+        write: impl FnMut(&str) -> bool + Send + 'static,
+    ) -> Self {
+        if json {
+            Self(Mode::Events(Arc::new(Queue::with(capacity, wait, write))))
+        } else {
+            Self(Mode::Lines)
+        }
+    }
+
+    /// Whether this is the event stream.
+    pub(super) fn json(&self) -> bool {
+        matches!(self.0, Mode::Events(_))
+    }
+
+    /// A progress line: printed, or offered as a `log` event. One not written loses only progress.
+    pub(crate) fn log(&self, line: &str) {
+        match &self.0 {
+            Mode::Events(queue) => {
+                let _lost = queue.offer(Event::Log {
+                    line: line.to_owned(),
+                });
+            }
+            Mode::Lines => {
+                let _unlogged = writeln!(std::io::stderr().lock(), "{line}");
+            }
+        }
+    }
+
+    /// An event, offered to the event stream alone. One not written loses only progress.
+    pub(crate) fn emit(&self, event: Event) {
         let _lost = self.emitted(event);
     }
 
-    /// An event written to the event stream: whether it was — what a delegated task's dispatch
-    /// stands on (`delegate.rs`).
-    pub(crate) fn emitted(self, event: &Event) -> bool {
-        self.written(&mut std::io::stderr().lock(), event)
+    /// An event offered to the event stream: whether the queue took it — what a delegated task's
+    /// dispatch stands on (`delegate.rs`).
+    pub(crate) fn emitted(&self, event: Event) -> bool {
+        match &self.0 {
+            Mode::Events(queue) => queue.offer(event),
+            Mode::Lines => false,
+        }
     }
 
-    /// An event written as one line to `out`, whole or not at all: whether it was written.
-    fn written(self, out: &mut dyn Write, event: &Event) -> bool {
-        self.json && serde_json::to_string(event).is_ok_and(|line| writeln!(out, "{line}").is_ok())
+    /// Waits, no longer than its exit wait, for the events offered to be written.
+    pub(crate) fn finish(&self) {
+        if let Mode::Events(queue) = &self.0 {
+            queue.finish();
+        }
+    }
+}
+
+/// A test's event stream, for this module's tests and `delegate`'s.
+#[cfg(test)]
+pub(super) mod stream {
+    use std::sync::{Arc, Condvar, Mutex, PoisonError};
+    use std::thread::{self, ThreadId};
+    use std::time::{Duration, Instant};
+
+    /// Holds the writer at its first line until opened.
+    #[derive(Default)]
+    pub(crate) struct Gate {
+        /// Whether the writer arrived, and whether it may go on.
+        at: Mutex<(bool, bool)>,
+        opened: Condvar,
+    }
+
+    impl Gate {
+        /// The writer's side: says it arrived and waits until the gate opens.
+        pub(super) fn reach(&self) {
+            let mut at = self.at.lock().unwrap_or_else(PoisonError::into_inner);
+            at.0 = true;
+            while !at.1 {
+                at = self.opened.wait(at).unwrap_or_else(PoisonError::into_inner);
+            }
+        }
+
+        /// Whether the writer arrived.
+        pub(crate) fn arrived(&self) -> bool {
+            self.at.lock().unwrap_or_else(PoisonError::into_inner).0
+        }
+
+        /// Lets the writer go on.
+        pub(crate) fn open(&self) {
+            self.at.lock().unwrap_or_else(PoisonError::into_inner).1 = true;
+            self.opened.notify_all();
+        }
+    }
+
+    /// What the stream was given, and by which thread.
+    #[derive(Default)]
+    pub(crate) struct Kept {
+        given: Mutex<(Vec<Vec<u8>>, Vec<ThreadId>)>,
+        gate: Option<Arc<Gate>>,
+        delay: Duration,
+    }
+
+    impl Kept {
+        /// A stream that takes a line as soon as it is given.
+        pub(crate) fn new() -> Self {
+            Self::default()
+        }
+
+        /// A stream whose first line waits at `gate`.
+        pub(crate) fn at(gate: &Arc<Gate>) -> Self {
+            Self {
+                gate: Some(Arc::clone(gate)),
+                ..Self::default()
+            }
+        }
+
+        /// A stream that takes `delay` over each line.
+        pub(crate) fn slow(delay: Duration) -> Self {
+            Self {
+                delay,
+                ..Self::default()
+            }
+        }
+
+        fn take(&self, line: &str) -> bool {
+            if let Some(gate) = &self.gate {
+                gate.reach();
+            }
+            thread::sleep(self.delay);
+            let mut given = self.given.lock().unwrap_or_else(PoisonError::into_inner);
+            given.0.push(line.as_bytes().to_vec());
+            given.1.push(thread::current().id());
+            true
+        }
+
+        /// The lines the stream took so far, each with its newline.
+        pub(crate) fn lines(&self) -> Vec<String> {
+            self.given
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .0
+                .iter()
+                .map(|line| String::from_utf8_lossy(line).into_owned())
+                .collect()
+        }
+
+        /// The thread that took each line the stream took so far.
+        pub(crate) fn writers(&self) -> Vec<ThreadId> {
+            self.given
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .1
+                .clone()
+        }
+    }
+
+    /// The writer of a test sink's stream: what it is given goes to `kept`.
+    pub(crate) fn writing(kept: &Arc<Kept>) -> impl FnMut(&str) -> bool + Send + 'static {
+        let kept = Arc::clone(kept);
+        move |line| kept.take(line)
+    }
+
+    /// Up to five seconds for `so` to hold: whether it did.
+    pub(crate) fn waited_until(mut so: impl FnMut() -> bool) -> bool {
+        let by = Instant::now() + Duration::from_secs(5);
+        while !so() && Instant::now() < by {
+            thread::sleep(Duration::from_millis(1));
+        }
+        so()
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+    use std::sync::mpsc;
+    use std::thread;
+    use std::thread::ThreadId;
+    use std::time::{Duration, Instant};
+
     use serde_json::json;
 
     use super::*;
@@ -223,26 +502,252 @@ mod tests {
         );
     }
 
+    /// A `task_cancelled` event of `key`.
+    fn cancelled(key: u64) -> Event {
+        Event::TaskCancelled { key }
+    }
+
+    /// The `task_cancelled` keys of the lines the stream took, in their order.
+    fn keys_of(kept: &stream::Kept) -> Vec<u64> {
+        kept.lines()
+            .iter()
+            .map(|line| {
+                let Event::TaskCancelled { key } = serde_json::from_str::<Event>(line).unwrap()
+                else {
+                    panic!("not a task_cancelled event: {line}")
+                };
+                key
+            })
+            .collect()
+    }
+
+    /// `sink.finish()` on a thread of its own; its channel says when it returned, so a finish that
+    /// never returns fails the test there instead of hanging it.
+    fn finished_elsewhere(sink: &Sink) -> mpsc::Receiver<()> {
+        let (done, waited) = mpsc::channel();
+        let ending = sink.clone();
+        thread::spawn(move || {
+            ending.finish();
+            let _said = done.send(());
+        });
+        waited
+    }
+
+    /// `sink.emitted(event)` on a thread of its own: its answer within five seconds, `None` while
+    /// it is still waiting — an offer never waits.
+    fn offered_elsewhere(sink: &Sink, event: Event) -> Option<bool> {
+        let (said, answer) = mpsc::channel();
+        let offering = sink.clone();
+        thread::spawn(move || {
+            let _sent = said.send(offering.emitted(event));
+        });
+        answer.recv_timeout(Duration::from_secs(5)).ok()
+    }
+
     #[test]
-    fn an_event_is_written_only_in_the_event_stream_and_says_so() {
+    fn an_event_is_offered_only_to_the_event_stream_and_says_so() {
         let event = Event::TaskCancelled { key: 1 };
-        assert!(Sink { json: true }.emitted(&event));
+        let sink = |json| Sink::with(json, 8, Duration::from_secs(5), |_| true);
+        assert!(sink(true).emitted(event.clone()));
         assert!(
-            !Sink { json: false }.emitted(&event),
-            "without --events json no event is written, so no task can be handed out"
+            !sink(false).emitted(event),
+            "without --events json no event is offered, so no task can be handed out"
         );
     }
 
-    /// Set when this test's binary runs again as a child: there the test writes one event through the process's
-    /// stderr, for the parent to read.
+    #[test]
+    fn every_event_is_written_by_the_sink_s_one_thread_and_no_other() {
+        let kept = Arc::new(stream::Kept::new());
+        let sink = Sink::with(true, 64, Duration::from_secs(5), stream::writing(&kept));
+        let offering: Vec<_> = (0..4u64)
+            .map(|n| {
+                let sink = sink.clone();
+                thread::spawn(move || {
+                    for key in 0..8 {
+                        sink.emit(cancelled(n * 8 + key));
+                    }
+                    thread::current().id()
+                })
+            })
+            .collect();
+        let offered_by: HashSet<ThreadId> = offering
+            .into_iter()
+            .map(|offerer| offerer.join().unwrap())
+            .collect();
+        sink.finish();
+        let mut keys = keys_of(&kept);
+        keys.sort_unstable();
+        assert_eq!(
+            keys,
+            (0..32).collect::<Vec<_>>(),
+            "each event offered, once"
+        );
+        let writers: HashSet<ThreadId> = kept.writers().into_iter().collect();
+        assert_eq!(writers.len(), 1, "one thread wrote every line");
+        assert!(
+            writers.is_disjoint(&offered_by),
+            "and it is none of those that offered the events"
+        );
+    }
+
+    #[test]
+    fn no_offer_waits_for_a_write_and_the_exit_waits_for_what_was_offered() {
+        let kept = Arc::new(stream::Kept::slow(Duration::from_millis(10)));
+        let sink = Sink::with(true, 128, Duration::from_secs(5), stream::writing(&kept));
+        for round in 0..64 {
+            sink.emit(Event::Round {
+                round,
+                phase: "lenses".into(),
+                tasks: 1,
+            });
+        }
+        sink.emit(Event::result(None, None, 0));
+        assert!(
+            kept.lines().len() < 65,
+            "the stream was still being written after the last offer"
+        );
+        let exit = Instant::now();
+        sink.finish();
+        let waited = exit.elapsed();
+        let last = kept
+            .lines()
+            .last()
+            .map(|line| serde_json::from_str::<Event>(line).unwrap());
+        assert_eq!(
+            last,
+            Some(Event::result(None, None, 0)),
+            "every event offered was written, the result last"
+        );
+        assert!(
+            waited < Duration::from_secs(4),
+            "the exit waits only for the lines still to write: {waited:?}"
+        );
+    }
+
+    #[test]
+    fn the_exit_waits_for_a_parked_writer_no_longer_than_its_wait() {
+        let gate = Arc::new(stream::Gate::default());
+        let kept = Arc::new(stream::Kept::at(&gate));
+        let sink = Sink::with(true, 8, Duration::from_millis(100), stream::writing(&kept));
+        assert!(sink.emitted(cancelled(1)));
+        assert!(
+            stream::waited_until(|| gate.arrived()),
+            "the writer took the event and is parked in the stream"
+        );
+        let exit = Instant::now();
+        finished_elsewhere(&sink)
+            .recv_timeout(Duration::from_secs(5))
+            .expect("the exit gives up once its wait is over");
+        let waited = exit.elapsed();
+        assert!(
+            waited >= Duration::from_millis(100),
+            "the exit waited its whole wait: {waited:?}"
+        );
+        assert!(
+            waited < Duration::from_secs(4),
+            "and no longer: it did not wait for the parked writer: {waited:?}"
+        );
+        gate.open();
+    }
+
+    #[test]
+    fn a_broken_stream_ends_the_exit_s_wait_at_once() {
+        let sink = Sink::with(true, 8, Duration::from_secs(60), |_| false);
+        for key in 0..4 {
+            sink.emit(cancelled(key));
+        }
+        finished_elsewhere(&sink)
+            .recv_timeout(Duration::from_secs(5))
+            .expect("a broken stream ends the wait, not the whole wait");
+    }
+
+    #[test]
+    fn a_line_the_stream_did_not_take_whole_is_the_last_and_the_stream_refuses_the_rest() {
+        for taken in [0usize, 4] {
+            let gate = Arc::new(stream::Gate::default());
+            let held = Arc::clone(&gate);
+            let given = Arc::new(Mutex::new(Vec::new()));
+            let into = Arc::clone(&given);
+            let sink = Sink::with(true, 8, Duration::from_secs(5), move |line| {
+                held.reach();
+                into.lock().unwrap().extend(line.bytes().take(taken));
+                taken == line.len()
+            });
+            assert!(sink.emitted(cancelled(1)), "the queue took the first");
+            assert!(
+                sink.emitted(cancelled(2)),
+                "and the next, the break not yet known"
+            );
+            gate.open();
+            sink.finish();
+            assert_eq!(
+                given.lock().unwrap().len(),
+                taken,
+                "the first line's first {taken} bytes, and nothing after it"
+            );
+            assert!(!sink.emitted(cancelled(3)), "a broken stream takes no more");
+        }
+    }
+
+    #[test]
+    fn a_full_queue_refuses_an_event_at_once_and_takes_one_again_once_its_writer_moved() {
+        let gate = Arc::new(stream::Gate::default());
+        let kept = Arc::new(stream::Kept::at(&gate));
+        let sink = Sink::with(true, 2, Duration::from_secs(5), stream::writing(&kept));
+        assert!(sink.emitted(cancelled(1)));
+        assert!(stream::waited_until(|| gate.arrived()));
+        assert!(
+            sink.emitted(cancelled(2)) && sink.emitted(cancelled(3)),
+            "the writer holds the first, so two more fit"
+        );
+        assert_eq!(
+            offered_elsewhere(&sink, cancelled(4)),
+            Some(false),
+            "a full queue refuses at once: nobody waits"
+        );
+        gate.open();
+        assert!(stream::waited_until(|| kept.lines().len() == 3));
+        assert!(
+            sink.emitted(cancelled(4)),
+            "the writer moved on, so the queue takes again"
+        );
+        sink.finish();
+        assert_eq!(keys_of(&kept), [1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn the_queue_takes_a_round_s_dispatches_behind_the_one_being_written() {
+        let gate = Arc::new(stream::Gate::default());
+        let kept = Arc::new(stream::Kept::at(&gate));
+        let sink = Sink::with(true, CAPACITY, EXIT_WAIT, stream::writing(&kept));
+        assert!(sink.emitted(cancelled(0)));
+        assert!(stream::waited_until(|| gate.arrived()));
+        let round = 256u64;
+        assert!(
+            (1..=round).all(|key| sink.emitted(cancelled(key))),
+            "a round's dispatches fit behind the first"
+        );
+        let behind = (0..CAPACITY)
+            .filter(|_| sink.emitted(cancelled(round + 1)))
+            .count();
+        assert_eq!(behind, CAPACITY - 256, "the queue is full, and no fuller");
+        gate.open();
+        sink.finish();
+        assert_eq!(kept.lines().len(), CAPACITY + 1);
+    }
+
+    /// Set when this test's binary runs again as a child: there the test offers one event to the
+    /// process's stderr, for the parent to read.
     const WRITES_EVENT: &str = "CRAFT_TEST_EVENT_STREAM";
 
-    /// The child's side: one event, written as the binary writes it under `--delegate`.
+    /// The child's side: one event, offered as the binary offers it under `--delegate`.
     fn writes_event() {
+        let sink = Sink::new(true);
         assert!(
-            Sink { json: true }.emitted(&Event::TaskCancelled { key: 1 }),
-            "the process's stderr took the event"
+            sink.emitted(Event::TaskCancelled { key: 1 }),
+            "the queue took the event"
         );
+        sink.finish();
     }
 
     #[test]
@@ -276,44 +781,6 @@ mod tests {
             !out.contains("task_cancelled"),
             "stdout is left to the answer:\n{out}"
         );
-    }
-
-    /// An event stream that takes `n` bytes more, then is gone: its reader stopped reading.
-    struct GoneAfter(usize);
-
-    impl std::io::Write for GoneAfter {
-        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-            if self.0 == 0 {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::BrokenPipe,
-                    "the reader is gone",
-                ));
-            }
-            let take = self.0.min(buf.len());
-            self.0 -= take;
-            Ok(take)
-        }
-
-        fn flush(&mut self) -> std::io::Result<()> {
-            Ok(())
-        }
-    }
-
-    #[test]
-    fn an_event_that_could_not_be_written_whole_is_not_said_written() {
-        let event = Event::TaskCancelled { key: 1 };
-        let mut out = Vec::new();
-        assert!(Sink { json: true }.written(&mut out, &event));
-        assert_eq!(
-            out.as_slice(),
-            b"{\"type\":\"task_cancelled\",\"key\":1}\n".as_slice()
-        );
-        for taken in [0, 4] {
-            assert!(
-                !Sink { json: true }.written(&mut GoneAfter(taken), &event),
-                "a stream that took {taken} bytes and is gone did not get the event"
-            );
-        }
     }
 
     #[test]
