@@ -11,6 +11,9 @@ tools:
   websearch: false
   question: false
   "*_*": false
+  review: false
+  rust-audit: false
+  triage-findings: false
   execute: false
   experimental_image_generate: false
 permission:
