@@ -8,7 +8,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { runEngine } from './engine-harness.mjs'
+import { filedRecord, runEngine } from './engine-harness.mjs'
 
 let RUN = ''
 /** The account's usage limit as a task agent says it (integrations/shared/cli-review-limit.mjs). */
@@ -193,8 +193,51 @@ test('a status command the harness refused asks no brief status: the review stop
   assert.match(run.report, /review stopped: the command printed no JSON: Error: the output was cut\. The run is in .*\. To resume .*`craft:review run=/)
 })
 
-test('a status whose page step stopped on the usage limit asks no brief status: the review stops on the lost submit', async () => {
-  const status = JSON.stringify({ run: RUN, done: true, filing: { record: 'filed' } })
+for (const recovery of ['page', 'status', 'brief', 'pending'])
+  for (const submit of ['unreadable', 'empty'])
+    test(`a ${recovery} status keeps the usage limit after an ${submit} submit`, async () => {
+      const status = JSON.stringify({ run: RUN, done: true, filing: { record: 'filed' } })
+      const run = await runEngine('review', {
+        args: ARGS,
+        script: {
+          ...BASE(),
+          'step:start': ran(JSON.stringify({ run: RUN, done: false, tasks: [TASK()] })),
+          lens: () => {
+            throw new Error(LIMIT)
+          },
+          'step:submit:1': submit === 'empty' ? null : ran('Error: the output was cut'),
+          'step:status':
+            recovery === 'page'
+              ? page(status, 0, 5)
+              : recovery === 'brief'
+                ? ran('Error: status was cut')
+                : recovery === 'pending'
+                  ? ran(JSON.stringify({ run: RUN, done: false, round: 2, phase: 'lenses' }))
+                  : null,
+          // The service agent answers nothing once the limit is seen: the page step comes back as the limit's stop.
+          'step:status:page': () => null,
+          'step:brief': () => null,
+        },
+      })
+      assert.ok(
+        run.logs.some(l => l.startsWith(`⛔ usage limit reached (${LIMIT})`)),
+        run.logs.join('\n'),
+      )
+      const extra = recovery === 'page' ? ['step:status:page'] : recovery === 'brief' ? ['step:brief'] : []
+      assert.deepEqual(
+        run.calls.map(c => c.label),
+        ['step:root', 'step:start', 'lens:a', 'step:submit:1', 'step:status', ...extra, 'log-run'],
+      )
+      assert.ok(run.report.includes(`stopped: usage limit reached (${LIMIT})`), run.report)
+      assert.ok(run.report.includes(`The run is in ${RUN}. To resume`), run.report)
+      assert.ok(run.report.includes(`craft review submit --run '${RUN}' --resume`), run.report)
+      assert.equal(run.report.includes('the binary reports round 2, phase lenses'), recovery === 'pending')
+      assert.doesNotMatch(run.report, /review stopped:|the command printed no JSON/)
+      assert.deepEqual(filedRecord(run)?.notRun, ['the craft binary did not finish the run', 'stopped: the usage limit was reached'])
+    })
+
+test('a recovered binary ending takes precedence over the limit seen by the driver', async () => {
+  const finished = { run: RUN, done: true, report: `${RUN}/report.md`, verdict: 'Block' }
   const run = await runEngine('review', {
     args: ARGS,
     script: {
@@ -203,23 +246,12 @@ test('a status whose page step stopped on the usage limit asks no brief status: 
       lens: () => {
         throw new Error(LIMIT)
       },
-      'step:submit:1': ran('Error: the output was cut'),
-      'step:status': page(status, 0, 5),
-      // The service agent answers nothing once the limit is seen: the page step comes back as the limit's stop.
-      'step:status:page': () => null,
+      'step:submit:1': ran('cut JSON'),
+      'step:status': ran(JSON.stringify({ run: RUN, done: true, filing: { record: 'filed', finished } })),
     },
   })
-  assert.ok(
-    run.logs.some(l => l.startsWith(`⛔ usage limit reached (${LIMIT})`)),
-    run.logs.join('\n'),
-  )
-  // The limit's stop on a page step is no status that said nothing: the brief status, another command, is not asked
-  // in its place. The review stops as on a status command that failed: on the reason its submit was lost.
-  assert.deepEqual(
-    run.calls.map(c => c.label),
-    ['step:root', 'step:start', 'lens:a', 'step:submit:1', 'step:status', 'step:status:page', 'log-run'],
-  )
-  assert.match(run.report, /review stopped: the command printed no JSON: Error: the output was cut\. The run is in .*\. To resume .*`craft:review run=/)
+  assert.match(run.report, /^## Verdict\n\n⛔ Block/)
+  assert.equal(filedRecord(run), null, 'the driver must not write INCOMPLETE over the binary’s ending')
 })
 
 test('a publication whose page step the harness refused says its outcome is unknown: the comment itself ran', async () => {
