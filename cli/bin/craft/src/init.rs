@@ -11,7 +11,9 @@
 //! composition (node #647): `--propose` prints each lens's yield over the repository's runs and the
 //! lenses it offers to hold or turn off, `--write --lens` records what the reviewer confirmed
 //! ([`lenses`]); beside it the `[mutants]` section, shown as held and written by `--mutants` and
-//! `--mutants-budget` ([`mutants`]).
+//! `--mutants-budget` ([`mutants`]); and the `[project]` properties, offered from the repository's
+//! files and written by `--library`, `--rule`, `--controllers`, `--security-path` and `--contract`
+//! ([`properties`]).
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -30,6 +32,7 @@ mod lenses;
 mod memory;
 mod mutants;
 mod paths;
+mod properties;
 
 #[derive(Debug, clap::Args)]
 #[command(group(clap::ArgGroup::new("mode").required(true).args(["propose", "write"])))]
@@ -84,6 +87,9 @@ pub struct InitArgs {
         value_parser = clap::value_parser!(u64).range(1..=i64::MAX.unsigned_abs())
     )]
     pub mutants_budget: Option<u64>,
+    /// The `[project]` properties to write ([`properties`]).
+    #[command(flatten)]
+    pub project: properties::ProjectArgs,
     /// The project memory's `external` records as JSON on stdin (`-`, the only value): each one is
     /// proposed as an integration point with the revision its version file names now.
     #[arg(long = "memory-externals", conflicts_with = "write", value_name = "-")]
@@ -146,6 +152,7 @@ pub fn init(args: &InitArgs) -> Result<ExitCode> {
         let mut profile = ProjectProfile::new(common, points, entries)?;
         profile.lenses = lenses::confirmed(&args.lenses)?;
         profile.mutants = mutants::confirmed(args.mutants, args.mutants_budget)?;
+        profile.project = properties::confirmed(&args.project)?;
         let held = project::load(&path)
             .map(|p| p.and_then(|p| p.code_graph))
             .map_err(|e| e.to_string());
@@ -158,6 +165,7 @@ pub fn init(args: &InitArgs) -> Result<ExitCode> {
             "ci": profile.ci,
             "lenses": profile.lenses,
             "mutants": mutants::proposed(&path),
+            "project": properties::written(&profile.project),
             "codeGraph": graph,
             "codeGraphSays": says,
         }));
@@ -186,12 +194,13 @@ pub fn init(args: &InitArgs) -> Result<ExitCode> {
         "ciCandidates": ci::proposed(&args.cwd),
         "lenses": lenses::proposed(&args.cwd, &path)?,
         "mutants": mutants::proposed(&path),
+        "project": properties::proposed(git::toplevel(&args.cwd).ok().as_deref(), &path),
         "codeGraph": held.as_ref().and_then(|p| p.code_graph.clone()),
         "codeGraphSays": graph::live_says(
             cbm::look(cbm::TOOL, &args.cwd),
             held.as_ref().and_then(|p| p.code_graph.as_ref()),
         ),
-        "write": "craft init --write --point <name>=<git url>@<tag or full commit> … --ci '<entry JSON>' … --lens <profile:lens>=<state> … [--mutants off] [--mutants-budget <seconds>] (every point, CI entry and lens to keep, a held lens as `lenses.held` prints it, the mutants as `mutants.flags` prints them, a held entry as `ci` prints it, one with `unusable` dropped or replaced; a branch is refused when a review prepares the sources)",
+        "write": "craft init --write --point <name>=<git url>@<tag or full commit> … --ci '<entry JSON>' … --lens <profile:lens>=<state> … [--mutants off] [--mutants-budget <seconds>] [--library yes|no] [--rule <path>] … [--controllers] [--security-path <glob>] … [--contract <glob>] … (every point, CI entry and lens to keep, a held lens as `lenses.held` prints it, the mutants as `mutants.flags` and the project as `project.flags` print them, a held entry as `ci` prints it, one with `unusable` dropped or replaced; a branch is refused when a review prepares the sources)",
     }))
 }
 

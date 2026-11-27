@@ -128,6 +128,11 @@ pub struct ProjectProfile {
     /// [`mutants::of`] when a review starts, never here.
     #[serde(default, skip_deserializing)]
     pub mutants: mutants::MutantsSection,
+    /// The `[project]` section the reviewer confirmed (realm @nick/craft, node #654): written on
+    /// every write, none confirmed as an empty one, so a write replaces the one it held; read by
+    /// [`properties::of`] when a review starts, never here.
+    #[serde(default, skip_deserializing)]
+    pub project: properties::Properties,
 }
 
 impl ProjectProfile {
@@ -149,6 +154,7 @@ impl ProjectProfile {
             code_graph: None,
             lenses: std::collections::BTreeMap::new(),
             mutants: mutants::MutantsSection::default(),
+            project: properties::Properties::new(),
         };
         p.check().map_err(ProjectError::Invalid)?;
         Ok(p)
