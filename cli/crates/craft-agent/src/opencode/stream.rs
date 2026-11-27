@@ -2,8 +2,9 @@
 //! and 1.19.5; realm @nick/craft, node #502). A step opens with `step_start`, carries its `text`
 //! parts (`part.text`, each part with an `id` of its own) and tool uses, and closes with
 //! `step_finish`, whose `part.tokens` and `part.cost` are what the step spent. A failure is an
-//! `error` event (`error.message`, `error.type`) on stdout, with a failed exit. The reply is the
-//! text of the last step: earlier steps are the agent's work before it, not its answer.
+//! `error` event on stdout, with a failed exit; its words are `error.message`, else the message
+//! under `error.data` (opencode 1.19.6), else `error.type`. The reply is the text of the last
+//! step: earlier steps are the agent's work before it, not its answer.
 
 use serde_json::Value;
 
@@ -63,13 +64,20 @@ fn spent(s: &mut Stream, part: &Value) {
     s.cost_usd += part.get("cost").and_then(Value::as_f64).unwrap_or(0.0);
 }
 
-/// An error event's words: its message, else its type, else the event as printed.
+/// An error event's words: its `message`, else the `message` under its `data` (how opencode 1.19.6
+/// prints a provider's refusal — realm @nick/craft, node #732), else its `type`, else the event as
+/// printed.
 fn error_of(event: &Value) -> String {
     let error = event.get("error").unwrap_or(&Value::Null);
-    [str_at(error, "message"), str_at(error, "type")]
-        .into_iter()
-        .find(|s| !s.is_empty())
-        .map_or_else(|| event.to_string(), str::to_owned)
+    let data = error.get("data").unwrap_or(&Value::Null);
+    [
+        str_at(error, "message"),
+        str_at(data, "message"),
+        str_at(error, "type"),
+    ]
+    .into_iter()
+    .find(|s| !s.is_empty())
+    .map_or_else(|| event.to_string(), str::to_owned)
 }
 
 /// The run as its events tell it; a line that is not a JSON event is passed over.
@@ -127,11 +135,25 @@ not json
     }
 
     #[test]
-    fn an_error_event_says_its_message_else_its_type() {
+    fn an_error_event_says_its_message_else_the_one_under_its_data_else_its_type_else_itself() {
         let out = r#"{"type":"error","error":{"type":"provider.no-route","message":"Model unavailable: nope/none"}}
-{"type":"error","error":{"type":"unknown"}}"#;
+{"type":"error","error":{"type":"unknown"}}
+{"type":"error","error":{"data":{"isRetryable":false,"message":"Claude Max rate limit reached. Wait a moment and try again.","metadata":{"url":"https://gateway.example/v1/messages"},"responseBody":"{\"type\":\"rate_limit_error\",\"message\":\"Claude Max rate limit reached. Wait a moment and try again.\"}","responseHeaders":{"content-type":"application/json"},"statusCode":500},"name":"APIError"}}
+{"type":"error","error":{"message":"Model unavailable: nope/none","data":{"message":"said under the data"}}}
+{"type":"error","error":{"data":{"retry_after":3600}}}"#;
+        let said = [
+            "Model unavailable: nope/none",
+            "unknown",
+            // opencode 1.19.6's event for a provider's refusal, its keys as the session store
+            // keeps them (realm @nick/craft, nodes #502, #732): the words under `data`.
+            "Claude Max rate limit reached. Wait a moment and try again.",
+            // Both said: `error.message` is the one read.
+            "Model unavailable: nope/none",
+            // Nothing said: the event as printed.
+            r#"{"error":{"data":{"retry_after":3600}},"type":"error"}"#,
+        ];
         let s = read(out);
-        assert_eq!(s.errors, ["Model unavailable: nope/none", "unknown"]);
+        assert_eq!(s.errors, said);
         assert_eq!(s.text, "");
     }
 }
