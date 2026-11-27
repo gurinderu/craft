@@ -517,6 +517,44 @@ fn a_launched_run_is_kept_in_the_gate_and_none_is_not_written() {
     assert!(kept.mutants.running());
 }
 
+#[test]
+fn a_short_run_stays_short_across_the_states_save_and_reload() {
+    let gate = Gate {
+        mutants: Mutants {
+            dir: "/r/mutants".into(),
+            joined: true,
+            short: "mutants of the change did not run: their budget ran out".into(),
+            ..Mutants::default()
+        },
+        ..Gate::default()
+    };
+    let kept: Gate = serde_json::from_value(serde_json::to_value(&gate).unwrap()).unwrap();
+    assert_eq!(kept.mutants.degraded_note(), gate.mutants.degraded_note());
+    assert!(kept.mutants.degraded_note().is_some());
+}
+
+#[test]
+fn a_no_mutant_word_is_an_answer_only_on_a_clean_exit() {
+    let (top, bin) = (repo(), tempfile::tempdir().unwrap());
+    for (said, code) in [("INFO No mutants to filter", 1), ("INFO something else", 0)] {
+        let run = tempfile::tempdir().unwrap();
+        let path = bin.path().join("cargo");
+        exe::write_executable(
+            &path,
+            &format!("#!/bin/sh\n[ \"$2\" = --version ] && {{ echo 'cargo-mutants 27.1.0'; exit 0; }}\necho '{said}' >&2\nexit {code}\n"),
+        )
+        .unwrap();
+        let came = work(top.path(), run.path(), &path.display().to_string(), 30);
+        assert!(
+            matches!(came, Came::Broken { .. }),
+            "{said} / {code}: {came:?}"
+        );
+        let mut m = launched(top.path(), run.path());
+        join(&mut m, Duration::ZERO);
+        assert!(m.degraded_note().is_some(), "{said} / {code}");
+    }
+}
+
 fn setup(cargo: String) -> MutantsSetup {
     MutantsSetup {
         exe: "/nonexistent".into(),
