@@ -428,6 +428,68 @@ test('a fetch that fails or prints no absolute path ends the run INCOMPLETE befo
   assert.match(verdictOf(rootless), /^⚠️ INCOMPLETE — .*no absolute root= and bin= lines/, 'a binary path without the root is not enough')
 })
 
+test('a fetch the usage limit stopped says to run the review again after the reset, never to pass a local build (realm @nick/craft, node #689)', async () => {
+  // The service agent's own answer, as the limit watch reads it: seen on the first call, so nothing else is dispatched.
+  const limited = await runEngine('review', { args: {}, script: { 'step:resolve': "You've hit your weekly limit" } })
+  const line = verdictOf(limited)
+  assert.match(
+    line,
+    /^⚠️ INCOMPLETE — review could not get the craft binary [\d.]+: stopped: usage limit reached \(You've hit your weekly limit\)\. Run the review again once the limit resets: a local build does not lift the limit — the review's agents answer from the same account\.$/,
+  )
+  assert.doesNotMatch(line, /craftBin=/, 'a local build does not lift the limit')
+  assert.deepEqual(work(limited), ['step:resolve'])
+})
+
+test('a craftRoot check the usage limit stopped says the root was not checked and to run the review again after the reset, never to pass another root, and names no local build', async () => {
+  // Both craftBin and craftRoot given: no fetch runs, so the root check is the first step the limit meets — the
+  // fetch's sibling (realm @nick/craft, node #689).
+  const limited = await runEngine('review', {
+    args: { repo: '/work/repo', craftBin: '/opt/craft', craftRoot: '/opt/craft-plugin' },
+    script: { 'step:root': "You've hit your weekly limit" },
+  })
+  const line = verdictOf(limited)
+  assert.match(
+    line,
+    /^⚠️ INCOMPLETE — review: craftRoot="\/opt\/craft-plugin" was not checked as the plugin root: stopped: usage limit reached \(You've hit your weekly limit\)\. Run the review again once the limit resets: another root does not lift the limit — the review's agents answer from the same account\.$/,
+  )
+  assert.doesNotMatch(line, /is not a usable plugin root|Pass the absolute path/, 'the root is not what failed')
+  assert.doesNotMatch(line, /local build|craftBin=/, 'no local build was offered on this path, so the advice names none')
+  assert.deepEqual(work(limited), ['step:root'], 'nothing runs past it')
+})
+
+test('a craftRoot check the harness refused says the root was not checked and what to allow, never to pass another root, and names the check itself when the refusal quotes no command', async () => {
+  const denied = `craft_usable '/opt/craft-plugin/.claude-plugin/plugin.json'`
+  /** @type {unknown[]} */
+  const filed = []
+  const refused = await runEngine('review', {
+    args: { repo: '/work/repo', craftBin: '/opt/craft', craftRoot: '/opt/craft-plugin' },
+    script: {
+      'step:root': { exitCode: -1, stdout: '', stderr: `Permission for this action was denied. The command was not run. Denied command: ${denied}` },
+      'log-run': (/** @type {{ prompt: string }} */ { prompt }) => {
+        filed.push(prompt)
+        return { ok: true, output: ['wrote /store/r.json'] }
+      },
+    },
+  })
+  assert.equal(
+    verdictOf(refused),
+    `⚠️ INCOMPLETE — review: craftRoot="/opt/craft-plugin" was not checked as the plugin root: the harness's permission check refused the command, not craft — it was not run: \`${denied}\`. To allow it, approve the command when the harness asks, or add a Bash permission rule for it with \`/permissions\`.`,
+  )
+  assert.deepEqual(work(refused), ['step:root'], 'nothing runs past it')
+  assert.match(String(filed[0]), /stopped: the harness refused a service command/, 'the record carries the cause the line says')
+  // Auto mode's classifier quotes no command, and the check is a script, which names none: the line says what was
+  // refused — the check of the root — never a fetch, which this path does not run (the fetch's own wording).
+  const unquoted = await runEngine('review', {
+    args: { repo: '/work/repo', craftBin: '/opt/craft', craftRoot: '/opt/craft-plugin' },
+    script: { 'step:root': { exitCode: -1, stdout: '', stderr: 'Permission for this action was denied. The command was not run.' } },
+  })
+  assert.equal(
+    verdictOf(unquoted),
+    '⚠️ INCOMPLETE — review: craftRoot="/opt/craft-plugin" was not checked as the plugin root: the harness\'s permission check refused the command, not craft — it was not run: the check of the craft plugin root. To allow it, approve the command when the harness asks, or add a Bash permission rule for it with `/permissions`.',
+  )
+  assert.deepEqual(work(unquoted), ['step:root'], 'nothing runs past it')
+})
+
 test('with craftBin, start gets --craft-root when craftRoot is given and checked, else --record-root: the plugin root located like the logger, for filing only', async () => {
   const given = await runEngine('review', {
     args: { repo: '/work/repo', craftBin: '/opt/craft', craftRoot: '/opt/craft-plugin' },
@@ -451,6 +513,11 @@ test('with craftBin, start gets --craft-root when craftRoot is given and checked
   assert.match(
     verdictOf(refused),
     /^⚠️ INCOMPLETE — review: craftRoot="\/work\/repo\/craft" is not a usable plugin root: the command exited 1: inside the reviewed repo /,
+  )
+  assert.match(
+    verdictOf(refused),
+    /\)\. Pass the absolute path of a craft plugin root \(an installed copy, or a checkout's integrations\/claude-code\) outside the reviewed repo\.$/,
+    'the root is what failed, so another one is the way on, not the advice of the limit',
   )
   assert.deepEqual(work(refused), ['step:root'], 'nothing runs past a refused root')
   const silent = await runEngine('review', { args: { craftBin: '/opt/craft', craftRoot: '/opt/p' }, script: { 'step:root': ran('ok\n') } })

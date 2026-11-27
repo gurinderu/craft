@@ -56,14 +56,16 @@ const allowSentence = bin =>
   `To allow it, add a Bash permission rule for \`${bin} review:*\` with \`/permissions\` (\`Bash(${bin} review:*)\`). The binary's path changes with each plugin update, so the rule must be added again then.`
 
 /**
- * A refused command with no run to go on with — the gate alone, a publication, the fetch of the binary: who refused it
- * and what to allow; with no binary yet (`bin` null, the fetch), to allow the command itself.
+ * A refused command with no run to go on with — the gate alone, a publication, the fetch of the binary, the check of a
+ * given plugin root: who refused it and what to allow; with no binary yet (`bin` null), to allow the command itself,
+ * named by `what` when the refusal quotes none — auto mode's classifier quotes none, and a script step's `sent` is ''.
  * @param {string} command  '' when the refusal quoted none @param {string | null} bin  the binary as the commands spell it
+ * @param {string} what  the unquoted command: the fetch's own unless the step names its
  * @returns {string}
  */
-export function harnessRefused(command, bin) {
+export function harnessRefused(command, bin, what = 'the fetch of the craft binary') {
   if (bin === null)
-    return `${refusedSentence(command, 'the fetch of the craft binary')} To allow it, approve the command when the harness asks, or add a Bash permission rule for it with \`/permissions\`.`
+    return `${refusedSentence(command, what)} To allow it, approve the command when the harness asks, or add a Bash permission rule for it with \`/permissions\`.`
   return `${refusedSentence(command, `a \`${bin} review\` command`)} ${allowSentence(bin)}`
 }
 

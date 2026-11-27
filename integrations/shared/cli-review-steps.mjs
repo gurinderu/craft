@@ -178,7 +178,10 @@ ${pluginRootCheck(o.craftRoot, o.repo)}\`\`\``,
     'one line, root=<the plugin root>,',
   )
 
-/** The checked root, or why it is not one. @param {unknown} got @returns {{ root: string } | { error: string }} */
+/**
+ * The checked root, or why it is not one — a harness refusal among the reasons, as commandOutput says it.
+ * @param {unknown} got @returns {{ root: string } | { error: string, harness?: string }}
+ */
 function checkedRoot(got) {
   const out = commandOutput(got)
   if ('error' in out) return out
@@ -254,11 +257,50 @@ async function paged(serve, label, title, bin, got) {
   })
 }
 
+/** How to continue when the released binary is not to be got: a local build stands in for it. */
+const LOCAL_BUILD = 'Pass craftBin=<absolute path> of a build (`cargo build --release` in cli/).'
+/**
+ * How to continue when the usage limit stopped the fetch or the check of a given root — the first step on either
+ * path: the limit is the account's, so `way`, the way on that path (a local build, another root), does not lift it —
+ * the review's own agents answer from the same account (realm @nick/craft, node #689).
+ * @param {string} way @returns {string}
+ */
+const afterTheLimit = way => `Run the review again once the limit resets: ${way} does not lift the limit — the review's agents answer from the same account.`
+/** The fetch's way on: the local build that stands in for the released binary. */
+const AFTER_THE_LIMIT = afterTheLimit('a local build')
+/** The root check's way on: another root. */
+const ROOT_AFTER_THE_LIMIT = afterTheLimit('another root')
+/** How to continue when the given craftRoot is not a usable plugin root: another one, outside the reviewed repo. */
+const ANOTHER_ROOT = "Pass the absolute path of a craft plugin root (an installed copy, or a checkout's integrations/claude-code) outside the reviewed repo."
+/**
+ * Why the check of a given craftRoot stopped, said by the cause the run record carries (stopCause): under the usage
+ * limit or a harness refusal the root was not what failed — the check never ran to its answer — so how to continue is
+ * the cause's own: run the review again after the reset (another root lifts the limit no more than a local build), or
+ * allow the check that was refused; only otherwise is the root not a usable one, and another the way on (realm
+ * @nick/craft, node #689).
+ * @param {string} craftRoot @param {{ error: string, harness?: string }} checked
+ * @returns {{ incomplete: string, cause: import('./cli-review-stop.mjs').StopCause }}
+ */
+const rootStopped = (craftRoot, checked) => {
+  const notChecked = `review: craftRoot=${JSON.stringify(craftRoot)} was not checked as the plugin root: `
+  if (checked.harness !== undefined) {
+    const incomplete = `${notChecked}${harnessRefused(checked.harness, null, 'the check of the craft plugin root')}`
+    return { incomplete, cause: 'harness' }
+  }
+  const cause = stopCause(checked, 'start')
+  return {
+    incomplete:
+      cause === 'limit'
+        ? `${notChecked}${checked.error}. ${ROOT_AFTER_THE_LIMIT}`
+        : `review: craftRoot=${JSON.stringify(craftRoot)} is not a usable plugin root: ${checked.error}. ${ANOTHER_ROOT}`,
+    cause,
+  }
+}
 /**
  * The binary to run and the plugin root to hand it: a given craftBin as is, with a given craftRoot checked first, or
  * the root located only to file the run through (`recordRoot`; `note` saying why none was) — the prompts keep the
  * binary's own, so a local build is not run with another plugin's content; otherwise this version's released binary
- * fetched, with the root its fetcher was found in.
+ * fetched, with the root its fetcher was found in — or why it was not got, with how to continue by its cause.
  * @param {Options} o @param {string} craftVersion @param {Serve} serve
  * @returns {Promise<{ bin: string, root: string, recordRoot?: string, note?: string } | { incomplete: string, cause: import('./cli-review-stop.mjs').StopCause }>}
  */
@@ -267,12 +309,14 @@ async function binAndRoot(o, craftVersion, serve) {
     const fetched = resolvedBin(await serve('step:resolve', 'Start', resolvePrompt(o, craftVersion)))
     if ('harness' in fetched)
       return { incomplete: `review could not get the craft binary ${craftVersion}: ${harnessRefused(fetched.harness, null)}`, cause: 'harness' }
-    return 'error' in fetched
-      ? {
-          incomplete: `review could not get the craft binary ${craftVersion}: ${fetched.error}. Pass craftBin=<absolute path> of a build (\`cargo build --release\` in cli/).`,
-          cause: stopCause(fetched, 'start'),
-        }
-      : fetched
+    if ('error' in fetched) {
+      const cause = stopCause(fetched, 'start')
+      return {
+        incomplete: `review could not get the craft binary ${craftVersion}: ${fetched.error}. ${cause === 'limit' ? AFTER_THE_LIMIT : LOCAL_BUILD}`,
+        cause,
+      }
+    }
+    return fetched
   }
   if (!o.craftRoot) {
     const located = checkedRoot(await serve('step:locate', 'Start', locatePrompt(o, craftVersion)))
@@ -282,12 +326,8 @@ async function binAndRoot(o, craftVersion, serve) {
       : { bin: o.craftBin, root: '', recordRoot: located.root }
   }
   const checked = checkedRoot(await serve('step:root', 'Start', rootPrompt(o)))
-  return 'error' in checked
-    ? {
-        incomplete: `review: craftRoot=${JSON.stringify(o.craftRoot)} is not a usable plugin root: ${checked.error}. Pass the absolute path of a craft plugin root (an installed copy, or a checkout's integrations/claude-code) outside the reviewed repo.`,
-        cause: stopCause(checked, 'start'),
-      }
-    : { bin: o.craftBin, root: checked.root }
+  if ('error' in checked) return rootStopped(o.craftRoot, checked)
+  return { bin: o.craftBin, root: checked.root }
 }
 
 /**
