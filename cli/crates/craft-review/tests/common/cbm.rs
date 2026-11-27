@@ -129,7 +129,7 @@ pub fn quiet(id: &str) -> Value {
     lens(name.split('-').next().unwrap(), &[])
 }
 
-/// [`scouted_over`], a medium scout, driven to its end with every lens finding nothing; the run's
+/// [`scouted_over`], its scout answering medium (its lines count it small), driven to its end with every lens finding nothing; the run's
 /// directories stay on disk, so the step's report can be read.
 pub fn finished_over(
     files: &[(&str, &str)],

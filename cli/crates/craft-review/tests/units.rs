@@ -111,6 +111,30 @@ fn answer_all(s: &Value, answers: &Map<String, Value>) -> Value {
     Value::Object(all)
 }
 
+/// The first round of the two-crate change, large by the lines the binary counts: the scout's pick
+/// and the security floor, the sliceable lenses once per crate slice (realm @nick/craft, node #655).
+const SLICED: [&str; 19] = [
+    "lens-rust-errors-r1-s0",
+    "lens-rust-errors-r1-s1",
+    "lens-rust-intent-r1",
+    "lens-rust-tests-r1-s0",
+    "lens-rust-tests-r1-s1",
+    "lens-rust-design-r1",
+    "lens-rust-correctness-r1-s0",
+    "lens-rust-correctness-r1-s1",
+    "lens-rust-security-r1-s0",
+    "lens-rust-security-r1-s1",
+    "lens-rust-concurrency-r1-s0",
+    "lens-rust-concurrency-r1-s1",
+    "lens-rust-compat-r1",
+    "lens-rust-invariants-r1",
+    "lens-rust-safety-r1-s0",
+    "lens-rust-safety-r1-s1",
+    "lens-rust-negative-space-r1",
+    "lens-rust-maintainability-r1-s0",
+    "lens-rust-maintainability-r1-s1",
+];
+
 #[test]
 fn a_two_crate_change_is_sliced_judged_by_contract_and_seam_and_its_questions_decided() {
     let repo = workspace(7, 120);
@@ -121,24 +145,17 @@ fn a_two_crate_change_is_sliced_judged_by_contract_and_seam_and_its_questions_de
     assert_eq!(
         ids(&s),
         [
-            "lens-rust-errors-r1-s0",
-            "lens-rust-errors-r1-s1",
-            "lens-rust-intent-r1",
-            "lens-rust-tests-r1-s0",
-            "lens-rust-tests-r1-s1",
-            "lens-rust-design-r1",
-            "lens-rust-maintainability-r1-s0",
-            "lens-rust-maintainability-r1-s1",
-            "lens-rust-contract-r1-u0",
-            "lens-rust-contract-r1-u1",
+            SLICED.as_slice(),
+            &["lens-rust-contract-r1-u0", "lens-rust-contract-r1-u1"]
         ]
+        .concat()
     );
     let state: Value =
         serde_json::from_str(&std::fs::read_to_string(run.join("state.json")).unwrap()).unwrap();
     assert_eq!(
         (&state["rounds"]["first"], &state["rounds"]["sent"]),
-        (&Value::Null, &json!(8)),
-        "every lens dispatch spends the budget, the units' contracts do not; a small plan runs one round, so none of it makes the default base (realm @nick/craft, node #634)"
+        (&json!(16), &json!(19)),
+        "every lens dispatch spends the budget, the units' contracts do not; those a later round may send again make the default base (realm @nick/craft, node #634)"
     );
     let confined = task(&s, "lens-rust-errors-r1-s1");
     assert_eq!(
@@ -170,7 +187,11 @@ fn a_two_crate_change_is_sliced_judged_by_contract_and_seam_and_its_questions_de
         "lens-rust-errors-r1-s1".into(),
         json!({"lens": "errors", "findings": [in_b(dropped, 1), in_b(kept, 2)], "questions": [question(dropped), question(kept)]}),
     );
-    let s = submit(&run, answer_all(&s, &found));
+    let mut s = submit(&run, answer_all(&s, &found));
+    // A large plan sends the lens that found something round after round first; answered empty.
+    while ids(&s).iter().any(|id| id.starts_with("lens-")) {
+        s = submit(&run, answer_all(&s, &Map::new()));
+    }
     assert_eq!(ids(&s), ["seam-rust"]);
     assert_contains_all(
         &prompt_of(task(&s, "seam-rust")),
@@ -265,6 +286,14 @@ fn without_the_flag_a_large_change_is_cut_by_directory_and_a_small_one_not_at_al
             "lens-rust-maintainability-r1"
         ]
     );
+    let state: Value =
+        serde_json::from_str(&std::fs::read_to_string(out.path().join("run/state.json")).unwrap())
+            .unwrap();
+    assert_eq!(
+        (&state["rounds"]["first"], &state["rounds"]["sent"]),
+        (&Value::Null, &json!(5)),
+        "every lens dispatch spends the budget; a small plan runs one round, so none of it makes the default base (realm @nick/craft, node #634)"
+    );
     let repo = workspace(7, 120);
     let out = tempfile::tempdir().unwrap();
     let run = out.path().join("run");
@@ -272,19 +301,7 @@ fn without_the_flag_a_large_change_is_cut_by_directory_and_a_small_one_not_at_al
     let s = submit(&run, json!({"scout-rust": scout("small", &["errors"])}));
     // The normal mode's directory slicing: sliceable lenses once per directory slice, the
     // whole-diff ones over everything, no contract lens and no coordinator.
-    assert_eq!(
-        ids(&s),
-        [
-            "lens-rust-errors-r1-s0",
-            "lens-rust-errors-r1-s1",
-            "lens-rust-intent-r1",
-            "lens-rust-tests-r1-s0",
-            "lens-rust-tests-r1-s1",
-            "lens-rust-design-r1",
-            "lens-rust-maintainability-r1-s0",
-            "lens-rust-maintainability-r1-s1"
-        ]
-    );
+    assert_eq!(ids(&s), SLICED);
     let sliced = prompt_of(task(&s, "lens-rust-errors-r1-s1"));
     assert_contains_all(
         &sliced,

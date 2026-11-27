@@ -57,10 +57,15 @@ fn start_renders_the_scout_over_the_diff() {
     )
     .unwrap();
     assert!(
-        schema["required"]
+        !schema["required"]
             .as_array()
             .unwrap()
-            .contains(&json!("sizeBucket"))
+            .contains(&json!("sizeBucket")),
+        "the binary counts the size; the scout is not asked for it"
+    );
+    assert!(
+        prompt.contains("counted by the engine over its files: 1 — its size is small"),
+        "{prompt}"
     );
     assert_eq!(status::status(&run).unwrap()["phase"], json!("scout"));
     let again = step::start(&opts(repo.path(), out.path())).unwrap_err();
@@ -165,6 +170,7 @@ fn a_full_run_goes_scout_lenses_two_rounds_dedup_verify_done() {
     let repo = fixture(true);
     let out = tempfile::tempdir().unwrap();
     let run = out.path().join("run");
+    common::sized(repo.path(), "medium");
     step::start(&opts(repo.path(), out.path())).unwrap();
     let s = submit(
         &run,
@@ -536,6 +542,7 @@ fn a_light_pass_runs_one_round_of_the_scoped_lenses() {
     let run = out.path().join("run");
     let mut o = opts(repo.path(), out.path());
     o.light = true;
+    common::sized(repo.path(), "large");
     step::start(&o).unwrap();
     let s = submit(
         &run,
@@ -614,6 +621,7 @@ fn a_profile_whose_only_yield_was_a_first_round_lens_runs_no_second_round() {
     common::git(repo.path(), &["commit", "-qm", "feat: add g"]);
     let out = tempfile::tempdir().unwrap();
     let run = out.path().join("run");
+    common::sized(repo.path(), "medium");
     step::start(&opts(repo.path(), out.path())).unwrap();
     let s = submit(&run, json!({"scout-rust": scout("medium", &["errors"])}));
     let lenses = ids(&s);
@@ -658,6 +666,7 @@ fn new_file_run(out: &std::path::Path) -> (tempfile::TempDir, std::path::PathBuf
     common::git(repo.path(), &["add", "."]);
     common::git(repo.path(), &["commit", "-qm", "feat: add g"]);
     let run = out.join("run");
+    common::sized(repo.path(), "large");
     step::start(&opts(repo.path(), out)).unwrap();
     let s = submit(&run, json!({"scout-rust": scout("large", &["errors"])}));
     (repo, run, s)
@@ -752,6 +761,7 @@ fn a_dispatch_that_answered_then_died_in_its_rerun_makes_the_verdict_incomplete(
     let repo = fixture(true);
     let out = tempfile::tempdir().unwrap();
     let run = out.path().join("run");
+    common::sized(repo.path(), "medium");
     step::start(&opts(repo.path(), out.path())).unwrap();
     let s = submit(&run, json!({"scout-rust": scout("medium", &["errors"])}));
     let mut first = Map::new();

@@ -101,6 +101,9 @@ pub struct PlanInput<'a> {
     /// The lens signals the profile's part shows ([`crate::lens_signal`]); `None` when unknown,
     /// which admits every signal-gated lens.
     pub signals: Option<&'a [String]>,
+    /// The lines the profile's part changed ([`crate::size`]): its size, unless its profile is
+    /// sized by its scout or they could not be counted (`None`), when the scout's answer is.
+    pub changed_lines: Option<u64>,
 }
 
 /// Rounds and verifier votes by size, as `RIGOR_BY_SIZE`.
@@ -213,8 +216,11 @@ pub fn plan(input: PlanInput<'_>) -> Plan {
         changed_files: files,
         ..
     } = input;
-    let size = scout_str(scout, "sizeBucket")
-        .filter(|s| matches!(*s, "small" | "medium" | "large"))
+    let counted = crate::size::told(&p.id, input.changed_lines).map(crate::size::bucket);
+    let size = counted
+        .or_else(|| {
+            scout_str(scout, "sizeBucket").filter(|s| matches!(*s, "small" | "medium" | "large"))
+        })
         .unwrap_or("medium");
     let (max_rounds, verify_votes) = rigor(size);
     let picked = scout_strings(scout, "lenses");

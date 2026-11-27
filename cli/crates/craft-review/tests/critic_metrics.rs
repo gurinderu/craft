@@ -11,9 +11,11 @@ use serde_json::{Value, json};
 #[test]
 fn a_complexity_lens_the_critic_admits_is_sifted_and_names_what_it_left_unmeasured() {
     // The stand-in answers `web/b.ts` with no column, so its functions go unread.
+    // Padded past the lines that make a change large, which is what asks the critic.
+    let b = format!("export const g = () => 2\n{}", "// note\n".repeat(450));
     let files = [
         ("web/app.ts", "export const f = () => 1\n"),
-        ("web/b.ts", "export const g = () => 2\n"),
+        ("web/b.ts", b.as_str()),
     ];
     let (run, s, _dirs) = scouted_over(&files, (None, None), ("large", &["correctness"]));
     assert!(

@@ -27,6 +27,7 @@ fn a_stop_in_the_lens_rounds_reports_the_pool_unverified() {
     let repo = common::fixture(true);
     let out = tempfile::tempdir().unwrap();
     let run = out.path().join("run");
+    common::sized(repo.path(), "large");
     step::start(&common::opts(repo.path(), out.path())).unwrap();
     // A large plan: two lens rounds; the first finds one High, the limit hits in the second.
     let s = submit(

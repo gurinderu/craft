@@ -204,7 +204,7 @@ fn plan_tracks(run: &mut RunState, profiles: &[Profile]) {
             .and_then(|t| t.answer.as_ref());
         if scout.is_none() {
             run.not_run.push(format!(
-                "{} scout classification — the plan is the conservative fallback (the security floor, 3-vote, 2 rounds), not a scouted one ({})",
+                "{} scout classification — the plan is the conservative fallback (the security floor, 3-vote, 2 rounds — 3 when its counted lines make it large), not a scouted one ({})",
                 p.id,
                 why_failed(task)
             ));
@@ -223,6 +223,7 @@ fn plan_tracks(run: &mut RunState, profiles: &[Profile]) {
             embedded_sql: track.embedded_sql,
             design: track.design,
             signals: track.signals.as_deref(),
+            changed_lines: track.changed_lines,
         }));
         if let Some(plan) = track.plan.as_mut() {
             let mut asked = crate::optional::bought(p, &run.optional);

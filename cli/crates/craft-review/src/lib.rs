@@ -57,6 +57,7 @@ pub mod rubric_read;
 mod runbook;
 pub mod scope;
 pub mod settle;
+pub mod size;
 pub mod sources;
 pub mod state;
 pub mod status;

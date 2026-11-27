@@ -12,6 +12,7 @@ fn a_round_over_the_budget_is_not_bought_and_the_run_verifies_what_it_found() {
     let repo = fixture(true);
     let out = tempfile::tempdir().unwrap();
     let run = out.path().join("run");
+    common::sized(repo.path(), "medium");
     step::start(&StartOptions {
         lens_agents: Some(4),
         ..opts(repo.path(), out.path())
@@ -87,6 +88,7 @@ fn a_lens_run_once_spends_the_budget_but_makes_none_of_its_default_base() {
     common::git(repo.path(), &["commit", "-qm", "feat: add g"]);
     let out = tempfile::tempdir().unwrap();
     let run = out.path().join("run");
+    common::sized(repo.path(), "medium");
     step::start(&opts(repo.path(), out.path())).unwrap();
     let s = submit(&run, json!({"scout-rust": scout("medium", &["errors"])}));
     let sent = ids(&s);
