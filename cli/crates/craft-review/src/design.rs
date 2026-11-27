@@ -14,7 +14,7 @@ use crate::git::Diff;
 use crate::state::Track;
 
 mod delta;
-mod members;
+pub(crate) mod members;
 mod seed;
 mod signal;
 mod types;

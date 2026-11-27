@@ -12,6 +12,7 @@ impl PromptContext {
         Self {
             mutants: false,
             composition: crate::composition::Composition::default(),
+            project: crate::project::properties::Properties::new(),
             repo: repo.into(),
             base: base.into(),
             spec: String::new(),

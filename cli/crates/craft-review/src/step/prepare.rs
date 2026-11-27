@@ -73,6 +73,7 @@ pub(super) fn prepare(
     run: &mut RunState,
 ) {
     compose(opts, profiles, run);
+    properties(opts, run);
     let taking_part = |p: &&Profile| run.tracks.iter().any(|t| t.profile == p.id);
     let metrics = profiles.iter().filter(taking_part).any(complexity::wanted);
     let sql = crate::embedded_sql::mark(cwd, &run.diff.merge_base, &mut run.tracks);
@@ -139,6 +140,19 @@ pub(super) fn prepare(
     if run.gate.exit().is_none() {
         launch_mutants(cwd, dir, opts, run);
     }
+}
+
+/// The project's properties the reviewer's profile sets (realm @nick/craft, node #654), named in
+/// the report, or why they could not be read — then the plans read the scouts' answers alone.
+fn properties(opts: &StartOptions, run: &mut RunState) {
+    if !opts.project_unread.is_empty() {
+        run.notes.push(format!(
+            "the reviewer's profile's [project] section could not be read ({}): the plans take the scouts' answers alone",
+            opts.project_unread
+        ));
+    }
+    run.notes.extend(opts.project.line());
+    run.context.project = opts.project.clone();
 }
 
 /// The lens composition the reviewer's profile gives the run (realm @nick/craft, node #644), and

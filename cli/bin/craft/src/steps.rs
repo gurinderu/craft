@@ -307,6 +307,7 @@ pub(crate) fn start_step(args: &StartArgs, cancel: &craft_review::cancel::Cancel
         None => default_run_dir()?,
     };
     let lenses = lenses_of(&args.cwd);
+    let project = profile_section(&args.cwd, craft_review::project::properties::of);
     let opts = step::StartOptions {
         cwd: args.cwd.clone(),
         base: args.base.clone(),
@@ -324,6 +325,8 @@ pub(crate) fn start_step(args: &StartArgs, cancel: &craft_review::cancel::Cancel
         all_lenses: args.all_lenses,
         lenses: lenses.clone().unwrap_or_default(),
         lenses_unread: lenses.err().unwrap_or_default(),
+        project: project.clone().unwrap_or_default(),
+        project_unread: project.err().unwrap_or_default(),
         recall: !args.no_recall,
         recall_degraded: args.recall_degraded.clone(),
         // An unreadable list is refused and named in the report; the review still runs.
@@ -613,12 +616,21 @@ fn recall_note(s: &str) -> Result<String, String> {
 fn lenses_of(
     cwd: &std::path::Path,
 ) -> Result<Vec<(String, craft_review::composition::State)>, String> {
-    use craft_review::project::{lenses, profile_path};
+    profile_section(cwd, craft_review::project::lenses::of)
+}
+
+/// One section of the reviewer's profile of the repository at `cwd`, as `read` reads it; its
+/// default when there is no home to hold a profile, or why it could not be read.
+fn profile_section<T: Default, E: std::fmt::Display>(
+    cwd: &std::path::Path,
+    read: impl FnOnce(&std::path::Path) -> Result<T, E>,
+) -> Result<T, String> {
     let Some(projects) = crate::init::projects_dir() else {
-        return Ok(Vec::new());
+        return Ok(T::default());
     };
-    let (path, _) = profile_path(&projects, cwd).map_err(|e| e.to_string())?;
-    lenses::of(&path).map_err(|e| e.to_string())
+    let (path, _) =
+        craft_review::project::profile_path(&projects, cwd).map_err(|e| e.to_string())?;
+    read(&path).map_err(|e| e.to_string())
 }
 
 /// How a review's mutants run: this binary as their worker, for the budget the reviewer's profile

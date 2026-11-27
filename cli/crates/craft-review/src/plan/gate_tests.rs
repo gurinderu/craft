@@ -23,6 +23,7 @@ fn input<'a>(p: &'a Profile, files: &'a [String], signals: Option<&'a [String]>)
         design: false,
         signals,
         changed_lines: None,
+        project: &crate::project::properties::NONE,
     }
 }
 

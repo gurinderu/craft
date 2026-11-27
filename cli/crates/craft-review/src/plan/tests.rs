@@ -22,6 +22,7 @@ fn input<'a>(p: &'a Profile, files: &'a [String], embedded_sql: bool) -> PlanInp
         design: false,
         signals: Some(&[]),
         changed_lines: None,
+        project: &crate::project::properties::NONE,
     }
 }
 
@@ -342,5 +343,68 @@ fn the_counted_lines_size_the_plan_whatever_the_scout_said_but_a_runbook_keeps_i
         sized(&runbook, Some(1000)).size_bucket,
         "small",
         "its steps, not its lines"
+    );
+}
+
+#[test]
+fn the_profiles_facts_beat_the_scout_either_way_and_its_risks_only_add() {
+    use crate::project::properties::Properties;
+    let rust = Profile::load("rust").unwrap();
+    let files = ["src/auth/token.rs".to_owned(), "spec/wire.cddl".to_owned()];
+    let scout = serde_json::json!({"lenses": ["errors"], "isLibrary": true, "securitySensitive": false,
+                                   "repoRules": ["AGENTS.md"]});
+    let planned = |project: &Properties| {
+        plan(PlanInput {
+            scout: Some(&scout),
+            project,
+            changed_lines: Some(10),
+            ..input(&rust, &files, false)
+        })
+    };
+    let bare = planned(&Properties::new());
+    assert!(
+        bare.is_library && !bare.security_sensitive,
+        "the scout's answer alone"
+    );
+    assert_eq!(bare.repo_rules, ["AGENTS.md"]);
+    assert!(!bare.lenses.contains(&"reconciler".to_owned()));
+    assert!(!bare.lenses.contains(&"compat".to_owned()));
+
+    let set = Properties {
+        library: Some(false),
+        rules: Some(vec!["CONTRIBUTING.md".into()]),
+        controllers: true,
+        security_paths: vec!["src/auth".into()],
+        contracts: vec!["spec/*.cddl".into()],
+    };
+    let got = planned(&set);
+    assert!(
+        !got.is_library,
+        "a fact the reviewer confirmed beats the scout's guess"
+    );
+    assert_eq!(got.repo_rules, ["CONTRIBUTING.md"]);
+    assert!(
+        got.security_sensitive,
+        "a change under a security path is sensitive"
+    );
+    assert_eq!((got.verify_votes, got.max_rounds), (3, 2));
+    for l in ["reconciler", "failure-windows", "compat", "security"] {
+        assert!(got.lenses.contains(&l.to_owned()), "{l}: {:?}", got.lenses);
+    }
+
+    let elsewhere = Properties {
+        security_paths: vec!["src/other".into()],
+        ..Properties::new()
+    };
+    let sensitive = serde_json::json!({"lenses": ["errors"], "securitySensitive": true});
+    let kept = plan(PlanInput {
+        scout: Some(&sensitive),
+        project: &elsewhere,
+        changed_lines: Some(10),
+        ..input(&rust, &files, false)
+    });
+    assert!(
+        kept.security_sensitive,
+        "a risk the scout saw is never taken back"
     );
 }

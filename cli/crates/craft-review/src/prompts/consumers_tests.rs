@@ -21,6 +21,7 @@ fn ctx() -> PromptContext {
     PromptContext {
         mutants: false,
         composition: crate::composition::Composition::default(),
+        project: crate::project::properties::Properties::new(),
         repo: "/work/repo".into(),
         base: "origin/main".into(),
         spec: String::new(),
