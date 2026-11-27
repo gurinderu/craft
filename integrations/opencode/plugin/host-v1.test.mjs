@@ -214,11 +214,35 @@ test("a turn that failed inside throws the runtime's error by its type and messa
 test('the agents are the names the runtime lists; a refused or unreadable list throws', async () => {
   // `GET /agent` as the 1.x SDK's `app.agents()` answers it: the agents under `data`, each by its `name`.
   const listed = fakeClient(null, () =>
-    Promise.resolve({ data: [{ name: 'build', mode: 'primary' }, { name: 'review-task', mode: 'all' }, { mode: 'subagent' }] }),
+    Promise.resolve({
+      data: [{ name: 'build', mode: 'primary' }, { name: 'review-task', mode: 'all' }, { name: 'rust-reviewer', mode: 'subagent' }, { mode: 'all' }],
+    }),
   )
+  // A subagent is not offered: the binary places its tasks on review-task, closed as the Rust agents are not (#714).
   assert.deepEqual(await v1Host({ client: listed, directory: '', worktree: '' }).agents?.(), ['build', 'review-task'])
   const refused = fakeClient(null, () => Promise.resolve({ error: { name: 'UnknownError', data: { message: 'agent list gone' } } }))
   await assert.rejects(v1Host({ client: refused, directory: '', worktree: '' }).agents?.() ?? Promise.resolve(), /agent list gone/)
   const odd = fakeClient(null, () => Promise.resolve({ data: { agents: 'none' } }))
   await assert.rejects(v1Host({ client: odd, directory: '', worktree: '' }).agents?.() ?? Promise.resolve(), /not a list/)
+})
+
+test('a child given up before or while it is created never runs its prompt, and one created is stopped', async () => {
+  const before = fakeClient({ data: { parts: [] } })
+  const gone = new AbortController()
+  gone.abort()
+  const req = { title: 't', agent: 'review-task', prompt: 'p' }
+  await assert.rejects(v1Host({ client: before, directory: '', worktree: '' }).runChild({ ...req, signal: gone.signal }), /stopped at its deadline/)
+  assert.deepEqual(before.sent, [])
+  const during = fakeClient({ data: { parts: [] } })
+  const late = new AbortController()
+  const create = during.session.create
+  during.session.create = (/** @type {unknown} */ r) => {
+    late.abort()
+    return create(r)
+  }
+  await assert.rejects(v1Host({ client: during, directory: '', worktree: '' }).runChild({ ...req, signal: late.signal }), /stopped at its deadline/)
+  assert.deepEqual(
+    during.sent.map(s => (Array.isArray(s) ? s[0] : s)),
+    ['create', 'abort'],
+  )
 })

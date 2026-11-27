@@ -56,9 +56,14 @@ export function v1Host(input: { client: V1Client; directory: string; worktree: s
     worktree,
     sh: shellIn(directory),
     async runChild(req) {
+      if (req.signal?.aborted) throw new Error('the child session was stopped at its deadline')
       const session = await client.session.create({ body: { title: req.title, ...(req.parentID ? { parentID: req.parentID } : {}) } })
       const id = field(session, 'id') ?? field(field(session, 'data'), 'id')
       if (typeof id === 'string') req.onSession?.(id)
+      if (req.signal?.aborted) {
+        if (typeof id === 'string') await client.session.abort({ path: { id } }).catch(() => undefined)
+        throw new Error('the child session was stopped at its deadline')
+      }
       return prompted(client, id, req)
     },
     async callerModel(sessionID) {

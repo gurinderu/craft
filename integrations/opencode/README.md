@@ -88,9 +88,9 @@ opencode. The links point into this checkout, but a checkout does not change wha
   Workflow tool and `codex exec`; in OpenCode the review is `/craft-review`.
 - **Agents** — `rust-reviewer`, `rust-architecture-reviewer`, `rust-security-scanner` and `rust-miri`
   are hidden subagents (they don't clutter `@`-autocomplete); the workflows dispatch them.
-  `review-task` exists only for `/craft-review`'s tasks: hidden too, but `mode: all`, because the binary
-  starts it with `opencode run --agent review-task`, which opencode 1.19.5 refuses for a subagent
-  (it falls back to the default agent); `hidden` keeps it out of the agent picker. It may read
+  `review-task` exists only for `/craft-review`'s tasks: hidden too, but `mode: all`, because the binary's own
+  terminal path starts it with `opencode run --agent review-task`, which opencode 1.19.5 refuses for a
+  subagent (it falls back to the default agent); `hidden` keeps it out of the agent picker. It may read
   outside the reviewed repository (`external_directory: allow`, as `rust-reviewer` may too, for a `--pr`
   review's worktree): its task's prompt file is in the
   run directory under `~/.craft`, and 1.19.5's `run` stops on the permission question otherwise.
@@ -104,8 +104,8 @@ opencode. The links point into this checkout, but a checkout does not change wha
 plugin's version, downloaded from its GitHub release into `~/.craft/bin/<version>/` the first time
 (`CRAFT_BIN=<path>` runs a local build). The binary decides every step — the gate, the scouts, the
 lenses round after round, verification, the verdict. On both lines it hands each task back to the plugin
-(`--delegate`), which runs it as a child session of the calling session, so the tasks show as that
-session's subagents. On 1.x the tool's title follows the run's progress; the answer is the binary's `## Verdict`
+(`--delegate`), which runs it as a child session of the calling session, so the tasks are that
+session's children (on 1.x not yet seen opened from it in a live TUI). On 1.x the tool's title is set to the run's progress, which the 1.19.6 TUI does not redraw while the tool runs; the answer is the binary's `## Verdict`
 block and findings, as markdown. The binary's own 1.19.5 path (`opencode run`, from a terminal) was seen
 reaching the model as `review-task`; the tool itself and its child sessions on either line are
 covered by tests against a fake binary and fake host, not yet seen in a real OpenCode session.

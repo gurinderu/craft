@@ -2,7 +2,8 @@
 // nodes #496, #626, #627, #720) and the plugin runs it as a child session of the calling session, so the tasks show as
 // its subagents, on the agent and model the binary names. The binary bounds each by its kind's deadline and says a task
 // no longer awaited, which aborts that child.
-//   • The agents the runtime lists go to the binary (`--agents`), which places each task as it does for `opencode run`:
+//   • The agents the runtime lists go to the binary (`--agents`), which places each task on the agent it names when it is listed —
+//     on 1.x subagents are not listed, so their tasks run on `review-task` (host-v1-read.ts) —
 //     a task whose own agent is missing runs on `review-task`, said degraded. The listing fails closed: no list, an
 //     error, or no `review-task` runs nothing, since a child named an agent the runtime lacks may run on its writable
 //     default.

@@ -56,11 +56,16 @@ export function turnError(res: unknown): { type: string; message: string } | und
   return { type: typeof type === 'string' && type ? type : 'unknown', message: typeof message === 'string' ? message : '' }
 }
 
-// The agents' names in `app.agents()`'s answer (`GET /agent`); throws when it is refused or is not a list.
+// The names of the agents a review task may run on in `app.agents()`'s answer (`GET /agent`); throws when it is refused
+// or is not a list. A subagent is left out: craft's Rust agents are not closed as `review-task` is (realm @nick/craft,
+// node #714), so the binary places their tasks on `review-task`, as it did when each task was its own `opencode run`.
 export function agentNames(res: unknown): string[] {
   const failed = errorOf(res)
   if (failed) throw new Error(failed)
   const list = field(res, 'data') ?? res
   if (!Array.isArray(list)) throw new Error('the agent list OpenCode answered is not a list')
-  return list.map(a => field(a, 'name')).filter((name): name is string => typeof name === 'string' && name !== '')
+  return list
+    .filter(a => field(a, 'mode') !== 'subagent')
+    .map(a => field(a, 'name'))
+    .filter((name): name is string => typeof name === 'string' && name !== '')
 }
