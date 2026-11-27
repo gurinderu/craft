@@ -88,9 +88,9 @@ opencode. The links point into this checkout, but a checkout does not change wha
   Workflow tool and `codex exec`; in OpenCode the review is `/craft-review`.
 - **Agents** — `rust-reviewer`, `rust-architecture-reviewer`, `rust-security-scanner` and `rust-miri`
   are hidden subagents (they don't clutter `@`-autocomplete); the workflows dispatch them.
-  `review-task` exists only for `/craft-review`'s tasks: hidden too, but `mode: all`, because the binary
-  starts it with `opencode run --agent review-task`, which opencode 1.19.5 refuses for a subagent
-  (it falls back to the default agent); `hidden` keeps it out of the agent picker. It may read
+  `review-task` exists only for `/craft-review`'s tasks: hidden too, but `mode: all`, because the binary's own
+  terminal path starts it with `opencode run --agent review-task`, which opencode 1.19.5 refuses for a
+  subagent (it falls back to the default agent); `hidden` keeps it out of the agent picker. It may read
   outside the reviewed repository (`external_directory: allow`, as `rust-reviewer` may too, for a `--pr`
   review's worktree): its task's prompt file is in the
   run directory under `~/.craft`, and 1.19.5's `run` stops on the permission question otherwise.
@@ -103,34 +103,43 @@ opencode. The links point into this checkout, but a checkout does not change wha
 `<checkout>/bin/craft review run --backend opencode --events json`. `bin/craft` runs the binary of this
 plugin's version, downloaded from its GitHub release into `~/.craft/bin/<version>/` the first time
 (`CRAFT_BIN=<path>` runs a local build). The binary decides every step — the gate, the scouts, the
-lenses round after round, verification, the verdict. On 1.x it runs each task as its own `opencode run`
-process; on 2.x it hands each task back to the plugin (`--delegate`), which runs it as a child session
-of the calling session, so the tasks show as that session's subagents. On 1.x the tool's title follows the run's progress; the answer is the binary's `## Verdict`
-block and findings, as markdown. On 1.x the tasks' sessions are not archived (1.19.5's `run` takes no
-`--archived`), and a task of a subagent such as `rust-reviewer` runs on `review-task` with that
-agent's prompt (1.x `run` puts a subagent on its default agent, which writes). The binary's 1.19.5
-path was seen reaching the model as `review-task`; the tool itself, and its 2.x child sessions, are
-covered by tests against a fake binary and fake host, not yet seen in a real OpenCode session.
+lenses round after round, verification, the verdict. On both lines it hands each task back to the plugin
+(`--delegate`), which runs it as a child session of the calling session. On 1.19.6, `Ctrl+X ↓` opens a
+review child and `Up` returns to its parent. The running tool row does not display its progress title;
+craft shows the phase and task counts in a native TUI notification instead. It renews the notification
+while the review runs and briefly shows the result or interruption at the end. This notification is
+shared by the TUI, so it remains visible when navigating to a child or another session. Each notice
+expires after ten seconds without renewal; a failed notification is logged and does not stop the review.
+The answer is the binary's `## Verdict`
+block and findings, as markdown. The binary's own 1.19.5 path (`opencode run`, from a terminal) was seen
+reaching the model as `review-task`. Child navigation and ordinary cancellation were also observed
+in a real 1.19.6 TUI with the branch-built binary and a scripted provider. That trial does not establish
+review quality or acceptance of the released plugin in a consumer's repository.
 
-On 2.x each child session is bounded by its task's deadline (15 minutes for a scout, 90 for a lens, 30
+On both lines each child session is bounded by its task's deadline (15 minutes for a scout, 90 for a lens, 30
 for the rest): past it the binary abandons the task and the plugin interrupts its session. At most
 `--concurrency` children run at once (else `CRAFT_OPENCODE_CONCURRENCY`, else 4), and a child that gave
-nothing back, or broke before its run ended, is stopped and tried once more alone: no other child of the
-review runs beside the retry, which is given up with its task's deadline. If the plugin stops answering
+nothing back, or broke before its run ended, is asked to stop and tried once more alone. The plugin waits
+at most ten seconds for the stop; a failed or unconfirmed stop is logged, and that child may still run
+beside the retry. Other tasks wait until the retry ends; it is given up with its task's deadline. If the plugin stops answering
 the binary — its input ends, or a task cannot be handed to it — the run stops INCOMPLETE with how to
 resume it. Only a child whose run succeeded gives a reply: one that failed is reported by
-the error OpenCode gives (its type and message, such as `provider.no-route`), one interrupted by that
-outcome, in the run's log and, when every task of a round fails, in the answer; a usage limit in it
+the error OpenCode gives (its type and message, such as 2.x's `provider.no-route` or 1.x's `APIError`), one
+interrupted (2.x) by that outcome, in the run's log and, when every task of a round fails, in the answer; a usage limit in it
 stops the run INCOMPLETE with how to resume it. The plugin hands the binary the agents OpenCode lists:
 when they cannot be listed or `review-task` is not among them, the review refuses before anything runs;
 a task whose own agent is missing runs on `review-task`, and the report says the run was degraded.
-A child session is made where its parent is (OpenCode 2.x gives a child no directory of its own), so
+On 1.x agents with `mode: subagent` are left out of that list, preserving their placement on
+`review-task` with their own prompts. A failed listing now refuses the review on 1.x too; the former
+terminal path fell back to `review-task` when it could not list agents.
+A child session is made where its parent is: 2.x gives it no directory of its own, and on 1.x using
+the caller's directory keeps project-installed agents available. Thus
 each task's prompt names the repository it reviews by its absolute path — with `--pr`, craft's own
 worktree of the PR — and asks the agent to use absolute paths under it. That is an instruction to the
 model, not an enforced directory.
 
 On 2.x the review shows its progress as a line in the TUI's prompt footer of the session that runs it —
-the same line 1.x shows as the tool's title — and on the end clears it and shows the verdict as a toast;
+the same text shown in the TUI notification on 1.x — and on the end clears it and shows the verdict as a toast;
 nothing of it reaches the model. The footer is a TUI plugin of its own: `install.sh` links the directory
 `plugin/tui/` as `plugins/craft-review-footer` (2.x loads a TUI plugin only from a directory; 1.x ignores
 directories there). Without that link, or on a 2.x that lacks the plugin RPC, the review runs as before
@@ -143,8 +152,8 @@ the reply reader fixed since (it reads past the session's `idle` entry and takes
 run's reply), which the audit and the triage would share, but neither has been run on it yet. The refusal itself is tested against fake
 hosts only, not yet seen in a real OpenCode 2.x.
 
-- Every task is read-only: one that names `rust-reviewer` runs on the hidden `rust-reviewer` agent,
-  every other on `review-task` (both have write and edit off), with the matching Claude Code agent's
+- Every task is read-only: on 2.x one that names `rust-reviewer` runs on the hidden `rust-reviewer` agent;
+  on 1.x it runs on `review-task`. Other built-in tasks run on `review-task` (both have write and edit off), with the matching Claude Code agent's
   prompt (or the reviewed repository's own `.claude/agents/<name>.md`) before the task. A task still
   runs read-only commands (git, grep, the build's own checks) through bash.
 - `review-task` is kept light on both lines, each by the hooks its host has. On 2.x the plugin's
@@ -175,12 +184,13 @@ hosts only, not yet seen in a real OpenCode 2.x.
   binary refuses it before anything runs, since that round would review the whole branch.
 - `--pr <n>` from a checkout that lacks the PR's head (the trunk, say) reviews it in craft's own
   detached worktree, `~/.craft/worktrees/<repo>/pr-<n>-<head>`, one per head, shared by runs at once
-  and never moved; your checkout is not touched. On 1.x every task — and the agent check before them —
-  runs there, so OpenCode loads the PR head's own `opencode.json`, `.opencode/` plugins, MCP servers and
-  agent overrides: the PR's code runs even with `--no-gate`. Review a PR you do not trust on another
-  host, with `--no-gate`. Project-installed craft agents are not in that worktree: install them
-  globally (`install.sh --global`) or, on 2.x, add the package. On 2.x the tasks are child sessions
-  of your session, in your checkout's OpenCode, and read the worktree by its absolute path.
+  and never moved; your checkout is not touched. From the `review` tool the tasks are child sessions
+  of your session, in your checkout's OpenCode, and read the worktree by its absolute path. When the
+  binary runs its own `opencode run` (`craft review run --backend opencode` from a terminal), every
+  task — and the agent check before them — runs there, so OpenCode loads the PR head's own
+  `opencode.json`, `.opencode/` plugins, MCP servers and agent overrides: the PR's code runs even with
+  `--no-gate`. Review a PR you do not trust on another host, with `--no-gate`. Project-installed craft
+  agents are not in that worktree: install them globally (`install.sh --global`) or, on 2.x, add the package.
 - A failed task is handed out again by the binary; the first usage-limit error stops new tasks and
   ends the run INCOMPLETE with how to resume it.
 - If this OpenCode has no `review-task` agent (an install from before it), the review refuses to

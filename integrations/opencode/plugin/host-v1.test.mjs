@@ -5,16 +5,19 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseMarkdown } from './frontmatter.ts'
-import { extractText, lastModel, v1Host, v1Hooks } from './host-v1.ts'
+import { ChildSessionFailed } from './host.ts'
+import { v1Host, v1Hooks } from './host-v1.ts'
+import { extractText, lastModel } from './host-v1-read.ts'
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 
-/** @param {unknown} reply */
-function fakeClient(reply) {
+/** @param {unknown} reply @param {() => Promise<unknown>} [agents] */
+function fakeClient(reply, agents = () => Promise.resolve({ data: [] })) {
   /** @type {unknown[]} */
   const sent = []
   return {
     sent,
+    app: { agents },
     session: {
       create: (/** @type {unknown} */ req) => {
         sent.push(['create', req])
@@ -189,4 +192,58 @@ test('a deadline stops the session and gives up on it; a refused prompt throws i
   // As opencode 1.19.5 answers an unknown agent (observed): an error object, not a throw.
   const refused = fakeClient({ error: { name: 'UnknownError', data: { message: 'Unexpected server error.' } } })
   await assert.rejects(v1Host({ client: refused, directory: '', worktree: '' }).runChild({ title: 't', agent: 'x', prompt: 'p' }), /Unexpected server error/)
+})
+
+test("a turn that failed inside throws the runtime's error by its type and message, as 2.x does", async () => {
+  // As opencode 1.19.6 answers a turn the provider refused (observed): the reply's assistant message carries the error.
+  const limit = 'Claude Max usage limit reached, resets 5pm'
+  const failed = fakeClient({ data: { info: { role: 'assistant', error: { name: 'APIError', data: { message: limit } } }, parts: [] } })
+  await assert.rejects(
+    v1Host({ client: failed, directory: '', worktree: '' }).runChild({ title: 't', agent: 'review-task', prompt: 'p' }),
+    (/** @type {unknown} */ e) =>
+      e instanceof ChildSessionFailed && e.type === 'APIError' && e.detail === limit && e.message === `the child session failed (APIError): ${limit}`,
+  )
+  const bare = fakeClient({ data: { info: { role: 'assistant', error: { data: {} } }, parts: [{ type: 'text', text: 'half' }] } })
+  await assert.rejects(
+    v1Host({ client: bare, directory: '', worktree: '' }).runChild({ title: 't', agent: '', prompt: 'p' }),
+    (/** @type {unknown} */ e) => e instanceof ChildSessionFailed && e.message === 'the child session failed (unknown)',
+  )
+  const fine = fakeClient({ data: { info: { role: 'assistant' }, parts: [{ type: 'text', text: 'ok' }] } })
+  assert.equal(await v1Host({ client: fine, directory: '', worktree: '' }).runChild({ title: 't', agent: '', prompt: 'p' }), 'ok')
+})
+
+test('the agents are the names the runtime lists; a refused or unreadable list throws', async () => {
+  // `GET /agent` as the 1.x SDK's `app.agents()` answers it: the agents under `data`, each by its `name`.
+  const listed = fakeClient(null, () =>
+    Promise.resolve({
+      data: [{ name: 'build', mode: 'primary' }, { name: 'review-task', mode: 'all' }, { name: 'rust-reviewer', mode: 'subagent' }, { mode: 'all' }],
+    }),
+  )
+  // A subagent is not offered: the binary places its tasks on review-task, closed as the Rust agents are not (#714).
+  assert.deepEqual(await v1Host({ client: listed, directory: '', worktree: '' }).agents?.(), ['build', 'review-task'])
+  const refused = fakeClient(null, () => Promise.resolve({ error: { name: 'UnknownError', data: { message: 'agent list gone' } } }))
+  await assert.rejects(v1Host({ client: refused, directory: '', worktree: '' }).agents?.() ?? Promise.resolve(), /agent list gone/)
+  const odd = fakeClient(null, () => Promise.resolve({ data: { agents: 'none' } }))
+  await assert.rejects(v1Host({ client: odd, directory: '', worktree: '' }).agents?.() ?? Promise.resolve(), /not a list/)
+})
+
+test('a child given up before or while it is created never runs its prompt, and one created is stopped', async () => {
+  const before = fakeClient({ data: { parts: [] } })
+  const gone = new AbortController()
+  gone.abort()
+  const req = { title: 't', agent: 'review-task', prompt: 'p' }
+  await assert.rejects(v1Host({ client: before, directory: '', worktree: '' }).runChild({ ...req, signal: gone.signal }), /stopped at its deadline/)
+  assert.deepEqual(before.sent, [])
+  const during = fakeClient({ data: { parts: [] } })
+  const late = new AbortController()
+  const create = during.session.create
+  during.session.create = (/** @type {unknown} */ r) => {
+    late.abort()
+    return create(r)
+  }
+  await assert.rejects(v1Host({ client: during, directory: '', worktree: '' }).runChild({ ...req, signal: late.signal }), /stopped at its deadline/)
+  assert.deepEqual(during.sent, [
+    ['create', { body: { title: 't' } }],
+    ['abort', { path: { id: 'ses_1' } }],
+  ])
 })

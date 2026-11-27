@@ -1,5 +1,5 @@
 //! The `opencode` host's tasks handed back to the process that runs `craft review run --delegate`
-//! (realm @nick/craft, nodes #496, #626, #627): the OpenCode 2.x plugin runs each as a child
+//! (realm @nick/craft, nodes #496, #626, #627): the OpenCode plugin runs each, on 1.x and 2.x, as a child
 //! session of the calling session, which `opencode run` cannot make. A task goes out as a `task`
 //! event on the event stream, its key fresh per dispatch and its working directory the repository
 //! the run reviews; its reply comes back on stdin as one JSON line, `{"key":n,"text":…}` or

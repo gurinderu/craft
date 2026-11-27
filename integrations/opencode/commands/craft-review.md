@@ -1,5 +1,5 @@
 ---
-description: craft's review of the current change — the craft binary runs it, each task its own `opencode run` on craft's read-only agents, the answer is its Verdict block.
+description: craft's review of the current change — the craft binary runs it, each task a child session of this session on craft's read-only agents, the answer is its Verdict block.
 ---
 
 Run craft's review by invoking the `review` tool.
@@ -23,6 +23,9 @@ what stopped the run and how to resume it. Do not edit any code yourself: the re
 Never submit a GitHub review verdict (`gh pr review --approve` or `--request-changes`), approve or
 merge: the verdict goes to the user only, and findings reach the PR only through `--comment` when the user asked for it.
 
-With `--pr` from a checkout that lacks the PR's head, the review runs in craft's own worktree of it,
-where OpenCode loads the PR's own project config (plugins, MCP servers, agents): the PR's code runs
-even with `--no-gate`, so for a PR the user does not trust, say so and suggest another host instead.
+With `--pr` from a checkout that lacks the PR's head, craft prepares its own worktree of it. The tool's
+child sessions stay in the caller's OpenCode directory and are instructed to read that worktree by
+absolute path. The terminal path (`craft review run --backend opencode` without `--delegate`) starts
+OpenCode in the worktree, loading the PR's own plugins, MCP servers and agents even with `--no-gate`.
+For a PR the user does not trust, suggest another host with `--no-gate`; task prompts do not enforce
+filesystem isolation.

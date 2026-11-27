@@ -1,20 +1,20 @@
-// The 2.x review's tasks as the plugin runs them: the binary hands each back (`--delegate`, realm @nick/craft, nodes
-// #496, #626, #627) and the plugin runs it as a child session of the calling session, so the tasks show as its
-// subagents, on the agent and model the binary names. The binary bounds each by its kind's deadline and says a task no
-// longer awaited, which aborts that child.
-//   • The agents the runtime lists go to the binary (`--agents`), which places each task as it does for `opencode run`:
+// The review's tasks as the plugin runs them on both lines: the binary hands each back (`--delegate`, realm @nick/craft,
+// nodes #496, #626, #627, #720) and the plugin runs it as a child session of the calling session,
+// on the agent and model the binary names. The binary bounds each by its kind's deadline and says a task
+// no longer awaited, which aborts that child.
+//   • The agents the runtime lists go to the binary (`--agents`), which places each task on the agent it names when it is listed —
+//     on 1.x subagents are not listed, so their tasks run on `review-task` (host-v1-read.ts) —
 //     a task whose own agent is missing runs on `review-task`, said degraded. The listing fails closed: no list, an
 //     error, or no `review-task` runs nothing, since a child named an agent the runtime lacks may run on its writable
 //     default.
-//   • A child is made where its parent is (opencode-v2.d.ts), so the repository the task reviews — craft's worktree of a
-//     PR, say — is named at the head of its prompt.
+//   • A child is made where its parent is (opencode-v2.d.ts; on 1.x, realm @nick/craft, node #719), so the repository the
+//     task reviews — craft's worktree of a PR, say — is named at the head of its prompt.
 //   • At most the cap of children run at once (`--concurrency`, else `CRAFT_OPENCODE_CONCURRENCY`, else 4), and a child
 //     that gave nothing back, or broke before its loop ended, is tried once more alone — no other child of this review
 //     running beside it: the plugin's own fan-out's mitigation of opencode's concurrent-child bugs (child-run.ts).
 import type { DelegatedTask } from '../../shared/craft-review-run.mjs'
 import { runChildSession } from './child-run.ts'
-import type { Host, ModelRef } from './host.ts'
-import { ChildSessionFailed } from './host-v2.ts'
+import { ChildSessionFailed, type Host, type ModelRef } from './host.ts'
 
 /** The read-only agent every review task runs on unless the binary names another. */
 export const TASK_AGENT = 'review-task'
@@ -143,7 +143,7 @@ const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e))
  * `run` in a shared turn, and once more alone — no other child of this review running — when it gave nothing back or
  * broke before its loop ended (the plugin's own fan-out's mitigation of opencode's concurrent-child bugs, child-run.ts).
  * Never once the task is given up, nor after a loop that failed: that error is the answer. Before a broken or abandoned
- * first attempt throws or returns, its session is asked to stop and the stop awaited for a bounded time (host-v2.ts); a
+ * first attempt throws or returns empty, its session is asked to stop and the stop awaited for a bounded time by the host; a
  * stop OpenCode fails or does not confirm in that time is logged, and that child may then run beside the retry. When the
  * retry fails too, the first error is kept, the retry's beside it.
  */
