@@ -4,8 +4,10 @@
 // (nix opencode2-2.2.7: the plugin loader's `{id, effect} | {id, setup}` check and the promise-side context
 // it builds) and observed by a probe plugin loaded in `opencode serve` 2.2.7: the context's keys, a session
 // created (nested by `parentID`, with a model) and read back, an admitted prompt, the `prompt` hook rewriting its text, a JSON Schema tool added
-// and executed, and `session.created` events; a child session's reply and failure after a real agent loop were observed later (realm
-// @nick/craft, node #626). Re-read this against the binary on each 2.x bump.
+// and executed, `session.created` events, and the `context` hook changing a model request in place (realm @nick/craft,
+// node #697); a child session's reply and failure after a real agent loop were observed later (node #626), and the
+// `compaction` hook carrying the same input for the request that summarizes a session (node #697). Re-read this against
+// the binary on each 2.x bump.
 
 import type { V2AgentDraft, V2CommandDefinition, V2Skill } from './opencode-v2-editors.js'
 
@@ -63,6 +65,38 @@ export interface V2PromptHookInput {
   delivery: string
 }
 
+// A system part of a model request as 2.2.7 hands it to the `context` hook (observed by a probe, realm @nick/craft,
+// node #697): the agent's prompt, a `# Your Model` note, the repository's instructions and a worktree note. Only the
+// instructions part carried metadata: each of its sections under `experimental.instructions` as `{key, text}`, its text
+// their texts joined by blank lines (node #698).
+export interface V2SystemPart {
+  type: string
+  text: string
+  metadata?: { experimental?: { instructions?: { key: string; text: string }[] } }
+}
+
+// A message of the same request: a user message (the task; or a rule file the host loaded on the way, its text
+// beginning `Instructions from: `), an assistant message, a tool result, or a `system` message — an instruction
+// change's notice — of text parts.
+export interface V2ModelMessage {
+  id?: string
+  role: string
+  content: string | { type: string; text?: string }[]
+}
+
+// The `context` hook's input, and the `compaction` and `generate` hooks' with the same keys (2.2.7, node #697): a
+// model request on its way out. Mutable, and only that: the host keeps what the hook changes in place and drops what
+// it returns (2.2.7, node #697). `tools` is a record of name → definition.
+export interface V2ContextHookInput {
+  sessionID: string
+  agent: string
+  model: V2ModelRef
+  options: Record<string, unknown>
+  system?: V2SystemPart[]
+  messages?: V2ModelMessage[]
+  tools?: Record<string, unknown>
+}
+
 export interface V2Event {
   type: string
   data: { sessionID: string; parentID?: string; agent?: string }
@@ -116,6 +150,10 @@ export interface V2Context {
     interrupt(input: { sessionID: string }): Promise<unknown>
     context(input: { sessionID: string }): Promise<V2Message[]>
     hook(name: 'prompt', callback: (input: V2PromptHookInput) => Promise<void> | void): Promise<V2Registration>
+    // Experimental in 2.2.7: the agent's own model requests (`context`), the request that summarizes a session for the
+    // agent (`compaction`) and a request the session is asked outside its steps (`generate`), before they go out, changed
+    // in place; the summarizer's instruction is appended after the hook (light-agent.ts, node #697).
+    hook(name: 'context' | 'compaction' | 'generate', callback: (input: V2ContextHookInput) => Promise<void> | void): Promise<V2Registration>
   }
   event: {
     // Returned synchronously; an async iterable of the location's events, filtered by type.

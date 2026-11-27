@@ -7,6 +7,8 @@ import { tool } from '@opencode-ai/plugin'
 import type { Part, TextPart } from '@opencode-ai/sdk'
 import { stringArgs, type ChildRequest, type Host, type ToolSpec, type WorkHook } from './host.ts'
 import { errorOf, extractText, field, lastModel } from './host-v1-read.ts'
+import { lightenSystem } from './light-agent-v1.ts'
+import { oncePerReason, reasonOf } from './light-agent-shared.ts'
 import { shellIn } from './shell.mjs'
 
 export { extractText, lastModel }
@@ -121,8 +123,27 @@ export function v1WorkHooks(work: WorkHook): Required<Pick<Hooks, 'event' | 'cha
   }
 }
 
-/** Everything the 1.x runtime gets from `server()`: the tools and the work hook. */
-export function v1Hooks(input: Pick<PluginInput, 'directory' | 'worktree'> & { client: unknown }, tools: readonly ToolSpec[], work: WorkHook): Hooks {
+// Everything the 1.x runtime gets from `server()`: the tools, the work hook and the review-task agent's system text
+// lightened in place (light-agent-v1.ts) — a throw inside that hook is caught and said once per reason on `log`
+// (realm @nick/craft, node #707).
+export function v1Hooks(
+  input: Pick<PluginInput, 'directory' | 'worktree'> & { client: unknown },
+  tools: readonly ToolSpec[],
+  work: WorkHook,
+  log: (line: string) => void = console.error,
+): Hooks {
   const host = v1Host({ client: input.client as V1Client, directory: input.directory, worktree: input.worktree })
-  return { ...v1WorkHooks(work), tool: Object.fromEntries(tools.map(t => [t.name, v1Tool(host, t)])) }
+  const say = oncePerReason(log)
+  return {
+    ...v1WorkHooks(work),
+    tool: Object.fromEntries(tools.map(t => [t.name, v1Tool(host, t)])),
+    'experimental.chat.system.transform': (_input, output) => {
+      try {
+        lightenSystem(output.system)
+      } catch (e) {
+        say(reasonOf(e))
+      }
+      return Promise.resolve()
+    },
+  }
 }

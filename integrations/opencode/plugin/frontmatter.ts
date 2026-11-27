@@ -1,7 +1,7 @@
 // The YAML frontmatter of craft's own Markdown files (agents, commands, skills), as far as they spell it: `key: value`
 // scalars (quotes stripped, true/false read as booleans), folded (`>`, `>-`) and literal (`|`, `|-`) block scalars, and
-// one level of nested `key:` map. Not a YAML parser: the plugin ships no dependency for one, and these files are ours
-// (plugin-content.test.mjs reads every shipped file through it).
+// one level of nested `key:` map, its keys quotable. Not a YAML parser: the plugin ships no dependency for one, and
+// these files are ours (plugin-content.test.mjs reads every shipped file through it).
 
 export type Scalar = string | boolean
 export type FrontValue = Scalar | Record<string, Scalar>
@@ -34,8 +34,10 @@ function block(lines: string[], style: string): string {
 function nested(lines: string[]): Record<string, Scalar> {
   const out: Record<string, Scalar> = {}
   for (const line of lines) {
-    const m = /^\s+([\w.*-]+):\s*(.*)$/.exec(line)
-    if (m?.[1] !== undefined) out[m[1]] = scalar(m[2] ?? '')
+    // A quoted key is a key (`"*_*"`: bare, YAML would read an alias); a line dropped here would leave an agent
+    // without the rule it spells (realm @nick/craft, node #694).
+    const m = /^\s+(['"]?)([\w.*-]+)\1:\s*(.*)$/.exec(line)
+    if (m?.[2] !== undefined) out[m[2]] = scalar(m[3] ?? '')
   }
   return out
 }

@@ -1,7 +1,13 @@
 // The 1.x side of the host against a fake SDK client: what it sends, and how it reads the answer back.
 import { test } from 'vitest'
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { parseMarkdown } from './frontmatter.ts'
 import { extractText, lastModel, v1Host, v1Hooks } from './host-v1.ts'
+
+const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 
 /** @param {unknown} reply */
 function fakeClient(reply) {
@@ -135,6 +141,36 @@ test('each tool spec becomes a 1.x tool that hands its string arguments, the abo
   assert.deepEqual(titles, [{ title: 'half way' }], "progress is the tool's title")
   assert.equal(typeof hooks['chat.message'], 'function')
   assert.equal(typeof hooks.event, 'function')
+})
+
+test("the 1.x hooks carry the review-task agent's lightening: its system text is cut in place, any other request's passes, and a throw never reaches the host", async () => {
+  /** @type {string[]} */
+  const said = []
+  const work = { childCreated() {}, compacted: async () => {}, message: async () => {} }
+  const hooks = v1Hooks({ client: fakeClient(null), directory: '/r', worktree: '/r' }, [], work, line => said.push(line))
+  const transform = hooks['experimental.chat.system.transform']
+  assert.equal(typeof transform, 'function', 'the hook stands under the name the 1.x types give it')
+  const call = /** @type {(input: unknown, output: unknown) => Promise<void>} */ (transform)
+  const { body } = parseMarkdown(fs.readFileSync(path.join(REPO, 'integrations/opencode/agents/review-task.md'), 'utf8'))
+  const MODEL_LINE = 'You are powered by the model named fake-model. The exact model ID is fake/fake-model'
+  const RULES = 'Instructions from: /r/AGENTS.md\n# Rules\n\nMARKER-HOOK-RULES-c2d4\n'
+  const light = { system: [`${body}\n${MODEL_LINE}\n${RULES}`] }
+  await call({ sessionID: 'ses_1', model: { providerID: 'fake', modelID: 'fake-model' } }, light)
+  assert.deepEqual(light, { system: [`${body}\n${MODEL_LINE}\n`] }, 'the rule file goes, the rest stays byte for byte')
+  // The session's title request comes under the session's own id (opencode 1.19.5): the id cannot tell the requests apart.
+  const TITLE = 'You are a title generator. You output ONLY a thread title. Nothing else.'
+  const title = { system: [`${TITLE}\n${RULES}`] }
+  await call({ sessionID: 'ses_1', model: { providerID: 'fake', modelID: 'fake-model' } }, title)
+  assert.deepEqual(title, { system: [`${TITLE}\n${RULES}`] }, "a request that is not the agent's passes as it came")
+  const sealed = {
+    get system() {
+      throw new Error('system is sealed')
+    },
+  }
+  await call(undefined, sealed)
+  await call(undefined, sealed)
+  assert.deepEqual(said, ["craft: could not lighten the review-task agent's context on this OpenCode: system is sealed"], 'said once per reason')
+  assert.deepEqual(Object.keys(hooks).sort(), ['chat.message', 'event', 'experimental.chat.system.transform', 'tool'])
 })
 
 test('a deadline stops the session and gives up on it; a refused prompt throws its error', async () => {

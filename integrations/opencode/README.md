@@ -147,6 +147,22 @@ hosts only, not yet seen in a real OpenCode 2.x.
   every other on `review-task` (both have write and edit off), with the matching Claude Code agent's
   prompt (or the reviewed repository's own `.claude/agents/<name>.md`) before the task. A task still
   runs read-only commands (git, grep, the build's own checks) through bash.
+- `review-task` is kept light on both lines, each by the hooks its host has. On 2.x the plugin's
+  `context`, `compaction` and `generate` hooks — a step's request, the compaction's, one the host asks the
+  session outside its steps — edit that agent's model requests in place, leaving out the repository's
+  instructions however they reach the context (its rule files, one loaded on the way by a read, a change's
+  notice) and every tool but glob, grep, read and shell (`light-agent.ts`); a compaction's summary passes
+  as the summarizer wrote it. On 1.x the plugin's `experimental.chat.system.transform` hook edits the
+  system text of that agent's requests in place (`light-agent-v1.ts`). The host calls it on every request
+  of every session and names no agent, so a request is the agent's when its system text opens with the
+  first sentence of the agent's file; there, in each string of the system text, everything from the first
+  line that begins `Instructions from: ` to the string's end is cut, and the agent's prompt, the host's
+  model line and the environment stay. That hook can change the system text only — it is shown no tool
+  list and no tool result: on 1.19.5 a subdirectory's rule file still reaches the agent inside the result
+  of a `read` under it. The agent's file denies the calls of the tools it names, craft's own `review`,
+  `rust-audit` and `triage-findings` among them — its `"*_*"` reaches a name with an underscore only, so
+  they are named — and on 2.x the hooks remove every offer but the four, and the texts, which a deny does
+  not; on 1.19.5 the agent's requests carry five tools: bash, glob, grep, read and todowrite.
 - Models: every tier runs on the calling session's model — the one that session recorded: on 1.x its
   newest message's, on 2.x the model set on the session; when it recorded none, OpenCode's default —
   unless the flags name `--models`: one `provider/model` for all, or
@@ -187,8 +203,11 @@ a model). Tune by task — strongest model + high effort where reasoning is heav
 
 ## Containment
 
-The plugin registers the workflow tools and one narrow hook: craft's hook at the moment of work.
-It only remembers which sessions are subagents' and notes compactions, and adds a few short lines
+The plugin registers the workflow tools and narrow hooks: craft's hook at the moment of work, and — for
+the `review-task` agent only — the hooks that edit its model requests in place: on 2.x `context`,
+`compaction` and `generate` (`light-agent.ts`), on 1.x `experimental.chat.system.transform`
+(`light-agent-v1.ts`); no other agent's request is touched.
+The work hook only remembers which sessions are subagents' and notes compactions, and adds a few short lines
 to a message asking for review work (findings, PR comments, a review), in a repo that declares its
 own agents or work rules, once per request kind (findings, review) per session. On 1.x the lines
 arrive as a synthetic part after the message (`chat.message`). 2.x has no such hook, so they are
