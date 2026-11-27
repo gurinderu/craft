@@ -34,6 +34,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 // A run where every agent is dead. The most important script in the file: an engine that renders
 // dead agents as a clean result is this repo's recurring defect, and it is exactly what no
 // source-text assertion can reach.
+/** @type {Record<string, unknown>} */
 const ALL_DEAD = {}
 
 // `triage-findings` refuses to run without a source, and rightly so — a triage over nothing would
@@ -589,13 +590,15 @@ test('the option each engine actually has lands in the prompt that uses it', asy
   // Named per engine because the word differs: adversarial-review calls it `diffBase`, review and
   // rust-audit `base`, triage-findings has no diff to base and takes `pr` instead. Naming four
   // options is a page of work; not naming them is how "undefined" reached a scout prompt.
-  /** @type {[string, string, RegExp][]} */
+  // triage-findings hands its options to the craft binary's start, so it gets the binary first: its fetch answers.
+  const GOT_BINARY = { 'step:resolve': { exitCode: 0, stdout: 'root=/p\nbin=/b/craft\n', stderr: '' } }
+  /** @type {[string, string, RegExp, Record<string, unknown>][]} */
   const cases = [
-    ['rust-audit', 'base=v0.17.0', /v0\.17\.0/],
-    ['triage-findings', 'pr=60', /\b60\b/],
+    ['rust-audit', 'base=v0.17.0', /v0\.17\.0/, ALL_DEAD],
+    ['triage-findings', 'pr=60', /--pr '60'/, GOT_BINARY],
   ]
-  for (const [engine, argString, expected] of cases) {
-    const { calls } = await runEngine(engine, { args: argString, script: ALL_DEAD })
+  for (const [engine, argString, expected, script] of cases) {
+    const { calls } = await runEngine(engine, { args: argString, script })
     const prompts = calls.map(c => c.prompt).join('\n')
     assert.match(prompts, expected, `${engine}: the value passed as ${argString} must reach an agent`)
   }
