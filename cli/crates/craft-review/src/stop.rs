@@ -24,8 +24,7 @@ use serde_json::{Value, json};
 use crate::Error;
 use crate::finished;
 use crate::report;
-use crate::state::{self, Phase, RunState, TaskState};
-use crate::step::StepError;
+use crate::state::{Phase, RunState, TaskState};
 
 use craft_step::stop::TEXT_MAX as LIMIT_TEXT_MAX;
 pub use craft_step::stop::{Cause, Stop, deaths, limit};
@@ -178,9 +177,7 @@ pub(crate) fn step(dir: &Path, run: &RunState) -> Result<Value, Error> {
     shown.not_run.push(line.clone());
     crate::verify::stood(&mut shown);
     let verdict = report::verdict(&shown);
-    let path = state::report_path(dir);
-    std::fs::write(&path, report::markdown(&shown, &verdict))
-        .map_err(|source| StepError::NoReport { path, source })?;
+    report::write(dir, &shown, &verdict)?;
     let mut done = finished::step(dir, &shown, &verdict);
     if let Some(obj) = done.as_object_mut() {
         obj.insert("line".into(), json!(format!("{verdict} — {line}")));

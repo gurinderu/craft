@@ -12,7 +12,9 @@ use crate::profile::Profile;
 const DEDUP_WHY_MAX: usize = 160;
 
 /// The scout's prompt for `profile`'s part `files` of the diff: classify it and pick the lenses,
-/// without reviewing it.
+/// without reviewing it. A part whose size the binary sets from its `changed_lines` is told it
+/// ([`crate::size::told`]; realm @nick/craft, node #655); otherwise — a runbook, or lines git could
+/// not count — the scout names it.
 ///
 /// # Errors
 /// When a content file is missing or a placeholder has no value.
@@ -20,8 +22,25 @@ pub fn scout_prompt(
     ctx: &PromptContext,
     profile: &Profile,
     files: &[String],
+    changed_lines: Option<u64>,
 ) -> Result<String, ContentError> {
     let globs = profile.pathspec(files);
+    let stat_range = format!("{}...HEAD", shq(&ctx.base));
+    let size_step = match crate::size::told(&profile.id, changed_lines) {
+        Some(n) => content::prompt(
+            "scout-size-counted",
+            &vars([
+                ("statRange", stat_range),
+                ("globs", globs.clone()),
+                ("lines", n.to_string()),
+                ("size", crate::size::bucket(n).into()),
+            ]),
+        )?,
+        None => content::prompt(
+            "scout-size-ask",
+            &vars([("statRange", stat_range), ("globs", globs.clone())]),
+        )?,
+    };
     let json = |v: Vec<String>| serde_json::to_string(&v).unwrap_or_default();
     let is_library = if profile.uses_library {
         "true if this is a published library (has `[lib]`/looks publishable) — best effort."
@@ -35,7 +54,7 @@ pub fn scout_prompt(
             ("scope", scope_line(ctx)?),
             ("base", format!("`{}`", flatten(Some(&Value::String(ctx.base.clone()))))),
             ("globs", globs),
-            ("statRange", format!("{}...HEAD", shq(&ctx.base))),
+            ("sizeStep", size_step),
             ("lenses", json(profile.roster())),
             ("safetyLens", profile.safety_lens.clone()),
             ("securityHints", profile.security_hints.clone()),

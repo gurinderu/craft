@@ -236,6 +236,7 @@ fn a_mixed_diff_plans_each_profile_over_its_own_files_and_settles_one_pool() {
         "web/package.json",
     ]);
     let out = tempfile::tempdir().unwrap();
+    common::sized(repo.path(), "medium");
     let (run, s) = start(repo.path(), out.path());
     assert_eq!(ids(&s), ["scout-rust", "scout-nix", "scout-general"]);
     let general = prompt_of(task(&s, "scout-general"));
@@ -401,13 +402,25 @@ fn a_query_string_on_a_changed_rust_line_adds_the_queries_lens() {
 /// #625).
 #[test]
 fn a_profile_that_only_repeated_another_profiles_finding_goes_dry() {
-    let repo = repo_with(&["src/lib.rs", "web/app.ts"]);
+    // Both parts medium by the lines the binary counts, so each plans a second round (node #655).
+    let medium = "// note\n".repeat(100);
+    let repo = repo_holding(&[("src/lib.rs", &medium), ("web/app.ts", &medium)]);
     let out = tempfile::tempdir().unwrap();
     let (run, _) = start(repo.path(), out.path());
     let s = submit(
         &run,
         json!({"scout-rust": scout("medium", &["errors"]), "scout-general": scout("medium", &["security"])}),
     );
+    let state: Value =
+        serde_json::from_str(&std::fs::read_to_string(run.join("state.json")).unwrap()).unwrap();
+    for t in state["tracks"].as_array().unwrap() {
+        assert_eq!(
+            t["plan"]["maxRounds"],
+            json!(2),
+            "{}: a second round allowed",
+            t["profile"]
+        );
+    }
     let same = |id: &str| match id {
         "lens-rust-errors-r1" | "lens-general-correctness-r1" => {
             vec![titled("High", 1, "f returns 1")]

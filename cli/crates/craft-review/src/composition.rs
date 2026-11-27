@@ -31,6 +31,23 @@ pub enum State {
     Off,
 }
 
+/// A composition entry refused, naming the entry.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum Refused {
+    /// Not a `profile:lens` name.
+    #[error("{0}: not a `profile:lens` name")]
+    NotQualified(String),
+    /// No profile offers the lens.
+    #[error("{0}: no such lens")]
+    NoSuchLens(String),
+    /// The security lens or a profile's safety lens, held or turned off.
+    #[error("{0}: a security lens is never held or turned off")]
+    Floor(String),
+    /// The concurrency lens turned off.
+    #[error("{0}: the concurrency lens is held to the first round at most")]
+    ConcurrencyOff(String),
+}
+
 /// The composition a run applies: each lens qualified by its profile, `rust:money`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -49,31 +66,26 @@ impl Composition {
     }
 
     /// The composition of `lenses`, each `profile:lens` with its state, checked against
-    /// `profiles`; `Err` names the first entry refused.
+    /// `profiles`; `Err` names the first entry refused and why.
     ///
     /// # Errors
     /// An entry naming no profile's lens, a security floor lens held or turned off, or the
     /// concurrency lens turned off.
-    pub fn of(lenses: &[(String, State)], profiles: &[Profile]) -> Result<Self, String> {
+    pub fn of(lenses: &[(String, State)], profiles: &[Profile]) -> Result<Self, Refused> {
         let mut c = Self::default();
         for (id, state) in lenses {
-            let (profile, lens) =
-                split(id).ok_or_else(|| format!("{id}: not a `profile:lens` name"))?;
+            let (profile, lens) = split(id).ok_or_else(|| Refused::NotQualified(id.clone()))?;
             let p = profiles
                 .iter()
                 .find(|p| p.id == profile)
                 .filter(|p| p.offers(lens))
-                .ok_or_else(|| format!("{id}: no such lens"))?;
+                .ok_or_else(|| Refused::NoSuchLens(id.clone()))?;
             let floor = lens == SECURITY || p.safety_lens == lens;
             match state {
                 State::Always => {}
-                _ if floor => {
-                    return Err(format!("{id}: a security lens is never held or turned off"));
-                }
+                _ if floor => return Err(Refused::Floor(id.clone())),
                 State::Off if lens == NEVER_OFF => {
-                    return Err(format!(
-                        "{id}: the concurrency lens is held to the first round at most"
-                    ));
+                    return Err(Refused::ConcurrencyOff(id.clone()));
                 }
                 State::Off => c.off.push(id.clone()),
                 State::FirstRound => c.first_round.push(id.clone()),

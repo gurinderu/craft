@@ -41,6 +41,7 @@ fn metric(title: &str, metrics: &Value) -> Value {
 /// agent to index: the binary alone indexes the graph (realm @nick/craft, node #529).
 fn planned(repo: &Path, out: &Path, graph: (Option<&Path>, &Path)) -> Value {
     let run = out.join("run");
+    common::sized(repo, "medium");
     let s = step::start(&common::cbm::with_profile(opts(repo, out), out, graph)).unwrap();
     assert_eq!(ids(&s), ["scout-general"]);
     for t in s["tasks"].as_array().unwrap() {

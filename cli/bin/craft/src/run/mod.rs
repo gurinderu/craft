@@ -16,6 +16,7 @@ mod drive;
 mod drive_tests;
 mod ending;
 mod events;
+mod findings;
 mod host;
 mod limit;
 mod models;

@@ -73,6 +73,7 @@ fn launched(top: &Path, run: &Path) -> Mutants {
         workspace: String::new(),
         base: "main".into(),
         joined: false,
+        short: String::new(),
     }
 }
 
@@ -154,7 +155,9 @@ fn a_survivor_in_the_changed_function_is_pooled_and_one_in_its_neighbour_is_coun
         ),
         Came::Exited { code: Some(2) }
     );
-    let (found, line) = join(&mut launched(top.path(), run.path()), Duration::ZERO);
+    let mut m = launched(top.path(), run.path());
+    let (found, line) = join(&mut m, Duration::ZERO);
+    assert_eq!(m.degraded_note(), None, "a whole answer degrades nothing");
     assert_eq!(found.len(), 1, "{found:?}");
     assert_eq!(
         (found[0]["file"].as_str(), found[0]["line"].as_u64()),
@@ -193,12 +196,56 @@ fn a_worker_past_its_budget_stops_cargo_mutants_and_says_how_long_it_ran() {
     assert!(gone(
         &std::fs::read_to_string(bin.path().join("cargo.pid")).unwrap()
     ));
-    let (found, line) = join(&mut launched(top.path(), run.path()), Duration::ZERO);
+    let mut m = launched(top.path(), run.path());
+    let (found, line) = join(&mut m, Duration::ZERO);
     assert!(found.is_empty());
     assert!(
         line.unwrap().contains("budget ran out"),
         "a stopped run is said, not silent"
     );
+    let degraded = m
+        .degraded_note()
+        .expect("a run with no outcome degrades the review");
+    assert!(degraded.contains("budget ran out"), "{degraded}");
+}
+
+#[test]
+fn a_change_with_no_mutant_in_its_lines_is_an_answer_not_a_broken_run() {
+    for said in [
+        "No mutants to filter",
+        "Diff changes no Rust source files",
+        "Diff file is empty",
+    ] {
+        no_mutant_is_an_answer(said);
+    }
+}
+
+/// A cargo-mutants that says `said` on stderr, exits 0 and writes no `mutants.out/`.
+fn no_mutant_is_an_answer(said: &str) {
+    let (top, run, bin) = (
+        repo(),
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+    );
+    let path = bin.path().join("cargo");
+    exe::write_executable(
+        &path,
+        &format!("#!/bin/sh\n[ \"$2\" = --version ] && {{ echo 'cargo-mutants 27.1.0'; exit 0; }}\necho 'INFO {said}' >&2\nexit 0\n"),
+    )
+    .unwrap();
+    assert_eq!(
+        work(top.path(), run.path(), &path.display().to_string(), 30),
+        Came::NoMutants
+    );
+    let mut m = launched(top.path(), run.path());
+    let (found, line) = join(&mut m, Duration::ZERO);
+    assert!(found.is_empty());
+    let line = line.unwrap();
+    assert!(
+        line.contains("found no mutant in the change") && !line.contains("did not run"),
+        "{line}"
+    );
+    assert_eq!(m.degraded_note(), None);
 }
 
 #[test]
@@ -272,8 +319,22 @@ fn a_worker_that_never_answers_is_said_with_its_last_word() {
         "error: unrecognized subcommand '__craft-mutants'\n",
     )
     .unwrap();
-    let (_, line) = join(&mut launched(top.path(), run.path()), Duration::ZERO);
-    assert!(line.unwrap().contains("unrecognized subcommand"));
+    let mut m = launched(top.path(), run.path());
+    let (_, line) = join(&mut m, Duration::ZERO);
+    let line = line.unwrap();
+    assert!(line.contains("unrecognized subcommand"), "{line}");
+    assert!(
+        line.contains(&format!(
+            "cargo-mutants may still be running, unwatched and with no budget, writing into {}",
+            dir.display()
+        )),
+        "{line}"
+    );
+    assert!(
+        m.degraded_note()
+            .is_some_and(|n| n.contains("may still be running")),
+        "a worker that never answered is a run short"
+    );
 }
 
 #[test]
@@ -335,8 +396,23 @@ fn a_run_cut_short_is_said_short() {
         &cargo(bin.path(), &unended, 0, 2),
         30,
     );
-    let (_, line) = join(&mut launched(top.path(), run.path()), Duration::ZERO);
-    assert!(line.unwrap().contains("run short: 2 of 2 tested"));
+    let mut m = launched(top.path(), run.path());
+    let (found, line) = join(&mut m, Duration::ZERO);
+    assert_eq!(
+        found.len(),
+        1,
+        "what survived before the cut is kept: {found:?}"
+    );
+    assert_eq!(
+        (found[0]["file"].as_str(), found[0]["line"].as_u64()),
+        (Some("src/lib.rs"), Some(2))
+    );
+    let line = line.unwrap();
+    assert!(
+        line.contains("1 survived of 2 tested") && line.contains("run short: 2 of 2 tested"),
+        "{line}"
+    );
+    assert!(m.degraded_note().is_some_and(|n| n.contains("run short")));
 }
 
 #[test]
@@ -348,7 +424,12 @@ fn a_baseline_that_failed_in_the_copy_is_said_with_its_cause_and_log() {
     );
     let failed = r#"{"outcomes":[{"scenario":"Baseline","summary":"Failure"}],"total_mutants":3,"end_time":"t"}"#;
     work(top.path(), run.path(), &cargo(bin.path(), failed, 0, 4), 30);
-    let (found, line) = join(&mut launched(top.path(), run.path()), Duration::ZERO);
+    let mut m = launched(top.path(), run.path());
+    let (found, line) = join(&mut m, Duration::ZERO);
+    assert!(
+        m.degraded_note()
+            .is_some_and(|n| n.contains("baseline.log"))
+    );
     let line = line.unwrap();
     assert!(found.is_empty());
     assert!(
@@ -434,6 +515,44 @@ fn a_launched_run_is_kept_in_the_gate_and_none_is_not_written() {
     };
     let kept: Gate = serde_json::from_value(serde_json::to_value(&gate).unwrap()).unwrap();
     assert!(kept.mutants.running());
+}
+
+#[test]
+fn a_short_run_stays_short_across_the_states_save_and_reload() {
+    let gate = Gate {
+        mutants: Mutants {
+            dir: "/r/mutants".into(),
+            joined: true,
+            short: "mutants of the change did not run: their budget ran out".into(),
+            ..Mutants::default()
+        },
+        ..Gate::default()
+    };
+    let kept: Gate = serde_json::from_value(serde_json::to_value(&gate).unwrap()).unwrap();
+    assert_eq!(kept.mutants.degraded_note(), gate.mutants.degraded_note());
+    assert!(kept.mutants.degraded_note().is_some());
+}
+
+#[test]
+fn a_no_mutant_word_is_an_answer_only_on_a_clean_exit() {
+    let (top, bin) = (repo(), tempfile::tempdir().unwrap());
+    for (said, code) in [("INFO No mutants to filter", 1), ("INFO something else", 0)] {
+        let run = tempfile::tempdir().unwrap();
+        let path = bin.path().join("cargo");
+        exe::write_executable(
+            &path,
+            &format!("#!/bin/sh\n[ \"$2\" = --version ] && {{ echo 'cargo-mutants 27.1.0'; exit 0; }}\necho '{said}' >&2\nexit {code}\n"),
+        )
+        .unwrap();
+        let came = work(top.path(), run.path(), &path.display().to_string(), 30);
+        assert!(
+            matches!(came, Came::Broken { .. }),
+            "{said} / {code}: {came:?}"
+        );
+        let mut m = launched(top.path(), run.path());
+        join(&mut m, Duration::ZERO);
+        assert!(m.degraded_note().is_some(), "{said} / {code}");
+    }
 }
 
 fn setup(cargo: String) -> MutantsSetup {

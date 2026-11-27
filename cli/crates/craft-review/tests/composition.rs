@@ -188,6 +188,7 @@ fn what_the_run_asks_for_itself_runs_though_the_profile_turns_it_off() {
 fn second_round(lenses: &[(&str, State)]) -> Vec<String> {
     let (repo, out) = (fixture(true), tempfile::tempdir().unwrap());
     let run = out.path().join("run");
+    common::sized(repo.path(), "medium");
     step::start(&StartOptions {
         lenses: lenses.iter().map(|(l, s)| ((*l).to_owned(), *s)).collect(),
         ..opts(repo.path(), out.path())

@@ -351,7 +351,7 @@ lens rounds within its budget — the reviewer's profile's `[mutants]` section c
 joined when the rounds end, each mutant that survived in a function the change touched pooled as a tool's finding, and the report
 saying what came of them or why they did not run), the reviewer's profile's `[lenses]` composition (`src/composition.rs`, read by `src/project/lenses.rs`: a lens
 turned off leaves the plan, one held runs its first round only, the report naming each; never the security or a profile's safety lens,
-the concurrency lens at most held; `--all-lenses` sets it aside for the release's full review; `src/composition/candidates.rs` sums each lens's yield over a repository's runs and offers the quiet ones, which `craft init` shows through `cli/bin/craft/src/init/lenses.rs` and writes with `--write --lens`), a scout per profile whose answer plans its lenses over its own files, the
+the concurrency lens at most held; `--all-lenses` sets it aside for the release's full review; `src/composition/candidates.rs` sums each lens's yield over a repository's runs and offers the quiet ones, which `craft init` shows through `cli/bin/craft/src/init/lenses.rs` and writes with `--write --lens`), a scout per profile whose answer plans its lenses over its own files (the part's size counted by the binary from its changed lines, `src/size.rs`, a runbook's named by its scout), the
 consumers list, built at start beside the gate (`src/consumers/`: for each changed Rust symbol the lines outside the diff that name it —
 callers, implementors and same-named declarations, places passing it as a value — from a name search, always run
 (`names.rs`), a structural search for a name too common to search by text or past the name search's line cap
@@ -404,7 +404,7 @@ decides each finding that depends on one and judges the seam between the crates;
 sorts its findings into defects and doubtful ones and posts the defects on the branch's PR through `gh` itself, never twice,
 a line GitHub refuses going on its file; `craft review comment --run <dir>` does the same for a run already finished,
 its record amended with what came of it; `craft review post --n <n> --as question|defect` posts one doubtful finding the reviewer chose by the same rules (`src/publish/doubtful.rs`) and records the choice; `craft pr rejections` reads a PR's review threads through `gh api graphql` into the decision records of the author's and maintainers' rejections (`src/rejections/`) — `content/parity/finding-post-cases.json` and `pr-rejections-cases.json` freeze what the JavaScript `finding-post` and `pr-rejections` they replaced built),
-then a Markdown report of the findings by tier, the lenses that ran, the rounds and what the CLI does not run — rendered
+then a Markdown report of the findings by tier (its unverified Low and Info ones counted there and listed in `unverified.md` beside it, `src/report/unverified.rs`; the finished step names them as `unverifiedLow`), the lenses that ran, the rounds and what the CLI does not run — rendered
 from `content/`, which it compiles in, its plans, prompts and verification rules pinned by the shared cases in
 `content/parity/`, with the run's state in `state.json` of its run directory, each task's prompt and
 schema in its `tasks/` and each answer in its `answers/`, so no model copies them; with `start --record` the run files its own telemetry

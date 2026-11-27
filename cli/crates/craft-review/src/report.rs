@@ -22,6 +22,7 @@ mod rereview;
 mod seam_tests;
 #[cfg(test)]
 mod tests;
+pub mod unverified;
 
 use rereview::rereview_line;
 
@@ -360,6 +361,23 @@ pub fn memory_sections(state: &RunState) -> String {
     )
 }
 
+/// Writes the report of the run in `dir`, and beside it the findings it holds apart
+/// ([`unverified`]).
+///
+/// # Errors
+/// When a file cannot be written.
+pub(crate) fn write(
+    dir: &std::path::Path,
+    state: &RunState,
+    verdict: &str,
+) -> Result<(), crate::step::StepError> {
+    // The file first: a report never names one its write did not leave.
+    unverified::write(dir, state)?;
+    let path = crate::state::report_path(dir);
+    std::fs::write(&path, markdown(state, verdict))
+        .map_err(|source| crate::step::StepError::NoReport { path, source })
+}
+
 /// The Markdown report of a finished run: the verdict, then the findings grouped by tier, worst
 /// first in each.
 #[must_use]
@@ -447,13 +465,14 @@ pub fn capped(state: &RunState) -> Vec<String> {
 /// The host's notes, the rubric skills no path was found for, a recall that may not have read the
 /// store (its query failed, its agent died or gave no list, its answer was truncated, or the
 /// launcher's recall was so), the gate's
-/// unread changed lines, then the CONSUMERS lines no lens marked per line and no seam pass read (realm @nick/craft, node #531).
+/// unread changed lines, a mutants run that fell short of a whole answer, then the CONSUMERS lines no lens marked per line and no seam pass read (realm @nick/craft, node #531).
 #[must_use]
 pub fn degraded_notes(state: &RunState) -> Vec<String> {
     let mut notes = state.degraded.clone();
     notes.extend(skills_note(state));
     notes.extend(state.memory.source.degraded_notes());
     notes.extend(state.gate.unread_note());
+    notes.extend(state.gate.mutants.degraded_note());
     notes.extend(
         consumer_lines::all(state)
             .into_iter()
@@ -484,7 +503,8 @@ fn skills_note(state: &RunState) -> Option<String> {
 fn degraded(state: &RunState, out: &mut String) {
     let skills = skills_note(state);
     let memory = state.memory.source.degraded_notes();
-    if state.degraded.is_empty() && skills.is_none() && memory.is_empty() {
+    let mutants = state.gate.mutants.degraded_note();
+    if state.degraded.is_empty() && skills.is_none() && memory.is_empty() && mutants.is_none() {
         return;
     }
     out.push_str("## Degraded\n\nThe host ran part of this review weaker than it asked:\n\n");
@@ -493,6 +513,7 @@ fn degraded(state: &RunState, out: &mut String) {
         .iter()
         .chain(skills.iter())
         .chain(memory.iter())
+        .chain(mutants.iter())
     {
         out.push_str(&format!("- {}\n", one_line(d)));
     }
@@ -511,17 +532,23 @@ fn findings(state: &RunState, out: &mut String) {
         let mut list: Vec<(usize, String)> = state
             .settled
             .iter()
-            .filter(|f| Tier::of(f) == want)
+            .filter(|f| Tier::of(f) == want && !unverified::held(f))
             .map(|f| (crate::dedup::sev_rank(f), entry(f)))
             .collect();
         list.sort_by_key(|(rank, _)| *rank);
         out.push_str(&format!("## {name} findings\n\n"));
-        if list.is_empty() {
+        let apart = if want == Tier::Unverified {
+            unverified::line(state)
+        } else {
+            String::new()
+        };
+        if list.is_empty() && apart.is_empty() {
             out.push_str("None.\n");
         }
         for (_, e) in list {
             out.push_str(&e);
         }
+        out.push_str(&apart);
         out.push('\n');
     }
     let [c, s, r, u] = tier_counts(state);

@@ -14,7 +14,7 @@ use crate::step::status;
 /// Answers each write with `answer`, keeping what it was asked.
 pub(super) struct Kept {
     answer: Result<Value, WriteError>,
-    calls: RefCell<Vec<(String, String, Value)>>,
+    pub(super) calls: RefCell<Vec<(String, String, Value)>>,
 }
 
 impl Writer for Kept {

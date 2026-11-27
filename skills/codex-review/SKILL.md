@@ -46,7 +46,8 @@ How to run it:
   your tool allows.
 - It needs to run **outside the sandbox** (ask for escalated permissions the user approves): it
   writes under `~/.craft`, may fetch the craft binary from GitHub, builds and runs the branch's
-  code for the mechanical gate (`--no-gate` turns that off for a branch you do not trust), and
+  code for the mechanical gate — on a Rust change also its test suite, once per mutant of the
+  changed lines, up to 10 minutes (`--no-gate` turns both off for a branch you do not trust), and
   starts `codex exec -s read-only` processes that call the model with this session's login and
   need Codex's own sandbox to start. If that sandbox itself cannot start here (every command
   fails, `bwrap: …` errors), tell the user that and stop.

@@ -141,7 +141,7 @@ pub(crate) fn skipped_note(run: &RunState) -> Option<String> {
     };
     (n > 0).then(|| {
         format!(
-            "{n} Low/Info finding(s) NOT VERIFIED: no verifier was spent on them, since {why}; they are reported as unverified"
+            "{n} Low/Info finding(s) NOT VERIFIED: no verifier was spent on them, since {why}; they are held apart as unverified, counted in the report and listed in `unverified.md` beside it"
         )
     })
 }

@@ -65,6 +65,11 @@ pub struct Mutants {
     /// Whether it was joined.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub joined: bool,
+    /// How a launched run gave no whole answer, '' when it did: the tests lens was told the
+    /// mutants answer whether a test fails on a broken changed line, so a run that fell short is
+    /// a weaker review, said as degraded, not only noted.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub short: String,
 }
 
 impl Mutants {
@@ -78,6 +83,17 @@ impl Mutants {
     #[must_use]
     pub fn running(&self) -> bool {
         !self.dir.is_empty() && !self.joined
+    }
+
+    /// The degraded note of a launched run that gave no whole answer.
+    #[must_use]
+    pub fn degraded_note(&self) -> Option<String> {
+        (!self.short.is_empty()).then(|| {
+            format!(
+                "the tests lens left to the mutants whether a test fails when a changed line breaks, and they gave no whole answer: {}",
+                self.short
+            )
+        })
     }
 }
 

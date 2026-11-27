@@ -147,6 +147,8 @@ const FILES: &[(&str, &str)] = content_files![
     "prompts/scout-rules-runbook.md",
     "prompts/scout-rules-general.md",
     "prompts/scout-repo-rules.md",
+    "prompts/scout-size-ask.md",
+    "prompts/scout-size-counted.md",
     "prompts/lens.md",
     "prompts/lens-spec.md",
     "prompts/lens-catalogue.md",

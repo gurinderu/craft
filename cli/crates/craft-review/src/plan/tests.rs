@@ -21,6 +21,7 @@ fn input<'a>(p: &'a Profile, files: &'a [String], embedded_sql: bool) -> PlanInp
         embedded_sql,
         design: false,
         signals: Some(&[]),
+        changed_lines: None,
     }
 }
 
@@ -306,5 +307,40 @@ fn the_design_lens_joins_a_plan_on_its_signal_or_its_request_only() {
         .iter()
         .any(|l| l == "design"),
         "the SQL profile does not extend the general lenses"
+    );
+}
+
+#[test]
+fn the_counted_lines_size_the_plan_whatever_the_scout_said_but_a_runbook_keeps_its_scouts() {
+    let rust = Profile::load("rust").unwrap();
+    let files = ["src/lib.rs".to_owned()];
+    let scout = serde_json::json!({"sizeBucket": "small", "lenses": ["errors"]});
+    let sized = |p: &Profile, lines: Option<u64>| {
+        plan(PlanInput {
+            scout: Some(&scout),
+            changed_lines: lines,
+            ..input(p, &files, false)
+        })
+    };
+    let large = sized(&rust, Some(crate::size::LARGE_ABOVE + 1));
+    assert_eq!(
+        (
+            large.size_bucket.as_str(),
+            large.max_rounds,
+            large.verify_votes
+        ),
+        ("large", 3, 3)
+    );
+    assert_eq!(sized(&rust, Some(100)).size_bucket, "medium");
+    assert_eq!(
+        sized(&rust, None).size_bucket,
+        "small",
+        "uncounted: the scout's"
+    );
+    let runbook = Profile::load("runbook").unwrap();
+    assert_eq!(
+        sized(&runbook, Some(1000)).size_bucket,
+        "small",
+        "its steps, not its lines"
     );
 }

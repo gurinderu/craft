@@ -57,10 +57,15 @@ fn start_renders_the_scout_over_the_diff() {
     )
     .unwrap();
     assert!(
-        schema["required"]
+        !schema["required"]
             .as_array()
             .unwrap()
-            .contains(&json!("sizeBucket"))
+            .contains(&json!("sizeBucket")),
+        "the binary counts the size; the scout is not asked for it"
+    );
+    assert!(
+        prompt.contains("counted by the engine over its files: 1 — its size is small"),
+        "{prompt}"
     );
     assert_eq!(status::status(&run).unwrap()["phase"], json!("scout"));
     let again = step::start(&opts(repo.path(), out.path())).unwrap_err();
@@ -141,11 +146,31 @@ fn lens_rounds(run: &std::path::Path) {
     );
 }
 
+/// The finished step `s` holds one unverified Low apart from its `report`: counted, in
+/// `unverified.md` beside the report as the `entry` line, not in the report itself.
+#[expect(
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    reason = "a test helper: a missing field fails the test loudly"
+)]
+fn held_apart(s: &Value, report: &str, entry: &str) {
+    let title = entry.rsplit(" — ").next().unwrap();
+    assert!(!report.contains(title), "held apart: {report}");
+    let file = s["unverifiedLow"]["file"].as_str().unwrap();
+    assert_eq!(s["unverifiedLow"]["count"], json!(1));
+    let beside =
+        std::path::Path::new(s["report"].as_str().unwrap()).with_file_name("unverified.md");
+    assert_eq!(std::path::Path::new(file), beside);
+    let held = std::fs::read_to_string(file).unwrap();
+    assert!(held.contains(entry), "{held}");
+}
+
 #[test]
 fn a_full_run_goes_scout_lenses_two_rounds_dedup_verify_done() {
     let repo = fixture(true);
     let out = tempfile::tempdir().unwrap();
     let run = out.path().join("run");
+    common::sized(repo.path(), "medium");
     step::start(&opts(repo.path(), out.path())).unwrap();
     let s = submit(
         &run,
@@ -212,12 +237,13 @@ fn a_full_run_goes_scout_lenses_two_rounds_dedup_verify_done() {
             "Held back, no diff signal for them: money, performance, maintainability.",
             "## Confirmed findings\n\n- **High** `src/lib.rs:1` — f returns 1 where 0 is claimed (errors, intent)",
             "(same defect also reported by: intent)",
-            "## Unverified findings\n\n- **Low** `src/lib.rs:1` — naming (intent)",
+            "## Unverified findings\n\n1 Low or Info finding(s) no verifier checked are not listed here: they are in `unverified.md` beside this report.",
             "## Refuted findings\n\n- **Medium** `src/lib.rs:1` — no doc (errors)",
             "3 finding(s) reported: 1 confirmed, 0 suspected, 1 refuted, 1 unverified.",
             "dedup before verification: 4 → 3 (1 cross-lens duplicate(s) merged)",
         ],
     );
+    held_apart(&s, &report, "- **Low** `src/lib.rs:1` — naming (intent)");
     let mut reported: Vec<Value> = s["findings"].as_array().unwrap().clone();
     reported.sort_by_key(|f| f["tier"].as_str().unwrap().to_owned());
     assert_eq!(
@@ -516,6 +542,7 @@ fn a_light_pass_runs_one_round_of_the_scoped_lenses() {
     let run = out.path().join("run");
     let mut o = opts(repo.path(), out.path());
     o.light = true;
+    common::sized(repo.path(), "large");
     step::start(&o).unwrap();
     let s = submit(
         &run,
@@ -552,9 +579,15 @@ fn a_light_pass_runs_one_round_of_the_scoped_lenses() {
         "a light round never approves"
     );
     let report = std::fs::read_to_string(s["report"].as_str().unwrap()).unwrap();
+    // A Low no verifier was spent on is held apart, its note with it.
+    let held = std::fs::read_to_string(s["unverifiedLow"]["file"].as_str().unwrap()).unwrap();
+    assert!(
+        held.contains("(NOT VERIFIED: light pass: only Medium and above are verified"),
+        "{held}"
+    );
     for want in [
         "## Verdict\n\nWarning — a light round (depth=light) never approves: Approve comes only from a full round (the whole diff, `depth=full`) · light pass (depth=light) -- see \"Light pass\" below for what it skipped",
-        "(NOT VERIFIED: light pass: only Medium and above are verified, so no verifier was spent on this Low finding and nothing here has been checked against the code)",
+        "no verifier checked are not listed here: they are in `unverified.md` beside this report.",
         "## Light pass -- what it skipped\n⚠️ This was a LIGHT pass (depth=light), not a full review, and its verdict covers only what it ran: the whole-diff lenses invariants, compat, negative-space were NOT dispatched (it DID run intent, which the diff called for);",
     ] {
         assert!(report.contains(want), "{want}: {report}");
@@ -588,6 +621,7 @@ fn a_profile_whose_only_yield_was_a_first_round_lens_runs_no_second_round() {
     common::git(repo.path(), &["commit", "-qm", "feat: add g"]);
     let out = tempfile::tempdir().unwrap();
     let run = out.path().join("run");
+    common::sized(repo.path(), "medium");
     step::start(&opts(repo.path(), out.path())).unwrap();
     let s = submit(&run, json!({"scout-rust": scout("medium", &["errors"])}));
     let lenses = ids(&s);
@@ -632,6 +666,7 @@ fn new_file_run(out: &std::path::Path) -> (tempfile::TempDir, std::path::PathBuf
     common::git(repo.path(), &["add", "."]);
     common::git(repo.path(), &["commit", "-qm", "feat: add g"]);
     let run = out.join("run");
+    common::sized(repo.path(), "large");
     step::start(&opts(repo.path(), out)).unwrap();
     let s = submit(&run, json!({"scout-rust": scout("large", &["errors"])}));
     (repo, run, s)
@@ -726,6 +761,7 @@ fn a_dispatch_that_answered_then_died_in_its_rerun_makes_the_verdict_incomplete(
     let repo = fixture(true);
     let out = tempfile::tempdir().unwrap();
     let run = out.path().join("run");
+    common::sized(repo.path(), "medium");
     step::start(&opts(repo.path(), out.path())).unwrap();
     let s = submit(&run, json!({"scout-rust": scout("medium", &["errors"])}));
     let mut first = Map::new();

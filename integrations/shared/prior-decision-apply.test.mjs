@@ -86,11 +86,12 @@ test('check list: only decisions that could set a finding aside and recorded a c
   assert.deepEqual(decisionsToCheck(fs.slice(1), ds), [], 'a Critical is never set aside, so nothing to check')
 })
 
-test('scope script: one quoted line per decision, printing id and status — or `missing` for a commit the repo does not know', () => {
+test('scope script: one quoted line per decision, run from the top level, printing id and status — or `missing` for a commit the repo does not know', () => {
   const ds = /** @type {any[]} */ (parsePriorDecisions([decision({ id: "it's-1" })]).decisions)
   assert.equal(
     scopeCheckScript(ds),
-    `if git cat-file -e 'abc1234^{commit}' 2>/dev/null; then git diff --quiet 'abc1234' -- 'src/parse.rs'; echo 'it'\\''s-1' $?; else echo 'it'\\''s-1' missing; fi`,
+    `(top=$(git rev-parse --show-toplevel 2>/dev/null) && [ -n "$top" ] && cd "$top" 2>/dev/null || { echo 'it'\\''s-1' $?; exit; }; ` +
+      `if git cat-file -e 'abc1234^{commit}' 2>/dev/null; then git diff --quiet 'abc1234' -- 'src/parse.rs'; echo 'it'\\''s-1' $?; else echo 'it'\\''s-1' missing; fi)`,
   )
 })
 

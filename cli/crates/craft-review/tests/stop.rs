@@ -343,7 +343,12 @@ fn a_limit_stop_in_verification_reports_every_finding_under_its_honest_tier() {
     };
     assert!(section("Confirmed").contains("decided"), "{report}");
     assert!(section("Suspected").contains("half judged"), "{report}");
-    assert!(section("Unverified").contains("minor"), "{report}");
+    assert!(section("Unverified").contains("1 Low or Info finding(s) no verifier checked are not listed here: they are in `unverified.md` beside this report."), "{report}");
+    let held = std::fs::read_to_string(s["unverifiedLow"]["file"].as_str().unwrap()).unwrap();
+    assert!(
+        held.contains("minor"),
+        "a Low the stop left unverified is held apart: {held}"
+    );
     assert!(
         report
             .contains("3 finding(s) reported: 1 confirmed, 1 suspected, 0 refuted, 1 unverified."),
