@@ -104,19 +104,24 @@ opencode. The links point into this checkout, but a checkout does not change wha
 plugin's version, downloaded from its GitHub release into `~/.craft/bin/<version>/` the first time
 (`CRAFT_BIN=<path>` runs a local build). The binary decides every step — the gate, the scouts, the
 lenses round after round, verification, the verdict. On both lines it hands each task back to the plugin
-(`--delegate`), which runs it as a child session of the calling session. Navigation into these review
-children on 1.x still needs a live TUI check. On 1.x the plugin sends progress through the tool's title;
-in a 1.19.6 TUI trial the review row appeared without visible progress, and the cause is unresolved.
+(`--delegate`), which runs it as a child session of the calling session. On 1.19.6, `Ctrl+X ↓` opens a
+review child and `Up` returns to its parent. The running tool row does not display its progress title;
+craft shows the phase and task counts in a native TUI notification instead. It renews the notification
+while the review runs and briefly shows the result or interruption at the end. This notification is
+shared by the TUI, so it remains visible when navigating to a child or another session. Each notice
+expires after ten seconds without renewal; a failed notification is logged and does not stop the review.
 The answer is the binary's `## Verdict`
 block and findings, as markdown. The binary's own 1.19.5 path (`opencode run`, from a terminal) was seen
-reaching the model as `review-task`; the tool itself and its child sessions on either line are
-covered by tests against a fake binary and fake host, not yet seen in a real OpenCode session.
+reaching the model as `review-task`. Child navigation and ordinary cancellation were also observed
+in a real 1.19.6 TUI with the branch-built binary and a scripted provider. That trial does not establish
+review quality or acceptance of the released plugin in a consumer's repository.
 
 On both lines each child session is bounded by its task's deadline (15 minutes for a scout, 90 for a lens, 30
 for the rest): past it the binary abandons the task and the plugin interrupts its session. At most
 `--concurrency` children run at once (else `CRAFT_OPENCODE_CONCURRENCY`, else 4), and a child that gave
-nothing back, or broke before its run ended, is stopped and tried once more alone: no other child of the
-review runs beside the retry, which is given up with its task's deadline. If the plugin stops answering
+nothing back, or broke before its run ended, is asked to stop and tried once more alone. The plugin waits
+at most ten seconds for the stop; a failed or unconfirmed stop is logged, and that child may still run
+beside the retry. Other tasks wait until the retry ends; it is given up with its task's deadline. If the plugin stops answering
 the binary — its input ends, or a task cannot be handed to it — the run stops INCOMPLETE with how to
 resume it. Only a child whose run succeeded gives a reply: one that failed is reported by
 the error OpenCode gives (its type and message, such as 2.x's `provider.no-route` or 1.x's `APIError`), one
@@ -134,7 +139,7 @@ worktree of the PR — and asks the agent to use absolute paths under it. That i
 model, not an enforced directory.
 
 On 2.x the review shows its progress as a line in the TUI's prompt footer of the session that runs it —
-the same text sent to the tool's title on 1.x — and on the end clears it and shows the verdict as a toast;
+the same text shown in the TUI notification on 1.x — and on the end clears it and shows the verdict as a toast;
 nothing of it reaches the model. The footer is a TUI plugin of its own: `install.sh` links the directory
 `plugin/tui/` as `plugins/craft-review-footer` (2.x loads a TUI plugin only from a directory; 1.x ignores
 directories there). Without that link, or on a 2.x that lacks the plugin RPC, the review runs as before

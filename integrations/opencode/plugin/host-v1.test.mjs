@@ -241,8 +241,8 @@ test('a child given up before or while it is created never runs its prompt, and 
     return create(r)
   }
   await assert.rejects(v1Host({ client: during, directory: '', worktree: '' }).runChild({ ...req, signal: late.signal }), /stopped at its deadline/)
-  assert.deepEqual(
-    during.sent.map(s => (Array.isArray(s) ? s[0] : s)),
-    ['create', 'abort'],
-  )
+  assert.deepEqual(during.sent, [
+    ['create', { body: { title: 't' } }],
+    ['abort', { path: { id: 'ses_1' } }],
+  ])
 })

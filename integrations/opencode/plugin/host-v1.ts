@@ -5,8 +5,10 @@
 import type { Hooks, PluginInput } from '@opencode-ai/plugin'
 import { tool } from '@opencode-ai/plugin'
 import type { Part, TextPart } from '@opencode-ai/sdk'
-import { ChildSessionFailed, stringArgs, type ChildRequest, type Host, type ToolSpec, type WorkHook } from './host.ts'
-import { agentNames, errorOf, extractText, field, lastModel, turnError } from './host-v1-read.ts'
+import type { Host, ToolSpec, WorkHook } from './host.ts'
+import { agentNames, extractText, lastModel } from './host-v1-read.ts'
+import { runV1Child } from './host-v1-child.ts'
+import { runV1Tool, type V1Toast } from './host-v1-progress.ts'
 import { lightenSystem } from './light-agent-v1.ts'
 import { oncePerReason, reasonOf } from './light-agent-shared.ts'
 import { shellIn } from './shell.mjs'
@@ -15,36 +17,13 @@ export { extractText, lastModel }
 
 type TextIn = { type: 'text'; text: string }
 export interface V1Client {
+  tui?: V1Toast
   app: { agents(): Promise<unknown> }
   session: {
     create(req: { body: { title: string; parentID?: string } }): Promise<unknown>
     messages(req: { path: { id: string } }): Promise<unknown>
     abort(req: { path: { id: string } }): Promise<unknown>
-    prompt(req: { path: { id: unknown }; body: { agent: string; parts: TextIn[]; model?: { providerID: string; modelID: string } } }): Promise<unknown>
-  }
-}
-
-// The child's prompt, run to its reply; an abort asks the server to stop the session through `session.abort`.
-// A prompt the server refused throws its error; a turn that failed inside throws the runtime's, as 2.x does.
-async function prompted(client: V1Client, id: unknown, req: ChildRequest): Promise<string> {
-  const stop = () => {
-    if (typeof id === 'string') client.session.abort({ path: { id } }).catch(() => undefined)
-  }
-  req.signal?.addEventListener('abort', stop, { once: true })
-  try {
-    const model = req.model && { providerID: req.model.providerID, modelID: req.model.modelID }
-    const res = await client.session.prompt({
-      path: { id },
-      body: { agent: req.agent, parts: [{ type: 'text', text: req.prompt }], ...(model ? { model } : {}) },
-    })
-    if (req.signal?.aborted) throw new Error('the child session was stopped at its deadline')
-    const failed = errorOf(res)
-    if (failed) throw new Error(failed)
-    const turn = turnError(res)
-    if (turn) throw new ChildSessionFailed(turn.type, turn.message)
-    return extractText(res)
-  } finally {
-    req.signal?.removeEventListener('abort', stop)
+    prompt(req: { path: { id: string }; body: { agent: string; parts: TextIn[]; model?: { providerID: string; modelID: string } } }): Promise<unknown>
   }
 }
 
@@ -54,17 +33,7 @@ export function v1Host(input: { client: V1Client; directory: string; worktree: s
     directory,
     worktree,
     sh: shellIn(directory),
-    async runChild(req) {
-      if (req.signal?.aborted) throw new Error('the child session was stopped at its deadline')
-      const session = await client.session.create({ body: { title: req.title, ...(req.parentID ? { parentID: req.parentID } : {}) } })
-      const id = field(session, 'id') ?? field(field(session, 'data'), 'id')
-      if (typeof id === 'string') req.onSession?.(id)
-      if (req.signal?.aborted) {
-        if (typeof id === 'string') await client.session.abort({ path: { id } }).catch(() => undefined)
-        throw new Error('the child session was stopped at its deadline')
-      }
-      return prompted(client, id, req)
-    },
+    runChild: req => runV1Child(client, req),
     async callerModel(sessionID) {
       return lastModel(await client.session.messages({ path: { id: sessionID } }))
     },
@@ -74,13 +43,12 @@ export function v1Host(input: { client: V1Client; directory: string; worktree: s
   }
 }
 
-function v1Tool(host: Host, spec: ToolSpec) {
+function v1Tool(host: Host, spec: ToolSpec, client: V1Client, log: (line: string) => void) {
   const args = Object.fromEntries(Object.entries(spec.args).map(([k, a]) => [k, a.optional ? tool.schema.string().optional() : tool.schema.string()]))
   return tool({
     description: spec.description,
     args,
-    execute: (raw, context) =>
-      spec.run(host, stringArgs(spec, raw), { sessionID: context.sessionID, signal: context.abort, progress: title => context.metadata({ title }) }),
+    execute: (raw, context) => runV1Tool(host, spec, raw, context, client.tui, log),
   })
 }
 
@@ -147,7 +115,7 @@ export function v1Hooks(
   const say = oncePerReason(log)
   return {
     ...v1WorkHooks(work),
-    tool: Object.fromEntries(tools.map(t => [t.name, v1Tool(host, t)])),
+    tool: Object.fromEntries(tools.map(t => [t.name, v1Tool(host, t, input.client as V1Client, log)])),
     'experimental.chat.system.transform': (_input, output) => {
       try {
         lightenSystem(output.system)

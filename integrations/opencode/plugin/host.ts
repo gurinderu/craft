@@ -62,8 +62,8 @@ export interface Host extends Workspace {
 }
 
 // The tool call as the runtime hands it over: the session that called the tool, the signal that aborts the call, and
-// where a running tool says how far it got (1.x shows it as the tool's title; 2.x as a line in the TUI's footer,
-// progress-rpc.ts).
+// where a running tool says how far it got (1.x shows a renewed TUI notification, host-v1-progress.ts;
+// 2.x a line in the TUI's footer, progress-rpc.ts).
 export interface ToolCall {
   sessionID?: string
   signal?: AbortSignal
