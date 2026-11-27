@@ -120,3 +120,61 @@ fn the_directories_named_for_security_are_offered_outermost_and_tests_left_out()
         "past the bound the names say too little"
     );
 }
+
+#[test]
+fn a_crate_inheriting_publish_false_from_its_workspace_or_publishing_to_no_registry_is_none() {
+    let root = "[workspace]\nmembers = [\"crates/*\"]\n[workspace.package]\npublish = false\n";
+    let member = "[package]\nname = \"x\"\npublish.workspace = true\n";
+    let o = of(&[
+        ("Cargo.toml", root),
+        ("crates/x/Cargo.toml", member),
+        ("crates/x/src/lib.rs", ""),
+    ]);
+    assert_eq!(o.library.map(|l| l.value), Some(false));
+    let open = root.replace("publish = false", "publish = true");
+    let o = of(&[
+        ("Cargo.toml", &open),
+        ("crates/x/Cargo.toml", member),
+        ("crates/x/src/lib.rs", ""),
+    ]);
+    assert_eq!(o.library.map(|l| l.value), Some(true));
+    let none = of(&[
+        ("Cargo.toml", "[package]\nname = \"a\"\npublish = []\n"),
+        ("src/lib.rs", ""),
+    ]);
+    assert_eq!(none.library.map(|l| l.value), Some(false));
+    let elsewhere = of(&[
+        ("crates/x/Cargo.toml", "[package]\nname = \"x\"\n"),
+        ("src/lib.rs", ""),
+    ]);
+    assert_eq!(
+        elsewhere.library.map(|l| l.value),
+        Some(false),
+        "its own src/lib.rs, not the top's"
+    );
+}
+
+#[test]
+fn vendored_code_offers_nothing() {
+    let o = of(&[
+        ("Cargo.toml", "[package]\nname = \"app\"\n"),
+        ("src/main.rs", ""),
+        (
+            "vendor/kube/Cargo.toml",
+            "[package]\nname = \"k\"\n[dependencies]\nkube = \"1\"\n",
+        ),
+        ("vendor/kube/src/lib.rs", ""),
+        ("third_party/x/auth/a.go", ""),
+        ("internal/auth/a.go", ""),
+    ]);
+    assert_eq!(o.library.map(|l| l.value), Some(false));
+    assert_eq!(o.controllers, None);
+    assert_eq!(o.security_paths, ["internal/auth"]);
+}
+
+#[test]
+fn up_to_the_bound_of_security_directories_each_is_offered() {
+    let names: Vec<String> = (0..8).map(|i| format!("m{i}/auth/a.rs")).collect();
+    let files: Vec<(&str, &str)> = names.iter().map(|f| (f.as_str(), "")).collect();
+    assert_eq!(of(&files).security_paths.len(), 8);
+}

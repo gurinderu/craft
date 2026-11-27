@@ -29,6 +29,9 @@ pub struct ProjectArgs {
     /// A rule file the lenses are handed, repository-relative, over the scout's; repeatable.
     #[arg(long = "rule", conflicts_with = "propose", value_name = "PATH")]
     pub rules: Vec<String>,
+    /// No rule file is handed to the lenses, whatever the scout finds.
+    #[arg(long = "no-rules", conflicts_with_all = ["propose", "rules"])]
+    pub no_rules: bool,
     /// The project holds controllers: the reconciler lens runs on every change.
     #[arg(long = "controllers", conflicts_with = "propose")]
     pub controllers: bool,
@@ -46,28 +49,40 @@ pub struct ProjectArgs {
     pub contracts: Vec<String>,
 }
 
+/// `p` as a write keeps it: trimmed, a leading `./` and a trailing `/` dropped.
+fn clean(p: &str) -> String {
+    let p = p.trim();
+    p.strip_prefix("./")
+        .unwrap_or(p)
+        .trim_end_matches('/')
+        .to_owned()
+}
+
+/// The paths `list` names under `flag`, each cleaned; one empty or named twice is refused.
+fn paths(flag: &str, list: &[String]) -> Result<Vec<String>> {
+    let mut out: Vec<String> = Vec::new();
+    for p in list {
+        let c = clean(p);
+        if c.is_empty() {
+            return Err(anyhow!("{flag}: an empty path"));
+        }
+        if out.contains(&c) {
+            return Err(anyhow!("{flag} {p}: named twice"));
+        }
+        out.push(c);
+    }
+    Ok(out)
+}
+
 /// The section the flags name, a path named twice or empty refused.
 pub fn confirmed(args: &ProjectArgs) -> Result<Properties> {
-    for (flag, list) in [
-        ("--rule", &args.rules),
-        ("--security-path", &args.security_paths),
-        ("--contract", &args.contracts),
-    ] {
-        for (i, p) in list.iter().enumerate() {
-            if p.trim().is_empty() {
-                return Err(anyhow!("{flag}: an empty path"));
-            }
-            if list.iter().take(i).any(|q| q == p) {
-                return Err(anyhow!("{flag} {p}: named twice"));
-            }
-        }
-    }
+    let rules = paths("--rule", &args.rules)?;
     Ok(Properties {
         library: args.library.map(|l| l == YesNo::Yes),
-        rules: (!args.rules.is_empty()).then(|| args.rules.clone()),
+        rules: (args.no_rules || !rules.is_empty()).then_some(rules),
         controllers: args.controllers,
-        security_paths: args.security_paths.clone(),
-        contracts: args.contracts.clone(),
+        security_paths: paths("--security-path", &args.security_paths)?,
+        contracts: paths("--contract", &args.contracts)?,
     })
 }
 
@@ -101,17 +116,24 @@ pub fn written(p: &Properties) -> Value {
 /// The flags that write `p` again.
 fn flags(p: &Properties) -> Vec<String> {
     let mut out = Vec::new();
-    let mut each = |flag: &str, list: &[String]| {
+    let each = |out: &mut Vec<String>, flag: &str, list: &[String]| {
         for v in list {
             out.extend([flag.to_owned(), v.clone()]);
         }
     };
     if let Some(l) = p.library {
-        each("--library", &[if l { "yes" } else { "no" }.to_owned()]);
+        each(
+            &mut out,
+            "--library",
+            &[if l { "yes" } else { "no" }.to_owned()],
+        );
     }
-    each("--rule", p.rules.as_deref().unwrap_or_default());
-    each("--security-path", &p.security_paths);
-    each("--contract", &p.contracts);
+    match p.rules.as_deref() {
+        Some([]) => out.push("--no-rules".to_owned()),
+        rules => each(&mut out, "--rule", rules.unwrap_or_default()),
+    }
+    each(&mut out, "--security-path", &p.security_paths);
+    each(&mut out, "--contract", &p.contracts);
     if p.controllers {
         out.push("--controllers".to_owned());
     }

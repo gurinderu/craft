@@ -200,7 +200,7 @@ pub fn init(args: &InitArgs) -> Result<ExitCode> {
             cbm::look(cbm::TOOL, &args.cwd),
             held.as_ref().and_then(|p| p.code_graph.as_ref()),
         ),
-        "write": "craft init --write --point <name>=<git url>@<tag or full commit> … --ci '<entry JSON>' … --lens <profile:lens>=<state> … [--mutants off] [--mutants-budget <seconds>] [--library yes|no] [--rule <path>] … [--controllers] [--security-path <glob>] … [--contract <glob>] … (every point, CI entry and lens to keep, a held lens as `lenses.held` prints it, the mutants as `mutants.flags` and the project as `project.flags` print them, a held entry as `ci` prints it, one with `unusable` dropped or replaced; a branch is refused when a review prepares the sources)",
+        "write": "craft init --write --point <name>=<git url>@<tag or full commit> … --ci '<entry JSON>' … --lens <profile:lens>=<state> … [--mutants off] [--mutants-budget <seconds>] [--library yes|no] [--rule <path>] … | [--no-rules] [--controllers] [--security-path <glob>] … [--contract <glob>] … (every point, CI entry and lens to keep, a held lens as `lenses.held` prints it, the mutants as `mutants.flags` and the project as `project.flags` print them, a held entry as `ci` prints it, one with `unusable` dropped or replaced; a branch is refused when a review prepares the sources)",
     }))
 }
 

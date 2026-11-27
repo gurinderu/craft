@@ -80,28 +80,63 @@ pub fn of_repo(top: &Path) -> Result<Offered, crate::git::GitError> {
     }))
 }
 
+/// The directories other projects' code is copied into, read as none of this one's.
+const VENDORED: [&str; 4] = ["vendor", "third_party", "third-party", "node_modules"];
+
+/// Whether `f` is this project's own code: not a test, not under a vendored directory.
+fn own(f: &str) -> bool {
+    !crate::paths::is_test_path(f) && !f.split('/').any(|s| VENDORED.contains(&s))
+}
+
 fn manifests<'a>(files: &'a [String], name: &'a str) -> impl Iterator<Item = &'a String> {
     files
         .iter()
-        .filter(move |f| f.rsplit('/').next() == Some(name) && !crate::paths::is_test_path(f))
+        .filter(move |f| f.rsplit('/').next() == Some(name) && own(f))
 }
 
-/// A library when a crate with a library target is not `publish = false`, or a `package.json` is
-/// not `private`; no library when manifests are there and none of them is one.
+/// Whether a `publish` value publishes nothing: `false`, or no registry at all.
+fn publishes_nothing(v: &toml::Value) -> bool {
+    v.as_bool()
+        .map_or_else(|| v.as_array().is_some_and(Vec::is_empty), |b| !b)
+}
+
+/// The `publish` of the workspace whose root holds `dir`, its innermost: what a crate's
+/// `publish.workspace = true` takes.
+fn workspace_publish(roots: &[(String, toml::Table)], dir: &str) -> Option<toml::Value> {
+    roots
+        .iter()
+        .filter(|(root, _)| dir.starts_with(root.as_str()))
+        .max_by_key(|(root, _)| root.len())
+        .and_then(|(_, t)| t.get("workspace")?.get("package")?.get("publish").cloned())
+}
+
+/// A library when a crate with a library target publishes (its own `publish`, or its workspace's
+/// when it inherits it, is neither `false` nor empty), or a `package.json` is not `private`; no
+/// library when manifests are there and none of them is one. Vendored manifests are none.
 fn library(files: &[String], read: &dyn Fn(&str) -> Option<String>) -> Option<Offer<bool>> {
     let (mut seen, mut published) = (Vec::new(), Vec::new());
-    for m in manifests(files, "Cargo.toml") {
-        let Some(t) = read(m).and_then(|t| t.parse::<toml::Table>().ok()) else {
-            continue;
-        };
+    let cargo: Vec<(String, toml::Table)> = manifests(files, "Cargo.toml")
+        .filter_map(|m| Some((m.clone(), read(m)?.parse::<toml::Table>().ok()?)))
+        .collect();
+    let dir = |m: &str| m.strip_suffix("Cargo.toml").unwrap_or_default().to_owned();
+    let roots: Vec<(String, toml::Table)> = cargo
+        .iter()
+        .filter(|(_, t)| t.contains_key("workspace"))
+        .map(|(m, t)| (dir(m), t.clone()))
+        .collect();
+    for (m, t) in &cargo {
         let Some(pkg) = t.get("package").and_then(toml::Value::as_table) else {
             continue;
         };
         seen.push(m.clone());
-        let dir = m.strip_suffix("Cargo.toml").unwrap_or_default();
-        let lib = t.contains_key("lib") || files.iter().any(|f| *f == format!("{dir}src/lib.rs"));
-        let private = pkg.get("publish") == Some(&toml::Value::Boolean(false));
-        if lib && !private {
+        let at = dir(m);
+        let lib_rs = format!("{at}src/lib.rs");
+        let lib = t.contains_key("lib") || files.contains(&lib_rs);
+        let publish = match pkg.get("publish") {
+            Some(v) if v.get("workspace").is_some() => workspace_publish(&roots, &at),
+            v => v.cloned(),
+        };
+        if lib && !publish.as_ref().is_some_and(publishes_nothing) {
             published.push(m.clone());
         }
     }
@@ -174,7 +209,7 @@ fn controllers(files: &[String], read: &dyn Fn(&str) -> Option<String>) -> Optio
 /// first; none past [`SECURITY_DIRS_MAX`].
 fn security_dirs(files: &[String]) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
-    for f in files.iter().filter(|f| !crate::paths::is_test_path(f)) {
+    for f in files.iter().filter(|f| own(f)) {
         let segs: Vec<&str> = f.split('/').collect();
         let Some((_, dirs)) = segs.split_last() else {
             continue;

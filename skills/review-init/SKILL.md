@@ -1,7 +1,7 @@
 ---
 name: review-init
 description: >-
-  Your own review profile of a repository for the craft CLI review — `craft init` — kept outside it (~/.craft/projects/<id>/review.toml), never committed. Integration points: the external systems this code talks to over the network or its API (kube-ovn, a cloud API), each with its source git URL and deployed tag or commit; it proposes the project memory's `external` records to confirm. CI map: which GitHub CI check runs clippy, tests, fmt or the build, on a command quoted from the workflow or its recipe — read when the gate cannot build. Lens composition: lenses held to the first round or turned off, offered by what they found here. Use before a repository's first review, on `not recorded: <system>`, when a deployed version changes, when the gate's build signal is unknown or its CI map missing or stale, or to turn off a lens that finds nothing. Triggers: craft init, set up my review profile, integration points, CI map, turn off a lens. Not for library dependencies, nor the project's shared memory (memory).
+  Your own review profile of a repository for the craft CLI review — `craft init` — in ~/.craft/projects/<id>/review.toml, never committed. Integration points: the external systems this code talks to (kube-ovn, a cloud API), each with its source git URL and deployed tag or commit; it proposes the project memory's `external` records to confirm. CI map: which GitHub CI check runs clippy, tests, fmt or the build, on a command quoted from the workflow — read when the gate cannot build. Lenses held to the first round or turned off, by what they found here. Project properties: a published library, rule files, controllers, security paths, contracts. Use before a repository's first review, on `not recorded: <system>`, when a deployed version changes, when the gate's CI map is missing or stale, or to turn off a lens that finds nothing. Triggers: craft init, set up my review profile, integration points, CI map, turn off a lens, mark security paths. Not for library dependencies, nor the project's shared memory (memory).
 ---
 
 # review-init — your review profile of a repository
@@ -222,7 +222,7 @@ on every run:
   section could not be read, and then a review takes its scouts' answers alone.
 - `offered` — what the tracked files say, each with the files it was read from: `library`,
   `rules`, `controllers`, and `security_paths`, the directories named for security (`auth`,
-  `crypto`, `secrets` and the like). No contract is offered: the ones craft knows it applies
+  `crypto`, `secrets` and the like; vendored code aside). No contract is offered: the ones craft knows it applies
   anyway; the reviewer names any other. `offeredUnread` says why the files could not be listed.
 
 `library` and `rules` set aside what the scout says, either way; the other three only add risk —
@@ -238,13 +238,13 @@ numbered list: each offer with its files, and each held entry, to confirm, corre
   --ci '{"check":"Rust","signal":"clippy","command":"cargo clippy --all-targets -- -D warnings","workflow":".github/workflows/ci.yml","sources":[]}' \
   --ci '{"check":"lint","signal":"clippy","command":"cargo clippy --workspace -- -D warnings","workflow":".github/workflows/ci.yml","sources":["justfile"]}' \
   --lens 'rust:money=off' --lens 'general:concurrency=first-round' \
-  --mutants-budget 900 \\
+  --mutants-budget 900 \
   --library no --rule AGENTS.md --security-path src/auth
 ```
 
 `--write` replaces the whole list: pass every point to keep, the ones already there included.
-The same holds for the CI map, one `--ci` per entry to keep, and for the project's properties — `project.flags` as printed to keep them, none for none; a path
-named twice is refused — and for the mutants — `mutants.flags` as printed to keep them, none for the defaults; a budget
+The same holds for the CI map, one `--ci` per entry to keep, and for the project's properties — `project.flags` as printed to keep them (`--no-rules` for no rule file), none for none; a
+path is trimmed of a leading `./` and a trailing `/`, and one named twice is refused — and for the mutants — `mutants.flags` as printed to keep them, none for the defaults; a budget
 beside `--mutants off` is refused — and for the lenses: one `--lens` per
 entry to keep, a held one as `held` prints it — a write with none leaves the profile with no
 composition. A lens entry a review would refuse (the security or a safety lens, the concurrency

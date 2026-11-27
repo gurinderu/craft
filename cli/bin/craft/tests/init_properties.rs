@@ -138,6 +138,25 @@ fn write_records_the_confirmed_properties_replaces_them_and_refuses_a_path_twice
         "a refused write leaves it as it was"
     );
 
+    json_of(&write(t, &repo, &["--no-rules"]));
+    let none = project(t, &repo);
+    assert_eq!(
+        (&none["held"]["rules"], &none["flags"]),
+        (&json!([]), &json!(["--no-rules"])),
+        "no rule file, written back as it is held"
+    );
+    let cleaned = json_of(&write(t, &repo, &["--security-path", " ./src/auth/ "]));
+    assert_eq!(
+        cleaned["project"]["held"]["security_paths"],
+        json!(["src/auth"])
+    );
+    let same = write(t, &repo, &["--contract", "spec", "--contract", "./spec/"]);
+    assert!(
+        String::from_utf8_lossy(&same.stderr).contains("named twice"),
+        "{same:?}"
+    );
+    assert_ne!(write(t, &repo, &["--rule", " "]).status.code(), Some(0));
+
     json_of(&write(t, &repo, &[]));
     assert_eq!(
         project(t, &repo)["held"],
