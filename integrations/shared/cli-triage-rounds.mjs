@@ -42,7 +42,7 @@ export function roundsOf(sb, serve, bin, runDir, { tasks, limit, spent }) {
       return readTriageStep(await runCommand(serve, `step:submit:${round}`, 'Submit', triageSubmit(bin, step.run, said, spent()), SUBMIT_TIMEOUT))
     },
     heard: () => {},
-    lost: async lostRead => recovered(serve, bin, runDir, lostRead),
+    lost: async lostRead => recovered(serve, bin, runDir, lostRead, spent),
     gaveUp: step => ({ stopped: `triage gave up after ${MAX_ROUNDS} rounds; the run is in ${step.run}. ${triageResumeHint(step.run)}`, cause: 'rounds' }),
     finished: step => ({ finished: step }),
   }
@@ -51,15 +51,26 @@ export function roundsOf(sb, serve, bin, runDir, { tasks, limit, spent }) {
 /**
  * A submit whose output could not be read may still have ended the run: the binary's status is asked before anything
  * is filed. A run it ended ends as it says; one it did not, stops where it stands, to be resumed.
- * @param {Serve} serve @param {string} bin @param {string} runDir @param {{ error: string, harness?: string }} lostRead
+ * @param {Serve} serve @param {string} bin @param {string} runDir @param {{ error: string, harness?: string }} lostRead @param {Spent} spent
  * @returns {Promise<Ending>}
  */
-async function recovered(serve, bin, runDir, lostRead) {
+async function recovered(serve, bin, runDir, lostRead, spent) {
   const status = readTriageStatus(await runCommand(serve, 'step:status', 'Submit', triageStatus(bin, runDir), SUBMIT_TIMEOUT))
-  if (!('error' in status) && status.done) return { finished: status.step }
+  if (!('error' in status) && status.done) return { finished: await refiled(serve, bin, status.step, spent) }
   const standing = 'error' in status ? '' : ` (the binary reports the ${status.phase || 'current'} phase)`
   return {
     stopped: `triage stopped${standing}: ${failureOf(lostRead)}. The run is in ${runDir}. ${triageResumeHint(runDir)}`,
     cause: stopCause(lostRead, 'step'),
   }
+}
+
+/**
+ * A finished run read back from its status, its record filed again when it did not land (`--resume`), as the binary's
+ * re-file ends it; a re-file that cannot be read leaves the run as the status said, never filed a second way.
+ * @param {Serve} serve @param {string} bin @param {TriageFinished} step @param {Spent} spent @returns {Promise<TriageFinished>}
+ */
+async function refiled(serve, bin, step, spent) {
+  if (step.stopped || !step.filing || step.filing.record === 'filed') return step
+  const again = readTriageStep(await runCommand(serve, 'step:refile', 'Submit', triageSubmit(bin, step.run, { resume: true }, spent()), SUBMIT_TIMEOUT))
+  return 'step' in again && again.step.done ? again.step : step
 }

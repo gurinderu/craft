@@ -3,7 +3,7 @@
 //! the priors still open are split by the records in hand — the decisions first, the match judge
 //! asked about their near misses, then the project rules, the rule judge asked about the findings
 //! in their scope — and a deferred prior is held while its question is (`deferralHeld`,
-//! `deferralReleased` in `prior-decision-apply.mjs` (the JavaScript the binary replaced)). Each judge is a task of its own step: the
+//! `deferralReleased` in `prior-decision-apply.mjs`, the JavaScript the binary replaced). Each judge is a task of its own step: the
 //! pairs it is asked about, and the scopes git observed for them, are kept in the run's state when
 //! its task is handed out ([`super::Asked`]) and read back with its answer, so git is asked once.
 

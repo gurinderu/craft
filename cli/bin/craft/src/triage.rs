@@ -7,6 +7,7 @@ use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use clap::Subcommand;
+use craft_triage::TriageError;
 use craft_triage::run::{Args, Recording};
 use craft_triage::step::{self, StartOptions};
 
@@ -53,9 +54,16 @@ fn absolute(p: &Path) -> Result<PathBuf> {
 fn one_stdin(a: &StartArgs) -> Result<()> {
     let stdin = |p: &Option<PathBuf>| p.as_deref().is_some_and(|p| p.as_os_str() == "-");
     if stdin(&a.prior_ledger) && stdin(&a.prior_decisions) {
-        anyhow::bail!("--prior-ledger and --prior-decisions cannot both be read from stdin (-)");
+        return Err(refused(
+            "--prior-ledger and --prior-decisions cannot both be read from stdin (-)".into(),
+        ));
     }
     Ok(())
+}
+
+/// An argument the triage refuses before any work, exiting as a refused argument does.
+fn refused(why: String) -> anyhow::Error {
+    TriageError::Refused(why).into()
 }
 
 fn start(a: &StartArgs) -> Result<serde_json::Value> {
@@ -65,9 +73,9 @@ fn start(a: &StartArgs) -> Result<serde_json::Value> {
         None => default_run_dir()?,
     };
     let prior_ledger = match &a.prior_ledger {
-        Some(p) => {
-            serde_json::from_value(json_input(p)?).context("the prior ledger is not a JSON list")?
-        }
+        Some(p) => json_input(p)
+            .and_then(|v| serde_json::from_value(v).map_err(Into::into))
+            .map_err(|e| refused(format!("the prior ledger is not a JSON list: {e:#}")))?,
         None => Vec::new(),
     };
     let args = Args {

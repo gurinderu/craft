@@ -24,7 +24,7 @@ const FILES = [
   'integrations/claude-code/src/review.js',
   'integrations/claude-code/src/rust-audit.js',
   'integrations/claude-code/src/triage-findings.js',
-  // triage-findings' prompts as content (triage-content.mjs (the JavaScript the binary replaced)).
+  // triage-findings' prompts as content (triage-content.mjs, the JavaScript the binary replaced).
   ...listed('content/prompts', /^triage-.*\.md$/),
   'skills/rust-review/SKILL.md',
   'skills/rust-architecture-review/SKILL.md',

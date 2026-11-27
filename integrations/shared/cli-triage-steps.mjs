@@ -46,7 +46,7 @@ export async function runCliTriage(sb, craftVersion) {
   const o = read.options
   const at = { craftRoot: o.craftRoot, repo: o.repo }
   const recorder = triageRecorder(sb, craftVersion, () => at)
-  return endedAnswer(sb, o, recorder, await drive(sb, o, craftVersion, at))
+  return endedAnswer(sb, o, at, recorder, await drive(sb, o, craftVersion, at))
 }
 
 /**
@@ -62,14 +62,14 @@ async function refusedAnswer(sb, recorder, refused) {
  * The answer of how the run ended; a run the binary never finished filed INCOMPLETE first — but a resumed run whose
  * repository was not named, which has none to key a record to: filed under the session's, it would sit in another
  * repository's history.
- * @param {Sandbox} sb @param {TriageOptions} o @param {ReturnType<typeof triageRecorder>} recorder @param {Ending} ending
+ * @param {Sandbox} sb @param {TriageOptions} o @param {{ craftRoot: string, repo: string }} at  the record's keys @param {ReturnType<typeof triageRecorder>} recorder @param {Ending} ending
  * @returns {Promise<string>}
  */
-async function endedAnswer(sb, o, recorder, ending) {
+async function endedAnswer(sb, o, at, recorder, ending) {
   if ('finished' in ending) return finishedTriageAnswer(ending.finished)
   if ('argument' in ending) return refusedAnswer(sb, recorder, [[ending.argument, VALUE_REFUSED_CLASS]])
   sb.phase('Record')
-  const keyed = !o.run || !!o.repo
+  const keyed = !o.run || !!at.repo
   if (keyed) await recorder.unfinished(ending.cause)
   return withNotes(incompleteAnswer(ending.stopped), [keyed ? '' : UNKEYED, recorder.notes()])
 }
@@ -83,18 +83,31 @@ async function drive(sb, o, craftVersion, at) {
   const { limit, service } = serviceOf(sb)
   const serve = serveWith(service, limit)
   sb.log(`triage-findings ${craftVersion}: ${o.craftBin ?? `the released binary ${craftVersion}`} over ${o.repo || 'the session checkout'}`)
-  sb.phase('Start')
-  const where = await binAndRoot('triage', o, craftVersion, serve)
-  if ('incomplete' in where) return { stopped: where.incomplete, cause: where.cause }
-  if (where.note) sb.log(where.note)
-  at.craftRoot ||= where.recordRoot || where.root
+  const where = await binaryOf(sb, o, craftVersion, serve, at)
+  if ('stopped' in where) return where
   const clock = runClock()
   /** @type {Spent} */
   const spent = () => ({ agents: clock.stats().agents, tokens: sb.budget?.spent() ?? null })
   const first = await opening(serve, where.bin, o, craftVersion, where.recordRoot || where.root, spent)
   if (!('step' in first)) return first
+  // A resumed run's repository, when none was given, is the one the binary names.
+  if (!first.step.done && first.step.repo) at.repo ||= first.step.repo
   const tasks = taskRunner({ ...sb, agent: limit.tasks(clock.counted(sb.agent)) }, () => !!limit.seen())
   return stepRounds(first.step, roundsOf(sb, serve, where.bin, first.step.run, { tasks, limit, spent }))
+}
+
+/**
+ * The binary to run and the plugin root the record is stamped with, filled into `at` — or why the binary was not got.
+ * @param {Sandbox} sb @param {TriageOptions} o @param {string} craftVersion @param {Serve} serve @param {{ craftRoot: string, repo: string }} at
+ * @returns {Promise<{ bin: string, root: string, recordRoot?: string } | { stopped: string, cause: import('./cli-review-stop.mjs').StopCause }>}
+ */
+async function binaryOf(sb, o, craftVersion, serve, at) {
+  sb.phase('Start')
+  const where = await binAndRoot('triage', o, craftVersion, serve)
+  if ('incomplete' in where) return { stopped: where.incomplete, cause: where.cause }
+  if (where.note) sb.log(where.note)
+  at.craftRoot ||= where.recordRoot || where.root
+  return where
 }
 
 /** @typedef {() => { agents: number, tokens: number | null }} Spent  the task agents dispatched so far and the output tokens spent */
@@ -108,7 +121,13 @@ async function drive(sb, o, craftVersion, at) {
 async function opening(serve, bin, o, craftVersion, recordRoot, spent) {
   const got = o.run
     ? await runCommand(serve, 'step:resume', 'Start', triageSubmit(bin, o.run, { resume: true }, spent()), SUBMIT_TIMEOUT)
-    : await runCommand(serve, 'step:start', 'Start', triageStart(bin, o, craftVersion, recordRoot), START_TIMEOUT)
+    : await runCommand(
+        serve,
+        'step:start',
+        'Start',
+        triageStart(bin, o, craftVersion, recordRoot),
+        o.priorLedger || o.priorDecisions ? `${START_TIMEOUT}, the JSON inside each \`printf\` copied character for character` : START_TIMEOUT,
+      )
   const argument = o.run ? null : argumentRefused(got, 'triage')
   if (argument) return { argument }
   const first = readTriageStep(got)

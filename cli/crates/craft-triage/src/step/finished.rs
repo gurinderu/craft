@@ -135,6 +135,17 @@ pub(super) fn files(out: &mut Value, dir: &Path) {
 /// When the summary or the failure holds text JSON cannot carry (an unpaired surrogate).
 pub(super) fn step(dir: &Path, plan: &Js, s: &TriageState) -> Result<Value, TriageError> {
     let mut out = json!({"run": dir.display().to_string(), "done": true});
+    gist(&mut out, plan)?;
+    files(&mut out, dir);
+    said(&mut out, s);
+    Ok(out)
+}
+
+/// The plan's gist on a step or a status: its summary, or the text of a plan that failed.
+///
+/// # Errors
+/// When that text holds what JSON cannot carry (an unpaired surrogate).
+pub(super) fn gist(out: &mut Value, plan: &Js) -> Result<(), TriageError> {
     let (key, said_of) = if let Js::Obj(o) = plan {
         (
             "summary",
@@ -147,7 +158,5 @@ pub(super) fn step(dir: &Path, plan: &Js, s: &TriageState) -> Result<Value, Tria
     if let Some(o) = out.as_object_mut() {
         o.insert(key.into(), text);
     }
-    files(&mut out, dir);
-    said(&mut out, s);
-    Ok(out)
+    Ok(())
 }

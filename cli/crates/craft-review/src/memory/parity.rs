@@ -15,8 +15,8 @@ const CASES: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../../content/parity/memory-cases.json"
 ));
-/// The memory's prompts triage-findings renders too: the recall's and the judges', which
-/// `integrations/shared/judge-prompt-parity.test.mjs` writes.
+/// The memory's prompts triage-findings renders too: the recall's and the judges', frozen golden
+/// data the JavaScript sift wrote before the binary took it over, edited by hand.
 const PROMPTS: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../../content/parity/judge-prompt-cases.json"

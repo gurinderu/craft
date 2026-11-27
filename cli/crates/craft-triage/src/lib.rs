@@ -79,3 +79,13 @@ pub enum TriageError {
     #[error("the triage's {0:?} phase asked no agent it had not asked before")]
     Stuck(run::Phase),
 }
+
+impl TriageError {
+    /// Whether the run was refused for an argument it was given, before any work: the command
+    /// exits as a refused argument does, so a host tells it from a failure (realm @nick/craft,
+    /// node #523).
+    #[must_use]
+    pub fn refuses_argument(&self) -> bool {
+        matches!(self, Self::Refused(_) | Self::NoRepo { .. })
+    }
+}

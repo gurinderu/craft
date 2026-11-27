@@ -191,6 +191,13 @@ fn every_case_run_on_the_protocol_ends_with_the_engines_plan_and_record() {
             "{name}: status names the plan"
         );
         assert_eq!(named("recordFile"), Some(record_path(dir.path())), "{name}");
+        // The status says the plan's gist as the finished step does: its summary, or a failure.
+        let gist = if let Value::Object(p) = &plan {
+            ("summary", p.get("summary").cloned().unwrap_or_default())
+        } else {
+            ("failed", plan.clone())
+        };
+        assert_eq!(st[gist.0], gist.1, "{name}: the status's {}", gist.0);
         assert!(matches!(
             submit(dir.path(), None, &Said::default(), &Unused),
             Err(TriageError::Done(_))

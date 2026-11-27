@@ -1,5 +1,5 @@
 //! What a finding a record answers carries (`priorDecisionMark`, `reraiseReason`, `reraisedNote` in
-//! `prior-decision-apply.mjs` (the JavaScript the binary replaced)): set aside, the record's mark; raised again, why.
+//! `prior-decision-apply.mjs`, the JavaScript the binary replaced): set aside, the record's mark; raised again, why.
 
 use craft_store::js::JsStr;
 use serde_json::{Map, Value, json};

@@ -166,9 +166,13 @@ test('an argument the engine does not take is refused before any agent but the l
 test('an argument the binary refuses at the start is filed as a refusal, in the binary’s words', async () => {
   const run = await runEngine('triage-findings', {
     args: { base: 'x' },
-    script: { 'step:resolve': RESOLVED, 'step:start': ran('', 2, 'craft: triage needs a source: --report or --pr'), 'log-run': { ok: true } },
+    script: {
+      'step:resolve': RESOLVED,
+      'step:start': ran('', 2, 'craft: a triage needs a source: a report file and/or a pull request'),
+      'log-run': { ok: true },
+    },
   })
-  assert.match(run.report, /INCOMPLETE — triage: triage needs a source: --report or --pr\. Nothing ran\./)
+  assert.match(run.report, /INCOMPLETE — triage: a triage needs a source: a report file and\/or a pull request\. Nothing ran\./)
   assert.deepEqual(filedRecord(run)?.notRun, ['an argument value triage cannot use was refused, nothing ran'])
 })
 
@@ -191,4 +195,63 @@ test('a resumed run with no repository named that stops files no record, and say
   assert.match(run.report, /^## Triage\n\n⚠️ INCOMPLETE — triage stopped: .+\. The run is in \/r\/run-1\./)
   assert.ok(run.report.includes("No run record was filed: the resumed run's repository is unknown"), run.report)
   assert.deepEqual(logged(run), [])
+})
+
+test('a lost submit of a run the binary stopped on the limit ends stopped, filed by no one here', async () => {
+  const status = ran({ run: RUN, phase: 'validate', done: false, tasks: [], stopped: { cause: 'limit', text: 'weekly limit' } })
+  const run = await runEngine('triage-findings', {
+    args: { report: '/r.md' },
+    script: {
+      'step:resolve': RESOLVED,
+      'step:start': pending([PLAN()]),
+      plan: writes({}),
+      'step:submit:1': null,
+      'step:status': status,
+      'log-run': { ok: true },
+    },
+  })
+  assert.match(run.report, /^## Triage\n\n⚠️ INCOMPLETE — stopped: usage limit reached \(weekly limit\)\. The run is in /)
+  assert.deepEqual(logged(run), [], 'the binary files it when the resumed run finishes')
+})
+
+test('a lost submit of a finished run whose record did not land has it filed again, and ends as the re-file says', async () => {
+  const status = ran({
+    run: RUN,
+    phase: 'done',
+    done: true,
+    tasks: [],
+    planFile: PLAN_FILE(),
+    recordFile: `${RUN}/record.json`,
+    summary: 'S',
+    filing: { runDir: '', rejoin: false, lost: ['x'], record: 'failed' },
+  })
+  const run = await runEngine('triage-findings', {
+    args: { report: '/r.md' },
+    script: {
+      'step:resolve': RESOLVED,
+      'step:start': pending([PLAN()]),
+      plan: writes({}),
+      'step:submit:1': null,
+      'step:status': status,
+      'step:refile': done(),
+    },
+  })
+  assert.match(command(run, 'step:refile'), /triage submit --run '.+' --resume/)
+  assert.ok(!/Telemetry lost/.test(run.report), `the re-file landed: ${run.report}`)
+})
+
+test('a resumed run keys its record to the repository the binary names', async () => {
+  const run = await runEngine('triage-findings', {
+    args: { run: '/r/run-1' },
+    script: {
+      'step:resolve': RESOLVED,
+      'step:resume': ran({ run: '/r/run-1', done: false, repo: '/work/named', tasks: [PLAN()] }),
+      'step:submit:1': null,
+      'step:status': null,
+      'log-run': { ok: true },
+    },
+  })
+  assert.match(run.report, /INCOMPLETE/)
+  const write = run.calls.find(c => /^log-run/.test(c.label))
+  assert.ok(write && write.prompt.includes("cd '/work/named'"), String(write?.prompt).slice(0, 400))
 })

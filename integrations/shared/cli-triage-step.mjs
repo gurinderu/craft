@@ -4,7 +4,7 @@
 // said; a stopped one's line and how to resume it; a status's phase. The plan itself is read from its file, by the
 // session that launched the triage, never copied through a model.
 import { absolutePath, commandOutput, filingOf, isObject, pendingTasks } from './cli-review-step.mjs'
-import { stepText, strings } from './cli-review-step-fields.mjs'
+import { stepText, stopNoteOf, strings } from './cli-review-step-fields.mjs'
 
 /** @typedef {import('./cli-review-step.mjs').Task} Task @typedef {import('./cli-review-step.mjs').Filing} Filing */
 /** @typedef {{ run: string, done: false, tasks: Task[], phase: string, repo: string }} TriagePending */
@@ -73,6 +73,22 @@ function finished(v) {
   }
 }
 
+/** A stopped run's finished-step fields, nothing of a plan. @param {Record<string, unknown>} v @returns {TriageFinished} */
+const stoppedFields = v => ({
+  run: String(v['run'] ?? ''),
+  done: true,
+  planFile: '',
+  recordFile: '',
+  summary: '',
+  failed: '',
+  stopped: true,
+  line: '',
+  resume: '',
+  degraded: strings(v['degraded']),
+  notes: strings(v['notes']),
+  filing: null,
+})
+
 /**
  * Where a run stands by its status, for a driver that lost the step that said it: its phase, and whether it is done —
  * its plan file named when it is.
@@ -82,6 +98,8 @@ export function readTriageStatus(got) {
   const read = printed(got, 'status')
   if ('error' in read) return read
   const { v } = read
+  // A run the binary stopped on the usage limit is not done, but stopped: it ends as its finished step would.
+  if (isObject(v['stopped']) && v['done'] !== true) return { done: true, step: { ...stoppedFields(v), line: stopNoteOf(v['stopped']) } }
   if (v['done'] !== true) return { done: false, phase: stepText(v['phase']) }
   const ended = finished(v)
   return 'error' in ended ? ended : { done: true, step: ended.step }

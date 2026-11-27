@@ -386,9 +386,8 @@ plan's panel bought only when those two disagree — each finding's severity cap
 memory already rejected or deferred — recalled by one agent beside the scouts, plus the launcher's own records — set aside
 under its own section when the code in its record's scope is unchanged since the record's commit — or, for a record
 naming no commit, since the merge on the trunk of the pull request its links give and unchanged on the trunk
-outside that pull request before its merge too — where its branch lacked a trunk change, and after a date it names (`cli/crates/craft-review/src/memory/anchor/pull.rs`, `pull/outside.rs`; its shell line in
-`integrations/shared/prior-decision-scope-lines.mjs`), else since the trunk's last commit before its date (`cli/crates/craft-review/src/memory/anchor.rs` and its
-JavaScript twin `integrations/shared/prior-decision-anchor.mjs`), and on the branch's next round a deferred finding whose
+outside that pull request before its merge too — where its branch lacked a trunk change, and after a date it names (`cli/crates/craft-review/src/memory/anchor/pull.rs`, `pull/outside.rs`), else since the trunk's last commit before its
+date (`cli/crates/craft-review/src/memory/anchor.rs`), and on the branch's next round a deferred finding whose
 file is unchanged since the same anchor carried without an adjudicator (`cli/crates/craft-review/src/memory/deferral.rs`) — a near miss between a
 record and a finding decided by a match judge, then a finding a project rule covers set aside under its own,
 decided by a rule judge — past their bounds (60 recalled paths, 100 records, 40 pairs per judge) the paths are
