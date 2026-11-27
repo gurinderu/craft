@@ -89,3 +89,24 @@ impl TriageError {
         matches!(self, Self::Refused(_) | Self::NoRepo { .. })
     }
 }
+
+#[cfg(test)]
+mod refusal_tests {
+    use super::TriageError;
+
+    #[test]
+    fn an_argument_the_triage_refuses_and_a_repository_not_there_are_refusals_and_nothing_else_is()
+    {
+        assert!(TriageError::Refused("no source".into()).refuses_argument());
+        let gone = std::io::Error::new(std::io::ErrorKind::NotFound, "gone");
+        assert!(
+            TriageError::NoRepo {
+                path: "/x".into(),
+                source: gone
+            }
+            .refuses_argument()
+        );
+        assert!(!TriageError::UnknownTask("t".into()).refuses_argument());
+        assert!(!TriageError::Stuck(crate::run::Phase::Gather).refuses_argument());
+    }
+}
