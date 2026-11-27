@@ -40,7 +40,7 @@ pub struct LedgerRow {
     pub deferral: Option<Deferral>,
 }
 
-/// A question's deferral as a ledger row carries it (`deferralOf` in `integrations/shared/ledger-deferral.mjs`).
+/// A question's deferral as a ledger row carries it (`Deferral` in `integrations/shared/ledger-deferral.mjs`).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Deferral {
