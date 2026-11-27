@@ -11,8 +11,8 @@ use super::read::{Row, Run};
 use super::{number, text};
 
 /// Only the rows of groups already on two branches are held to their lines, then regrouped in
-/// the runs' order; a row of a run that read uncommitted work (its lines are not `head`'s) or
-/// whose head this clone lacks is kept and counted unchecked.
+/// the runs' order; a row of a run whose working copy had changes when filed (its lines may not
+/// be `head`'s) or whose head this clone lacks is kept and counted unchecked.
 pub(super) fn unverified(runs: &[Run], project: &Path) -> Js {
     let rows = || {
         runs.iter()

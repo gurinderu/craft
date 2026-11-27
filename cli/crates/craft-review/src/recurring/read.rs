@@ -17,7 +17,8 @@ pub(super) struct Run {
     pub ts: JsString,
     pub branch: JsString,
     pub head: JsString,
-    /// Whether the review read uncommitted work, which `head` alone does not name.
+    /// Whether the working copy had changes when the record was filed (untracked files count):
+    /// the review may then have read uncommitted work, which `head` alone does not name.
     pub dirty: bool,
     pub rows: Vec<Row>,
     pub unverified: Vec<Row>,

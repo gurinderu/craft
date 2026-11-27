@@ -56,7 +56,7 @@ pub(super) fn unverified(line: u32) -> Value {
 }
 
 pub(super) fn record(s: &Store, branch: &str, head: &str, ledger: &Value) {
-    let rec = json!({"project": s.project, "branch": branch, "ts": branch, "head": head, "ledger": ledger});
+    let rec = json!({"project": s.project, "branch": branch, "ts": branch, "head": head, "dirty": false, "ledger": ledger});
     s.write(branch, &rec);
 }
 
@@ -136,9 +136,10 @@ fn a_head_this_clone_lacks_keeps_the_finding_unchecked() {
     record(&s, "a", ABSENT_HEAD, &json!([unverified(1)]));
     record(&s, "b", "", &json!([unverified(1)]));
     record(&s, "c", "--stat", &json!([unverified(1)]));
+    record(&s, "d", "refs/heads/main", &json!([unverified(1)]));
     let out = s.read(&["--unverified"]);
-    assert_eq!(branches(&out), [json!(["a", "b", "c"])]);
-    assert_eq!(out["unverified"]["unchecked"], 3);
+    assert_eq!(branches(&out), [json!(["a", "b", "c", "d"])]);
+    assert_eq!(out["unverified"]["unchecked"], 4);
     assert_eq!(out["unverified"]["changed"], 0);
 }
 
