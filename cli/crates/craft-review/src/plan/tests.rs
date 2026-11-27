@@ -486,7 +486,7 @@ fn a_library_the_profile_confirms_beats_the_scouts_no_on_a_profile_that_has_libr
 }
 
 #[test]
-fn a_file_renamed_out_of_a_security_path_still_makes_its_part_sensitive() {
+fn an_old_path_the_part_reads_under_a_security_path_makes_it_sensitive() {
     use crate::project::properties::Properties;
     let rust = Profile::load("rust").unwrap();
     let files = ["src/moved.rs".to_owned()];

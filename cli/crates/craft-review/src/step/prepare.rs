@@ -156,14 +156,16 @@ fn properties(opts: &StartOptions, run: &mut RunState) {
     let kept = crate::plan::repo_rule_paths(rules);
     let refused: Vec<&str> = rules
         .iter()
-        .map(|r| r.trim())
+        .map(|r| craft_store::js::JsStr::js_trim(r.as_str()))
         .filter(|r| !kept.iter().any(|k| k == r.strip_prefix("./").unwrap_or(r)))
+        .map(|r| if r.is_empty() { "\"\"" } else { r })
         .collect();
     if !refused.is_empty() {
         run.notes.push(format!(
-            "the reviewer's profile's rule files {} were left out — not a short repository-relative path, or past the {} files a lens reads: no lens reads them",
+            "the reviewer's profile's rule files {} were left out — not a short repository-relative path, or past the {} files or {} characters a lens reads: no lens reads them",
             refused.join(", "),
-            crate::plan::REPO_RULES_MAX
+            crate::plan::REPO_RULES_MAX,
+            crate::plan::REPO_RULES_MAX_CHARS
         ));
     }
     run.context.project = opts.project.clone();

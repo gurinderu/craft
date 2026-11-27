@@ -60,7 +60,9 @@ fn the_profiles_properties_are_named_and_the_plan_follows_them() {
         assert!(lenses.contains(&l.to_owned()), "{l}: {lenses:?}");
     }
     assert!(
-        p.contains("REPO RULES `CONTRIBUTING.md`") && !p.contains("`AGENTS.md`"),
+        p.contains("REPO RULES `CONTRIBUTING.md`")
+            && !p.contains("AGENTS.md`")
+            && !p.contains("/etc/AGENTS.md"),
         "the profile's rule files, not the scout's: {p}"
     );
     assert!(

@@ -15,7 +15,7 @@ use crate::profile::Profile;
 /// At most this many repository rule files reach a lens prompt, as `REPO_RULES_MAX`.
 pub(crate) const REPO_RULES_MAX: usize = 5;
 /// And at most this many characters of their joined paths, as `REPO_RULES_MAX_CHARS`.
-const REPO_RULES_MAX_CHARS: usize = 120;
+pub(crate) const REPO_RULES_MAX_CHARS: usize = 120;
 
 /// What a profile's review runs.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
