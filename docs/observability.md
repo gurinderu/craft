@@ -68,7 +68,9 @@ loads the detail files anyway. This is also why every record-filing engine — `
 computes the fields from a prompt cannot produce this one at all, so every record it files is
 excluded from `--engine latest` by construction. The JS engines' shared write path is
 `integrations/shared/run-logging.mjs`, bundled into each; the binary's is its own `crates/craft-store`. `craft runs retro <version>`
-gives a version's per-workflow, per-engine and per-lens numbers as `node integrations/shared/analyze-runs.mjs --version <version>` does.
+gives a version's per-workflow, per-engine and per-lens numbers as `node integrations/shared/analyze-runs.mjs --version <version>` does;
+with `runs ls`'s filters (`--project`, `--branch`, `--since`, `--until`, `--name`, `--verdict`) and no version it sums any
+selection, and its runs by kind give each workflow's depth and lens scope with the minutes and agents its records carry.
 Records written before these fields carry `null` and are outside any filter.
 
 Workflows add: `scout`, `dimensions[]`, `verification {candidates, judged, confirmed, suspected, refuted, unverified, died, refuteRate}` (`refuteRate` is over what was *judged*. When nothing was, the engines differ: `rust-audit` records `null` — a run whose verifiers all died reports no rate rather than a rate of zero — while `review` records `0`, as the retired `adversarial-review` did (`refuteRate()` in `integrations/shared/run-record.mjs`, the binary's `refute_rate` alike), and `integrations/shared/analyze-runs.mjs` averages that `0` into the workflow's `avg refute` as it skips a `null`; `unverified` counts candidates no verifier ever judged — an unchecked Low/Info the engine spends no verifier on — and is reported **beside** `candidates`, not inside it, so it is outside the rate),
