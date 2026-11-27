@@ -202,11 +202,38 @@ test('deferral on a row: every part a string, null without a question id', () =>
   assert.deepEqual(deferralOn({ id: 'q-1', who: 5, extra: 1 }), { id: 'q-1', reason: '', who: '', when: '', link: '', commit: '' })
 })
 
+test('deferral on a row: its pull requests ride it, the malformed ones dropped, none without them', () => {
+  const pulls = [{ repo: 'owner/repo', number: 7 }, { repo: 'owner/repo', number: 0 }, { number: 8 }, 'x', { repo: 'o/r', number: 1.5 }]
+  assert.deepEqual(deferralOn({ id: 'q-1', pulls })?.pulls, [{ repo: 'owner/repo', number: 7 }])
+  assert.equal(deferralOn({ id: 'q-1', pulls: [{ number: 8 }] })?.pulls, undefined)
+  assert.equal(deferralOn({ id: 'q-1', pulls: 'x' })?.pulls, undefined)
+  const q = { id: 'q-1', reason: 'r', who: 'w', when: 'd', link: 'l', commit: '' }
+  assert.deepEqual(deferralOf({ ...q, pulls: [{ repo: 'owner/repo', number: 7 }] }).pulls, [{ repo: 'owner/repo', number: 7 }])
+  assert.equal('pulls' in deferralOf({ ...q, pulls: [] }), false)
+  assert.equal('pulls' in deferralOf(q), false)
+})
+
+test('deferral on a row: its scope rides it when a non-empty string, none otherwise', () => {
+  assert.equal(deferralOn({ id: 'q-1', scope: 'src/net' })?.scope, 'src/net')
+  assert.equal('scope' in (deferralOn({ id: 'q-1', scope: 7 }) ?? {}), false)
+  assert.equal('scope' in (deferralOn({ id: 'q-1', scope: '' }) ?? {}), false)
+  const q = { id: 'q-1', reason: 'r', who: 'w', when: 'd', link: 'l', commit: '' }
+  assert.equal(deferralOf({ ...q, scope: 'src/net' }).scope, 'src/net')
+  assert.equal('scope' in deferralOf(q), false)
+})
+
 test('a question sets its deferral on the finding it sets aside; a decision sets none', () => {
   const [q] = /** @type {any[]} */ (parsePriorDecisions([question()]).decisions)
   const [d] = /** @type {any[]} */ (parsePriorDecisions([decision()]).decisions)
   const f = { file: 'src/parse.rs', title: 'unwrap in parser may panic', severity: 'Medium', why: 'w' }
   assert.deepEqual(splitByDecisions([f], [q], new Set([q.id]), 'confirmed').setAside[0]?.deferral, deferralOf(q))
+  // A question on a folder linking its pull request: the set-aside deferral names both, as the next round
+  // anchors it by the request's merge and checks the folder (realm @nick/craft, node #680).
+  const [wide] = /** @type {any[]} */ (parsePriorDecisions([question({ scope: 'src', links: ['https://github.com/Owner/Repo/pull/7'] })]).decisions)
+  const carried = splitByDecisions([f], [wide], new Set([wide.id]), 'confirmed').setAside[0]?.deferral
+  assert.ok(carried)
+  assert.deepEqual(carried.pulls, [{ repo: 'owner/repo', number: 7 }])
+  assert.equal(carried.scope, 'src')
   const byDecision = splitByDecisions([{ ...f, title: d.title }], [d], new Set([d.id]), 'confirmed').setAside
   assert.equal(byDecision.length, 1)
   assert.equal(byDecision[0]?.deferral, undefined)

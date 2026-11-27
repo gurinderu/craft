@@ -1,5 +1,6 @@
 //! Where a run joins its branch's chain: the prior round it builds on and what its lenses review.
 
+use std::collections::BTreeSet;
 use std::path::Path;
 
 use super::branch::{self, Lookup};
@@ -8,17 +9,15 @@ use crate::chain::{self, Prior};
 use crate::error::Error;
 use crate::git::{self, Diff, GitError};
 use crate::ledger::LedgerRow;
+use crate::memory;
 use crate::prompts::ReScope;
 use crate::step::StepError;
 
 /// The prior round's rows: tombstones apart, every other row a prior finding with its starting fate.
-/// `quiet` says of a `deferred` row whether its deferral may be carried without an adjudicator.
-pub(super) fn take_ledger(
-    chain: &mut Chain,
-    ledger: Vec<LedgerRow>,
-    quiet: &dyn Fn(&LedgerRow) -> bool,
-) {
-    for row in ledger {
+/// `quiet` names, by their place in `ledger`, the `deferred` rows whose deferral may be carried
+/// without an adjudicator ([`quiet_deferrals`]).
+pub(super) fn take_ledger(chain: &mut Chain, ledger: Vec<LedgerRow>, quiet: &BTreeSet<usize>) {
+    for (i, row) in ledger.into_iter().enumerate() {
         let fate = match row.disposition.as_str() {
             "closed" => {
                 chain.tombstones.push(row);
@@ -31,14 +30,14 @@ pub(super) fn take_ledger(
             // Only the author's dismissals are carry-checked, as `isSettledPrior` settles them.
             "rejected" | "justified" => Fate::Carried,
             // A `deferred` row whose deferral is quiet — it names its question, it is not Critical or
-            // High, and the code of its file is unchanged since the question's commit — is carried as
+            // High, and the code of its question's scope is unchanged since its anchor — is carried as
             // Known and deferred, as the engine's carry-check carries it; whether its question still
             // holds is settled once the memory is recalled (`hold_deferrals`).
-            "deferred" if quiet(&row) => Fate::Deferred,
+            "deferred" if quiet.contains(&i) => Fate::Deferred,
             // Everything else is adjudicated and counted by its answer: `open`; a `deferred` row with
-            // no deferral, Critical or High, or whose code changed since its question's commit (the
-            // engine adjudicates it once its carry-check sees the change); a disposition this CLI does
-            // not know.
+            // no deferral, Critical or High, whose code changed since its question's anchor or whose
+            // anchor git cannot find (the engine adjudicates it once its carry-check sees the
+            // change); a disposition this CLI does not know.
             _ => Fate::Pending,
         };
         chain.priors.push(PriorFinding {
@@ -50,20 +49,38 @@ pub(super) fn take_ledger(
     }
 }
 
-/// Whether a deferred row may be carried without an adjudicator: it carries a deferral with a
-/// commit, it is not Critical or High, and git shows its file unchanged since that commit, the
-/// working tree included (the scope check the memory runs for its records).
-fn quiet_deferral(cwd: &Path, row: &LedgerRow) -> bool {
-    let Some(d) = row.deferral.as_ref().filter(|d| !d.commit.is_empty()) else {
-        return false;
-    };
-    let severe = matches!(row.severity.to_lowercase().as_str(), "critical" | "high");
-    let file = if row.file.is_empty() {
-        "."
-    } else {
-        row.file.as_str()
-    };
-    !severe && git::has_commit(cwd, &d.commit) && git::unchanged_since(cwd, &d.commit, file)
+/// The places in `ledger` of the `deferred` rows that may be carried without an adjudicator: each
+/// carries a deferral, it is not Critical or High, and the memory's scope check finds its
+/// question's scope — in a row written before the deferral carried one, its file, the whole tree
+/// when it names none — unchanged since the deferral's anchor, the working tree
+/// included: its commit, else the merge of a pull request it links, else its date, as the memory
+/// sets a finding aside by (realm @nick/craft, node #680). One check over all of them.
+fn quiet_deferrals(cwd: &Path, ledger: &[LedgerRow]) -> BTreeSet<usize> {
+    let mut places = Vec::new();
+    let mut rows = Vec::new();
+    for (i, row) in ledger.iter().enumerate() {
+        let severe = matches!(row.severity.to_lowercase().as_str(), "critical" | "high");
+        let Some(d) = row
+            .deferral
+            .as_ref()
+            .filter(|_| row.disposition == "deferred" && !severe)
+        else {
+            continue;
+        };
+        let file = if row.file.is_empty() {
+            "."
+        } else {
+            row.file.as_str()
+        };
+        places.push(i);
+        rows.push((d, file));
+    }
+    let unchanged = memory::unchanged_deferrals(cwd, &rows);
+    places
+        .into_iter()
+        .zip(unchanged)
+        .filter_map(|(i, quiet)| quiet.then_some(i))
+        .collect()
 }
 
 /// The chain of the run about to start in `cwd`: its key, its round and the prior round it builds
@@ -124,7 +141,8 @@ pub fn begin(
                 round: record.round,
                 head: record.head,
             });
-            take_ledger(&mut chain, record.ledger, &|row| quiet_deferral(cwd, row));
+            let quiet = quiet_deferrals(cwd, &record.ledger);
+            take_ledger(&mut chain, record.ledger, &quiet);
         }
     }
     Ok((chain, resolved.note.take()))
@@ -150,3 +168,6 @@ pub fn scope(cwd: &Path, chain: &mut Chain, branch: Diff) -> Result<(Diff, ReSco
     }
     Ok((delta, ReScope::Fixes))
 }
+
+#[cfg(test)]
+mod tests;

@@ -14,7 +14,7 @@ mod shallow;
 
 /// How pull request #7 reached the trunk.
 #[derive(Clone, Copy)]
-enum Landed {
+pub(in crate::memory) enum Landed {
     /// A merge commit of its branch as it was opened, before #8.
     Stale,
     /// A merge commit of its branch rebased onto #8.
@@ -34,7 +34,7 @@ fn landed(dir: &std::path::Path, file: &str, text: &str, date: &str, subject: &s
 /// 2026-05-02 began anywhere; #7 opened off it at 09:00 changing `src/p.rs`; #8 squashed on
 /// 2026-05-02 09:00 UTC, before 2026-05-03 began anywhere, changing `src/a.rs`; then #7 landing on
 /// 2026-05-04 as `how` says.
-fn repo(how: Landed) -> tempfile::TempDir {
+pub(in crate::memory) fn repo(how: Landed) -> tempfile::TempDir {
     let t = tempfile::tempdir().unwrap();
     let d = t.path();
     let start = "2026-05-01T08:00:00+0000";

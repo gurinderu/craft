@@ -29,7 +29,7 @@ fn chained(rows: Vec<LedgerRow>) -> Chain {
         }),
         ..Chain::default()
     };
-    take_ledger(&mut c, rows, &|_| false);
+    take_ledger(&mut c, rows, &std::collections::BTreeSet::new());
     c
 }
 

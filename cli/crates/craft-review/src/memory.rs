@@ -14,6 +14,7 @@ mod anchor;
 mod apply;
 mod asked;
 mod bounds;
+mod deferral;
 mod degraded;
 #[cfg(test)]
 mod high_tests;
@@ -45,6 +46,7 @@ pub use record::{PriorDecision, RecordKind};
 pub use rules::Covered;
 pub use source::MemorySource;
 
+pub(crate) use deferral::unchanged_deferrals;
 pub(crate) use id::{memory_record_id, split_scope_line};
 pub use judge::contradiction_of;
 pub(crate) use judge::contradiction_record;
