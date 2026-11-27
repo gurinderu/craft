@@ -14,21 +14,31 @@ SKILL.md's ("Choosing the backend"); this file only says how to write and search
   never a write to the server's default or another store.
 - **Its own instructions first.** When the server ships a skill, a prompt or tool descriptions
   saying how to write (which item type, which fields, which modes, where to anchor), follow them
-  and hand it the record's content — title, body, scope, kind, author, commit, deferred, line, lens, toolRule, links. Do not force the fields
-  below onto a store that has its own discipline.
+  and hand it the record's content — title, body, scope, kind, date, author, commit, deferred, line, lens, toolRule, links;
+  the date goes into the item as `craft_date` unless those instructions name a field of their own for
+  it. Do not force the other fields below onto a store that has its own discipline.
 - **Without instructions**, the plain mapping: one item per record; the item's name = `title`;
   its text = `body`; the other fields under fixed keys, prefixed `craft_` as in the harness format
-  below — `craft_kind`, `craft_id`, `craft_scope`, `craft_status`, `craft_author`, `craft_commit`,
+  below — `craft_kind`, `craft_id`, `craft_scope`, `craft_status`, `craft_date`, `craft_author`, `craft_commit`,
   `craft_deferred`, `craft_line`, `craft_lens`, `craft_tool_rule` — as attributes, tags
   (`craft_kind:decision`) or observations, whichever the tool accepts, never under another name;
-  `links` as relations when the tool has them, else as text.
+  `links` as relations when the tool has them and they can hold a URL; else each link as a
+  `Links: <link>` line at the end of the item's text, one line per link — the harness files'
+  `Links:` lines — and recall rebuilds `links` from those lines. `craft_date` is the record's `date`,
+  written by each record or re-record and by nothing else: the server's own modified time moves
+  with any edit of the item, and a review checks a record that names no commit against the merge of
+  the pull request its `links` give, else against its date — so a record of a pull request's
+  finding keeps that pull request's URL among its links.
 - **Recall searches both spellings**: records written before these keys were fixed may carry them
   bare (`kind`, `id`, `scope`, `status`, …). Search and filter by the `craft_` key **and** the bare
   one (`craft_kind:decision` or `kind:decision`), never by one alone, and hand the record on with the
   bare names of SKILL.md.
 - **Recall returns the record shape**: whatever the server stores, a recalled record handed on
-  (to a subagent, or to a review as `priorDecisions`) is rebuilt as the SKILL.md shape — `author`,
-  `commit`, `deferred`, `line`, `lens` and `toolRule` included when the item carries them, and an
+  (to a subagent, or to a review as `priorDecisions`) is rebuilt as the SKILL.md shape — an active
+  record's `date` from `craft_date` (or the field the server's instructions named), never the server's
+  modified time (an inactive one's `date` stays the store's last write, SKILL.md "Recall", step 4), `author`,
+  `commit`, `deferred`, `line`, `lens`, `toolRule` and `links` (from its relations, or its text's
+  `Links:` lines) included when the item carries them, and an
   `external` record's `system`, `repo`, and `versionFrom` and `versionMatch` or a stated `version`.
 - **Ids — the convention for a server with its own ids**: `id` is the skill-rule id (SKILL.md,
   from kind + title + scope), and the server's own id goes into `links` as `store: <id>`. `kind`,

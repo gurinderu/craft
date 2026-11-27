@@ -44,7 +44,7 @@ answer with `rubric not read: <path>` and do not judge as if you had read it.
    installed; name the check as the source. Otherwise, **if NO tool ran at all**, the verdict is
    **INCOMPLETE (not run)** 🚫.
    An Approve is a claim about what the tools did not find, and it only holds over what was
-   actually scanned. If `toolsRun` is empty and no CI check is red, nothing was scanned: report `INCOMPLETE (not run)`,
+   actually scanned. If no tool ran and no CI check is red, nothing was scanned: report `INCOMPLETE (not run)`,
    name every missing tool, and say plainly that the project's security posture is UNKNOWN, not
    clean. A partial run (some tools ran, some could not — not installed, timed out, broken, or
    stopped by this machine or its network) gives at most **Warning**, never Approve, even when a
@@ -108,21 +108,3 @@ INCOMPLETE (not run) — no security tool was available; this project is UNSCANN
 Each finding: `severity · tool · what · why it matters · fix/mitigation`. Cite the advisory id /
 crate / file:line. Be precise; prefer a few real findings over a wall of noise. If a tool isn't
 installed, say so — don't imply that area was cleared.
-
-## Observability
-
-After you have issued your verdict, record this run — UNLESS your dispatch prompt says the workflow
-records this run (then skip; the workflow owns it). This is best-effort: never fail your scan
-because logging failed.
-
-Append ONE compact JSON line to `~/.craft/runs/index.jsonl` (run `mkdir -p ~/.craft/runs` first),
-using a single atomic append (`printf '%s\n' "$LINE" >> ~/.craft/runs/index.jsonl`):
-
-`{"schemaVersion":1,"runtime":"claude-code","ts":"<date -u +%Y-%m-%dT%H-%M-%SZ>","kind":"agent","name":"rust-security-scanner","project":"<pwd>","commit":"<git rev-parse --short HEAD, empty if none>","dirty":<true if git status --porcelain is non-empty, else false>,"verdict":"<Approve|Warning|Block|INCOMPLETE (not run)>","findings":{"total":<n>,"bySeverity":{"Critical":0,"High":0,"Medium":0,"Low":0,"Info":0}},"nested":false,"via":null,"toolsRun":["cargo-audit","cargo-deny"],"ciRed":[]}`
-
-Set `toolsRun` to the tools that actually ran (omit ones that were absent), and `ciRed` to the
-red covering CI checks from step 0 (`[]` when none) — a red CI check is not a tool run, so it never
-goes into `toolsRun`. An empty `toolsRun` and a verdict of `Approve` is a contradiction the
-aggregate cannot detect — if `toolsRun` is empty, the verdict MUST be `Block` when `ciRed` is not
-empty, and `INCOMPLETE (not run)` otherwise. Likewise `Approve` needs all four tools in
-`toolsRun`; with any of them absent the verdict is at most `Warning`.

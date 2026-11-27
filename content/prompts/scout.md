@@ -1,8 +1,7 @@
 You are scouting a {{lang}} diff to plan an elastic review. Use shell + read only — do NOT review yet.{{scope}}
 
 Diff base: {{base}}. Consider only this profile's files ({{globs}}).
-1. Inspect `git diff --stat {{statRange}} -- {{globs}}`. Set sizeBucket:
-   small = a few files / < ~80 changed lines; large = many files / > ~400 lines or a public-API-heavy change; medium otherwise.
+1. {{sizeStep}}
 2. lenses: choose from {{lenses}}.
    - small: only the touched categories (minimum 2; always include the dominant category, and include '{{safetyLens}}' unless the diff clearly touches nothing related to {{securityHints}}).
    - medium: the categories plausibly in play.

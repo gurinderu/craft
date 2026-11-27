@@ -1,7 +1,7 @@
 {
   "name": "craft-opencode",
-  "version": "0.60.0",
-  "description": "craft's skills, review agents and review for OpenCode 2.x.",
+  "version": "0.61.0",
+  "description": "craft: AI code review and code-quality skills for OpenCode 2.x.",
   "license": "MIT",
   "type": "module",
   "exports": {

@@ -1,0 +1,11 @@
+{
+  "unfinished": "the craft binary did not finish the run",
+  "causes": {
+    "start": "stopped: the run could not start or resume",
+    "limit": "stopped: the usage limit was reached",
+    "harness": "stopped: the harness refused a service command",
+    "host": "stopped: the host could not run the tasks",
+    "step": "stopped: a step of the binary was lost",
+    "rounds": "stopped: the driver's round backstop was reached"
+  }
+}

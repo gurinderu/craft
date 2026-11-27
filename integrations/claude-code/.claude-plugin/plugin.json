@@ -1,8 +1,8 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "craft",
-  "version": "0.60.0",
-  "description": "Personal Claude Code collection of opinionated engineering skills and agents — a broad Rust skill set (ownership, concurrency, traits, performance, unsafe, errors, idioms, ecosystem, architecture, web, CLI, security, plugins, macros, fintech, cloud-native, ml) plus language-agnostic engineering skills (specs, debugging, refactoring, onboarding) and code-review / architecture / security / Miri agents; a Nix skill set (flakes, packaging, dev-env, nixos/home-manager, review). Self-contained — owns its domain knowledge and carries no generic engineering-process content. Multi-language over time.",
+  "version": "0.61.0",
+  "description": "AI code review for Claude Code — a diff review in any language with verified findings and one verdict before the pull request, a whole-crate Rust audit and a fix plan from review findings — with the code-quality skills it judges by: a broad Rust skill set (ownership, concurrency, traits, performance, unsafe, errors, idioms, ecosystem, architecture, web, CLI, security, plugins, macros, fintech, cloud-native, ml), a Nix skill set (flakes, packaging, dev-env, nixos/home-manager, review) and language-agnostic engineering skills (specs, debugging, refactoring, onboarding). Self-contained — owns its domain knowledge and carries no generic engineering-process content.",
   "author": {
     "name": "gurinderu",
     "email": "gurinderu@gmail.com"
@@ -10,11 +10,15 @@
   "license": "MIT",
   "keywords": [
     "claude-code",
+    "ai-code-review",
+    "code-review",
+    "code-quality",
+    "review",
     "skills",
     "agents",
     "rust",
+    "nix",
     "testing",
-    "code-review",
     "craft"
   ]
 }

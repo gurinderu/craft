@@ -2,7 +2,6 @@
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "sizeBucket",
     "lenses",
     "isLibrary",
     "securitySensitive",
@@ -18,7 +17,8 @@
         "small",
         "medium",
         "large"
-      ]
+      ],
+      "description": "only where the prompt asks for it; otherwise the engine counts the size itself"
     },
     "lenses": {
       "type": "array",
