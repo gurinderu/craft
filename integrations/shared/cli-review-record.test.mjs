@@ -638,7 +638,9 @@ for (const brief of [false, true])
       'step:brief': () => (asked++ ? refused : briefSays('failed')),
       'step:refile': refused,
     })
-    assert.match(verdictLine(run.report), /^⛔ Block/)
+    const verdict = verdictLine(run.report)
+    assert.ok(verdict)
+    assert.match(verdict, /^⛔ Block/)
     assert.match(run.report, /Telemetry lost/)
     assert.match(run.report, /The run record can be filed again/)
     assert.doesNotMatch(run.report, /whether the binary finished the run is unknown/)
