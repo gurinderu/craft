@@ -374,27 +374,30 @@ for (const [name, status] of Object.entries({
 }
 
 for (const resume of [false, true])
-  test(`a refused triage status after a lost ${resume ? 'resume' : 'submit'} names the refusal and files no guessed record`, async () => {
-    const run = await runEngine('triage-findings', {
-      args: resume ? { run: RUN, repo: '/work/repo' } : { report: '/r/report.md' },
-      script: {
-        'step:resolve': RESOLVED,
-        'step:start': pending([PLAN()]),
-        plan: writes({}),
-        'step:submit:1': ran('cut JSON'),
-        'step:resume': ran('cut JSON'),
-        'step:status': ran('', 1, 'Permission for this action was denied. The command was not run.'),
-        'log-run': { ok: true },
-      },
+  for (const refused of [false, true])
+    test(`a ${refused ? 'refused' : 'failed'} triage status after a lost ${resume ? 'resume' : 'submit'} preserves both failures and files no guessed record`, async () => {
+      const run = await runEngine('triage-findings', {
+        args: resume ? { run: RUN, repo: '/work/repo' } : { report: '/r/report.md' },
+        script: {
+          'step:resolve': RESOLVED,
+          'step:start': pending([PLAN()]),
+          plan: writes({}),
+          'step:submit:1': ran('cut JSON'),
+          'step:resume': ran('cut JSON'),
+          'step:status': ran('', 1, refused ? 'Permission for this action was denied. The command was not run.' : 'cannot read state'),
+          'log-run': { ok: true },
+        },
+      })
+      if (refused) assert.match(run.report, /the harness's permission check refused the command, not craft/)
+      else assert.match(run.report, /Status recovery failed:.*the command exited 1: cannot read state/)
+      assert.match(run.report, /triage stopped: the command printed no JSON: cut JSON/)
+      assert.ok(run.report.includes(`/b/craft triage status --run '${RUN}'`), run.report)
+      if (refused) assert.match(run.report, /\/permissions/)
+      assert.ok(run.report.includes(`craft:triage-findings run=${RUN}`), run.report)
+      assert.match(run.report, /whether the binary finished the run is unknown/)
+      assert.match(run.report, /No additional run record was filed by this driver/)
+      assert.deepEqual(logged(run), [])
     })
-    assert.match(run.report, /the harness's permission check refused the command, not craft/)
-    assert.ok(run.report.includes(`/b/craft triage status --run '${RUN}'`), run.report)
-    assert.match(run.report, /\/permissions/)
-    assert.ok(run.report.includes(`craft:triage-findings run=${RUN}`), run.report)
-    assert.match(run.report, /whether the binary finished the run is unknown/)
-    assert.match(run.report, /No run record was filed/)
-    assert.deepEqual(logged(run), [])
-  })
 
 for (const resume of [false, true])
   test(`a failed triage status after ${resume ? 'resume' : 'submit'} preserves the limit and files nothing`, async () => {
@@ -413,7 +416,7 @@ for (const resume of [false, true])
     assert.match(run.report, /stopped: usage limit reached \(You've hit your limit\)/)
     assert.match(run.report, /Status recovery failed:.*the command exited 1: cannot read state/)
     assert.ok(run.report.includes(`/b/craft triage status --run '${RUN}'`), run.report)
-    assert.match(run.report, /No run record was filed: whether the binary finished the run is unknown/)
+    assert.match(run.report, /No additional run record was filed by this driver: whether the binary finished the run is unknown/)
     assert.deepEqual(logged(run), [])
   })
 

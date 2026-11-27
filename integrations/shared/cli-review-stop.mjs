@@ -5,7 +5,7 @@
 import { commandOutput } from './cli-review-step.mjs'
 
 /** A failed recovery says nothing about the binary's completion (realm @nick/craft, nodes #667, #731). */
-export const UNKNOWN_COMPLETION = 'No run record was filed: whether the binary finished the run is unknown.'
+export const UNKNOWN_COMPLETION = 'No additional run record was filed by this driver: whether the binary finished the run is unknown.'
 
 /**
  * A status command's own refusal or failed exit, with the issued command preserved. An unread answer or the usage

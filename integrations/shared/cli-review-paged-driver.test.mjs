@@ -178,7 +178,7 @@ for (const brief of [false, true])
       args: ARGS,
       script: {
         ...BASE(),
-        'step:start': ran(JSON.stringify({ run: RUN, done: false, tasks: [TASK()] })),
+        'step:start': ran(JSON.stringify({ run: RUN, done: false, tasks: [TASK()], filing: { lost: ['checkpoint write failed'] } })),
         lens: 'done',
         'step:submit:1': ran('Error: the output was cut'),
         'step:status': brief ? ran('cut status') : refused,
@@ -194,7 +194,9 @@ for (const brief of [false, true])
     assert.ok(run.report.includes('Bash(/opt/craft review:*)'), run.report)
     assert.ok(run.report.includes(`craft:review run=${RUN}`), run.report)
     assert.match(run.report, /whether the binary finished the run is unknown/)
-    assert.match(run.report, /No run record was filed/)
+    assert.match(run.report, /No additional run record was filed by this driver/)
+    assert.match(run.report, /Telemetry lost/)
+    assert.match(run.report, /checkpoint write failed/)
     assert.equal(filedRecord(run), null)
   })
 
@@ -224,7 +226,7 @@ for (const brief of [false, true])
       if (cause === 'limit') assert.ok(run.report.includes(`stopped: usage limit reached (${LIMIT})`), run.report)
       else if (cause === 'refused') assert.match(run.report, /the harness's permission check refused the command, not craft.*review submit/)
       else assert.match(run.report, /the command printed no JSON: cut submit/)
-      assert.match(run.report, /No run record was filed: whether the binary finished the run is unknown/)
+      assert.match(run.report, /No additional run record was filed by this driver: whether the binary finished the run is unknown/)
       assert.equal(filedRecord(run), null)
       assert.equal(run.calls.filter(c => c.label === 'step:brief').length, brief ? 1 : 0)
     })
