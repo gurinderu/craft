@@ -70,6 +70,11 @@ impl Bench {
     /// `craft review run --backend codex` over the repository, the stand-in tools first on PATH;
     /// `--no-gate` unless `gate`.
     pub fn review(&self, gate: bool) -> Child {
+        self.command(gate).stdin(Stdio::null()).spawn().unwrap()
+    }
+
+    /// [`Bench::review`] unspawned, its stdin left to the caller.
+    pub fn command(&self, gate: bool) -> Command {
         let checkout = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
         let path = std::env::join_paths(std::iter::once(self.bin.clone()).chain(
             std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()),
@@ -99,11 +104,9 @@ impl Bench {
             .env("PATH", path)
             .env_remove("CLAUDE_PLUGIN_ROOT")
             .env_remove("CRAFT_ROOT")
-            .stdin(Stdio::null())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .unwrap()
+            .stderr(Stdio::piped());
+        cmd
     }
 
     /// The run records filed under the home.

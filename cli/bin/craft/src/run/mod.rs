@@ -154,7 +154,12 @@ fn ready(args: &RunArgs, repo: &Path, sink: Sink) -> Result<(NonZeroUsize, Host,
     Ok((concurrency, host, root))
 }
 
-pub async fn run(args: RunArgs) -> Result<ExitCode> {
+pub async fn run(mut args: RunArgs) -> Result<ExitCode> {
+    // Before the stop handler: a signal then ends an input held open, which no handler could
+    // interrupt (realm @nick/craft, node #737).
+    if args.run.is_none() {
+        args.start.prior_decisions_read = crate::steps::prior_decisions(&args.start);
+    }
     // Before any task starts, so no stopping signal finds craft without a handler while a task's
     // process group is up: the round in flight stops its tasks, and the run is filed INCOMPLETE
     // with how to resume it (realm @nick/craft, node #40).
