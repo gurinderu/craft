@@ -408,3 +408,99 @@ fn the_profiles_facts_beat_the_scout_either_way_and_its_risks_only_add() {
         "a risk the scout saw is never taken back"
     );
 }
+
+#[test]
+fn a_contract_the_profile_names_adds_compat_over_the_scouts_surfaces_and_a_light_pass_keeps_its_risks()
+ {
+    use crate::project::properties::Properties;
+    let rust = Profile::load("rust").unwrap();
+    let files = ["spec/wire.cddl".to_owned()];
+    let scout = serde_json::json!({"lenses": ["errors"], "securitySensitive": false,
+                                   "surfaces": {"wireForm": false, "crossBoundarySymbol": false}});
+    let planned = |project: &Properties, light: bool| {
+        plan(PlanInput {
+            scout: Some(&scout),
+            project,
+            light,
+            changed_lines: Some(10),
+            ..input(&rust, &files, false)
+        })
+    };
+    let contract = Properties {
+        contracts: vec!["spec".into()],
+        ..Properties::new()
+    };
+    assert!(
+        !planned(&Properties::new(), false)
+            .lenses
+            .contains(&"compat".to_owned())
+    );
+    let got = planned(&contract, false);
+    assert!(!got.security_sensitive, "a contract is no security risk");
+    assert!(
+        got.lenses.contains(&"compat".to_owned()),
+        "{:?}",
+        got.lenses
+    );
+    assert!(
+        planned(&contract, true)
+            .lenses
+            .contains(&"compat".to_owned()),
+        "a light pass too"
+    );
+    let controllers = Properties {
+        controllers: true,
+        ..Properties::new()
+    };
+    let light = planned(&controllers, true);
+    for l in ["reconciler", "failure-windows"] {
+        assert!(
+            light.lenses.contains(&l.to_owned()),
+            "{l}: {:?}",
+            light.lenses
+        );
+    }
+}
+
+#[test]
+fn a_library_the_profile_confirms_beats_the_scouts_no_on_a_profile_that_has_libraries() {
+    use crate::project::properties::Properties;
+    let files = ["src/lib.rs".to_owned()];
+    let scout = serde_json::json!({"lenses": ["errors"], "isLibrary": false});
+    let library = Properties {
+        library: Some(true),
+        ..Properties::new()
+    };
+    let rust = Profile::load("rust").unwrap();
+    let general = Profile::load("general").unwrap();
+    let of = |p: &Profile| {
+        plan(PlanInput {
+            scout: Some(&scout),
+            project: &library,
+            ..input(p, &files, false)
+        })
+        .is_library
+    };
+    assert!(of(&rust));
+    assert!(!of(&general), "a profile with no libraries takes none");
+}
+
+#[test]
+fn a_file_renamed_out_of_a_security_path_still_makes_its_part_sensitive() {
+    use crate::project::properties::Properties;
+    let rust = Profile::load("rust").unwrap();
+    let files = ["src/moved.rs".to_owned()];
+    let read = ["src/moved.rs".to_owned(), "src/auth/old.rs".to_owned()];
+    let scout = serde_json::json!({"lenses": ["errors"], "securitySensitive": false});
+    let project = Properties {
+        security_paths: vec!["src/auth".into()],
+        ..Properties::new()
+    };
+    let got = plan(PlanInput {
+        scout: Some(&scout),
+        project: &project,
+        read_paths: &read,
+        ..input(&rust, &files, false)
+    });
+    assert!(got.security_sensitive);
+}

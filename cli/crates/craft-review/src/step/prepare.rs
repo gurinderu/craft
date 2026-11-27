@@ -152,6 +152,20 @@ fn properties(opts: &StartOptions, run: &mut RunState) {
         ));
     }
     run.notes.extend(opts.project.line());
+    let rules = opts.project.rules.as_deref().unwrap_or_default();
+    let kept = crate::plan::repo_rule_paths(rules);
+    let refused: Vec<&str> = rules
+        .iter()
+        .map(|r| r.trim())
+        .filter(|r| !kept.iter().any(|k| k == r.strip_prefix("./").unwrap_or(r)))
+        .collect();
+    if !refused.is_empty() {
+        run.notes.push(format!(
+            "the reviewer's profile's rule files {} were left out — not a short repository-relative path, or past the {} files a lens reads: no lens reads them",
+            refused.join(", "),
+            crate::plan::REPO_RULES_MAX
+        ));
+    }
     run.context.project = opts.project.clone();
 }
 

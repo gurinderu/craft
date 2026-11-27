@@ -43,6 +43,31 @@ fn a_path_matches_as_a_glob_or_as_a_directory_above_the_file() {
 }
 
 #[test]
+fn a_glob_naming_a_directory_matches_the_files_inside_it_and_a_leading_dot_is_no_part() {
+    let p = Properties {
+        security_paths: vec![
+            "**/auth".into(),
+            "crates/*/src/keys".into(),
+            "./src/vault".into(),
+            String::new(),
+        ],
+        ..Properties::new()
+    };
+    assert!(p.security("a/auth/mod.rs"));
+    assert!(p.security("auth/mod.rs"));
+    assert!(p.security("crates/x/src/keys/k.rs"));
+    assert!(p.security("src/vault/v.rs"));
+    assert!(
+        !p.security("crates/x/y/src/keys/k.rs"),
+        "one `*` is one segment"
+    );
+    assert!(
+        !p.security("src/main.rs"),
+        "an empty pattern matches nothing"
+    );
+}
+
+#[test]
 fn the_report_line_names_what_the_profile_set() {
     assert_eq!(NONE.line(), None);
     let p = Properties {

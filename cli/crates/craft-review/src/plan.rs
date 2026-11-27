@@ -175,7 +175,7 @@ fn scout_strings(scout: Option<&Value>, k: &str) -> Vec<String> {
 }
 
 /// The scout's rule-file paths as the engine keeps them, as `repoRulePaths`.
-fn repo_rule_paths(raw: &[String]) -> Vec<String> {
+pub(crate) fn repo_rule_paths(raw: &[String]) -> Vec<String> {
     let safe = |s: &str| {
         (1..=100).contains(&s.len())
             && !s.starts_with('/')
@@ -253,10 +253,7 @@ pub fn plan(input: PlanInput<'_>) -> Plan {
             .and_then(|s| s.get("securitySensitive"))
             .and_then(Value::as_bool)
             .unwrap_or(true)
-            || input
-                .profile_files
-                .iter()
-                .any(|f| input.project.security(f)),
+            || input.read_paths.iter().any(|f| input.project.security(f)),
         intent: scout_str(scout, "intent").unwrap_or("").to_owned(),
         spec: input.spec.to_owned(),
         churn: scout_strings(scout, "churn"),
@@ -314,7 +311,8 @@ pub fn plan(input: PlanInput<'_>) -> Plan {
 }
 
 /// The lenses the plan carries whatever the scout picked: the always set, `tests` on a change to
-/// production code, `failure-windows` on controller code, `sql-queries` on embedded SQL, `design`
+/// production code, `reconciler` and `failure-windows` on controller code (the scout's pick or the
+/// reviewer's profile's `controllers`), `sql-queries` on embedded SQL, `design`
 /// on new structure — the signal buys it though it is optional.
 fn required(
     p: &Profile,

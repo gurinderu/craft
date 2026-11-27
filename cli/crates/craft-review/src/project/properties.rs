@@ -101,12 +101,13 @@ impl Properties {
     }
 }
 
-/// Whether `f` matches the pattern `p`: a Cargo-style glob, or a path naming `f` or a directory
-/// above it.
+/// Whether `f` matches the pattern `p`, a leading `./` aside: a Cargo-style glob naming `f` or a
+/// directory above it.
 fn under(p: &str, f: &str) -> bool {
-    let p = p.trim_end_matches('/');
-    crate::design::members::glob(p, f)
-        || f.strip_prefix(p).is_some_and(|rest| rest.starts_with('/'))
+    let p = p.strip_prefix("./").unwrap_or(p).trim_end_matches('/');
+    !p.is_empty()
+        && (crate::design::members::glob(p, f)
+            || crate::design::members::glob(&format!("{p}/**"), f))
 }
 
 /// The `[project]` section of the profile at `path`: none confirmed when the profile or the

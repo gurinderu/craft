@@ -50,7 +50,7 @@ fn lens_step(project: Properties, unread: &str) -> (Vec<String>, String, String)
 fn the_profiles_properties_are_named_and_the_plan_follows_them() {
     let (lenses, p, notes) = lens_step(
         Properties {
-            rules: Some(vec!["CONTRIBUTING.md".into()]),
+            rules: Some(vec!["CONTRIBUTING.md".into(), "/etc/AGENTS.md".into()]),
             controllers: true,
             ..Properties::new()
         },
@@ -64,8 +64,13 @@ fn the_profiles_properties_are_named_and_the_plan_follows_them() {
         "the profile's rule files, not the scout's: {p}"
     );
     assert!(
-        notes.contains("the reviewer's profile sets the project's properties — rule files: CONTRIBUTING.md; controllers: yes"),
+        notes.contains("the reviewer's profile sets the project's properties — rule files: CONTRIBUTING.md, /etc/AGENTS.md; controllers: yes"),
         "{notes}"
+    );
+    assert!(
+        notes.contains("rule files /etc/AGENTS.md were left out")
+            && !notes.contains("CONTRIBUTING.md were"),
+        "a refused rule file is named: {notes}"
     );
 }
 

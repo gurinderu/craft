@@ -1,5 +1,5 @@
 //! `review start` reads the reviewer's profile's `[project]` section (realm @nick/craft, node #654):
-//! a section written by hand reaches the run's state and notes; one it cannot read is named and
+//! a section written by hand reaches the run's state and notes, as its `[lenses]` does beside it; one it cannot read is named and
 //! the run goes on as if it were absent. HOME is a temporary directory holding the profile.
 #![expect(
     clippy::unwrap_used,
@@ -51,8 +51,8 @@ fn craft(t: &Path, args: &[&str]) -> Output {
 }
 
 /// The state a `review start` over `code` leaves, its profile holding `section` beside what
-/// `init --write` wrote.
-fn started(section: &str) -> Value {
+/// `init --write` wrote and `lenses` in the `[lenses]` table that wrote.
+fn started(section: &str, lenses: &str) -> Value {
     let tmp = tempfile::tempdir().unwrap();
     let t = tmp.path();
     let code = repo(t);
@@ -61,6 +61,8 @@ fn started(section: &str) -> Value {
     let profile: Value = serde_json::from_slice(&wrote.stdout).unwrap();
     let path = profile.get("profile").and_then(Value::as_str).unwrap();
     let text = std::fs::read_to_string(path).unwrap();
+    assert!(text.contains("[lenses]\n"), "{text}");
+    let text = text.replace("[lenses]\n", &format!("[lenses]\n{lenses}"));
     std::fs::write(path, format!("{text}\n{section}")).unwrap();
     let run = t.join("run");
     let out = craft(
@@ -88,7 +90,10 @@ fn notes(state: &Value) -> String {
 
 #[test]
 fn a_hand_written_project_section_reaches_the_run() {
-    let state = started("[project]\nlibrary = false\nsecurity_paths = [\"src\"]\n");
+    let state = started(
+        "[project]\nlibrary = false\nsecurity_paths = [\"src\"]\n",
+        "\"rust:money\" = \"off\"\n",
+    );
     assert_eq!(
         state["context"]["project"],
         json!({"library": false, "security_paths": ["src"]})
@@ -98,11 +103,16 @@ fn a_hand_written_project_section_reaches_the_run() {
         "{}",
         notes(&state)
     );
+    assert_eq!(
+        state["context"]["composition"]["off"],
+        json!(["rust:money"]),
+        "the [lenses] section beside it, read the same way"
+    );
 }
 
 #[test]
 fn a_project_section_it_cannot_read_is_named_and_set_aside() {
-    let state = started("[project]\nlibary = true\n");
+    let state = started("[project]\nlibary = true\n", "");
     assert_eq!(state["context"].get("project"), None);
     assert!(
         notes(&state).contains("[project] section could not be read"),
