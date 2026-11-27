@@ -1,14 +1,15 @@
 //! `--prior-decisions -` held open: a stop signal ends the read before any task, and a list that
-//! was closed still reaches the run (realm @nick/craft, node #737).
+//! was closed still reaches the run — `review run`'s, read ahead, and `review start`'s, read in
+//! the start (realm @nick/craft, node #737).
 
 use std::io::Write;
 use std::os::unix::process::ExitStatusExt;
-use std::process::Stdio;
+use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use super::HANGING_CODEX;
 use super::common;
-use super::fixture::{Bench, signal, wait_until};
+use super::fixture::{Bench, all_gone, signal, wait_until};
 
 #[test]
 fn sigterm_interrupts_prior_decisions_held_open_on_stdin() {
@@ -31,9 +32,24 @@ fn interrupted(sig: &str, number: i32) {
         .unwrap();
     craft.stdin.as_mut().unwrap().write_all(b"[").unwrap();
     let wchan = format!("/proc/{}/wchan", craft.id());
-    wait_until("craft reading stdin", Duration::from_secs(10), || {
-        std::fs::read_to_string(&wchan).is_ok_and(|s| s.trim() == "pipe_read")
-    });
+    let bound = Instant::now() + Duration::from_secs(10);
+    let reading = loop {
+        if std::fs::read_to_string(&wchan).is_ok_and(|s| s.trim() == "pipe_read") {
+            break true;
+        }
+        if Instant::now() >= bound {
+            break false;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    if !reading {
+        craft.kill().unwrap();
+    }
+    assert!(
+        reading,
+        "never reached pipe_read: {:?}",
+        craft.wait_with_output()
+    );
     signal(&craft, sig);
     let bound = Instant::now() + Duration::from_secs(3);
     while craft.try_wait().unwrap().is_none() && Instant::now() < bound {
@@ -69,13 +85,42 @@ fn a_list_closed_on_stdin_still_reaches_the_run() {
     });
     signal(&craft, "-TERM");
     let out = craft.wait_with_output().unwrap();
-    let state = state_of(&bench);
+    all_gone(&bench.bin, &["pid", "grandchild"]);
+    let runs = bench.home.join(".craft/runs/cli");
+    let dir = std::fs::read_dir(&runs).unwrap().next().unwrap().unwrap();
+    let state = std::fs::read_to_string(dir.path().join("state.json")).unwrap();
     assert!(state.contains("read-ahead"), "{state}\n{out:?}");
 }
 
-/// The one run's state under the bench's home.
-fn state_of(bench: &Bench) -> String {
-    let runs = bench.home.join(".craft/runs/cli");
-    let dir = std::fs::read_dir(&runs).unwrap().next().unwrap().unwrap();
-    std::fs::read_to_string(dir.path().join("state.json")).unwrap()
+#[test]
+fn review_start_reads_a_list_on_stdin_itself() {
+    let bench = Bench::new();
+    let run = bench.home.join("run");
+    let mut craft = Command::new(env!("CARGO_BIN_EXE_craft"))
+        .env("CRAFT_CODE_GRAPH", "")
+        .env("HOME", &bench.home)
+        .args([
+            "review",
+            "start",
+            "--no-recall",
+            "--no-gate",
+            "--depth",
+            "light",
+        ])
+        .args(["--prior-decisions", "-", "--cwd"])
+        .arg(&bench.repo)
+        .arg("--run-dir")
+        .arg(&run)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut input = craft.stdin.take().unwrap();
+    input.write_all(br#"{"read-in-start":"marker"}"#).unwrap();
+    drop(input);
+    let out = craft.wait_with_output().unwrap();
+    assert!(out.status.success(), "{out:?}");
+    let state = std::fs::read_to_string(run.join("state.json")).unwrap();
+    assert!(state.contains("read-in-start"), "{state}");
 }
