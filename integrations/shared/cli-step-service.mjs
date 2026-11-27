@@ -7,7 +7,11 @@ import { limitWatch } from './cli-review-limit.mjs'
 import { isObject } from './cli-review-step.mjs'
 
 /** @typedef {import('./cli-step-binary.mjs').Located} Located */
-/** @typedef {import('./cli-step-binary.mjs').Serve} Serve */
+/**
+ * A service step: `sent` is the one command its prompt asks run ('' for a script), which names the refused command when
+ * the harness's refusal quotes none, as auto mode's classifier does not.
+ * @typedef {(label: string, title: string, prompt: string, sent?: string) => Promise<unknown>} Serve
+ */
 
 // The fetcher of the released binary, inside the plugin: the POSIX entry, so a consumer needs no Node to get it. The
 // service step runs in the harness's Bash; under Git Bash, MSYS or Cygwin the script names the binary craft.exe (not

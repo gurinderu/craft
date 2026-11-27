@@ -55,11 +55,7 @@ function checkedRoot(got) {
   return root ? { root } : { error: `the check printed no absolute root= line: ${out.stdout.slice(0, 200)}` }
 }
 
-/**
- * A service step: `sent` is the one command its prompt asks run ('' for a script), which names the refused command when
- * the harness's refusal quotes none, as auto mode's classifier does not.
- * @typedef {(label: string, title: string, prompt: string, sent?: string) => Promise<unknown>} Serve
- */
+/** @typedef {import('./cli-step-service.mjs').Serve} Serve */
 
 /** How to continue when the released binary is not to be got: a local build stands in for it. */
 const LOCAL_BUILD = 'Pass craftBin=<absolute path> of a build (`cargo build --release` in cli/).'

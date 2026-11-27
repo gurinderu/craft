@@ -10,7 +10,7 @@ const RELEASED = { craftBin: null, craftRoot: '', repo: '' }
 function serving(got) {
   /** @type {string[]} */
   const asked = []
-  /** @type {import('./cli-step-binary.mjs').Serve} */
+  /** @type {import('./cli-step-service.mjs').Serve} */
   const serve = label => {
     asked.push(label)
     return Promise.resolve(got)
@@ -49,4 +49,19 @@ test('a given craftRoot that is no plugin root is named in the engine’s words'
   const got = await binAndRoot('triage', { craftBin: '/b/craft', craftRoot: '/nope', repo: '' }, '9.9.9', serve)
   assert.deepEqual(asked, ['step:root'])
   assert.ok('incomplete' in got && got.incomplete.startsWith('triage: craftRoot="/nope" is not a usable plugin root: '), JSON.stringify(got))
+})
+
+test('beside a given craftBin with no craftRoot, the root is located only to file the run through', async () => {
+  const given = { craftBin: '/b/craft', craftRoot: '', repo: '' }
+  const found = serving({ exitCode: 0, stdout: 'root=/p/craft\n', stderr: '' })
+  assert.deepEqual(await binAndRoot('triage', given, '9.9.9', found.serve), { bin: '/b/craft', root: '', recordRoot: '/p/craft' })
+  assert.deepEqual(found.asked, ['step:locate'])
+  const none = serving({ exitCode: 1, stdout: '', stderr: 'no usable plugin root' })
+  const got = await binAndRoot('triage', given, '9.9.9', none.serve)
+  assert.ok('note' in got && got.bin === '/b/craft' && got.root === '', JSON.stringify(got))
+})
+
+test('a given craftRoot the check accepts is handed to the binary', async () => {
+  const { serve } = serving({ exitCode: 0, stdout: 'root=/p/craft\n', stderr: '' })
+  assert.deepEqual(await binAndRoot('triage', { craftBin: '/b/craft', craftRoot: '/p/craft', repo: '' }, '9.9.9', serve), { bin: '/b/craft', root: '/p/craft' })
 })

@@ -7,8 +7,8 @@
 // The binary files the run's telemetry itself — a checkpoint as each of its phases ends, the record when the run
 // finishes, written by its own store writer byte for byte as integrations/shared/craft-log-run.mjs writes them (realm @nick/craft, nodes
 // #456, #539) — told by each submit what only the driver sees: the task agents dispatched and the output tokens spent. The
-// driver files only the record of a run the binary never finished (integrations/shared/cli-review-record.mjs), and locates the
-// plugin's integrations/shared/craft-cli.sh the way every plugin script an agent runs is located (plugin-script.mjs).
+// driver files only the record of a run the binary never finished (integrations/shared/cli-review-record.mjs); it gets the binary
+// and the plugin root as every kind's driver does (integrations/shared/cli-step-binary.mjs).
 import { binAndRoot } from './cli-step-binary.mjs'
 import { servicePrompt, serveWith, serviceOf } from './cli-step-service.mjs'
 import { makeDefaultTypeFallback } from './service-agent.mjs'
@@ -34,7 +34,7 @@ import { stopCause, stopNotRun } from './cli-review-stop.mjs'
 /** @typedef {import('./cli-review-options.mjs').Options} Options */
 /** @typedef {import('./cli-review-step.mjs').Step} Step */
 /** @typedef {import('./cli-review-step.mjs').Finished} Finished */
-/** @typedef {import('./cli-step-binary.mjs').Serve} Serve */
+/** @typedef {import('./cli-step-service.mjs').Serve} Serve */
 /** @typedef {(prompt: string, opts?: Record<string, unknown>) => Promise<unknown>} Agent */
 /** @typedef {{ args: unknown, agent: Agent, parallel: <T>(thunks: Array<() => Promise<T>>) => Promise<Array<T | null>>, phase: (title: string) => void, log: (message: string) => void, budget?: { spent: () => number | null } }} Sandbox */
 
