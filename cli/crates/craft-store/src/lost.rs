@@ -2,10 +2,12 @@
 //! `telemetryLostSection` in `integrations/shared/review-coverage.mjs` words it: "" when every write
 //! landed; a landed record whose run directory did not fold is counted apart.
 
+use crate::js::{JsStr, JsString};
+
 /// The section over `lost`, each `<what> — <why>`; "" when it holds none.
 #[must_use]
 pub fn section(lost: &[String]) -> String {
-    let lines: Vec<&String> = lost.iter().filter(|l| !l.trim().is_empty()).collect();
+    let lines: Vec<&String> = lost.iter().filter(|l| !l.js_trim().is_empty()).collect();
     if lines.is_empty() {
         return String::new();
     }
@@ -36,12 +38,28 @@ pub fn section(lost: &[String]) -> String {
     };
     let mut out = vec![title.to_owned(), head];
     out.extend(lines.iter().map(|l| {
-        let flat = l.replace(['\r', '\n'], " ");
-        format!("- {}", flat.chars().take(300).collect::<String>())
+        let cut = JsString::from_utf16(flat(l).encode_utf16().take(300).collect());
+        format!("- {}", cut.to_utf8_lossy())
     }));
     out.push(String::new());
     out.push(String::new());
     out.join("\n")
+}
+
+/// `l.replace(/[\r\n]+/g, ' ')`: each run of line breaks one space.
+fn flat(l: &str) -> String {
+    let mut out = String::with_capacity(l.len());
+    let mut in_break = false;
+    for c in l.chars() {
+        let brk = matches!(c, '\r' | '\n');
+        if !brk {
+            out.push(c);
+        } else if !in_break {
+            out.push(' ');
+        }
+        in_break = brk;
+    }
+    out
 }
 
 #[cfg(test)]
@@ -91,5 +109,29 @@ mod tests {
         let item = got.lines().nth(2).unwrap();
         assert_eq!(item.chars().count(), 2 + 300, "{item}");
         assert!(item.starts_with("- a b d"), "{item}");
+    }
+
+    #[test]
+    fn a_run_of_line_breaks_is_one_space_as_the_engine_flattens_it() {
+        // `telemetryLostSection(['a\r\n\r\nb\n\rc\rd'])`'s item, read from the engine.
+        let got = section(&lines(&["a\r\n\r\nb\n\rc\rd"]));
+        assert_eq!(got.lines().nth(2), Some("- a b c d"), "{got}");
+    }
+
+    #[test]
+    fn the_cut_counts_utf16_units_and_a_split_pair_reads_as_a_replacement() {
+        // The engine keeps 299 `x` and the emoji's high surrogate alone (`'\ud83d'`), which reaches
+        // a UTF-8 reader as U+FFFD.
+        let got = section(&[format!("{}\u{1F600}tail", "x".repeat(299))]);
+        assert_eq!(
+            got.lines().nth(2),
+            Some(format!("- {}\u{FFFD}", "x".repeat(299)).as_str()),
+            "{got}"
+        );
+    }
+
+    #[test]
+    fn a_line_of_what_javascript_trims_away_counts_as_nothing() {
+        assert_eq!(section(&lines(&["\u{FEFF}"])), "");
     }
 }
