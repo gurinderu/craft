@@ -7,10 +7,9 @@
 // decision's scope changed since the commit the decision was recorded at — or, for one naming no commit,
 // since the trunk's last commit before its date (node #676) — or when that cannot be established. The engine recalls them itself on every launch and a passed list adds to that recall
 // (integrations/shared/memory-recall.mjs; realm @nick/craft, node #218); a malformed one applies nothing and is named.
-// This module reads the argument and matches; one decision is read by integrations/shared/prior-decision-record.mjs,
-// scopes are checked by integrations/shared/prior-decision-scope.mjs and findings split by integrations/shared/prior-decision-apply.mjs.
-// Imported by integrations/claude-code/src/rust-audit.js and integrations/claude-code/src/triage-findings.js.
-import { DECISION_FIELD_MAX, decisionScopeParts, hasControlChar, readPriorDecision, recordId, recordKind } from './prior-decision-record.mjs'
+// This module reads the argument; one decision is read by integrations/shared/prior-decision-record.mjs. Imported by
+// integrations/claude-code/src/rust-audit.js; the review and the triage apply decisions in the craft binary.
+import { DECISION_FIELD_MAX, hasControlChar, readPriorDecision, recordId, recordKind } from './prior-decision-record.mjs'
 import { keptRecords } from './memory-bounds.mjs'
 
 // The most decisions one run applies — across the recalled and the passed records together (realm
@@ -26,9 +25,6 @@ const CUT_HOW =
   'kept are the records closest to the reviewed paths (a scope naming a changed file, then a directory holding one, a deeper scope before a shallower, a newer record before an older); to apply the rest, review a narrower path (path=<dir>) or supersede the records that no longer hold'
 const CUT_HOW_PATHLESS =
   'no reviewed paths are given here, so kept are the records with a scope before those over the whole repository, a deeper scope before a shallower, a newer record before an older; to apply the rest, review a narrower path (path=<dir>) or supersede the records that no longer hold'
-// A decision answers a finding when the finding's file sits inside the decision's scope AND their
-// titles share at least this share of words (of the longer one) (realm @nick/craft, node #187).
-export const DECISION_TITLE_OVERLAP = 0.6
 
 /**
  * @typedef {import('./prior-decision-record.mjs').PriorDecision} PriorDecision
@@ -120,60 +116,4 @@ export function underCaps(list, paths) {
   )
   const read = [...others.filter((_, k) => kept[k]), ...rules.slice(0, PRIOR_DECISIONS_MAX)].sort((a, b) => a - b)
   return { read, cut: others.filter((_, k) => !kept[k]), cutRules: rules.slice(PRIOR_DECISIONS_MAX) }
-}
-
-/** Lower-cased alphanumeric words of a title. @param {unknown} t */
-export function titleWords(t) {
-  return new Set(
-    String(t ?? '')
-      .toLowerCase()
-      .split(/[^a-z0-9]+/)
-      .filter(Boolean),
-  )
-}
-
-/**
- * Whether `d` answers finding `f` by the title rule alone: the file inside the scope, and the titles
- * overlapping enough. The engines apply it to a record or a finding without a comparable anchor
- * (integrations/shared/prior-decision-match.mjs; realm @nick/craft, node #230).
- * @param {DecidableFinding} f @param {PriorDecision} d @returns {boolean}
- */
-export function decisionAnswers(f, d) {
-  return inDecisionScope(f.file, d.scope) && titleOverlap(f.title, d.title) >= DECISION_TITLE_OVERLAP
-}
-
-/** Whether `file` sits inside `scope` (by path segments; `.` covers the repo). @param {unknown} file @param {string} scope */
-export function inDecisionScope(file, scope) {
-  const parts = decisionScopeParts(String(file ?? ''))
-  const within = decisionScopeParts(scope)
-  return parts.length > 0 && within.length <= parts.length && within.every((s, i) => s === parts[i])
-}
-
-/** The share of words two titles share, of the longer one; 0 when either has none. @param {unknown} x @param {unknown} y @returns {number} */
-export function titleOverlap(x, y) {
-  const a = titleWords(x)
-  const b = titleWords(y)
-  if (!a.size || !b.size) return 0
-  let shared = 0
-  for (const w of a) if (b.has(w)) shared++
-  return shared / Math.max(a.size, b.size)
-}
-
-/**
- * Whether `d` is a human's decision: a decision that says `decidedBy: "human"` and records no deferral. A
- * record without the field is not one, so every record written before it is not.
- * @param {{ kind: string, deferred?: boolean, decidedBy?: string }} d
- */
-export function humanDecision(d) {
-  return d.kind === 'decision' && !d.deferred && d.decidedBy === 'human'
-}
-
-/**
- * Whether a finding's severity alone raises it again whatever record `d` says (realm @nick/craft, node #196):
- * a Critical always, a High unless `d` is a human's decision.
- * @param {unknown} sev @param {{ kind: string, deferred?: boolean, decidedBy?: string }} d
- */
-export function reraisedByRank(sev, d) {
-  const s = String(sev ?? '').trim()
-  return /^critical$/i.test(s) || (/^high$/i.test(s) && !humanDecision(d))
 }

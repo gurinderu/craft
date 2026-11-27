@@ -1,7 +1,6 @@
 //! The triage of review findings (`craft:triage-findings`) as the binary runs it, the second kind
-//! of the step protocol (realm @nick/craft, node #616), ported from
-//! `integrations/claude-code/src/triage-findings.js`, `integrations/shared/triage-sift.mjs` and
-//! `integrations/shared/triage-noise-class.mjs` and held to them by
+//! of the step protocol (realm @nick/craft, node #616), ported from the JavaScript triage engine
+//! it replaced (its `triage-sift.mjs` and `triage-noise-class.mjs`) and held to it by
 //! `content/parity/triage-cases.json` (the `parity` tests). Its steps on the protocol ([`step`]),
 //! its state between them ([`state`]), its tasks' kinds ([`kind`]), and its run derived at every
 //! step from its arguments and its agents' answers ([`run`]); the agents' prompts ([`prompts`]);

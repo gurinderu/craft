@@ -1,5 +1,5 @@
 //! What the report says of publishing on the PR: the doubtful findings, numbered as the run record
-//! keeps them (`doubtfulSection` in `integrations/shared/finding-sort.mjs`), and what came of posting the defects.
+//! keeps them (`doubtfulSection` in `finding-sort.mjs` (the JavaScript the binary replaced)), and what came of posting the defects.
 
 use serde_json::Value;
 

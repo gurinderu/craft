@@ -24,7 +24,7 @@ export { isObject }
 export const absolutePath = v => (typeof v === 'string' && (v.startsWith('/') || /^[A-Za-z]:[\\/]/.test(v)) && !hasControl(v) ? v : null)
 
 /** @param {unknown} t @returns {t is Task} */
-function isTask(t) {
+export function isTask(t) {
   if (!isObject(t)) return false
   const s = /** @param {string} k */ k => typeof t[k] === 'string'
   const file = /** @param {string} k */ k => absolutePath(t[k]) !== null
@@ -85,15 +85,15 @@ const ARGUMENT_REFUSED = 2
  * Why the binary refused an argument it was given — the command ran and exited 2, its reason on stderr — said as the
  * driver says its own refused arguments; null for any other outcome, a harness refusal included (realm @nick/craft,
  * node #523).
- * @param {unknown} got @returns {string | null}
+ * @param {unknown} got @param {string} [engine]  the engine whose start refused it, as its answers name it @returns {string | null}
  */
-export function argumentRefused(got) {
+export function argumentRefused(got, engine = 'review') {
   if (!isObject(got) || got['exitCode'] !== ARGUMENT_REFUSED || harnessRefusal(got)) return null
   const why = String(got['stderr'] ?? '')
     .trim()
     .replace(/^craft: /, '')
     .slice(0, 600)
-  return why ? `review: ${why}. Nothing ran.` : null
+  return why ? `${engine}: ${why}. Nothing ran.` : null
 }
 
 /**
@@ -155,13 +155,23 @@ export function finishedStep(v) {
 const clockOf = v => ({ at: millis(v['at']), took: millis(v['took']), filing: filingOf(v['filing']) })
 
 /** What the binary's telemetry write did, null when it sent none. @param {unknown} v @returns {Filing | null} */
-const filingOf = v =>
+export const filingOf = v =>
   isObject(v) ? { runDir: stepText(v['runDir']), rejoin: v['rejoin'] === true, lost: strings(v['lost']), record: stepText(v['record']) } : null
+
+/**
+ * The tasks of a pending step, any kind's — at least one, each well-formed —, or why there are none.
+ * @param {Record<string, unknown>} v @returns {{ tasks: Task[] } | { error: string }}
+ */
+export function pendingTasks(v) {
+  const tasks = v['tasks']
+  return v['done'] !== false || !Array.isArray(tasks) || !tasks.length || !tasks.every(isTask) ? { error: 'the step carries no well-formed tasks' } : { tasks }
+}
 
 /** @param {Record<string, unknown>} v  a step with a run directory @returns {{ step: Step } | { error: string }} */
 function pendingStep(v) {
-  const tasks = v['tasks']
-  if (v['done'] !== false || !Array.isArray(tasks) || !tasks.length || !tasks.every(isTask)) return { error: 'the step carries no well-formed tasks' }
+  const read = pendingTasks(v)
+  if ('error' in read) return read
+  const { tasks } = read
   return {
     step: {
       run: /** @type {string} */ (v['run']),

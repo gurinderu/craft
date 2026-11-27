@@ -1,5 +1,5 @@
 //! A finding that shows the code going against a record the memory holds, as
-//! `integrations/shared/memory-contradiction.mjs` marks and lists it (realm @nick/craft, nodes #282, #423): the
+//! `memory-contradiction.mjs` (the JavaScript the binary replaced) marks and lists it (realm @nick/craft, nodes #282, #423): the
 //! judges say so beside their own verdict, the finding stays in the verdict marked with the
 //! record, and the report names it — a not-confirmed one with its tier, a doubt to check; the run
 //! record counts them (`contradictionRecord`, node #281).

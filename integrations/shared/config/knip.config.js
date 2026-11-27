@@ -58,6 +58,8 @@ export default {
         '!integrations/shared/logger-replay.mjs!',
         '!integrations/shared/binary-filing-replay.mjs!',
         '!integrations/shared/write-executable.mjs!',
+        // The launch-side memory reading the triage engine ran, kept for the tests of memory-recall.mjs's rules.
+        '!integrations/shared/memory-recall-launch.mjs!',
       ],
       // pi supplies its TUI module to the extensions it loads (integrations/pi/pi-extension.mjs, integrations/pi/pi-tui.d.ts; realm
       // @nick/craft, node #504): no dependency of this repository.

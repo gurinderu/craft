@@ -1,6 +1,6 @@
 //! The project memory held to the engines' by `content/parity/memory-cases.json`, whose expected
 //! side `integrations/shared/memory-parity.test.mjs` computes with `integrations/shared/memory-recall.mjs`,
-//! `integrations/shared/prior-decision-apply.mjs` and `integrations/shared/project-rule-apply.mjs`: the same recall, launcher list,
+//! `prior-decision-apply.mjs` (the JavaScript the binary replaced) and `project-rule-apply.mjs` (the JavaScript the binary replaced): the same recall, launcher list,
 //! findings, scope check and judges' answers give the same findings kept (with their marks) and set
 //! aside, notes, source and report sections.
 

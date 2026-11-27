@@ -58,7 +58,7 @@ const ledgerRow = f => ({
 const keptRow = r => ({ fp: fingerprint(r), ...r })
 
 /**
- * The binary's count of the findings going against memory as the record keeps it (integrations/shared/memory-contradiction.mjs): each
+ * The binary's count of the findings going against memory as the record keeps it (memory-contradiction.mjs (the JavaScript the binary replaced)): each
  * finding fingerprinted over the fields the binary names (`key`) as its ledger row is, so analyze-runs finds it in the
  * branch's later round; null when the binary sent none.
  * @param {Record<string, unknown> | null | undefined} m @returns {Record<string, unknown> | null}

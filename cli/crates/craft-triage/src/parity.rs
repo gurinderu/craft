@@ -1,6 +1,6 @@
-//! The triage held to the engine's by `content/parity/triage-cases.json`, whose expected side
-//! `integrations/shared/triage-parity.test.mjs` writes by running `triage-findings.js` with the
-//! case's scripted answers.
+//! The triage held to the JavaScript engine it replaced by `content/parity/triage-cases.json`:
+//! what that engine dispatched, filed and returned for each case's scripted answers, frozen golden
+//! data edited by hand since the binary took the triage over (realm @nick/craft, node #616).
 //!
 //! The run ([`crate::run`]) is driven here by the same arguments and answers — the scope check and
 //! the memory's judges answered as the case scripts them — and gives the same prompts to every

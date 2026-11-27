@@ -1,5 +1,5 @@
 //! The issue a class-1 finding ("not this PR's", realm @nick/craft, node #303) becomes on the
-//! consumer's forge, as `issueOf` in `integrations/shared/triage-noise-class.mjs`, and the issue
+//! consumer's forge, as `issueOf` in `triage-noise-class.mjs` (the JavaScript the binary replaced), and the issue
 //! action on the ledger rows it carries.
 
 use std::collections::BTreeSet;

@@ -6,9 +6,9 @@
 // the timestamp's UTC day; a day the calendar lacks is malformed.
 import { test, afterEach } from 'vitest'
 import assert from 'node:assert/strict'
-import { mergeAndRead, mergeRecall, readMemoryRecall, notLaterWhy } from './memory-recall.mjs'
+import { mergeAndRead, readMemoryRecall, notLaterWhy } from './memory-recall.mjs'
+import { mergeRecall } from './memory-recall-launch.mjs'
 import { parsePriorDecisions } from './prior-decisions.mjs'
-import { applyPriorDecisions } from './prior-decision-apply.mjs'
 
 const A = {
   id: 'decision-aaaaaaaaaa',
@@ -44,16 +44,12 @@ const recall = (bDate, inactiveDate) =>
     },
     0,
   )
-const scopes = async () => ({ unchanged: [], missing: [], reason: '' })
-
 for (const inactiveDate of ['2026-10-01', undefined]) {
-  test(`newer than the successor${inactiveDate ? ' and the inactive copy' : ''}: applied, the successor's link to it does not drop it`, async () => {
+  test(`newer than the successor${inactiveDate ? ' and the inactive copy' : ''}: applied, the successor's link to it does not drop it`, () => {
     const r = mergeRecall({ ...recall('2026-10-03', inactiveDate), memory: MEM }, [{ ...A, date: '2026-10-05' }], parsePriorDecisions)
     assert.deepEqual(r.prior.decisions.map(d => d.id).sort(), [A.id, B.id])
     assert.deepEqual(r.prior.refused, [])
     assert.match(r.memory.why, new RegExp(`passed decision #0 \\(${A.id}\\) applied over .*${B.id} \\(active, 2026-10-03\\): newer`))
-    const applied = await applyPriorDecisions({ confirmed: [] }, r.prior.decisions, scopes)
-    assert.doesNotMatch(applied.notes.join('\n'), /superseded by another given record/)
   })
 
   test(`not newer than the successor${inactiveDate ? ' (though newer than the inactive copy)' : ''}: held back, named by the successor`, () => {

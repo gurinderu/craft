@@ -1,5 +1,5 @@
 //! What a record's scope check compares against (`decisionDate` in
-//! `integrations/shared/prior-decision-anchor.mjs`): its commit, else the merge on the trunk of
+//! `prior-decision-anchor.mjs` (the JavaScript the binary replaced)): its commit, else the merge on the trunk of
 //! the pull request of this repository it links (node #682), else the UTC day its `when` names — a
 //! record written where no commit may be named still sets a finding aside when the code in its
 //! scope is unchanged since that day (realm @nick/craft, node #676).

@@ -155,8 +155,8 @@ INCOMPLETE run record with only the logger run, no work agent. The workflow sift
 project's records for the findings' paths and merges in what `priorDecisions` (an object argument,
 the step-0 records) adds; its ledger rows with `sifted: true` (their reason opens with `SIFTED
 BEFORE VALIDATION`) were settled by the sift — a repeat or a record's answer — not judged on the
-code. It returns the plan (accepted findings grouped by file), the ledger and `issues` (title, body)
-for the findings that are not this PR's. A failed recall in this session (step 0) does not mean the
+code. It names the plan file it wrote — read that `plan.json`: `plan_markdown` (the plan), `ledger` and `issues` (title, body)
+for the findings that are not this PR's; a run stopped on the usage limit says how to resume it (`run=` alone). A failed recall in this session (step 0) does not mean the
 workflow has no memory: say it in one line and launch the workflow anyway.
 
 **Right after it returns, the main session** — not a subagent — writes every disposition to memory

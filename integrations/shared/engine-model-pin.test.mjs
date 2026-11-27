@@ -32,59 +32,40 @@ function assertPinned(r) {
 /** @param {{ calls: Call[] }} r @param {string} label @returns {unknown} */
 const modelOf = (r, label) => modelIn(r.calls.find(c => c.label === label || c.label.startsWith(`${label}:`) || c.label.startsWith(`${label}#`)))
 
-const DECISION = {
-  id: 'decision-bc2a4e82f6',
-  kind: 'decision',
-  title: 'float arithmetic on amounts',
-  body: 'amounts are display-only here',
-  scope: 'src',
-  status: 'active',
-  date: '2026-09-30',
-  author: 'bob',
-  commit: 'def5678',
-  links: [],
-}
-const RULE = {
-  kind: 'rule',
-  title: 'no rollback',
-  scope: 'src',
-  body: 'deploys only go forward',
-  status: 'active',
-  date: '2026-10-20',
-  author: 'nick',
-  links: [],
-}
-/** @param {string} title @param {string} location */
-const finding = (title, location) => ({ severity: 'Medium', title, location, detail: 'd', proposed_fix: '', thread_id: '' })
+/** A service agent's answer carrying `value` as stdout. @param {unknown} value */
+const ran = value => ({ exitCode: 0, stdout: typeof value === 'string' ? value : JSON.stringify(value), stderr: '' })
+/** A task of the triage's binary, on the model it names. @param {string} id @param {string} model @param {string} kind */
+const triageTask = (id, model, kind) => ({ id, label: id, model, kind, promptFile: `/r/${id}.md`, schemaFile: `/r/${id}.json`, answerFile: `/r/a/${id}.json` })
 
-test('triage-findings: every agent it spawns, from gather to plan, names its model', async () => {
+// The triage's agents are the binary's tasks, each on the model the binary names (craft-triage holds them to the engine's
+// table: sonnet for extraction and lookup, opus for the judgement against the code and the plan), and the service
+// steps that run the binary, on haiku; a run the binary never finished adds the logger, on haiku too.
+test('triage-findings: every agent it spawns — service steps, the binary’s tasks, the logger — names its model', async () => {
+  const tasks = [triageTask('gather-report', 'sonnet', 'gatherReport'), triageTask('recall', 'sonnet', 'recall'), triageTask('validate-0', 'opus', 'validate')]
   const r = await runEngine('triage-findings', {
-    args: { report: '/r.md', pr: '9', base: 'v1' },
+    args: { report: '/r.md' },
     script: {
+      'step:resolve': ran('root=/p\nbin=/b/craft\n'),
+      'step:start': ran({ run: '/r', done: false, phase: 'gather', tasks }),
+      'gather-report': 'done',
+      recall: 'done',
+      'validate-0': 'done',
+      'step:submit:1': ran({ run: '/r', done: false, phase: 'plan', tasks: [triageTask('plan', 'opus', 'plan')] }),
+      plan: 'done',
+      'step:submit:2': null,
+      'step:status': null,
       'log-run': { ok: true },
-      'gather:report': { source: 'review', findings: [finding('leak', 'src/a.rs:10')] },
-      'gather:pr': { source: 'github-pr', findings: [finding('float arithmetic on amounts', 'src/pay.rs:4')] },
-      'memory-recall': { backend: 'harness', why: 'the default', decisions: [DECISION], rules: [RULE] },
-      'decision-scope': { unchanged: [DECISION.id], missing: [], reason: '' },
-      validate: (/** @type {{ prompt: string }} */ { prompt }) => ({
-        stable_id: /stable_id MUST be exactly: (.+)/.exec(prompt)?.[1] ?? '?',
-        verdict: 'accept',
-        reason: 'real',
-        fix_pointer: 'rust-errors: x',
-        premise_checked: '',
-        noise_class: 0,
-      }),
-      plan: { plan_markdown: 'BODY', summary: 'S', ledger: [] },
     },
   })
-  const labels = new Set(agentCalls(r).map(c => c.label.replace(/:.*$/, '')))
-  for (const l of ['gather', 'memory-recall', 'decision-scope', 'decision-match', 'rule-match', 'validate', 'plan', 'log-run']) {
-    assert.ok(labels.has(l), `the run reaches ${l}`)
-  }
+  for (const l of ['step:resolve', 'step:start', 'gather-report', 'recall', 'validate-0', 'plan', 'step:status', 'log-run'])
+    assert.ok(
+      r.calls.some(c => c.label === l || c.label.startsWith(`${l}:`) || c.label.startsWith(`${l}#`)),
+      `the run reaches ${l}`,
+    )
   assertPinned(r)
-  // Extraction and lookup run on sonnet; the judgement against the code and the plan on opus.
-  for (const l of ['gather:report', 'gather:pr', 'memory-recall', 'decision-scope']) assert.equal(modelOf(r, l), 'sonnet', l)
-  for (const l of ['validate', 'plan']) assert.equal(modelOf(r, l), 'opus', l)
+  for (const l of ['gather-report', 'recall']) assert.equal(modelOf(r, l), 'sonnet', l)
+  for (const l of ['validate-0', 'plan']) assert.equal(modelOf(r, l), 'opus', l)
+  for (const l of ['step:start', 'step:submit', 'step:status']) assert.equal(modelOf(r, l), 'haiku', l)
 })
 
 test('rust-audit: every agent it spawns, every dimension dispatched, names its model', async () => {

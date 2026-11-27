@@ -3,8 +3,7 @@
 // paths grouped by directory instead of cut, the records past the cap ranked by how close their scope is
 // to the reviewed paths, and the judges' pairs ranked so the reviewed paths, then every finding's best
 // candidate, come first. Under its bound each list is left exactly as it was.
-// Imported by integrations/shared/memory-recall.mjs, prior-decisions.mjs, prior-decision-match.mjs and
-// project-rule-judge.mjs.
+// Imported by integrations/shared/memory-recall.mjs and prior-decisions.mjs.
 import { decisionScopeParts, decisionText } from './prior-decision-record.mjs'
 
 /** `path` cut to its first `depth` segments, as `dir/`; unchanged when it is no deeper. @param {string} path @param {number} depth */
@@ -82,53 +81,4 @@ export function keptRecords(list, paths, max) {
   const kept = list.map(() => false)
   for (const k of keyed.slice(0, max)) kept[k.i] = true
   return kept
-}
-
-/** A finding's severity as a rank, Critical first. @param {unknown} s */
-function findingSeverityRank(s) {
-  const at = ['critical', 'high', 'medium', 'low'].indexOf(
-    String(s ?? '')
-      .trim()
-      .toLowerCase(),
-  )
-  return at < 0 ? 4 : at
-}
-
-/**
- * Whether a finding is one the round reviews: a prior it re-adjudicates, or one whose file is among the
- * reviewed `paths` (every finding, when none are given).
- * @param {{ file?: unknown, priorIndex?: unknown }} f @param {string[]} paths
- */
-export function inFocus(f, paths) {
-  return !paths.length || f.priorIndex !== undefined || paths.includes(String(f.file ?? ''))
-}
-
-/**
- * The judge's `ranked` pairs reordered so the `max` it is asked about come first, each part in the order
- * it had: under the bound unchanged; past it those of findings in focus first, then by `group` (the
- * stage's own split of a pair: whether its record can set the finding aside), then every finding's
- * first candidate before any finding's second, then the more severe finding, then the order given.
- * @template {{ f: { file?: unknown, severity?: unknown, priorIndex?: unknown } }} P
- * @param {P[]} ranked @param {number} max @param {string[]} paths @param {(p: P) => number} group
- * @returns {P[]}
- */
-export function spreadPairs(ranked, max, paths, group) {
-  if (ranked.length <= max) return ranked
-  /** @type {Map<unknown, number>} */
-  const nth = new Map()
-  const keyed = ranked.map((p, i) => {
-    const k = nth.get(p.f) ?? 0
-    nth.set(p.f, k + 1)
-    return { p, i, key: [inFocus(p.f, paths) ? 0 : 1, group(p), k, findingSeverityRank(p.f.severity), i] }
-  })
-  keyed.sort((a, b) => {
-    for (let j = 0; j < a.key.length; j++) {
-      const d = (a.key[j] ?? 0) - (b.key[j] ?? 0)
-      if (d) return d
-    }
-    return 0
-  })
-  const sent = keyed.slice(0, max).sort((a, b) => a.i - b.i)
-  const rest = keyed.slice(max).sort((a, b) => a.i - b.i)
-  return [...sent, ...rest].map(x => x.p)
 }

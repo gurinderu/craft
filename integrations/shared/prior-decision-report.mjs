@@ -1,4 +1,4 @@
-// The prior-decision sections of a review report (integrations/shared/prior-decisions.mjs, integrations/shared/prior-decision-apply.mjs
+// The prior-decision sections of a review report (integrations/shared/prior-decisions.mjs, prior-decision-apply.mjs (the JavaScript the binary replaced)
 // write them), lifted out whole for an engine that keeps a nested report only up to a bound: the
 // sections sit at the report's tail, where the bound cuts, so they are carried apart and appended to
 // the outer report verbatim — never summarised by a model, never cut.

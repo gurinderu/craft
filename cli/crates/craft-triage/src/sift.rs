@@ -1,5 +1,5 @@
 //! Repeats inside one batch collapsed onto one finding before any validator, as
-//! `integrations/shared/triage-sift.mjs` (realm @nick/craft, node #305).
+//! `triage-sift.mjs` (the JavaScript the binary replaced) (realm @nick/craft, node #305).
 //!
 //! The memory's part of the sift is [`crate::memory`], over the review's memory.
 

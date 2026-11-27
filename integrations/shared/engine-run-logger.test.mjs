@@ -13,7 +13,7 @@ const argsFor = engine => ({ ...(ARGS[engine] || {}) })
 
 // The phase the record write is dispatched under, per engine: the last phase each one runs.
 /** @type {Record<string, string>} */
-const PHASE = { review: 'Record', 'rust-audit': 'Synthesize', 'triage-findings': 'Plan' }
+const PHASE = { review: 'Record', 'rust-audit': 'Synthesize', 'triage-findings': 'Record' }
 const WARNING = 'craft-log-run WARNING: --dir /tmp/elsewhere is not inside the store'
 const SUCCESS = 'wrote /store/2026-10-30-review.json (folded 3 checkpoint(s))'
 

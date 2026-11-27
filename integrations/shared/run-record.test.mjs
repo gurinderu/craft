@@ -11,11 +11,9 @@ import {
   indexProjection,
   selectPriorRounds,
   branchFromAbbrevRef,
-  tallyVerdicts,
   titleShingle,
   normalizeSymbol,
   fingerprint,
-  shingleOverlap,
   ENGINE_REVISION,
   engineKey,
   parseEngineKey,
@@ -132,26 +130,6 @@ test('reviewVerdict is driven by confirmed severities', () => {
   assert.equal(reviewVerdict([]), 'Approve')
 })
 
-test('tallyVerdicts buckets dispositions, ignores unknown and malformed', () => {
-  assert.deepEqual(
-    tallyVerdicts([
-      { verdict: 'accept' },
-      { verdict: 'accept' },
-      { verdict: 'reject' },
-      { verdict: 'defer' },
-      { verdict: 'needs-decision' },
-      { verdict: 'conflict' },
-      { verdict: 'bogus' },
-      {},
-    ]),
-    { accept: 2, reject: 1, defer: 1, 'needs-decision': 1, conflict: 1 },
-  )
-})
-
-test('tallyVerdicts tolerates non-array input', () => {
-  assert.deepEqual(tallyVerdicts(null), { accept: 0, reject: 0, defer: 0, 'needs-decision': 0, conflict: 0 })
-})
-
 test('indexProjection keeps only summary fields and passes runtime through', () => {
   const rec = {
     schemaVersion: 1,
@@ -254,13 +232,6 @@ test('fingerprint separates on file, symbol, and ruleId', () => {
   assert.notEqual(fingerprint(base), fingerprint({ ...base, file: 'src/other.rs' }))
   assert.notEqual(fingerprint(base), fingerprint({ ...base, symbol: 'Foo::baz' }))
   assert.notEqual(fingerprint(base), fingerprint({ ...base, ruleId: 'CON-004' }))
-})
-
-test('shingleOverlap is 1 for identical, 0 for disjoint, fractional for partial', () => {
-  assert.equal(shingleOverlap('lock across await', 'await across lock'), 1)
-  assert.equal(shingleOverlap('lock across await', 'unrelated other words'), 0)
-  assert.ok(shingleOverlap('lock held across await', 'lock across await') > 0.5)
-  assert.equal(shingleOverlap('', 'anything'), 0)
 })
 
 test('fingerprint of an absent finding is the fingerprint of an empty one', () => {
@@ -939,13 +910,6 @@ test('isCount takes only finite non-negative numbers; costProblem judges a store
 
 test('normalizeSymbol folds a keyword followed by several spaces mid-symbol', () => {
   assert.equal(normalizeSymbol('Trait::fn  run'), 'trait::run')
-})
-
-test('shingleOverlap divides by the LARGER word set and reads two empty titles as no overlap', () => {
-  assert.equal(shingleOverlap('a', 'a b c'), 1 / 3)
-  assert.equal(shingleOverlap('a b c', 'a'), 1 / 3)
-  assert.equal(shingleOverlap('', ''), 0)
-  assert.equal(shingleOverlap('!!', '??'), 0)
 })
 
 test('selectPriorRounds skips holes and non-workflow records named review', () => {

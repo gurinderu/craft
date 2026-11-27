@@ -15,8 +15,8 @@
 //                        parallel() (dead dimensions → NOT RUN), but the synthesis that follows is a
 //                        direct, unguarded await, so the run fails closed there. Reaching the
 //                        INCOMPLETE *verdict* by pure budget is structurally impossible here (below).
-//   triage-findings    — NO INCOMPLETE verdict for budget at all. Its Plan agent is the first
-//                        unguarded await, so exhaustion fails the run closed before any plan renders.
+//   triage-findings    — no verdict at all: the craft binary drives it, and a refused task or service step is a
+//                        dead agent, so the binary is never told the Plan answered and no plan is named.
 import { test } from 'vitest'
 import assert from 'node:assert/strict'
 import { runEngine, CALL_SPEND } from './engine-harness.mjs'
@@ -86,34 +86,43 @@ test('rust-audit: budget exhausted after the fan-out starts fails the run closed
   )
 })
 
-// ================= triage-findings: fail-closed, no verdict =================
-// The completing control: one report source with no findings, and a Plan agent that returns a plan.
-// triage-findings has no Approve/Block/INCOMPLETE verdict — its output is a fix plan — so there is no
-// INCOMPLETE verdict for budget to reach. Its Gather/Validate phases run through parallel() (throws
-// absorbed → NOT RUN sources / dropped validations); the Plan agent is the first unguarded await, so
-// budget exhaustion fails the run closed there before any plan renders. The "> INCOMPLETE TRIAGE"
-// banner it CAN print requires the Plan to SURVIVE, so it is a dead-AGENT mechanism, not a budget one.
+// ================= triage-findings: fail-closed, no plan =================
+// The completing control: the craft binary (its service steps scripted) hands out a gather task, then the Plan task,
+// then names the plan file. triage-findings has no Approve/Block verdict — its output is where the plan is — so the
+// property is that a run whose budget died mid-flight never names a plan: the refused dispatches are dead agents and
+// dead service steps, so the binary is never told the Plan answered, and the run either ends INCOMPLETE or dies with
+// the budget's own throw.
+/** A service agent's answer carrying `value` as stdout. @param {unknown} value */
+const ran = value => ({ exitCode: 0, stdout: JSON.stringify(value), stderr: '' })
+/** @param {string} id */
+const tfTask = id => ({ id, label: id, model: 'opus', kind: id, promptFile: `/r/${id}.md`, schemaFile: `/r/${id}.json`, answerFile: `/r/a/${id}.json` })
 const TF_SCRIPT = {
-  'gather:report': { source: 'rust-audit', findings: [] },
-  plan: { plan_markdown: 'PLAN-BODY', summary: 's', ledger: [] },
+  'step:resolve': { exitCode: 0, stdout: 'root=/p\nbin=/b/craft\n', stderr: '' },
+  'step:start': ran({ run: '/r', done: false, tasks: [tfTask('gatherReport')] }),
+  gatherReport: 'done',
+  'step:submit:1': ran({ run: '/r', done: false, tasks: [tfTask('plan')] }),
+  plan: 'done',
+  'step:submit:2': ran({ run: '/r', done: true, planFile: '/r/plan.json', recordFile: '/r/record.json', summary: 'PLAN-SUMMARY' }),
   'log-run': { ok: true },
   '*': null,
 }
 
-test('triage-findings: budget exhausted before the Plan phase fails the run closed — no plan renders', async () => {
+test('triage-findings: budget exhausted at the Plan task fails the run closed — no plan is named', async () => {
   const control = await runEngine('triage-findings', { args: { report: '/store/r.md' }, script: TF_SCRIPT })
-  assert.match(control.report, /PLAN-BODY/, 'the control must complete and return the plan, or the abort below proves nothing')
+  assert.match(
+    control.report,
+    /The plan is \/r\/plan\.json[\s\S]*PLAN-SUMMARY/,
+    'the control must complete and name the plan, or the abort below proves nothing',
+  )
   assert.ok(!control.calls.some(c => c.threw), 'and nothing is refused under an unlimited budget')
   const planAt = control.calls.findIndex(c => c.label === 'plan')
-  assert.ok(planAt > 0, 'the control must dispatch the Plan agent after gathering — the wall below is placed at that index')
+  assert.ok(planAt > 0, 'the control must dispatch the Plan task after gathering — the wall below is placed at that index')
 
-  // The wall exactly at the Plan dispatch: the gather succeeds and spends, the Plan is refused.
-  const err = await runEngine('triage-findings', { args: { report: '/store/r.md' }, script: TF_SCRIPT, budgetTotal: planAt * CALL_SPEND }).then(
-    () => null,
-    (/** @type {unknown} */ e) => /** @type {EngineDeath} */ (e),
+  const ended = await runEngine('triage-findings', { args: { report: '/store/r.md' }, script: TF_SCRIPT, budgetTotal: planAt * CALL_SPEND }).then(
+    r => ({ report: r.report, calls: r.calls }),
+    (/** @type {unknown} */ e) => ({ report: '', calls: /** @type {EngineDeath} */ (e).calls ?? [], died: /** @type {EngineDeath} */ (e).message }),
   )
-  assert.ok(err, 'exhaustion at the Plan phase must abort the run — any rendered plan would be built on judgements the budget stopped')
-  assert.match(err.message, /budget exhausted/, "and the abort must carry the throw's own reason, not an anonymous death")
-  const refused = (err.calls || []).filter((/** @type {import('./engine-harness.mjs').Call} */ c) => c.threw)
-  assert.ok(refused[0]?.label === 'plan', `the FIRST refusal is the Plan dispatch — the phase this test aims the exhaustion at (got '${refused[0]?.label}')`)
+  assert.ok(!/The plan is /.test(ended.report), `exhaustion at the Plan task must never name a plan: ${ended.report}`)
+  const refused = ended.calls.filter((/** @type {import('./engine-harness.mjs').Call} */ c) => c.threw)
+  assert.ok(refused[0]?.label === 'plan', `the FIRST refusal is the Plan dispatch — the task this test aims the exhaustion at (got '${refused[0]?.label}')`)
 })

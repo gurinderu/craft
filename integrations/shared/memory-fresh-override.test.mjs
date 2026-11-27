@@ -5,7 +5,8 @@
 // @nick/craft, node #215).
 import { test } from 'vitest'
 import assert from 'node:assert/strict'
-import { mergeAndRead, mergeRecall, readMemoryRecall } from './memory-recall.mjs'
+import { mergeAndRead, readMemoryRecall } from './memory-recall.mjs'
+import { mergeRecall } from './memory-recall-launch.mjs'
 import { parsePriorDecisions } from './prior-decisions.mjs'
 
 const PASSED = {

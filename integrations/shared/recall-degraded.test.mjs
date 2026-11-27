@@ -1,6 +1,7 @@
 import { test } from 'vitest'
 import assert from 'node:assert/strict'
-import { MEMORY_RECALL_SCHEMA, readMemoryRecall, mergeRecall, memoryRecord, memoryLine, memorySection, recallDecisions } from './memory-recall.mjs'
+import { MEMORY_RECALL_SCHEMA, readMemoryRecall, memoryRecord, memoryLine, memorySection, recallDecisions } from './memory-recall.mjs'
+import { mergeRecall } from './memory-recall-launch.mjs'
 import { RECALL_NOTE_MAX, forwardedDegraded, memoryDegradedNotes, recallNote } from './recall-degraded.mjs'
 import { parsePriorDecisions } from './prior-decisions.mjs'
 

@@ -1,5 +1,5 @@
 //! The remembered records applied to a run's findings, as `applyPriorDecisions` in
-//! `integrations/shared/prior-decision-apply.mjs` applies them (realm @nick/craft, nodes #184, #187, #204, #218,
+//! `prior-decision-apply.mjs` (the JavaScript the binary replaced) applies them (realm @nick/craft, nodes #184, #187, #204, #218,
 //! #230, #282): a finding a decision answers leaves the verdict and is listed under Rejected before
 //! with who, when, why and a link, never dropped; one a deferred question answers under Known and
 //! deferred. It is raised again when it is Critical, when it is High and its record is not a human's
