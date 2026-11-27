@@ -1,9 +1,11 @@
 //! The loop end to end against a stand-in binary ([`Fake`], acting as the step protocol's binary
 //! does) and stand-in host CLIs: shell scripts that act on a word in their task's
 //! prompt — FAIL fails, FAIL-ONCE fails the first time, HANG outlives its deadline, LIMIT says the
-//! usage limit, NOLOGIN says no account is logged in, BLOCKED (Codex) answers that it could not
-//! look — and otherwise answer. With a `deaf` file in the log the script ignores SIGTERM from its
-//! first line and says so with `deaf-ready`, once its `call-` file is written.
+//! usage limit, MAX-RATE-TEXT says a sustained rate limit's words on stderr and MAX-RATE the host's
+//! error event for it on stdout (realm @nick/craft, node #715), NOLOGIN says no account is logged
+//! in, BLOCKED (Codex) answers that it could not look — and otherwise answer. With a `deaf` file in
+//! the log the script ignores SIGTERM from its first line and says so with `deaf-ready`, once its
+//! `call-` file is written.
 
 use std::cell::RefCell;
 use std::num::NonZeroUsize;
@@ -20,6 +22,7 @@ use super::ending::{Answer, drive};
 use super::events::Event;
 use super::exe::write_executable;
 use super::host::Host;
+use super::limit::{MAX_RATE, MAX_RATE_EVENT};
 use super::models::ModelTable;
 use super::protocol::{Protocol, Said};
 use super::round::RoundCtx;
@@ -174,6 +177,8 @@ case "$input" in
   *FAIL-ONCE*) if [ ! -f '{log}/failed-once' ]; then touch '{log}/failed-once'; echo boom >&2; exit 1; fi;;
   *FAIL*) echo boom >&2; exit 1;;
   *NOLOGIN*) echo 'ERROR: unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: x' >&2; echo 'No API key found for x' >&2; exit 1;;
+  *MAX-RATE-TEXT*) echo '{MAX_RATE}' >&2; exit 1;;
+  *MAX-RATE*) printf '%s\n' '{MAX_RATE_EVENT}'; exit 1;;
   *LIMIT*) echo "ERROR: You've hit your usage limit. Try again in 3 hours." >&2; exit 1;;
   *BLOCKED*) blocked=1;;
 esac
@@ -431,6 +436,24 @@ async fn a_task_on_the_usage_limit_starts_no_other_and_the_submit_carries_the_li
         limit.as_deref(),
         Some("ERROR: You've hit your usage limit. Try again in 3 hours.")
     );
+    assert_eq!(fake.submits.borrow()[0].agents, 1);
+    assert_eq!(
+        bench.calls().iter().filter(|c| c.contains("do b")).count(),
+        0
+    );
+}
+
+#[tokio::test]
+async fn a_sustained_rate_limit_refusal_starts_no_other_and_the_submit_carries_its_words() {
+    let mut bench = Bench::new(HostKind::Codex);
+    bench.concurrency = 1;
+    let fake = bench.fake(vec![
+        Spec("a", "MAX-RATE-TEXT", None),
+        Spec("b", "do b", None),
+    ]);
+    bench.drive(&fake).await;
+    let limit = fake.submits.borrow()[0].limit.clone();
+    assert_eq!(limit.as_deref(), Some(MAX_RATE));
     assert_eq!(fake.submits.borrow()[0].agents, 1);
     assert_eq!(
         bench.calls().iter().filter(|c| c.contains("do b")).count(),

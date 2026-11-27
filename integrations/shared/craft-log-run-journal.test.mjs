@@ -333,6 +333,16 @@ test('recordFromJournal names the evidence it has, each dead agent once', () => 
   assert.deepEqual(recordFromJournal(died).notRun, ['1 agent(s) never returned a result', REBUILT_NOT_RUN])
 })
 
+// A sustained rate-limit refusal an agent failed with is the stop, named by its words in the
+// host's event that said it — not one more error (realm @nick/craft, node #715).
+test('recordFromJournal names a sustained rate-limit refusal as the stop', () => {
+  const dir = tmp()
+  const event =
+    '{"error":{"data":{"isRetryable":false,"message":"Claude Max rate limit reached. Wait a moment and try again.","metadata":{"url":"https://gateway.example/v1/messages"},"responseBody":"{\\"type\\":\\"error\\"}"}},"type":"error"}'
+  journal(dir, [{ type: 'started' }, { type: 'error', agentId: 'x', error: event }])
+  assert.deepEqual(recordFromJournal(dir).notRun, [`stopped: usage limit reached (${event.slice(0, 200)})`, REBUILT_NOT_RUN])
+})
+
 test('normalizeStampBoundary trims, and accepts only a whole timestamp', () => {
   assert.equal(normalizeStampBoundary(' 2026-09-01T20:08:31Z '), '2026-09-01T20-08-31Z')
   assert.equal(normalizeStampBoundary('x2026-09-01T20:08:31Z'), null)
