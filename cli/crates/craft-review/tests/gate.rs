@@ -109,6 +109,11 @@ fn report(done: &Value) -> String {
     std::fs::read_to_string(done["report"].as_str().unwrap()).unwrap()
 }
 
+/// The run directory of the finished step `done`.
+fn run_dir(done: &Value) -> std::path::PathBuf {
+    std::path::PathBuf::from(done["run"].as_str().unwrap())
+}
+
 #[test]
 fn a_gate_seed_reaches_the_lenses_the_report_and_the_ledger_with_its_tool_rule() {
     let repo = package();
@@ -179,6 +184,11 @@ fn a_red_check_blocks_before_any_lens() {
     let done = step::start(&gated(repo.path(), out.path(), tools.path())).unwrap();
     assert_eq!(done["done"], json!(true), "no scout, no lens: {done}");
     assert_eq!(done["verdict"], json!("Block"));
+    assert!(
+        done.get("unverifiedLow").is_none(),
+        "nothing held apart, nothing named: {done}"
+    );
+    assert!(!run_dir(&done).join("unverified.md").exists());
     common::assert_contains_all(
         &report(&done),
         &[
