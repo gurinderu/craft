@@ -70,18 +70,24 @@ export function candidatesToCheck(findings, decisions) {
  * checkout lacks count as after the record (realm @nick/craft, node #676) — printing `future` for a date
  * later than today in UTC, `no-trunk` when no trunk resolves (origin/HEAD when it names a commit, else
  * origin/main, else origin/master), `unreadable` when git fails listing the trunk, and `missing` when the
- * trunk holds no commit before the day. Each line resolves the trunk itself, so it stands alone for the
- * agent that runs it. Arguments single-quoted.
+ * trunk holds no commit before the day. A scope is a path from the repository's top level, and git reads
+ * a pathspec matching nothing as no change: so each line runs in a subshell from `git rev-parse
+ * --show-toplevel`, wherever the agent's shell stands, and prints the id with that step's non-zero exit
+ * status — never 0 — when the top level cannot be resolved or entered. Each line resolves the top level
+ * and the trunk itself, so it stands alone for the agent that runs it. Arguments single-quoted.
  * @param {PriorDecision[]} decisions @returns {string}
  */
 export function scopeCheckScript(decisions) {
+  /** @param {PriorDecision} d @param {string} body */
+  const atTop = (d, body) =>
+    `(top=$(git rev-parse --show-toplevel 2>/dev/null) && [ -n "$top" ] && cd "$top" 2>/dev/null || { echo ${shellWord(d.id)} $?; exit; }; ${body})`
   /** @param {PriorDecision} d */
   const line = d => {
     if (d.commit)
       return `if git cat-file -e ${shellWord(`${d.commit}^{commit}`)} 2>/dev/null; then git diff --quiet ${shellWord(d.commit)} -- ${shellWord(d.scope)}; echo ${shellWord(d.id)} $?; else echo ${shellWord(d.id)} missing; fi`
     return d.pulls?.length ? mergeLine(d, d.pulls, decisionDate(d)) : datedLine(d, decisionDate(d))
   }
-  return decisions.map(line).join('\n')
+  return decisions.map(d => atTop(d, line(d))).join('\n')
 }
 
 // The words a scope-check line prints, after the id, for a decision whose anchor names no commit to compare.
@@ -128,7 +134,7 @@ export const SCOPE_CHECK_SCHEMA = {
 
 /** The scope-check agent's prompt. @param {PriorDecision[]} decisions @returns {string} */
 export function scopeCheckPrompt(decisions) {
-  return `Run these lines in the repository under review, exactly as written (shell only, read only). Each prints a decision id and, right after it, the exit status of \`git diff --quiet\` against that decision's commit (or, for a decision naming a pull request, that request's merge on the trunk, the status then followed by merge and the request's number, and by the word between when the code changed on the trunk outside that pull request before its merge; for one naming only a date, the trunk's last commit before that date), or the word missing when the repository does not have that commit — or, for a date, future, no-trunk or unreadable when it cannot be compared, and unmerged when a pull request's merge is not found and there is no date.
+  return `Run these lines in the repository under review, exactly as written (shell only, read only). Each prints a decision id and, right after it, the exit status of \`git diff --quiet\` against that decision's commit (or, for a decision naming a pull request, that request's merge on the trunk, the status then followed by merge and the request's number, and by the word between when the code changed on the trunk outside that pull request before its merge; for one naming only a date, the trunk's last commit before that date), or the word missing when the repository does not have that commit — or, for a date, future, no-trunk or unreadable when it cannot be compared, and unmerged when a pull request's merge is not found and there is no date. Each line runs from the repository's top level itself; one that cannot find it prints a non-zero status.
 ${scopeCheckScript(decisions)}
 Return {unchanged: [every id whose status, printed right after it, was 0, whether or not merge and a number follow], missing: [every id printed with the word missing], unusable: [{id, word} for every id printed with the word future, no-trunk, unreadable or unmerged], merged: [{id, pr, between} for every id whose status was followed by merge and a number, pr that number, between true when the word between followed it], reason: one line on anything that did not run — a tool a line needs that is missing goes here}.`
 }

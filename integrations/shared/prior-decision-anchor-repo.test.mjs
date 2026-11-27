@@ -89,10 +89,11 @@ test('scope script: a dated record is diffed against the trunk before its day be
     const script = scopeCheckScript(ds)
     assert.equal(
       script.split('\n')[0],
-      `if [ '20260502' -gt "$(date -u +%F | tr -d -)" ]; then echo 'a-2nd'\\''s' future; ` +
+      `(top=$(git rev-parse --show-toplevel 2>/dev/null) && [ -n "$top" ] && cd "$top" 2>/dev/null || { echo 'a-2nd'\\''s' $?; exit; }; ` +
+        `if [ '20260502' -gt "$(date -u +%F | tr -d -)" ]; then echo 'a-2nd'\\''s' future; ` +
         `elif ! t=$(for r in "$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null)" origin/main origin/master; do [ -n "$r" ] && git rev-parse -q --verify "$r^{commit}" >/dev/null && echo "$r" && break; done | grep .); then echo 'a-2nd'\\''s' no-trunk; ` +
         `elif ! b=$(git rev-list -1 --first-parent '--before=2026-05-02 00:00:00 +1400' "$t" 2>/dev/null); then echo 'a-2nd'\\''s' unreadable; ` +
-        `elif [ -n "$b" ]; then git diff --quiet "$b" -- 'src/a.rs'; echo 'a-2nd'\\''s' $?; else echo 'a-2nd'\\''s' missing; fi`,
+        `elif [ -n "$b" ]; then git diff --quiet "$b" -- 'src/a.rs'; echo 'a-2nd'\\''s' $?; else echo 'a-2nd'\\''s' missing; fi)`,
     )
     const seen = ["a-2nd's 1", 'b-2nd 0', 'c-2nd 1', 'd-2nd 1', 'b-zoned-2nd 0', 'b-zoned-1st missing', 'a-4th 0', 'a-ahead future']
     assert.deepEqual(run(script, dir), seen)
