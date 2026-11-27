@@ -30,7 +30,7 @@ pub(super) fn take_ledger(chain: &mut Chain, ledger: Vec<LedgerRow>, quiet: &BTr
             // Only the author's dismissals are carry-checked, as `isSettledPrior` settles them.
             "rejected" | "justified" => Fate::Carried,
             // A `deferred` row whose deferral is quiet — it names its question, it is not Critical or
-            // High, and the code of its file is unchanged since the question's anchor — is carried as
+            // High, and the code of its question's scope is unchanged since its anchor — is carried as
             // Known and deferred, as the engine's carry-check carries it; whether its question still
             // holds is settled once the memory is recalled (`hold_deferrals`).
             "deferred" if quiet.contains(&i) => Fate::Deferred,
@@ -50,8 +50,9 @@ pub(super) fn take_ledger(chain: &mut Chain, ledger: Vec<LedgerRow>, quiet: &BTr
 }
 
 /// The places in `ledger` of the `deferred` rows that may be carried without an adjudicator: each
-/// carries a deferral, it is not Critical or High, and the memory's scope check finds its file —
-/// the whole tree when it names none — unchanged since the deferral's anchor, the working tree
+/// carries a deferral, it is not Critical or High, and the memory's scope check finds its
+/// question's scope — in a row written before the deferral carried one, its file, the whole tree
+/// when it names none — unchanged since the deferral's anchor, the working tree
 /// included: its commit, else the merge of a pull request it links, else its date, as the memory
 /// sets a finding aside by (realm @nick/craft, node #680). One check over all of them.
 fn quiet_deferrals(cwd: &Path, ledger: &[LedgerRow]) -> BTreeSet<usize> {

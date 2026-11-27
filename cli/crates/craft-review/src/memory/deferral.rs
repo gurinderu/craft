@@ -13,7 +13,8 @@ use super::priors::scope_check_on;
 use crate::ledger::Deferral;
 
 /// For each of `rows`, a deferral and the path of its row's finding, whether the scope check
-/// finds that path unchanged since the deferral's anchor in `repo` — not missing, not unusable,
+/// finds the deferral's scope — its question's own, else, in a row written before it carried
+/// one, that path — unchanged since the deferral's anchor in `repo`: not missing, not unusable,
 /// not changed on the trunk outside the pull request before its merge. The trunk and the origin
 /// are asked of git once for all of them.
 pub(crate) fn unchanged_deferrals(repo: &Path, rows: &[(&Deferral, &str)]) -> Vec<bool> {
@@ -25,7 +26,7 @@ fn unchanged_on(repo: &Path, rows: &[(&Deferral, &str)], today: &str) -> Vec<boo
     let records: Vec<PriorDecision> = rows
         .iter()
         .enumerate()
-        .map(|(i, (d, scope))| record(i, d, scope))
+        .map(|(i, (d, file))| record(i, d, file))
         .collect();
     let refs: Vec<&PriorDecision> = records.iter().collect();
     let checked = scope_check_on(repo, &refs, today);
@@ -35,11 +36,11 @@ fn unchanged_on(repo: &Path, rows: &[(&Deferral, &str)], today: &str) -> Vec<boo
         .collect()
 }
 
-/// The question record a deferral stands for, as far as its scope check reads it — its scope
-/// `scope` and its anchors —, named by its place `i`: two rows may carry one question over
-/// different files. A row written before its pull requests were carried names them by its `link`
-/// alone.
-fn record(i: usize, d: &Deferral, scope: &str) -> PriorDecision {
+/// The question record a deferral stands for, as far as its scope check reads it — its scope and
+/// its anchors —, named by its place `i`: two rows may carry one question over different files.
+/// A row written before its scope was carried is checked by its file `file`, and one written
+/// before its pull requests were carried names them by its `link` alone.
+fn record(i: usize, d: &Deferral, file: &str) -> PriorDecision {
     let pulls = if d.pulls.is_empty() {
         pulls(&[Value::from(d.link.as_str())])
     } else {
@@ -47,7 +48,7 @@ fn record(i: usize, d: &Deferral, scope: &str) -> PriorDecision {
     };
     PriorDecision {
         id: i.to_string(),
-        scope: scope.to_owned(),
+        scope: if d.scope.is_empty() { file } else { &d.scope }.to_owned(),
         when: d.when.clone(),
         commit: d.commit.clone(),
         pulls,

@@ -3,6 +3,7 @@ use std::path::Path;
 use super::unchanged_on;
 use crate::ledger::Deferral;
 use crate::memory::Pull;
+use crate::memory::anchor::tests::repo::between::{self, Landed};
 use crate::memory::anchor::tests::repo::{at, commit, repo};
 
 const TODAY: &str = "2026-05-04";
@@ -119,4 +120,39 @@ fn a_deferral_linking_a_merged_pull_request_is_unchanged_since_its_merge() {
     assert_eq!(check(d, &rows), [true, true, false, false]);
     commit(d, "src/m.rs", "m2\n", "2026-05-03T10:00:00+0000");
     assert_eq!(check(d, &rows[..2]), [false, false]);
+}
+
+#[test]
+fn a_deferral_is_checked_by_its_questions_scope_and_a_row_without_one_by_its_file() {
+    let (t, _) = repo(true);
+    let d = t.path();
+    let head = at(d, "2026-05-04T00:00:00+0000", &["rev-parse", "HEAD"]);
+    // A question on the folder, set aside on one file in it.
+    let scoped = Deferral {
+        scope: "src".into(),
+        ..deferral(&head, "", "", &[])
+    };
+    let rows = [
+        (scoped, "src/b.rs"),
+        // A row written before its scope was carried: its file alone.
+        (deferral(&head, "", "", &[]), "src/b.rs"),
+    ];
+    assert_eq!(check(d, &rows), [true, true]);
+    // A sibling in the question's folder changed since its anchor; the row's file did not.
+    commit(d, "src/a.rs", "2\n", "2026-05-04T01:00:00+0000");
+    assert_eq!(check(d, &rows), [false, true]);
+}
+
+#[test]
+fn a_deferral_whose_scope_the_trunk_changed_outside_its_pull_request_before_the_merge_is_not_quiet()
+{
+    // #7 opened off the root changing src/p.rs, #8 changed src/a.rs on the trunk, then #7's stale
+    // branch merged: src/a.rs is unchanged since the merge, but changed outside #7 before it.
+    let t = between::repo(Landed::Stale);
+    let d = t.path();
+    let rows = [
+        (deferral("", "", "", &[7]), "src/a.rs"),
+        (deferral("", "", "", &[7]), "src/p.rs"),
+    ];
+    assert_eq!(check(d, &rows), [false, true]);
 }

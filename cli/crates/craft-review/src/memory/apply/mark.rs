@@ -114,9 +114,15 @@ pub(super) fn set_aside(f: &Value, d: &PriorDecision, how: &str, key: &str) -> V
     if d.kind == RecordKind::Question {
         let mut deferral = json!({"id": d.id, "reason": d.reason, "who": d.who, "when": d.when, "link": d.link, "commit": d.commit});
         // Its pull requests ride beside `link`, which names only one link, and not always a pull
-        // request's: the next round anchors the deferral by them (realm @nick/craft, node #680).
-        if let (Some(o), false) = (deferral.as_object_mut(), d.pulls.is_empty()) {
-            o.insert("pulls".into(), json!(d.pulls));
+        // request's: the next round anchors the deferral by them; and its scope, which the next
+        // round checks unchanged, as this check did (realm @nick/craft, node #680).
+        if let Some(o) = deferral.as_object_mut() {
+            if !d.pulls.is_empty() {
+                o.insert("pulls".into(), json!(d.pulls));
+            }
+            if !d.scope.is_empty() {
+                o.insert("scope".into(), json!(d.scope));
+            }
         }
         extra.push(("deferral", deferral));
     }
@@ -131,7 +137,7 @@ mod tests {
     use crate::memory::Pull;
 
     #[test]
-    fn a_questions_pull_requests_ride_its_deferral_and_none_is_written_without_them() {
+    fn a_questions_pull_requests_and_scope_ride_its_deferral_and_none_is_written_without_them() {
         let pr = Pull {
             repo: "owner/repo".into(),
             number: 7,
@@ -140,6 +146,7 @@ mod tests {
             id: "question-abcdef0123".into(),
             kind: RecordKind::Question,
             link: "https://github.com/owner/repo/issues/3".into(),
+            scope: "src/net".into(),
             pulls: vec![pr],
             ..PriorDecision::default()
         };
@@ -149,9 +156,12 @@ mod tests {
             aside["deferral"]["pulls"],
             json!([{"repo": "owner/repo", "number": 7}])
         );
+        assert_eq!(aside["deferral"]["scope"], json!("src/net"));
         q.pulls.clear();
+        q.scope.clear();
         let aside = set_aside(&f, &q, "title", "why");
         assert!(aside["deferral"].get("pulls").is_none(), "{aside}");
+        assert!(aside["deferral"].get("scope").is_none(), "{aside}");
         assert_eq!(aside["deferral"]["link"], json!(q.link));
     }
 }

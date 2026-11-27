@@ -59,6 +59,28 @@ const STEP = {
       deferral: { until: 'x' },
     },
     { file: 'src/old.rs', line: 'x', disposition: 'closed', title: 'gone' },
+    // A deferral as a question on a folder linking its pull request sets it (realm @nick/craft, node #680).
+    {
+      file: 'src/net/fetch.rs',
+      line: 4,
+      severity: 'Low',
+      tier: 'confirmed',
+      disposition: 'deferred',
+      source: 'errors',
+      ruleId: 'errors.retry',
+      title: 'no retry',
+      why: 'w',
+      deferral: {
+        id: 'question-abcdef0123',
+        reason: 'r',
+        who: 'w',
+        when: '2026-03-01',
+        link: 'https://github.com/owner/repo/pull/7',
+        commit: '',
+        pulls: [{ repo: 'owner/repo', number: 7 }],
+        scope: 'src/net',
+      },
+    },
   ],
   reReview: { prior: 1, carried: 2 },
   // Sorted, as the binary's step carries it (serde): both writers put the engines' order back (realm @nick/craft, node #250).

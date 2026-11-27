@@ -2603,8 +2603,9 @@ function normalizeLedgerItem(item) {
     out['whyRef'] = { record: src.whyRef.record, fp: src.whyRef.fp }
   }
   // `deferral` is the question a `deferred` row was set aside by — the carry track holds the row by it,
-  // since the transport cuts the mark off the tail of `why` (realm @nick/craft, node #204). Kept, every
-  // part a string, when it names a question; dropped otherwise.
+  // since the transport cuts the mark off the tail of `why` (realm @nick/craft, node #204). Kept when it
+  // names a question — its text parts strings, its pull requests and scope only when well-formed
+  // (`deferralOn`); dropped otherwise.
   const deferral = deferralOn(src['deferral'])
   if (deferral) out['deferral'] = deferral
   return /** @type {LedgerItem} */ ({ ...out, ...ledgerToolRule(src['toolRule']) }) // unknown keys are dropped by construction

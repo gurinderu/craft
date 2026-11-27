@@ -25,7 +25,7 @@ fn git(dir: &Path, date: &str, args: &[&str]) -> String {
 }
 
 /// A trunk of two commits, `src/lib.rs` written on 2026-05-01 and `src/other.rs` changed on
-/// 2026-05-05, and `HEAD` on it: the first commit.
+/// 2026-05-05, and `HEAD` on its second; the first commit's id is returned.
 fn repo() -> (tempfile::TempDir, String) {
     let t = tempfile::tempdir().unwrap();
     let d = t.path();

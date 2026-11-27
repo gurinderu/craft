@@ -52,9 +52,51 @@ pub struct Deferral {
     pub commit: String,
     /// The pull requests the question's links name, whose merge anchors it where it names no
     /// commit, as it anchors the question (realm @nick/craft, nodes #680, #682); absent when it
-    /// links none, and in a row written before it, whose `link` alone is read for one.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    /// links none, and in a row written before it, whose `link` alone is read for one. A malformed
+    /// entry is dropped, the deferral kept (`deferralOn`).
+    #[serde(
+        skip_serializing_if = "Vec::is_empty",
+        deserialize_with = "lenient_pulls"
+    )]
     pub pulls: Vec<Pull>,
+    /// The question's own scope, which the next round checks unchanged, as the memory checks the
+    /// question — wider than the row's file when the question names a folder (realm @nick/craft,
+    /// node #680); absent in a row written before it, which is checked by its file. Anything but a
+    /// string reads as absent.
+    #[serde(
+        skip_serializing_if = "String::is_empty",
+        deserialize_with = "lenient_text"
+    )]
+    pub scope: String,
+}
+
+/// The pull requests a row's deferral names, each a repository and a positive number below 2^53;
+/// the others dropped (`pullsOn`).
+fn lenient_pulls<'de, D: serde::Deserializer<'de>>(de: D) -> Result<Vec<Pull>, D::Error> {
+    const SAFE: u64 = (1 << 53) - 1;
+    let v = Value::deserialize(de)?;
+    let pull = |p: &Value| {
+        let repo = p.get("repo")?.as_str()?;
+        let number = p
+            .get("number")?
+            .as_u64()
+            .filter(|n| (1..=SAFE).contains(n))?;
+        Some(Pull {
+            repo: repo.to_owned(),
+            number,
+        })
+    };
+    Ok(v.as_array()
+        .map(|ps| ps.iter().filter_map(pull).collect())
+        .unwrap_or_default())
+}
+
+/// A string field, '' when it is anything else.
+fn lenient_text<'de, D: serde::Deserializer<'de>>(de: D) -> Result<String, D::Error> {
+    Ok(Value::deserialize(de)?
+        .as_str()
+        .unwrap_or_default()
+        .to_owned())
 }
 
 impl Deferral {
@@ -350,7 +392,30 @@ mod tests {
         let old: Deferral = serde_json::from_str(old).unwrap();
         assert!(old.pulls.is_empty() && old.when == "2026-05-01");
         let none = serde_json::to_value(&old).unwrap();
-        assert!(none.get("pulls").is_none(), "{none}");
+        assert!(
+            none.get("pulls").is_none() && none.get("scope").is_none(),
+            "{none}"
+        );
+    }
+
+    #[test]
+    fn a_malformed_pull_request_or_scope_drops_only_itself_and_the_row_still_reads() {
+        let row = r#"{"file":"a.rs","disposition":"deferred","deferral":{"id":"q-1",
+            "scope":7,"pulls":[{"repo":"owner/repo","number":7},{"repo":"o/r","number":-1},
+            {"number":8},"x",{"repo":"o/r","number":1.5},{"repo":"o/r","number":9007199254740992}]}}"#;
+        let row: LedgerRow = serde_json::from_str(row).unwrap();
+        let d = row.deferral.unwrap();
+        let pulls = [Pull {
+            repo: "owner/repo".into(),
+            number: 7,
+        }];
+        assert_eq!((d.id.as_str(), d.pulls.as_slice()), ("q-1", &pulls[..]));
+        assert!(d.scope.is_empty());
+        let odd: Deferral =
+            serde_json::from_str(r#"{"id":"q-1","pulls":"x","scope":null}"#).unwrap();
+        assert!(odd.pulls.is_empty() && odd.scope.is_empty());
+        let scoped: Deferral = serde_json::from_str(r#"{"id":"q-1","scope":"src/net"}"#).unwrap();
+        assert_eq!(serde_json::to_value(&scoped).unwrap()["scope"], "src/net");
     }
 
     #[test]
