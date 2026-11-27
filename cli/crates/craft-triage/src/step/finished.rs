@@ -126,14 +126,27 @@ pub(super) fn files(out: &mut Value, dir: &Path) {
     }
 }
 
-/// The finished step: the plan (its file holds its keys in the engine's order), where it and the
-/// record are, what filing the record did, and what the host said and the run noted.
+/// The finished step: where the plan and the record are — the host reads the plan from its file, as
+/// the review's host reads its report, so no agent copies it (realm @nick/craft, node #616) —, the
+/// plan's summary, or the text of a plan that failed, what filing the record did, and what the host
+/// said and the run noted.
 ///
 /// # Errors
-/// When the plan holds text JSON cannot carry (an unpaired surrogate).
+/// When the summary or the failure holds text JSON cannot carry (an unpaired surrogate).
 pub(super) fn step(dir: &Path, plan: &Js, s: &TriageState) -> Result<Value, TriageError> {
-    let plan = Value::try_from(plan).map_err(|e| TriageError::PlanNotJson(e.to_string()))?;
-    let mut out = json!({"run": dir.display().to_string(), "done": true, "plan": plan});
+    let mut out = json!({"run": dir.display().to_string(), "done": true});
+    let (key, said_of) = if let Js::Obj(o) = plan {
+        (
+            "summary",
+            o.get("summary").cloned().unwrap_or_else(|| Js::str("")),
+        )
+    } else {
+        ("failed", plan.clone())
+    };
+    let text = Value::try_from(&said_of).map_err(|e| TriageError::PlanNotJson(e.to_string()))?;
+    if let Some(o) = out.as_object_mut() {
+        o.insert(key.into(), text);
+    }
     files(&mut out, dir);
     said(&mut out, s);
     Ok(out)

@@ -148,6 +148,12 @@ fn run_recording(
     panic!("{name}: the run did not end");
 }
 
+/// The plan the finished `step` names, read from its file.
+fn plan_of(step: &Value) -> Value {
+    let file = step["planFile"].as_str().unwrap();
+    serde_json::from_str(&std::fs::read_to_string(file).unwrap()).unwrap()
+}
+
 mod banners;
 mod halt;
 mod recording;
@@ -213,9 +219,10 @@ fn the_hosts_degraded_notes_lead_the_plan_and_reach_the_step_and_the_status() {
         "the finished step"
     );
     assert_eq!(
-        step["plan"], plan,
-        "the finished step carries the plan its file holds"
+        step["summary"], plan["summary"],
+        "the finished step carries the summary its plan file holds, not the plan"
     );
+    assert!(step.get("plan").is_none(), "{step}");
     assert_eq!(
         status(dir.path()).unwrap()["degraded"],
         serde_json::json!(note)

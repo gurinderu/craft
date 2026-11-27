@@ -5,7 +5,7 @@ use std::cell::RefCell;
 use craft_review::filing::{Call, WriteError, Writer};
 use serde_json::{Value, json};
 
-use super::{Unused, run_case, run_recording};
+use super::{Unused, plan_of, run_case, run_recording};
 use crate::TriageError;
 use crate::run::Recording;
 use crate::step::finished::plan_path;
@@ -48,11 +48,14 @@ fn a_finished_run_whose_record_did_not_land_files_it_again_on_a_resume_once() {
     let calls = w.0.borrow().clone();
     assert_eq!((calls.len(), &calls[1]["retry"]), (2, &json!(true)));
     assert_eq!(calls[1]["record"], calls[0]["record"], "the same record");
-    let md = again["plan"]["plan_markdown"].as_str().unwrap();
+    let md = plan_of(&again)["plan_markdown"]
+        .as_str()
+        .unwrap()
+        .to_owned();
     assert!(!md.contains("Telemetry lost"), "{md}");
     let on_disk: Value =
         serde_json::from_str(&std::fs::read_to_string(plan_path(dir.path())).unwrap()).unwrap();
-    assert_eq!(on_disk["plan_markdown"], again["plan"]["plan_markdown"]);
+    assert_eq!(on_disk["plan_markdown"], plan_of(&again)["plan_markdown"]);
     assert!(
         done(submit(dir.path(), None, &resumed, &w)),
         "a filed run is done"

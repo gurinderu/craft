@@ -6,7 +6,7 @@ use std::cell::RefCell;
 use craft_review::filing::{Call, WriteError, Writer};
 use serde_json::{Value, json};
 
-use super::{file, run_case, run_recording};
+use super::{file, plan_of, run_case, run_recording};
 use crate::run::Recording;
 use crate::step::finished::record_path;
 use crate::step::status;
@@ -67,9 +67,9 @@ fn a_recording_run_files_its_record_once_as_built_and_names_it_in_the_step_and_t
     assert_eq!(step["filing"], filing);
     assert_eq!(status(dir.path()).unwrap()["filing"], filing);
     assert!(
-        step["plan"].get("telemetryLost").is_none(),
+        plan_of(&step).get("telemetryLost").is_none(),
         "{}",
-        step["plan"]
+        plan_of(&step)
     );
 }
 
@@ -83,13 +83,13 @@ fn a_run_that_does_not_record_files_nothing_and_says_no_filing() {
 #[test]
 fn a_record_that_did_not_land_leads_the_plan() {
     let w = kept(Err(WriteError::Store("disk full".into())));
-    let (_, _, step) = run_recording(CASE, &[], Some(recording()), &w);
+    let (_, _step_dir, step) = run_recording(CASE, &[], Some(recording()), &w);
     let lost = "the run record — the run store refused the write: disk full";
     assert_eq!(
         step["filing"],
         json!({"record": "failed", "file": "", "lost": [lost]})
     );
-    let plan = &step["plan"];
+    let plan = &plan_of(&step);
     let md = plan["plan_markdown"].as_str().unwrap();
     assert!(
         md.starts_with("## ⚠️ Telemetry lost\n1 record write(s)"),
@@ -104,21 +104,28 @@ fn a_landed_record_the_store_warned_on_reads_incomplete_not_lost() {
     let w = kept(Ok(
         json!({"ok": true, "reason": "craft-log-run WARNING: x", "file": "/s/r.json"}),
     ));
-    let (_, _, step) = run_recording(CASE, &[], Some(recording()), &w);
+    let (_, _step_dir, step) = run_recording(CASE, &[], Some(recording()), &w);
     assert_eq!(step["filing"]["record"], "filed");
-    let md = step["plan"]["plan_markdown"].as_str().unwrap();
+    let md = plan_of(&step)["plan_markdown"].as_str().unwrap().to_owned();
     assert!(md.starts_with("## ⚠️ Telemetry incomplete\n"), "{md}");
 }
 
 #[test]
 fn a_failed_plan_is_led_by_the_record_that_did_not_land() {
     let w = kept(Ok(json!({"ok": false, "reason": "", "file": ""})));
-    let (_, _, step) = run_recording("class 1 without a prBase", &[], Some(recording()), &w);
-    let plan = step["plan"].as_str().unwrap();
+    let (_, _step_dir, step) =
+        run_recording("class 1 without a prBase", &[], Some(recording()), &w);
+    let plan = plan_of(&step).as_str().unwrap().to_owned();
     let lost =
         "- the run record — the writer gave no reason\n\nTriage failed: the Plan-phase agent";
     assert!(plan.starts_with("## ⚠️ Telemetry lost\n"), "{plan}");
     assert!(plan.contains(lost), "{plan}");
+    // The step names the failure as its file holds it, and no summary.
+    assert_eq!(step["failed"], json!(plan));
+    assert!(
+        step.get("summary").is_none() && step.get("plan").is_none(),
+        "{step}"
+    );
 }
 
 #[test]

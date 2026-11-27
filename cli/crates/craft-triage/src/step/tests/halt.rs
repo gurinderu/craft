@@ -4,7 +4,7 @@
 use craft_step::TaskState;
 use serde_json::{Value, json};
 
-use super::{Unused, answers, case, git_repo, opts_of, seen_of};
+use super::{Unused, answers, case, git_repo, opts_of, plan_of, seen_of};
 use crate::parity::answers::CaseAnswers;
 use crate::state;
 use crate::step::{Said, start, status, submit};
@@ -110,7 +110,7 @@ fn a_limit_with_every_answer_in_moves_on_and_the_last_one_finishes_the_run() {
     state::save(dir.path(), &s).unwrap();
     let (mut stops, mut last_limited) = (0, false);
     for _ in 0..40 {
-        if step.get("plan").is_some() {
+        if step.get("planFile").is_some() {
             break;
         }
         let given = answers(dir.path(), &a);
@@ -142,8 +142,12 @@ fn a_limit_with_every_answer_in_moves_on_and_the_last_one_finishes_the_run() {
     assert!(stops > 0, "a phase that still needs agents stops");
     assert!(step.get("stopped").is_none(), "{step}");
     assert_eq!(step["done"], true, "{step}");
-    let (_, _, plain) = super::run_case(name, &[]);
-    assert_eq!(step["plan"], plain["plan"], "the plan as without the limit");
+    let (_, _plain_dir, plain) = super::run_case(name, &[]);
+    assert_eq!(
+        plan_of(&step),
+        plan_of(&plain),
+        "the plan as without the limit"
+    );
 }
 
 #[test]
