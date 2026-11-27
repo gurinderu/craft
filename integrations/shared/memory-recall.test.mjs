@@ -58,7 +58,7 @@ test('memory recall prompt: both key spellings hold on every MCP path, pinned (a
   const p = memoryRecallPrompt(['src/a.rs'], 'main')
   assert.match(
     p,
-    /On any MCP server, pinned by \(a\) or found by \(b\): use only its search; a record there carries its fields as attributes prefixed `craft_`[\s\S]*search and filter by both, never by one alone\./,
+    /On any MCP server, pinned by \(a\) or found by \(b\): use only its search; a record there carries its fields as attributes prefixed `craft_`[\s\S]*search and filter by both, never by one alone; its links are its relations, or, in a store whose relations hold no URL, the `Links: <link>` lines at the end of its text, one per link: hand them back as links either way\./,
   )
   assert.equal(p.split('search and filter by both').length, 2)
 })

@@ -92,4 +92,9 @@ test('a refusal with no run says who refused and what to allow, and offers no re
   const fetch = harnessRefused('', null)
   assert.ok(fetch.includes('it was not run: the fetch of the craft binary'), fetch)
   assert.doesNotMatch(fetch, /Bash\(/, 'no binary yet, so no rule for it')
+  // A script step refused with no command quoted: its caller names what was refused — the root check names no fetch.
+  const root = harnessRefused('', null, 'the check of the craft plugin root')
+  assert.ok(root.includes('it was not run: the check of the craft plugin root.'), root)
+  assert.doesNotMatch(root, /fetch/, 'no fetch runs on the root check’s path')
+  assert.match(root, /To allow it, approve the command when the harness asks/, root)
 })

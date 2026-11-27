@@ -65,7 +65,7 @@ Path/shape: `~/.craft/runs/<ts>-workflow-review.json`, keyed by `project + branc
   severity, tier,
   disposition,  // open | closed | rejected | justified | deferred | covered
   source, ruleId, title, why,
-  deferral,     // optional, engine-written: { id, reason, who, when, link, commit } of the question
+  deferral,     // optional, engine-written: { id, reason, who, when, link, commit, pulls?, scope? } of the question
                 // that set a `deferred` row aside — never written or edited by this fix loop
 }
 ```

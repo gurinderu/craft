@@ -92,7 +92,7 @@ export { repoKey }
 /**
  * One agent's structured answer as the journal holds it; `classifyResult` tells the kinds apart by these fields.
  * @typedef {{ verdicts?: (BatchVerdict | null)[], refuted?: unknown, citedLineMatches?: unknown, findings?: (JournalFinding | null)[],
- *   lenses?: unknown, sizeBucket?: unknown, files?: unknown, baseRef?: unknown, groups?: unknown, missingLenses?: unknown,
+ *   lenses?: unknown, sizeBucket?: unknown, isLibrary?: unknown, files?: unknown, baseRef?: unknown, groups?: unknown, missingLenses?: unknown,
  *   status?: unknown, seedFindings?: (JournalFinding | null)[], head?: unknown, branch?: unknown }} AgentResult
  */
 /** @typedef {{ type?: unknown, agentId?: unknown, result?: unknown, error?: unknown, message?: unknown }} JournalEntry */
@@ -1617,7 +1617,8 @@ const RESULT_SHAPES = [
   ['verify-batch', r => Array.isArray(r.verdicts)],
   ['verify', r => typeof r.refuted === 'boolean' && typeof r.citedLineMatches === 'boolean'],
   ['lens', r => Array.isArray(r.findings)],
-  ['scout', r => Array.isArray(r.lenses) && r.sizeBucket],
+  // A scout the engine told its size leaves `sizeBucket` out; `isLibrary` it always gives.
+  ['scout', r => Array.isArray(r.lenses) && (Boolean(r.sizeBucket) || typeof r.isLibrary === 'boolean')],
   ['base', r => Array.isArray(r.files) && r.baseRef],
   ['dedup', r => Array.isArray(r.groups)],
   ['critic', r => Array.isArray(r.missingLenses)],
@@ -2077,7 +2078,7 @@ export function recordFromJournal(dir, { name = 'review', kind = 'workflow' } = 
     // result, so a transcript cannot show it. Reading it off the scout result left both keys
     // undefined and silently dropped them from the record; naming them here would be worse still,
     // since a value re-derived without the security floor would be wrong as often as not.
-    scout: scout ? [{ size: scout.sizeBucket, lenses: scout.lenses }] : [],
+    scout: scout ? [{ size: scout.sizeBucket ?? null, lenses: scout.lenses }] : [],
     agentsStarted: started,
     agentsReturned: results.length,
     agentsLost: started - results.length,
@@ -2602,8 +2603,9 @@ function normalizeLedgerItem(item) {
     out['whyRef'] = { record: src.whyRef.record, fp: src.whyRef.fp }
   }
   // `deferral` is the question a `deferred` row was set aside by — the carry track holds the row by it,
-  // since the transport cuts the mark off the tail of `why` (realm @nick/craft, node #204). Kept, every
-  // part a string, when it names a question; dropped otherwise.
+  // since the transport cuts the mark off the tail of `why` (realm @nick/craft, node #204). Kept when it
+  // names a question — its text parts strings, its pull requests and scope only when well-formed
+  // (`deferralOn`); dropped otherwise.
   const deferral = deferralOn(src['deferral'])
   if (deferral) out['deferral'] = deferral
   return /** @type {LedgerItem} */ ({ ...out, ...ledgerToolRule(src['toolRule']) }) // unknown keys are dropped by construction

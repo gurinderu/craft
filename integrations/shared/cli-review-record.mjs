@@ -124,6 +124,42 @@ const changeKept = o => ({ base: o.base ?? '', path: o.path ?? '' })
 /** The host a run's tasks ran in, as the record names it: Claude Code when none was named. @param {string | undefined} r */
 const hostOf = r => r || 'claude-code'
 
+// The order the engines set a memory source's keys in (`readMemoryRecall`, `acceptedMemory`, `withPassed`, `withDerived`
+// in integrations/shared/memory-recall.mjs, then a launcher's degraded recall as rust-audit notes it): a record keeps it
+// whatever order the binary's step gave them, as the Rust writer does (cli/crates/craft-store/src/memory.rs; realm
+// @nick/craft, node #250).
+const MEMORY_ORDER = [
+  'source',
+  'count',
+  'why',
+  'recallDied',
+  'backend',
+  'externals',
+  'queryError',
+  'truncated',
+  'questions',
+  'rules',
+  'passed',
+  'added',
+  'derived',
+  'recallDegraded',
+]
+
+/**
+ * A memory object with its keys in the engines' order, any other named key after them as it came (index keys lead, as
+ * JavaScript orders them); anything else null, as the Rust writer keeps it.
+ * @param {unknown} m @returns {Record<string, unknown> | null}
+ */
+function orderedMemory(m) {
+  if (!m || typeof m !== 'object' || Array.isArray(m)) return null
+  const o = /** @type {Record<string, unknown>} */ (m)
+  /** @type {Record<string, unknown>} */
+  const out = {}
+  for (const k of MEMORY_ORDER) if (Object.hasOwn(o, k)) out[k] = o[k]
+  for (const [k, v] of Object.entries(o)) if (!Object.hasOwn(out, k)) out[k] = v
+  return out
+}
+
 /**
  * The record of a run that ended with `o`. The project and the git identity are the logger script's to stamp, never
  * the record's. A run a parent engine launched (`_via`, as rust-audit launches its per-crate reviews) is filed nested,
@@ -164,7 +200,7 @@ export function cliRecord(o, { craftVersion, depth, strict, via, outputTokens, o
     ...telemetryKept(o),
     // Where the project memory the run applied came from, as the engine's record keeps it (integrations/shared/review-record.mjs; realm
     // @nick/craft, node #250): null when the binary never finished; and whether strict mode raised the maintainability bar.
-    memory: o.memory ?? null,
+    memory: orderedMemory(o.memory),
     strict,
     ...publicationKept(o),
     outputTokens,

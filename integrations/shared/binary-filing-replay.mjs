@@ -7,11 +7,14 @@
 //
 //   checkpoint --input <file> [--store <dir>]   the start's slice, or the slice of the phase the last step ended
 //   finalize --input <file> [--store <dir>]     the record, folding the checkpoints in `dir`
+//   record --input <file> [--store <dir>]       a record filed as its run built it (triage's), as that engine's logger
+//                                               files it: `write`
 //   publication --input <file>                  a finished run published on its PR after the fact: its sorting, memory
 //                                               contradictions and PR comments written into the record already filed
 //
 // Its answer is the LAST line on stdout, one JSON object: a checkpoint's { phase, runDir } or { phase, error }, or
-// { skipped: true } when no phase ended; the record's { ok, reason, file }; a publication's { ok, reason, file }.
+// { skipped: true } when no phase ended; the record's { ok, reason, file }, a built record's the same; a publication's
+// { ok, reason, file }.
 import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import { run as craftLogRun } from './craft-log-run.mjs'
@@ -183,6 +186,20 @@ async function finalize(req, store) {
 }
 
 /**
+ * A record filed as its run built it — triage's, whose engine files it with the logger's `write` (realm @nick/craft,
+ * node #616) — `--retry` when an earlier attempt may have filed it.
+ * @param {Record<string, unknown>} req @param {string} store
+ */
+async function record(req, store) {
+  const c = common(req)
+  const rec = req['record']
+  if (!rec || typeof rec !== 'object' || Array.isArray(rec)) return { ok: false, reason: 'no record was sent', file: '' }
+  const retry = req['retry'] === true ? ['--retry'] : []
+  const r = await craftLogRun(['write', ...retry, ...loggerFlags(c, store, null)], {}, c.repo, () => JSON.stringify(rec))
+  return { ...logRunOutcome({ ok: r.exitCode === 0, output: [...r.stdout, ...r.stderr] }), file: filedIn(r.stdout.join('\n')) }
+}
+
+/**
  * The publication of a finished step written into the record already filed (`recordFile`), in the record's own shape.
  * Run from the binary's filing directory: the reviewed checkout may be gone, and the record names its file.
  * @param {Record<string, unknown>} req
@@ -199,10 +216,10 @@ async function publication(req) {
 }
 
 /** @type {Record<string, (req: Record<string, unknown>, store: string) => Promise<Record<string, unknown>>>} */
-const COMMANDS = { checkpoint, finalize, publication }
+const COMMANDS = { checkpoint, finalize, record, publication }
 
 /**
- * `<checkpoint|finalize|publication> --input <file> [--store <dir>]`: exit 0 with the answer as the last stdout line, 1 when the
+ * `<checkpoint|finalize|record|publication> --input <file> [--store <dir>]`: exit 0 with the answer as the last stdout line, 1 when the
  * input cannot be read, 2 on an unknown command.
  * @param {string[]} argv @returns {Promise<import('./script-main.mjs').ScriptResult>}
  */
@@ -210,7 +227,7 @@ export async function run(argv) {
   const o = outputLines()
   const write = Object.hasOwn(COMMANDS, String(argv[0])) ? COMMANDS[String(argv[0])] : undefined
   if (!write) {
-    o.stderr.push('usage: <checkpoint|finalize|publication> --input <file> [--store <dir>]')
+    o.stderr.push('usage: <checkpoint|finalize|record|publication> --input <file> [--store <dir>]')
     return { exitCode: 2, ...o }
   }
   /** @type {Record<string, unknown>} */

@@ -5,7 +5,7 @@
 # without sh uses craft-bin.mjs.
 set -u
 
-version=0.60.0 # x-release-please-version
+version=0.61.0 # x-release-please-version
 
 die() {
   printf 'craft: %s\n' "$1" >&2

@@ -147,7 +147,7 @@ export function packageJson(root, version) {
   return {
     name: PACKAGE_NAME,
     version,
-    description: "craft's skills, review agents and review for OpenCode 2.x.",
+    description: 'craft: AI code review and code-quality skills for OpenCode 2.x.',
     license: 'MIT',
     type: 'module',
     exports: EXPORTS,

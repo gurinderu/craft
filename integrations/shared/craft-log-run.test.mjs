@@ -277,6 +277,7 @@ test('classifyResult separates the agent result shapes a review actually produce
   assert.equal(classifyResult({ refuted: false, citedLineMatches: true, reachable: true, premiseSupported: true }), 'verify')
   assert.equal(classifyResult({ verdicts: [{ index: 0, refuted: true }] }), 'verify-batch')
   assert.equal(classifyResult({ sizeBucket: 'medium', lenses: ['safety'] }), 'scout')
+  assert.equal(classifyResult({ lenses: ['safety'], isLibrary: false }), 'scout', 'a scout told its size')
   assert.equal(classifyResult({ baseRef: 'origin/main', files: ['a.rs'] }), 'base')
   assert.equal(classifyResult({ status: 'pass', seedFindings: [] }), 'gate')
   assert.equal(classifyResult({ groups: [[0, 1]] }), 'dedup')
@@ -322,6 +323,15 @@ test('recordFromJournal rebuilds a dead run and never passes candidates off as c
   // Rigor is derived on the plan, which no transcript carries — the reconstruction says size and
   // lenses rather than claiming rigor it cannot observe.
   assert.deepEqual(rec.scout, [{ size: 'medium', lenses: ['safety'] }])
+})
+
+test('recordFromJournal: a scout the engine told its size gives it none, and the record says so', () => {
+  const dir = tmpStore()
+  fakeJournal(dir, [
+    { type: 'started', agentId: 'a1' },
+    { type: 'result', agentId: 'a1', result: { lenses: ['errors'], isLibrary: false, securitySensitive: false } },
+  ])
+  assert.deepEqual(recordFromJournal(dir).scout, [{ size: null, lenses: ['errors'] }])
 })
 
 // The verify/verify-batch `result` entry carries no finding identity of its own (no fingerprint, no
