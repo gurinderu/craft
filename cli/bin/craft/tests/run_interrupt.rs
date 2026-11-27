@@ -14,6 +14,8 @@
 mod common;
 #[path = "run_interrupt/fixture.rs"]
 mod fixture;
+#[path = "run_interrupt/stdin.rs"]
+mod stdin;
 
 use std::time::{Duration, Instant};
 

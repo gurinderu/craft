@@ -75,6 +75,9 @@ pub struct StartArgs {
     /// a file or `-` for stdin; they add to what the run recalls from the project's memory.
     #[arg(long)]
     pub prior_decisions: Option<PathBuf>,
+    /// `--prior-decisions` as `review run` read it ahead; the start reads it itself when absent.
+    #[arg(skip)]
+    pub prior_decisions_read: Option<Result<Value, String>>,
     /// Recall nothing from the project's memory: only the records `--prior-decisions` passes
     /// apply (a launcher that recalled them itself).
     #[arg(long)]
@@ -326,11 +329,10 @@ pub(crate) fn start_step(args: &StartArgs, cancel: &craft_review::cancel::Cancel
         lenses_unread: lenses.err().unwrap_or_default(),
         recall: !args.no_recall,
         recall_degraded: args.recall_degraded.clone(),
-        // An unreadable list is refused and named in the report; the review still runs.
         prior_decisions: args
-            .prior_decisions
-            .as_deref()
-            .map(|p| json_input(p).map_err(|e| format!("{e:#}"))),
+            .prior_decisions_read
+            .clone()
+            .or_else(|| prior_decisions(args)),
         sources: crate::init::sources_setup(),
         gate: (!args.no_gate).then(|| craft_review::gate::GateSetup {
             projects: crate::init::projects_dir(),
@@ -456,6 +458,14 @@ fn installed_copy(config: Option<PathBuf>, home: Option<PathBuf>) -> Option<Path
             .join("plugins/cache/craft/craft")
             .join(env!("CARGO_PKG_VERSION")),
     )
+}
+
+/// The launcher's list `--prior-decisions` names, when it names one: an unreadable list is refused
+/// and named in the report; the review still runs.
+pub(crate) fn prior_decisions(args: &StartArgs) -> Option<Result<Value, String>> {
+    args.prior_decisions
+        .as_deref()
+        .map(|p| json_input(p).map_err(|e| format!("{e:#}")))
 }
 
 /// A JSON value the host passes, as a file or `-` for stdin.
