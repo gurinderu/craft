@@ -1,4 +1,7 @@
 //! Native triage through the real binary and controlled, read-only host CLIs (#616).
+#[cfg(target_os = "linux")]
+#[path = "../../../test-support/blocked.rs"]
+mod blocked;
 #[path = "triage_run/boundaries.rs"]
 mod boundaries;
 mod common;

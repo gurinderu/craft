@@ -43,10 +43,9 @@ fn interrupt_stdin(flag: &str, signal: &str, number: i32) {
         .spawn()
         .unwrap();
     child.stdin.as_mut().unwrap().write_all(b"[").unwrap();
-    let wchan = format!("/proc/{}/wchan", child.id());
     let bound = Instant::now() + Duration::from_secs(10);
     let reading = loop {
-        if std::fs::read_to_string(&wchan).is_ok_and(|s| s.trim() == "pipe_read") {
+        if super::blocked::reading_stdin(child.id()) {
             break true;
         }
         if child.try_wait().unwrap().is_some() || Instant::now() >= bound {
@@ -70,7 +69,7 @@ fn interrupt_stdin(flag: &str, signal: &str, number: i32) {
     }
     // Keep the input pipe open until after observing the signal's effect.
     let out = child.wait_with_output().unwrap();
-    assert!(reading, "{flag}: never reached pipe_read: {out:?}");
+    assert!(reading, "{flag}: never blocked reading stdin: {out:?}");
     assert!(sent, "{flag}: failed to send {signal}");
     assert!(exited, "{flag}: still reading stdin after {signal}");
     assert_eq!(out.status.signal(), Some(number), "{out:?}");
