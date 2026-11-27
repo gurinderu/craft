@@ -1,0 +1,1 @@
+Inspect `git diff --stat {{statRange}} -- {{globs}}`. This part changed {{lines}} lines: its size is {{size}}, counted by the engine. Pick the lenses for that size below; leave sizeBucket out of your answer.

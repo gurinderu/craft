@@ -236,6 +236,7 @@ fn a_mixed_diff_plans_each_profile_over_its_own_files_and_settles_one_pool() {
         "web/package.json",
     ]);
     let out = tempfile::tempdir().unwrap();
+    common::sized(repo.path(), "medium");
     let (run, s) = start(repo.path(), out.path());
     assert_eq!(ids(&s), ["scout-rust", "scout-nix", "scout-general"]);
     let general = prompt_of(task(&s, "scout-general"));
@@ -403,6 +404,7 @@ fn a_query_string_on_a_changed_rust_line_adds_the_queries_lens() {
 fn a_profile_that_only_repeated_another_profiles_finding_goes_dry() {
     let repo = repo_with(&["src/lib.rs", "web/app.ts"]);
     let out = tempfile::tempdir().unwrap();
+    common::sized(repo.path(), "medium");
     let (run, _) = start(repo.path(), out.path());
     let s = submit(
         &run,

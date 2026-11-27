@@ -66,7 +66,7 @@ fn every_prompt_renders_as_the_engines_render_it() {
         let profile = Profile::load(id).unwrap();
         g.check(
             &format!("{at}/scout"),
-            body(&ctx, scout_prompt(&ctx, &profile, &[]).unwrap()),
+            body(&ctx, scout_prompt(&ctx, &profile, &[], None).unwrap()),
         );
         let pathspec = profile.pathspec(&[]);
         for lens in strings(lenses) {
@@ -255,7 +255,7 @@ fn strict(g: &mut Golden, ctx: &PromptContext, plan: &Plan, prior: &str) {
     let rust = Profile::load("rust").unwrap();
     g.check(
         "/expected/strict/scout",
-        body(ctx, scout_prompt(&strict, &rust, &[]).unwrap()),
+        body(ctx, scout_prompt(&strict, &rust, &[], None).unwrap()),
     );
     let pathspec = rust.pathspec(&[]);
     let at = LensIn {
@@ -287,7 +287,7 @@ fn rereview(g: &mut Golden, ctx: &PromptContext, plan: &Plan, prior: &str, input
         let at = format!("/expected/rereview/{case}");
         g.check(
             &format!("{at}/scout"),
-            body(&ctx, scout_prompt(&ctx, &rust, &[]).unwrap()),
+            body(&ctx, scout_prompt(&ctx, &rust, &[], None).unwrap()),
         );
         let errors = LensIn {
             profile: &rust,

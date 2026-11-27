@@ -90,7 +90,7 @@ fn the_critic_its_follow_up_and_an_extra_lens_render_as_the_engines_do() {
         scope: input["scope"].as_str().map(str::to_owned),
         ..ctx
     };
-    let got = body(crate::prompts::scout_prompt(&scoped, &rust, &[]).unwrap());
+    let got = body(crate::prompts::scout_prompt(&scoped, &rust, &[], None).unwrap());
     g.check("/expected/scoped/scout", got);
     let got = body(extra_lens_prompt(&scoped, "reviewer", &prior, &plan.repo_rules).unwrap());
     g.check("/expected/scoped/extraLens", got);

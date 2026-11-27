@@ -349,7 +349,7 @@ lens rounds within its budget — the reviewer's profile's `[mutants]` section c
 joined when the rounds end, each mutant that survived in a function the change touched pooled as a tool's finding, and the report
 saying what came of them or why they did not run), the reviewer's profile's `[lenses]` composition (`src/composition.rs`, read by `src/project/lenses.rs`: a lens
 turned off leaves the plan, one held runs its first round only, the report naming each; never the security or a profile's safety lens,
-the concurrency lens at most held; `--all-lenses` sets it aside for the release's full review; `src/composition/candidates.rs` sums each lens's yield over a repository's runs and offers the quiet ones, which `craft init` shows through `cli/bin/craft/src/init/lenses.rs` and writes with `--write --lens`), a scout per profile whose answer plans its lenses over its own files, the
+the concurrency lens at most held; `--all-lenses` sets it aside for the release's full review; `src/composition/candidates.rs` sums each lens's yield over a repository's runs and offers the quiet ones, which `craft init` shows through `cli/bin/craft/src/init/lenses.rs` and writes with `--write --lens`), a scout per profile whose answer plans its lenses over its own files (the part's size counted by the binary from its changed lines, `src/size.rs`, a runbook's named by its scout), the
 consumers list, built at start beside the gate (`src/consumers/`: for each changed Rust symbol the lines outside the diff that name it —
 callers, implementors and same-named declarations, places passing it as a value — from a name search, always run
 (`names.rs`), a structural search for a name too common to search by text or past the name search's line cap

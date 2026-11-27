@@ -210,6 +210,10 @@ pub struct Track {
     /// written before they were.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signals: Option<Vec<String>>,
+    /// The lines its files changed, added and removed ([`crate::size`]), which size its plan;
+    /// `None` until counted, when git could not count them, and in a state written before.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub changed_lines: Option<u64>,
 }
 
 impl Track {
@@ -225,6 +229,7 @@ impl Track {
             design: false,
             renamed_from: Vec::new(),
             signals: None,
+            changed_lines: None,
         }
     }
 

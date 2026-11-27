@@ -82,6 +82,8 @@ pub(super) fn prepare(
     run.notes.extend(design);
     let signals = crate::lens_signal::mark(cwd, &run.diff, &mut run.tracks);
     run.notes.extend(signals);
+    let size = crate::size::mark(cwd, &run.diff, &mut run.tracks);
+    run.notes.extend(size);
     let (prepared, gated, listed) = std::thread::scope(|s| {
         let sources = s.spawn(|| {
             opts.sources
@@ -209,7 +211,7 @@ pub(super) fn scouts(run: &RunState, profiles: &[Profile]) -> Result<Vec<Task>, 
         tasks.push(Task::new(
             format!("scout-{}", p.id),
             format!("scout:{}", p.id),
-            prompts::scout_prompt(&run.context, p, &t.read_paths())?,
+            prompts::scout_prompt(&run.context, p, &t.read_paths(), t.changed_lines)?,
             p.scout_model,
             content::schema("scout")?,
             TaskKind::Scout {

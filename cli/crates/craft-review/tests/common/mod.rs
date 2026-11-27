@@ -167,6 +167,37 @@ pub fn write_answer(step: &Value, id: &str, answer: &str) {
     std::fs::write(path, answer).unwrap();
 }
 
+/// Grows the fixture's change to the `size` the binary counts (realm @nick/craft, node #655) with
+/// comment lines amended into its last commit, which no lens signal reads: a medium one in its
+/// file, under the lines that make a file large; a large one in a test file, which no signal reads.
+pub fn sized(dir: &Path, size: &str) {
+    let (file, lines) = match size {
+        "medium" => (
+            ["src/lib.rs", "src/notes.txt"]
+                .into_iter()
+                .map(|f| dir.join(f))
+                .find(|f| f.is_file())
+                .unwrap(),
+            100,
+        ),
+        "large" => (dir.join("tests/sized.rs"), 450),
+        _ => return,
+    };
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    let mut text = std::fs::read_to_string(&file).unwrap_or_default();
+    let mark = if file.extension().is_some_and(|e| e == "rs") {
+        "//"
+    } else {
+        "#"
+    };
+    for i in 0..lines {
+        text.push_str(&format!("{mark} note {i}\n"));
+    }
+    std::fs::write(&file, text).unwrap();
+    git(dir, &["add", "."]);
+    git(dir, &["commit", "-q", "--amend", "--no-edit"]);
+}
+
 /// A scout's answer: `size`, the picks `lenses`, not security-sensitive, one repository rule file.
 pub fn scout(size: &str, lenses: &[&str]) -> Value {
     json!({"sizeBucket": size, "lenses": lenses, "isLibrary": false, "securitySensitive": false,

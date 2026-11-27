@@ -22,6 +22,7 @@ fn input<'a>(p: &'a Profile, files: &'a [String], signals: Option<&'a [String]>)
         embedded_sql: false,
         design: false,
         signals,
+        changed_lines: None,
     }
 }
 

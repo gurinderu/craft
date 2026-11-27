@@ -51,6 +51,7 @@ fn to_critic(run: &Path) -> Value {
 #[test]
 fn the_critic_admits_a_lens_and_its_finding_is_verified() {
     let repo = fixture(true);
+    common::sized(repo.path(), "large");
     let out = tempfile::tempdir().unwrap();
     let run = out.path().join("run");
     step::start(&opts(repo.path(), out.path())).unwrap();
@@ -115,6 +116,7 @@ fn the_critic_admits_a_lens_and_its_finding_is_verified() {
 #[test]
 fn a_follow_up_lens_that_read_no_rubric_file_whole_is_named_as_degraded() {
     let repo = fixture(true);
+    common::sized(repo.path(), "large");
     let out = tempfile::tempdir().unwrap();
     let run = out.path().join("run");
     step::start(&opts(repo.path(), out.path())).unwrap();
@@ -139,6 +141,7 @@ fn a_follow_up_lens_that_read_no_rubric_file_whole_is_named_as_degraded() {
 #[test]
 fn a_critic_that_names_nothing_ends_the_run_as_it_stood() {
     let repo = fixture(true);
+    common::sized(repo.path(), "large");
     let out = tempfile::tempdir().unwrap();
     let run = out.path().join("run");
     step::start(&opts(repo.path(), out.path())).unwrap();
@@ -154,6 +157,7 @@ fn a_critic_that_names_nothing_ends_the_run_as_it_stood() {
 #[test]
 fn a_limit_stop_in_the_critics_verification_keeps_the_first_passs_findings() {
     let repo = fixture(true);
+    common::sized(repo.path(), "large");
     let out = tempfile::tempdir().unwrap();
     let run = out.path().join("run");
     step::start(&opts(repo.path(), out.path())).unwrap();

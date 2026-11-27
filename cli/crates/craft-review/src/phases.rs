@@ -223,6 +223,7 @@ fn plan_tracks(run: &mut RunState, profiles: &[Profile]) {
             embedded_sql: track.embedded_sql,
             design: track.design,
             signals: track.signals.as_deref(),
+            changed_lines: track.changed_lines,
         }));
         if let Some(plan) = track.plan.as_mut() {
             let mut asked = crate::optional::bought(p, &run.optional);
