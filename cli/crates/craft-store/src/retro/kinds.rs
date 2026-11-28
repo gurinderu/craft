@@ -71,6 +71,7 @@ pub struct Deferred {
     kind: String,
     key: String,
     ts: JsString,
+    stopped: bool,
     cost: Option<Js>,
 }
 
@@ -107,6 +108,7 @@ pub fn add(
             kind: at,
             key,
             ts: r.text_units("ts"),
+            stopped: crate::parts::stopped(r),
             cost: r.get("cost").cloned(),
         }),
         None => price(kind, r.get("cost")),
@@ -115,9 +117,9 @@ pub fn add(
 }
 
 /// Prices each deferred run by its parts' cost summed once ([`Parts::cost_for`]).
-pub fn settle(kinds: &mut BTreeMap<String, Kind>, deferred: Vec<Deferred>, parts: &Parts) {
+pub fn settle(kinds: &mut BTreeMap<String, Kind>, deferred: Vec<Deferred>, parts: &mut Parts) {
     for d in deferred {
-        let cost = parts.cost_for(Some(&d.key), &d.ts, d.cost);
+        let cost = parts.cost_for(Some(&d.key), &d.ts, d.stopped, d.cost);
         price(kinds.entry(d.kind).or_default(), cost.as_ref());
     }
 }

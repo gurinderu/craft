@@ -188,15 +188,18 @@ fn a_kind_prices_its_usable_costs_and_counts_the_others_in_text_and_json() {
         "2026-11-02T12-00-00Z",
         &review("0.61.0", "/w/craft", "feat/a", "delta", 3.0),
     );
+    let mut more = review("0.61.0", "/w/craft", "feat/b", "delta", 5.0);
+    more["cost"] = json!({"total": 3000, "agents": 6, "rule": "per-message"});
+    record(s, "2026-11-02T13-00-00Z", &more);
 
     let lines = retro(s, &[]);
     let kind = section(&lines, "kind")[0];
     assert_eq!(
         (&kind["priced"], &kind["cost"], &kind["costPerRun"]),
-        (&json!(1), &json!(1000), &json!(1000))
+        (&json!(2), &json!(4000), &json!(2000))
     );
     assert_eq!(kind["unpriced"], json!({"missing": 1, "partial": 1}));
-    assert_eq!((&kind["timed"], &kind["counted"]), (&json!(3), &json!(3)));
+    assert_eq!((&kind["timed"], &kind["counted"]), (&json!(4), &json!(4)));
 
     let text = Command::new(env!("CARGO_BIN_EXE_craft"))
         .args(["runs", "retro", "--store"])
@@ -217,13 +220,55 @@ fn a_kind_prices_its_usable_costs_and_counts_the_others_in_text_and_json() {
         cells,
         [
             "review (cli) · light · delta",
-            "3",
-            "3",
+            "4",
+            "3.5",
             "6",
-            "1",
-            "1000",
+            "2",
+            "2000",
             "missing 1, partial 1"
         ],
         "{text}"
+    );
+}
+
+#[test]
+fn a_run_filed_in_parts_is_priced_once_by_every_parts_share() {
+    let d = tempfile::tempdir().unwrap();
+    let s = d.path();
+    let part = |verdict: &str, run: &str, total: u64, source: &str| {
+        let mut r = review("0.61.0", "/w/craft", "feat/a", "delta", 2.0);
+        r["verdict"] = json!(verdict);
+        r["cliRun"] = json!(run);
+        r["cost"] = json!({"output": total, "input": 0, "cacheRead": 0, "cacheWrite": 0,
+            "total": total, "agents": 2, "rule": "per-message", "source": source});
+        r
+    };
+    record(
+        s,
+        "2026-11-02T10-00-00Z",
+        &part("INCOMPLETE", "/r/1", 100, "wf_a"),
+    );
+    record(
+        s,
+        "2026-11-02T11-00-00Z",
+        &part("Warning", "/r/1", 300, "wf_b"),
+    );
+    record(
+        s,
+        "2026-11-02T12-00-00Z",
+        &part("Approve", "/r/2", 500, "wf_c"),
+    );
+    let lines = retro(s, &[]);
+    assert_eq!(section(&lines, "summary")[0]["folded"], json!(1));
+    let kind = section(&lines, "kind")[0];
+    assert_eq!(
+        (
+            &kind["runs"],
+            &kind["priced"],
+            &kind["cost"],
+            &kind["unpriced"]
+        ),
+        (&json!(2), &json!(2), &json!(900), &json!({})),
+        "the resumed run carries its stopped part's share: {kind}"
     );
 }

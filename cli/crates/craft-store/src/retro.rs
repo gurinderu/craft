@@ -219,7 +219,7 @@ fn finished_of(
 }
 
 /// Prices the runs filed in parts once every record is read, by their parts' shares summed once.
-pub fn settle(retro: &mut Retro, parts: &crate::parts::Parts) {
+pub fn settle(retro: &mut Retro, parts: &mut crate::parts::Parts) {
     kinds::settle(&mut retro.kinds, std::mem::take(&mut retro.deferred), parts);
 }
 
@@ -228,11 +228,11 @@ pub fn settle(retro: &mut Retro, parts: &crate::parts::Parts) {
 /// When a report field cannot be represented as Unicode.
 pub fn retro(version: &str, records: impl IntoIterator<Item = Obj>) -> Result<Retro, Utf16Error> {
     let mut out = Retro::default();
-    let (finished, parts) = finished_of(version, records, &mut out)?;
+    let (finished, mut parts) = finished_of(version, records, &mut out)?;
     for r in finished {
         add_record(&mut out, &r)?;
     }
-    settle(&mut out, &parts);
+    settle(&mut out, &mut parts);
     Ok(out)
 }
 

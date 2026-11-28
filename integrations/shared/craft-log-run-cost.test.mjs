@@ -34,11 +34,13 @@ test('foldStoppedParts: a run filed in parts is priced by every share summed onc
   const { readFile } = await import('node:fs/promises')
   const { foldStoppedParts } = await import('./run-parts.mjs')
   const url = new URL('../../content/parity/cost-problem-cases.json', import.meta.url)
-  /** @type {{ folds: { name: string, parts: { ts: string, verdict: string, cost?: unknown }[], standing: string, cost: unknown }[] }} */
+  /** @type {{ folds: { name: string, parts: { ts: string, verdict: string, cost?: unknown }[], standing: number, cost: unknown }[] }} */
   const { folds } = JSON.parse(await readFile(url, 'utf8'))
   for (const f of folds) {
     const records = f.parts.map(p => ({ ...p, kind: 'workflow', name: 'review', driver: 'cli', project: '/p', cliRun: '/r/1' }))
-    const standing = foldStoppedParts(records).records.find(r => r.ts === f.standing)
-    assert.deepEqual(standing?.cost ?? null, f.cost, f.name)
+    const part = f.parts[f.standing]
+    const kept = foldStoppedParts(records).records.filter(r => r.ts === part?.ts && r.verdict === part.verdict)
+    assert.equal(kept.length, 1, `${f.name}: the standing part is kept once`)
+    assert.deepEqual(kept[0]?.cost ?? null, f.cost, f.name)
   }
 })

@@ -62,12 +62,21 @@ fn a_run_filed_in_parts_is_priced_as_the_javascript_fold_prices_it() {
         for r in &records {
             parts.note(r);
         }
-        let standing = f.get("standing").and_then(Js::as_str).unwrap();
-        let r = records
-            .iter()
-            .find(|r| r.text_units("ts") == standing)
-            .unwrap();
+        let standing = f.get("standing").and_then(Js::as_num).unwrap();
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "a part's index"
+        )]
+        let Some(r) = records.get(standing as usize) else {
+            panic!("{name}: no part {standing}");
+        };
         let want = f.get("cost").filter(|c| **c != Js::Null).map(Js::compact);
         assert_eq!(parts.cost_of(r).map(|c| c.compact()), want, "{name}");
+        assert_eq!(
+            parts.cost_of(r).map(|c| c.compact()),
+            r.get("cost").map(Js::compact),
+            "{name}: a record of the same time and stop priced again is not the standing one"
+        );
     }
 }

@@ -15,7 +15,10 @@ pub type Part = (JsString, Option<Js>);
 /// The share of its Workflow run a cost is, `None` when it names no run (a share of its own).
 fn share(cost: Option<&Js>) -> Option<String> {
     let c = cost?.as_obj()?;
-    let source = c.get("source").and_then(Js::as_str)?;
+    let source = c
+        .get("source")
+        .and_then(problem::text)
+        .filter(|s| !s.is_empty())?;
     let index = c
         .get("slice")
         .filter(|s| problem::is_slice(s))
@@ -24,7 +27,7 @@ fn share(cost: Option<&Js>) -> Option<String> {
         .and_then(Js::as_num)
         .map(crate::js::number_text)
         .unwrap_or_default();
-    Some(format!("{source}#{index}"))
+    Some(format!("{}#{index}", Js::Str(source.clone()).compact()))
 }
 
 /// Whether a cost is summed: usable, or a measured lower bound.

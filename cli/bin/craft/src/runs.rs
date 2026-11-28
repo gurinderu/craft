@@ -373,7 +373,7 @@ pub(crate) fn retro_where(
     for r in read_back(store, standing, skipped, keep) {
         craft_store::retro::add_record(&mut out, &r)?;
     }
-    craft_store::retro::settle(&mut out, &parts);
+    craft_store::retro::settle(&mut out, &mut parts);
     Ok(out)
 }
 

@@ -6,13 +6,14 @@
 //! every part stopped stands as its newest. The fold comes before any version or filter: the run
 //! is counted under its standing record's version, and a retro of the stopped part's version counts
 //! that part folded. A reader that sums cost prices the standing record by its parts' shares
-//! summed once ([`Parts::cost_of`], [`crate::cost::fold`]), as the JavaScript report does. A record that names no run directory — one filed before records named it — folds on
+//! summed once ([`cost`]), as the JavaScript report does. A record that names no run directory — one filed before records named it — folds on
 //! nothing here.
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::cost::fold::{self, Part};
-use crate::js::{Js, JsString, Obj, Utf16Error};
+use crate::js::{Js, Obj, Utf16Error};
+
+mod cost;
 
 /// The run a CLI record is a part of — its workflow, project and the binary's run directory —
 /// `None` when it names no run directory.
@@ -52,8 +53,8 @@ struct Held {
 pub struct Parts {
     finished: BTreeSet<String>,
     held: BTreeMap<String, Held>,
-    /// Every part of each run noted: its time, whether it stopped, its cost.
-    costs: BTreeMap<String, Vec<(JsString, bool, Option<Js>)>>,
+    /// Every part of each run noted, in the order noted ([`cost`]).
+    costs: BTreeMap<String, Vec<cost::Noted>>,
 }
 
 impl Parts {
@@ -63,42 +64,17 @@ impl Parts {
         let Some(key) = part_key(r) else {
             return;
         };
-        let part = (r.text_units("ts"), stopped(r), r.get("cost").cloned());
-        self.costs.entry(key.clone()).or_default().push(part);
+        self.costs
+            .entry(key.clone())
+            .or_default()
+            .push(cost::Noted {
+                ts: r.text_units("ts"),
+                stopped: stopped(r),
+                cost: r.get("cost").cloned(),
+                claimed: false,
+            });
         if !stopped(r) {
             self.finished.insert(key);
-        }
-    }
-
-    /// The cost to price `r` by: when it stands for a run whose stopped parts fold into it — its
-    /// run's newest finished record, else its newest — every part's share summed once; else its own.
-    #[must_use]
-    pub fn cost_of(&self, r: &Obj) -> Option<Js> {
-        self.cost_for(
-            part_key(r).as_deref(),
-            &r.text_units("ts"),
-            r.get("cost").cloned(),
-        )
-    }
-
-    /// [`Self::cost_of`] for a record of run `key` filed at `ts` with cost `own`.
-    #[must_use]
-    pub fn cost_for(&self, key: Option<&str>, ts: &JsString, own: Option<Js>) -> Option<Js> {
-        let Some(parts) = key.and_then(|k| self.costs.get(k)) else {
-            return own;
-        };
-        let newest = |finished: bool| parts.iter().filter(|p| p.1 != finished).map(|p| &p.0).max();
-        if newest(true).or_else(|| newest(false)) != Some(ts) {
-            return own;
-        }
-        let folding = parts.iter().filter(|p| p.1 && p.0 != *ts);
-        let all: Vec<Part> = std::iter::once((ts.clone(), own.clone()))
-            .chain(folding.map(|p| (p.0.clone(), p.2.clone())))
-            .collect();
-        if all.len() == 1 {
-            own
-        } else {
-            fold::summed(&all)
         }
     }
 

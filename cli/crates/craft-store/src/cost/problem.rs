@@ -3,7 +3,7 @@
 //! `content/parity/cost-problem-cases.json` (realm @nick/craft, nodes #357, #393, #658).
 
 use super::{COST_RULE, COST_RULE_PER_LINE};
-use crate::js::{Js, Obj};
+use crate::js::{Js, JsString, Obj};
 
 /// Why a cost is not usable, worst first as the rule tests them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -49,6 +49,12 @@ const MEASURED: [&str; 6] = [
 ];
 const LOWER: [&str; 2] = ["skipped", "partsUnmeasured"];
 
+/// A string, as the JavaScript `typeof v === 'string'` takes one: any string, a lone surrogate
+/// in it too.
+pub(super) const fn text(v: &Js) -> Option<&JsString> {
+    if let Js::Str(s) = v { Some(s) } else { None }
+}
+
 /// `isCount`: a finite number, not below zero.
 fn count(v: &Js) -> Option<f64> {
     v.as_num().filter(|n| n.is_finite() && *n >= 0.0)
@@ -90,10 +96,10 @@ pub fn problem(cost: Option<&Js>) -> Option<Problem> {
     if total(c) <= 0.0 {
         return Some(Problem::Empty);
     }
-    match present(c, "rule").and_then(Js::as_str) {
+    match present(c, "rule").and_then(text) {
         None => return Some(Problem::Overcounted),
-        Some(r) if r == COST_RULE_PER_LINE => return Some(Problem::Overcounted),
-        Some(r) if r != COST_RULE => return Some(Problem::UnknownRule),
+        Some(r) if *r == COST_RULE_PER_LINE => return Some(Problem::Overcounted),
+        Some(r) if *r != COST_RULE => return Some(Problem::UnknownRule),
         Some(_) => {}
     }
     let lower = LOWER
@@ -121,8 +127,8 @@ fn malformed(c: &Obj) -> bool {
 /// A `source` that is not a non-empty string, a `rule` that is not a string, or a `slice` that is
 /// not a run's slice.
 fn label_malformed(c: &Obj) -> bool {
-    present(c, "source").is_some_and(|s| s.as_str().is_none_or(str::is_empty))
-        || present(c, "rule").is_some_and(|r| r.as_str().is_none())
+    present(c, "source").is_some_and(|s| text(s).is_none_or(JsString::is_empty))
+        || present(c, "rule").is_some_and(|r| text(r).is_none())
         || present(c, "slice").is_some_and(|s| !is_slice(s))
 }
 
