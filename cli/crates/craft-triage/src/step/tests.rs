@@ -156,6 +156,7 @@ fn plan_of(step: &Value) -> Value {
 
 mod banners;
 mod halt;
+mod kept;
 mod recording;
 mod refile;
 mod repo;

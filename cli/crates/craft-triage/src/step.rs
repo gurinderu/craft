@@ -18,7 +18,7 @@ mod status;
 use std::path::Path;
 
 use craft_review::filing::Writer;
-use craft_step::{Aside, Hold, take};
+use craft_step::{Aside, Hold, noted, take};
 use serde_json::{Map, Value, json};
 
 use crate::TriageError;
@@ -55,6 +55,9 @@ pub fn submit(
     if s.stopped.is_some() && said.limit.is_some() {
         return Ok(halt::stopped(dir, &s));
     }
+    // The notes a round left unsubmitted come first, before this submit's (realm @nick/craft,
+    // node #752); forgotten only once the state holding them is saved.
+    take::note(&mut s.degraded, &noted::kept(dir));
     take::note(&mut s.degraded, said.degraded);
     if let Some(id) = take::unknown(&s.tasks, given) {
         return Err(TriageError::UnknownTask(id.clone()));
@@ -63,12 +66,16 @@ pub fn submit(
     take::abandon(dir, &mut s.tasks, said.abandoned, &mut aside)?;
     // A stopped run goes on: given no answers, its held tasks are handed out again, none counted.
     let was_stopped = s.stopped.take().is_some();
-    if was_stopped && given.is_none() {
-        return step(dir, &mut s, aside, None, w);
-    }
-    let hold = Hold::of(said.limit.is_some(), said.resume);
-    take::take_pending(dir, &mut s.tasks, given, hold, &mut aside)?;
-    step(dir, &mut s, aside, said.limit, w)
+    let limit = if was_stopped && given.is_none() {
+        None
+    } else {
+        let hold = Hold::of(said.limit.is_some(), said.resume);
+        take::take_pending(dir, &mut s.tasks, given, hold, &mut aside)?;
+        said.limit
+    };
+    let next = step(dir, &mut s, aside, limit, w)?;
+    noted::forget(dir);
+    Ok(next)
 }
 
 /// Moves the run on when none of its tasks is pending, saves it, sets the refused answers aside,
