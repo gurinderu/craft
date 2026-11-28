@@ -1,6 +1,6 @@
 use super::{Fake, args, clean, next, open, scratch};
 use crate::AuditError;
-use crate::step::{Said, report_path, submit};
+use crate::step::{Said, record_path, report_path, submit};
 
 const RESUME: Said<'static> = Said {
     degraded: &[],
@@ -60,4 +60,25 @@ fn a_run_that_does_not_record_files_nothing_and_its_finished_resume_is_done() {
     assert!(w.calls.borrow().is_empty());
     let again = submit(&s.run, None, &RESUME, &w);
     assert!(matches!(again, Err(AuditError::Done(_))), "{again:?}");
+}
+
+#[test]
+fn the_run_directory_is_written_before_the_store_so_a_failed_write_lands_no_record() {
+    let s = scratch(&["tool.py"]);
+    let w = Fake::default();
+    let step = open(&s, args(None), &w);
+    clean(&s.run, &step);
+    std::fs::create_dir(record_path(&s.run)).unwrap();
+    let got = submit(&s.run, None, &Said::default(), &w);
+    assert!(matches!(got, Err(AuditError::Unwritable { .. })), "{got:?}");
+    assert!(
+        w.calls.borrow().is_empty(),
+        "no record lands before its run directory is written"
+    );
+    std::fs::remove_dir(record_path(&s.run)).unwrap();
+    let done = next(&s.run, &w, &Said::default());
+    assert_eq!(done["filing"]["record"], "filed", "{done}");
+    let calls = w.calls.borrow();
+    assert_eq!((calls.len(), calls[0]["retry"].clone()), (1, false.into()));
+    assert_eq!(calls[0]["writtenAtWrite"], true);
 }

@@ -1,7 +1,7 @@
-//! A finished pass as the host receives it: its record filed first when the run records, so a
-//! record that did not land leads the report; then the report, the record, the unread paths and
-//! the unverified Low and Info findings, each written into the run directory, and the step naming
-//! them, kept in `finished.json` for a host that lost it.
+//! A finished pass as the host receives it: the report, the record, the unread paths and the
+//! unverified Low and Info findings, each written into the run directory; then its record filed
+//! when the run records, a record that did not land leading the report written again; and the
+//! step naming them, kept in `finished.json` for a host that lost it.
 
 use std::path::{Path, PathBuf};
 
@@ -72,7 +72,7 @@ fn held(sum: &Summary) -> Option<String> {
     Some(out)
 }
 
-/// Ends the pass of `s` in `dir`: files its record, writes what it says, and returns its step.
+/// Ends the pass of `s` in `dir`: writes what it says, files its record, and returns its step.
 ///
 /// # Errors
 /// When the filing's attempt or a file cannot be written.
@@ -84,18 +84,22 @@ pub(super) fn end(
 ) -> Result<Value, AuditError> {
     let sum = report::summary(s, profiles);
     let record = crate::record::run_record(s, &sum);
-    let filed = filing::file(dir, s, &record, w)?;
-    let lost = filed.as_ref().map(|f| f.lost.clone()).unwrap_or_default();
-    let refile = filed.as_ref().is_some_and(|f| f.record != "filed");
+    // Every file the run directory holds is written before the store's write, so a write that
+    // fails leaves no landed record unkept; only a lost write's banner rewrites the report after.
     write(
         report_path(dir),
-        &report::markdown(dir, s, &sum, &lost, refile),
+        &report::markdown(dir, s, &sum, &[], false),
     )?;
     write(record_path(dir), &format!("{record:#}\n"))?;
     let unread = (!sum.unread.is_empty()).then(|| format!("{}\n", sum.unread.join("\n")));
     list(unread_path(dir), unread)?;
     list(unverified_path(dir), held(&sum))?;
+    let filed = filing::file(dir, s, &record, w)?;
     if let Some(f) = &filed {
+        if !f.lost.is_empty() {
+            let banner = report::markdown(dir, s, &sum, &f.lost, f.record != "filed");
+            write(report_path(dir), &banner)?;
+        }
         filing::keep(dir, f)?;
     }
     let out = step(dir, s, &sum, filed.as_ref());

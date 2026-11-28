@@ -29,6 +29,8 @@ impl Writer for Fake {
         let kept = super::filing::read(call.run).map(|f| f.record);
         let mut request = call.request.clone();
         request["keptAtWrite"] = json!(kept);
+        let written = [super::report_path(call.run), super::record_path(call.run)];
+        request["writtenAtWrite"] = json!(written.iter().all(|p| p.is_file()));
         self.calls.borrow_mut().push(request);
         if *self.refuse.borrow() {
             return Ok(json!({"ok": false, "reason": "the store is read-only", "file": ""}));
