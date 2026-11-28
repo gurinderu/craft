@@ -134,6 +134,17 @@ test('a start whose first page named its run but whose next page was not read as
 
 test('a start whose named run the binary did not finish files one INCOMPLETE record and offers its resume', async () => {
   const run = await lostStartPage({ 'step:status': statusSays(false) })
+  assert.ok(labels(run).includes('step:status'), String(labels(run)))
   assert.equal(labels(run).filter(l => l === 'log-run').length, 1, String(labels(run)))
   assert.ok(run.report.includes(`craft:review run=${RUN}`), run.report)
+  /** @type {{ notRun?: unknown, cliRun?: unknown } | null} */
+  const rec = JSON.parse(String(run.calls.find(c => c.label === 'log-run')?.prompt).split(/\nRECORD:\n/)[1] ?? 'null')
+  assert.deepEqual(rec?.notRun, ['the craft binary did not finish the run', 'stopped: the harness refused a service command'], 'the page step was refused')
+  assert.equal(rec.cliRun, RUN, 'the record names the run its resume will file under, so the store folds the two')
+})
+
+test('a start whose named run could not be recovered, its status refused, files nothing and says completion is unknown', async () => {
+  const run = await lostStartPage({ 'step:status': { exitCode: 1, stdout: '', stderr: REFUSED } })
+  assert.ok(!labels(run).includes('log-run'), String(labels(run)))
+  assert.match(run.report, /whether the binary finished the run is unknown/)
 })
