@@ -19,12 +19,14 @@ pub(super) fn exit_code(ran: &Ran) -> Option<i32> {
     }
 }
 
-/// Names `label` broken: its signal is unknown, never a pass or a failure.
-pub(super) fn broke(acc: &mut Acc, label: &str, why: &str) {
+/// Names `label` broken: its signal is unknown, never a pass or a failure, and `tool` is kept
+/// with `why` for the verdict line (realm @nick/craft, node #743).
+pub(super) fn broke(acc: &mut Acc, label: &str, tool: &str, why: &str) {
     acc.parts.push(format!("{label}: broken"));
     acc.notes.push(format!(
         "{label} {why} — a broken answer, its signal unknown"
     ));
+    acc.no_answer(tool, why);
 }
 
 /// Why an exit with `code` is no answer at all.

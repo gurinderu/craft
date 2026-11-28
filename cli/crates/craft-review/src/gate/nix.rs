@@ -3,7 +3,8 @@
 //! machine (no network, flakes off), which leaves the signal unknown — then statix (anti-idioms)
 //! and deadnix (dead bindings) on the changed `.nix` files, each diagnostic on a line the change
 //! added a seed (`MNT-001`, Low). With no flake the linters are the gate and must run: give a
-//! well-formed answer (`gate/nix_answer.rs`).
+//! well-formed answer (`gate/nix_answer.rs`). One that gives none — with a flake as without one —
+//! leaves the track unknown (realm @nick/craft, node #743).
 
 use super::Status;
 use super::check::{Acc, Cx};
@@ -12,7 +13,9 @@ use super::nix_lint::{STATIX, deadnix, statix};
 
 /// The Nix gate over `cx`. With no `flake.nix` its linters are the whole gate: both run clean is
 /// nothing to gate, one that did not run or broke leaves the signal unknown (realm @nick/craft,
-/// node #487). With a flake, `nix flake check` alone sets it.
+/// node #487). With a flake, `nix flake check` sets it — and a linter that gave no answer leaves
+/// it unknown just the same, whatever the check said: a seed tool's silence is no pass (realm
+/// @nick/craft, node #743).
 pub(super) fn gate(cx: &Cx<'_>, acc: &mut Acc) {
     let flake = cx.top.join("flake.nix").is_file();
     let s = flake_check(cx, acc, flake);
@@ -27,7 +30,6 @@ pub(super) fn gate(cx: &Cx<'_>, acc: &mut Acc) {
             "with no flake.nix the linters are the Nix gate, and {} gave no well-formed answer here — its signal is unknown, not a pass",
             not_run.join(" and ")
         ));
-        acc.check(Status::Unknown);
     }
 }
 

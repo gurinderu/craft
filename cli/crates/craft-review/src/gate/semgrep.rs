@@ -1,5 +1,8 @@
 //! semgrep as the Rust gate runs it: the repository's own rules over the changed Rust files, each
-//! result a `semgrep` seed (ERROR High, WARNING Medium, else Low), never a gate failure.
+//! result a `semgrep` seed (ERROR High, WARNING Medium, else Low), never a gate failure. Asked
+//! for — a rules directory and a changed Rust file — and not answered: not installed, past the
+//! budget, broken, or printing what is not JSON, it leaves the track unknown, since its silence is
+//! no pass (realm @nick/craft, node #743). Not asked for, it is no signal at all.
 
 use serde_json::Value;
 
@@ -28,14 +31,15 @@ pub(super) fn semgrep(cx: &Cx<'_>, acc: &mut Acc) {
     args.push("--");
     args.extend(files);
     let Some((_, out, err)) =
-        acc.exited(&label, "semgrep", cx.runner.run(cx.top, "semgrep", &args))
+        acc.seed_tool(&label, "semgrep", cx.runner.run(cx.top, "semgrep", &args))
     else {
         return;
     };
     let Ok(v) = serde_json::from_str::<Value>(&out) else {
+        let why = format!("printed no JSON: {}", last_line(&err));
         acc.parts.push(format!("{label}: unreadable output"));
-        acc.notes
-            .push(format!("{label} printed no JSON: {}", last_line(&err)));
+        acc.notes.push(format!("{label} {why}"));
+        acc.no_answer("semgrep", &why);
         return;
     };
     let results = v

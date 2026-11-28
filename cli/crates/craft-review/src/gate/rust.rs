@@ -2,7 +2,8 @@
 //! changed package with the project's own lint levels — a compile error or a lint the project
 //! denies is red, a warning on a line the change added a `clippy` seed — then a pedantic and
 //! nursery pass whose new warnings there are `clippy-pedantic` seeds, then semgrep with the
-//! repository's own rules over the changed files, each result a `semgrep` seed. A run scoped to a
+//! repository's own rules over the changed files, each result a `semgrep` seed — not answered, it
+//! leaves the track unknown (realm @nick/craft, node #743). A run scoped to a
 //! package's directory (`path`) lints that package alone, by name: per-crate runs of one workspace
 //! (rust-audit's) then do not lint each other's packages. cargo runs inside the checkout's flake
 //! dev shell when it has one (`gate/devshell.rs`).
