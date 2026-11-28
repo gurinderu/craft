@@ -1,10 +1,10 @@
-//! The recipes of the root justfile, read as the gate needs them: name, parameters, `[group(…)]` attributes and
-//! body lines, in file order. A reader of the forms this repository writes, not of just's whole grammar:
+//! The recipes of the root justfile, read as the gate needs them: name, parameters, dependencies, attributes and
+//! body lines, in file order, and its top-level directives (`set`, `import`, `mod`). A reader of the forms this repository writes, not of just's whole grammar:
 //! `gate-steps` holds the names it reads to the ones `just --summary --unsorted` lists.
 
 mod syntax;
-pub use syntax::ignores_errors;
-use syntax::{groups_in, header, names_script};
+pub use syntax::directives;
+use syntax::{attributes_in, groups_in, header};
 
 /// One recipe.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -12,8 +12,10 @@ pub struct Recipe {
     pub name: String,
     pub params: Vec<String>,
     pub groups: Vec<String>,
-    /// `[script]`: the body runs as one script, not line by line.
-    pub script: bool,
+    /// Each attribute as written, its inner whitespace dropped (`group('gate')`, `script:'sh'`).
+    pub attributes: Vec<String>,
+    /// What follows the header's `:` — the recipes it depends on — trimmed; empty for none.
+    pub dependencies: String,
     /// The body's lines, their indentation trimmed.
     pub body: Vec<String>,
 }
@@ -42,11 +44,6 @@ impl Recipe {
         out
     }
 
-    /// A script recipe: `[script]`, or a body opening with `#!`; just runs it whole, not line by line.
-    pub fn is_script(&self) -> bool {
-        self.script || self.body.first().is_some_and(|l| l.starts_with("#!"))
-    }
-
     pub fn body_text(&self) -> String {
         self.commands().join("\n")
     }
@@ -59,7 +56,7 @@ pub const GATE_GROUP: &str = "gate";
 pub fn recipes(text: &str) -> Vec<Recipe> {
     let mut found: Vec<Recipe> = Vec::new();
     let mut groups: Vec<String> = Vec::new();
-    let mut script = false;
+    let mut attributes: Vec<String> = Vec::new();
     let mut open = false;
     for line in text.lines() {
         if line.starts_with([' ', '\t']) {
@@ -75,21 +72,22 @@ pub fn recipes(text: &str) -> Vec<Recipe> {
         open = false;
         if let Some(inner) = line.strip_prefix('[').and_then(|l| l.strip_suffix(']')) {
             groups.extend(groups_in(inner));
-            script |= names_script(inner);
+            attributes.extend(attributes_in(inner));
             continue;
         }
-        if let Some((name, params)) = header(line) {
+        if let Some((name, params, dependencies)) = header(line) {
             found.push(Recipe {
                 name,
                 params,
                 groups: std::mem::take(&mut groups),
-                script: std::mem::take(&mut script),
+                attributes: std::mem::take(&mut attributes),
+                dependencies,
                 body: Vec::new(),
             });
             open = true;
         } else {
             groups.clear();
-            script = false;
+            attributes.clear();
         }
     }
     found

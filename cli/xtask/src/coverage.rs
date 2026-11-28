@@ -3,9 +3,9 @@
 
 use std::collections::BTreeSet;
 
+use crate::allowlist;
 use crate::justfile::Recipe;
 use crate::keys::Keys;
-use crate::masking;
 
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct Report {
@@ -17,8 +17,8 @@ pub struct Report {
     pub repeated: Vec<String>,
     /// Steps covering nothing another step does not.
     pub redundant: Vec<String>,
-    /// `step: line — why` of each gate line whose failure cannot fail its step.
-    pub masked: Vec<String>,
+    /// `step: why` of each gate step outside the gate's form (`crate::allowlist`).
+    pub refused: Vec<String>,
     pub no_steps: bool,
 }
 
@@ -83,10 +83,10 @@ pub fn check(
         })
         .map(|(_, (step, _))| step.name.clone())
         .collect();
-    let masked = steps.iter().flat_map(masking::masked).collect();
+    let refused = steps.iter().flat_map(allowlist::recipe).collect();
     Report {
         uncovered,
-        masked,
+        refused,
         stale,
         repeated,
         redundant,

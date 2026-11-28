@@ -40,41 +40,23 @@ fn a_step_joined_across_lines_stands_for_its_script_only_as_just_joins_them() {
 }
 
 #[test]
-fn a_gate_line_that_cannot_fail_its_step_is_named_with_why() {
-    for (line, masked) in [
+fn a_gate_step_outside_the_form_is_named_with_why() {
+    for (line, refused) in [
         ("-prettier --check .", true),
         ("prettier --check . || true # the formatter is flaky", true),
         ("prettier --check . | cat", true),
         ("prettier --check .", false),
-        ("prettier --check . && true # fine", false),
+        ("prettier --check . && node x.mjs 2>&1", false),
     ] {
         let mut gate = steps();
         gate.push(step("format", line));
         let report = check(&required(), EXCLUDED, &gate, &keys());
-        let named = report.masked.len() == 1
+        let named = report.refused.len() == 1
             && report
-                .masked
+                .refused
                 .iter()
                 .all(|m| m.starts_with(&format!("format: {line} — ")));
-        assert_eq!(named, masked, "{line}: {:?}", report.masked);
-        assert_eq!(report.masked.is_empty(), !masked, "{line}");
+        assert_eq!(named, refused, "{line}: {:?}", report.refused);
+        assert_eq!(report.refused.is_empty(), !refused, "{line}");
     }
-}
-
-#[test]
-fn a_script_recipe_in_the_gate_is_named() {
-    let mut shebang = step("format", "#!/usr/bin/env bash");
-    shebang.body.push("set -euo pipefail".to_owned());
-    let mut attributed = step("other", "prettier --check .");
-    attributed.script = true;
-    let mut gate = steps();
-    gate.extend([shebang, attributed]);
-    let report = check(&required(), EXCLUDED, &gate, &keys());
-    assert_eq!(
-        report.masked,
-        [
-            "format: a script recipe (#! or [script]) runs whole, past a failed command",
-            "other: a script recipe (#! or [script]) runs whole, past a failed command",
-        ]
-    );
 }

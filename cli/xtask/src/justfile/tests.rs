@@ -80,7 +80,7 @@ fn a_header_names_a_recipe_only_by_just_s_name_characters() {
         ("@quiet:", "quiet"),
     ] {
         assert_eq!(
-            header(line).map(|(n, _)| n).as_deref(),
+            header(line).map(|(n, _, _)| n).as_deref(),
             Some(name),
             "{line}"
         );
@@ -106,21 +106,27 @@ fn continued_lines_join_as_just_joins_them() {
 }
 
 #[test]
-fn a_script_attribute_or_a_shebang_makes_a_script_recipe() {
-    let all = recipes(
-        "[script('bash')]\na:\n    x\n\n[group('gate'), script]\nb:\n    x\n\nc:\n    #!/bin/sh\n    x\n\nd:\n    x\n",
+fn reads_attributes_dependencies_and_directives() {
+    let text = "set positional-arguments\nset  shell := ['bash']\nimport 'x.just'\nexport A := '1'\n\n[group('gate'), script: 'sh']\n[doc('a, b'), confirm(x, y)]\na: b && c\n    x\n\n[script ( 'sh' )]\nb:\n    x\n";
+    let all = recipes(text);
+    assert_eq!(
+        all[0].attributes,
+        [
+            "group('gate')",
+            "script:'sh'",
+            "doc('a, b')",
+            "confirm(x,y)"
+        ]
     );
-    let scripts: Vec<bool> = all.iter().map(crate::justfile::Recipe::is_script).collect();
-    assert_eq!(scripts, [true, true, true, false]);
-}
-
-#[test]
-fn ignore_errors_counts_unless_it_is_set_false() {
-    assert!(crate::justfile::ignores_errors("set ignore-errors\n"));
-    assert!(crate::justfile::ignores_errors(
-        "set ignore-errors := true\n"
-    ));
-    assert!(!crate::justfile::ignores_errors(
-        "set ignore-errors := false\nset positional-arguments\n"
-    ));
+    assert_eq!(all[0].dependencies, "b && c");
+    assert_eq!(all[1].attributes, ["script('sh')"]);
+    assert_eq!(all[1].dependencies, "");
+    assert_eq!(
+        crate::justfile::directives(text),
+        [
+            "set positional-arguments",
+            "set shell := ['bash']",
+            "import 'x.just'"
+        ]
+    );
 }

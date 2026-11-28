@@ -3,10 +3,10 @@
 
 use std::io::{self, Write};
 
+use crate::allowlist;
 use crate::coverage::{self, Report};
 use crate::justfile::{self, Recipe};
 use crate::keys::Keys;
-use crate::masking;
 use crate::sources::Repo;
 
 /// The recipe `just gate` runs.
@@ -39,14 +39,12 @@ pub fn check(
     let required = repo.required(&keys);
     let steps = justfile::gate_steps(&repo.recipes);
     let mut report = coverage::check(&required, excluded, &steps, &keys);
-    // The `gate` recipe runs the runner: a failure it hides hides the whole gate's.
+    // The `gate` recipe runs the runner: what could hide its failure hides the whole gate's.
     let entry = repo.recipes.iter().filter(|r| r.name == ENTRY);
-    report.masked.extend(entry.flat_map(masking::masked));
-    if repo.ignores_errors {
-        report.masked.push(
-            "justfile: `set ignore-errors` — every recipe line ignores its failure".to_owned(),
-        );
-    }
+    report.refused.extend(entry.flat_map(allowlist::recipe));
+    report
+        .refused
+        .extend(allowlist::directives(&repo.directives));
     let mismatch = summary_mismatch(&repo.recipes, summary);
     if report.is_clean() && mismatch.is_none() {
         writeln!(
@@ -80,11 +78,8 @@ fn print(report: &Report, err: &mut dyn Write) -> io::Result<()> {
             "gate-steps: a step covering no named check another step does not: {name}"
         )?;
     }
-    for line in &report.masked {
-        writeln!(
-            err,
-            "gate-steps: a gate line whose failure cannot fail its step: {line}"
-        )?;
+    for line in &report.refused {
+        writeln!(err, "gate-steps: outside the gate's form: {line}")?;
     }
     if report.no_steps {
         writeln!(

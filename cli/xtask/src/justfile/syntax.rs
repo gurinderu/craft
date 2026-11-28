@@ -1,4 +1,4 @@
-//! The pieces of just's syntax the reader needs: a recipe header, an attribute line's inside, a setting.
+//! The pieces of just's syntax the reader needs: a recipe header, an attribute line's inside, a directive.
 
 /// The names in `group('…')` / `group("…")` of an attribute line's inside.
 pub(super) fn groups_in(inner: &str) -> Vec<String> {
@@ -20,7 +20,7 @@ pub(super) fn groups_in(inner: &str) -> Vec<String> {
 }
 
 /// `name params…:` — a recipe header; `None` for a setting, an assignment or anything else.
-pub(super) fn header(line: &str) -> Option<(String, Vec<String>)> {
+pub(super) fn header(line: &str) -> Option<(String, Vec<String>, String)> {
     const KEYWORDS: [&str; 5] = ["set ", "export ", "alias ", "import ", "mod "];
     if KEYWORDS.iter().any(|k| line.starts_with(k)) {
         return None;
@@ -46,21 +46,43 @@ pub(super) fn header(line: &str) -> Option<(String, Vec<String>)> {
         .map(|w| w.trim_start_matches(['*', '+']).trim_start_matches('$'))
         .map(|w| w.split('=').next().unwrap_or(w).to_owned())
         .collect();
-    Some((name.to_owned(), params))
+    let dependencies = tail.strip_prefix(':').unwrap_or(tail).trim().to_owned();
+    Some((name.to_owned(), params, dependencies))
 }
 
-/// Whether an attribute line's inside names `script` (`[script]`, `[script('bash')]`): the body runs as one script.
-pub(super) fn names_script(inner: &str) -> bool {
-    inner.split(',').any(|a| {
-        let a = a.trim();
-        a == "script" || a.starts_with("script(")
-    })
+/// Each attribute of an attribute line's inside, split at its top-level commas, its whitespace dropped.
+pub(super) fn attributes_in(inner: &str) -> Vec<String> {
+    let mut out = vec![String::new()];
+    let (mut depth, mut quote) = (0_u32, None::<char>);
+    for c in inner.chars() {
+        match (quote, c) {
+            (Some(q), _) if c == q => quote = None,
+            (None, '\'' | '"') => quote = Some(c),
+            (None, '(') => depth += 1,
+            (None, ')') => depth = depth.saturating_sub(1),
+            (None, ',') if depth == 0 => {
+                out.push(String::new());
+                continue;
+            }
+            _ => {}
+        }
+        if let (false, Some(last)) = (quote.is_none() && c.is_whitespace(), out.last_mut()) {
+            last.push(c);
+        }
+    }
+    out.retain(|a| !a.is_empty());
+    out
 }
 
-/// Whether the justfile sets `ignore-errors` (to anything but `false`): every recipe line then ignores its failure.
-pub fn ignores_errors(text: &str) -> bool {
-    text.lines().any(|line| {
-        let compact: String = line.chars().filter(|c| !c.is_whitespace()).collect();
-        compact.starts_with("setignore-errors") && compact != "setignore-errors:=false"
-    })
+/// The top-level `set`, `import` and `mod` lines, their whitespace collapsed to single spaces.
+pub fn directives(text: &str) -> Vec<String> {
+    text.lines()
+        .filter(|l| !l.starts_with([' ', '\t']))
+        .map(|l| l.split_whitespace().collect::<Vec<_>>().join(" "))
+        .filter(|l| {
+            ["set ", "import ", "import? ", "mod ", "mod? "]
+                .iter()
+                .any(|k| l.starts_with(k))
+        })
+        .collect()
 }

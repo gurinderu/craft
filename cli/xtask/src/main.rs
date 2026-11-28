@@ -2,10 +2,11 @@
 //! - `gate [--base <ref>]` — runs the justfile's gate, every step, and exits 1 when any failed;
 //! - `gate-steps` — fails when a check the repository names is neither a gate step nor excluded with its reason.
 
+mod allowlist;
 mod cli;
 mod coverage;
-// The workspace's one way to write an executable a test then runs.
 mod exclusions;
+// The workspace's one way to write an executable a test then runs.
 #[cfg(test)]
 #[path = "../../test-support/exe.rs"]
 mod exe;
@@ -13,7 +14,6 @@ mod gate;
 mod gate_steps;
 mod justfile;
 mod keys;
-mod masking;
 #[cfg(test)]
 mod repo_justfile;
 mod sources;

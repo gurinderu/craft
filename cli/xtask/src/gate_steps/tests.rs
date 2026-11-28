@@ -21,7 +21,7 @@ fn repo(justfile: &str, cells: &[&str]) -> Repo {
         ],
         agents_cells: cells.iter().map(|c| (*c).to_owned()).collect(),
         recipes: recipes(justfile),
-        ignores_errors: justfile::ignores_errors(justfile),
+        directives: justfile::directives(justfile),
     }
 }
 
@@ -128,16 +128,32 @@ fn the_gate_recipe_itself_may_not_hide_the_runner_s_failure() {
     let c = run(&repo(&masked, &["`just lint`"]), "gate lint");
     assert!(!c.passed);
     assert!(
-        c.err.starts_with("gate-steps: a gate line whose failure cannot fail its step: gate: cd cli && cargo xtask gate \"$@\" || true — "),
+        c.err.starts_with("gate-steps: outside the gate's form: gate: cd cli && cargo xtask gate \"$@\" || true — `|`"),
         "{}",
         c.err
     );
 }
 
 #[test]
-fn a_justfile_ignoring_errors_fails_the_check() {
-    let ignoring = format!("set ignore-errors\n\n{JUSTFILE}");
-    let c = run(&repo(&ignoring, &["`just lint`"]), "gate lint");
-    assert!(!c.passed);
-    assert!(c.err.contains("justfile: `set ignore-errors`"), "{}", c.err);
+fn a_justfile_setting_more_than_the_gate_needs_fails_the_check() {
+    for directive in [
+        "set ignore-errors",
+        "set ignore-errors := false",
+        "set guards",
+        "set shell := [\"bash\", \"-c\"]",
+        "import 'more.just'",
+    ] {
+        let justfile = format!("set positional-arguments\n{directive}\n\n{JUSTFILE}");
+        let c = run(&repo(&justfile, &["`just lint`"]), "gate lint");
+        assert!(!c.passed, "{directive}");
+        assert!(
+            c.err.contains(&format!(
+                "outside the gate's form: justfile: `{directive}` — "
+            )),
+            "{directive}: {}",
+            c.err
+        );
+    }
+    let allowed = format!("set positional-arguments\n\n{JUSTFILE}");
+    assert!(run(&repo(&allowed, &["`just lint`"]), "gate lint").passed);
 }

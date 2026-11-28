@@ -18,8 +18,8 @@ pub struct Repo {
     pub ci_runs: Vec<String>,
     pub agents_cells: Vec<String>,
     pub recipes: Vec<Recipe>,
-    /// The justfile sets `ignore-errors`.
-    pub ignores_errors: bool,
+    /// The justfile's top-level `set`, `import` and `mod` lines.
+    pub directives: Vec<String>,
 }
 
 impl Repo {
@@ -38,7 +38,7 @@ impl Repo {
             ci_runs: ci_test_runs(&read(".github/workflows/ci.yml")?)?,
             agents_cells: agents_commands(&read("AGENTS.md")?),
             recipes: justfile::recipes(&justfile),
-            ignores_errors: justfile::ignores_errors(&justfile),
+            directives: justfile::directives(&justfile),
         })
     }
 

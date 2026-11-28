@@ -3,10 +3,13 @@
 # Without `--base`, the mutation floor's base is origin/main when it resolves.
 # `cargo xtask gate-steps` (the `gate-steps` step) fails when a check package.json, integrations/shared/check-*.mjs,
 # CI's `test` job, AGENTS.md "Commands" or this file names is neither a step here nor excluded with its reason.
-# A step standing for a package.json script is exactly that script's command (gate-steps holds them equal), and
-# no line of a gate step or of `gate` may hide its own failure: just runs each as `sh -cu` and stops on a non-zero
-# status, so no `-` prefix, no `||`, pipe, `;`, background `&` or `!` outside quotes, and no script recipe
-# (`#!` or `[script]`) — gate-steps fails otherwise (cli/xtask/src/masking.rs).
+# A step standing for a package.json script is exactly that script's command (gate-steps holds them equal).
+# Every gate recipe, `gate` included, is held to a small form so an edit that could hide a failure fails gate-steps
+# loudly (cli/xtask/src/allowlist.rs): one line; no dependency; no attribute but [group('gate')] and [doc(...)];
+# words and quoted strings joined by `&&`, with only `2>&1`, `>&2` and `>file`; `"$@"`, `"$1"` and
+# `${1:+--base "$1"}` only in a recipe that takes a parameter; no `{{`, no `-`/`@` prefix, no other shell or `just`.
+# The only setting this file may carry is `set positional-arguments`, and it imports nothing. Not a sandbox: an
+# author set on bypassing it can edit the xtask too.
 # `just gate --base <ref>` hands the base to the one step whose recipe takes `base`; a base no step takes is red.
 # Needs `npm ci` and `npm ci --prefix integrations/opencode/plugin`, and cargo for the xtask.
 
