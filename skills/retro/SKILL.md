@@ -1,7 +1,7 @@
 ---
 name: retro
 description: >-
-  Retro of your craft reviews in this repository: where the tokens and minutes go and what breaks, counted by the binary from the run store — `craft runs retro` over this project's runs (a period, a branch), its runs by kind (a review's depth and lens scope) with minutes, agents and the usable cost, each lens's yield, what did not run, and the unverified findings that recur. Two outcomes, each shown before anything is written or sent: a proposal for your review profile (lenses held or off, the mutants budget, the project's properties), written through review-init on your word, and a draft issue about craft itself, sent only if you say so. Use when the session-start hook offers a retro, after a release's full review, when reviews feel slow or costly, or after several runs without a clean verdict. Triggers: craft retro, review retro, where do the review tokens go, why are my reviews so slow, which lenses find nothing. Not for one run's report (read its report.md), nor the whole store's history (analyze-runs).
+  Retro of your craft reviews in this repository: where the tokens and minutes go and what breaks, counted by the binary from the run store — `craft runs retro` over this project's runs (a period, a branch), its runs by kind (a review's depth and lens scope) with minutes, agents and the usable cost, each lens's yield, what did not run, and the unverified findings that recur. Two outcomes, each shown before anything is written or sent: a proposal for your review profile (lenses held or off, the mutants budget, the project's properties), written through review-init on your word, and a draft issue about craft itself, sent only if you say so. Use after a release's full review, when reviews feel slow or costly, or after several runs without a clean verdict. Triggers: craft retro, review retro, where do the review tokens go, why are my reviews so slow, which lenses find nothing. Not for one run's report (read its report.md).
 ---
 
 # retro — what your reviews here cost and found
@@ -22,13 +22,14 @@ version (`--version`). Say the range in one line before you read.
 
 ```sh
 CRAFT_BIN="$(sh "<this skill's base directory>/../../integrations/shared/craft-cli.sh" --ensure --print-path)" || exit $?
-REPO="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")"
-"$CRAFT_BIN" runs retro --project "$REPO" --since <YYYY-MM-DD> --json
-"$CRAFT_BIN" runs recurring --unverified --project "$REPO"
-"$CRAFT_BIN" init --propose --cwd "$(git rev-parse --show-toplevel)" --craft-root "<this skill's base directory>/../.."
+"$CRAFT_BIN" runs recurring --unverified --project "$(git rev-parse --show-toplevel)"
+"$CRAFT_BIN" runs retro --project '<its project, as printed>' --since <YYYY-MM-DD> --json
+"$CRAFT_BIN" init --propose --cwd "$(git rev-parse --show-toplevel)"
 ```
 
-`REPO` is the main checkout: runs made in a linked worktree are filed under it. On native
+`runs recurring` resolves the repository to the key the run store files its runs under — a
+linked worktree's runs under its main checkout — and prints it as `project`; `runs retro`
+matches `--project` as written, so pass it that key exactly, never a path of your own. On native
 Windows without `sh`, obtain the binary with `node "<this skill's base directory>/../../integrations/shared/craft-bin.mjs" ensure`.
 An exported `CRAFT_BIN` selects a local build. None of the three writes anything.
 
@@ -43,13 +44,15 @@ An exported `CRAFT_BIN` selects a local build. None of the three writes anything
   read minutes and agents instead.
 - `workflow` — verdicts, findings by severity, the verified share; `engine` — which host and
   craft version ran them; `notRun` — what did not run, and coverage gaps, by how often.
-- `lens` — per lens: `runs`, `dead` (it did not run), `findings` by severity, `refuted` of the
-  `candidates` verified and `refuteRate`, `unverified`; `lensRound` — what each lens round raised
-  and what verification confirmed of it.
+- `lens` — per lens: `runs`, `dead` (it did not run), `findings` and their `bySeverity`,
+  `refuted` of the `candidates` verified and `refuteRate`, `unverified`; `lensRound` — what each
+  lens round raised and what verification confirmed of it; `roundYieldApart` — what was
+  confirmed of the gate's seeds and of no lens round.
 
 `runs recurring --unverified` prints one JSON object: findings confirmed on more than one branch,
 and apart under `unverified`, unverified ones that recur, each group with its `file`, `titles`,
-`severities` and `runs`. `init --propose` prints what the profile holds and what it offers:
+`severities` and `runs`. It reads the store's newest runs (`runsRead`, its `note`), not the range
+above: say which window its groups come from. `init --propose` prints what the profile holds and what it offers:
 `lenses` (each lens's yield on this project and an offer to hold it to the first round or turn
 it off), `mutants` and `project`, as the review-init skill reads them.
 
@@ -76,18 +79,22 @@ lens dead on many runs, a step that fails, a cost no profile setting reaches.
 
 Only what the profile can say: a lens held to the first round or turned off, the mutants off or
 their budget, the project's properties. Ask the reviewer in words, one numbered list, each
-proposal with the numbers behind it. On their word, follow the review-init skill from its step 2
-with the confirmed changes: it proposes again and writes the whole profile in its step 4, every
-held entry passed back, so a change here loses nothing else the profile holds. Nothing confirmed —
+proposal with the numbers behind it. On their word, write through the review-init skill: from its
+proposal (its step 2) go straight to its step 4 with the confirmed changes, every held entry
+passed back as the proposal prints it — a write replaces each section whole. When the proposal
+marks a section it could not read (`unread`, `heldUnread`) or a held CI entry `unusable`, stop and
+tell the reviewer first: such a write replaces what the file holds there. Nothing confirmed —
 nothing written.
 
 ## 5. About craft
 
 What the profile cannot fix goes to craft's maintainer as a draft issue, shown whole before
 anything is sent: a title; the observation with its numbers and how they were counted; the craft
-version and host from the `engine` rows; the hypothesis, named as one. Leave out this
-repository's paths, file names and finding titles: they name the person's code; they add them
-only if they choose to. Send it only on their word, as they say: `gh issue create --repo
+version and host from the `engine` rows; the hypothesis, named as one. Leave out anything that
+names the person's code or machine: the repository's and branches' names, paths (the home
+directory's too), file names, finding titles, the names of the repository's own agents or
+lenses — keep only craft's own lens ids — and the text of `notRun` lines, which quotes paths and
+errors: say what failed in your own words. They add any of it only if they choose to. Send it only on their word, as they say: `gh issue create --repo
 gurinderu/craft --title <title> --body-file <the draft's file>`, the file in the session's
 scratch and removed after. Nothing about craft — say so in one line.
 
