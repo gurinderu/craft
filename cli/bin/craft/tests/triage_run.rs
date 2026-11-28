@@ -7,6 +7,8 @@ mod boundaries;
 mod common;
 #[path = "triage_run/delegate.rs"]
 mod delegate;
+#[path = "triage_run/events.rs"]
+mod events;
 #[path = "triage_run/fixture.rs"]
 mod fixture;
 #[cfg(target_os = "linux")]
@@ -137,7 +139,10 @@ fn new_sources_on_resume_are_refused_before_even_host_preflight() {
             .output()
             .unwrap();
         b.expect(&out, 2);
-        assert!(String::from_utf8_lossy(&out.stderr).contains(flag));
+        // A refusal before anything ran is said on stdout once the stream carries events (realm
+        // @nick/craft, node #690); the parser's own refusal, before the stream exists, on stderr.
+        let said = [&out.stdout, &out.stderr].map(|o| String::from_utf8_lossy(o).into_owned());
+        assert!(said.iter().any(|o| o.contains(flag)), "{flag}: {said:?}");
         assert!(b.calls().is_empty(), "{flag} must precede preflight");
     }
 }
