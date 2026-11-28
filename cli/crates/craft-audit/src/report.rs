@@ -13,6 +13,7 @@ use serde_json::Value;
 use crate::plan;
 use crate::state::AuditState;
 
+mod entry;
 pub mod markdown;
 mod summary;
 pub mod unverified;

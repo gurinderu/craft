@@ -60,15 +60,19 @@ pub(super) fn file(
     if let Some(kept) = read(dir).filter(|f| f.pass == s.pass && f.record == "filed") {
         return Ok(Some(kept));
     }
-    let retry = read(dir).is_some_and(|f| f.pass == s.pass);
+    let previous = read(dir).filter(|f| f.pass == s.pass);
+    let retry = previous.is_some();
     let base = Filed {
         pass: s.pass,
         ..Filed::default()
     };
+    // A retry's attempt keeps what the last one lost, so the report still says it until it lands.
+    let lost = previous.map(|f| f.lost).unwrap_or_default();
     keep(
         dir,
         &Filed {
             record: "attempted".into(),
+            lost,
             ..base.clone()
         },
     )?;

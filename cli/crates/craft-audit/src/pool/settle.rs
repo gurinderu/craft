@@ -57,11 +57,22 @@ fn judged(tasks: &[Task], i: usize, f: &Value) -> Value {
     )
 }
 
-/// Every pooled finding settled: judged, then raised by a verified harm and capped by its harm.
+/// Every pooled finding settled: judged, then raised by a verified harm and capped by its harm,
+/// keeping as `lensSeverity` the severity its lens rated it when that moved it.
 #[must_use]
 pub fn settle(pool: &[Pooled], tasks: &[Task]) -> Vec<Value> {
     pool.iter()
         .enumerate()
-        .map(|(i, p)| finalize(&judged(tasks, i, &p.finding)))
+        .map(|(i, p)| {
+            let mut f = finalize(&judged(tasks, i, &p.finding));
+            let lens = p.finding.get("severity").cloned().unwrap_or(Value::Null);
+            if let Some(o) = f
+                .as_object_mut()
+                .filter(|o| o.get("severity") != Some(&lens))
+            {
+                o.insert("lensSeverity".into(), lens);
+            }
+            f
+        })
         .collect()
 }

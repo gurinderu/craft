@@ -3,7 +3,7 @@
 use serde_json::Value;
 
 use super::Summary;
-use super::markdown::entry;
+use super::entry::entry;
 
 /// The unverified Low and Info findings held apart, Low first, as `unverified.md` lists them;
 /// `None` when there are none.

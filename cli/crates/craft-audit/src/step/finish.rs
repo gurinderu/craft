@@ -72,20 +72,21 @@ pub(super) fn end(
     let sum = report::summary(s, profiles);
     let record = crate::record::run_record(s, &sum);
     // Every file the run directory holds is written before the store's write, so a write that
-    // fails leaves no landed record unkept; only a lost write's banner rewrites the report after.
-    write(
-        report_path(dir),
-        &report::markdown(dir, s, &sum, &[], false),
-    )?;
+    // fails leaves no landed record unkept. The report keeps what this pass's last filing lost
+    // until the store answers, and is written again only when the answer changes what it says.
+    let before = filing::read(dir).filter(|f| f.pass == s.pass);
+    let (lost, refile) = before.map_or((Vec::new(), false), |f| (f.lost, f.record != "filed"));
+    let text = report::markdown(dir, s, &sum, &lost, refile);
+    write(report_path(dir), &text)?;
     write(record_path(dir), &format!("{record:#}\n"))?;
     let unread = (!sum.unread.is_empty()).then(|| format!("{}\n", sum.unread.join("\n")));
     list(unread_path(dir), unread)?;
     list(unverified_path(dir), report::unverified::list(&sum))?;
     let filed = filing::file(dir, s, &record, w)?;
     if let Some(f) = &filed {
-        if !f.lost.is_empty() {
-            let banner = report::markdown(dir, s, &sum, &f.lost, f.record != "filed");
-            write(report_path(dir), &banner)?;
+        let after = report::markdown(dir, s, &sum, &f.lost, f.record != "filed");
+        if after != text {
+            write(report_path(dir), &after)?;
         }
         filing::keep(dir, f)?;
     }
@@ -95,7 +96,7 @@ pub(super) fn end(
 }
 
 /// The finished step: the verdict, where the report and record are, what is unread and how to
-/// read it, the held findings, what filing the record did, and what the host said.
+/// read it or file a record that did not land, the held findings, what filing the record did, and what the host said.
 fn step(dir: &Path, s: &AuditState, sum: &Summary, filed: Option<&filing::Filed>) -> Value {
     let path = |p: PathBuf| p.display().to_string();
     let mut out = json!({
@@ -119,7 +120,8 @@ fn step(dir: &Path, s: &AuditState, sum: &Summary, filed: Option<&filing::Filed>
     if !sum.unjudged.is_empty() {
         o.insert("unjudged".into(), json!(sum.unjudged.len()));
     }
-    if sum.incomplete() {
+    // A resume reads what is left, or files again a record that did not land.
+    if sum.incomplete() || filed.is_some_and(|f| f.record != "filed") {
         o.insert(
             "resume".into(),
             json!(craft_step::stop::resume("audit", dir)),

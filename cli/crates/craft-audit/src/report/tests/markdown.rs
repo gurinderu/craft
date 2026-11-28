@@ -16,7 +16,7 @@ fn the_report_opens_with_its_verdict_and_says_what_it_did_not_read() {
         &["the run record — refused".into()],
         true,
     );
-    assert!(md.starts_with("# craft audit\n\n> **Not filed**: the run record — refused; resume the run to file it again: `craft audit submit --run '/runs/a' --resume`\n\n## Verdict\n\n**INCOMPLETE**\n"), "{md}");
+    assert!(md.starts_with("# craft audit\n\n> **Not filed**: the run record — refused; a resume files a record — this pass's, or its own when a new pass reads what is left: `craft audit submit --run '/runs/a' --resume`\n\n## Verdict\n\n**INCOMPLETE**\n"), "{md}");
     assert!(
         md.contains("- Files: 0 of 2 read, of 3 tracked; 1 outside every profile"),
         "{md}"
@@ -113,4 +113,29 @@ fn a_lost_write_beside_a_record_that_landed_names_no_resume() {
         md.contains("> **Not filed**: the run directory (the record itself landed) — full\n"),
         "{md}"
     );
+}
+
+#[test]
+fn a_finding_its_harm_capped_to_low_whose_verifier_died_is_listed_as_unjudged_not_held() {
+    let s = state(&["a.rs"]);
+    let mut capped = settled("Low", "unverified");
+    capped["title"] = json!("the capped one");
+    capped["lensSeverity"] = json!("Medium");
+    let sum = crate::report::Summary {
+        verdict: "INCOMPLETE".into(),
+        unread: Vec::new(),
+        jobs: 1,
+        answered: 1,
+        settled: vec![capped],
+        unjudged: vec![0],
+        left: Vec::new(),
+    };
+    assert!(sum.held().is_empty());
+    let md = markdown(std::path::Path::new("/r"), &s, &sum, &[], false);
+    let listed = md
+        .split_once("## Unverified at Medium and above")
+        .map(|(_, l)| l);
+    let entry = "- **Low** (lens: Medium, capped by harm) `a.rs:2` — the capped one";
+    assert!(listed.is_some_and(|l| l.contains(entry)), "{md}");
+    assert!(!md.contains("no verifier checked"), "{md}");
 }

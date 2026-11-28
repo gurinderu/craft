@@ -110,7 +110,7 @@ fn tries(tasks: &[Task], job: &Job) -> usize {
 /// tried first, then by fewest tries, each tie in job order.
 #[must_use]
 pub fn buy(mut todo: Vec<Job>, tasks: &[Task], budget: Option<usize>) -> Vec<Job> {
-    todo.sort_by_key(|j| tries(tasks, j));
+    todo.sort_by_cached_key(|j| tries(tasks, j));
     match budget {
         Some(n) => todo.into_iter().take(n).collect(),
         None => todo,

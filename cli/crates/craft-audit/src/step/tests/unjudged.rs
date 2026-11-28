@@ -3,17 +3,10 @@
 
 use serde_json::{Value, json};
 
-use super::{Fake, Scratch, answer, args, finding, found, ids, next, open, scratch};
+use super::{Fake, RESUME, Scratch, answer, args, finding, found, ids, next, open, scratch};
 use crate::AuditError;
 use crate::state;
-use crate::step::{Said, submit, unverified_path};
-
-const RESUME: Said<'static> = Said {
-    degraded: &[],
-    limit: None,
-    resume: true,
-    abandoned: &[],
-};
+use crate::step::{Said, report_path, submit, unverified_path};
 
 fn vote(index: u64) -> Value {
     json!({"index": index, "refuted": false, "citedLineMatches": true, "reachable": true,
@@ -95,6 +88,12 @@ fn a_medium_its_harm_caps_whose_verifier_died_leaves_the_audit_incomplete_until_
         done.get("unverifiedLow").is_none() && !unverified_path(&s.run).exists(),
         "{done}"
     );
+    let report = std::fs::read_to_string(report_path(&s.run)).unwrap();
+    let listed = report
+        .split_once("## Unverified at Medium and above")
+        .map(|(_, l)| l);
+    let entry = "- **Low** (lens: Medium, capped by harm) `src/a.rs:1` — Medium in src/a.rs";
+    assert!(listed.is_some_and(|l| l.contains(entry)), "{report}");
     let again = next(&s.run, &w, &RESUME);
     assert_eq!(ids(&again), ["verify-2-0"], "{again}");
     answer(&s.run, "verify-2-0", &json!({"verdicts": [vote(0)]}));

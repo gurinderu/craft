@@ -6,37 +6,15 @@ use std::path::Path;
 use craft_review::settle::Tier;
 use serde_json::Value;
 
+use super::entry::{capped, field};
 use super::{Summary, UNREAD, UNVERIFIED};
 use crate::state::AuditState;
-
-fn field<'a>(f: &'a Value, k: &str) -> &'a str {
-    f.get(k).and_then(Value::as_str).unwrap_or("")
-}
 
 fn rank(f: &Value) -> usize {
     ["Critical", "High", "Medium", "Low", "Info"]
         .iter()
         .position(|s| *s == field(f, "severity"))
         .unwrap_or(9)
-}
-
-/// One finding as a report entry.
-#[must_use]
-pub fn entry(f: &Value) -> String {
-    let line = f.get("line").and_then(Value::as_i64).unwrap_or(0);
-    let mut e = format!(
-        "- **{}** `{}:{line}` — {} ({})\n  - Why: {}\n",
-        field(f, "severity"),
-        field(f, "file"),
-        field(f, "title"),
-        field(f, "source"),
-        field(f, "why").replace('\n', " "),
-    );
-    let fix = field(f, "fix");
-    if !fix.is_empty() {
-        e.push_str(&format!("  - Fix: {}\n", fix.replace('\n', " ")));
-    }
-    e
 }
 
 /// The entries of the findings of `tier` worth listing, worst first, under `title`; "" for none.
@@ -50,7 +28,7 @@ fn section(sum: &Summary, title: &str, tier: Tier) -> String {
         return String::new();
     }
     list.sort_by_key(|f| rank(f));
-    let body: String = list.into_iter().map(entry).collect();
+    let body: String = list.into_iter().map(capped).collect();
     format!("\n## {title}\n\n{body}")
 }
 
@@ -115,7 +93,7 @@ pub fn markdown(
         out.push_str(&format!("> **Not filed**: {l}"));
         if refile {
             out.push_str(&format!(
-                "; resume the run to file it again: `{}`",
+                "; a resume files a record — this pass's, or its own when a new pass reads what is left: `{}`",
                 craft_step::stop::resume("audit", dir)
             ));
         }

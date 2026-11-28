@@ -18,6 +18,13 @@ use serde_json::{Value, json};
 use super::{Said, StartOptions, start, submit};
 use crate::state::{Args, Recording};
 
+pub(super) const RESUME: Said<'static> = Said {
+    degraded: &[],
+    limit: None,
+    resume: true,
+    abandoned: &[],
+};
+
 /// A store writer that keeps each request and answers as told.
 #[derive(Default)]
 pub(super) struct Fake {
@@ -27,11 +34,17 @@ pub(super) struct Fake {
 
 impl Writer for Fake {
     fn write(&self, call: &Call<'_>) -> Result<Value, WriteError> {
-        let kept = super::filing::read(call.run).map(|f| f.record);
-        let mut request = call.request.clone();
-        request["keptAtWrite"] = json!(kept);
-        let written = [super::report_path(call.run), super::record_path(call.run)];
-        request["writtenAtWrite"] = json!(written.iter().all(|p| p.is_file()));
+        let (kept, mut request) = (super::filing::read(call.run), call.request.clone());
+        request["keptAtWrite"] = json!(kept.as_ref().map(|f| &f.record));
+        request["lostAtWrite"] = json!(kept.map(|f| f.lost).unwrap_or_default());
+        let report = std::fs::read_to_string(super::report_path(call.run)).ok();
+        request["atWrite"] = json!({
+            "report": report.is_some(),
+            "banner": report.is_some_and(|r| r.contains("Not filed")),
+            "record": super::record_path(call.run).is_file(),
+            "unread": super::unread_path(call.run).is_file(),
+            "unverified": super::unverified_path(call.run).is_file(),
+        });
         self.calls.borrow_mut().push(request);
         if *self.refuse.borrow() {
             return Ok(json!({"ok": false, "reason": "the store is read-only", "file": ""}));

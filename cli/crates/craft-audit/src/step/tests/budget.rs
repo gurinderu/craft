@@ -1,15 +1,8 @@
-use super::{Fake, answer, args, clean, found, ids, next, open, scratch};
+use super::{Fake, RESUME, answer, args, clean, found, ids, next, open, scratch};
 use crate::AuditError;
 use crate::step::{Said, submit, unread_path};
 
 const FILES: [&str; 3] = ["src/a.rs", "src/b.rs", "tool.py"];
-
-const RESUME: Said<'static> = Said {
-    degraded: &[],
-    limit: None,
-    resume: true,
-    abandoned: &[],
-};
 
 fn unread(run: &std::path::Path) -> Vec<String> {
     std::fs::read_to_string(unread_path(run))
@@ -32,6 +25,11 @@ fn a_budget_buys_the_first_jobs_and_the_rest_is_named_unread_never_read_as_clean
     assert!(resume.starts_with("craft audit submit --run '") && resume.ends_with("' --resume"));
     let record = &w.calls.borrow()[0]["record"];
     assert_eq!(record["notRun"][0], "audit:unread-files:3");
+    assert_eq!(
+        w.calls.borrow()[0]["atWrite"]["unread"],
+        true,
+        "unread.txt lands first"
+    );
 }
 
 #[test]

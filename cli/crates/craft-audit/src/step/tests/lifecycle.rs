@@ -90,6 +90,8 @@ fn ended_blocked(s: &Scratch, w: &Fake, done: &Value) {
         calls[0]["keptAtWrite"], "attempted",
         "the attempt is kept before the write"
     );
+    // The held findings' list is written before the store's write.
+    assert_eq!(calls[0]["atWrite"]["unverified"], true);
     assert_eq!(done["filing"]["record"], "filed");
     let st = status(&s.run).unwrap();
     assert_eq!(
