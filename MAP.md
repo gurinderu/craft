@@ -349,7 +349,7 @@ numbered step's command against an external system, added, changed or removed �
 `cli/Cargo.lock`); a part that adds a module, crate, public type or format gets the `design`
 lens, seeded with what it adds and, for Rust, the crate graph's new edges and the dev-dependency cycles they close; first round only, `src/design.rs`), the mechanical gate the binary runs itself before any lens (clippy and semgrep
 for Rust, nix flake check, statix and deadnix for Nix: a red check blocks, a diagnostic on a changed line is a seed the
-lenses and verifiers see, a tool not installed is named), the change's mutants once the Rust gate passed (`src/gate/mutants.rs`
+lenses and verifiers see, a tool that did not answer is named, and its track stays unknown), the change's mutants once the Rust gate passed (`src/gate/mutants.rs`
 and `src/gate/mutants/`: `cargo mutants --in-diff` in a worker process of the same binary, `__craft-mutants`, that runs beside the
 lens rounds within its budget — the reviewer's profile's `[mutants]` section can name it or turn them off (`src/project/mutants.rs`; `craft init` shows it and writes it with `--mutants` and `--mutants-budget`, `cli/bin/craft/src/init/mutants.rs`; and the `[project]` properties, offered from the repository's files by `src/project/properties/propose.rs` and written through `cli/bin/craft/src/init/properties.rs`) —;
 joined when the rounds end, each mutant that survived in a function the change touched pooled as a tool's finding, and the report
