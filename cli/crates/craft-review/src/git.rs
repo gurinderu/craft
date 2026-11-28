@@ -69,7 +69,7 @@ pub(crate) fn git(cwd: &Path, args: &[&str]) -> Result<String, GitError> {
 /// missing object fails the call as [`GitError::NotFetched`]; craft's no-prompt environment on
 /// top, for an older git that fetches anyway. A review fetches what its diff needs first, through
 /// the guarded path ([`warm`]) (realm @nick/craft, node #548).
-fn git_bytes(cwd: &Path, args: &[&str]) -> Result<Vec<u8>, GitError> {
+pub(crate) fn git_bytes(cwd: &Path, args: &[&str]) -> Result<Vec<u8>, GitError> {
     let mut cmd = Command::new("git");
     cmd.arg("-C")
         .arg(cwd)

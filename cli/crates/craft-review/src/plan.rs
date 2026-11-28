@@ -15,7 +15,7 @@ use crate::profile::Profile;
 /// At most this many repository rule files reach a lens prompt, as `REPO_RULES_MAX`.
 pub(crate) const REPO_RULES_MAX: usize = 5;
 /// And at most this many characters of their joined paths, as `REPO_RULES_MAX_CHARS`.
-const REPO_RULES_MAX_CHARS: usize = 120;
+pub(crate) const REPO_RULES_MAX_CHARS: usize = 120;
 
 /// What a profile's review runs.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -104,6 +104,9 @@ pub struct PlanInput<'a> {
     /// The lines the profile's part changed ([`crate::size`]): its size, unless its profile is
     /// sized by its scout or they could not be counted (`None`), when the scout's answer is.
     pub changed_lines: Option<u64>,
+    /// The project's properties the reviewer's profile sets ([`crate::project::properties`]): its
+    /// facts taken over the scout's, its risks added to what the scout saw.
+    pub project: &'a crate::project::properties::Properties,
 }
 
 /// Rounds and verifier votes by size, as `RIGOR_BY_SIZE`.
@@ -172,7 +175,7 @@ fn scout_strings(scout: Option<&Value>, k: &str) -> Vec<String> {
 }
 
 /// The scout's rule-file paths as the engine keeps them, as `repoRulePaths`.
-fn repo_rule_paths(raw: &[String]) -> Vec<String> {
+pub(crate) fn repo_rule_paths(raw: &[String]) -> Vec<String> {
     let safe = |s: &str| {
         (1..=100).contains(&s.len())
             && !s.starts_with('/')
@@ -240,18 +243,27 @@ pub fn plan(input: PlanInput<'_>) -> Plan {
         max_rounds,
         verify_votes,
         is_library: p.uses_library
-            && scout
-                .and_then(|s| s.get("isLibrary"))
-                .and_then(Value::as_bool)
-                .unwrap_or(false),
+            && input.project.library.unwrap_or_else(|| {
+                scout
+                    .and_then(|s| s.get("isLibrary"))
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false)
+            }),
         security_sensitive: scout
             .and_then(|s| s.get("securitySensitive"))
             .and_then(Value::as_bool)
-            .unwrap_or(true),
+            .unwrap_or(true)
+            || input.read_paths.iter().any(|f| input.project.security(f)),
         intent: scout_str(scout, "intent").unwrap_or("").to_owned(),
         spec: input.spec.to_owned(),
         churn: scout_strings(scout, "churn"),
-        repo_rules: repo_rule_paths(&scout_strings(scout, "repoRules")),
+        repo_rules: repo_rule_paths(
+            input
+                .project
+                .rules
+                .as_deref()
+                .unwrap_or(&scout_strings(scout, "repoRules")),
+        ),
         surface_dropped: Vec::new(),
         light_skipped: Vec::new(),
         metrics_dropped: Vec::new(),
@@ -260,21 +272,25 @@ pub fn plan(input: PlanInput<'_>) -> Plan {
         data_skipped: Vec::new(),
         data_files: Vec::new(),
     };
+    let controllers = chose_reconciler(scout) || input.project.controllers;
+    let contract = files
+        .iter()
+        .any(|f| is_contract_path(f) || input.project.contract(f));
     required(
         p,
-        (scout, input.embedded_sql, input.design),
+        (controllers, input.embedded_sql, input.design),
         input.profile_files,
         &mut plan,
     );
     if input.strict && p.offers("maintainability") {
         push_missing(&mut plan.lenses, "maintainability");
     }
-    floors(p, files, input.optional, &mut plan);
+    floors(p, contract, input.optional, &mut plan);
     // A request adds the lens, not merely permits it, as `optionalRequested` does in the engine.
     for l in crate::optional::bought(p, input.optional) {
         push_missing(&mut plan.lenses, &l);
     }
-    surface_gate(p, scout, files, &mut plan);
+    surface_gate(p, scout, contract, &mut plan);
     if !input.metrics {
         let metrics = p.flagged(|l| l.metrics);
         let (dropped, kept) = plan.lenses.drain(..).partition(|l| metrics.contains(l));
@@ -284,8 +300,8 @@ pub fn plan(input: PlanInput<'_>) -> Plan {
     if input.light {
         light(
             (p, input.optional),
-            scout,
-            (files, input.profile_files),
+            (scout, controllers),
+            (contract, input.profile_files),
             &mut plan,
         );
     }
@@ -295,11 +311,12 @@ pub fn plan(input: PlanInput<'_>) -> Plan {
 }
 
 /// The lenses the plan carries whatever the scout picked: the always set, `tests` on a change to
-/// production code, `failure-windows` on controller code, `sql-queries` on embedded SQL, `design`
+/// production code, `reconciler` and `failure-windows` on controller code (the scout's pick or the
+/// reviewer's profile's `controllers`), `sql-queries` on embedded SQL, `design`
 /// on new structure — the signal buys it though it is optional.
 fn required(
     p: &Profile,
-    (scout, embedded_sql, design): (Option<&Value>, bool, bool),
+    (controllers, embedded_sql, design): (bool, bool, bool),
     own: &[String],
     plan: &mut Plan,
 ) {
@@ -314,7 +331,8 @@ fn required(
     if production(p, own) {
         offer("tests");
     }
-    if chose_reconciler(scout) {
+    if controllers {
+        offer("reconciler");
         offer("failure-windows");
     }
     if embedded_sql {
@@ -327,7 +345,7 @@ fn required(
 
 /// The security floor on a security-sensitive or large plan, negative-space where new surface
 /// appears (on a profile that has the lens), and compat on large diffs and contract paths.
-fn floors(p: &Profile, files: &[String], optional: &[String], plan: &mut Plan) {
+fn floors(p: &Profile, contract: bool, optional: &[String], plan: &mut Plan) {
     let large = plan.size_bucket == "large";
     if plan.security_sensitive || large {
         for l in security_floor(p, optional) {
@@ -341,14 +359,13 @@ fn floors(p: &Profile, files: &[String], optional: &[String], plan: &mut Plan) {
     if (plan.security_sensitive || large) && p.lens("negative-space").is_some() {
         push_missing(&mut plan.lenses, "negative-space");
     }
-    if (large || files.iter().any(|f| is_contract_path(f))) && p.offers("compat") {
+    if (large || contract) && p.offers("compat") {
         push_missing(&mut plan.lenses, "compat");
     }
 }
 
 /// Drops each surface-gated lens whose surface the scout said, in so many words, is absent.
-fn surface_gate(p: &Profile, scout: Option<&Value>, files: &[String], plan: &mut Plan) {
-    let forced = files.iter().any(|f| is_contract_path(f));
+fn surface_gate(p: &Profile, scout: Option<&Value>, forced: bool, plan: &mut Plan) {
     let surfaces = scout.and_then(|s| s.get("surfaces"));
     let absent = |need: &str| {
         let on = forced && matches!(need, "crossBoundarySymbol" | "wireForm");
@@ -366,8 +383,8 @@ fn surface_gate(p: &Profile, scout: Option<&Value>, files: &[String], plan: &mut
 /// The light pass: the diff-scoped lenses and those the diff calls for, one round.
 fn light(
     (p, optional): (&Profile, &[String]),
-    scout: Option<&Value>,
-    (files, own): (&[String], &[String]),
+    (scout, controllers): (Option<&Value>, bool),
+    (contract, own): (bool, &[String]),
     plan: &mut Plan,
 ) {
     let in_roster = |ls: &[&str]| -> Vec<String> {
@@ -380,13 +397,13 @@ fn light(
     if production(p, own) {
         forced.extend(in_roster(&["tests", "intent"]));
     }
-    if chose_reconciler(scout) {
+    if controllers {
         forced.extend(in_roster(&["reconciler", "failure-windows"]));
     } else if chose(scout, "failure-windows") {
         // A failure window the scout saw outside a controller: a write pair, a retry, a resume.
         forced.extend(in_roster(&["failure-windows"]));
     }
-    if files.iter().any(|f| is_contract_path(f)) {
+    if contract {
         forced.extend(in_roster(&["compat"]));
     }
     let whole = p.flagged(|l| l.whole_diff);

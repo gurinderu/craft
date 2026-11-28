@@ -73,6 +73,7 @@ pub(super) fn prepare(
     run: &mut RunState,
 ) {
     compose(opts, profiles, run);
+    properties(opts, run);
     let taking_part = |p: &&Profile| run.tracks.iter().any(|t| t.profile == p.id);
     let metrics = profiles.iter().filter(taking_part).any(complexity::wanted);
     let sql = crate::embedded_sql::mark(cwd, &run.diff.merge_base, &mut run.tracks);
@@ -139,6 +140,35 @@ pub(super) fn prepare(
     if run.gate.exit().is_none() {
         launch_mutants(cwd, dir, opts, run);
     }
+}
+
+/// The project's properties the reviewer's profile sets (realm @nick/craft, node #654), named in
+/// the report, or why they could not be read — then the plans read the scouts' answers alone.
+fn properties(opts: &StartOptions, run: &mut RunState) {
+    if !opts.project_unread.is_empty() {
+        run.notes.push(format!(
+            "the reviewer's profile's [project] section could not be read ({}): the plans take the scouts' answers alone",
+            opts.project_unread
+        ));
+    }
+    run.notes.extend(opts.project.line());
+    let rules = opts.project.rules.as_deref().unwrap_or_default();
+    let kept = crate::plan::repo_rule_paths(rules);
+    let refused: Vec<&str> = rules
+        .iter()
+        .map(|r| craft_store::js::JsStr::js_trim(r.as_str()))
+        .filter(|r| !kept.iter().any(|k| k == r.strip_prefix("./").unwrap_or(r)))
+        .map(|r| if r.is_empty() { "\"\"" } else { r })
+        .collect();
+    if !refused.is_empty() {
+        run.notes.push(format!(
+            "the reviewer's profile's rule files {} were left out — not a short repository-relative path, or past the {} files or {} characters a lens reads: no lens reads them",
+            refused.join(", "),
+            crate::plan::REPO_RULES_MAX,
+            crate::plan::REPO_RULES_MAX_CHARS
+        ));
+    }
+    run.context.project = opts.project.clone();
 }
 
 /// The lens composition the reviewer's profile gives the run (realm @nick/craft, node #644), and

@@ -6,7 +6,8 @@ use super::read::{Row, Run};
 use super::{GROUPS_MAX, TITLES_MAX, number, text};
 
 #[derive(Default)]
-struct Group {
+pub(super) struct Group<'a> {
+    members: Vec<(&'a Run, &'a Row)>,
     file: JsString,
     titles: Vec<JsString>,
     branches: BTreeSet<JsString>,
@@ -15,7 +16,12 @@ struct Group {
     last_seen: JsString,
 }
 
-impl Group {
+impl<'a> Group<'a> {
+    /// The rows the group holds, by identity.
+    pub fn rows(&self) -> impl Iterator<Item = *const Row> + '_ {
+        self.members.iter().map(|(_, row)| std::ptr::from_ref(*row))
+    }
+
     fn matches(&self, row: &Row) -> bool {
         text::within(&row.file, &self.file)
             && self
@@ -24,7 +30,8 @@ impl Group {
                 .any(|t| text::overlap(&row.title, t) >= 0.6)
     }
 
-    fn add(&mut self, run: &Run, row: &Row) {
+    fn add(&mut self, run: &'a Run, row: &'a Row) {
+        self.members.push((run, row));
         if !self.titles.contains(&row.title) {
             self.titles.push(row.title.clone());
         }
@@ -69,19 +76,25 @@ fn severity_rank(s: &JsString) -> usize {
 }
 
 pub(super) fn recurring(runs: &[Run]) -> (Vec<Js>, usize) {
-    let mut groups: Vec<Group> = vec![];
-    for run in runs {
-        for row in &run.rows {
-            if let Some(group) = groups.iter_mut().find(|g| g.matches(row)) {
-                group.add(run, row);
-            } else {
-                let mut group = Group {
-                    file: row.file.clone(),
-                    ..Group::default()
-                };
-                group.add(run, row);
-                groups.push(group);
-            }
+    listed(&grouped(
+        runs.iter()
+            .flat_map(|run| run.rows.iter().map(move |row| (run, row))),
+    ))
+}
+
+/// The groups found on two branches or more, ranked; each row joins the first group it matches.
+pub(super) fn grouped<'a>(rows: impl IntoIterator<Item = (&'a Run, &'a Row)>) -> Vec<Group<'a>> {
+    let mut groups: Vec<Group<'a>> = vec![];
+    for (run, row) in rows {
+        if let Some(group) = groups.iter_mut().find(|g| g.matches(row)) {
+            group.add(run, row);
+        } else {
+            let mut group = Group {
+                file: row.file.clone(),
+                ..Group::default()
+            };
+            group.add(run, row);
+            groups.push(group);
         }
     }
     groups.retain(|g| g.branches.len() >= 2);
@@ -93,6 +106,10 @@ pub(super) fn recurring(runs: &[Run]) -> (Vec<Js>, usize) {
             .then(b.last_seen.cmp(&a.last_seen))
             .then(a.file.cmp(&b.file))
     });
+    groups
+}
+
+pub(super) fn listed(groups: &[Group<'_>]) -> (Vec<Js>, usize) {
     let cut = groups.len().saturating_sub(GROUPS_MAX);
     (
         groups.iter().take(GROUPS_MAX).map(Group::json).collect(),

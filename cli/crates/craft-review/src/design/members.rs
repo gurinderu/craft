@@ -11,7 +11,7 @@ use crate::git;
 
 /// Whether `path`, `/`-separated, matches the Cargo glob `pat`: `*` and `?` within one segment,
 /// `**` across any number of them.
-fn glob(pat: &str, path: &str) -> bool {
+pub(crate) fn glob(pat: &str, path: &str) -> bool {
     let (p, s): (Vec<&str>, Vec<&str>) = (
         pat.trim_end_matches('/').split('/').collect(),
         path.split('/').collect(),

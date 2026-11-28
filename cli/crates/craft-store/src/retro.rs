@@ -10,8 +10,10 @@ use crate::js::{Js, JsString, Obj, Utf16Error};
 use crate::record::SEVERITIES;
 use crate::tally::{Tally, round2};
 
+mod kinds;
 mod rounds;
 
+pub use kinds::Kind;
 pub use rounds::{Apart, Round};
 
 /// One lens's yield over the runs it ran in.
@@ -42,6 +44,8 @@ pub struct Retro {
     pub runs: u64,
     pub partial_coverage: u64,
     pub workflows: BTreeMap<String, Tally>,
+    /// The runs by kind: the workflow, a review's depth and lens scope ([`kinds`]).
+    pub kinds: BTreeMap<String, Kind>,
     pub engines: BTreeMap<String, u64>,
     pub lenses: BTreeMap<String, Lens>,
     pub not_run: BTreeMap<String, u64>,
@@ -241,6 +245,7 @@ pub fn add_record(out: &mut Retro, r: &Obj) -> Result<(), Utf16Error> {
     } else {
         name
     };
+    kinds::add(r, &name, &mut out.kinds)?;
     let w = out.workflows.entry(name).or_default();
     w.add(r);
     let verdict = r.get("verdict").filter(|v| v.truthy()).map(Js::to_js_text);
