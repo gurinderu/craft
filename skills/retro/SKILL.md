@@ -1,7 +1,7 @@
 ---
 name: retro
 description: >-
-  Retro of your craft reviews in this repository: where the tokens and minutes go and what breaks, counted by the binary from the run store — `craft runs retro` over this project's runs (a period, a branch), its runs by kind (a review's depth and lens scope) with minutes, agents and the usable cost, each lens's yield, what did not run, and the unverified findings that recur. Two outcomes, each shown before anything is written or sent: a proposal for your review profile (lenses held or off, the mutants budget, the project's properties), written through review-init on your word, and a draft issue about craft itself, sent only if you say so. Use after a release's full review, when reviews feel slow or costly, or after several runs without a clean verdict. Triggers: craft retro, review retro, where do the review tokens go, why are my reviews so slow, which lenses find nothing. Not for one run's report (read its report.md).
+  Retro of your craft reviews in this repository: where the tokens and minutes go and what breaks, counted by the binary from the run store — `craft runs retro` over this project's runs (a period, a branch), its runs by kind (a review's depth and lens scope) with minutes, agents and the usable cost, each lens's yield, what did not run, and the unverified findings that recur. Two outcomes, each shown before anything is written or sent: a proposal for your review profile (lenses held or off, the mutants budget, the project's properties), written through review-init on your word, and a draft issue about craft itself, sent only if you say so. Use when the session-start hook offers a retro, after a release's full review, when reviews feel slow or costly, or after several runs without a clean verdict. Triggers: craft retro, review retro, where do the review tokens go, why are my reviews so slow, which lenses find nothing. Not for one run's report (read its report.md).
 ---
 
 # retro — what your reviews here cost and found
@@ -101,4 +101,12 @@ scratch and removed after. Nothing about craft — say so in one line.
 ## 6. Report
 
 The range and the runs read; the observations; what was written to the profile, or that nothing
-was; the draft issue — sent with its link, or kept by the person, or none.
+was; the draft issue — sent with its link, or kept by the person, or none. Then mark the retro
+done, whatever came of it:
+
+```sh
+"$CRAFT_BIN" runs retro-done --project "$(git rev-parse --show-toplevel)"
+```
+
+It files a `retro` record of this repository, which no reader counts as a run; the session-start
+hook counts this repository's runs anew from it before it offers the next retro.

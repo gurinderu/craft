@@ -120,6 +120,15 @@ test('aggregate ignores non-object records', () => {
   assert.equal(aggregate([null, 42, 'x', undefined]).totalRuns, 0)
 })
 
+test('aggregate counts no retro mark as a run (craft runs retro-done)', () => {
+  const a = aggregate([REVIEW_1, { schemaVersion: 1, kind: 'retro', name: 'retro', ts: '2026-11-02T10-00-00Z' }])
+  assert.equal(a.totalRuns, 1)
+  assert.deepEqual(
+    a.workflows.map(w => w.name),
+    ['review'],
+  )
+})
+
 test('aggregate tallies runs, verdicts and INCOMPLETE', () => {
   const a = aggregate([REVIEW_1, REVIEW_2, AUDIT])
   assert.equal(a.totalRuns, 3)

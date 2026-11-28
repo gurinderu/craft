@@ -299,12 +299,18 @@ function tallyHarmCap(t, r) {
   t.lowered += lowered
 }
 
+// The record a finished retro files (`craft runs retro-done`, cli/crates/craft-store/src/retro.rs): a mark of
+// when the repository's runs were last read, no run (realm @nick/craft, #658).
+const RETRO_KIND = 'retro'
+/** @param {{ kind?: unknown }} r @returns {boolean} */
+const isRetroMark = r => r.kind === RETRO_KIND
+
 // Pure: array of parsed run records → structured summary. Tolerant of malformed / partial records.
 /** @param {unknown} records */
 export function aggregate(records) {
   const all = /** @type {RunRec[]} */ ((Array.isArray(records) ? records : []).filter(r => r && typeof r === 'object'))
   // A craft:develop cycle is no review run: it has its own section and stays out of every review rate (realm @nick/craft, #281).
-  const recs = all.filter(r => !isDevelopRecord(r))
+  const recs = all.filter(r => !isDevelopRecord(r) && !isRetroMark(r))
   const develop = newDevelopTally()
   const depth = newDepthTally()
   for (const r of all.filter(isDevelopRecord)) tallyDevelop(develop, r)
@@ -1233,7 +1239,7 @@ function sliceByEngine(usable, records, wantEngine) {
   // engine run counts: a develop-cycle record carries no craftVersion, so as the newest it would name
   // "unversioned" as the engine.
   const newest = usable
-    .filter(r => !isDevelopRecord(r))
+    .filter(r => !isDevelopRecord(r) && !isRetroMark(r))
     .reduce((/** @type {RunRec | null} */ best, r) => (!best || String(r.ts) > String(best.ts) ? r : best), /** @type {RunRec | null} */ (null))
   const target = wantEngine === 'latest' ? (newest ? engineKey(newest) : '') : wantEngine
   if (!target) return { stop: 'No runs to pick an engine from.' }

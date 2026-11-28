@@ -20,6 +20,7 @@ mod kind;
 mod opencode;
 mod readiness;
 mod remind;
+mod retro;
 mod start;
 mod text;
 mod text_codex;

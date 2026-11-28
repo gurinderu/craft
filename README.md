@@ -174,7 +174,9 @@ PR's own OpenCode configuration and plugins, so its code runs even with `--no-ga
 - **Hooks** — in a repository that declares its own agent roles or review rules, craft tells the session how those
   run with craft's tools; these are silent elsewhere and off with `CRAFT_ROLE_HOOK=0`. One more hook speaks in any
   repository and has no switch: after `gh pr create` in Claude Code it warns when the new PR has no finished full
-  craft review.
+  craft review. And in any repository where your reviews have piled up — 20 runs, the last 3 without a clean
+  verdict, a release's full review, or two weeks since the last retro — the session start offers `craft:retro`, at
+  most once a day; it never runs it for you, and `CRAFT_RETRO_HOOK=0` turns the offer off.
 
 The full catalogue, what each hook says and when, how the workflows run and how the repository is laid out:
 [MAP.md](https://github.com/gurinderu/craft/blob/main/MAP.md). The run records the workflows write: [docs/observability.md](https://github.com/gurinderu/craft/blob/main/docs/observability.md). Working on

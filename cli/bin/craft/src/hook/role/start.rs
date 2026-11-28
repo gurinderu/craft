@@ -2,10 +2,12 @@
 //! against, #276): in a repo that declares its own roles or work rules, that they win on every
 //! step they cover (#264) and the cycle craft's tools run (#266; a subagent has no Workflow tool,
 //! #262); under Codex its own cycle lines (#293) and what the session must know before a review
-//! (`super::readiness`).
+//! (`super::readiness`); in any repository whose review runs call for one, the offer of a retro
+//! (`super::retro`).
 
 use super::declared::{self, SWITCH_ENV};
 use super::readiness::{self, Probe};
+use super::retro;
 use super::{Ctx, Harness, Run, context, cwd_of, fields, text_codex, text_of};
 
 const EVENT: &str = "SessionStart";
@@ -50,7 +52,8 @@ fn role_text(found: &[String], who: Harness) -> String {
 
 /// One `SessionStart` run: the role text where the repo declares a role, and under Codex the
 /// readiness lines after it unless the hook is switched off. A run that said only the readiness
-/// lines is logged as one that spoke, with `reason: codex-readiness`.
+/// lines is logged as one that spoke, with `reason: codex-readiness`; one that said only the retro
+/// offer, with `reason: retro-offer`.
 pub fn run(input: &str, ctx: &Ctx, probe: &dyn Probe) -> Run {
     let fields = fields(input);
     let cwd = cwd_of(&fields, ctx);
@@ -81,6 +84,18 @@ pub fn run(input: &str, ctx: &Ctx, probe: &dyn Probe) -> Run {
                 entry = entry.because("codex-readiness");
             }
         }
+    }
+    if let Some(offer) = retro::offer(ctx, &entry.repo, env!("CARGO_PKG_VERSION")) {
+        if !entry.spoke {
+            entry.spoke = true;
+            entry.silent = None;
+            entry = entry.because("retro-offer");
+        }
+        text = if text.is_empty() {
+            offer
+        } else {
+            format!("{text}\n{offer}")
+        };
     }
     let stdout = if text.is_empty() {
         String::new()

@@ -1,4 +1,4 @@
-//! `craft runs enrich-cost | sorting-choice | develop-cycle`: the writes made into the run store
+//! `craft runs enrich-cost | sorting-choice | develop-cycle | retro-done`: the writes made into the run store
 //! after a run, by the launcher or a skill, with the binary's own store writer and no node
 //! (`craft_store::cost`, `sorting`, `develop`; realm @nick/craft, nodes #393, #281, #39).
 
@@ -130,6 +130,15 @@ pub fn develop_cycle(
     let (_, line, _) =
         craft_store::posthoc::develop_cycle(&cycle, &request(&repo, session), &env(store))
             .map_err(|why| anyhow!(why))?;
+    writeln!(std::io::stdout().lock(), "{line}")?;
+    Ok(ExitCode::SUCCESS)
+}
+
+/// A finished retro of the repository, filed as its `retro` record (realm @nick/craft, node #658).
+pub fn retro_done(store: &Path, project: Option<&Path>, session: Option<&str>) -> Result<ExitCode> {
+    let repo = repo(project)?;
+    let (_, line, _) = craft_store::posthoc::retro_done(&request(&repo, session), &env(store))
+        .map_err(|why| anyhow!(why))?;
     writeln!(std::io::stdout().lock(), "{line}")?;
     Ok(ExitCode::SUCCESS)
 }

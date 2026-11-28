@@ -166,6 +166,16 @@ pub enum RunsCommand {
         #[arg(long)]
         session: Option<String>,
     },
+    /// A finished craft:retro of this repository, filed as its `retro` record: the session-start
+    /// hook counts its runs anew from here.
+    RetroDone {
+        /// The repository (default: the working directory).
+        #[arg(long, value_parser = path_value())]
+        project: Option<PathBuf>,
+        /// The harness session the retro ran in.
+        #[arg(long)]
+        session: Option<String>,
+    },
 }
 
 #[derive(Debug, clap::Args)]
@@ -291,6 +301,9 @@ fn printed(args: &RunsArgs) -> Result<ExitCode> {
         } => write::sorting_choice(&store, n, choice, record.as_deref(), project.as_deref())?,
         RunsCommand::DevelopCycle { project, session } => {
             write::develop_cycle(&store, project.as_deref(), session.as_deref())?
+        }
+        RunsCommand::RetroDone { project, session } => {
+            write::retro_done(&store, project.as_deref(), session.as_deref())?
         }
     };
     said_skipped(&skipped);
@@ -539,6 +552,9 @@ fn tally_record(
         By::Name => r.try_text("name")?,
         By::Project => r.try_text("project")?,
     };
+    if !craft_store::retro::is_run(r) {
+        return Ok(());
+    }
     let key = if key.is_empty() { "(none)" } else { key };
     groups.entry(key.to_owned()).or_default().add(r);
     Ok(())

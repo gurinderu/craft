@@ -1,4 +1,5 @@
-//! The writes made after a run, from the binary (`craft runs sorting-choice | develop-cycle`), as
+//! The writes made after a run, from the binary (`craft runs sorting-choice | develop-cycle |
+//! retro-done`), as
 //! requests answered `{ ok, reason, file }` — the shape `content/parity/posthoc-store-cases.json`
 //! holds them to: what the JavaScript writer's `sorting-choice` and `develop-cycle` verbs filed,
 //! frozen when they were removed.
@@ -31,6 +32,22 @@ pub fn develop_cycle(cycle: &Obj, req: &Obj, env: &Env) -> Said {
     let w = writing(req, env, None).map_err(|e| e.to_string())?;
     let (file, _) =
         crate::write::write_record(&record, &w, &w.git_id, None).map_err(|e| e.to_string())?;
+    Ok((
+        file.clone(),
+        format!("wrote {}", file.display()),
+        Vec::new(),
+    ))
+}
+
+/// A finished retro of the repository the request names, filed as its `retro` record: from here
+/// its runs count anew towards the next retro's offer.
+///
+/// # Errors
+/// When the write does not land.
+pub fn retro_done(req: &Obj, env: &Env) -> Said {
+    let w = writing(req, env, None).map_err(|e| e.to_string())?;
+    let (file, _) = crate::write::write_record(&crate::retro::done_record(), &w, &w.git_id, None)
+        .map_err(|e| e.to_string())?;
     Ok((
         file.clone(),
         format!("wrote {}", file.display()),
