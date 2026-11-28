@@ -1,6 +1,7 @@
 //! The mechanical gate end to end over a fixture repository, its tools stand-ins on a PATH of
 //! their own: a tool's seed reaches the lenses, the verdict's report and the ledger with its own
-//! rule; a red check blocks before any lens; a tool not installed is named and the review goes on.
+//! rule; a red check blocks before any lens; a tool not installed is named and the review goes on;
+//! a seed tool that did not answer leaves the gate unknown, and the verdict's line says why.
 
 #![expect(
     clippy::unwrap_used,
@@ -209,7 +210,8 @@ fn a_tool_not_installed_is_named_and_the_review_goes_on() {
     assert_eq!(ids(&s), ["scout-rust"], "the review goes on");
     let done = drive(&run, s);
     // An absent tool is no failure, and no pass: the unknown gate caps the verdict at Warning
-    // (realm @nick/craft, node #487).
+    // (realm @nick/craft, node #487), and the line and a note name the seed tool the repository's
+    // rules asked for and why it did not answer (realm @nick/craft, node #743).
     assert_eq!(
         done["verdict"],
         json!("Warning"),
@@ -218,9 +220,48 @@ fn a_tool_not_installed_is_named_and_the_review_goes_on() {
     common::assert_contains_all(
         &report(&done),
         &[
-            "Warning — the gate was not established locally (rust: unknown); no CI check informed it",
+            "Warning — the gate was not established locally (rust: unknown); semgrep is not installed; no CI check informed it",
             "- **rust**: unknown — `cargo clippy --manifest-path Cargo.toml --all-targets`: not installed",
             "  - Not installed, skipped (the review went on without them): cargo, semgrep",
+            "  - semgrep is not installed — its signal is unknown, not a pass",
+        ],
+    );
+}
+
+/// The gate's semgrep stand-in, dying on an internal error, and the repository rule directory
+/// that makes the gate ask for it.
+fn asks_semgrep(repo: &Path, tools: &Path) {
+    write_tool(
+        tools,
+        "semgrep",
+        r#"echo "Semgrep encountered an internal error" >&2; exit 2"#,
+    );
+    std::fs::create_dir_all(repo.join(".semgrep")).unwrap();
+}
+
+/// clippy passed, and semgrep — asked for by the repository's rules — printed no JSON: the track
+/// is unknown, the verdict is capped at Warning and its line names the tool and why (realm
+/// @nick/craft, node #743).
+#[test]
+fn a_semgrep_that_printed_no_json_is_named_and_caps_the_verdict_at_warning() {
+    let repo = package();
+    let out = tempfile::tempdir().unwrap();
+    let tools = fake_cargo(&[], &[]);
+    asks_semgrep(repo.path(), tools.path());
+    let run = out.path().join("run");
+    let s = step::start(&gated(repo.path(), out.path(), tools.path())).unwrap();
+    assert_eq!(ids(&s), ["scout-rust"], "the review goes on");
+    let done = drive(&run, s);
+    assert_eq!(done["verdict"], json!("Warning"), "{done}");
+    let scan = "`semgrep scan --json --metrics=off --quiet --config .semgrep`";
+    common::assert_contains_all(
+        &report(&done),
+        &[
+            "Warning — the gate was not established locally (rust: unknown); semgrep printed no JSON: Semgrep encountered an internal error; no CI check informed it",
+            "- **rust**: unknown — ",
+            "`cargo clippy --manifest-path Cargo.toml --all-targets`: pass",
+            &format!("{scan}: unreadable output"),
+            &format!("  - {scan} printed no JSON: Semgrep encountered an internal error"),
         ],
     );
 }
@@ -454,6 +495,29 @@ fn a_taken_gate_that_stayed_unknown_caps_the_run_at_warning() {
     assert_eq!(done["verdict"], json!("Warning"), "{done}");
     assert!(
         report(&done).contains("Warning — the gate was not established locally (rust: unknown)")
+    );
+}
+
+/// The gate ran once for the whole change and this run takes it (`--gate-from`): a seed tool that
+/// did not answer reaches the taking run's verdict line with its reason, through the kept result
+/// (realm @nick/craft, node #743).
+#[test]
+fn a_taken_gate_whose_seed_tool_did_not_answer_names_it_in_the_verdict_line() {
+    let repo = package();
+    let out = tempfile::tempdir().unwrap();
+    let tools = fake_cargo(&[], &[]);
+    asks_semgrep(repo.path(), tools.path());
+    let from = gate_alone(repo.path(), out.path(), tools.path());
+    let run = out.path().join("run");
+    let s = step::start(&taking(repo.path(), out.path(), &from)).unwrap();
+    let done = drive(&run, s);
+    assert_eq!(done["verdict"], json!("Warning"), "{done}");
+    common::assert_contains_all(
+        &report(&done),
+        &[
+            "Warning — the gate was not established locally (rust: unknown); semgrep printed no JSON: Semgrep encountered an internal error; no CI check informed it",
+            "  - `semgrep scan --json --metrics=off --quiet --config .semgrep` printed no JSON: Semgrep encountered an internal error",
+        ],
     );
 }
 

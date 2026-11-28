@@ -66,7 +66,7 @@ pub struct StartOptions {
     /// `craft review gate` wrote): its seeds on this run's files reach the lenses
     /// ([`crate::gate::alone::taken`]); over `gate` when both are given.
     pub gate_from: Option<PathBuf>,
-    /// How the mutants of the change run beside the lens rounds once the Rust gate passed
+    /// How the mutants of the change run beside the lens rounds once the Rust gate's checks passed
     /// ([`crate::gate::mutants`]); `None`, they do not, and the report says so.
     pub mutants: Option<crate::gate::mutants::MutantsSetup>,
     /// The consumer's own agents to run as extra lenses, as the host names them (`extraLenses`):

@@ -1,7 +1,8 @@
 //! The tests lens is told the binary runs the change's mutants only when their worker was launched
-//! (realm @nick/craft, node #648): a start whose gate passed and whose cargo-mutants answers
-//! launches it and says so in the lens's prompt; one the reviewer's profile turns them off for does
-//! not. cargo and the worker are stand-ins.
+//! (realm @nick/craft, node #648): a start whose gate's checks passed — its track passed, or left
+//! unknown by a seed tool that did not answer (realm @nick/craft, node #743) — and whose
+//! cargo-mutants answers launches it and says so in the lens's prompt; one the reviewer's profile
+//! turns them off for does not. cargo and the worker are stand-ins.
 #![cfg(unix)]
 #![expect(
     clippy::unwrap_used,
@@ -19,9 +20,14 @@ use serde_json::{Value, json};
 
 const TOLD: &str = "MUTANTS: the binary runs cargo-mutants";
 
-/// The tests lens's prompt and the run's state, its start's mutants `off` or not.
-fn tests_lens(off: bool) -> (String, Value) {
+/// The tests lens's prompt and the run's state, its start's mutants `off` or not, over a
+/// repository that keeps semgrep rules for `rules` — never installed here.
+fn tests_lens(off: bool, rules: bool) -> (String, Value) {
     let repo = fixture(true);
+    // Not committed: the rules are the repository's already, not a part of the change.
+    if rules {
+        std::fs::create_dir(repo.path().join(".semgrep")).unwrap();
+    }
     std::fs::write(
         repo.path().join("Cargo.toml"),
         "[package]\nname = \"f\"\nversion = \"0.1.0\"\n",
@@ -75,14 +81,32 @@ fn launched(state: &Value) -> bool {
 
 #[test]
 fn a_launched_worker_tells_the_tests_lens_the_mutants_run() {
-    let (prompt, state) = tests_lens(false);
+    let (prompt, state) = tests_lens(false, false);
+    assert!(launched(&state), "{}", state["notes"]);
+    assert!(prompt.contains(TOLD), "{prompt}");
+}
+
+/// A seed tool the review asked for and that did not answer leaves the gate's track unknown and
+/// the verdict capped (realm @nick/craft, node #743), and the mutants still launch: the checks
+/// passed, so the change's tests are known to build.
+#[test]
+fn a_silent_seed_tool_leaves_the_track_unknown_and_the_mutants_still_launch() {
+    let (prompt, state) = tests_lens(false, true);
+    let track = &state["gate"]["tracks"][0];
+    assert_eq!(track["status"], "unknown", "{state}");
+    assert_eq!(track["checksPassed"], true, "{state}");
+    assert_eq!(
+        track["unanswered"],
+        json!(["semgrep is not installed"]),
+        "{state}"
+    );
     assert!(launched(&state), "{}", state["notes"]);
     assert!(prompt.contains(TOLD), "{prompt}");
 }
 
 #[test]
 fn no_worker_launched_tells_the_tests_lens_nothing_of_them() {
-    let (prompt, state) = tests_lens(true);
+    let (prompt, state) = tests_lens(true, false);
     assert!(!launched(&state), "{}", state["notes"]);
     assert!(!prompt.contains(TOLD), "{prompt}");
 }

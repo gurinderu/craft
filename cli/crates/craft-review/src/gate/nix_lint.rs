@@ -1,6 +1,7 @@
 //! The Nix gate's linters on the changed `.nix` files: statix (anti-idioms) and deadnix (dead
 //! bindings), each diagnostic on a line the change added a seed (`MNT-001`, Low), never a gate
-//! failure. Each counts as run only on a well-formed answer (`gate/nix_answer.rs`).
+//! failure. Each counts as run only on a well-formed answer (`gate/nix_answer.rs`); one that gave
+//! none leaves the track unknown, with a flake as without one (realm @nick/craft, node #743).
 
 use serde_json::Value;
 
@@ -42,7 +43,7 @@ pub(super) fn statix(cx: &Cx<'_>, acc: &mut Acc, file: &str) -> bool {
         .runner
         .run(cx.top, "statix", &["check", "-o", "json", "--", file]);
     let code = exit_code(&ran);
-    let Some((_, out, err)) = acc.exited(STATIX, "statix", ran) else {
+    let Some((_, out, err)) = acc.seed_tool(STATIX, "statix", ran) else {
         return false;
     };
     match statix_report(code, &out, &err) {
@@ -53,7 +54,7 @@ pub(super) fn statix(cx: &Cx<'_>, acc: &mut Acc, file: &str) -> bool {
             true
         }
         Err(why) => {
-            broke(acc, STATIX, &format!("on {file} {why}"));
+            broke(acc, STATIX, "statix", &format!("on {file} {why}"));
             false
         }
     }
@@ -93,13 +94,13 @@ pub(super) fn deadnix(cx: &Cx<'_>, acc: &mut Acc, files: &[&str]) -> bool {
     args.extend(files);
     let ran = cx.runner.run(cx.top, "deadnix", &args);
     let code = exit_code(&ran);
-    let Some((_, out, err)) = acc.exited(DEADNIX, "deadnix", ran) else {
+    let Some((_, out, err)) = acc.seed_tool(DEADNIX, "deadnix", ran) else {
         return false;
     };
     let reports = match deadnix_reports(code, &out, &err) {
         Ok(r) => r,
         Err(why) => {
-            broke(acc, DEADNIX, &why);
+            broke(acc, DEADNIX, "deadnix", &why);
             return false;
         }
     };
@@ -114,6 +115,7 @@ pub(super) fn deadnix(cx: &Cx<'_>, acc: &mut Acc, files: &[&str]) -> bool {
     broke(
         acc,
         DEADNIX,
+        "deadnix",
         &format!("could not parse or read {}", unread.join("; ")),
     );
     false

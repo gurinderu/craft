@@ -10,7 +10,10 @@
 //! A red check this change is answerable for blocks the review before any lens; a clippy, statix
 //! or deadnix diagnostic on a line the change added, and any result of semgrep's repository rules
 //! in a changed file, is a seed finding every lens and verifier sees, carrying its `toolRule`; a
-//! tool that is not installed is named, and the review goes on.
+//! tool that is not installed is named, and the review goes on. A seed tool the gate asked for
+//! and that did not answer — not installed, past the budget, broken, or printing what is not JSON
+//! — leaves its track unknown, and the verdict line names it and why (realm @nick/craft, node
+//! #743).
 //! clippy and `nix flake check` build and run the branch's code (build scripts, proc macros,
 //! flake checks, and the flake dev shell's `shellHook` when clippy runs inside it): a run started
 //! with `--no-gate` runs none of them, and says so.
@@ -74,6 +77,8 @@ mod section;
 mod semgrep;
 #[cfg(test)]
 pub(crate) mod tests;
+#[cfg(test)]
+pub(crate) mod unanswered_tests;
 pub mod unknown;
 #[cfg(test)]
 #[cfg(unix)]
@@ -150,6 +155,16 @@ pub struct Track {
     /// The tools not installed, each skipped.
     pub missing: Vec<String>,
     pub notes: Vec<String>,
+    /// Each seed tool this profile's gate asked for and that did not answer, with why (realm
+    /// @nick/craft, node #743): what the verdict line names. Kept whatever the status came to.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub unanswered: Vec<String>,
+    /// Whether its primary checks passed, read before the seed tools: the change's tests are then
+    /// known to build, whatever a seed tool that did not answer made of the status, so the mutants
+    /// still run ([`mutants`]; realm @nick/craft, node #743). Optional, so a track written before
+    /// it reads as not passed.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub checks_passed: bool,
     /// How many seed findings it gave the lenses.
     pub seeds: usize,
     /// Whether its cargo ran inside the checkout's flake dev shell: the mutants run where it did
@@ -182,6 +197,20 @@ pub struct Gate {
     /// none were launched.
     #[serde(skip_serializing_if = "mutants::Mutants::is_none")]
     pub mutants: mutants::Mutants,
+}
+
+impl Track {
+    /// Whether the change's tests are known to build, so the mutants may run on them: a track that
+    /// passed, or one a seed tool left unknown after its primary checks passed (realm @nick/craft,
+    /// node #743). Red, not run, nothing to check, or a build that did not happen: no.
+    #[must_use]
+    pub fn tests_build(&self) -> bool {
+        match self.status {
+            Status::Pass => true,
+            Status::Unknown => self.checks_passed,
+            Status::Fail | Status::Nothing => false,
+        }
+    }
 }
 
 impl Gate {

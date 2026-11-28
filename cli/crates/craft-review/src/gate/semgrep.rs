@@ -1,5 +1,9 @@
 //! semgrep as the Rust gate runs it: the repository's own rules over the changed Rust files, each
-//! result a `semgrep` seed (ERROR High, WARNING Medium, else Low), never a gate failure.
+//! result a `semgrep` seed (ERROR High, WARNING Medium, else Low), never a gate failure. Asked
+//! for — a rules directory and a changed Rust file — and not answered: not installed, past the
+//! budget, broken, printing what is not JSON, or reporting an error of its own, it leaves the
+//! track unknown, since its silence is no pass (realm @nick/craft, node #743). Not asked for, it
+//! is no signal at all.
 
 use serde_json::Value;
 
@@ -28,14 +32,15 @@ pub(super) fn semgrep(cx: &Cx<'_>, acc: &mut Acc) {
     args.push("--");
     args.extend(files);
     let Some((_, out, err)) =
-        acc.exited(&label, "semgrep", cx.runner.run(cx.top, "semgrep", &args))
+        acc.seed_tool(&label, "semgrep", cx.runner.run(cx.top, "semgrep", &args))
     else {
         return;
     };
     let Ok(v) = serde_json::from_str::<Value>(&out) else {
+        let why = format!("printed no JSON: {}", last_line(&err));
         acc.parts.push(format!("{label}: unreadable output"));
-        acc.notes
-            .push(format!("{label} printed no JSON: {}", last_line(&err)));
+        acc.notes.push(format!("{label} {why}"));
+        acc.no_answer("semgrep", &why);
         return;
     };
     let results = v
@@ -76,6 +81,54 @@ pub(super) fn semgrep(cx: &Cx<'_>, acc: &mut Acc) {
             );
         }
     }
-    acc.parts
-        .push(format!("{label}: {} result(s)", results.len()));
+    answered(acc, &label, &v, results.len());
+}
+
+/// Folds in semgrep's JSON answer once its findings are seeds: what it says of its own run.
+fn answered(acc: &mut Acc, label: &str, v: &Value, found: usize) {
+    // An error of its own — an invalid rule, a file it could not wholly parse — at any exit status
+    // and beside any number of findings: the rules did not read every line, so what it found stays
+    // and the track is unknown (realm @nick/craft, node #744). Its exit status says no more: the
+    // answer is read by its `errors`.
+    if let Some((errors, first)) = v
+        .get("errors")
+        .and_then(Value::as_array)
+        .and_then(|errors| Some((errors, one_line(errors.first()?))))
+    {
+        let why = format!("reported {} error(s): {}", errors.len(), first);
+        acc.parts.push(format!(
+            "{label}: {found} result(s), {} error(s)",
+            errors.len()
+        ));
+        acc.notes.push(format!("{label} {why}"));
+        acc.no_answer("semgrep", &why);
+        return;
+    }
+    // An answer over no file — its rules cover none of the changed ones — is named so, not as a
+    // clean scan (realm @nick/craft, node #744); one without `paths` is read as it always was.
+    if v.pointer("/paths/scanned")
+        .and_then(Value::as_array)
+        .is_some_and(Vec::is_empty)
+    {
+        acc.parts.push(format!("{label}: no file scanned"));
+        acc.notes.push(format!(
+            "{label} scanned no file: its rules cover none of the changed ones"
+        ));
+        return;
+    }
+    acc.parts.push(format!("{label}: {found} result(s)"));
+}
+
+/// An error entry of semgrep's answer on one line of a note: its message, else its long one.
+fn one_line(error: &Value) -> String {
+    let said = ["message", "long_msg"]
+        .iter()
+        .find_map(|k| error.get(k).and_then(Value::as_str))
+        .unwrap_or("no message");
+    said.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .take(200)
+        .collect()
 }

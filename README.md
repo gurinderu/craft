@@ -146,7 +146,8 @@ installed-host behavior has not yet been observed.
 
 The review's mechanical gate **builds and runs the reviewed branch's code on your machine**: clippy runs its build
 scripts and proc macros (inside the repository's flake dev shell when it defines one, whose `shellHook` runs too),
-and `nix flake check` runs its checks. On a Rust change whose gate passed, and where `cargo mutants` is installed,
+and `nix flake check` runs its checks. On a Rust change whose gate's checks passed (a seed tool that did not
+answer leaves its track unknown and does not stop them), and where `cargo mutants` is installed,
 the review also **runs the branch's test suite**: cargo-mutants runs the tests once per mutant of the changed lines,
 beside the lens rounds, for up to 10 minutes. A suite with side effects (a database, the network) or a heavy one runs
 then too. The reviewer's profile turns this off or bounds it: ask the `craft:review-init` skill to turn the mutants

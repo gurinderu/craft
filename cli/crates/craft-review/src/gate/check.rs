@@ -82,6 +82,12 @@ pub(super) struct Acc {
     pub failed: Vec<String>,
     pub missing: Vec<String>,
     pub notes: Vec<String>,
+    /// Each seed tool that did not answer, with why (realm @nick/craft, node #743).
+    pub unanswered: Vec<String>,
+    /// The primary checks passed, read before the seed tools: the tests the mutants run are then
+    /// known to build, whatever a seed tool that did not answer went on to make of the status
+    /// (realm @nick/craft, node #743).
+    pub checks_passed: bool,
     pub seeds: Vec<Value>,
     /// A build was impossible: cargo ended with no compiler error, so the signal is unknown and
     /// CI may stand for it.
@@ -123,6 +129,46 @@ impl Acc {
             }
         }
         None
+    }
+
+    /// [`Self::exited`] for a seed tool the gate asked for (realm @nick/craft, node #743): one
+    /// that did not answer leaves the signal unknown — never a pass — and is kept with why for the
+    /// verdict line. Not installed gets a note of its own; the other outcomes already wrote theirs.
+    pub(super) fn seed_tool(
+        &mut self,
+        label: &str,
+        tool: &str,
+        ran: Ran,
+    ) -> Option<(bool, String, String)> {
+        let missing = ran == Ran::Missing;
+        let why = Self::not_answered(&ran);
+        let out = self.exited(label, tool, ran);
+        let Some(why) = why else {
+            return out;
+        };
+        if missing {
+            self.notes
+                .push(format!("{tool} {why} — its signal is unknown, not a pass"));
+        }
+        self.no_answer(tool, &why);
+        None
+    }
+
+    /// Why a tool that did not exit gave no answer; `None` when it exited.
+    fn not_answered(ran: &Ran) -> Option<String> {
+        match ran {
+            Ran::Exited { .. } => None,
+            Ran::Missing => Some("is not installed".to_owned()),
+            Ran::TimedOut(d) => Some(format!("hit the gate's time budget after {}s", d.as_secs())),
+            Ran::Broken(e) => Some(format!("could not run: {e}")),
+        }
+    }
+
+    /// Keeps `tool` as not answered for `why` (realm @nick/craft, node #743): the track's signal
+    /// is unknown, whatever the other tools said that was not a failure.
+    pub(super) fn no_answer(&mut self, tool: &str, why: &str) {
+        self.check(Status::Unknown);
+        self.unanswered.push(format!("{tool} {why}"));
     }
 
     /// Names `tool` as not installed: `label` skipped, never a failure.
@@ -172,6 +218,8 @@ impl Acc {
             failed_checks: self.failed,
             missing: self.missing,
             notes: self.notes,
+            unanswered: self.unanswered,
+            checks_passed: self.checks_passed,
             seeds: self.seeds.len(),
             dev_shell: self.dev_shell,
         };
