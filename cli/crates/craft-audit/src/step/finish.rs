@@ -86,7 +86,11 @@ pub(super) fn end(
     let record = crate::record::run_record(s, &sum);
     let filed = filing::file(dir, s, &record, w)?;
     let lost = filed.as_ref().map(|f| f.lost.clone()).unwrap_or_default();
-    write(report_path(dir), &report::markdown(dir, s, &sum, &lost))?;
+    let refile = filed.as_ref().is_some_and(|f| f.record != "filed");
+    write(
+        report_path(dir),
+        &report::markdown(dir, s, &sum, &lost, refile),
+    )?;
     write(record_path(dir), &format!("{record:#}\n"))?;
     let unread = (!sum.unread.is_empty()).then(|| format!("{}\n", sum.unread.join("\n")));
     list(unread_path(dir), unread)?;

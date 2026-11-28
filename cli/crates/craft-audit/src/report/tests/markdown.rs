@@ -14,8 +14,9 @@ fn the_report_opens_with_its_verdict_and_says_what_it_did_not_read() {
         &s,
         &sum,
         &["the run record — refused".into()],
+        true,
     );
-    assert!(md.starts_with("# craft audit\n\n> **Not filed**: the run record — refused\n\n## Verdict\n\n**INCOMPLETE**\n"), "{md}");
+    assert!(md.starts_with("# craft audit\n\n> **Not filed**: the run record — refused; resume the run to file it again: `craft audit submit --run '/runs/a' --resume`\n\n## Verdict\n\n**INCOMPLETE**\n"), "{md}");
     assert!(
         md.contains("- Files: 0 of 2 read, of 3 tracked; 1 outside every profile"),
         "{md}"
@@ -41,7 +42,7 @@ fn the_report_lists_the_findings_that_stand_worst_first_and_holds_low_unverified
     s.tasks = all.iter().map(|j| answered(j, &json!([]))).collect();
     s.tasks[0].answer = Some(json!({"findings": [settled("Low", ""), settled("Info", "")]}));
     let sum = summary(&s, &profiles().unwrap());
-    let md = markdown(std::path::Path::new("/r"), &s, &sum, &[]);
+    let md = markdown(std::path::Path::new("/r"), &s, &sum, &[], false);
     assert!(md.contains("- Files: 1 of 1 read"), "{md}");
     assert!(
         md.contains("2 Low or Info finding(s) no verifier checked"),
@@ -69,7 +70,7 @@ fn findings_are_listed_worst_first_with_their_fix_and_no_line_counts_nothing() {
         unjudged: Vec::new(),
         left: Vec::new(),
     };
-    let md = markdown(std::path::Path::new("/r"), &s, &sum, &[]);
+    let md = markdown(std::path::Path::new("/r"), &s, &sum, &[], false);
     let at = |t: &str| md.find(t).unwrap();
     assert!(
         at("the high one") < at("the medium one") && at("the medium one") < at("the low one"),
@@ -94,10 +95,22 @@ fn a_finding_left_unjudged_is_named_with_how_to_hand_it_to_a_new_verifier() {
         unjudged: vec![0],
         left: Vec::new(),
     };
-    let md = markdown(std::path::Path::new("/r"), &s, &sum, &[]);
+    let md = markdown(std::path::Path::new("/r"), &s, &sum, &[], false);
     assert!(
         md.contains("- Unjudged: 1 finding(s) at Medium or above"),
         "{md}"
     );
     assert!(md.contains("## Unverified at Medium and above"), "{md}");
+}
+
+#[test]
+fn a_lost_write_beside_a_record_that_landed_names_no_resume() {
+    let s = state(&["a.rs"]);
+    let sum = summary(&s, &profiles().unwrap());
+    let lost = ["the run directory (the record itself landed) — full".to_owned()];
+    let md = markdown(std::path::Path::new("/r"), &s, &sum, &lost, false);
+    assert!(
+        md.contains("> **Not filed**: the run directory (the record itself landed) — full\n"),
+        "{md}"
+    );
 }

@@ -100,12 +100,26 @@ fn coverage(dir: &Path, s: &AuditState, sum: &Summary) -> String {
     out
 }
 
-/// The report of the audit `s` in `dir` as `sum` says it, `lost` the writes that did not land.
+/// The report of the audit `s` in `dir` as `sum` says it, `lost` the writes that did not land and
+/// `refile` whether its record is one of them, which a resume files again.
 #[must_use]
-pub fn markdown(dir: &Path, s: &AuditState, sum: &Summary, lost: &[String]) -> String {
+pub fn markdown(
+    dir: &Path,
+    s: &AuditState,
+    sum: &Summary,
+    lost: &[String],
+    refile: bool,
+) -> String {
     let mut out = String::from("# craft audit\n\n");
     for l in lost {
-        out.push_str(&format!("> **Not filed**: {l}\n"));
+        out.push_str(&format!("> **Not filed**: {l}"));
+        if refile {
+            out.push_str(&format!(
+                "; resume the run to file it again: `{}`",
+                craft_step::stop::resume("audit", dir)
+            ));
+        }
+        out.push('\n');
     }
     if !lost.is_empty() {
         out.push('\n');

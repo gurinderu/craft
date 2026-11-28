@@ -25,6 +25,13 @@ fn a_record_that_did_not_land_leads_the_report_and_a_resume_files_it_again_as_a_
         ),
         "{report}"
     );
+    let resume = craft_step::stop::resume("audit", &s.run);
+    assert!(
+        report.contains(&format!(
+            "the store is read-only; resume the run to file it again: `{resume}`"
+        )),
+        "{report}"
+    );
     *w.refuse.borrow_mut() = false;
     let refiled = next(&s.run, &w, &RESUME);
     assert_eq!(refiled["filing"]["record"], "filed", "{refiled}");
