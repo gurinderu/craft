@@ -301,6 +301,10 @@ export function cliRecorder(sb, { craftVersion, repo: given, run = '', depth, st
       keyed = true
     },
     keyed: () => keyed,
+    // named: the run directory a first step's unread output named, for the record when no step was read.
+    named: (/** @type {string} */ r) => {
+      if (!seen.run) seen = { ...seen, run: r }
+    },
     heard,
     told: (/** @type {string[]} */ lines) => toldLosses(lines, lost, sb.log),
     settled,

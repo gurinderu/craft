@@ -16,7 +16,7 @@ binary the workflow drives, under the name `review` with `driver: 'cli'`; a stor
 
 ## Record schema (`schemaVersion: 1`)
 
-Common: `ts`, `runtime` (`"claude-code"` | `"codex"` | `"pi"` | `"opencode"`), `kind` (`workflow`|`agent`), `name`, `project`, `commit`, `dirty`, `verdict`,
+Common: `ts`, `runtime` (`"claude-code"` | `"codex"` | `"pi"` | `"opencode"`), `kind` (`workflow`|`agent`; `develop` for a craft:develop cycle, and `retro` for the mark `craft runs retro-done` files when a craft:retro ends — neither a run, the session-start hook's retro offer counting a repository's runs anew from the newest `retro`), `name`, `project`, `commit`, `dirty`, `verdict`,
 `findings: {total, bySeverity:{Critical,High,Medium,Low,Info}}`, `nested`, `via`.
 
 **`branch` and `head` are computed, not carried.** `integrations/shared/craft-log-run.mjs` reads them itself

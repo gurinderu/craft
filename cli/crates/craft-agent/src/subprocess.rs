@@ -29,6 +29,9 @@ pub(crate) async fn output(spawn: Spawn<'_>) -> Result<Output, AgentError> {
         .args(spawn.args)
         .current_dir(spawn.cwd)
         .envs(spawn.env.iter().map(|(k, v)| (k, v)))
+        // A task is no user's session: it takes no retro offer from the session-start hook, nor
+        // spends the day's (realm @nick/craft, node #658).
+        .env("CRAFT_RETRO_HOOK", "0")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());

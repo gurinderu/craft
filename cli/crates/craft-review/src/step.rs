@@ -29,8 +29,8 @@ mod options;
 mod prepare;
 
 use answers::move_on;
-use craft_step::take;
 use craft_step::{Aside, Hold};
+use craft_step::{noted, take};
 use open::{open_dir, pr_worktree, read_change, refuse_delta_over_branch};
 pub use options::StartOptions;
 use prepare::{choose_extra, choose_units, prepare, scouts};
@@ -346,6 +346,9 @@ pub fn submit_with(
             return save_and_next(dir, &mut run, said, Aside::default());
         }
     }
+    // The notes a round left unsubmitted come first, before this submit's (realm @nick/craft,
+    // node #752); forgotten only once the state holding them is saved.
+    take::note(&mut run.degraded, &noted::kept(dir));
     take::note(&mut run.degraded, said.degraded);
     if let Some(id) = take::unknown(&run.tasks, given) {
         return Err(StepError::UnknownTask(id.clone()).into());
@@ -358,7 +361,9 @@ pub fn submit_with(
     let hold = Hold::of(said.limit.is_some(), said.resume);
     run.watch.live |= take::take_pending(dir, &mut run.tasks, given, hold, &mut aside)?;
     move_on(dir, &mut run, said)?;
-    save_and_next(dir, &mut run, said, aside)
+    let next = save_and_next(dir, &mut run, said, aside)?;
+    noted::forget(dir);
+    Ok(next)
 }
 
 /// Posts a run that finished on its PR when it was asked to, writes the pending tasks and the

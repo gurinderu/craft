@@ -372,25 +372,28 @@ async function drive(sb, o, craftVersion, service, recorder) {
 }
 
 /**
- * How a run ends whose first step was not read. A resume the binary did not refuse and the harness ran may have gone
- * on, even to the end: the binary is asked before anything is filed, as after a lost submit (realm @nick/craft, node
- * #736): one whose first page named its run ran, even when the harness refused a later page step. A start's lost step,
- * a refused resume and one the harness never ran stop where they are.
+ * How a run ends whose first step was not read. A resume the binary did not refuse and the harness ran, or a start
+ * whose first page named its run, may have gone on, even to the end: the binary is asked before anything is filed, as
+ * after a lost submit (realm @nick/craft, nodes #736, #754); a step whose first page named its run ran, even when the
+ * harness refused a later page step. A start that named no run, a refused resume and one the harness never ran stop
+ * where they are.
  * @param {Watched} sb @param {Options} o @param {string} bin @param {Serve} serve @param {Recorder} recorder
  * @param {{ error: string, harness?: string, refused?: true, run?: string }} started @returns {Promise<Ending>}
  */
 async function openingLost(sb, o, bin, serve, recorder, started) {
   const ran = started.harness === undefined || started.run !== undefined
-  if (o.run && !started.refused && ran) return afterLost(sb, bin, o.run, serve, recorder, started)
+  const known = o.run || started.run
+  if (started.run) recorder.named(started.run)
+  if (known && !started.refused && ran) return afterLost(sb, bin, known, serve, recorder, started)
   return { stopped: stoppedAt('', started, runOfStop(started, o), bin), cause: stopCause(started, 'start') }
 }
 
 /**
- * The run directory a stopped opening names: none for a run the binary refused to resume; a start's that made its run
- * though its step was not read; else the one given.
- * @param {{ refused?: true, run?: string }} started @param {Options} o @returns {string}
+ * The run directory a stopped opening names: none for a run the binary refused to resume, else the one given. A start
+ * whose unread step named its run is recovered through its status, never stopped here (openingLost).
+ * @param {{ refused?: true }} started @param {Options} o @returns {string}
  */
-const runOfStop = (started, o) => (started.refused ? '' : (started.run ?? o.run))
+const runOfStop = (started, o) => (started.refused ? '' : o.run)
 
 /**
  * The run's first step: a resume's (`resumed`), or a start's — or why its binary refused an argument before any work
@@ -475,9 +478,9 @@ async function rounds(sb, bin, first, serve, recorder) {
 }
 
 /**
- * How a run ends whose submit or resume output was lost (`read`): as the binary's status says it ended, else stopped
- * where it stands — a lost step of the binary, unless the harness or the limit stopped it; a status that failed leaves
- * its completion unknown (realm @nick/craft, nodes #731, #736).
+ * How a run ends whose submit, resume or named start output was lost (`read`): as the binary's status says it ended,
+ * else stopped where it stands — a lost step of the binary, unless the harness or the limit stopped it; a status that
+ * failed leaves its completion unknown (realm @nick/craft, nodes #731, #736, #754).
  * @param {Watched} sb @param {string} bin @param {string} run @param {Serve} serve @param {Recorder} recorder
  * @param {{ error: string, harness?: string }} read @returns {Promise<Ending>}
  */

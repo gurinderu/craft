@@ -64,8 +64,12 @@ pub fn check_start(opts: &StartOptions) -> Result<PathBuf, TriageError> {
         .canonicalize()
         .map_err(|source| TriageError::NoRepo { path: repo, source })?;
     let dir = &opts.run_dir;
-    // A directory a run filed from is not a new run's: its kept filing would answer for this one.
-    if state::state_path(dir).exists() || filing::filing_path(dir).exists() {
+    // A directory a run filed from is not a new run's: its kept filing would answer for this one,
+    // and the degraded notes a host kept there would be read as this run's.
+    if state::state_path(dir).exists()
+        || filing::filing_path(dir).exists()
+        || craft_step::noted::file(dir).exists()
+    {
         return Err(TriageError::RunExists(dir.clone()));
     }
     Ok(cwd)

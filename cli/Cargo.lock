@@ -331,6 +331,7 @@ dependencies = [
  "craft-agent",
  "craft-audit",
  "craft-review",
+ "craft-step",
  "craft-store",
  "craft-triage",
  "craft-tui",
