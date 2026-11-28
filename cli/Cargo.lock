@@ -329,6 +329,7 @@ dependencies = [
  "anyhow",
  "clap",
  "craft-agent",
+ "craft-audit",
  "craft-review",
  "craft-store",
  "craft-triage",
@@ -353,6 +354,18 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
+]
+
+[[package]]
+name = "craft-audit"
+version = "0.61.0"
+dependencies = [
+ "craft-review",
+ "craft-step",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

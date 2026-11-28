@@ -1,5 +1,6 @@
 //! `craft`: the command line over craft's review.
 
+mod audit;
 mod comment;
 mod filing_worker;
 mod hook;
@@ -56,6 +57,11 @@ enum Command {
     /// agents the host is to run, and the next takes their answers.
     #[command(subcommand)]
     Triage(triage::TriageCommand),
+    /// Audit a whole project, step by step: its tracked files read whole by each lens of their
+    /// language's profile, its findings at Medium and above verified; each step prints the agents
+    /// the host is to run, and the next takes their answers.
+    #[command(subcommand)]
+    Audit(audit::AuditCommand),
     #[command(name = "__craft-file-run", hide = true)]
     FileRun,
     #[command(name = "__craft-process-identity", hide = true)]
@@ -180,6 +186,7 @@ async fn dispatch() -> anyhow::Result<ExitCode> {
         Command::Memory(cmd) => memory::memory(&cmd),
         Command::Pr(cmd) => pr::pr(&cmd),
         Command::Triage(cmd) => triage::triage(cmd).await,
+        Command::Audit(cmd) => audit::audit(&cmd),
         Command::FileRun => filing_worker::worker(),
         Command::ProcessIdentity(args) => process_identity::run(&args),
         Command::Mutants { dir } => {
@@ -228,7 +235,9 @@ fn report(outcome: anyhow::Result<ExitCode>) -> ExitCode {
                 .downcast_ref::<craft_review::Error>()
                 .is_some_and(craft_review::Error::refuses_argument)
                 || e.downcast_ref::<craft_triage::TriageError>()
-                    .is_some_and(craft_triage::TriageError::refuses_argument);
+                    .is_some_and(craft_triage::TriageError::refuses_argument)
+                || e.downcast_ref::<craft_audit::AuditError>()
+                    .is_some_and(craft_audit::AuditError::refuses_argument);
             if refused {
                 ExitCode::from(2)
             } else {

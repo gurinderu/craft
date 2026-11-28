@@ -3,6 +3,7 @@ resolver = "3"
 members = [
     "bin/craft",
     "crates/craft-agent",
+    "crates/craft-audit",
     "crates/craft-review",
     "crates/craft-step",
     "crates/craft-store",
@@ -40,6 +41,7 @@ tokio = { version = "1.53", default-features = false }
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Threading"] }
 
 craft-agent = { path = "crates/craft-agent" }
+craft-audit = { path = "crates/craft-audit" }
 craft-review = { path = "crates/craft-review" }
 craft-step = { path = "crates/craft-step" }
 craft-store = { path = "crates/craft-store" }
