@@ -449,5 +449,40 @@
     "skills": ["review-init"],
     "query": "Set up my craft review profile for this repository: record the external systems we talk to and which CI check runs clippy.",
     "expected_behavior": ["Selects review-init, not retro", "Runs `craft init --propose` and asks before `craft init --write`"]
+  },
+  {
+    "skills": ["audit"],
+    "query": "Nobody has ever reviewed most of this repository — it is Python, TypeScript and some Nix. Do a full audit of the whole codebase as it stands, not a diff, and tell me what is wrong with it.",
+    "expected_behavior": [
+      "Selects audit and launches the `craft:audit` workflow from the main session, not a diff review",
+      "Passes no base and no PR: the audit reads the checkout as it stands",
+      "Reads report.md from the path the workflow names and reports the verdict with the unread, unjudged and unverifiedLow counts",
+      "Treats an INCOMPLETE verdict as unfinished and offers to go on with run=<the run directory>"
+    ]
+  },
+  {
+    "skills": ["audit"],
+    "query": "Сделай аудит проекта, только каталога src/, и не трать больше двадцати агентов на один проход.",
+    "expected_behavior": [
+      "Selects audit and launches the `craft:audit` workflow with path=src and lensAgents=20",
+      "Says how many files were left unread, where they are listed, and how to read them with run=",
+      "Posts nothing to a PR or an issue"
+    ]
+  },
+  {
+    "skills": ["rust-review"],
+    "query": "Review the diff of my Rust branch against main before I open the PR, and tell me if it is mergeable.",
+    "expected_behavior": [
+      "Selects rust-review (the `craft:review` workflow over the diff), NOT audit — a diff or a PR is reviewed, not audited whole",
+      "Does not launch the `craft:audit` workflow"
+    ]
+  },
+  {
+    "skills": ["rust-security"],
+    "query": "Before the release, run Miri, cargo-audit and cargo-deny over our Rust workspace and check the public API for semver breaks.",
+    "expected_behavior": [
+      "Selects rust-security, NOT audit — Miri, cargo-audit/deny and semver are Rust-only checks the audit does not carry",
+      "Does not launch the `craft:audit` workflow"
+    ]
   }
 ]

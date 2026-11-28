@@ -17,6 +17,8 @@
 //                        INCOMPLETE *verdict* by pure budget is structurally impossible here (below).
 //   triage-findings    — no verdict at all: the craft binary drives it, and a refused task or service step is a
 //                        dead agent, so the binary is never told the Plan answered and no plan is named.
+//   audit              — the same driver as triage-findings: a refused verifier is a dead agent, so the binary
+//                        never ends the pass and no verdict is named.
 import { test } from 'vitest'
 import assert from 'node:assert/strict'
 import { runEngine, CALL_SPEND } from './engine-harness.mjs'
@@ -125,4 +127,35 @@ test('triage-findings: budget exhausted at the Plan task fails the run closed �
   assert.ok(!/The plan is /.test(ended.report), `exhaustion at the Plan task must never name a plan: ${ended.report}`)
   const refused = ended.calls.filter((/** @type {import('./engine-harness.mjs').Call} */ c) => c.threw)
   assert.ok(refused[0]?.label === 'plan', `the FIRST refusal is the Plan dispatch — the task this test aims the exhaustion at (got '${refused[0]?.label}')`)
+})
+
+// ================= audit: fail-closed, no verdict =================
+// The completing control: the craft binary hands out a lens task, then a verifier, then names the report with its
+// verdict. A run whose budget died at the verifier never names a verdict: the refused dispatch is a dead agent, so the
+// binary is never told the verifier answered, and the run either ends INCOMPLETE or dies with the budget's own throw.
+const AU_SCRIPT = {
+  'step:resolve': { exitCode: 0, stdout: 'root=/p\nbin=/b/craft\n', stderr: '' },
+  'step:start': ran({ run: '/r', done: false, phase: 'lens', tasks: [tfTask('lens')] }),
+  lens: 'done',
+  'step:submit:1': ran({ run: '/r', done: false, phase: 'verify', tasks: [tfTask('verify')] }),
+  verify: 'done',
+  'step:submit:2': ran({ run: '/r', done: true, verdict: 'Approve', report: '/r/report.md', recordFile: '/r/record.json' }),
+  'log-run': { ok: true },
+  '*': null,
+}
+
+test('audit: budget exhausted at the verifier fails the run closed — no verdict is named', async () => {
+  const control = await runEngine('audit', { args: {}, script: AU_SCRIPT })
+  assert.match(control.report, /Verdict: Approve[\s\S]*\/r\/report\.md/, 'the control must complete and name the verdict, or the abort below proves nothing')
+  assert.ok(!control.calls.some(c => c.threw), 'and nothing is refused under an unlimited budget')
+  const verifyAt = control.calls.findIndex(c => c.label === 'verify')
+  assert.ok(verifyAt > 0, 'the control must dispatch the verifier after the lens — the wall below is placed at that index')
+
+  const ended = await runEngine('audit', { args: {}, script: AU_SCRIPT, budgetTotal: verifyAt * CALL_SPEND }).then(
+    r => ({ report: r.report, calls: r.calls }),
+    (/** @type {unknown} */ e) => ({ report: '', calls: /** @type {EngineDeath} */ (e).calls ?? [], died: /** @type {EngineDeath} */ (e).message }),
+  )
+  assert.ok(!/Verdict: /.test(ended.report), `exhaustion at the verifier must never name a verdict: ${ended.report}`)
+  const refused = ended.calls.filter((/** @type {import('./engine-harness.mjs').Call} */ c) => c.threw)
+  assert.ok(refused[0]?.label === 'verify', `the FIRST refusal is the verifier dispatch (got '${refused[0]?.label}')`)
 })

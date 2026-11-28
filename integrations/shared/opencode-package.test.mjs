@@ -128,11 +128,16 @@ test("the checkout's package carries the entries, what they reach, the binary's 
     assert.doesNotMatch(f, /\.test\.mjs$|node_modules|package-lock/, f)
     for (const s of SKIPPED_SKILLS) assert.ok(!f.startsWith(`skills/${s}/`), f)
   }
+  // Named here, not read from SKIPPED_SKILLS, so dropping one from the list reddens this: each drives craft's engines
+  // through a tool OpenCode lacks (Claude Code's Workflow tool, `codex exec`).
+  for (const s of ['develop', 'codex-review', 'audit']) assert.ok(!files.some(f => f.startsWith(`skills/${s}/`)), s)
 })
 
 test('install.sh leaves out the same skills', () => {
   const install = fs.readFileSync(path.join(REPO, 'integrations/opencode/install.sh'), 'utf8')
   assert.match(install, new RegExp(`case "\\$\\(basename "\\$d"\\)" in ${SKIPPED_SKILLS.join('\\|')}\\) continue`))
+  const set = /case "\$\(basename "\$d"\)" in ([^)]*)\) continue/.exec(install)?.[1]?.split('|') ?? []
+  for (const s of ['develop', 'codex-review', 'audit']) assert.ok(set.includes(s), `${s} in ${set.join('|')}`)
 })
 
 test('the package.json has its entries, and no dependencies, overrides or scripts', () => {

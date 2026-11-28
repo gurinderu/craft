@@ -35,6 +35,7 @@ pub fn status(dir: &Path) -> Result<Value, AuditError> {
             "report",
             "recordFile",
             "unread",
+            "unjudged",
             "resume",
             "unverifiedLow",
             "filing",

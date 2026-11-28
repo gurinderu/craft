@@ -32,7 +32,7 @@ beforeEach(() => {
   at = { dir, repo, oc, project: path.join(dir, 'project'), log: path.join(dir, 'npm.log'), bin: path.join(dir, 'bin') }
   put(path.join(oc, 'install.sh'), fs.readFileSync(INSTALL, 'utf8'))
   for (const f of ['agents/review-task.md', 'commands/craft-review.md', 'plugin/index.ts', 'plugin/package-lock.json']) put(path.join(oc, f))
-  for (const s of ['tdd', 'codex-review', 'develop']) put(path.join(repo, 'skills', s, 'SKILL.md'))
+  for (const s of ['tdd', 'codex-review', 'develop', 'audit']) put(path.join(repo, 'skills', s, 'SKILL.md'))
   fs.mkdirSync(at.project)
   fs.mkdirSync(at.bin)
   writeExecutable(path.join(at.bin, 'npm'), FAKE_NPM)
@@ -69,7 +69,10 @@ test('a first install links each file and the plugin entry, leaves out the exclu
   assert.equal(linkOf('agents/review-task.md'), path.join(at.oc, 'agents', 'review-task.md'))
   assert.equal(linkOf('commands/craft-review.md'), path.join(at.oc, 'commands', 'craft-review.md'))
   assert.equal(linkOf('plugins/craft-rust.ts'), path.join(at.oc, 'plugin', 'index.ts'))
-  assert.deepEqual([linkOf('skills/tdd'), linkOf('skills/codex-review'), linkOf('skills/develop')], [path.join(at.repo, 'skills', 'tdd'), null, null])
+  assert.deepEqual(
+    [linkOf('skills/tdd'), linkOf('skills/codex-review'), linkOf('skills/develop'), linkOf('skills/audit')],
+    [path.join(at.repo, 'skills', 'tdd'), null, null, null],
+  )
   assert.deepEqual(npmRuns(), [`ci --prefix ${path.join(at.oc, 'plugin')} --omit=dev --no-audit --no-fund`])
 })
 
