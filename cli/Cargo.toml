@@ -9,6 +9,8 @@ members = [
     "crates/craft-store",
     "crates/craft-triage",
     "crates/craft-tui",
+    # The repository's own checks, `cargo xtask <name>`; never shipped: the release builds `-p craft`.
+    "xtask",
 ]
 
 [workspace.package]
