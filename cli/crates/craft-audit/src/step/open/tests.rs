@@ -101,3 +101,23 @@ fn an_audit_started_in_a_subdirectory_reads_the_whole_repository_from_its_root()
     let prompt = std::fs::read_to_string(st["tasks"][0]["promptFile"].as_str().unwrap()).unwrap();
     assert!(prompt.contains("- `sub/x.py`"), "{prompt}");
 }
+
+#[test]
+fn every_path_given_must_hold_a_tracked_file_and_one_may_name_a_file() {
+    let s = scratch(&["src/a.rs", "tool.py"]);
+    let w = Fake::default();
+    let one_bad = crate::state::Args {
+        paths: vec!["src".into(), "nowhere".into()],
+        ..args(None)
+    };
+    assert!(refused(start(&opts(&s, one_bad), &w)).contains("\"nowhere\" holds no file"));
+    let file = crate::state::Args {
+        paths: vec!["tool.py".into()],
+        ..args(None)
+    };
+    let step = start(&opts(&s, file), &w).unwrap();
+    assert!(
+        ids(&step).iter().all(|id| id.contains("-general-")),
+        "{step}"
+    );
+}

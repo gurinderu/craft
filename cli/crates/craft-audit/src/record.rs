@@ -121,11 +121,19 @@ mod tests {
         assert_eq!(r["craftVersion"], "9.9.9");
         assert_eq!(r["findings"]["total"], 2);
         assert_eq!(r["findings"]["bySeverity"]["High"], 1);
+        assert_eq!(r["findings"]["bySeverity"]["Medium"], 1);
+        assert_eq!(r["findings"]["bySeverity"]["Critical"], 0);
         assert_eq!(r["audit"]["pass"], 2);
         assert_eq!(r["audit"]["tiers"]["refuted"], 1);
         assert_eq!(
             r["notRun"],
             json!(["audit:unread-files:1", "audit:unjudged-findings:1"])
         );
+        let whole = Summary {
+            unread: Vec::new(),
+            settled: vec![json!({"severity": "Medium", "tier": "confirmed"})],
+            ..sum
+        };
+        assert_eq!(run_record(&s, &whole)["notRun"], json!([]));
     }
 }

@@ -34,6 +34,15 @@ fn the_writers_answer_is_kept_filed_with_what_did_not_land_beside_it() {
 
 #[test]
 fn a_refusal_or_a_broken_writer_is_a_failed_filing_saying_why() {
+    let refused = answered(
+        &base(),
+        Ok(json!({"ok": false, "reason": "full", "file": "/s/r.json"})),
+    );
+    assert_eq!(
+        (refused.record.as_str(), refused.file.as_str()),
+        ("failed", "/s/r.json")
+    );
+    assert_eq!(refused.lost, ["the run record — full"]);
     let no = answered(&base(), Ok(json!({"ok": false})));
     assert_eq!(no.record, "failed");
     assert_eq!(no.lost, ["the run record — the writer gave no reason"]);

@@ -36,3 +36,6 @@ pub(super) fn set_aside(dir: &Path, s: &mut AuditState, aside: Aside) -> Result<
         Ok(()) | Err(_) => Ok(()),
     }
 }
+
+#[cfg(test)]
+mod tests;

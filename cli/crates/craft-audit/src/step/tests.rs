@@ -25,7 +25,10 @@ pub(super) struct Fake {
 
 impl Writer for Fake {
     fn write(&self, call: &Call<'_>) -> Result<Value, WriteError> {
-        self.calls.borrow_mut().push(call.request.clone());
+        let kept = super::filing::read(call.run).map(|f| f.record);
+        let mut request = call.request.clone();
+        request["keptAtWrite"] = json!(kept);
+        self.calls.borrow_mut().push(request);
         if *self.refuse.borrow() {
             return Ok(json!({"ok": false, "reason": "the store is read-only", "file": ""}));
         }

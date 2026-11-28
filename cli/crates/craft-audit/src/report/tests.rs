@@ -35,6 +35,11 @@ fn the_verdict_is_the_worst_confirmed_severity_and_incomplete_when_something_was
         ),
         "Block"
     );
+    let worst_first = [
+        settled("Critical", "confirmed"),
+        settled("Medium", "confirmed"),
+    ];
+    assert_eq!(v(&worst_first, false), "Block");
     assert_eq!(v(&[], true), "INCOMPLETE");
     assert_eq!(
         v(&[settled("High", "confirmed")], true),
@@ -108,4 +113,27 @@ fn a_file_is_read_only_once_every_lens_over_it_answered() {
 fn a_project_whose_profiles_take_no_file_has_nothing_to_audit() {
     let sum = summary(&state(&[]), &profiles().unwrap());
     assert_eq!((sum.verdict.as_str(), sum.jobs), (NOTHING, 0));
+}
+
+#[test]
+fn the_tiers_are_counted_confirmed_suspected_refuted_unverified() {
+    let sum = super::Summary {
+        verdict: String::new(),
+        unread: Vec::new(),
+        jobs: 0,
+        answered: 0,
+        settled: [
+            "confirmed",
+            "confirmed",
+            "refuted",
+            "",
+            "suspected",
+            "unverified",
+        ]
+        .iter()
+        .map(|t| settled("Low", t))
+        .collect(),
+        left: Vec::new(),
+    };
+    assert_eq!(sum.tiers(), [2, 1, 1, 2]);
 }

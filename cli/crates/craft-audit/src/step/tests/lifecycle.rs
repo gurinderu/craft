@@ -86,6 +86,10 @@ fn ended_blocked(s: &Scratch, w: &Fake, done: &Value) {
     assert_eq!(calls[0]["record"]["name"], "audit");
     assert_eq!(calls[0]["record"]["verdict"], "Block");
     assert_eq!(calls[0]["retry"], false);
+    assert_eq!(
+        calls[0]["keptAtWrite"], "attempted",
+        "the attempt is kept before the write"
+    );
     assert_eq!(done["filing"]["record"], "filed");
     let st = status(&s.run).unwrap();
     assert_eq!(
@@ -103,6 +107,16 @@ fn an_audit_whose_lenses_find_nothing_ends_without_a_verifier_and_approves() {
     let done = next(&s.run, &w, &Said::default());
     assert_eq!(done["verdict"], "Approve", "{done}");
     assert!(!unverified_path(&s.run).exists());
+    for absent in [
+        "unjudged",
+        "unverifiedLow",
+        "unread",
+        "resume",
+        "degraded",
+        "notes",
+    ] {
+        assert!(done.get(absent).is_none(), "{absent}: {done}");
+    }
 }
 
 #[test]
@@ -112,4 +126,35 @@ fn a_project_its_profiles_take_nothing_of_ends_at_start_with_nothing_to_audit() 
     let done = open(&s, args(None), &w);
     assert_eq!(done["verdict"], crate::report::NOTHING, "{done}");
     assert_eq!(w.calls.borrow().len(), 1);
+}
+
+#[test]
+fn the_held_findings_are_listed_low_before_info_and_the_hosts_notes_ride_on_the_steps() {
+    let s = scratch(&["tool.py"]);
+    let w = Fake::default();
+    let step = open(&s, args(None), &w);
+    let lens = ids(&step);
+    answer(
+        &s.run,
+        &lens[0],
+        &found(&[finding("Info", "tool.py"), finding("Low", "tool.py")]),
+    );
+    for id in &lens[1..] {
+        answer(&s.run, id, &found(&[]));
+    }
+    let weaker = ["ran on a smaller model".to_owned()];
+    let done = next(
+        &s.run,
+        &w,
+        &Said {
+            degraded: &weaker,
+            ..Said::default()
+        },
+    );
+    assert_eq!(done["degraded"], json!(weaker), "{done}");
+    let held = std::fs::read_to_string(unverified_path(&s.run)).unwrap();
+    assert!(
+        held.find("Low in tool.py").unwrap() < held.find("Info in tool.py").unwrap(),
+        "{held}"
+    );
 }

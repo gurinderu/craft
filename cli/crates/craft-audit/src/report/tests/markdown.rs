@@ -49,3 +49,53 @@ fn the_report_lists_the_findings_that_stand_worst_first_and_holds_low_unverified
     );
     assert!(!md.contains("## Unverified"), "{md}");
 }
+
+#[test]
+fn findings_are_listed_worst_first_with_their_fix_and_no_line_counts_nothing() {
+    let s = state(&["a.rs"]);
+    let mut low = settled("Low", "confirmed");
+    low["title"] = json!("the low one");
+    let mut high = settled("High", "confirmed");
+    high["title"] = json!("the high one");
+    high["fix"] = json!("guard it");
+    let mut medium = settled("Medium", "confirmed");
+    medium["title"] = json!("the medium one");
+    let sum = crate::report::Summary {
+        verdict: "Block".into(),
+        unread: Vec::new(),
+        jobs: 1,
+        answered: 1,
+        settled: vec![low, medium, high],
+        left: Vec::new(),
+    };
+    let md = markdown(std::path::Path::new("/r"), &s, &sum, &[]);
+    let at = |t: &str| md.find(t).unwrap();
+    assert!(
+        at("the high one") < at("the medium one") && at("the medium one") < at("the low one"),
+        "{md}"
+    );
+    assert_eq!(md.matches("  - Fix: ").count(), 1, "{md}");
+    assert!(md.contains("  - Fix: guard it\n"), "{md}");
+    for absent in ["Unread:", "Unjudged:", "no verifier checked", "Not filed"] {
+        assert!(!md.contains(absent), "{absent}: {md}");
+    }
+}
+
+#[test]
+fn a_finding_left_unjudged_is_named_with_how_to_hand_it_to_a_new_verifier() {
+    let s = state(&["a.rs"]);
+    let sum = crate::report::Summary {
+        verdict: "INCOMPLETE".into(),
+        unread: Vec::new(),
+        jobs: 1,
+        answered: 1,
+        settled: vec![settled("High", "unverified")],
+        left: Vec::new(),
+    };
+    let md = markdown(std::path::Path::new("/r"), &s, &sum, &[]);
+    assert!(
+        md.contains("- Unjudged: 1 finding(s) at Medium or above"),
+        "{md}"
+    );
+    assert!(md.contains("## Unverified at Medium and above"), "{md}");
+}
