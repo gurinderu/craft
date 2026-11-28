@@ -110,6 +110,10 @@ jobs:
         run: cargo clippy --all-targets --locked -- -D warnings
       - name: cargo test
         run: cargo test --locked
+      # The gate's completeness and its recipes' form, run here directly, not only as a step of `just gate`: a
+      # justfile edit that dropped the `gate-steps` step would otherwise silence the checker that judges it.
+      - name: cargo xtask gate-steps
+        run: cargo xtask gate-steps
       # The parity files the CLI owns are what it renders: regenerated, they must not change.
       - name: parity files are current
         run: |
