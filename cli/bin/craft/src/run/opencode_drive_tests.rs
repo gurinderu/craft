@@ -121,19 +121,13 @@ async fn a_sustained_rate_limit_refusal_stops_the_round_by_its_event_and_is_an_e
     bench.concurrency = 1;
     let fake = bench.fake(vec![Spec("a", "MAX-RATE", None), Spec("b", "do b", None)]);
     bench.drive(&fake).await;
-    let line: String = MAX_RATE_EVENT.chars().take(200).collect();
-    assert!(
-        line.contains(r#""isRetryable":false,"message":"Claude Max rate limit reached. Wait a moment and try again.""#),
-        "{line}"
-    );
+    // The event's message, not the event: the cause reads as one line wherever it is printed.
+    let line = "Claude Max rate limit reached. Wait a moment and try again.";
     let limit = fake.submits.borrow()[0].limit.clone();
-    assert_eq!(limit.as_deref(), Some(line.as_str()));
-    assert!(
-        bench
-            .events
-            .borrow()
-            .contains(&Event::UsageLimit { text: line })
-    );
+    assert_eq!(limit.as_deref(), Some(line));
+    assert!(bench.events.borrow().contains(&Event::UsageLimit {
+        text: line.to_owned()
+    }));
     assert_eq!(
         bench.calls().iter().filter(|c| c.contains("do b")).count(),
         0
