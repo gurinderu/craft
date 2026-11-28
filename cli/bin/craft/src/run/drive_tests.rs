@@ -624,6 +624,9 @@ async fn a_stopping_signal_stops_the_round_s_tasks_and_files_the_run_incomplete(
 #[path = "exit_drive_tests.rs"]
 mod exit;
 
+#[path = "kept_drive_tests.rs"]
+mod kept;
+
 #[path = "opencode_drive_tests.rs"]
 mod opencode;
 

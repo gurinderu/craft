@@ -218,14 +218,17 @@ async fn rounds<P: Protocol>(
         let phase = at.get("phase").and_then(Value::as_str).unwrap_or_default();
         announce(d, (round, phase), &tasks, &mut last_phase);
         let res = round_of(&d.round, &tasks, round).await;
-        // A stopping signal cut the round short (its tasks' groups stopped): nothing is submitted.
+        // A stopping signal cut the round short (its tasks' groups stopped): nothing is submitted,
+        // and the round's degraded notes wait in the run beside the answers that landed.
         if let Some(code) = *d.round.stop.borrow() {
+            keep(d, run, &res.degraded);
             return Ending::Signalled(code, Caught::Running);
         }
         let said = heard(r, res);
         // Not logged in: no task can answer, so nothing is submitted; a resume hands the step's
         // missing answers out again.
         if let Some(login) = said.1 {
+            keep(d, run, &said.0.degraded);
             let hint = d.hint(run);
             return Ending::Stopped(
                 format!("{login}. The run is in {}. {hint}", run.display()),
@@ -241,6 +244,18 @@ async fn rounds<P: Protocol>(
         }
     }
     Ending::Stopped(format!("{name} ran out of rounds"), StopCause::Rounds)
+}
+
+/// The degraded notes of a round no submit carries, kept in the run for the next submit to take
+/// (realm @nick/craft, node #752); notes that cannot be kept are said, so they are not lost unseen.
+fn keep<P>(d: &Driver<'_, P>, run: &Path, notes: &[String]) {
+    if let Err(e) = craft_step::noted::keep(run, notes) {
+        let why = craft_step::left::chain(&e);
+        d.log(&format!(
+            "⚠️ the round's degraded notes could not be kept for the resume ({why}); a resumed run will not say them: {}",
+            notes.join(" | ")
+        ));
+    }
 }
 
 /// A round's start, said: the phase when it moved, then the round and its tasks.

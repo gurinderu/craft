@@ -12,6 +12,7 @@ clap.workspace = true
 craft-agent.workspace = true
 craft-audit.workspace = true
 craft-review.workspace = true
+craft-step.workspace = true
 craft-store.workspace = true
 craft-triage.workspace = true
 craft-tui.workspace = true
