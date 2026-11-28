@@ -9,6 +9,8 @@ mod gate;
 mod gate_steps;
 mod justfile;
 mod keys;
+#[cfg(test)]
+mod repo_justfile;
 mod sources;
 
 use std::ffi::OsStr;
