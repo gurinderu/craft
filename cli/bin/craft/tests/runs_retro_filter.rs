@@ -172,3 +172,114 @@ fn a_version_named_twice_is_refused_and_the_text_names_the_filters() {
     assert!(text.contains("\nKinds\n"), "{text}");
     assert!(text.contains("review (cli) · light · delta"), "{text}");
 }
+
+#[test]
+fn a_kind_prices_its_usable_costs_and_counts_the_others_in_text_and_json() {
+    let d = tempfile::tempdir().unwrap();
+    let s = d.path();
+    let mut priced = review("0.61.0", "/w/craft", "feat/a", "delta", 4.0);
+    priced["cost"] = json!({"total": 1000, "agents": 6, "rule": "per-message"});
+    record(s, "2026-11-02T10-00-00Z", &priced);
+    let mut partial = review("0.61.0", "/w/craft", "feat/a", "delta", 2.0);
+    partial["cost"] = json!({"total": 10, "agents": 6, "rule": "per-message", "skipped": 1});
+    record(s, "2026-11-02T11-00-00Z", &partial);
+    record(
+        s,
+        "2026-11-02T12-00-00Z",
+        &review("0.61.0", "/w/craft", "feat/a", "delta", 3.0),
+    );
+    let mut more = review("0.61.0", "/w/craft", "feat/b", "delta", 5.0);
+    more["cost"] = json!({"total": 3000, "agents": 6, "rule": "per-message"});
+    record(s, "2026-11-02T13-00-00Z", &more);
+
+    let lines = retro(s, &[]);
+    let kind = section(&lines, "kind")[0];
+    assert_eq!(
+        (&kind["priced"], &kind["cost"], &kind["costPerRun"]),
+        (&json!(2), &json!(4000), &json!(2000))
+    );
+    assert_eq!(kind["unpriced"], json!({"missing": 1, "partial": 1}));
+    assert_eq!((&kind["timed"], &kind["counted"]), (&json!(4), &json!(4)));
+
+    let text = Command::new(env!("CARGO_BIN_EXE_craft"))
+        .args(["runs", "retro", "--store"])
+        .arg(s)
+        .output()
+        .unwrap();
+    let text = String::from_utf8(text.stdout).unwrap();
+    let row = text
+        .lines()
+        .find(|l| l.starts_with("review (cli) · light · delta"))
+        .unwrap();
+    let cells: Vec<&str> = row
+        .split("  ")
+        .map(str::trim)
+        .filter(|c| !c.is_empty())
+        .collect();
+    assert_eq!(
+        cells,
+        [
+            "review (cli) · light · delta",
+            "4",
+            "3.5",
+            "6",
+            "2",
+            "2000",
+            "missing 1, partial 1"
+        ],
+        "{text}"
+    );
+}
+
+#[test]
+fn a_run_filed_in_parts_is_priced_once_by_every_parts_share() {
+    let d = tempfile::tempdir().unwrap();
+    let s = d.path();
+    let part = |verdict: &str, run: &str, total: u64, source: &str| {
+        let mut r = review("0.61.0", "/w/craft", "feat/a", "delta", 2.0);
+        r["verdict"] = json!(verdict);
+        r["cliRun"] = json!(run);
+        r["cost"] = json!({"output": total, "input": 0, "cacheRead": 0, "cacheWrite": 0,
+            "total": total, "agents": 2, "rule": "per-message", "source": source});
+        r
+    };
+    record(
+        s,
+        "2026-11-02T10-00-00Z",
+        &part("INCOMPLETE", "/r/1", 100, "wf_a"),
+    );
+    record(
+        s,
+        "2026-11-02T11-00-00Z",
+        &part("Warning", "/r/1", 300, "wf_b"),
+    );
+    record(
+        s,
+        "2026-11-02T12-00-00Z",
+        &part("Approve", "/r/2", 500, "wf_c"),
+    );
+    record(
+        s,
+        "2026-11-02T13-00-00Z",
+        &part("INCOMPLETE", "/r/3", 40, "wf_d"),
+    );
+    record(
+        s,
+        "2026-11-02T14-00-00Z",
+        &part("INCOMPLETE", "/r/3", 60, "wf_e"),
+    );
+    let lines = retro(s, &[]);
+    assert_eq!(section(&lines, "summary")[0]["folded"], json!(2));
+    let kind = section(&lines, "kind")[0];
+    assert_eq!(
+        (
+            &kind["runs"],
+            &kind["priced"],
+            &kind["cost"],
+            &kind["unpriced"]
+        ),
+        (&json!(3), &json!(3), &json!(1000), &json!({})),
+        "a resumed run carries its stopped part's share, a run whose every part stopped its \
+         newest's and the others': {kind}"
+    );
+}

@@ -8,6 +8,8 @@
 mod agents;
 mod count;
 mod date;
+pub mod fold;
+pub mod problem;
 mod run_dir;
 mod slices;
 
