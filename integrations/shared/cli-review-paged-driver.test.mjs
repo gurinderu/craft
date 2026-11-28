@@ -167,31 +167,69 @@ for (const [how, answer, asks] of /** @type {[string, () => unknown, number][]} 
   })
 }
 
-test('a status command the harness refused asks no brief status: the review stops on the lost submit', async () => {
-  const refused = {
-    exitCode: 1,
-    stdout: '',
-    stderr: `Permission for this action was denied by the Claude Code auto mode classifier. The command was not run. Denied command: /opt/craft review status --run '${RUN}' (timeout 120000 ms).`,
-  }
-  const run = await runEngine('review', {
-    args: ARGS,
-    script: {
-      ...BASE(),
-      'step:start': ran(JSON.stringify({ run: RUN, done: false, tasks: [TASK()] })),
-      lens: 'done',
-      'step:submit:1': ran('Error: the output was cut'),
-      'step:status': refused,
-    },
+for (const brief of [false, true])
+  test(`a refused ${brief ? 'brief' : 'full'} status names the refusal without claiming an unfinished run`, async () => {
+    const refused = {
+      exitCode: 1,
+      stdout: '',
+      stderr: 'Permission for this action was denied by the Claude Code auto mode classifier. The command was not run.',
+    }
+    const run = await runEngine('review', {
+      args: ARGS,
+      script: {
+        ...BASE(),
+        'step:start': ran(JSON.stringify({ run: RUN, done: false, tasks: [TASK()], filing: { lost: ['checkpoint write failed'] } })),
+        lens: 'done',
+        'step:submit:1': ran('Error: the output was cut'),
+        'step:status': brief ? ran('cut status') : refused,
+        'step:brief': refused,
+      },
+    })
+    assert.deepEqual(
+      run.calls.map(c => c.label),
+      ['step:root', 'step:start', 'lens:a', 'step:submit:1', 'step:status', ...(brief ? ['step:brief'] : [])],
+    )
+    assert.match(run.report, /the harness's permission check refused the command, not craft/)
+    assert.ok(run.report.includes(`/opt/craft review status --run '${RUN}'${brief ? ' --brief' : ' --paged'}`), run.report)
+    assert.ok(run.report.includes('Bash(/opt/craft review:*)'), run.report)
+    assert.ok(run.report.includes(`craft:review run=${RUN}`), run.report)
+    assert.match(run.report, /whether the binary finished the run is unknown/)
+    assert.match(run.report, /No additional run record was filed by this driver/)
+    assert.match(run.report, /Telemetry lost/)
+    assert.match(run.report, /checkpoint write failed/)
+    assert.equal(filedRecord(run), null)
   })
-  // The status command itself was not run, so nothing says whether the run finished; the refusal does not speak for
-  // the brief status, another command, which is not asked in its place. The review stops as on a status command that
-  // failed or was refused: on the reason its submit was lost, with the run to resume.
-  assert.deepEqual(
-    run.calls.map(c => c.label),
-    ['step:root', 'step:start', 'lens:a', 'step:submit:1', 'step:status', 'log-run'],
-  )
-  assert.match(run.report, /review stopped: the command printed no JSON: Error: the output was cut\. The run is in .*\. To resume .*`craft:review run=/)
-})
+
+for (const brief of [false, true])
+  for (const cause of ['lost', 'limit', 'refused'])
+    test(`a failed ${brief ? 'brief' : 'full'} status retains the ${cause} submit cause and files nothing`, async () => {
+      const refused = { exitCode: 1, stdout: '', stderr: 'Permission for this action was denied. The command was not run.' }
+      const status = { exitCode: 124, stdout: '', stderr: 'status timed out' }
+      const run = await runEngine('review', {
+        args: ARGS,
+        script: {
+          ...BASE(),
+          'step:start': ran(JSON.stringify({ run: RUN, done: false, tasks: [TASK()] })),
+          lens:
+            cause === 'lost'
+              ? 'done'
+              : () => {
+                  throw new Error(LIMIT)
+                },
+          'step:submit:1': cause === 'refused' ? refused : ran('cut submit'),
+          'step:status': brief ? ran('cut status') : status,
+          'step:brief': status,
+        },
+      })
+      assert.match(run.report, /Status recovery failed:.*the command exited 124: status timed out/)
+      assert.ok(run.report.includes(`/opt/craft review status --run '${RUN}'${brief ? ' --brief' : ' --paged'}`), run.report)
+      if (cause === 'limit') assert.ok(run.report.includes(`stopped: usage limit reached (${LIMIT})`), run.report)
+      else if (cause === 'refused') assert.match(run.report, /the harness's permission check refused the command, not craft.*review submit/)
+      else assert.match(run.report, /the command printed no JSON: cut submit/)
+      assert.match(run.report, /No additional run record was filed by this driver: whether the binary finished the run is unknown/)
+      assert.equal(filedRecord(run), null)
+      assert.equal(run.calls.filter(c => c.label === 'step:brief').length, brief ? 1 : 0)
+    })
 
 for (const recovery of ['page', 'status', 'brief', 'pending'])
   for (const submit of ['unreadable', 'empty'])

@@ -315,7 +315,8 @@ that shaped this layer has been removed.
 ## Rust CLI
 
 `craft runs recurring` reads up to 500 newest detail files and emits one JSON object of findings
-confirmed on at least two branches of one repository. Selection and grouping are in
+confirmed on at least two branches of one repository; with `--unverified` it adds the unverified ones, grouped apart and
+each held to its line at the project's `HEAD`. Selection and grouping are in
 `cli/crates/craft-review/src/recurring.rs` and `recurring/`, reached by `cli/bin/craft/src/runs.rs` and tested through the
 built binary in `cli/bin/craft/tests/recurring.rs` and `cli/bin/craft/tests/recurring/`. The addressing-findings and develop skills resolve
 that binary by the package's existing downloader and call the native command. Equal groups use UTF-16 code-unit order,
@@ -350,7 +351,7 @@ lens, seeded with what it adds and, for Rust, the crate graph's new edges and th
 for Rust, nix flake check, statix and deadnix for Nix: a red check blocks, a diagnostic on a changed line is a seed the
 lenses and verifiers see, a tool not installed is named), the change's mutants once the Rust gate passed (`src/gate/mutants.rs`
 and `src/gate/mutants/`: `cargo mutants --in-diff` in a worker process of the same binary, `__craft-mutants`, that runs beside the
-lens rounds within its budget — the reviewer's profile's `[mutants]` section can name it or turn them off (`src/project/mutants.rs`; `craft init` shows it and writes it with `--mutants` and `--mutants-budget`, `cli/bin/craft/src/init/mutants.rs`) —;
+lens rounds within its budget — the reviewer's profile's `[mutants]` section can name it or turn them off (`src/project/mutants.rs`; `craft init` shows it and writes it with `--mutants` and `--mutants-budget`, `cli/bin/craft/src/init/mutants.rs`; and the `[project]` properties, offered from the repository's files by `src/project/properties/propose.rs` and written through `cli/bin/craft/src/init/properties.rs`) —;
 joined when the rounds end, each mutant that survived in a function the change touched pooled as a tool's finding, and the report
 saying what came of them or why they did not run), the reviewer's profile's `[lenses]` composition (`src/composition.rs`, read by `src/project/lenses.rs`: a lens
 turned off leaves the plan, one held runs its first round only, the report naming each; never the security or a profile's safety lens,

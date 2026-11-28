@@ -101,9 +101,17 @@ pub enum RunsCommand {
     /// lines whose record is gone, INCOMPLETE records beside a finished run, finished runs with no
     /// record, checkpoint directories left behind. Exits 1 when it finds any.
     Check,
-    /// A version's retro: its finished runs per workflow, engine and lens, and what did not run.
-    Retro { version: String },
-    /// Confirmed findings recurring across branches of this project; always one JSON object.
+    /// The retro of the finished runs the filters keep — one version's, one project's, a period's:
+    /// per workflow, kind, engine and lens, and what did not run.
+    Retro {
+        /// The craft version, as `--version` names it.
+        #[arg(value_name = "VERSION", conflicts_with = "version")]
+        at: Option<String>,
+        #[command(flatten)]
+        filter: FilterArgs,
+    },
+    /// Confirmed findings recurring across branches of this project, and with `--unverified` the
+    /// unverified ones apart; always one JSON object.
     Recurring {
         /// The repository (default: the working directory); linked worktrees share its key.
         #[arg(long, value_parser = path_value())]
@@ -111,6 +119,10 @@ pub enum RunsCommand {
         /// Only findings within this file or directory; repeat to include more paths.
         #[arg(long = "path")]
         paths: Vec<String>,
+        /// Also group unverified findings, apart, under `unverified`; one whose line changed
+        /// since its run's head is set aside.
+        #[arg(long)]
+        unverified: bool,
     },
     /// Once a Workflow run has ended, folds its real cost — counted from the harness's per-agent
     /// transcripts — into each record it filed, each record its own slice of the run's agents.
@@ -241,17 +253,23 @@ fn printed(args: &RunsArgs) -> Result<ExitCode> {
                 ExitCode::FAILURE
             }
         }
-        RunsCommand::Retro { version } => {
-            let retro = retro(&store, version, &mut skipped)?;
-            render::retro(&mut out, version, &retro, args.at.json)?;
+        RunsCommand::Retro { at, filter } => {
+            let mut filter = filter.filter();
+            filter.version = filter.version.or_else(|| at.clone());
+            let retro = retro_where(&store, &|r| filter.keeps(r), &mut skipped)?;
+            render::retro(&mut out, &filter, &retro, args.at.json)?;
             ExitCode::SUCCESS
         }
-        RunsCommand::Recurring { project, paths } => {
+        RunsCommand::Recurring {
+            project,
+            paths,
+            unverified,
+        } => {
             let project = project
                 .clone()
                 .filter(|p| !p.as_os_str().is_empty())
                 .map_or_else(std::env::current_dir, Ok)?;
-            let result = craft_review::recurring::recurring(&store, &project, paths)?;
+            let result = craft_review::recurring::recurring(&store, &project, paths, *unverified)?;
             writeln!(out, "{}", result.pretty())?;
             ExitCode::SUCCESS
         }
@@ -279,12 +297,8 @@ fn printed(args: &RunsArgs) -> Result<ExitCode> {
     Ok(code)
 }
 
-fn retro(store: &Path, version: &str, skipped: &mut Skipped) -> Result<craft_store::retro::Retro> {
-    retro_where(store, &|r| r.text_units("craftVersion") == version, skipped)
-}
-
 /// The retro of the finished runs `keep` keeps — one version's, one repository's — read from the
-/// store at `store` as [`retro`] reads them, a resumed run once.
+/// store at `store`, a resumed run once.
 pub(crate) fn retro_where(
     store: &Path,
     keep: &dyn Fn(&Obj) -> bool,

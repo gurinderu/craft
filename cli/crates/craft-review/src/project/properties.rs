@@ -10,6 +10,8 @@ use serde::{Deserialize, Serialize};
 
 pub use super::section::SectionError;
 
+pub mod propose;
+
 /// The section as the reviewer confirmed it; each field absent when not confirmed.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

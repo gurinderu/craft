@@ -50,8 +50,8 @@ fn craft(t: &Path, args: &[&str]) -> Output {
         .unwrap()
 }
 
-/// The state a `review start` over `code` leaves, its profile holding `section` beside what
-/// `init --write` wrote and `lenses` in the `[lenses]` table that wrote.
+/// The state a `review start` over `code` leaves, its profile holding `section`'s lines in the
+/// `[project]` table `init --write` wrote and `lenses` in its `[lenses]` table.
 fn started(section: &str, lenses: &str) -> Value {
     let tmp = tempfile::tempdir().unwrap();
     let t = tmp.path();
@@ -63,7 +63,11 @@ fn started(section: &str, lenses: &str) -> Value {
     let text = std::fs::read_to_string(path).unwrap();
     assert!(text.contains("[lenses]\n"), "{text}");
     let text = text.replace("[lenses]\n", &format!("[lenses]\n{lenses}"));
-    std::fs::write(path, format!("{text}\n{section}")).unwrap();
+    // `init --write` writes the `[project]` table itself, empty: the section's lines go into it.
+    let body = section.strip_prefix("[project]\n").unwrap();
+    assert!(text.contains("[project]\n"), "{text}");
+    let text = text.replace("[project]\n", &format!("[project]\n{body}"));
+    std::fs::write(path, text).unwrap();
     let run = t.join("run");
     let out = craft(
         t,
