@@ -993,7 +993,27 @@
       "notRun": [],
       "partial": true
     },
-    "2026-11-08T10-00-00Z-27.json": {
+    "2026-10-31T10-00-00Z-27.json": {
+      "ts": "2026-10-31T10-00-00Z",
+      "schemaVersion": 1,
+      "kind": "workflow",
+      "name": "triage-findings",
+      "runtime": "claude-code",
+      "craftVersion": "0.9.0",
+      "engineRevision": 4,
+      "project": "/w/p",
+      "branch": "feat/a",
+      "findings": {
+        "total": 0,
+        "bySeverity": {}
+      },
+      "notRun": [],
+      "verdict": "",
+      "triage": {
+        "reject": 2
+      }
+    },
+    "2026-11-08T10-00-00Z-28.json": {
       "ts": "2026-11-08T10-00-00Z",
       "kind": "workflow",
       "name": "review"
@@ -1003,14 +1023,14 @@
   "expected": {
     "retro": {
       "summary": {
-        "runs": 18,
+        "runs": 19,
         "partialCoverage": 5,
         "folded": 2,
         "legacy": 1,
         "unattributed": 1
       },
       "engine": {
-        "claude-code 0.9.0 r4": 14,
+        "claude-code 0.9.0 r4": 15,
         "claude-code+cli 0.9.0 r4": 2,
         "claude-code 0.8.0 r?": 1,
         "claude-code 0.9.0 r3": 1
@@ -1070,6 +1090,47 @@
             "partialCoverage": 5
           },
           "avgRefute": 0.18
+        },
+        "triage-findings": {
+          "runs": 2,
+          "refuteBasis": null,
+          "thinned": 0,
+          "thinnedRuns": 0,
+          "thinnedMeasured": 0,
+          "pool": {
+            "firstPass": null,
+            "reReview": null,
+            "unclassified": null,
+            "unclassifiedRuns": 0
+          },
+          "cost": {
+            "runs": 0,
+            "cacheRead": null,
+            "cacheWrite": null,
+            "input": null,
+            "output": null,
+            "total": null,
+            "apart": {}
+          },
+          "surfaceGate": {
+            "preGate": 2,
+            "gateRuns": 0,
+            "failedRuns": 0,
+            "savedRuns": 0,
+            "savedPasses": 0,
+            "savedByLens": {},
+            "dispatchedPasses": 0,
+            "shareSavedPasses": 0,
+            "missingDispatchedRuns": 0
+          },
+          "verdicts": {
+            "block": 0,
+            "warning": 0,
+            "approve": 0,
+            "incomplete": 0,
+            "partialCoverage": 0
+          },
+          "avgRefute": null
         },
         "review (cli)": {
           "runs": 2,
@@ -1152,47 +1213,6 @@
             "partialCoverage": 0
           },
           "avgRefute": null
-        },
-        "triage-findings": {
-          "runs": 1,
-          "refuteBasis": null,
-          "thinned": 0,
-          "thinnedRuns": 0,
-          "thinnedMeasured": 0,
-          "pool": {
-            "firstPass": null,
-            "reReview": null,
-            "unclassified": null,
-            "unclassifiedRuns": 0
-          },
-          "cost": {
-            "runs": 0,
-            "cacheRead": null,
-            "cacheWrite": null,
-            "input": null,
-            "output": null,
-            "total": null,
-            "apart": {}
-          },
-          "surfaceGate": {
-            "preGate": 1,
-            "gateRuns": 0,
-            "failedRuns": 0,
-            "savedRuns": 0,
-            "savedPasses": 0,
-            "savedByLens": {},
-            "dispatchedPasses": 0,
-            "shareSavedPasses": 0,
-            "missingDispatchedRuns": 0
-          },
-          "verdicts": {
-            "block": 0,
-            "warning": 0,
-            "approve": 0,
-            "incomplete": 0,
-            "partialCoverage": 0
-          },
-          "avgRefute": null
         }
       },
       "notRun": {
@@ -1228,7 +1248,7 @@
         }
       },
       "memory": {
-        "runs": 18,
+        "runs": 19,
         "carrying": 8,
         "recalled": 1,
         "none": 2,
@@ -1430,14 +1450,14 @@
     "retroVersion": {
       "version": "0.9.0",
       "summary": {
-        "runs": 17,
+        "runs": 18,
         "partialCoverage": 5,
         "folded": 2,
         "legacy": 1,
         "unattributed": 0
       },
       "engine": {
-        "claude-code 0.9.0 r4": 14,
+        "claude-code 0.9.0 r4": 15,
         "claude-code+cli 0.9.0 r4": 2,
         "claude-code 0.9.0 r3": 1
       },
@@ -1538,6 +1558,47 @@
           },
           "avgRefute": null
         },
+        "triage-findings": {
+          "runs": 1,
+          "refuteBasis": null,
+          "thinned": 0,
+          "thinnedRuns": 0,
+          "thinnedMeasured": 0,
+          "pool": {
+            "firstPass": null,
+            "reReview": null,
+            "unclassified": null,
+            "unclassifiedRuns": 0
+          },
+          "cost": {
+            "runs": 0,
+            "cacheRead": null,
+            "cacheWrite": null,
+            "input": null,
+            "output": null,
+            "total": null,
+            "apart": {}
+          },
+          "surfaceGate": {
+            "preGate": 1,
+            "gateRuns": 0,
+            "failedRuns": 0,
+            "savedRuns": 0,
+            "savedPasses": 0,
+            "savedByLens": {},
+            "dispatchedPasses": 0,
+            "shareSavedPasses": 0,
+            "missingDispatchedRuns": 0
+          },
+          "verdicts": {
+            "block": 0,
+            "warning": 0,
+            "approve": 0,
+            "incomplete": 0,
+            "partialCoverage": 0
+          },
+          "avgRefute": null
+        },
         "rust-audit": {
           "runs": 1,
           "refuteBasis": null,
@@ -1613,7 +1674,7 @@
         }
       },
       "memory": {
-        "runs": 17,
+        "runs": 18,
         "carrying": 8,
         "recalled": 1,
         "none": 2,
@@ -1808,14 +1869,14 @@
     "retroEngine": {
       "sliceEngine": "claude-code 0.9.0 r4",
       "summary": {
-        "runs": 14,
+        "runs": 15,
         "partialCoverage": 5,
         "folded": 1,
         "legacy": 1,
         "unattributed": 0
       },
       "engine": {
-        "claude-code 0.9.0 r4": 14
+        "claude-code 0.9.0 r4": 15
       },
       "versionCollision": {},
       "workflow": {
@@ -1867,6 +1928,47 @@
             "partialCoverage": 5
           },
           "avgRefute": 0.18
+        },
+        "triage-findings": {
+          "runs": 1,
+          "refuteBasis": null,
+          "thinned": 0,
+          "thinnedRuns": 0,
+          "thinnedMeasured": 0,
+          "pool": {
+            "firstPass": null,
+            "reReview": null,
+            "unclassified": null,
+            "unclassifiedRuns": 0
+          },
+          "cost": {
+            "runs": 0,
+            "cacheRead": null,
+            "cacheWrite": null,
+            "input": null,
+            "output": null,
+            "total": null,
+            "apart": {}
+          },
+          "surfaceGate": {
+            "preGate": 1,
+            "gateRuns": 0,
+            "failedRuns": 0,
+            "savedRuns": 0,
+            "savedPasses": 0,
+            "savedByLens": {},
+            "dispatchedPasses": 0,
+            "shareSavedPasses": 0,
+            "missingDispatchedRuns": 0
+          },
+          "verdicts": {
+            "block": 0,
+            "warning": 0,
+            "approve": 0,
+            "incomplete": 0,
+            "partialCoverage": 0
+          },
+          "avgRefute": null
         }
       },
       "notRun": {},
@@ -1899,7 +2001,7 @@
         }
       },
       "memory": {
-        "runs": 14,
+        "runs": 15,
         "carrying": 8,
         "recalled": 1,
         "none": 2,
@@ -2078,27 +2180,35 @@
         "SessionStart (claude-code)": {
           "runs": 2,
           "spoke": 1,
-          "silent": 1
+          "silent": 1,
+          "silentBy": {
+            "nothing-declared": 1
+          }
         },
         "chat.message (opencode)": {
           "runs": 1,
           "spoke": 1,
-          "silent": 0
+          "silent": 0,
+          "silentBy": {}
         },
         "UserPromptSubmit (claude-code)": {
           "runs": 2,
           "spoke": 0,
-          "silent": 2
+          "silent": 2,
+          "silentBy": {
+            "off-env": 2
+          }
         },
         "UserPromptSubmit re-review-nudge (claude-code)": {
           "runs": 1,
           "spoke": 1,
-          "silent": 0
+          "silent": 0,
+          "silentBy": {}
         }
       },
       "join": {
         "joined": 18,
-        "workflowRuns": 18,
+        "workflowRuns": 19,
         "repos": 1
       }
     },

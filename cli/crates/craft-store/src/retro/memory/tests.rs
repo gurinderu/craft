@@ -59,3 +59,10 @@ fn a_recall_counts_its_records_by_backend_and_a_none_by_its_class() {
         assert_eq!(m.none_why.get(class), Some(&1), "{class}: {:?}", m.none_why);
     }
 }
+
+#[test]
+fn a_zero_count_and_an_empty_backend_read_as_none() {
+    let mut m = Memory::default();
+    add(&mut m, r#"{"source":"recalled","count":0,"backend":""}"#);
+    assert_eq!((m.records, m.by_backend.get("unnamed")), (0.0, Some(&1)));
+}

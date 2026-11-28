@@ -94,7 +94,14 @@ fn filed(lines: &[Value]) -> Map<String, Value> {
 }
 
 /// Fields whose every key the JavaScript reader printed, and no other.
-const WHOLE: [&str; 5] = ["apart", "savedByLens", "byBackend", "noneWhy", "bySeverity"];
+const WHOLE: [&str; 6] = [
+    "apart",
+    "savedByLens",
+    "byBackend",
+    "noneWhy",
+    "bySeverity",
+    "silentBy",
+];
 
 /// `want` within `have`: each field `want` names has its value; a keyed section and a [`WHOLE`]
 /// field carry exactly `want`'s keys.

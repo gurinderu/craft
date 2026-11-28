@@ -1,0 +1,7 @@
+feat/a (/w/p) round 1 → 2: tokens ×0.7 (1000 → 700): output +0, input +0, cache read -300, cache write +0 (60 min apart); agents +0, lens dispatches +0, verified candidates -3, findings -2
+feat/a (/w/p) round 2 → 3: the rounds did not review the same diff (head, base, path or changed-file set)
+feat/p (/w/p) round 1 → 2: the later round does not say it chained from this round
+feat/p (/w/p) round 2 → 3: the later round does not say it chained from this round
+feat/p (/w/p) round 1 → 2: the later round does not say it chained from this round
+feat/c (/w/p) round 1 → 2: the later round does not say it chained from this round
+10 review record(s) are not rounds and pair with nothing: 3 did not finish, 6 no round, 1 pre-telemetry

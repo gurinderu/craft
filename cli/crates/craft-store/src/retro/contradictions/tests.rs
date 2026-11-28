@@ -74,3 +74,25 @@ fn with_no_later_round_a_fingerprinted_finding_has_none_and_without_a_branch_non
     let [js, _] = c.settle(|_| None);
     assert_eq!((js.runs, js.no_later_round, js.unknown), (2, 2, 2));
 }
+
+#[test]
+fn another_engine_is_followed_by_its_name_and_a_tie_keeps_the_first() {
+    let mut c = Contradictions::default();
+    let audit = r#""kind":"workflow","name":"rust-audit","project":"/p","branch":"b""#;
+    let m = r#""memoryContradictions":{"count":2.5,"doubtSignsAlone":0,"findings":[{"fp":"a"}]}"#;
+    c.add("first", &rec(&format!("{{{audit},\"ts\":\"1\",{m}}}")));
+    c.add("review", &rec(&format!("{{{ROUND},\"ts\":\"3\"}}")));
+    c.add("one", &rec(&format!("{{{audit},\"ts\":\"2\"}}")));
+    c.add("two", &rec(&format!("{{{audit},\"ts\":\"2\"}}")));
+    let mut asked = Vec::new();
+    let [js, _] = c.settle(|id| {
+        asked.push(id.to_owned());
+        None
+    });
+    assert_eq!(asked, ["one"]);
+    assert_eq!(
+        (js.count, js.unknown),
+        (0.0, 1),
+        "a count that is not whole counts nothing"
+    );
+}

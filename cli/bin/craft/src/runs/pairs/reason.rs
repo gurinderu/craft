@@ -36,3 +36,35 @@ pub(super) fn reason(status: &str) -> &'static str {
         _ => "",
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn every_confound_is_said_in_words_of_its_own() {
+        let statuses = [
+            "engine-unknown",
+            "engine-changed",
+            "prior-unconfirmed",
+            "diff-moved",
+            "dirty-tree",
+            "incomplete",
+            "scope-not-full",
+            "config-unknown",
+            "config-changed",
+            "memory-degraded",
+            "cost-missing",
+            "cost-malformed",
+            "cost-empty",
+            "cost-overcounted",
+            "cost-unknown-rule",
+            "counts-malformed",
+            "cost-partial",
+            "cost-unbound",
+        ];
+        let said: std::collections::BTreeSet<&str> =
+            statuses.iter().map(|s| super::reason(s)).collect();
+        assert_eq!(said.len(), statuses.len());
+        assert!(!said.contains(""));
+        assert_eq!(super::reason("clean"), "");
+    }
+}

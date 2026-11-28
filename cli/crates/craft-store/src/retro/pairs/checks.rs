@@ -157,15 +157,11 @@ fn bad_count(r: &Obj) -> bool {
             .any(|x| count_bad(x.as_obj().and_then(|o| o.get("agents"))))
 }
 
-/// A cost's slice of one run's records: its index and how many.
+/// A cost's slice of one run's records: its index and how many. Read past `cost-malformed`, so a
+/// slice present has its shape ([`crate::cost::problem`]).
 fn slice(c: &Obj) -> Option<(f64, f64)> {
     let s = c.get("slice").and_then(Js::as_obj)?;
-    let whole = |k: &str| integer(s.get(k)).filter(|n| *n >= 0.0);
-    let (index, of) = (whole("index")?, whole("of")?);
-    let tail = s
-        .get("tail")
-        .is_none_or(|t| *t == Js::Null || whole("tail").is_some());
-    (index >= 1.0 && index <= of && tail).then_some((index, of))
+    integer(s.get("index")).zip(integer(s.get("of")))
 }
 
 #[expect(

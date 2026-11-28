@@ -35,7 +35,8 @@ pub fn store_ts_ms(ts: &JsString) -> Option<f64> {
         31,
     ];
     let month_days = usize::try_from(month - 1).ok().and_then(|i| days.get(i))?;
-    if day < 1 || day > *month_days || n(11, 13)? > 23 || n(14, 16)? > 59 || n(17, 19)? > 59 {
+    // The minutes and seconds `parse_ms` bounds; it reads 24:00 as the day's end, which a stamp never is.
+    if day < 1 || day > *month_days || n(11, 13)? > 23 {
         return None;
     }
     crate::cost::date::parse_ms(&format!(

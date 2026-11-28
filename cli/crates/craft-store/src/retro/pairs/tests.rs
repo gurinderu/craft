@@ -132,3 +132,98 @@ fn a_review_record_that_is_no_round_is_counted_by_why() {
         r#"{"head":"h","findings":{"total":2}}"#
     );
 }
+
+#[test]
+fn the_rest_of_the_confounds_at_their_edges() {
+    let a = round(1, "1", "");
+    let cases = [
+        (r#","engineRevision":4.5"#, "engine-unknown"),
+        (r#","languages":["rust"]"#, "config-changed"),
+        (
+            r#","scout":[{"language":"rust","lenses":["b","a"]}]"#,
+            "config-changed",
+        ),
+        (r#","gate":{"status":"unknown"}"#, "incomplete"),
+        (r#","verification":null"#, "incomplete"),
+        (r#","notRun":null"#, "incomplete"),
+        (
+            r#","findings":{"total":null},"findingsTotal":-1"#,
+            "counts-malformed",
+        ),
+        (r#","lensRounds":[{"agents":"3"}]"#, "counts-malformed"),
+        (
+            r#","cost":{"total":5,"cacheRead":5,"rule":"per-message"}"#,
+            "cost-unbound",
+        ),
+    ];
+    for (more, want) in cases {
+        assert_eq!(checks::status(&a, &round(2, "2", more)), want, "{more}");
+    }
+    let scout = r#","scout":[{"language":"rust","lenses":["a","b"],"model":null}]"#;
+    let same = r#","scout":[{"language":"rust","lenses":["b","a"]}]"#;
+    assert_eq!(
+        checks::status(&round(1, "1", scout), &round(2, "2", same)),
+        "clean",
+        "lenses in any order, a null as absent"
+    );
+    let light = r#","depth":"light""#;
+    assert_eq!(
+        checks::status(&round(1, "1", light), &round(2, "2", light)),
+        "clean"
+    );
+    let slice = |i: u8, of: u8, tail: &str| {
+        format!(
+            r#","cost":{{"total":5,"cacheRead":5,"rule":"per-message","source":"wf_1","slice":{{"index":{i},"of":{of}{tail}}}}}"#
+        )
+    };
+    let pair = |x: String, y: String| checks::status(&round(1, "1", &x), &round(2, "2", &y));
+    assert_eq!(pair(slice(1, 3, ""), slice(2, 3, r#","tail":1"#)), "clean");
+    assert_eq!(
+        pair(slice(1, 2, ""), slice(2, 3, "")),
+        "cost-unbound",
+        "slices of two runs' splits"
+    );
+    assert_eq!(pair(slice(1, 2, ""), slice(3, 2, "")), "cost-malformed");
+}
+
+#[test]
+fn a_round_pairs_only_with_one_filed_strictly_before_it_and_the_delta_is_later_minus_earlier() {
+    let rounds = [
+        round(1, "2026-01-01T01-00-00Z", ""),
+        round(
+            1,
+            "2026-01-01T01-30-00Z",
+            r#","cost":{"total":300,"cacheRead":300,"rule":"per-message","source":"wf_x","agents":2}"#,
+        ),
+        round(
+            2,
+            "2026-01-01T01-30-00Z",
+            r#","lensRounds":[{"agents":2}],"findings":{"total":4}"#,
+        ),
+    ];
+    let got = pairs(&rounds);
+    assert_eq!(got.len(), 1);
+    let d = got[0].delta().unwrap();
+    assert_eq!(
+        (d.by[0], d.by[1], d.by[5], d.by[6], d.by[8]),
+        (100.0, 100.0, 0.0, 2.0, 4.0)
+    );
+    assert_eq!(d.minutes, Some(30.0));
+}
+
+#[test]
+fn of_two_earlier_rounds_filed_at_once_the_first_is_paired_and_a_count_of_zero_is_a_count() {
+    let rounds = [
+        round(1, "1", r#","lensRounds":[{"agents":3}]"#),
+        round(1, "1", r#","dirty":true"#),
+        round(2, "2", r#","lensRounds":[{"agents":0}]"#),
+    ];
+    let got = pairs(&rounds);
+    assert_eq!(got[0].status, "clean");
+    assert_eq!(got[0].delta().unwrap().by[6], -3.0);
+    let model = |m: &str| format!(r#","scout":[{{"language":"rust","model":"{m}"}}]"#);
+    assert_eq!(
+        checks::status(&round(1, "1", &model("a")), &round(2, "2", &model("b"))),
+        "config-changed"
+    );
+}

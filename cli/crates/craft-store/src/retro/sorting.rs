@@ -69,3 +69,6 @@ impl Sorting {
         (self.doubtful > 0.0).then(|| super::plan::js_round(n / self.doubtful * 100.0))
     }
 }
+
+#[cfg(test)]
+mod tests;

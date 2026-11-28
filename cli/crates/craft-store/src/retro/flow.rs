@@ -140,3 +140,6 @@ impl Gate {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests;

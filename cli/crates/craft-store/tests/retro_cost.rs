@@ -99,3 +99,19 @@ fn a_run_filed_twice_is_counted_once_by_its_newest_record() {
         "the newest record stands: {kind:?}"
     );
 }
+
+#[test]
+fn a_retro_in_memory_follows_a_contradiction_into_its_later_rounds_ledger() {
+    let rec = |ts: &str, more: &str| {
+        let text = format!(
+            r#"{{"schemaVersion":1,"ts":"{ts}","kind":"workflow","name":"review","craftVersion":"0.61.0","project":"/p","branch":"b"{more}}}"#
+        );
+        parse(&text).unwrap().as_obj().unwrap().clone()
+    };
+    let records = [
+        rec("1", r#","memoryContradictions":{"findings":[{"fp":"a"}]}"#),
+        rec("2", r#","ledger":[{"fp":"a","disposition":"closed"}]"#),
+    ];
+    let r = retro("0.61.0", records).unwrap();
+    assert_eq!((r.chains[0].runs, r.chains[0].fixed), (1, 1));
+}

@@ -121,3 +121,110 @@ fn an_engine_slice_reads_the_runs_own_revision_before_the_recovering_crafts() {
     assert_eq!(slice::engine_parts("claude-code 1.0 r4x"), None);
     assert_eq!(slice::engine_parts("claude-code"), None);
 }
+
+#[test]
+fn a_leap_day_reads_only_in_a_leap_year_and_each_part_has_its_bound() {
+    let ok = |t: &str| store_ts_ms(&t.into()).is_some();
+    assert!(ok("2000-02-29T23-59-59Z") && ok("2024-02-29T00-00-00Z"));
+    assert!(!ok("1900-02-29T00-00-00Z") && !ok("2023-02-29T00-00-00Z"));
+    assert!(!ok("2026-01-00T00-00-00Z") && !ok("2026-04-31T00-00-00Z"));
+    assert!(!ok("2026-01-01T00-60-00Z") && !ok("2026-01-01T00-00-60Z"));
+    assert!(ok("2026-12-31T23-59-59Z"));
+}
+
+#[test]
+fn a_finished_form_is_one_review_of_the_same_branch_at_the_same_head_filed_later() {
+    let phases = r#""phases":[{"phase":"scout","at":"2026-01-01T00:30:00Z"}]"#;
+    let partial = |more: &str| {
+        rec(&format!(
+            r#"{{{REVIEW},"ts":"2026-01-01T00-20-00Z",{phases}{more}}}"#
+        ))
+    };
+    let hidden = |p: &Obj, c: &str| {
+        let mut u = Unfinished::default();
+        u.partial(p, Some(true));
+        u.complete(&rec(c), Some(true));
+        u.settle(true).2 == 1
+    };
+    let complete =
+        |more: &str| format!(r#"{{{REVIEW},"ts":"2026-01-01T01-00-00Z",{phases}{more}}}"#);
+    assert!(hidden(&partial(""), &complete("")));
+    assert!(
+        !hidden(&partial(r#","head":"abc""#), &complete(r#","head":"abc""#)),
+        "a short head is no identity"
+    );
+    assert!(!hidden(&partial(""), &complete(r#","head":"abcdef9999""#)));
+    assert!(
+        !hidden(&partial(""), &complete(r#","driver":"cli""#)),
+        "another chain"
+    );
+    assert!(!hidden(&partial(""), &complete(r#","project":"/q""#)));
+    assert!(
+        !hidden(&partial(r#","branch":"""#), &complete(r#","branch":"""#)),
+        "no branch, no identity"
+    );
+    assert!(!hidden(&partial(""), &complete(r#","branch":"c""#)));
+    assert!(!hidden(&partial(r#","name":"rust-audit""#), &complete("")));
+    assert!(
+        !hidden(&partial(""), &complete(r#","ts":"2026-01-01T00-20-00Z""#)),
+        "filed at the same time is not later"
+    );
+    assert!(!hidden(&partial(""), &complete(r#","phases":[]"#)));
+    assert!(!hidden(
+        &partial(r#","phases":[{"phase":"lens","at":"x"}]"#),
+        &complete("")
+    ));
+    let journal = rec(&format!(r#"{{{REVIEW},"ts":"2026-01-01T00-30-00Z"}}"#));
+    assert!(
+        !hidden(&journal, &complete("")),
+        "a run that started as it was rebuilt was not yet going"
+    );
+}
+
+#[test]
+fn a_revision_is_a_whole_number_and_a_runtime_absent_is_unknown() {
+    let whole = Filter::default();
+    let s = |e| slice::Slice {
+        filter: &whole,
+        engine: Some(e),
+    };
+    let r = rec(
+        r#"{"runtimeEngineRevision":1,"runEngineRevision":4.5,"engineRevision":4,"craftVersion":"1.0","runtime":""}"#,
+    );
+    assert_eq!(slice::inside(&r, &s("unknown-runtime 1.0 r4")), Some(true));
+    assert_eq!(slice::engine_parts("a b"), None);
+    assert_eq!(slice::engine_parts("a b r1.5"), None);
+}
+
+#[test]
+fn a_records_part_is_no_evidence_and_a_null_shard_is_its_own_checkpoint() {
+    let hidden = |own: &str, folded: &str| {
+        let mut u = Unfinished::default();
+        u.partial(
+            &rec(&format!(
+                r#"{{{REVIEW},"ts":"2026-01-01T00-20-00Z","phases":[{own}]}}"#
+            )),
+            Some(true),
+        );
+        u.complete(
+            &rec(&format!(
+                r#"{{{REVIEW},"ts":"2026-01-01T01-00-00Z","phases":[{folded}]}}"#
+            )),
+            Some(true),
+        );
+        u.settle(true).2 == 1
+    };
+    let scout = r#"{"phase":"scout","at":"a"}"#;
+    assert!(hidden(
+        &format!(r#"{scout},{{"phase":"p","at":"b","recordPart":1}}"#),
+        scout
+    ));
+    assert!(!hidden(
+        &format!(r#"{scout},{{"phase":"p","at":"b","ledgerShard":null}}"#),
+        scout
+    ));
+    assert!(
+        !hidden(r#"{"phase":"p","at":"b","recordPart":1}"#, scout),
+        "nothing else to match on"
+    );
+}

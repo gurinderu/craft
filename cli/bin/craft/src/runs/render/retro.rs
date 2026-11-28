@@ -178,6 +178,7 @@ fn retro_json(out: &mut dyn Write, slice: &Slice<'_>, r: &Retro) -> io::Result<(
         .with("partialCoverage", n(r.partial_coverage))
         .with("unfinished", n(r.unfinished))
         .with("folded", n(r.folded))
+        .with("other", n(r.other))
         .with("legacy", n(r.legacy))
         .with("unattributed", n(r.unattributed));
     line(out, summary)?;
@@ -250,3 +251,6 @@ fn retro_json(out: &mut dyn Write, slice: &Slice<'_>, r: &Retro) -> io::Result<(
     rounds::json(out, r)?;
     listed::json(out, r)
 }
+
+#[cfg(test)]
+mod tests;
