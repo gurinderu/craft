@@ -83,6 +83,14 @@ pub(super) fn command(
         },
         other => other.map(str::to_owned),
     };
+    if let Some(e) = engine.as_deref()
+        && unfinished::slice::engine_parts(e).is_none()
+    {
+        bail!(
+            "\"{e}\" is no engine key (`<runtime> <version> r<N>`, as the Engines section names one); the store's engines:\n{}",
+            engines(store)?
+        );
+    }
     let slice = Slice {
         filter: &filter,
         engine: engine.as_deref(),
@@ -98,8 +106,7 @@ pub(super) fn command(
         + retro.develop.cycles
         + retro.develop.unreadable
         + retro.unfinished
-        + retro.listed.len() as u64
-        + retro.listed_unattributed;
+        + retro.listed.len() as u64;
     if let Some(e) = engine.as_deref()
         && reported == 0
     {

@@ -451,3 +451,32 @@ fn a_refused_engine_names_the_filters_that_kept_none_of_its_runs() {
     );
     assert!(err.contains("- claude-code 1.0.0 r4"), "{err}");
 }
+
+#[test]
+fn a_mistyped_or_unparsable_engine_is_refused_beside_a_versionless_dead_run() {
+    let rebuilt = json!({"partial": true, "craftVersion": null, "engineRevision": 4});
+    let d = store(&[
+        run("2026-01-01T00-00-00Z", &json!({})),
+        run("2026-01-02T00-00-00Z", &rebuilt),
+    ]);
+    for (engine, said) in [
+        (
+            "claude-code 1.0.1 r4",
+            "no run matches engine \"claude-code 1.0.1 r4\"",
+        ),
+        (
+            "claude-code 1.0.0",
+            "\"claude-code 1.0.0\" is no engine key",
+        ),
+        ("nonsense", "\"nonsense\" is no engine key"),
+    ] {
+        let out = craft(d.path(), &["retro", "--engine", engine]);
+        assert_eq!(out.status.code(), Some(1), "{engine}");
+        assert!(out.stdout.is_empty(), "{engine}: no report");
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            err.contains(said) && err.contains("- claude-code 1.0.0 r4"),
+            "{engine}: {err}"
+        );
+    }
+}

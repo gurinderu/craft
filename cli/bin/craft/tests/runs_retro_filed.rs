@@ -96,14 +96,9 @@ fn lines(out: &std::process::Output) -> Vec<Value> {
         .collect()
 }
 
-#[test]
-fn a_record_the_binary_filed_is_read_as_it_was_filed() {
-    let tmp = tempfile::tempdir().unwrap();
-    let (repo, home, fake) = (
-        tmp.path().join("repo"),
-        tmp.path().join("home"),
-        tmp.path().join("codex"),
-    );
+/// The review run under `tmp` to its verdict: the home it filed under, and the one record it filed.
+fn filed(tmp: &Path) -> (std::path::PathBuf, Value) {
+    let (repo, home, fake) = (tmp.join("repo"), tmp.join("home"), tmp.join("codex"));
     reviewed(&repo);
     std::fs::create_dir_all(&home).unwrap();
     common::write_executable(&fake, FAKE_CODEX).unwrap();
@@ -125,7 +120,7 @@ fn a_record_the_binary_filed_is_read_as_it_was_filed() {
         .arg("--craft-root")
         .arg(&root)
         .env("HOME", &home)
-        .env("FAKE_MARK", tmp.path().join("found"))
+        .env("FAKE_MARK", tmp.join("found"))
         .env_remove("CLAUDE_PLUGIN_ROOT")
         .env_remove("CRAFT_ROOT")
         .output()
@@ -142,9 +137,14 @@ fn a_record_the_binary_filed_is_read_as_it_was_filed() {
         .filter(|p| p.extension().is_some_and(|x| x == "json"))
         .map(|p| serde_json::from_str(&std::fs::read_to_string(p).unwrap()).unwrap())
         .collect();
-    let [record] = filed.as_slice() else {
-        panic!("one record filed: {filed:?}")
-    };
+    assert_eq!(filed.len(), 1, "one record filed: {filed:?}");
+    (home, filed.into_iter().next().unwrap())
+}
+
+#[test]
+fn a_record_the_binary_filed_is_read_as_it_was_filed() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (home, record) = filed(tmp.path());
     let out = Command::new(env!("CARGO_BIN_EXE_craft"))
         .args(["runs", "retro", "--json"])
         .env("HOME", &home)
@@ -172,6 +172,14 @@ fn a_record_the_binary_filed_is_read_as_it_was_filed() {
             "{name}"
         );
     }
+    assert_eq!(
+        (
+            record["verification"]["candidates"].clone(),
+            record["verification"]["confirmed"].clone()
+        ),
+        (json!(1), json!(1)),
+        "the verifier's vote landed: one candidate judged and confirmed: {record}"
+    );
     let flow = ls.iter().find(|l| l["section"] == "workflow").unwrap();
     assert_eq!(flow["name"], json!("review (cli)"));
     assert_eq!(
