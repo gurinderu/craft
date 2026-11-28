@@ -44,6 +44,7 @@ pub(crate) fn args_of(case: &Js) -> Args {
         prior_decisions: plain(a.at("priorDecisions")).map(Ok),
         craft_version: version.as_str().unwrap_or_default().to_owned(),
         record: None,
+        runtime: None,
     }
 }
 

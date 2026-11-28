@@ -8,7 +8,7 @@ use std::path::Path;
 use serde_json::Value;
 
 use super::drive::{Driver, Running, is_done, steps};
-use super::protocol::{Protocol, Said};
+use super::protocol::{Lifecycle, Protocol, Said};
 use craft_review::filing::{StopCause, UNFINISHED};
 
 use super::report::{cut_short, finished_answer, resume_hint, said_section, stopped_answer, text};
@@ -95,6 +95,9 @@ fn publish_after<P: Protocol>(d: &Driver<'_, P>, run: &Path) -> Answer {
 }
 
 fn ended<P: Protocol>(d: &Driver<'_, P>, ending: Ending, r: &mut Running) -> Answer {
+    if d.proto.lifecycle() == Lifecycle::Triage {
+        return super::triage::ended(d, ending, r);
+    }
     let log = |l: &str| d.log(l);
     let run = r.run.as_ref().map(|p| p.display().to_string());
     match ending {
@@ -214,6 +217,9 @@ pub(crate) fn recovered<P: Protocol>(
     error: &str,
     r: &mut Running,
 ) -> Ending {
+    if d.proto.lifecycle() == Lifecycle::Triage {
+        return super::triage::recovered(d, run, error, r);
+    }
     let status = d.proto.status(run).unwrap_or(Value::Null);
     let filing = status.get("filing").filter(|f| f.is_object());
     let finished = filing

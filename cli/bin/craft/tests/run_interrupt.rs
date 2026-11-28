@@ -11,6 +11,8 @@
     reason = "the fixture helpers fail the test loudly, like the tests they serve"
 )]
 
+#[path = "../../../test-support/blocked.rs"]
+mod blocked;
 mod common;
 #[path = "run_interrupt/fixture.rs"]
 mod fixture;

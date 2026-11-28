@@ -114,6 +114,30 @@ optional.
 
 Linux and macOS. On Windows the binary is built for x86_64, but craft has not been run there.
 
+### Triage with the binary
+
+`craft triage run` turns a review report, PR review threads, or both into a fix plan using Codex,
+pi or OpenCode's agents:
+
+```sh
+craft triage run --backend codex --report review.md
+craft triage run --backend pi --pr 123 --cwd /path/to/repo
+```
+
+Use `--backend opencode` for OpenCode. `--models` and `--concurrency` configure the host just as
+for `craft review run`; `--help` lists the other options. Progress goes to stderr; stdout names
+the plan file and summarizes the outcome. The calling session reads `plan.json` and handles the
+fixes and issues. The command itself gathers and checks findings, then writes the plan and its
+run record. Relative report paths start at the calling directory, even when `--cwd` or `--repo`
+points at another repository.
+
+Continue a stopped run with `craft triage run --backend codex --run /path/to/run`. A continuation
+keeps the recorded repository and sources; new `--report`, `--pr`, `--base`, `--pr-base`,
+`--prior-ledger` and `--prior-decisions` arguments are refused. An unfinished or stopped run exits
+nonzero. Host tool permissions stay the same as for review; unavailable project memory is
+reported as degraded. This command is separate from the workflow tools in the table above;
+installed-host behavior has not yet been observed.
+
 ## Before the first review
 
 The review's mechanical gate **builds and runs the reviewed branch's code on your machine**: clippy runs its build

@@ -20,6 +20,8 @@ pub use args::{StartArgs, StatusArgs, SubmitArgs};
 
 #[derive(Subcommand)]
 pub enum TriageCommand {
+    /// Run the whole triage with a host's read-only agents and print its plan path and summary.
+    Run(Box<crate::run::triage::RunArgs>),
     /// Open a triage: print the gatherers of the sources named.
     Start(StartArgs),
     /// Hand in the answers to a triage's pending tasks and print what comes next.
@@ -28,21 +30,33 @@ pub enum TriageCommand {
     Status(StatusArgs),
 }
 
-pub fn triage(cmd: &TriageCommand) -> Result<ExitCode> {
-    print(&match cmd {
-        TriageCommand::Start(a) => start(a)?,
-        TriageCommand::Submit(a) => {
-            let given = a.answers.as_deref().map(given_answers).transpose()?;
-            let said = step::Said {
-                degraded: &a.degraded,
-                limit: a.limit.as_deref(),
-                resume: a.resume,
-                abandoned: &a.abandoned,
-            };
-            step::submit(&absolute(&a.run)?, given.as_ref(), &said, &BoundedWriter)?
-        }
-        TriageCommand::Status(a) => step::status(&absolute(&a.run)?)?,
-    })
+pub async fn triage(cmd: TriageCommand) -> Result<ExitCode> {
+    match cmd {
+        TriageCommand::Run(a) => crate::run::triage::run(*a).await,
+        TriageCommand::Start(a) => print(&start(&a)?),
+        TriageCommand::Submit(a) => print(&submit(&a)?),
+        TriageCommand::Status(a) => print(&status(&a.run)?),
+    }
+}
+
+pub(crate) fn submit(a: &SubmitArgs) -> Result<serde_json::Value> {
+    let given = a.answers.as_deref().map(given_answers).transpose()?;
+    let said = step::Said {
+        degraded: &a.degraded,
+        limit: a.limit.as_deref(),
+        resume: a.resume,
+        abandoned: &a.abandoned,
+    };
+    Ok(step::submit(
+        &absolute(&a.run)?,
+        given.as_ref(),
+        &said,
+        &BoundedWriter,
+    )?)
+}
+
+pub(crate) fn status(run: &Path) -> Result<serde_json::Value> {
+    Ok(step::status(&absolute(run)?)?)
 }
 
 /// `p` made absolute, so the files a step names are found from wherever its agents run.
@@ -67,6 +81,10 @@ fn refused(why: String) -> anyhow::Error {
 }
 
 fn start(a: &StartArgs) -> Result<serde_json::Value> {
+    Ok(step::start(&options(a)?, &BoundedWriter)?)
+}
+
+pub(crate) fn options(a: &StartArgs) -> Result<StartOptions> {
     one_stdin(a)?;
     let run_dir = match &a.run_dir {
         Some(d) => d.clone(),
@@ -97,14 +115,12 @@ fn start(a: &StartArgs) -> Result<serde_json::Value> {
             root: filing_root(a.record_root.as_deref()).unwrap_or_default(),
             session: session(),
         }),
+        runtime: None,
     };
     let run_dir = absolute(&run_dir)?;
-    Ok(step::start(
-        &StartOptions {
-            cwd: a.cwd.clone(),
-            run_dir,
-            args,
-        },
-        &BoundedWriter,
-    )?)
+    Ok(StartOptions {
+        cwd: a.cwd.clone(),
+        run_dir,
+        args,
+    })
 }

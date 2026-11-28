@@ -179,7 +179,7 @@ async fn dispatch() -> anyhow::Result<ExitCode> {
         Command::Runs(args) => runs::runs(&args),
         Command::Memory(cmd) => memory::memory(&cmd),
         Command::Pr(cmd) => pr::pr(&cmd),
-        Command::Triage(cmd) => triage::triage(&cmd),
+        Command::Triage(cmd) => triage::triage(cmd).await,
         Command::FileRun => filing_worker::worker(),
         Command::ProcessIdentity(args) => process_identity::run(&args),
         Command::Mutants { dir } => {

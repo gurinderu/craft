@@ -361,7 +361,7 @@ async function drive(sb, o, craftVersion, service, recorder) {
   const filedThrough = filedRoot(sb, where, recorder)
   const started = await opening(sb, o, craftVersion, serve, { ...where, filedThrough })
   if ('argument' in started) return { refused: started.argument }
-  if ('error' in started) return { stopped: stoppedAt('', started, runOfStop(started, o), where.bin), cause: stopCause(started, 'start') }
+  if ('error' in started) return openingLost(sb, o, where.bin, serve, recorder, started)
   // The record is keyed to the repository the run reviews, which the binary names: a resumed run's, and a start's that
   // reviews elsewhere than the checkout given — craft's own worktree of the PR given (realm @nick/craft, node #517).
   const reviews = started.step.repo
@@ -369,6 +369,20 @@ async function drive(sb, o, craftVersion, service, recorder) {
   sb.clock.observe(started.step)
   recorder.heard(started.step)
   return rounds(sb, where.bin, started.step, serve, recorder)
+}
+
+/**
+ * How a run ends whose first step was not read. A resume the binary did not refuse and the harness ran may have gone
+ * on, even to the end: the binary is asked before anything is filed, as after a lost submit (realm @nick/craft, node
+ * #736): one whose first page named its run ran, even when the harness refused a later page step. A start's lost step,
+ * a refused resume and one the harness never ran stop where they are.
+ * @param {Watched} sb @param {Options} o @param {string} bin @param {Serve} serve @param {Recorder} recorder
+ * @param {{ error: string, harness?: string, refused?: true, run?: string }} started @returns {Promise<Ending>}
+ */
+async function openingLost(sb, o, bin, serve, recorder, started) {
+  const ran = started.harness === undefined || started.run !== undefined
+  if (o.run && !started.refused && ran) return afterLost(sb, bin, o.run, serve, recorder, started)
+  return { stopped: stoppedAt('', started, runOfStop(started, o), bin), cause: stopCause(started, 'start') }
 }
 
 /**
@@ -386,8 +400,13 @@ const runOfStop = (started, o) => (started.refused ? '' : (started.run ?? o.run)
  * @returns {Promise<{ step: Step } | { error: string, harness?: string, refused?: true, run?: string } | { argument: string }>}
  */
 async function opening(sb, o, craftVersion, serve, where) {
-  if (o.run)
-    return resumed(o.run, await submitStep(serve, 'step:resume', 'Start', where.bin, o.run, { resume: true, recordRoot: where.filedThrough }, spentSoFar(sb)))
+  if (o.run) {
+    const resumeGot = await submitStep(serve, 'step:resume', 'Start', where.bin, o.run, { resume: true, recordRoot: where.filedThrough }, spentSoFar(sb))
+    const resumeRead = resumed(o.run, resumeGot)
+    // A resume whose first page named its run ran, though the harness refused a later page step.
+    const named = unreadRun(resumeGot)
+    return 'error' in resumeRead && named !== null ? { ...resumeRead, run: named } : resumeRead
+  }
   const got = await paged(
     serve,
     'step:start',
@@ -448,20 +467,29 @@ async function rounds(sb, bin, first, serve, recorder) {
       sb.clock.observe(step)
       recorder.heard(step)
     },
-    lost: async read => {
-      const truth = await recovered(sb, bin, first.run, serve, recorder)
-      const why = stopRead(read, sb.limit.seen())
-      if ('failed' in truth) {
-        const failure = truth.failed.harness === undefined ? truth.failed.error : harnessRefused(truth.failed.harness, bin)
-        return { unknown: `${stoppedAt('', why, first.run, bin)}\n\nStatus recovery failed: ${failure}` }
-      }
-      if (!('standing' in truth)) return truth
-      return { stopped: stoppedAt(truth.standing, why, first.run, bin), cause: stopCause(why, 'step') }
-    },
+    lost: read => afterLost(sb, bin, first.run, serve, recorder, read),
     gaveUp: step => ({ stopped: `review gave up after ${MAX_ROUNDS} rounds; the run is in ${step.run}. ${resumeHint(step.run)}`, cause: 'rounds' }),
     finished: step => ({ finished: step }),
   }
   return stepRounds(first, review)
+}
+
+/**
+ * How a run ends whose submit or resume output was lost (`read`): as the binary's status says it ended, else stopped
+ * where it stands — a lost step of the binary, unless the harness or the limit stopped it; a status that failed leaves
+ * its completion unknown (realm @nick/craft, nodes #731, #736).
+ * @param {Watched} sb @param {string} bin @param {string} run @param {Serve} serve @param {Recorder} recorder
+ * @param {{ error: string, harness?: string }} read @returns {Promise<Ending>}
+ */
+async function afterLost(sb, bin, run, serve, recorder, read) {
+  const truth = await recovered(sb, bin, run, serve, recorder)
+  const why = stopRead(read, sb.limit.seen())
+  if ('failed' in truth) {
+    const failure = truth.failed.harness === undefined ? truth.failed.error : harnessRefused(truth.failed.harness, bin)
+    return { unknown: `${stoppedAt('', why, run, bin)}\n\nStatus recovery failed: ${failure}` }
+  }
+  if (!('standing' in truth)) return truth
+  return { stopped: stoppedAt(truth.standing, why, run, bin), cause: stopCause(why, 'step') }
 }
 
 /**
