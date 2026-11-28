@@ -65,6 +65,7 @@ fn each_resume_reads_only_what_the_passes_before_left_unread_until_every_file_is
             break;
         }
         pass += 1;
+        assert!(pass <= 20, "each resume must read something new: {done}");
         step = next(&s.run, &w, &RESUME);
         assert_eq!(step["pass"], pass);
     }

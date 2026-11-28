@@ -32,12 +32,15 @@ fn bad_path(path: &str) -> Option<&'static str> {
     if path.chars().any(char::is_control) {
         return Some("it holds a control character");
     }
-    let p = Path::new(path);
-    if p.is_absolute() || p.has_root() {
+    let parts: Vec<Component<'_>> = Path::new(path).components().collect();
+    if parts
+        .iter()
+        .any(|c| matches!(c, Component::Prefix(_) | Component::RootDir))
+    {
         return Some("it must be a path from the repository root, not an absolute one");
     }
-    let dots = p
-        .components()
+    let dots = parts
+        .iter()
         .any(|c| matches!(c, Component::CurDir | Component::ParentDir));
     dots.then_some("it must not hold `.` or `..`: leave --path out to audit the whole project")
 }
