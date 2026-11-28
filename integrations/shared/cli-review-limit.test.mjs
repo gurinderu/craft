@@ -22,6 +22,11 @@ afterEach(() => {
 
 const LIMIT = "You've hit your limit · resets 3am (Europe/Berlin)"
 const RATE = '429 Too Many Requests: rate limited, please try again'
+// A sustained rate-limit refusal, as the host's error event says it (realm @nick/craft, node #715),
+// and what the matcher keeps of it.
+const MAX_RATE_EVENT =
+  '{"error":{"data":{"isRetryable":false,"message":"Claude Max rate limit reached. Wait a moment and try again.","metadata":{"url":"https://gateway.example/v1/messages"},"responseBody":"{\\"type\\":\\"error\\"}"}},"type":"error"}'
+const MAX_RATE_LINE = MAX_RATE_EVENT.slice(0, 200)
 
 /** @param {string} id @param {string} label */
 const task = (id, label) => ({
@@ -114,6 +119,32 @@ test('limit text from a task stops the run at once: the submit says --limit, and
   )
   assert.equal(limitInReport(run.report), LIMIT, 'a parent reads the stop back from the answer')
   assert.equal(reviewResult('review:core', run.report).verdict, 'Warning')
+})
+
+test("a sustained rate-limit refusal stops the run the same way: --limit carries the host's line, and the answer reads back", async () => {
+  const line = `INCOMPLETE — stopped: usage limit reached (${MAX_RATE_LINE}). Resume once the limit resets: \`craft review submit --run '${RUN}' --resume\``
+  const run = await runEngine('review', {
+    args,
+    script: {
+      'step:start': pending([task('lens-errors-r1', 'lens:errors'), task('lens-intent-r1', 'lens:intent')]),
+      lens: () => {
+        throw new Error(MAX_RATE_EVENT)
+      },
+      'step:submit:1': finished('INCOMPLETE', line),
+    },
+  })
+  const submit = String(promptOf(run, 'step:submit:1').split('\n\n')[1])
+  assert.ok(
+    submit.startsWith(`/opt/craft review submit --run '${RUN}' --limit '${MAX_RATE_LINE}' --agents `) &&
+      / --output-tokens \d+ --output-tokens-scope turn-delta --paged$/.test(submit),
+    submit,
+  )
+  assert.ok(
+    run.logs.some(l => l.startsWith(`⛔ usage limit reached (${MAX_RATE_LINE})`)),
+    run.logs.join('\n'),
+  )
+  assert.equal(limitInReport(run.report), MAX_RATE_LINE, 'a parent reads the stop back from the answer')
+  assert.ok(!run.calls.some(c => c.label === 'step:submit:2'), 'the run is over: no second submit')
 })
 
 test('a transient 429 is an ordinary death: no --limit, and the binary asks for the answer again', async () => {

@@ -101,6 +101,43 @@ fn limit_text_stops_at_once_keeping_the_answers_that_came_in() {
     );
 }
 
+// A sustained rate-limit refusal the engine's agent said (realm @nick/craft, node #715) stops the
+// run by the `--limit` path as it is: its own words are the reason, in the answer, the report and
+// the run's state.
+#[test]
+fn a_sustained_rate_limit_refusal_is_the_reason_in_the_answer_the_report_and_the_state() {
+    const SAID: &str =
+        "rate_limit_error: Claude Max rate limit reached. Wait a moment and try again.";
+    let repo = fixture(true);
+    let out = tempfile::tempdir().unwrap();
+    let (run, _) = small_run(repo.path(), out.path());
+    let said = Said {
+        limit: Some(SAID),
+        ..Said::default()
+    };
+    let s = step::submit_with(&run, None, &said).unwrap();
+    assert_eq!(
+        (&s["done"], &s["verdict"]),
+        (&json!(true), &json!("INCOMPLETE"))
+    );
+    let line = s["line"].as_str().unwrap();
+    assert!(
+        line.contains(&format!(
+            "stopped: usage limit reached ({SAID}). Resume once the limit resets: `craft review submit --run"
+        )),
+        "{line}"
+    );
+    assert_eq!(s["stopped"], json!({"cause": "limit", "text": SAID}));
+    let report = std::fs::read_to_string(s["report"].as_str().unwrap()).unwrap();
+    assert!(
+        report.contains(&format!("- stopped: usage limit reached ({SAID}).")),
+        "{report}"
+    );
+    let state: Value =
+        serde_json::from_str(&std::fs::read_to_string(run.join("state.json")).unwrap()).unwrap();
+    assert_eq!(state["stopped"], json!({"cause": "limit", "text": SAID}));
+}
+
 #[test]
 fn a_transient_429_does_not_stop_the_run() {
     let repo = fixture(true);

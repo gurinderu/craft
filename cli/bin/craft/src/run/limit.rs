@@ -1,7 +1,8 @@
 //! An account's usage limit in what a host CLI said when it failed (integrations/shared/usage-limit.mjs; realm
 //! @nick/craft, nodes #298, #299): every task after it fails the same way until the limit resets,
-//! so the run stops. Only an account limit with a reset matches; a transient rate limit ("hit your
-//! rate limit", 429) is an ordinary failure the binary hands out again.
+//! so the run stops. Only an account limit with a reset matches — and a sustained rate limit, known
+//! by its words alone (realm @nick/craft, node #715); a transient rate limit ("hit your rate limit",
+//! 429) is an ordinary failure the binary hands out again.
 
 use std::sync::LazyLock;
 
@@ -14,6 +15,9 @@ static OTHERS: LazyLock<Vec<Regex>> = LazyLock::new(|| {
     [
         r"(?i)\b(?:usage|weekly|daily|monthly|session|5-hour) limit\b[^\n]*\b(?:reached|resets?)\b",
         r"(?i)\breached (?:your|the) (?:\w+ )?usage limit\b",
+        // A sustained rate limit, known by its words alone: the host's not-retryable flag is no
+        // pattern (realm @nick/craft, node #715).
+        r"(?i)\bClaude Max rate limit reached\b",
     ]
     .iter()
     .filter_map(|p| Regex::new(p).ok())
@@ -39,9 +43,53 @@ pub(crate) fn usage_limit_text(text: &str) -> Option<String> {
         .map(|l| l.chars().take(200).collect())
 }
 
+// A sustained rate-limit refusal (realm @nick/craft, node #715) as the engine's agent says it, and
+// as the host's error event for it does: the stand-in hosts of the benches answer with them.
+#[cfg(test)]
+pub(super) const MAX_RATE: &str =
+    "rate_limit_error: Claude Max rate limit reached. Wait a moment and try again.";
+#[cfg(test)]
+pub(super) const MAX_RATE_EVENT: &str = r#"{"error":{"data":{"isRetryable":false,"message":"Claude Max rate limit reached. Wait a moment and try again.","metadata":{"url":"https://gateway.example/v1/messages"},"responseBody":"{\"type\":\"error\"}"}},"type":"error"}"#;
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_sustained_rate_limit_refusal_matches_by_its_words() {
+        assert_eq!(usage_limit_text(MAX_RATE).as_deref(), Some(MAX_RATE));
+        assert_eq!(
+            usage_limit_text(&format!("agent failed\n{MAX_RATE}")).as_deref(),
+            Some(MAX_RATE)
+        );
+        let event: String = MAX_RATE_EVENT.chars().take(200).collect();
+        assert_eq!(
+            usage_limit_text(MAX_RATE_EVENT).as_deref(),
+            Some(event.as_str())
+        );
+        assert!(event.contains(
+            r#""message":"Claude Max rate limit reached. Wait a moment and try again.""#
+        ));
+        assert_eq!(
+            usage_limit_text("claude max rate limit reached").as_deref(),
+            Some("claude max rate limit reached")
+        );
+        // Whole words: glued into a longer word, they say nothing.
+        assert_eq!(usage_limit_text("xclaude max rate limit reached"), None);
+        assert_eq!(usage_limit_text("Claude Max rate limit reachedly"), None);
+    }
+
+    #[test]
+    fn the_hosts_not_retryable_flag_alone_is_no_limit() {
+        for line in [
+            r#"{"error":{"data":{"isRetryable":false,"message":"Invalid API key"},"type":"error"}}"#,
+            r#"{"error":{"data":{"isRetryable":false,"message":"Request rate limit reached for this model"},"type":"error"}}"#,
+            r#"{"error":{"data":{"isRetryable":true,"message":"You've hit your rate limit. Try again in 30s"},"type":"error"}}"#,
+            r#"{"error":{"data":{"retry_after":3600},"type":"error"}}"#,
+        ] {
+            assert_eq!(usage_limit_text(line), None, "{line}");
+        }
+    }
 
     #[test]
     fn an_account_limit_matches_and_a_rate_limit_does_not() {

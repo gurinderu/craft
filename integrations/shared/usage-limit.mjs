@@ -12,16 +12,20 @@
 // can be recovered (limitStopAdvice, integrations/shared/limit-report.mjs).
 // Imported by integrations/claude-code/src/rust-audit.js and the review driver (integrations/shared/cli-review-limit.mjs).
 //
-// Only an ACCOUNT limit with a reset stops a run. A transient rate limit (429, "try again") is an
-// ordinary death that the engines' re-dispatch already handles, so it is deliberately not matched.
-// Only an error's text, or an answer short enough to be one, is read: a report or a finding may well
-// talk about limits, and reading those would stop a healthy run.
+// Only an ACCOUNT limit with a reset stops a run — and a sustained rate limit, the one known by its
+// own words, "Claude Max rate limit reached" (realm @nick/craft, node #715). A transient rate limit
+// (429, "try again") is an ordinary death that the engines' re-dispatch already handles, so it is
+// deliberately not matched. Only an error's text, or an answer short enough to be one, is read: a
+// report or a finding may well talk about limits, and reading those would stop a healthy run.
 
 export const LIMIT_ANSWER_MAX = 400
 export const LIMIT_PATTERNS = [
   /\bhit your (?!rate\b)(?:[\w-]+ )?limit\b/i,
   /\b(?:usage|weekly|daily|monthly|session|5-hour) limit\b[^\n]*\b(?:reached|resets?)\b/i,
   /\breached (?:your|the) (?:\w+ )?usage limit\b/i,
+  // Known by its words alone — the host's not-retryable flag is no pattern (realm @nick/craft,
+  // node #715).
+  /\bClaude Max rate limit reached\b/i,
 ]
 
 /**

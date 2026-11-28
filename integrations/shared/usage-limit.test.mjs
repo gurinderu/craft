@@ -3,6 +3,12 @@ import { test } from 'vitest'
 import assert from 'node:assert/strict'
 import { usageLimitText, makeLimitStop, stopAtLimit } from './usage-limit.mjs'
 
+// A sustained rate-limit refusal (realm @nick/craft, node #715): what the engine's agent says of
+// it, and the host's error event for it, as the backend hands the event on.
+const MAX_RATE = 'rate_limit_error: Claude Max rate limit reached. Wait a moment and try again.'
+const MAX_RATE_EVENT =
+  '{"error":{"data":{"isRetryable":false,"message":"Claude Max rate limit reached. Wait a moment and try again.","metadata":{"url":"https://gateway.example/v1/messages"},"responseBody":"{\\"type\\":\\"error\\"}"}},"type":"error"}'
+
 test('usageLimitText: the limit messages are recognised', () => {
   for (const msg of [
     "You've hit your weekly limit - resets Oct 24, 5pm",
@@ -24,6 +30,15 @@ test('usageLimitText: ordinary errors and review prose are not a limit', () => {
     'rate limited, resets in 30s',
     'Request rate limit reached for this model',
     "You've hit your rate limit",
+    // Whole words: glued into a longer word, they say nothing.
+    'xclaude max rate limit reached',
+    'Claude Max rate limit reachedly',
+    // The host's not-retryable flag is no limit by itself: it is false for a refused key too, and
+    // a passing rate limit stays no stop with the flag beside it.
+    '{"error":{"data":{"isRetryable":false,"message":"Invalid API key"},"type":"error"}',
+    '{"error":{"data":{"isRetryable":false,"message":"Request rate limit reached for this model"},"type":"error"}',
+    '{"error":{"data":{"isRetryable":true,"message":"You\'ve hit your rate limit. Try again in 30s"},"type":"error"}',
+    '{"error":{"data":{"retry_after":3600},"type":"error"}',
     'craft-log-run FAILED: boom',
     'subagent completed without calling StructuredOutput',
     "agent type 'craft:rust-reviewer' not found",
@@ -42,6 +57,14 @@ test('usageLimitText: the matching line, collapsed and bounded', () => {
   assert.equal(usageLimitText(`You've hit your weekly limit ${'x'.repeat(400)}`).length, 200)
 })
 
+test('usageLimitText: a sustained rate-limit refusal is recognised by its words', () => {
+  assert.equal(usageLimitText(MAX_RATE), MAX_RATE)
+  assert.equal(usageLimitText(`agent failed\n${MAX_RATE}`), MAX_RATE)
+  assert.equal(usageLimitText(MAX_RATE_EVENT), MAX_RATE_EVENT.slice(0, 200), "the host's error event, cut as every line is")
+  assert.ok(usageLimitText(MAX_RATE_EVENT).includes('"message":"Claude Max rate limit reached. Wait a moment and try again."'))
+  assert.equal(usageLimitText('claude max rate limit reached'), 'claude max rate limit reached', 'whatever the case of its words')
+})
+
 test('makeLimitStop: the first limit wins, is said once, and becomes the note', () => {
   /** @type {string[]} */
   const said = []
@@ -57,6 +80,30 @@ test('makeLimitStop: the first limit wins, is said once, and becomes the note', 
   assert.equal(stop.seen(), "You've hit your weekly limit - resets 5pm")
   assert.equal(stop.note(), "stopped: usage limit reached (You've hit your weekly limit - resets 5pm)")
   assert.equal(said.length, 1)
+})
+
+test('makeLimitStop: a sustained rate-limit refusal stops the run at once, and the note keeps its words', async () => {
+  /** @type {string[]} */
+  const said = []
+  const stop = makeLimitStop(l => said.push(l))
+  assert.equal(stop.observeError(new Error(MAX_RATE_EVENT)), true)
+  assert.equal(stop.cause(), 'limit')
+  assert.equal(stop.note(), `stopped: usage limit reached (${MAX_RATE_EVENT.slice(0, 200)})`)
+  assert.equal(stop.observeError(new Error(MAX_RATE)), true)
+  assert.equal(stop.seen(), MAX_RATE_EVENT.slice(0, 200), 'the first refusal is the one kept')
+  assert.equal(said.length, 1)
+  let dispatched = 0
+  assert.equal(
+    await stopAtLimit(async () => {
+      dispatched++
+      return 'late'
+    }, stop)('p', {}),
+    null,
+  )
+  assert.equal(dispatched, 0, 'nothing is dispatched after the refusal')
+  const text = makeLimitStop(() => {})
+  assert.equal(text.observeAnswer(MAX_RATE), true, "the engine's own words, answered short, stop the same way")
+  assert.equal(text.note(), `stopped: usage limit reached (${MAX_RATE})`)
 })
 
 test('stopAtLimit: a limit failure becomes a null and stops every later dispatch', async () => {
