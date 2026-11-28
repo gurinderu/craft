@@ -79,7 +79,7 @@ test('a lost submit of a run still going stops it INCOMPLETE, filed under audit 
 })
 
 test('a lost submit of a finished pass whose record did not land has it filed again', async () => {
-  const run = await lostAfterLens(null, endedStatus(RUN, { filing: { file: '', lost: ['x'], pass: 1, record: 'failed' } }), { 'step:refile': done(RUN) })
+  const run = await lostAfterLens(null, endedStatus(RUN, { filing: { pass: 1, record: 'failed', file: '', lost: ['x'] } }), { 'step:refile': done(RUN) })
   assert.equal(command(run, 'step:refile'), `/b/craft audit submit --run '${RUN}' --resume`)
   assert.doesNotMatch(run.report, /Telemetry lost/)
 })

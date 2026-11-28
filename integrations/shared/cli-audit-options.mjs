@@ -27,12 +27,13 @@ const onePath = v => {
 }
 
 /**
- * The paths given: one or a list, each as it stands; [] when none was given. A path given empty — '', blank, an empty
- * list — is refused, not read as the whole project: whoever passed it meant a part.
+ * The paths given: one or a list, each as it stands; [] when none was given (absent or null, as every optional
+ * argument here). A path given empty — '', blank, an empty list — is refused, not read as the whole project: whoever
+ * passed it meant a part.
  * @param {unknown} v @returns {{ paths: string[] } | { refused: string }}
  */
 function pathsOf(v) {
-  if (v === undefined) return { paths: [] }
+  if (v === undefined || v === null) return { paths: [] }
   const given = Array.isArray(v) ? v : [v]
   const paths = given.map(onePath)
   if (paths.length && paths.every(p => p !== null)) return { paths: /** @type {string[]} */ (paths) }
@@ -40,12 +41,13 @@ function pathsOf(v) {
 }
 
 /**
- * A budget as the digits the binary reads, '' when absent.
+ * A budget as the digits the binary reads, '' when absent or null, as every optional argument here; given empty or
+ * blank, it is refused like any other value that is no positive whole number.
  * @param {Record<string, unknown>} a @param {string} key @returns {{ value: string } | { refused: string }}
  */
 function budgetOf(a, key) {
   const v = a[key]
-  if (v === undefined || v === null || v === '') return { value: '' }
+  if (v === undefined || v === null) return { value: '' }
   const text = typeof v === 'number' || typeof v === 'string' ? String(v).trim() : ''
   return /^[1-9]\d{0,15}$/.test(text) ? { value: text } : { refused: `${key}=${JSON.stringify(v)} refused: not a positive whole number. Nothing ran.` }
 }

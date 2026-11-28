@@ -481,8 +481,8 @@
     "skills": ["rust-security"],
     "query": "Before the release, run Miri, cargo-audit and cargo-deny over our Rust workspace and check the public API for semver breaks.",
     "expected_behavior": [
-      "Launches the `craft:rust-audit` workflow, NOT the `craft:audit` workflow — Miri, cargo-audit/deny and semver stay with rust-audit",
-      "Does not select audit"
+      "Selects rust-security, NOT audit — Miri, cargo-audit/deny and semver are Rust-only checks the audit does not carry",
+      "Does not launch the `craft:audit` workflow"
     ]
   }
 ]

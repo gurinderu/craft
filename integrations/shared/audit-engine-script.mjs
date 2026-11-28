@@ -1,6 +1,7 @@
 // The scripted `craft audit` the audit engine's tests drive through integrations/shared/engine-harness.mjs: the service
 // agent's command output standing in for the binary — its pending and finished steps and its status, in the shapes
-// `craft audit submit | status` print (cli/crates/craft-audit/src/step.rs, step/finish.rs, step/status.rs) —, a task
+// `craft audit submit | status` print (cli/crates/craft-audit/src/step.rs, step/finish.rs, step/status.rs), the
+// record's filing as the audit keeps it, `{ pass, record, file, lost }` (step/filing.rs) —, a task
 // agent that writes its answer file as a real one would, and what a run asked its service steps to run. Test
 // infrastructure: only tests reach it.
 import assert from 'node:assert/strict'
@@ -53,7 +54,7 @@ export const done = (run, more = {}) =>
     verdict: 'Warning',
     report: `${run}/report.md`,
     recordFile: `${run}/record.json`,
-    filing: { runDir: '', rejoin: false, lost: [], record: 'filed' },
+    filing: { pass: 1, record: 'filed', file: '/store/audit.json', lost: [] },
     ...more,
   })
 
@@ -71,7 +72,7 @@ export const endedStatus = (run, more = {}) =>
     verdict: 'Warning',
     report: `${run}/report.md`,
     recordFile: `${run}/record.json`,
-    filing: { file: '/store/audit.json', lost: [], pass: 1, record: 'filed' },
+    filing: { pass: 1, record: 'filed', file: '/store/audit.json', lost: [] },
     ...more,
   })
 

@@ -18,12 +18,14 @@ test('one path, a list of paths, or none: each as given, a number read as its di
   assert.deepEqual(options({ path: ['src', 'lib dir', '-dash'] }).paths, ['src', 'lib dir', '-dash'])
   assert.deepEqual(options({ path: 7 }).paths, ['7'])
   assert.deepEqual(options({}).paths, [])
+  assert.deepEqual(options({ path: null }).paths, [], 'null is absent, as for every optional argument')
 })
 
 test('the budgets are the digits the binary reads, from a number or a string', () => {
   const o = options({ batchBytes: 150000, lensAgents: ' 4 ' })
   assert.deepEqual([o.batchBytes, o.lensAgents], ['150000', '4'])
   assert.deepEqual([options({}).batchBytes, options({}).lensAgents], ['', ''])
+  assert.deepEqual([options({ batchBytes: null, lensAgents: null }).batchBytes, options({ lensAgents: null }).lensAgents], ['', ''])
 })
 
 for (const [key, value] of Object.entries({ batchBytes: 0, lensAgents: -1 }))
@@ -36,12 +38,12 @@ for (const [key, value] of Object.entries({ batchBytes: 0, lensAgents: -1 }))
     )
   })
 
-for (const value of ['1.5', 'ten', true, [3], '0x10', '1e3', 1.5])
-  test(`a budget of ${JSON.stringify(value)} is refused`, () => {
-    assert.ok('refused' in readAuditOptions({ lensAgents: value }))
+for (const value of ['', ' ', '1.5', 'ten', true, [3], '0x10', '1e3', 1.5])
+  test(`a budget of ${JSON.stringify(value)} is refused, for either budget`, () => {
+    for (const key of ['batchBytes', 'lensAgents']) assert.ok('refused' in readAuditOptions({ [key]: value }), key)
   })
 
-for (const value of ['', ' ', null, ['src', ''], 'a\tb', ['ok', { p: 1 }], [], true])
+for (const value of ['', ' ', ['src', ''], 'a\tb', ['ok', { p: 1 }], [], true])
   test(`path=${JSON.stringify(value)} is refused`, () => {
     const read = readAuditOptions({ path: value })
     assert.ok('refused' in read, JSON.stringify(read))

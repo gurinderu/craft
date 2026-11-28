@@ -11,6 +11,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { filedRecord, runEngine } from './engine-harness.mjs'
+import { VERSION } from './audit-engine-script.mjs'
 
 let RUN = ''
 beforeEach(() => {
@@ -78,14 +79,11 @@ test('a run gets the binary, starts with the engine’s arguments, runs each ste
       'step:submit:2': done(),
     },
   })
-  const start = command(run, 'step:start')
-  for (const part of [
-    "/b/craft triage start --repo '/work/repo' --report '/r/report.md' --base 'abc123' --pr-base 'def456'",
-    '--prior-ledger <(printf \'%s\' \'[{"stable_id":"x"',
-    ' --record ',
-    " --record-root '/p/craft'",
-  ])
-    assert.ok(start.includes(part), `${part} in ${start}`)
+  // Whole, so a flag the shared driver hands other kinds (the audit's `--craft-root`) cannot reach the triage unseen.
+  assert.equal(
+    command(run, 'step:start'),
+    `/b/craft triage start --repo '/work/repo' --report '/r/report.md' --base 'abc123' --pr-base 'def456' --prior-ledger <(printf '%s' '[{"stable_id":"x","verdict":"reject","reason":"r"}]') --record '${VERSION}' --record-root '/p/craft'`,
+  )
   assert.equal(command(run, 'step:submit:2'), `/b/craft triage submit --run '${RUN}'`)
   assert.equal(run.calls.find(c => c.label === 'plan')?.opts.model, 'opus', 'the task runs on the model the binary named')
   assert.match(run.report, new RegExp(`^## Triage\\n\\nThe plan is ${PLAN_FILE()} — read that file for the plan`))
@@ -93,6 +91,15 @@ test('a run gets the binary, starts with the engine’s arguments, runs each ste
   assert.ok(!run.report.includes('BODY'), 'the plan is read from its file, never copied into the answer')
   assert.deepEqual(logged(run), [], 'the binary files a finished run’s record itself')
 })
+
+for (const [name, args, script, root] of /** @type {[string, Record<string, unknown>, Record<string, unknown>, string][]} */ ([
+  ['with its plugin root, checked', { craftRoot: '/r/craft' }, { 'step:root': ran('root=/r/craft\n') }, '/r/craft'],
+  ['alone, the record’s root located', {}, { 'step:locate': ran('root=/l/craft\n') }, '/l/craft'],
+]))
+  test(`a local build ${name} starts with the record’s root and nothing else`, async () => {
+    const run = await runEngine('triage-findings', { args: { report: '/r.md', craftBin: '/b/craft', ...args }, script: { ...script, 'step:start': done() } })
+    assert.equal(command(run, 'step:start'), `/b/craft triage start --report '/r.md' --record '${VERSION}' --record-root '${root}'`)
+  })
 
 test('run= resumes the run with the binary’s submit --resume, never a start', async () => {
   const run = await runEngine('triage-findings', { args: { run: '/r/run-1', repo: '/work/repo' }, script: { 'step:resolve': RESOLVED, 'step:resume': done() } })

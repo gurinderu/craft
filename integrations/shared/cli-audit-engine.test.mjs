@@ -90,7 +90,7 @@ for (const [name, more] of Object.entries({
   })
 
 test('a record the binary could not land is said, with how to file it again', async () => {
-  const filing = { runDir: '', rejoin: false, lost: ['the run record — the index lock stayed taken'], record: 'failed' }
+  const filing = { pass: 1, record: 'failed', file: '', lost: ['the run record — the index lock stayed taken'] }
   const run = await runEngine('audit', { args: {}, script: { 'step:resolve': RESOLVED, 'step:start': done(RUN, { verdict: 'Approve', resume: 'r', filing }) } })
   assert.match(run.report, /^## Audit\n\nVerdict: Approve\n\n/)
   assert.match(run.report, /Telemetry lost[\s\S]*the run record — the index lock stayed taken/)
