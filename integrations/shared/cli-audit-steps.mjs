@@ -18,7 +18,8 @@ const AUDIT = {
   engine: 'audit',
   kind: 'audit',
   title: 'Audit',
-  // A pass is its lens round and its verifiers' round, each handed out again for a refused answer.
+  // One engine run drives one pass — its lens round and its verifiers' round, each handed out again for a refused
+  // answer —: it never goes on into a new pass over what that one left unread or unjudged, which only run= drives.
   maxRounds: 12,
   readOptions: readAuditOptions,
   start: auditStart,

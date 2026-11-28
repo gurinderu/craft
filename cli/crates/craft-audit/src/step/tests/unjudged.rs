@@ -6,7 +6,7 @@ use serde_json::{Value, json};
 use super::{Fake, RESUME, Scratch, answer, args, finding, found, ids, next, open, scratch};
 use crate::AuditError;
 use crate::state;
-use crate::step::{Said, report_path, submit, unverified_path};
+use crate::step::{Said, report_path, status, submit, unverified_path};
 
 fn vote(index: u64) -> Value {
     json!({"index": index, "refuted": false, "citedLineMatches": true, "reachable": true,
@@ -55,6 +55,13 @@ fn a_verifier_answer_missing_or_misnumbering_a_finding_is_refused_until_its_retr
         (done["verdict"].clone(), done["unjudged"].clone()),
         (json!("INCOMPLETE"), json!(2)),
         "{done}"
+    );
+    // A host that lost that step reads the same count from the status.
+    let st = status(&s.run).unwrap();
+    assert_eq!(
+        (st["verdict"].clone(), st["unjudged"].clone()),
+        (json!("INCOMPLETE"), json!(2)),
+        "{st}"
     );
     let st = state::load(&s.run).unwrap();
     let t = st.tasks.iter().find(|t| t.id == "verify-1-0").unwrap();

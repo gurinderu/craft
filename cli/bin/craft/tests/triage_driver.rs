@@ -11,7 +11,10 @@ import path from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {spawnSync} from 'node:child_process';
 const load = name => import(pathToFileURL(path.join(process.env.ROOT, 'integrations/shared', name)));
-const {triageStart, triageSubmit, triageStatus} = await load('cli-triage-commands.mjs');
+const {triageStart} = await load('cli-triage-commands.mjs');
+// The submit and status the driver itself runs: every kind's, made for the triage (cli-step-driver.mjs).
+const {stepCommands} = await load('cli-step-commands.mjs');
+const {submit: triageSubmit, status: triageStatus} = stepCommands('triage');
 const {readTriageOptions} = await load('cli-triage-options.mjs');
 const {shq} = await load('plugin-script.mjs');
 const bin = shq(process.env.CRAFT_BIN);

@@ -27,11 +27,12 @@ const onePath = v => {
 }
 
 /**
- * The paths given: one or a list, each as it stands; [] for none.
+ * The paths given: one or a list, each as it stands; [] when none was given. A path given empty — '', blank, an empty
+ * list — is refused, not read as the whole project: whoever passed it meant a part.
  * @param {unknown} v @returns {{ paths: string[] } | { refused: string }}
  */
 function pathsOf(v) {
-  if (v === undefined || v === null || v === '') return { paths: [] }
+  if (v === undefined) return { paths: [] }
   const given = Array.isArray(v) ? v : [v]
   const paths = given.map(onePath)
   if (paths.length && paths.every(p => p !== null)) return { paths: /** @type {string[]} */ (paths) }

@@ -11,9 +11,12 @@ export const auditStartTimeout = () => "in one Bash call with a timeout of 30000
 
 /**
  * The start: over the repository `o.repo` names (`--cwd`) or the session's checkout, each path given as one `--path`
- * (written `--path=…`, so a path that begins with a dash is not read as a flag), the budgets only when given, the run
- * filed under `version` (`--record`) through the plugin root `recordRoot` when one is known.
- * @param {string} bin @param {AuditOptions} o @param {string} version @param {string} recordRoot @returns {string}
+ * (written `--path=…`, so a path that begins with a dash is not read as a flag), the budgets only when given, the
+ * prompts naming the skills under the plugin root `root` (`--craft-root`; a fetched binary finds none above itself, and
+ * its lens and verifier prompts would then name no skill file), the run filed under `version` (`--record`) through the
+ * plugin root `recordRoot` when one is known.
+ * @param {string} bin @param {AuditOptions} o @param {string} version @param {string} recordRoot @param {string} root
+ * @returns {string}
  */
-export const auditStart = (bin, o, version, recordRoot) =>
-  `${bin} audit start${flag('--cwd', o.repo)}${o.paths.map(p => ` --path=${shq(p)}`).join('')}${flag('--batch-bytes', o.batchBytes)}${flag('--lens-agents', o.lensAgents)} --record ${shq(version)}${flag('--record-root', recordRoot)}`
+export const auditStart = (bin, o, version, recordRoot, root) =>
+  `${bin} audit start${flag('--cwd', o.repo)}${o.paths.map(p => ` --path=${shq(p)}`).join('')}${flag('--batch-bytes', o.batchBytes)}${flag('--lens-agents', o.lensAgents)}${flag('--craft-root', root)} --record ${shq(version)}${flag('--record-root', recordRoot)}`

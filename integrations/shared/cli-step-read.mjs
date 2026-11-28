@@ -22,7 +22,8 @@ import { stepText, stopNoteOf, strings } from './cli-review-step-fields.mjs'
  * @property {string} title  the heading of the answer
  * @property {number} maxRounds  the rounds after which the driver gives up, a backstop: the binary decides when the run is done
  * @property {(a: Record<string, unknown>) => { options: O } | { refused: Array<[string, string]> }} readOptions
- * @property {(bin: string, o: O, version: string, recordRoot: string) => string} start  the start's command line
+ * @property {(bin: string, o: O, version: string, recordRoot: string, root: string) => string} start  the start's command line: the
+ *   run filed through `recordRoot`, its prompts naming the skills under `root` ('' when the binary looks above itself)
  * @property {(o: O) => string} startTimeout  how the service agent runs the start
  * @property {(v: Record<string, unknown>) => { step: F } | { error: string }} finished  a finished step's fields, or why it cannot be read
  * @property {(step: F) => string} answer  the answer of a run the binary ended

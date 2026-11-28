@@ -87,7 +87,7 @@ async function drive(k, sb, o, craftVersion, at) {
   sb.log(`${k.engine} ${craftVersion}: ${o.craftBin ?? `the released binary ${craftVersion}`} over ${o.repo || 'the session checkout'}`)
   const where = await binaryOf(k, sb, o, craftVersion, serve, at)
   if ('stopped' in where) return where
-  const first = await opening(k, serve, where.bin, o, craftVersion, where.recordRoot || where.root, limit)
+  const first = await opening(k, serve, where, o, craftVersion, limit)
   if (!('step' in first)) return first
   // A resumed run's repository, when none was given, is the one the binary names.
   if (!first.step.done && first.step.repo) at.repo ||= first.step.repo
@@ -114,14 +114,17 @@ async function binaryOf(k, sb, o, craftVersion, serve, at) {
  * The run's first step — a resume's or a start's —, or how the run ended before any: an argument the binary refused,
  * or a step that could not be read.
  * @template {KindOptions} O @template {KindFinished} F
- * @param {StepKind<O, F>} k @param {Serve} serve @param {string} bin @param {O} o @param {string} craftVersion @param {string} recordRoot
+ * @param {StepKind<O, F>} k @param {Serve} serve @param {{ bin: string, root: string, recordRoot?: string }} where  the binary, the plugin
+ *   root its prompts name ('' to let it look above itself) and the one the run is filed through when only that was located
+ * @param {O} o @param {string} craftVersion
  * @param {{ seen: () => string }} limit
  * @returns {Promise<{ step: KindPending | F } | Ending<F>>}
  */
-async function opening(k, serve, bin, o, craftVersion, recordRoot, limit) {
+async function opening(k, serve, where, o, craftVersion, limit) {
+  const { bin, root } = where
   const got = o.run
     ? await runCommand(serve, 'step:resume', 'Start', stepCommands(k.kind).submit(bin, o.run, { resume: true }), SUBMIT_TIMEOUT)
-    : await runCommand(serve, 'step:start', 'Start', k.start(bin, o, craftVersion, recordRoot), k.startTimeout(o))
+    : await runCommand(serve, 'step:start', 'Start', k.start(bin, o, craftVersion, where.recordRoot || root, root), k.startTimeout(o))
   const argument = o.run ? null : argumentRefused(got, k.kind)
   if (argument) return { argument }
   const first = readStepWith(got, k.finished)

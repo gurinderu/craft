@@ -1,7 +1,7 @@
 ---
 name: audit
 description: >-
-  Audit a whole project in any language — every git-tracked file of the checkout as it stands, not a diff — through the `craft:audit` workflow and the craft binary (`craft audit start | submit | status`): each file to its profile (Rust, Nix, SQL, general), batches of whole files under a byte budget, the lenses that judge code as it stands, every Medium-and-above finding verified, one report with a verdict. No sampling: what the budget did not buy or what failed is counted unread (unread.txt), the verdict INCOMPLETE, and run= reads just that. Posts nothing to a PR or issues; findings go to addressing-findings. Use for code no diff review ever read — a release, a repository taken over, a part of a project (path=). Triggers: audit the repo, full audit, audit the whole project, audit this codebase, audit src/, аудит проекта, аудит репозитория. Not for a diff or a PR (the review workflow); Miri, cargo-audit, semver or unused-crate checks of a Rust crate stay with rust-audit for now.
+  Audit a whole project in any language — every git-tracked file of the checkout as it stands, not a diff — through the `craft:audit` workflow (`craft audit start | submit | status`): each file to its profile (Rust, Nix, SQL, general), batches of whole files under a byte budget, every Medium-and-above finding verified, one report with a verdict. No sampling: what the budget did not buy or what failed is counted unread (unread.txt), the verdict INCOMPLETE, and run= reads just that. Posts nothing to a PR or issues; findings go to addressing-findings. Needs Claude Code's Workflow tool (not in Codex, OpenCode or a subagent): main session only. Use for code no diff review ever read — a release, a repository taken over, a part of a project (path=). Triggers: audit the repo, full audit, audit the whole project, audit this codebase, аудит проекта. Not for a diff or a PR (the review workflow); Miri, cargo-audit, semver or unused crates of a Rust crate stay with rust-audit for now.
 ---
 
 # audit — the whole project, as it stands
@@ -27,8 +27,8 @@ Info are held apart, unverified. Severity is held by the finding's harm alone �
 
 ## Launch
 
-The main session launches the `craft:audit` workflow (a subagent has no Workflow tool). Its
-arguments, all optional:
+The main session launches the `craft:audit` workflow: it needs Claude Code's Workflow tool, which a
+subagent, Codex and OpenCode do not have. Its arguments, all optional:
 
 | Argument | What it does |
 |---|---|

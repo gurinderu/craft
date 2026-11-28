@@ -18,7 +18,6 @@ test('one path, a list of paths, or none: each as given, a number read as its di
   assert.deepEqual(options({ path: ['src', 'lib dir', '-dash'] }).paths, ['src', 'lib dir', '-dash'])
   assert.deepEqual(options({ path: 7 }).paths, ['7'])
   assert.deepEqual(options({}).paths, [])
-  assert.deepEqual(options({ path: '' }).paths, [])
 })
 
 test('the budgets are the digits the binary reads, from a number or a string', () => {
@@ -42,7 +41,7 @@ for (const value of ['1.5', 'ten', true, [3], '0x10', '1e3', 1.5])
     assert.ok('refused' in readAuditOptions({ lensAgents: value }))
   })
 
-for (const value of [' ', ['src', ''], 'a\tb', ['ok', { p: 1 }], [], true])
+for (const value of ['', ' ', null, ['src', ''], 'a\tb', ['ok', { p: 1 }], [], true])
   test(`path=${JSON.stringify(value)} is refused`, () => {
     const read = readAuditOptions({ path: value })
     assert.ok('refused' in read, JSON.stringify(read))
@@ -66,5 +65,5 @@ test('a resume keeps its repository and binary options, with no start options', 
 
 test('the start quotes each path whole after `--path=`, so a path with a quote or a leading dash stays one value', () => {
   const o = options({ path: ["it's", '-x'], repo: '/w' })
-  assert.equal(auditStart('/b/craft', o, '9.9.9', ''), `/b/craft audit start --cwd '/w' --path='it'\\''s' --path='-x' --record '9.9.9'`)
+  assert.equal(auditStart('/b/craft', o, '9.9.9', '', ''), `/b/craft audit start --cwd '/w' --path='it'\\''s' --path='-x' --record '9.9.9'`)
 })

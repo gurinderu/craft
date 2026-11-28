@@ -468,5 +468,21 @@
       "Says how many files were left unread, where they are listed, and how to read them with run=",
       "Posts nothing to a PR or an issue"
     ]
+  },
+  {
+    "skills": ["rust-review"],
+    "query": "Review the diff of my Rust branch against main before I open the PR, and tell me if it is mergeable.",
+    "expected_behavior": [
+      "Selects rust-review (the `craft:review` workflow over the diff), NOT audit — a diff or a PR is reviewed, not audited whole",
+      "Does not launch the `craft:audit` workflow"
+    ]
+  },
+  {
+    "skills": ["rust-security"],
+    "query": "Before the release, run Miri, cargo-audit and cargo-deny over our Rust workspace and check the public API for semver breaks.",
+    "expected_behavior": [
+      "Launches the `craft:rust-audit` workflow, NOT the `craft:audit` workflow — Miri, cargo-audit/deny and semver stay with rust-audit",
+      "Does not select audit"
+    ]
   }
 ]
