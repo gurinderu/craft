@@ -162,17 +162,23 @@ pub fn run_key(r: &Obj) -> Option<String> {
 /// Folds repeated records of the same resumed run, retaining the newest record.
 #[must_use]
 pub fn fold_runs(records: Vec<Obj>) -> Vec<Obj> {
+    let named = records.into_iter().map(|r| (String::new(), r)).collect();
+    fold_named(named).into_iter().map(|(_, r)| r).collect()
+}
+
+/// [`fold_runs`] over records each with its id, which the newest keeps.
+fn fold_named(records: Vec<(String, Obj)>) -> Vec<(String, Obj)> {
     let mut kept = Vec::new();
-    let mut newest: Vec<(String, Obj)> = Vec::new();
-    for r in records {
+    let mut newest: Vec<(String, (String, Obj))> = Vec::new();
+    for (id, r) in records {
         let Some(key) = run_key(&r) else {
-            kept.push(r);
+            kept.push((id, r));
             continue;
         };
         match newest.iter_mut().find(|(k, _)| *k == key) {
-            Some((_, seen)) if r.text_units("ts") > seen.text_units("ts") => *seen = r,
+            Some((_, seen)) if r.text_units("ts") > seen.1.text_units("ts") => *seen = (id, r),
             Some(_) => {}
-            None => newest.push((key, r)),
+            None => newest.push((key, (id, r))),
         }
     }
     kept.extend(newest.into_iter().map(|(_, r)| r));
@@ -185,14 +191,14 @@ fn finished_of(
     version: &str,
     records: impl IntoIterator<Item = Obj>,
     retro: &mut Retro,
-) -> Result<(Vec<Obj>, crate::parts::Parts), Utf16Error> {
+) -> Result<(Vec<(String, Obj)>, crate::parts::Parts), Utf16Error> {
     let records: Vec<Obj> = records.into_iter().collect();
     let mut parts = crate::parts::Parts::default();
     let live = |r: &Obj| {
         r.get("schemaVersion").is_some_and(Js::truthy) && !r.get("partial").is_some_and(Js::truthy)
     };
-    for r in records.iter().filter(|r| live(r)) {
-        parts.note(r);
+    for (i, r) in records.iter().enumerate().filter(|(_, r)| live(r)) {
+        parts.note(&i.to_string(), r);
     }
     let mut kept = Vec::new();
     let mut held = BTreeMap::new();
@@ -206,20 +212,24 @@ fn finished_of(
         } else if r.get("partial").is_some_and(Js::truthy) {
             retro.unfinished += 1;
         } else {
-            kept.push(r);
+            kept.push((i.to_string(), r));
         }
     }
     let (standing, folded) = parts.standing();
     retro.folded += folded;
-    kept.extend(standing.iter().filter_map(|(_, _, name)| held.remove(name)));
+    kept.extend(
+        standing
+            .iter()
+            .filter_map(|(_, _, name)| held.remove(name).map(|r| (name.clone(), r))),
+    );
     let before = kept.len();
-    let folded = fold_runs(kept);
+    let folded = fold_named(kept);
     retro.folded += u64::try_from(before - folded.len()).unwrap_or(u64::MAX);
     Ok((folded, parts))
 }
 
 /// Prices the runs filed in parts once every record is read, by their parts' shares summed once.
-pub fn settle(retro: &mut Retro, parts: &mut crate::parts::Parts) {
+pub fn settle(retro: &mut Retro, parts: &crate::parts::Parts) {
     kinds::settle(&mut retro.kinds, std::mem::take(&mut retro.deferred), parts);
 }
 
@@ -228,18 +238,19 @@ pub fn settle(retro: &mut Retro, parts: &mut crate::parts::Parts) {
 /// When a report field cannot be represented as Unicode.
 pub fn retro(version: &str, records: impl IntoIterator<Item = Obj>) -> Result<Retro, Utf16Error> {
     let mut out = Retro::default();
-    let (finished, mut parts) = finished_of(version, records, &mut out)?;
-    for r in finished {
-        add_record(&mut out, &r)?;
+    let (finished, parts) = finished_of(version, records, &mut out)?;
+    for (id, r) in finished {
+        add_record(&mut out, &id, &r)?;
     }
-    settle(&mut out, &mut parts);
+    settle(&mut out, &parts);
     Ok(out)
 }
 
-/// Add one finished, deduplicated record to a retro.
+/// Add one finished, deduplicated record to a retro, `id` the one [`crate::parts::Parts::note`]
+/// noted it by.
 /// # Errors
 /// When a report field cannot be represented as Unicode.
-pub fn add_record(out: &mut Retro, r: &Obj) -> Result<(), Utf16Error> {
+pub fn add_record(out: &mut Retro, id: &str, r: &Obj) -> Result<(), Utf16Error> {
     if r.text_units("kind") == "develop" {
         return Ok(());
     }
@@ -254,7 +265,7 @@ pub fn add_record(out: &mut Retro, r: &Obj) -> Result<(), Utf16Error> {
     } else {
         name
     };
-    kinds::add(r, &name, &mut out.kinds, &mut out.deferred)?;
+    kinds::add((id, r), &name, &mut out.kinds, &mut out.deferred)?;
     let w = out.workflows.entry(name).or_default();
     w.add(r);
     let verdict = r.get("verdict").filter(|v| v.truthy()).map(Js::to_js_text);

@@ -258,8 +258,18 @@ fn a_run_filed_in_parts_is_priced_once_by_every_parts_share() {
         "2026-11-02T12-00-00Z",
         &part("Approve", "/r/2", 500, "wf_c"),
     );
+    record(
+        s,
+        "2026-11-02T13-00-00Z",
+        &part("INCOMPLETE", "/r/3", 40, "wf_d"),
+    );
+    record(
+        s,
+        "2026-11-02T14-00-00Z",
+        &part("INCOMPLETE", "/r/3", 60, "wf_e"),
+    );
     let lines = retro(s, &[]);
-    assert_eq!(section(&lines, "summary")[0]["folded"], json!(1));
+    assert_eq!(section(&lines, "summary")[0]["folded"], json!(2));
     let kind = section(&lines, "kind")[0];
     assert_eq!(
         (
@@ -268,7 +278,8 @@ fn a_run_filed_in_parts_is_priced_once_by_every_parts_share() {
             &kind["cost"],
             &kind["unpriced"]
         ),
-        (&json!(2), &json!(2), &json!(900), &json!({})),
-        "the resumed run carries its stopped part's share: {kind}"
+        (&json!(3), &json!(3), &json!(1000), &json!({})),
+        "a resumed run carries its stopped part's share, a run whose every part stopped its \
+         newest's and the others': {kind}"
     );
 }

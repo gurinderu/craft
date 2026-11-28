@@ -59,8 +59,8 @@ fn a_run_filed_in_parts_is_priced_as_the_javascript_fold_prices_it() {
             })
             .collect();
         let mut parts = Parts::default();
-        for r in &records {
-            parts.note(r);
+        for (i, r) in records.iter().enumerate() {
+            parts.note(&i.to_string(), r);
         }
         let standing = f.get("standing").and_then(Js::as_num).unwrap();
         #[expect(
@@ -72,11 +72,18 @@ fn a_run_filed_in_parts_is_priced_as_the_javascript_fold_prices_it() {
             panic!("{name}: no part {standing}");
         };
         let want = f.get("cost").filter(|c| **c != Js::Null).map(Js::compact);
-        assert_eq!(parts.cost_of(r).map(|c| c.compact()), want, "{name}");
-        assert_eq!(
-            parts.cost_of(r).map(|c| c.compact()),
-            r.get("cost").map(Js::compact),
-            "{name}: a record of the same time and stop priced again is not the standing one"
-        );
+        let id = standing.to_string();
+        assert_eq!(parts.cost_of(&id, r).map(|c| c.compact()), want, "{name}");
+        for (i, other) in records
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| i.to_string() != id)
+        {
+            assert_eq!(
+                parts.cost_of(&i.to_string(), other).map(|c| c.compact()),
+                other.get("cost").map(Js::compact),
+                "{name}: part {i} does not stand for the run, so it keeps its own cost"
+            );
+        }
     }
 }

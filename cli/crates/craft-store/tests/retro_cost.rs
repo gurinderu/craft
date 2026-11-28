@@ -28,3 +28,19 @@ fn a_resumed_run_is_priced_by_its_stopped_parts_share_and_its_own() {
     assert!(kind.unpriced.is_empty(), "{kind:?}");
     assert!(r.deferred.is_empty(), "every deferred run is settled");
 }
+
+#[test]
+fn a_run_whose_every_part_stopped_is_priced_once_by_its_newest_part() {
+    let records = [
+        part("2026-11-02T10-00-00Z", "INCOMPLETE", "/r/1", 100, "wf_a"),
+        part("2026-11-02T11-00-00Z", "INCOMPLETE", "/r/1", 30, "wf_b"),
+    ];
+    let r = retro("0.61.0", records).unwrap();
+    let kind = &r.kinds["review (cli)"];
+    assert_eq!(
+        (kind.runs, kind.priced, kind.cost),
+        (1, 1, 130.0),
+        "{kind:?}"
+    );
+    assert_eq!(r.folded, 1);
+}

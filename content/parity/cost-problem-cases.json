@@ -1127,6 +1127,38 @@
         "source": "wf_c",
         "rule": "per-message"
       }
+    },
+    {
+      "name": "no usable share, the standing cost its own though unusable",
+      "parts": [
+        {
+          "ts": "2026-11-01T10-00-00Z",
+          "verdict": "INCOMPLETE"
+        },
+        {
+          "ts": "2026-11-01T11-00-00Z",
+          "verdict": "Warning",
+          "cost": {
+            "output": 5,
+            "input": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 5,
+            "agents": 1,
+            "source": "wf_b"
+          }
+        }
+      ],
+      "standing": 1,
+      "cost": {
+        "output": 5,
+        "input": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 5,
+        "agents": 1,
+        "source": "wf_b"
+      }
     }
   ]
 }

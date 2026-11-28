@@ -6,7 +6,7 @@
 //! every part stopped stands as its newest. The fold comes before any version or filter: the run
 //! is counted under its standing record's version, and a retro of the stopped part's version counts
 //! that part folded. A reader that sums cost prices the standing record by its parts' shares
-//! summed once ([`cost`]), as the JavaScript report does. A record that names no run directory — one filed before records named it — folds on
+//! summed once (its `cost` module), as the JavaScript report does. A record that names no run directory — one filed before records named it — folds on
 //! nothing here.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -53,14 +53,14 @@ struct Held {
 pub struct Parts {
     finished: BTreeSet<String>,
     held: BTreeMap<String, Held>,
-    /// Every part of each run noted, in the order noted ([`cost`]).
+    /// Every part of each run noted, in the order noted.
     costs: BTreeMap<String, Vec<cost::Noted>>,
 }
 
 impl Parts {
     /// Notes a record that did not die: a finished one stands for its run's stopped parts,
     /// whichever version or filter it is read under.
-    pub fn note(&mut self, r: &Obj) {
+    pub fn note(&mut self, id: &str, r: &Obj) {
         let Some(key) = part_key(r) else {
             return;
         };
@@ -68,10 +68,10 @@ impl Parts {
             .entry(key.clone())
             .or_default()
             .push(cost::Noted {
+                id: id.to_owned(),
                 ts: r.text_units("ts"),
                 stopped: stopped(r),
                 cost: r.get("cost").cloned(),
-                claimed: false,
             });
         if !stopped(r) {
             self.finished.insert(key);
@@ -138,7 +138,7 @@ mod tests {
     fn folded(records: &[(Obj, bool)]) -> (Vec<String>, u64) {
         let mut parts = Parts::default();
         for (r, _) in records {
-            parts.note(r);
+            parts.note(r.try_text("ts").unwrap(), r);
         }
         let mut counted = Vec::new();
         for (r, inside) in records {

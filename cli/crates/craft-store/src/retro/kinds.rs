@@ -6,7 +6,7 @@
 use std::collections::BTreeMap;
 
 use crate::cost::problem::{self, Problem};
-use crate::js::{Js, JsString, Obj, Utf16Error};
+use crate::js::{Js, Obj, Utf16Error};
 use crate::parts::Parts;
 use crate::tally::round2;
 
@@ -70,8 +70,7 @@ fn key(name: &str, r: &Obj) -> Result<String, Utf16Error> {
 pub struct Deferred {
     kind: String,
     key: String,
-    ts: JsString,
-    stopped: bool,
+    id: String,
     cost: Option<Js>,
 }
 
@@ -80,7 +79,7 @@ pub struct Deferred {
 /// # Errors
 /// When the record's depth or lens scope cannot be represented as Unicode.
 pub fn add(
-    r: &Obj,
+    (id, r): (&str, &Obj),
     name: &str,
     kinds: &mut BTreeMap<String, Kind>,
     deferred: &mut Vec<Deferred>,
@@ -107,8 +106,7 @@ pub fn add(
         Some(key) => deferred.push(Deferred {
             kind: at,
             key,
-            ts: r.text_units("ts"),
-            stopped: crate::parts::stopped(r),
+            id: id.to_owned(),
             cost: r.get("cost").cloned(),
         }),
         None => price(kind, r.get("cost")),
@@ -117,9 +115,9 @@ pub fn add(
 }
 
 /// Prices each deferred run by its parts' cost summed once ([`Parts::cost_for`]).
-pub fn settle(kinds: &mut BTreeMap<String, Kind>, deferred: Vec<Deferred>, parts: &mut Parts) {
+pub fn settle(kinds: &mut BTreeMap<String, Kind>, deferred: Vec<Deferred>, parts: &Parts) {
     for d in deferred {
-        let cost = parts.cost_for(Some(&d.key), &d.ts, d.stopped, d.cost);
+        let cost = parts.cost_for(Some(&d.key), &d.id, d.cost);
         price(kinds.entry(d.kind).or_default(), cost.as_ref());
     }
 }
