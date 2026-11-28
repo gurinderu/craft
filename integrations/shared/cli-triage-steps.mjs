@@ -17,12 +17,12 @@ import { serveWith, serviceOf } from './cli-step-service.mjs'
 import { stepRounds } from './cli-step-loop.mjs'
 import { taskRunner } from './cli-review-task.mjs'
 import { argumentRefused } from './cli-review-step.mjs'
-import { stopCause } from './cli-review-stop.mjs'
+import { UNKNOWN_COMPLETION, stopCause } from './cli-review-stop.mjs'
 
 /** @typedef {import('./cli-review-steps.mjs').Sandbox} Sandbox @typedef {import('./cli-step-service.mjs').Serve} Serve */
 /** @typedef {import('./cli-triage-options.mjs').TriageOptions} TriageOptions */
 /** @typedef {import('./cli-triage-step.mjs').TriagePending} TriagePending @typedef {import('./cli-triage-step.mjs').TriageFinished} TriageFinished */
-/** @typedef {{ finished: TriageFinished } | { stopped: string, cause: import('./cli-review-stop.mjs').StopCause } | { argument: string }} Ending */
+/** @typedef {{ finished: TriageFinished } | { stopped: string, cause: import('./cli-review-stop.mjs').StopCause } | { unknown: string } | { argument: string }} Ending */
 
 /** The `notRun` line of a run whose start the binary refused an argument of: a fixed line, tallied by exact text. */
 const VALUE_REFUSED_CLASS = 'an argument value triage cannot use was refused, nothing ran'
@@ -67,6 +67,7 @@ async function refusedAnswer(sb, recorder, refused) {
 async function endedAnswer(sb, o, at, recorder, ending) {
   if ('finished' in ending) return finishedTriageAnswer(ending.finished)
   if ('argument' in ending) return refusedAnswer(sb, recorder, [[ending.argument, VALUE_REFUSED_CLASS]])
+  if ('unknown' in ending) return withNotes(incompleteAnswer(ending.unknown), [UNKNOWN_COMPLETION, recorder.notes()])
   sb.phase('Record')
   const keyed = !o.run || !!at.repo
   if (keyed) await recorder.unfinished(ending.cause)
