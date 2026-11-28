@@ -13,6 +13,8 @@ const PLUGIN = 'integrations/opencode/plugin/'
 export default {
   // An export also used in its own module is surplus `export`, not dead code: not worth a red gate.
   ignoreExportsUsedInFile: true,
+  // `npm run gate` calls just, the gate's runner: a system tool (the dev shell, CI's setup-just), never an npm package.
+  ignoreBinaries: ['just'],
   eslint: { config: ['integrations/shared/config/eslint.config.mjs'] },
   vitest: { config: ['integrations/shared/config/vitest.config.mjs'] },
   workspaces: {
@@ -31,8 +33,6 @@ export default {
         'integrations/shared/mutation-issue.mjs!',
         // The gate's own checkers (CI workflow, package.json scripts).
         'integrations/shared/check-*.mjs!',
-        // The gate as one call (`npm run gate`, CI's test job): run, not imported.
-        'integrations/shared/gate.mjs!',
         // The engine build (`npm run build:engines`, the gate's check:engines): run, not imported.
         'integrations/shared/build-engines.mjs!',
         // The Claude Code plugin manifest validated on a materialized copy (`npm run check:plugin`): run, not imported.

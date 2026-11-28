@@ -45,6 +45,8 @@
             pkgs.nodejs_22
             # The mutants an implementation brief asks for on its diff.
             pkgs.cargo-mutants
+            # The gate's runner (justfile); CI pins the same version.
+            pkgs.just
             pkgs.jq
             pkgs.nixfmt
           ];

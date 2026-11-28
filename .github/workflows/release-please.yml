@@ -127,6 +127,7 @@ jobs:
       - name: musl C compiler
         if: ${{ endsWith(matrix.target, '-linux-musl') }}
         run: sudo apt-get update && sudo apt-get install -y musl-tools
+      # `-p craft`: the shipped binary alone — the workspace's cli/xtask, the repository's own checks, is never built here.
       - name: cargo build
         env:
           TARGET: ${{ matrix.target }}
@@ -134,7 +135,7 @@ jobs:
           case "$TARGET" in
             *-linux-musl) export "CC_$(echo "$TARGET" | tr - _)=musl-gcc" ;;
           esac
-          cargo build --release --locked --target "$TARGET"
+          cargo build --release --locked --target "$TARGET" -p craft
       - name: package
         env:
           TARGET: ${{ matrix.target }}

@@ -20,23 +20,38 @@ jobs:
       # `npm ci` here is what makes the typecheck step below possible.
       - name: Install opencode plugin deps
         run: npm ci --prefix integrations/opencode/plugin
-      # The gate as one call (integrations/shared/gate.mjs): lint, the three typechecks, the unit tests, the workflow,
-      # skill, delivery-parity, OpenCode-frontmatter and eval checkers, dependency-cruiser, both Knip runs,
-      # jscpd, the mutation floor and the plugin manifest validator — the same command an agent runs before
-      # pushing, so a check dropped from it is dropped from both at once, and integrations/shared/gate-steps.test.mjs fails
-      # when a check package.json, integrations/shared/check-*.mjs, this job or AGENTS.md "Commands" names is not in it.
-      # Every step runs, a failed one included, and the log names each one's result. On a pull request the
-      # checkout holds only the merge commit, so the base is fetched for the mutation floor to compare with
-      # (a base that cannot be read fails that step); on a push it compares with origin/main.
-      - name: Gate (npm run gate)
+      # The gate's runner and its completeness check are cli/xtask (`cargo xtask gate`, `cargo xtask gate-steps`), so
+      # the job needs the CLI's toolchain — the same pin as the rust job, which cli/rust-toolchain.toml names, with
+      # the components it lists, which rustup would otherwise have to add itself.
+      - uses: dtolnay/rust-toolchain@1.99.0
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: cli
+          key: gate
+      # just runs the justfile's gate; pinned to the dev shell's version (flake.nix's nixpkgs), the action by its commit.
+      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
+        with:
+          just-version: '1.51.0'
+      # The gate as one call (the justfile's gate group, run by cli/xtask): lint, the three typechecks, the unit
+      # tests, the gate's completeness, the workflow, skill, delivery-parity, OpenCode-frontmatter and eval
+      # checkers, dependency-cruiser, both Knip runs, jscpd, the mutation floor and the plugin manifest validators
+      # — the same command an agent runs before pushing, so a check dropped from it is dropped from both at once,
+      # and `cargo xtask gate-steps` fails when a check package.json, integrations/shared/check-*.mjs, this job,
+      # AGENTS.md "Commands" or the justfile names is not in it. Every step runs, a failed one included, and the
+      # log names each one's result. On a pull request the checkout holds only the merge commit, so the base is
+      # fetched for the mutation floor to compare with (a base that cannot be read fails that step); on a push it
+      # compares with origin/main.
+      - name: Gate (just gate)
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           if [ -n "$BASE_SHA" ]; then
             git fetch --no-tags --depth=1 origin "$BASE_SHA"
-            npm run gate -- --base "$BASE_SHA"
+            just gate --base "$BASE_SHA"
           else
-            npm run gate
+            just gate
           fi
       # The OpenCode plugin's dependencies are the only ones a consumer installs (craft itself ships
       # none), so a known high-severity advisory in its LOCKED production closure fails the build.
@@ -67,8 +82,8 @@ jobs:
           fi
 
   # The Rust CLI in cli/ (realm @nick/craft, #445): format, lint at zero warnings (the workspace
-  # lints in cli/Cargo.toml become hard here), and the tests. A job of its own, not a gate step:
-  # `npm run gate` covers the Node side, and integrations/shared/gate-steps.test.mjs reads only the `test` job.
+  # lints in cli/Cargo.toml become hard here), and the tests, cli/xtask's included. A job of its own, not a gate
+  # step: `just gate` covers the Node side, and `cargo xtask gate-steps` reads only the `test` job.
   # The release builds for every target are native-builds.yml's, not every pull request's (realm @nick/craft, #671).
   rust:
     runs-on: ubuntu-latest
@@ -85,12 +100,20 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: cli
+      # cli/xtask's tests run the repository's justfile with just: the same pin as the test job's.
+      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
+        with:
+          just-version: '1.51.0'
       - name: cargo fmt
         run: cargo fmt --check
       - name: cargo clippy
         run: cargo clippy --all-targets --locked -- -D warnings
       - name: cargo test
         run: cargo test --locked
+      # The gate's completeness and its recipes' form, run here directly, not only as a step of `just gate`: a
+      # justfile edit that dropped the `gate-steps` step would otherwise silence the checker that judges it.
+      - name: cargo xtask gate-steps
+        run: cargo xtask gate-steps
       # The parity files the CLI owns are what it renders: regenerated, they must not change.
       - name: parity files are current
         run: |
