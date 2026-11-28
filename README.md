@@ -103,6 +103,10 @@ Once per repository, `craft:review-init` (`craft init`) can record the external 
 which check of your CI runs what. The review then reads those systems' source at the version you deploy. It is
 optional.
 
+After a while of reviews, `craft:retro` reads your runs in that repository — where the minutes and tokens went,
+which lenses found nothing, what did not run — and proposes changes to that profile, written only on your word,
+and a draft issue about craft itself, sent only if you choose.
+
 ### What works where
 
 | | Claude Code | OpenCode | Codex | pi |
@@ -145,8 +149,10 @@ scripts and proc macros (inside the repository's flake dev shell when it defines
 and `nix flake check` runs its checks. On a Rust change whose gate passed, and where `cargo mutants` is installed,
 the review also **runs the branch's test suite**: cargo-mutants runs the tests once per mutant of the changed lines,
 beside the lens rounds, for up to 10 minutes. A suite with side effects (a database, the network) or a heavy one runs
-then too. The reviewer's profile turns this off or bounds it: a `[mutants]` section with `off = true` or
-`budget_secs = <seconds>` in `~/.craft/projects/<id>/review.toml`. For a branch you do not trust, pass `gate=false`
+then too. The reviewer's profile turns this off or bounds it: ask the `craft:review-init` skill to turn the mutants
+off or give them a budget, and it writes the `[mutants]` section of `~/.craft/projects/<id>/review.toml` while
+keeping the rest. Do not run `craft init --write --mutants off` alone: a write rebuilds the whole profile from the
+flags it is given, so it would drop your integration points, CI map and lenses. For a branch you do not trust, pass `gate=false`
 (`--no-gate` on the command line): it turns off both.
 
 On pi and OpenCode that is not enough. pi has no sandbox: a review task's shell runs with your permissions, so

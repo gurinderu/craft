@@ -283,15 +283,17 @@ rule is added again after each plugin update.
 
 On a Rust change whose gate passed, the review runs the branch's tests once per mutant of the
 changed lines with cargo-mutants (when `cargo mutants` answers), beside the lens rounds, for up
-to 10 minutes. `init` does not write this section and keeps it on every write; the reviewer adds
-it by hand to the profile when the test suite should not run, or not for that long:
+to 10 minutes. `init --write` writes this section from `--mutants off` or `--mutants-budget
+<seconds>` (step 4) and replaces it on every write, so `mutants.flags` as `--propose` prints them
+keep it; a write with neither writes the defaults over it. `--mutants off` writes
 
 ```toml
 [mutants]
 off = true
 ```
 
-turns them off on this project; `budget_secs = 300` in place of `off` bounds them instead.
+and turns them off on this project; `--mutants-budget 300` writes `budget_secs = 300` and bounds
+them instead.
 
 Name it to the reviewer when their suite has side effects (a database, the network) or is heavy.
 
