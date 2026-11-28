@@ -14,8 +14,9 @@ import { copyDereferenced } from './materialize-claude-code.mjs'
 export const PACKAGE_NAME = 'craft-opencode'
 const PLUGIN = 'integrations/opencode/plugin'
 export const EXPORTS = { './server': `./${PLUGIN}/index.ts`, './tui': `./${PLUGIN}/tui/tui.mjs` }
-// The skills install.sh leaves out too: they drive the review through Claude Code's Workflow tool and `codex exec`.
-export const SKIPPED_SKILLS = ['develop', 'codex-review']
+// The skills install.sh leaves out too: they drive the review or the audit through Claude Code's Workflow tool and
+// `codex exec`.
+export const SKIPPED_SKILLS = ['develop', 'codex-review', 'audit']
 // Read whole at run time: the review's content, OpenCode's agents and commands, and the Claude Code agents whose
 // prompts the binary puts before a task (its rubric_of reads `<root>/integrations/claude-code/agents`).
 const TREES = ['content', 'integrations/opencode/agents', 'integrations/opencode/commands', 'integrations/claude-code/agents']

@@ -111,9 +111,10 @@ and a draft issue about craft itself, sent only if you choose.
 
 | | Claude Code | OpenCode | Codex | pi |
 |---|---|---|---|---|
-| Skills | all | all but `develop` and `codex-review` | all | `craft-review` only |
+| Skills | all | all but `develop`, `codex-review` and `audit` | all | `craft-review` only |
 | Diff review | yes | yes | yes — new, not yet observed in a real session | yes — observed from a checkout, not yet as an installed package |
 | `rust-audit` and `triage-findings` workflows | yes | 1.x only; on 2.x they refuse to run | no | no |
+| `audit` workflow (the whole project) | yes — new, not yet observed in a real session | no | no | no |
 | The `craft:develop` cycle up to a PR | yes | no | no | no |
 
 Linux and macOS. On Windows the binary is built for x86_64, but craft has not been run there.
@@ -164,7 +165,8 @@ PR's own OpenCode configuration and plugins, so its code runs even with `--no-ga
 
 ## What is inside
 
-- **The review** — `review`, the diff review; beside it `rust-audit`, a whole-crate audit before a release, and
+- **The review** — `review`, the diff review; beside it `audit`, the audit of a whole project in any language — every
+  tracked file as it stands, not a diff —, `rust-audit`, a whole-crate audit before a release, and
   `triage-findings`, which turns review findings and PR comments into one ordered fix plan.
 - **Skills** — Rust (testing, errors, ownership, concurrency, traits, performance, unsafe, architecture, security
   and the domains: web, CLI, fintech, cloud-native, embedded, ML), Nix (flakes, packaging, dev shells, NixOS), the

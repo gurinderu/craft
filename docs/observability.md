@@ -1,6 +1,6 @@
 # Observability — craft run records
 
-Every `review` / `rust-audit` / `triage-findings` run writes a structured record to a global
+Every `review` / `audit` / `rust-audit` / `triage-findings` run writes a structured record to a global
 per-user store so runs can be studied later. A `review` run's record is filed by the `craft`
 binary the workflow drives, under the name `review` with `driver: 'cli'`; a store also keeps what retired engines filed — the JS `review` (no `driver`),
 `cli-review`, `rust-review`, `nix-review`, `adversarial-review` — and the readers still read them.
@@ -120,7 +120,10 @@ backend; the step commands and older state without that field keep `claude-code`
 file went unread or a finding at Medium or above went unjudged), `findings` (total and severity mix
 of the settled findings, refuted ones aside), `audit {pass, paths, tracked, audited, outside, unread,
 batches, jobs, answered, tiers, heldUnverified}` and `notRun[]` (`audit:unread-files:<n>`,
-`audit:unjudged-findings:<n>`). A resumed pass files its own record of the whole audit so far.
+`audit:unjudged-findings:<n>`). A resumed pass files its own record of the whole audit so far. The Claude Code `audit`
+workflow starts it with `--record`, so the binary files these itself; the workflow files only the INCOMPLETE record
+of a run the binary never finished (a refused argument, a start or step it could not read), named `audit` too, as
+`triage-findings` does for its own.
 A review agent dispatched on its own records nothing. A store may still hold the `kind: "agent"` index
 lines such agents once appended themselves (the `rust-security-scanner`'s carried `toolsRun[]`); the
 readers list them, and no report is built on them.

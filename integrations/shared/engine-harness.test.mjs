@@ -504,6 +504,7 @@ test('every engine on disk is claimed by a roster — none may be forgotten', ()
 // engine -> the file whose runEngine() budget wall drives its budget death. GROUNDED below: the named
 // file must actually wall that engine, so an entry cannot claim a coverage the file does not carry.
 const BUDGET_DEATH_PINNED = {
+  audit: 'engine-budget-exhaustion.test.mjs',
   review: 'cli-review-engine.test.mjs',
   'rust-audit': 'engine-budget-exhaustion.test.mjs',
   'triage-findings': 'engine-budget-exhaustion.test.mjs',

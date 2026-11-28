@@ -5,6 +5,9 @@ import { shq } from './plugin-script.mjs'
 
 /** @typedef {{ degraded?: string[], limit?: string, resume?: boolean, abandoned?: string[] }} Said  what a submit tells the binary of the step's tasks */
 
+/** A flag with its value, quoted; '' when the value is ''. @param {string} name @param {string} value */
+export const flag = (name, value) => (value ? ` ${name} ${shq(value)}` : '')
+
 /**
  * The submit and status commands of the run kind `kind`: `submit` with a `--degraded` note for each way the
  * step's tasks ran weaker than asked, an `--abandoned` for each task abandoned at its deadline, the usage limit's text

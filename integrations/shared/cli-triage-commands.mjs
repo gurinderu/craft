@@ -1,24 +1,19 @@
-// The command lines of the triage on the CLI's step protocol (realm @nick/craft, node #616), as shell text for the
-// service agent's Bash: `craft triage start` with the engine's arguments, and the submit and status every kind shares
+// The start of the triage on the CLI's step protocol (realm @nick/craft, node #616), as shell text for the service
+// agent's Bash: `craft triage start` with the engine's arguments; the submit and status every kind shares
 // (integrations/shared/cli-step-commands.mjs). The prior ledger and the launcher's records reach the binary as files
 // read through process substitution — the binary refuses both from stdin at once — each one line of JSON the shell
 // quotes whole.
 import { shq } from './plugin-script.mjs'
-import { stepCommands } from './cli-step-commands.mjs'
+import { flag } from './cli-step-commands.mjs'
 
 /** @typedef {import('./cli-triage-options.mjs').TriageOptions} TriageOptions */
 
-/** The rounds after which the driver gives up, a backstop: the binary decides when the run is done. */
-export const MAX_ROUNDS = 12
+// A start reads the report and asks gh for the PR's threads; past a Bash call's default two minutes, so five.
+const START_TIMEOUT = "in one Bash call with a timeout of 300000 ms (it may read the PR's review threads through gh)"
 
-const commands = stepCommands('triage')
-/** The submit of a triage run. */
-export const triageSubmit = commands.submit
-/** Where a triage run stands. */
-export const triageStatus = commands.status
-
-/** A flag with its value, quoted; '' when the value is ''. @param {string} name @param {string} value */
-const flag = (name, value) => (value ? ` ${name} ${shq(value)}` : '')
+/** How the service agent runs the start: the JSON inside each `printf` copied as it stands. @param {TriageOptions} o */
+export const triageStartTimeout = o =>
+  o.priorLedger || o.priorDecisions ? `${START_TIMEOUT}, the JSON inside each \`printf\` copied character for character` : START_TIMEOUT
 
 /** A list argument as a file the binary reads: its JSON through process substitution; '' when none. @param {string} flagName @param {string} json */
 const listed = (flagName, json) => (json ? ` ${flagName} <(printf '%s' ${shq(json)})` : '')

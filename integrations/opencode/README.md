@@ -18,7 +18,7 @@ opencode plugin add git+https://github.com/gurinderu/craft#opencode-v0.61.0
 `opencode-v<version>` by each release) — it has no npm dependencies, so nothing else is installed — and writes the spec into the global
 `~/.config/opencode/opencode.json` `plugins` list; the same spec as one line of a project's `plugins` works too.
 The plugin brings craft's tools, its agents, the `/craft-review`, `/rust-audit` and `/triage-findings` commands,
-the skills (all but `develop` and `codex-review`) and the review's footer line — 2.x reads no agents, commands
+the skills (all but `develop`, `codex-review` and `audit`) and the review's footer line — 2.x reads no agents, commands
 or skills folder inside a package, so the plugin registers them itself. `opencode plugin list --builtin` lists
 it as `craft-rust` (a plain `opencode plugin list` does not). The spec names a fixed tag, so `opencode plugin update`
 never moves it. To move to a new release, remove the old spec and add the new one — adding the new tag's spec alone
@@ -84,8 +84,8 @@ opencode. The links point into this checkout, but a checkout does not change wha
 ## Use
 
 - **Skills** — auto-discovered; opencode's `skill` tool lists all of craft's skills and routes by description.
-  `install.sh` leaves out `develop` and `codex-review`, which drive the review through Claude Code's
-  Workflow tool and `codex exec`; in OpenCode the review is `/craft-review`.
+  `install.sh` leaves out `develop`, `codex-review` and `audit`, which drive the review or the audit through
+  Claude Code's Workflow tool and `codex exec`; in OpenCode the review is `/craft-review`.
 - **Agents** — `rust-reviewer`, `rust-architecture-reviewer`, `rust-security-scanner` and `rust-miri`
   are hidden subagents (they don't clutter `@`-autocomplete); the workflows dispatch them.
   `review-task` exists only for `/craft-review`'s tasks: hidden too, but `mode: all`, because the binary's own

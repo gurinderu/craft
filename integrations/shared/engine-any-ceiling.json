@@ -1,4 +1,5 @@
 {
+  "integrations/claude-code/src/audit.js": 0,
   "integrations/claude-code/src/review.js": 0,
   "integrations/claude-code/src/rust-audit.js": 0,
   "integrations/claude-code/src/triage-findings.js": 0
