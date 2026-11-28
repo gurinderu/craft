@@ -40,7 +40,7 @@ impl Writer for Fake {
         let report = std::fs::read_to_string(super::report_path(call.run)).ok();
         request["atWrite"] = json!({
             "report": report.is_some(),
-            "banner": report.is_some_and(|r| r.contains("Not filed")),
+            "banner": report.and_then(|r| r.lines().find(|l| l.starts_with("> **Not filed**")).map(str::to_owned)),
             "record": super::record_path(call.run).is_file(),
             "unread": super::unread_path(call.run).is_file(),
             "unverified": super::unverified_path(call.run).is_file(),

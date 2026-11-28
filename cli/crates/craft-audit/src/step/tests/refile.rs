@@ -18,10 +18,11 @@ fn a_record_that_did_not_land_leads_the_report_and_a_resume_files_it_again_as_a_
         "a resume is what files it: {done}"
     );
     let report = || std::fs::read_to_string(report_path(&s.run)).unwrap();
+    let banner = format!(
+        "> **Not filed**: the run record — the store is read-only; a resume files a record — this pass's, or its own when a new pass reads what is left: `{resume}`"
+    );
     assert!(
-        report().starts_with(&format!(
-            "# craft audit\n\n> **Not filed**: the run record — the store is read-only; a resume files a record — this pass's, or its own when a new pass reads what is left: `{resume}`\n"
-        )),
+        report().starts_with(&format!("# craft audit\n\n{banner}\n")),
         "{}",
         report()
     );
@@ -34,7 +35,7 @@ fn a_record_that_did_not_land_leads_the_report_and_a_resume_files_it_again_as_a_
         lost[0].as_str().is_some_and(|l| l.contains("read-only")),
         "{lost}"
     );
-    assert_eq!(w.calls.borrow()[1]["atWrite"]["banner"], true);
+    assert_eq!(w.calls.borrow()[1]["atWrite"]["banner"], banner.as_str());
     assert!(report().contains("Not filed"), "{}", report());
     *w.refuse.borrow_mut() = false;
     let refiled = next(&s.run, &w, &RESUME);
@@ -46,7 +47,7 @@ fn a_record_that_did_not_land_leads_the_report_and_a_resume_files_it_again_as_a_
             calls[2]["retry"].clone(),
             calls[2]["atWrite"]["banner"].clone()
         ),
-        (true.into(), true.into())
+        (true.into(), banner.as_str().into())
     );
     assert!(!report().contains("Not filed"), "{}", report());
     let again = submit(&s.run, None, &RESUME, &w);
@@ -94,5 +95,5 @@ fn the_run_directory_is_written_before_the_store_so_a_failed_write_lands_no_reco
     for file in ["report", "record"] {
         assert_eq!(calls[0]["atWrite"][file], true, "{file}");
     }
-    assert_eq!(calls[0]["atWrite"]["banner"], false);
+    assert_eq!(calls[0]["atWrite"]["banner"], serde_json::Value::Null);
 }
