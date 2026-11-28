@@ -6,6 +6,7 @@ struct Triage {
     inner: Fake,
     status: Option<Value>,
     refile: Option<Value>,
+    refile_error: Option<&'static str>,
     calls: RefCell<Vec<Said>>,
     first: Option<Value>,
 }
@@ -25,6 +26,11 @@ impl Protocol for Triage {
             && let Some(step) = &self.refile
         {
             return Ok(step.clone());
+        }
+        if self.calls.borrow().len() > 1
+            && let Some(error) = self.refile_error
+        {
+            bail!(error)
         }
         bail!("lost submit response")
     }
@@ -46,6 +52,7 @@ fn fake(b: &Bench, status: Option<Value>) -> Triage {
         inner: b.fake(vec![Spec("a", "do a", None)]),
         status,
         refile: None,
+        refile_error: None,
         calls: RefCell::default(),
         first: None,
     }
@@ -70,7 +77,7 @@ async fn lost_submit_and_lost_resume_recover_a_stop_before_a_stale_plan_even_wit
         assert!(a.text.contains("wait until tomorrow"), "{}", a.text);
         assert!(
             a.text
-                .contains("the step after the stop — lost submit response"),
+                .contains("the step whose response was lost — lost submit response"),
             "{}",
             a.text
         );
@@ -99,6 +106,11 @@ async fn lost_submit_recovers_done_and_refiles_only_when_unfiled() {
         assert!(a.finished, "{}", a.text);
         assert!(a.text.contains("checked plan"));
         assert!(!a.text.contains("filed again"));
+        assert!(
+            !a.text.contains("the step whose response was lost"),
+            "{}",
+            a.text
+        );
         let calls = f.calls.borrow();
         assert_eq!(calls.len(), if filed { 1 } else { 2 });
         if !filed {
@@ -137,18 +149,19 @@ async fn failed_refiling_keeps_the_confirmed_plan_and_names_the_missing_record()
         r#"{"plan_markdown":"body","summary":"checked plan","ledger":[]}"#,
     )
     .unwrap();
-    let f = fake(
+    let mut f = fake(
         &b,
         Some(
             json!({"done":true,"planFile":plan,"filing":{"record":"failed","lost":["record — unavailable"]}}),
         ),
     );
+    f.refile_error = Some("refiling refused");
     let a = b.drive(&f).await;
     assert!(a.finished, "{}", a.text);
     assert!(a.text.contains("record — unavailable") && a.text.contains("filed again"));
     for lost in [
-        "the lost step — lost submit response",
-        "the record's refiling — lost submit response",
+        "the step whose response was lost — lost submit response",
+        "the record's refiling — refiling refused",
     ] {
         assert!(a.text.contains(lost), "{}", a.text);
     }
