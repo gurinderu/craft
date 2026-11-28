@@ -359,7 +359,7 @@ const agentSection = () => agentUnavailableSection(
     nestedAgentNotes.flatMap(n => n.emptied.map(x => ({ ...x, what: `lens dispatch(es) of the nested review ${n.dimension}` })))),
 )
 // The record, in the shape both engines write: this audit's OWN misses and fallbacks only. Each nested
-// review files its own record (`nested`, `via: 'rust-audit'`) carrying its fact, and analyze-runs counts
+// review files its own record (`nested`, `via: 'rust-audit'`) carrying its fact, and `craft runs retro` counts
 // every record alike, so folding the nested fact in here counted one unavailable agent twice; the
 // nested fact stays in this audit's report section above.
 const agentRecord = () => agentUnavailableRecord(
@@ -818,7 +818,7 @@ const results = (await auditLimit.round('the audit dimensions', () => parallel(t
 // edges) and Miri (no unsafe) — those are genuine "nothing to check here", not "could not check".
 const ran = new Set(results.map(r => r.dimension))
 // A review the red gate kept from starting is not in `notRun`, which the run store ranks as fragility a re-run fixes
-// (integrations/shared/analyze-runs.mjs): it is a decision a re-run makes again — the red gate is the verdict, as a review's own red
+// (`craft runs retro`): it is a decision a re-run makes again — the red gate is the verdict, as a review's own red
 // gate ends it before any lens — so it is said as NOT RUN (gate red) and filed apart, as `gateBlocked`.
 const notRun = dispatched.filter(d => !ran.has(d) && !gateBlocked.includes(d))
 if (auditLimit.seen()) notRun.unshift(auditLimit.note())
@@ -931,9 +931,9 @@ const auditRecord = {
   }),
   // The rate is over what was JUDGED, not over the candidates: charging the deaths to the detector
   // is the same conflation the dimension's verdict was fixed for, and this record — not the console
-  // report — is what analyze-runs averages into the "noisy lens" call. `refuted` and `died` ride
+  // report — is what `craft runs retro` averages into the "noisy lens" call. `refuted` and `died` ride
   // along so a reader can see the two apart; `refuteRate` keeps its name and its 0..1 range, so an
-  // older reader keeps working (analyze-runs skips a non-number, which is what an unjudged run now
+  // older reader keeps working (`craft runs retro` skips a non-number, which is what an unjudged run now
   // stores instead of a fabricated 0).
   verification: verificationRecord(uc),
   notRun,

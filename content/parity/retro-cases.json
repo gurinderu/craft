@@ -1,0 +1,2147 @@
+{
+  "note": "The figures integrations/shared/analyze-runs.mjs printed over this store before craft runs retro, hooks and round-pairs carried them; frozen golden data, edited by hand.",
+  "store": {
+    "2026-11-01T10-00-00Z-01.json": {
+      "ts": "2026-11-01T10-00-00Z",
+      "schemaVersion": 1,
+      "kind": "workflow",
+      "name": "review",
+      "runtime": "claude-code",
+      "craftVersion": "0.9.0",
+      "engineRevision": 4,
+      "project": "/w/p",
+      "branch": "feat/a",
+      "findings": {
+        "total": 3,
+        "bySeverity": {
+          "High": 3
+        }
+      },
+      "notRun": [],
+      "head": "abcdef1234",
+      "base": "main",
+      "filesDigest": "fd1",
+      "dirty": false,
+      "lensScope": "full",
+      "intentDigest": "i",
+      "specDigest": "s",
+      "gate": {
+        "status": "pass"
+      },
+      "languages": [
+        "rust"
+      ],
+      "scout": [
+        {
+          "language": "rust",
+          "lenses": [
+            "b",
+            "a"
+          ],
+          "model": "m",
+          "maxRounds": 2
+        }
+      ],
+      "round": 1,
+      "verdict": "Block",
+      "verification": {
+        "candidates": 5,
+        "confirmed": 3,
+        "refuteRate": 0.4,
+        "unverified": 1,
+        "thinned": 2
+      },
+      "dimensions": [
+        {
+          "dimension": "rust:errors",
+          "ran": true,
+          "findingCount": 3,
+          "confirmedCount": 3,
+          "refutedCount": 2,
+          "suspectedCount": 0,
+          "unverifiedCount": 1,
+          "bySeverity": {
+            "High": 3
+          }
+        },
+        {
+          "dimension": "rust:tests",
+          "ran": false
+        },
+        {
+          "dimension": "rust:noise",
+          "findingCount": 1,
+          "confirmedCount": 1,
+          "refutedCount": 3,
+          "suspectedCount": 1
+        }
+      ],
+      "cost": {
+        "cacheRead": 970,
+        "cacheWrite": 10,
+        "input": 10,
+        "output": 10,
+        "total": 1000,
+        "agents": 3,
+        "rule": "per-message",
+        "source": "wf_1000"
+      },
+      "outputTokens": 500,
+      "outputTokensScope": "turn-delta",
+      "surfaceGate": {
+        "dropped": [
+          "tests",
+          "docs"
+        ],
+        "dispatched": [
+          "errors"
+        ]
+      },
+      "savedByFloor": [
+        "Low a",
+        "Low b"
+      ],
+      "harmCap": {
+        "lowered": 2
+      },
+      "uncoveredFiles": [
+        "x.md",
+        "x.md",
+        "y.toml"
+      ],
+      "agentUnavailable": [
+        "craft:rust-reviewer"
+      ],
+      "agentFallbacks": {
+        "craft:rust-reviewer": 4
+      },
+      "memory": {
+        "source": "recalled",
+        "backend": "mcp iskron",
+        "count": 4,
+        "questions": 1,
+        "rules": 2,
+        "externals": 1,
+        "covered": 1
+      },
+      "memoryContradictions": {
+        "count": 2,
+        "doubtSignsAlone": 1,
+        "findings": [
+          {
+            "fp": "f1",
+            "toPr": true
+          },
+          {
+            "fp": "f2",
+            "toPr": false
+          },
+          {
+            "toPr": null
+          }
+        ]
+      },
+      "sorting": {
+        "defect": 2,
+        "doubtful": 3,
+        "choices": {
+          "1": {
+            "choice": "defect"
+          },
+          "2": {
+            "choice": "question"
+          }
+        }
+      },
+      "runtimeStats": {
+        "agents": 9,
+        "wallClockMinutes": 12
+      },
+      "reReview": null
+    },
+    "2026-11-01T11-00-00Z-02.json": {
+      "ts": "2026-11-01T11-00-00Z",
+      "schemaVersion": 1,
+      "kind": "workflow",
+      "name": "review",
+      "runtime": "claude-code",
+      "craftVersion": "0.9.0",
+      "engineRevision": 4,
+      "project": "/w/p",
+      "branch": "feat/a",
+      "findings": {
+        "total": 1,
+        "bySeverity": {
+          "Medium": 1
+        }
+      },
+      "notRun": [],
+      "head": "abcdef1234",
+      "base": "main",
+      "filesDigest": "fd1",
+      "dirty": false,
+      "lensScope": "full",
+      "intentDigest": "i",
+      "specDigest": "s",
+      "gate": {
+        "status": "pass"
+      },
+      "languages": [
+        "rust"
+      ],
+      "scout": [
+        {
+          "language": "rust",
+          "lenses": [
+            "b",
+            "a"
+          ],
+          "model": "m",
+          "maxRounds": 2
+        }
+      ],
+      "round": 2,
+      "verdict": "Warning",
+      "verification": {
+        "candidates": 2,
+        "confirmed": 1,
+        "refuteRate": 0.5,
+        "thinned": 0
+      },
+      "dimensions": [
+        {
+          "dimension": "rust:errors",
+          "findingCount": 1,
+          "confirmedCount": 1,
+          "refutedCount": 1,
+          "suspectedCount": 0,
+          "bySeverity": {
+            "Medium": 1
+          }
+        }
+      ],
+      "cost": {
+        "cacheRead": 670,
+        "cacheWrite": 10,
+        "input": 10,
+        "output": 10,
+        "total": 700,
+        "agents": 3,
+        "rule": "per-message",
+        "source": "wf_b"
+      },
+      "outputTokens": 800,
+      "outputTokensScope": "turn-delta",
+      "reReview": {
+        "chained": true,
+        "ledgerDegraded": false,
+        "journalSourced": false,
+        "priorRound": 1,
+        "priorHead": "abcdef1234"
+      },
+      "ledger": [
+        {
+          "fp": "f1",
+          "disposition": "open"
+        }
+      ],
+      "surfaceGate": {
+        "dropped": [
+          "tests"
+        ]
+      },
+      "savedByFloorPremiseHeld": false,
+      "memory": {
+        "source": "none",
+        "why": "not recalled — the store was empty; more",
+        "backend": "b",
+        "passed": 2
+      },
+      "reviewerAgentUnavailable": [
+        "nix"
+      ],
+      "reviewerAgentFallbacks": {
+        "nix": 2
+      },
+      "runtimeStats": {
+        "agents": 5,
+        "wallClockMinutes": 6
+      },
+      "phases": [
+        {
+          "phase": "scout",
+          "at": "2026-11-01T10:30:00.000Z"
+        },
+        {
+          "phase": "lenses",
+          "at": "2026-11-01T10:40:00.000Z"
+        }
+      ]
+    },
+    "2026-11-01T12-00-00Z-03.json": {
+      "ts": "2026-11-01T12-00-00Z",
+      "schemaVersion": 1,
+      "kind": "workflow",
+      "name": "review",
+      "runtime": "claude-code",
+      "craftVersion": "0.9.0",
+      "engineRevision": 4,
+      "project": "/w/p",
+      "branch": "feat/a",
+      "findings": {
+        "total": 0,
+        "bySeverity": {}
+      },
+      "notRun": [],
+      "head": "ffff000011",
+      "base": "main",
+      "filesDigest": "fd1",
+      "dirty": false,
+      "lensScope": "full",
+      "intentDigest": "i",
+      "specDigest": "s",
+      "gate": {
+        "status": "fail"
+      },
+      "languages": [
+        "rust"
+      ],
+      "scout": [
+        {
+          "language": "rust",
+          "lenses": [
+            "b",
+            "a"
+          ],
+          "model": "m",
+          "maxRounds": 2
+        }
+      ],
+      "round": 3,
+      "verdict": "Approve",
+      "verification": {
+        "candidates": 0,
+        "confirmed": 0,
+        "refuteRate": 0
+      },
+      "cost": {
+        "cacheRead": 370,
+        "cacheWrite": 10,
+        "input": 10,
+        "output": 10,
+        "total": 400,
+        "agents": 3,
+        "rule": "per-message",
+        "source": "wf_400",
+        "skipped": 1
+      },
+      "outputTokens": 300,
+      "outputTokensScope": "turn-delta",
+      "reReview": {
+        "chained": true,
+        "ledgerDegraded": false,
+        "journalSourced": false,
+        "priorRound": 2,
+        "priorHead": "abcdef1234"
+      },
+      "surfaceGate": [],
+      "ledger": [
+        {
+          "fp": "f1",
+          "disposition": "closed"
+        },
+        {
+          "fp": "f2",
+          "disposition": "rejected"
+        }
+      ],
+      "memory": {
+        "source": "none",
+        "why": "the recall agent died at step 2",
+        "queryError": "x"
+      },
+      "depth": "light",
+      "runtimeStats": {
+        "agents": 2,
+        "wallClockMinutes": 3
+      }
+    },
+    "2026-11-02T10-00-00Z-04.json": {
+      "ts": "2026-11-02T10-00-00Z",
+      "schemaVersion": 1,
+      "kind": "workflow",
+      "name": "review",
+      "runtime": "claude-code",
+      "craftVersion": "0.9.0",
+      "engineRevision": 4,
+      "project": "/w/p",
+      "branch": "feat/k",
+      "findings": {
+        "total": 0,
+        "bySeverity": {}
+      },
+      "notRun": [],
+      "verdict": "Approve (PARTIAL COVERAGE)",
+      "verification": {
+        "refuteRate": 0.1
+      },
+      "outputTokens": 50,
+      "outputTokensScope": "turn-delta",
+      "memory": {
+        "source": "launcher",
+        "recallDegraded": "y"
+      },
+      "cost": {
+        "total": 0,
+        "cacheRead": 0,
+        "rule": "per-message"
+      }
+    },
+    "2026-11-02T10-10-00Z-05.json": {
+      "ts": "2026-11-02T10-10-00Z",
+      "schemaVersion": 1,
+      "kind": "workflow",
+      "name": "review",
+      "runtime": "claude-code",
+      "craftVersion": "0.9.0",
+      "engineRevision": 4,
+      "project": "/w/p",
+      "branch": "feat/k",
+      "findings": {
+        "total": 0,
+        "bySeverity": {}
+      },
+      "notRun": [],
+      "verdict": "Approve (PARTIAL COVERAGE)",
+      "verification": {
+        "refuteRate": 0.1
+      },
+      "outputTokens": 50,
+      "outputTokensScope": "turn-delta",
+      "memory": {
+        "source": "launcher",
+        "recallDegraded": "y"
+      },
+      "cost": "x"
+    },
+    "2026-11-02T10-20-00Z-06.json": {
+      "ts": "2026-11-02T10-20-00Z",
+      "schemaVersion": 1,
+      "kind": "workflow",
+      "name": "review",
+      "runtime": "claude-code",
+      "craftVersion": "0.9.0",
+      "engineRevision": 4,
+      "project": "/w/p",
+      "branch": "feat/k",
+      "findings": {
+        "total": 0,
+        "bySeverity": {}
+      },
+      "notRun": [],
+      "verdict": "Approve (PARTIAL COVERAGE)",
+      "verification": {
+        "refuteRate": 0.1
+      },
+      "outputTokens": 50,
+      "outputTokensScope": "turn-delta",
+      "memory": {
+        "source": "launcher",
+        "recallDegraded": "y"
+      },
+      "cost": {
+        "cacheRead": 5,
+        "cacheWrite": 0,
+        "input": 0,
+        "output": 0,
+        "total": 5
+      }
+    },
+    "2026-11-02T10-30-00Z-07.json": {
+      "ts": "2026-11-02T10-30-00Z",
+      "schemaVersion": 1,
+      "kind": "workflow",
+      "name": "review",
+      "runtime": "claude-code",
+      "craftVersion": "0.9.0",
+      "engineRevision": 4,
+      "project": "/w/p",
+      "branch": "feat/k",
+      "findings": {
+        "total": 0,
+        "bySeverity": {}
+      },
+      "notRun": [],
+      "verdict": "Approve (PARTIAL COVERAGE)",
+      "verification": {
+        "refuteRate": 0.1
+      },
+      "outputTokens": 50,
+      "outputTokensScope": "turn-delta",
+      "memory": {
+        "source": "launcher",
+        "recallDegraded": "y"
+      },
+      "cost": {
+        "total": 5,
+        "cacheRead": 5,
+        "rule": "weird"
+      }
+    },
+    "2026-11-02T10-40-00Z-08.json": {
+      "ts": "2026-11-02T10-40-00Z",
+      "schemaVersion": 1,
+      "kind": "workflow",
+      "name": "review",
+      "runtime": "claude-code",
+      "craftVersion": "0.9.0",
+      "engineRevision": 4,
+      "project": "/w/p",
+      "branch": "feat/k",
+      "findings": {
+        "total": 0,
+        "bySeverity": {}
+      },
+      "notRun": [],
+      "verdict": "Approve (PARTIAL COVERAGE)",
+      "verification": {
+        "refuteRate": 0.1
+      },
+      "outputTokens": 50,
+      "outputTokensScope": "turn-delta",
+      "memory": {
+        "source": "launcher",
+        "recallDegraded": "y"
+      },
+      "gate": {
+        "status": "fail"
+      },
+      "surfaceGate": {
+        "dropped": [
+          "x"
+        ],
+        "dispatched": []
+      }
+    },
+    "2026-11-02T11-00-00Z-09.json": {
+      "ts": "2026-11-02T11-00-00Z",
+      "schemaVersion": 1,
+      "kind": "workflow",
+      "name": "review",
+      "runtime": "claude-code",
+      "craftVersion": "0.9.0",
+      "engineRevision": 4,
+      "project": "/w/p",
+      "branch": "feat/p",
+      "findings": {
+        "total": 0,
+        "bySeverity": {}
+      },
+      "notRun": [],
+      "verdict": "Approve",
+      "round": 1,
+      "outputTokens": 100,
+      "outputTokensScope": "turn-delta"
+    },
+    "2026-11-02T11-10-00Z-10.json": {
+      "ts": "2026-11-02T11-10-00Z",
+      "schemaVersion": 1,
+      "kind": "workflow",
+      "name": "review",
+      "runtime": "claude-code",
+      "craftVersion": "0.9.0",
+      "engineRevision": 4,
+      "project": "/w/p",
+      "branch": "feat/p",
+      "findings": {
+        "total": 0,
+        "bySeverity": {}
+      },
+      "notRun": [],
+      "verdict": "Approve",
+      "round": 0,
+      "outputTokens": 201,
+      "outputTokensScope": "turn-delta"
+    },
+    "2026-11-02T11-20-00Z-11.json": {
+      "ts": "2026-11-02T11-20-00Z",
+      "schemaVersion": 1,
+      "kind": "workflow",
+      "name": "review",
+      "runtime": "claude-code",
+      "craftVersion": "0.9.0",
+      "engineRevision": 4,
+      "project": "/w/p",
+      "branch": "feat/p",
+      "findings": {
+        "total": 0,
+        "bySeverity": {}
+      },
+      "notRun": [],
+      "verdict": "Approve",
+      "round": 2,
+      "outputTokens": 301,
+      "outputTokensScope": "turn-delta"
+    },
+    "2026-11-02T11-30-00Z-12.json": {
+      "ts": "2026-11-02T11-30-00Z",
+      "schemaVersion": 1,
+      "kind": "workflow",
+      "name": "review",
+      "runtime": "claude-code",
+      "craftVersion": "0.9.0",
+      "engineRevision": 4,
+      "project": "/w/p",
+      "branch": "feat/p",
+      "findings": {
+        "total": 0,
+        "bySeverity": {}
+      },
+      "notRun": [],
+      "verdict": "Approve",
+      "round": 3,
+      "outputTokens": 999
+    },
+    "2026-11-02T11-40-00Z-13.json": {
+      "ts": "2026-11-02T11-40-00Z",
+      "schemaVersion": 1,
+      "kind": "workflow",
+      "name": "review",
+      "runtime": "claude-code",
+      "craftVersion": "0.9.0",
+      "engineRevision": 4,
+      "project": "/w/p",
+      "branch": "feat/p",
+      "findings": {
+        "total": 0,
+        "bySeverity": {}
+      },
+      "notRun": [],
+      "verdict": "Approve",
+      "round": 2,
+      "outputTokens": 400,
+      "outputTokensScope": "turn-delta"
+    },
+    "2026-11-03T09-00-00Z-14.json": {
+      "ts": "2026-11-03T09-00-00Z",
+      "schemaVersion": 1,
+      "kind": "workflow",
+      "name": "review",
+      "runtime": "claude-code",
+      "craftVersion": "0.9.0",
+      "engineRevision": 4,
+      "project": "/w/p",
+      "branch": "feat/c",
+      "findings": {
+        "total": 0,
+        "bySeverity": {}
+      },
+      "notRun": [],
+      "driver": "cli",
+      "cliRun": "/s/cli/1",
+      "head": "1234567890",
+      "verdict": "INCOMPLETE",
+      "cost": {
+        "cacheRead": 170,
+        "cacheWrite": 10,
+        "input": 10,
+        "output": 10,
+        "total": 200,
+        "agents": 3,
+        "rule": "per-message",
+        "source": "wf_c1"
+      }
+    },
+    "2026-11-03T10-00-00Z-15.json": {
+      "ts": "2026-11-03T10-00-00Z",
+      "schemaVersion": 1,
+      "kind": "workflow",
+      "name": "review",
+      "runtime": "claude-code",
+      "craftVersion": "0.9.0",
+      "engineRevision": 4,
+      "project": "/w/p",
+      "branch": "feat/c",
+      "findings": {
+        "total": 0,
+        "bySeverity": {}
+      },
+      "notRun": [],
+      "driver": "cli",
+      "cliRun": "/s/cli/1",
+      "head": "1234567890",
+      "verdict": "Approve",
+      "round": 1,
+      "cost": {
+        "cacheRead": 270,
+        "cacheWrite": 10,
+        "input": 10,
+        "output": 10,
+        "total": 300,
+        "agents": 3,
+        "rule": "per-message",
+        "source": "wf_c2"
+      },
+      "depth": "light",
+      "dimensions": [
+        {
+          "dimension": "rust:errors",
+          "findingCount": 2,
+          "confirmedCount": 1,
+          "refutedCount": 0,
+          "suspectedCount": 1,
+          "unverifiedCount": 0
+        }
+      ],
+      "verification": {
+        "confirmed": 1
+      },
+      "runtimeStats": {
+        "agents": 4,
+        "wallClockMinutes": 2
+      },
+      "memoryContradictions": {
+        "count": 1,
+        "findings": [
+          {
+            "fp": "zz",
+            "toPr": false
+          }
+        ]
+      }
+    },
+    "2026-11-03T11-00-00Z-16.json": {
+      "ts": "2026-11-03T11-00-00Z",
+      "schemaVersion": 1,
+      "kind": "workflow",
+      "name": "review",
+      "runtime": "claude-code",
+      "craftVersion": "0.9.0",
+      "engineRevision": 4,
+      "project": "/w/p",
+      "branch": "feat/c",
+      "findings": {
+        "total": 0,
+        "bySeverity": {}
+      },
+      "notRun": [
+        "verifier died"
+      ],
+      "driver": "cli",
+      "cliRun": "/s/cli/2",
+      "head": "1234567890",
+      "verdict": "Block",
+      "round": 2,
+      "outputTokens": 70,
+      "cost": {
+        "cacheRead": 470,
+        "cacheWrite": 10,
+        "input": 10,
+        "output": 10,
+        "total": 500,
+        "agents": 3,
+        "rule": "per-message",
+        "source": "wf_c3"
+      },
+      "capped": [
+        "metrics lens x could not look — a.rs, b.rs"
+      ]
+    },
+    "2026-11-04T10-00-00Z-17.json": {
+      "ts": "2026-11-04T10-00-00Z",
+      "schemaVersion": 1,
+      "kind": "workflow",
+      "name": "review",
+      "runtime": "claude-code",
+      "craftVersion": "0.9.0",
+      "engineRevision": 4,
+      "project": "/w/p",
+      "branch": "feat/d",
+      "findings": {
+        "total": 2,
+        "bySeverity": {
+          "Low": 2
+        }
+      },
+      "notRun": [],
+      "head": "dddddddddd",
+      "filesDigest": "dd",
+      "round": 1,
+      "verdict": "Warning"
+    },
+    "2026-11-04T10-05-00Z-18.json": {
+      "ts": "2026-11-04T10-05-00Z",
+      "schemaVersion": 1,
+      "kind": "workflow",
+      "name": "review",
+      "runtime": "claude-code",
+      "craftVersion": "0.9.0",
+      "engineRevision": 4,
+      "project": "/w/p",
+      "branch": "feat/d",
+      "findings": {
+        "total": 2,
+        "bySeverity": {
+          "Low": 2
+        }
+      },
+      "notRun": [],
+      "head": "dddddddddd",
+      "filesDigest": "dd",
+      "round": 1,
+      "verdict": "Warning"
+    },
+    "2026-11-05T10-00-00Z-19.json": {
+      "ts": "2026-11-05T10-00-00Z",
+      "schemaVersion": 1,
+      "kind": "workflow",
+      "name": "rust-audit",
+      "runtime": "claude-code",
+      "craftVersion": "0.9.0",
+      "engineRevision": 3,
+      "project": "/w/p",
+      "branch": "feat/e",
+      "findings": {
+        "total": 0,
+        "bySeverity": {}
+      },
+      "notRun": [],
+      "verdict": "Healthy"
+    },
+    "2026-11-05T11-00-00Z-20.json": {
+      "ts": "2026-11-05T11-00-00Z",
+      "schemaVersion": 1,
+      "kind": "workflow",
+      "name": "triage-findings",
+      "runtime": "claude-code",
+      "craftVersion": "0.8.0",
+      "project": "/w/p",
+      "branch": "feat/a",
+      "findings": {
+        "total": 0,
+        "bySeverity": {}
+      },
+      "notRun": [],
+      "verdict": "",
+      "triage": {
+        "accept": 1
+      }
+    },
+    "2026-11-06T10-00-00Z-21.json": {
+      "ts": "2026-11-06T10-00-00Z",
+      "schemaVersion": 1,
+      "kind": "develop",
+      "name": "develop",
+      "project": "/w/p",
+      "runtime": "claude-code",
+      "develop": {
+        "mode": "light",
+        "outcome": "converged",
+        "rounds": [
+          {
+            "engine": "e",
+            "scope": "full",
+            "verdict": "Block",
+            "mediumPlus": 2
+          },
+          {
+            "engine": "e",
+            "scope": "delta",
+            "verdict": "Approve",
+            "mediumPlus": 0
+          }
+        ],
+        "fullReviews": [
+          {
+            "afterRound": 2,
+            "engine": "e",
+            "verdict": "Approve",
+            "mediumPlus": 0
+          }
+        ]
+      }
+    },
+    "2026-11-06T11-00-00Z-22.json": {
+      "ts": "2026-11-06T11-00-00Z",
+      "schemaVersion": 1,
+      "kind": "develop",
+      "name": "develop",
+      "project": "/w/p",
+      "runtime": "claude-code",
+      "develop": {
+        "mode": "full",
+        "outcome": "capped",
+        "rounds": [
+          {
+            "engine": "e",
+            "scope": "full",
+            "verdict": "Block",
+            "mediumPlus": 1
+          }
+        ],
+        "fullReviews": [
+          {
+            "afterRound": 1,
+            "engine": "e",
+            "verdict": "Block",
+            "mediumPlus": 3
+          },
+          {
+            "afterRound": 1,
+            "engine": "e",
+            "verdict": "x",
+            "mediumPlus": null
+          }
+        ]
+      }
+    },
+    "2026-11-06T12-00-00Z-23.json": {
+      "ts": "2026-11-06T12-00-00Z",
+      "schemaVersion": 1,
+      "kind": "develop",
+      "name": "develop",
+      "project": "/w/p",
+      "runtime": "claude-code",
+      "develop": {
+        "outcome": "what"
+      }
+    },
+    "2026-11-01T10-20-00Z-24.json": {
+      "ts": "2026-11-01T10-20-00Z",
+      "schemaVersion": 1,
+      "kind": "workflow",
+      "name": "review",
+      "runtime": "claude-code",
+      "engineRevision": 4,
+      "project": "/w/p",
+      "branch": "feat/a",
+      "findings": {
+        "total": 0,
+        "bySeverity": {}
+      },
+      "notRun": [],
+      "head": "abcdef1234",
+      "base": "main",
+      "filesDigest": "fd1",
+      "dirty": false,
+      "lensScope": "full",
+      "intentDigest": "i",
+      "specDigest": "s",
+      "gate": {
+        "status": "pass"
+      },
+      "languages": [
+        "rust"
+      ],
+      "scout": [
+        {
+          "language": "rust",
+          "lenses": [
+            "b",
+            "a"
+          ],
+          "model": "m",
+          "maxRounds": 2
+        }
+      ],
+      "partial": true,
+      "partialReason": "died",
+      "phases": [
+        {
+          "phase": "scout",
+          "at": "2026-11-01T10:30:00.000Z",
+          "craftVersion": "0.9.0"
+        }
+      ]
+    },
+    "2026-11-07T10-00-00Z-25.json": {
+      "ts": "2026-11-07T10-00-00Z",
+      "schemaVersion": 1,
+      "kind": "workflow",
+      "name": "review",
+      "runtime": "claude-code",
+      "craftVersion": "0.9.0",
+      "engineRevision": 4,
+      "project": "/w/p",
+      "branch": "feat/a",
+      "findings": {
+        "total": 0,
+        "bySeverity": {}
+      },
+      "notRun": [],
+      "partial": true,
+      "partialReason": "lost",
+      "runtimeStats": {
+        "agents": 3,
+        "wallClockMinutes": 40,
+        "longestStallSeconds": 900
+      }
+    },
+    "2026-11-07T11-00-00Z-26.json": {
+      "ts": "2026-11-07T11-00-00Z",
+      "schemaVersion": 1,
+      "kind": "workflow",
+      "name": "review",
+      "runtime": "claude-code",
+      "engineRevision": 4,
+      "project": "/w/p",
+      "branch": "feat/z",
+      "findings": {
+        "total": 0,
+        "bySeverity": {}
+      },
+      "notRun": [],
+      "partial": true
+    },
+    "2026-11-08T10-00-00Z-27.json": {
+      "ts": "2026-11-08T10-00-00Z",
+      "kind": "workflow",
+      "name": "review"
+    }
+  },
+  "hooks": "{\"ts\":\"2026-11-01T09:00:00.000Z\",\"repo\":\"/w/p\",\"spoke\":true,\"found\":[],\"silent\":null}\n{\"ts\":\"2026-11-01T09:30:00.000Z\",\"repo\":\"/w/q\",\"spoke\":false,\"found\":[],\"silent\":\"nothing-declared\"}\n{\"ts\":\"2026-11-03T10:30:00.000Z\",\"repo\":\"/w/p\",\"spoke\":true,\"found\":[],\"silent\":null,\"event\":\"UserPromptSubmit\",\"reason\":\"re-review-nudge\"}\n{\"ts\":\"2026-11-03T10:31:00.000Z\",\"repo\":\"/w/p\",\"spoke\":false,\"found\":[],\"silent\":\"off-env\",\"event\":\"UserPromptSubmit\"}\n{\"ts\":\"2026-11-03T10:32:00.000Z\",\"repo\":\"/w/p\",\"spoke\":false,\"found\":[],\"silent\":\"off-env\",\"event\":\"UserPromptSubmit\"}\n{\"ts\":\"2026-11-03T10:33:00.000Z\",\"repo\":\"/w/p\",\"spoke\":true,\"found\":[],\"silent\":null,\"event\":\"chat.message\"}\n{torn\n",
+  "expected": {
+    "retro": {
+      "summary": {
+        "runs": 18,
+        "partialCoverage": 5,
+        "folded": 2,
+        "legacy": 1,
+        "unattributed": 1
+      },
+      "engine": {
+        "claude-code 0.9.0 r4": 14,
+        "claude-code+cli 0.9.0 r4": 2,
+        "claude-code 0.8.0 r?": 1,
+        "claude-code 0.9.0 r3": 1
+      },
+      "versionCollision": {
+        "0.9.0": [
+          "r3",
+          "r4"
+        ]
+      },
+      "workflow": {
+        "review": {
+          "runs": 14,
+          "refuteBasis": "mixed",
+          "thinned": 2,
+          "thinnedRuns": 1,
+          "thinnedMeasured": 2,
+          "pool": {
+            "firstPass": 151,
+            "reReview": 351,
+            "unclassified": 50,
+            "unclassifiedRuns": 5
+          },
+          "cost": {
+            "runs": 2,
+            "cacheRead": 820,
+            "cacheWrite": 10,
+            "input": 10,
+            "output": 10,
+            "total": 850,
+            "apart": {
+              "malformed": 1,
+              "empty": 1,
+              "overcounted": 1,
+              "unknown-rule": 1
+            }
+          },
+          "surfaceGate": {
+            "preGate": 10,
+            "gateRuns": 3,
+            "failedRuns": 1,
+            "savedRuns": 2,
+            "savedPasses": 3,
+            "savedByLens": {
+              "tests": 2,
+              "docs": 1
+            },
+            "dispatchedPasses": 1,
+            "shareSavedPasses": 2,
+            "missingDispatchedRuns": 1
+          },
+          "verdicts": {
+            "block": 1,
+            "warning": 2,
+            "approve": 6,
+            "incomplete": 5,
+            "partialCoverage": 5
+          },
+          "avgRefute": 0.18
+        },
+        "review (cli)": {
+          "runs": 2,
+          "refuteBasis": null,
+          "thinned": 0,
+          "thinnedRuns": 0,
+          "thinnedMeasured": 0,
+          "pool": {
+            "firstPass": null,
+            "reReview": null,
+            "unclassified": null,
+            "unclassifiedRuns": 0
+          },
+          "cost": {
+            "runs": 1,
+            "cacheRead": 470,
+            "cacheWrite": 10,
+            "input": 10,
+            "output": 10,
+            "total": 500,
+            "apart": {}
+          },
+          "surfaceGate": {
+            "preGate": 1,
+            "gateRuns": 0,
+            "failedRuns": 0,
+            "savedRuns": 0,
+            "savedPasses": 0,
+            "savedByLens": {},
+            "dispatchedPasses": 0,
+            "shareSavedPasses": 0,
+            "missingDispatchedRuns": 0
+          },
+          "verdicts": {
+            "block": 1,
+            "warning": 0,
+            "approve": 1,
+            "incomplete": 0,
+            "partialCoverage": 0
+          },
+          "avgRefute": null
+        },
+        "rust-audit": {
+          "runs": 1,
+          "refuteBasis": null,
+          "thinned": 0,
+          "thinnedRuns": 0,
+          "thinnedMeasured": 0,
+          "pool": {
+            "firstPass": null,
+            "reReview": null,
+            "unclassified": null,
+            "unclassifiedRuns": 0
+          },
+          "cost": {
+            "runs": 0,
+            "cacheRead": null,
+            "cacheWrite": null,
+            "input": null,
+            "output": null,
+            "total": null,
+            "apart": {}
+          },
+          "surfaceGate": {
+            "preGate": 1,
+            "gateRuns": 0,
+            "failedRuns": 0,
+            "savedRuns": 0,
+            "savedPasses": 0,
+            "savedByLens": {},
+            "dispatchedPasses": 0,
+            "shareSavedPasses": 0,
+            "missingDispatchedRuns": 0
+          },
+          "verdicts": {
+            "block": 0,
+            "warning": 0,
+            "approve": 1,
+            "incomplete": 0,
+            "partialCoverage": 0
+          },
+          "avgRefute": null
+        },
+        "triage-findings": {
+          "runs": 1,
+          "refuteBasis": null,
+          "thinned": 0,
+          "thinnedRuns": 0,
+          "thinnedMeasured": 0,
+          "pool": {
+            "firstPass": null,
+            "reReview": null,
+            "unclassified": null,
+            "unclassifiedRuns": 0
+          },
+          "cost": {
+            "runs": 0,
+            "cacheRead": null,
+            "cacheWrite": null,
+            "input": null,
+            "output": null,
+            "total": null,
+            "apart": {}
+          },
+          "surfaceGate": {
+            "preGate": 1,
+            "gateRuns": 0,
+            "failedRuns": 0,
+            "savedRuns": 0,
+            "savedPasses": 0,
+            "savedByLens": {},
+            "dispatchedPasses": 0,
+            "shareSavedPasses": 0,
+            "missingDispatchedRuns": 0
+          },
+          "verdicts": {
+            "block": 0,
+            "warning": 0,
+            "approve": 0,
+            "incomplete": 0,
+            "partialCoverage": 0
+          },
+          "avgRefute": null
+        }
+      },
+      "notRun": {
+        "metrics lens x could not look": 1,
+        "verifier died": 1
+      },
+      "saved": {
+        "Low a": 1,
+        "Low b": 1
+      },
+      "signals": {
+        "revokedRuns": 1,
+        "harmCapRuns": 1,
+        "harmCapLowered": 2,
+        "uncoveredRuns": 1
+      },
+      "uncovered": {
+        "x.md": 1,
+        "y.toml": 1
+      },
+      "agentUnavailable": {
+        "craft:nix-reviewer": 1,
+        "craft:rust-reviewer": 1
+      },
+      "agentFallback": {
+        "craft:rust-reviewer": {
+          "dispatches": 4,
+          "runs": 1
+        },
+        "craft:nix-reviewer": {
+          "dispatches": 2,
+          "runs": 1
+        }
+      },
+      "memory": {
+        "runs": 18,
+        "carrying": 8,
+        "recalled": 1,
+        "none": 2,
+        "passedOnly": 1,
+        "nested": 5,
+        "records": 4,
+        "questions": 1,
+        "rules": 2,
+        "externals": 1,
+        "covered": 1,
+        "notRead": 1,
+        "partlyRead": 0,
+        "launcherDegraded": 5,
+        "byBackend": {
+          "mcp iskron": 1
+        },
+        "noneWhy": {
+          "the recall agent died or returned no list": 1,
+          "not recalled — the store was empty": 1
+        }
+      },
+      "contradictions": {
+        "js": {
+          "runs": 1,
+          "count": 2,
+          "doubtSignsAlone": 1,
+          "toPr": 1,
+          "fixed": 1,
+          "open": 0,
+          "setAside": 1,
+          "noLaterRound": 0,
+          "unknown": 1,
+          "noPosting": 1
+        },
+        "cli": {
+          "runs": 1,
+          "count": 1,
+          "doubtSignsAlone": 0,
+          "toPr": 0,
+          "fixed": 0,
+          "open": 0,
+          "setAside": 0,
+          "noLaterRound": 0,
+          "unknown": 1,
+          "noPosting": 0
+        }
+      },
+      "sorting": {
+        "runs": 1,
+        "doubtful": 3,
+        "defect": 1,
+        "question": 1,
+        "dropped": 0,
+        "posted": 2,
+        "undecided": 1
+      },
+      "develop": {
+        "cycles": 2,
+        "unreadable": 1,
+        "converged": 1,
+        "capped": 1,
+        "light": 1,
+        "full": 1,
+        "fullReviews": 3,
+        "fullReopened": 1,
+        "fullNoVerdict": 1,
+        "cyclesByRound": [
+          2,
+          1
+        ],
+        "mediumPlusByRound": [
+          3,
+          0
+        ],
+        "noVerdict": 0,
+        "roundsPerCycle": 1.5,
+        "roundsToConverge": 2
+      },
+      "depth": {
+        "js light": {
+          "runs": 1,
+          "agentsPerRun": 2,
+          "minutesPerRun": 3,
+          "confirmedPerRun": 0
+        },
+        "js full": {
+          "runs": 13,
+          "agentsPerRun": 7,
+          "minutesPerRun": 9,
+          "confirmedPerRun": 2
+        },
+        "cli light": {
+          "runs": 1,
+          "agentsPerRun": 4,
+          "minutesPerRun": 2,
+          "confirmedPerRun": 1
+        },
+        "cli full": {
+          "runs": 1,
+          "agentsPerRun": null,
+          "minutesPerRun": null,
+          "confirmedPerRun": null
+        }
+      },
+      "lens": {
+        "rust:errors": {
+          "runs": 2,
+          "dead": 0,
+          "findings": 4,
+          "findingsPerRun": 2,
+          "refuted": 3,
+          "candidates": 7,
+          "refuteRate": 0.43,
+          "refuteBasis": "mixed",
+          "unverified": 1,
+          "bySeverity": {
+            "Critical": 0,
+            "High": 3,
+            "Medium": 1,
+            "Low": 0,
+            "Info": 0
+          }
+        },
+        "rust:errors (cli)": {
+          "runs": 1,
+          "dead": 0,
+          "findings": 2,
+          "findingsPerRun": 2,
+          "refuted": 0,
+          "candidates": 2,
+          "refuteRate": 0,
+          "refuteBasis": "strict",
+          "unverified": 0,
+          "bySeverity": {
+            "Critical": 0,
+            "High": 0,
+            "Medium": 0,
+            "Low": 0,
+            "Info": 0
+          }
+        },
+        "rust:noise": {
+          "runs": 1,
+          "dead": 0,
+          "findings": 1,
+          "findingsPerRun": 1,
+          "refuted": 3,
+          "candidates": 5,
+          "refuteRate": 0.6,
+          "refuteBasis": "legacy",
+          "unverified": 0,
+          "bySeverity": {
+            "Critical": 0,
+            "High": 0,
+            "Medium": 0,
+            "Low": 0,
+            "Info": 0
+          }
+        },
+        "rust:tests": {
+          "runs": 0,
+          "dead": 1,
+          "findings": 0,
+          "findingsPerRun": 0,
+          "refuted": 0,
+          "candidates": 0,
+          "refuteRate": null,
+          "refuteBasis": null,
+          "unverified": 0,
+          "bySeverity": {
+            "Critical": 0,
+            "High": 0,
+            "Medium": 0,
+            "Low": 0,
+            "Info": 0
+          }
+        }
+      },
+      "noise": {
+        "rust:errors": {
+          "refuteRate": 0.43,
+          "candidates": 7
+        },
+        "rust:noise": {
+          "refuteRate": 0.6,
+          "candidates": 5
+        }
+      },
+      "unfinishedListed": {
+        "listed": 2,
+        "unattributed": 0,
+        "twins": 1
+      },
+      "unfinishedRun": {
+        "2026-11-07T10-00-00Z": {},
+        "2026-11-07T11-00-00Z": {}
+      }
+    },
+    "retroVersion": {
+      "version": "0.9.0",
+      "summary": {
+        "runs": 17,
+        "partialCoverage": 5,
+        "folded": 2,
+        "legacy": 1,
+        "unattributed": 0
+      },
+      "engine": {
+        "claude-code 0.9.0 r4": 14,
+        "claude-code+cli 0.9.0 r4": 2,
+        "claude-code 0.9.0 r3": 1
+      },
+      "versionCollision": {
+        "0.9.0": [
+          "r3",
+          "r4"
+        ]
+      },
+      "workflow": {
+        "review": {
+          "runs": 14,
+          "refuteBasis": "mixed",
+          "thinned": 2,
+          "thinnedRuns": 1,
+          "thinnedMeasured": 2,
+          "pool": {
+            "firstPass": 151,
+            "reReview": 351,
+            "unclassified": 50,
+            "unclassifiedRuns": 5
+          },
+          "cost": {
+            "runs": 2,
+            "cacheRead": 820,
+            "cacheWrite": 10,
+            "input": 10,
+            "output": 10,
+            "total": 850,
+            "apart": {
+              "malformed": 1,
+              "empty": 1,
+              "overcounted": 1,
+              "unknown-rule": 1
+            }
+          },
+          "surfaceGate": {
+            "preGate": 10,
+            "gateRuns": 3,
+            "failedRuns": 1,
+            "savedRuns": 2,
+            "savedPasses": 3,
+            "savedByLens": {
+              "tests": 2,
+              "docs": 1
+            },
+            "dispatchedPasses": 1,
+            "shareSavedPasses": 2,
+            "missingDispatchedRuns": 1
+          },
+          "verdicts": {
+            "block": 1,
+            "warning": 2,
+            "approve": 6,
+            "incomplete": 5,
+            "partialCoverage": 5
+          },
+          "avgRefute": 0.18
+        },
+        "review (cli)": {
+          "runs": 2,
+          "refuteBasis": null,
+          "thinned": 0,
+          "thinnedRuns": 0,
+          "thinnedMeasured": 0,
+          "pool": {
+            "firstPass": null,
+            "reReview": null,
+            "unclassified": null,
+            "unclassifiedRuns": 0
+          },
+          "cost": {
+            "runs": 1,
+            "cacheRead": 470,
+            "cacheWrite": 10,
+            "input": 10,
+            "output": 10,
+            "total": 500,
+            "apart": {}
+          },
+          "surfaceGate": {
+            "preGate": 1,
+            "gateRuns": 0,
+            "failedRuns": 0,
+            "savedRuns": 0,
+            "savedPasses": 0,
+            "savedByLens": {},
+            "dispatchedPasses": 0,
+            "shareSavedPasses": 0,
+            "missingDispatchedRuns": 0
+          },
+          "verdicts": {
+            "block": 1,
+            "warning": 0,
+            "approve": 1,
+            "incomplete": 0,
+            "partialCoverage": 0
+          },
+          "avgRefute": null
+        },
+        "rust-audit": {
+          "runs": 1,
+          "refuteBasis": null,
+          "thinned": 0,
+          "thinnedRuns": 0,
+          "thinnedMeasured": 0,
+          "pool": {
+            "firstPass": null,
+            "reReview": null,
+            "unclassified": null,
+            "unclassifiedRuns": 0
+          },
+          "cost": {
+            "runs": 0,
+            "cacheRead": null,
+            "cacheWrite": null,
+            "input": null,
+            "output": null,
+            "total": null,
+            "apart": {}
+          },
+          "surfaceGate": {
+            "preGate": 1,
+            "gateRuns": 0,
+            "failedRuns": 0,
+            "savedRuns": 0,
+            "savedPasses": 0,
+            "savedByLens": {},
+            "dispatchedPasses": 0,
+            "shareSavedPasses": 0,
+            "missingDispatchedRuns": 0
+          },
+          "verdicts": {
+            "block": 0,
+            "warning": 0,
+            "approve": 1,
+            "incomplete": 0,
+            "partialCoverage": 0
+          },
+          "avgRefute": null
+        }
+      },
+      "notRun": {
+        "metrics lens x could not look": 1,
+        "verifier died": 1
+      },
+      "saved": {
+        "Low a": 1,
+        "Low b": 1
+      },
+      "signals": {
+        "revokedRuns": 1,
+        "harmCapRuns": 1,
+        "harmCapLowered": 2,
+        "uncoveredRuns": 1
+      },
+      "uncovered": {
+        "x.md": 1,
+        "y.toml": 1
+      },
+      "agentUnavailable": {
+        "craft:nix-reviewer": 1,
+        "craft:rust-reviewer": 1
+      },
+      "agentFallback": {
+        "craft:rust-reviewer": {
+          "dispatches": 4,
+          "runs": 1
+        },
+        "craft:nix-reviewer": {
+          "dispatches": 2,
+          "runs": 1
+        }
+      },
+      "memory": {
+        "runs": 17,
+        "carrying": 8,
+        "recalled": 1,
+        "none": 2,
+        "passedOnly": 1,
+        "nested": 5,
+        "records": 4,
+        "questions": 1,
+        "rules": 2,
+        "externals": 1,
+        "covered": 1,
+        "notRead": 1,
+        "partlyRead": 0,
+        "launcherDegraded": 5,
+        "byBackend": {
+          "mcp iskron": 1
+        },
+        "noneWhy": {
+          "the recall agent died or returned no list": 1,
+          "not recalled — the store was empty": 1
+        }
+      },
+      "contradictions": {
+        "js": {
+          "runs": 1,
+          "count": 2,
+          "doubtSignsAlone": 1,
+          "toPr": 1,
+          "fixed": 1,
+          "open": 0,
+          "setAside": 1,
+          "noLaterRound": 0,
+          "unknown": 1,
+          "noPosting": 1
+        },
+        "cli": {
+          "runs": 1,
+          "count": 1,
+          "doubtSignsAlone": 0,
+          "toPr": 0,
+          "fixed": 0,
+          "open": 0,
+          "setAside": 0,
+          "noLaterRound": 0,
+          "unknown": 1,
+          "noPosting": 0
+        }
+      },
+      "sorting": {
+        "runs": 1,
+        "doubtful": 3,
+        "defect": 1,
+        "question": 1,
+        "dropped": 0,
+        "posted": 2,
+        "undecided": 1
+      },
+      "develop": {
+        "cycles": 0,
+        "unreadable": 0,
+        "converged": 0,
+        "capped": 0,
+        "light": 0,
+        "full": 0,
+        "fullReviews": 0,
+        "fullReopened": 0,
+        "fullNoVerdict": 0,
+        "cyclesByRound": [],
+        "mediumPlusByRound": [],
+        "noVerdict": 0,
+        "roundsPerCycle": 0,
+        "roundsToConverge": 0
+      },
+      "depth": {
+        "js light": {
+          "runs": 1,
+          "agentsPerRun": 2,
+          "minutesPerRun": 3,
+          "confirmedPerRun": 0
+        },
+        "js full": {
+          "runs": 13,
+          "agentsPerRun": 7,
+          "minutesPerRun": 9,
+          "confirmedPerRun": 2
+        },
+        "cli light": {
+          "runs": 1,
+          "agentsPerRun": 4,
+          "minutesPerRun": 2,
+          "confirmedPerRun": 1
+        },
+        "cli full": {
+          "runs": 1,
+          "agentsPerRun": null,
+          "minutesPerRun": null,
+          "confirmedPerRun": null
+        }
+      },
+      "lens": {
+        "rust:errors": {
+          "runs": 2,
+          "dead": 0,
+          "findings": 4,
+          "findingsPerRun": 2,
+          "refuted": 3,
+          "candidates": 7,
+          "refuteRate": 0.43,
+          "refuteBasis": "mixed",
+          "unverified": 1,
+          "bySeverity": {
+            "Critical": 0,
+            "High": 3,
+            "Medium": 1,
+            "Low": 0,
+            "Info": 0
+          }
+        },
+        "rust:errors (cli)": {
+          "runs": 1,
+          "dead": 0,
+          "findings": 2,
+          "findingsPerRun": 2,
+          "refuted": 0,
+          "candidates": 2,
+          "refuteRate": 0,
+          "refuteBasis": "strict",
+          "unverified": 0,
+          "bySeverity": {
+            "Critical": 0,
+            "High": 0,
+            "Medium": 0,
+            "Low": 0,
+            "Info": 0
+          }
+        },
+        "rust:noise": {
+          "runs": 1,
+          "dead": 0,
+          "findings": 1,
+          "findingsPerRun": 1,
+          "refuted": 3,
+          "candidates": 5,
+          "refuteRate": 0.6,
+          "refuteBasis": "legacy",
+          "unverified": 0,
+          "bySeverity": {
+            "Critical": 0,
+            "High": 0,
+            "Medium": 0,
+            "Low": 0,
+            "Info": 0
+          }
+        },
+        "rust:tests": {
+          "runs": 0,
+          "dead": 1,
+          "findings": 0,
+          "findingsPerRun": 0,
+          "refuted": 0,
+          "candidates": 0,
+          "refuteRate": null,
+          "refuteBasis": null,
+          "unverified": 0,
+          "bySeverity": {
+            "Critical": 0,
+            "High": 0,
+            "Medium": 0,
+            "Low": 0,
+            "Info": 0
+          }
+        }
+      },
+      "noise": {
+        "rust:errors": {
+          "refuteRate": 0.43,
+          "candidates": 7
+        },
+        "rust:noise": {
+          "refuteRate": 0.6,
+          "candidates": 5
+        }
+      },
+      "unfinishedListed": {
+        "listed": 1,
+        "unattributed": 1,
+        "twins": 1
+      },
+      "unfinishedRun": {
+        "2026-11-07T10-00-00Z": {}
+      }
+    },
+    "retroEngine": {
+      "sliceEngine": "claude-code 0.9.0 r4",
+      "summary": {
+        "runs": 14,
+        "partialCoverage": 5,
+        "folded": 1,
+        "legacy": 1,
+        "unattributed": 0
+      },
+      "engine": {
+        "claude-code 0.9.0 r4": 14
+      },
+      "versionCollision": {},
+      "workflow": {
+        "review": {
+          "runs": 14,
+          "refuteBasis": "mixed",
+          "thinned": 2,
+          "thinnedRuns": 1,
+          "thinnedMeasured": 2,
+          "pool": {
+            "firstPass": 151,
+            "reReview": 351,
+            "unclassified": 50,
+            "unclassifiedRuns": 5
+          },
+          "cost": {
+            "runs": 2,
+            "cacheRead": 820,
+            "cacheWrite": 10,
+            "input": 10,
+            "output": 10,
+            "total": 850,
+            "apart": {
+              "malformed": 1,
+              "empty": 1,
+              "overcounted": 1,
+              "unknown-rule": 1
+            }
+          },
+          "surfaceGate": {
+            "preGate": 10,
+            "gateRuns": 3,
+            "failedRuns": 1,
+            "savedRuns": 2,
+            "savedPasses": 3,
+            "savedByLens": {
+              "tests": 2,
+              "docs": 1
+            },
+            "dispatchedPasses": 1,
+            "shareSavedPasses": 2,
+            "missingDispatchedRuns": 1
+          },
+          "verdicts": {
+            "block": 1,
+            "warning": 2,
+            "approve": 6,
+            "incomplete": 5,
+            "partialCoverage": 5
+          },
+          "avgRefute": 0.18
+        }
+      },
+      "notRun": {},
+      "saved": {
+        "Low a": 1,
+        "Low b": 1
+      },
+      "signals": {
+        "revokedRuns": 1,
+        "harmCapRuns": 1,
+        "harmCapLowered": 2,
+        "uncoveredRuns": 1
+      },
+      "uncovered": {
+        "x.md": 1,
+        "y.toml": 1
+      },
+      "agentUnavailable": {
+        "craft:nix-reviewer": 1,
+        "craft:rust-reviewer": 1
+      },
+      "agentFallback": {
+        "craft:rust-reviewer": {
+          "dispatches": 4,
+          "runs": 1
+        },
+        "craft:nix-reviewer": {
+          "dispatches": 2,
+          "runs": 1
+        }
+      },
+      "memory": {
+        "runs": 14,
+        "carrying": 8,
+        "recalled": 1,
+        "none": 2,
+        "passedOnly": 1,
+        "nested": 5,
+        "records": 4,
+        "questions": 1,
+        "rules": 2,
+        "externals": 1,
+        "covered": 1,
+        "notRead": 1,
+        "partlyRead": 0,
+        "launcherDegraded": 5,
+        "byBackend": {
+          "mcp iskron": 1
+        },
+        "noneWhy": {
+          "the recall agent died or returned no list": 1,
+          "not recalled — the store was empty": 1
+        }
+      },
+      "contradictions": {
+        "js": {
+          "runs": 1,
+          "count": 2,
+          "doubtSignsAlone": 1,
+          "toPr": 1,
+          "fixed": 1,
+          "open": 0,
+          "setAside": 1,
+          "noLaterRound": 0,
+          "unknown": 1,
+          "noPosting": 1
+        },
+        "cli": {
+          "runs": 0,
+          "count": 0,
+          "doubtSignsAlone": 0,
+          "toPr": 0,
+          "fixed": 0,
+          "open": 0,
+          "setAside": 0,
+          "noLaterRound": 0,
+          "unknown": 0,
+          "noPosting": 0
+        }
+      },
+      "sorting": {
+        "runs": 1,
+        "doubtful": 3,
+        "defect": 1,
+        "question": 1,
+        "dropped": 0,
+        "posted": 2,
+        "undecided": 1
+      },
+      "develop": {
+        "cycles": 0,
+        "unreadable": 0,
+        "converged": 0,
+        "capped": 0,
+        "light": 0,
+        "full": 0,
+        "fullReviews": 0,
+        "fullReopened": 0,
+        "fullNoVerdict": 0,
+        "cyclesByRound": [],
+        "mediumPlusByRound": [],
+        "noVerdict": 0,
+        "roundsPerCycle": 0,
+        "roundsToConverge": 0
+      },
+      "depth": {
+        "js light": {
+          "runs": 1,
+          "agentsPerRun": 2,
+          "minutesPerRun": 3,
+          "confirmedPerRun": 0
+        },
+        "js full": {
+          "runs": 13,
+          "agentsPerRun": 7,
+          "minutesPerRun": 9,
+          "confirmedPerRun": 2
+        },
+        "cli light": {
+          "runs": 0,
+          "agentsPerRun": null,
+          "minutesPerRun": null,
+          "confirmedPerRun": null
+        },
+        "cli full": {
+          "runs": 0,
+          "agentsPerRun": null,
+          "minutesPerRun": null,
+          "confirmedPerRun": null
+        }
+      },
+      "lens": {
+        "rust:errors": {
+          "runs": 2,
+          "dead": 0,
+          "findings": 4,
+          "findingsPerRun": 2,
+          "refuted": 3,
+          "candidates": 7,
+          "refuteRate": 0.43,
+          "refuteBasis": "mixed",
+          "unverified": 1,
+          "bySeverity": {
+            "Critical": 0,
+            "High": 3,
+            "Medium": 1,
+            "Low": 0,
+            "Info": 0
+          }
+        },
+        "rust:noise": {
+          "runs": 1,
+          "dead": 0,
+          "findings": 1,
+          "findingsPerRun": 1,
+          "refuted": 3,
+          "candidates": 5,
+          "refuteRate": 0.6,
+          "refuteBasis": "legacy",
+          "unverified": 0,
+          "bySeverity": {
+            "Critical": 0,
+            "High": 0,
+            "Medium": 0,
+            "Low": 0,
+            "Info": 0
+          }
+        },
+        "rust:tests": {
+          "runs": 0,
+          "dead": 1,
+          "findings": 0,
+          "findingsPerRun": 0,
+          "refuted": 0,
+          "candidates": 0,
+          "refuteRate": null,
+          "refuteBasis": null,
+          "unverified": 0,
+          "bySeverity": {
+            "Critical": 0,
+            "High": 0,
+            "Medium": 0,
+            "Low": 0,
+            "Info": 0
+          }
+        }
+      },
+      "noise": {
+        "rust:errors": {
+          "refuteRate": 0.43,
+          "candidates": 7
+        },
+        "rust:noise": {
+          "refuteRate": 0.6,
+          "candidates": 5
+        }
+      },
+      "unfinishedListed": {
+        "listed": 1,
+        "unattributed": 1,
+        "twins": 1
+      },
+      "unfinishedRun": {
+        "2026-11-07T10-00-00Z": {}
+      }
+    },
+    "hooks": {
+      "rows": {
+        "SessionStart (claude-code)": {
+          "runs": 2,
+          "spoke": 1,
+          "silent": 1
+        },
+        "chat.message (opencode)": {
+          "runs": 1,
+          "spoke": 1,
+          "silent": 0
+        },
+        "UserPromptSubmit (claude-code)": {
+          "runs": 2,
+          "spoke": 0,
+          "silent": 2
+        },
+        "UserPromptSubmit re-review-nudge (claude-code)": {
+          "runs": 1,
+          "spoke": 1,
+          "silent": 0
+        }
+      },
+      "join": {
+        "joined": 18,
+        "workflowRuns": 18,
+        "repos": 1
+      }
+    },
+    "roundPairs": {
+      "pairs": {
+        "feat/a 1>2": {
+          "status": "clean",
+          "delta": {
+            "costTotal": -300,
+            "costRatio": 0.7,
+            "cacheRead": -300,
+            "cacheWrite": 0,
+            "input": 0,
+            "output": 0,
+            "agents": 0,
+            "lensAgents": 0,
+            "candidates": -3,
+            "findings": -2,
+            "minutesApart": 60
+          }
+        },
+        "feat/a 2>3": {
+          "status": "diff-moved",
+          "delta": null
+        },
+        "feat/p 1>2": {
+          "status": "prior-unconfirmed",
+          "delta": null
+        },
+        "feat/p 2>3": {
+          "status": "prior-unconfirmed",
+          "delta": null
+        },
+        "feat/c 1>2": {
+          "status": "prior-unconfirmed",
+          "delta": null
+        }
+      },
+      "excluded": {
+        "did not finish": 3,
+        "no round": 6,
+        "pre-telemetry": 1
+      }
+    }
+  }
+}

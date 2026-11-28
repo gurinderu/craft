@@ -10,7 +10,6 @@ import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { run as analyzeRuns } from './analyze-runs.mjs'
 import { runClock } from './cli-review-clock.mjs'
 import { runEngine } from './engine-harness.mjs'
 import { asBinaryFiling } from './logger-replay.mjs'
@@ -139,18 +138,6 @@ async function telemetryRun() {
   return { store, engine, told, rec: JSON.parse(fs.readFileSync(path.join(store, String(file)), 'utf8')) }
 }
 
-/**
- * The report's lines that matter here: the lens rows (a CLI row's chain mark, ` (cli)`, taken off), the workflow's
- * refutation clause and the DEPTH section's full line of its chain.
- * @param {string} store
- */
-async function figures(store) {
-  const out = analyzeRuns([store], process.env).stdout.join('\n')
-  const section = /## Dimensions[^\n]*\n((?:- [^\n]*\n?)+)/.exec(out)?.[1]?.trim() ?? ''
-  const depth = /## DEPTH[^\n]*\n(?:- [^\n]*\n)*?(- full: [^\n]*)/.exec(out)?.[1] ?? ''
-  return { out, dimensions: section.replaceAll(' (cli):', ':'), refute: /avg refute [0-9.]+/.exec(out)?.[0] ?? '', depth }
-}
-
 test("the filed record carries the binary's lens rows, verification and lens rounds, and the cost the driver told it", async () => {
   const { engine, told, rec } = await telemetryRun()
   assert.deepEqual([rec.dimensions, rec.verification, rec.lensRounds], [DIMENSIONS, VERIFICATION, [{ round: 1, agents: 1, returned: 1, newFindings: 2 }]])
@@ -186,40 +173,6 @@ test("the record and every checkpoint, the start's first, say the CLI drove the 
     /** @type {Array<Record<string, unknown>>} */ (rec.phases).map(p => p['driver']),
     ['cli', 'cli', 'cli', 'cli'],
   )
-})
-
-// The readers keep the two chains apart (integrations/shared/run-record.mjs, reviewChain): the CLI's rows and DEPTH population are
-// its own, and read the same way as the engine's.
-test("analyze-runs reads a CLI record's lens yield, refutation and depth figures as it reads the engine's", async () => {
-  const { store, rec } = await telemetryRun()
-  const cli = await figures(store)
-  assert.match(cli.out, /^- rust:errors \(cli\): /m, "the CLI's rows stay apart from the engine's")
-  assert.match(cli.depth, /^- full: 1 run\(s\), agents\/run 3, wall min\/run 8\.1, confirmed\/run 1$/, cli.out)
-  assert.match(cli.dimensions, /^- rust:errors: 1 finding\(s\) \/ 1 run\(s\) \(1\/run\) · H1 · refute 0\.5 \(1\/2\)/m, cli.out)
-  assert.equal(cli.refute, 'avg refute 0.5')
-  // The engine's record of the same run, as review files it.
-  const js = tmp('craft-js-store-')
-  const review = {
-    schemaVersion: 1,
-    runtime: 'claude-code',
-    kind: 'workflow',
-    name: 'review',
-    craftVersion: rec.craftVersion,
-    verdict: 'Block',
-    depth: 'full',
-    round: 1,
-    findings: rec.findings,
-    notRun: [],
-    uncoveredFiles: [],
-    outputTokens: rec.outputTokens,
-    ts: rec.ts,
-    dimensions: DIMENSIONS.map(({ rounds: _, ...row }) => row),
-    verification: { candidates: 2, confirmed: 1, refuteRate: 0.5, unverified: 0, thinned: 0 },
-    runtimeStats: { agents: rec.runtimeStats.agents, wallClockMinutes: 8.1, agentMinutes: 7, longestStallSeconds: 30, byModel: {} },
-  }
-  fs.writeFileSync(path.join(js, 'r.json'), JSON.stringify(review))
-  const engine = await figures(js)
-  assert.deepEqual([cli.dimensions, cli.refute, cli.depth], [engine.dimensions, engine.refute, engine.depth])
 })
 
 test("the clock: minutes per phase from the binary's stamps, a phase returned to adding up, none without stamps", () => {

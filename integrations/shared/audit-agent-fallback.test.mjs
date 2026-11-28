@@ -4,7 +4,6 @@
 import { test } from 'vitest'
 import assert from 'node:assert/strict'
 import { runEngine, filedRecord } from './engine-harness.mjs'
-import { aggregate } from './analyze-runs.mjs'
 import { isAgentTypeMissing, agentUnavailableSection } from './agent-fallback.mjs'
 
 /** @typedef {{ opts?: { agentType?: string } }} Dispatch */
@@ -167,7 +166,7 @@ test("rust-audit (whole-workspace site): the nested review's unavailable agent r
   assert.match(section, /`craft:rust-reviewer` is not registered[^\n]*nested review/)
   assert.match(run.report, /\/plugin install craft@craft/)
   // The nested review files its own record (`nested`, `via: 'rust-audit'`) carrying this fact; the audit's
-  // record repeating it would count one unavailable agent twice in analyze-runs.
+  // record repeating it would count one unavailable agent twice in `craft runs retro`.
   assert.deepEqual(filedRecord(run)?.agentUnavailable, [])
 })
 
@@ -199,22 +198,4 @@ test('rust-audit: a nested review with every agent present adds nothing', async 
   assert.ok(!/Reviewer agent unavailable/.test(run.report))
   assert.deepEqual(filedRecord(run)?.agentUnavailable, [])
   assert.deepEqual(filedRecord(run)?.agentFallbacks, {})
-})
-
-// One audit session with one unavailable agent in its nested review: the nested review's record and the
-// audit's record together count it once — one run, the nested review's dispatches — in analyze-runs.
-test('rust-audit + its nested review: one unavailable agent is one run and N dispatches in the aggregate', async () => {
-  const nested = { name: 'review', nested: true, via: 'rust-audit', agentUnavailable: ['craft:rust-reviewer'], agentFallbacks: {} }
-  const softNested = { name: 'review', nested: true, via: 'rust-audit', agentUnavailable: [], agentFallbacks: { 'craft:rust-reviewer': 3 } }
-  const soft =
-    '## ⚠️ Reviewer agent unavailable\n- `craft:rust-reviewer` returned nothing for 3 lens dispatch(es), which were re-run on the generic subagent, without its rubric (an unregistered agent on some runtimes, or a transient failure).\n\n## Verdict\n✅ Approve'
-  const hard = await runEngine('rust-audit', {
-    args: {},
-    script: { ...base, architecture: { findings: [] }, security: { findings: [] }, workflow: nestedReport('craft:rust-reviewer') },
-  })
-  const a = aggregate([filedRecord(hard), nested])
-  assert.deepEqual(a.agentUnavailable, [{ agent: 'craft:rust-reviewer', runs: 1 }])
-  const softRun = await runEngine('rust-audit', { args: {}, script: { ...base, architecture: { findings: [] }, security: { findings: [] }, workflow: soft } })
-  const b = aggregate([filedRecord(softRun), softNested])
-  assert.deepEqual(b.agentFallbacks, [{ agent: 'craft:rust-reviewer', dispatches: 3, runs: 1 }])
 })

@@ -9,12 +9,11 @@ import { SHIPPED_NODE_ENTRIES } from './shipped-entries.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 
-test('the shipped entries are the run-record CLI, the run-store reader, the SessionStart hook, the reviewer-dispatch hook, the engine source-map reader, the craft binary fetcher, the run-record adapter that binary runs, the pi extension, the external-findings matcher, the OpenCode plugin and its TUI footer entry, each a real file', () => {
+test('the shipped entries are the run-record CLI, the SessionStart hook, the reviewer-dispatch hook, the engine source-map reader, the craft binary fetcher, the run-record adapter that binary runs, the pi extension, the external-findings matcher, the OpenCode plugin and its TUI footer entry, each a real file', () => {
   assert.deepEqual([...SHIPPED_NODE_ENTRIES].sort(), [
     'integrations/opencode/plugin/index.ts',
     'integrations/opencode/plugin/tui/tui.mjs',
     'integrations/pi/pi-extension.mjs',
-    'integrations/shared/analyze-runs.mjs',
     'integrations/shared/craft-bin.mjs',
     'integrations/shared/craft-log-run.mjs',
     'integrations/shared/engine-source-map.mjs',

@@ -1,5 +1,5 @@
 // The one key a repository is known by in craft's stores: a run record's `project` (integrations/shared/craft-log-run.mjs) and
-// the hooks' `repo` (integrations/shared/hook-log.mjs) — one implementation, so a join between them cannot
+// the hooks' `repo` (`craft runs hooks`) — one implementation, so a join between them cannot
 // drift (realm @nick/craft, #283, #299).
 import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
@@ -61,7 +61,7 @@ function git(args, cwd, timeoutMs) {
 // one key), else the resolved one — still better than a relative one.
 /**
  * @param {string} [p] a path in the repository @param {{ timeoutMs?: number }} [opts] a bound on each git call, for
- *   the hooks (integrations/shared/hook-log.mjs); the record path passes none @returns {string}
+ *   the hooks (`craft runs hooks`); the record path passes none @returns {string}
  */
 export function repoKey(p = process.cwd(), { timeoutMs } = {}) {
   const abs = path.resolve(p)

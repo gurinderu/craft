@@ -13,7 +13,7 @@ mod entry;
 mod feedback;
 mod frontmatter;
 mod heard;
-mod iso;
+pub(crate) mod iso;
 mod js;
 mod key;
 mod kind;

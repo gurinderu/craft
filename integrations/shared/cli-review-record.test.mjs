@@ -9,7 +9,6 @@ import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { run as analyzeRuns } from './analyze-runs.mjs'
 import { runEngine } from './engine-harness.mjs'
 import { asBinaryFiling } from './logger-replay.mjs'
 import { repoKey } from './repo-key.mjs'
@@ -112,7 +111,7 @@ test('a finished review files one record under the branch and head it started on
   assert.ok(!engine.logs.some(l => /telemetry/.test(l)), engine.logs.join('\n'))
 })
 
-test('the record carries the findings by severity, a ledger row each and the uncovered files; the run-store report reads it', async () => {
+test('the record carries the findings by severity, a ledger row each and the uncovered files', async () => {
   const { store, runDir } = await cliRun({ args: { depth: 'light' } })
   const file = fs.readdirSync(store).find(f => f.endsWith('.json'))
   const rec = JSON.parse(fs.readFileSync(path.join(store, String(file)), 'utf8'))
@@ -128,8 +127,6 @@ test('the record carries the findings by severity, a ledger row each and the unc
   )
   assert.deepEqual([rec.uncoveredFiles, rec.notRun, rec.base, rec.depth], [['app.py'], [], 'origin/main', 'light'])
   assert.equal(rec.cliRun, runDir, "the record names the binary's run directory, which a stopped part of the run names too")
-  const out = analyzeRuns([store], process.env).stdout.join('\n')
-  assert.match(out, /- review \(cli\): 1 run\(s\)/, out)
 })
 
 test('the answer opens with a verdict block the report readers parse, naming why when nothing was reviewed', async () => {

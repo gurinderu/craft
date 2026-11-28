@@ -56,7 +56,7 @@ a prior round's fingerprints compare to this round's is decided by `FP_BASIS_SIN
 tombstones. Change that table, not only the revision, when `fingerprint()` changes what an `fp` means.
 The retired JS review engine decided that comparability itself, with the same table bundled into it — it was the side that computed the fingerprints — so its `review` records and each of their checkpoints also carry `workflowEngineRevision`, the engine's revision, next to the logger's `engineRevision` stamp; the CLI review chains its rounds in the binary, under `~/.craft/runs/cli`. The analyzer's engine identity (`rN`) uses the engine's revision when a record carries it, and the logger's otherwise. The loader prints `priorFpRevisions` together with `priorFpRevisionsCheck` (the same list as a string), and that engine trusted the list only when the two still matched after the model relay; a mismatch is recorded as `reReview.basisMismatch`.
 
-`node integrations/shared/analyze-runs.mjs --engine latest` (or `--engine "claude-code 0.16.0 r2"`) slices to one
+`craft runs retro --engine latest` (or `--engine "claude-code 0.16.0 r2"`) slices to one
 engine; `--version` still exists and still filters, but a version slice is not an engine slice.
 With no flag the report names the engines it spans **before** any rate, and says so plainly when it
 cannot separate them — a caveat under the numbers arrives after they have been read as a
@@ -68,23 +68,23 @@ loads the detail files anyway. This is also why every record-filing engine — `
 computes the fields from a prompt cannot produce this one at all, so every record it files is
 excluded from `--engine latest` by construction. The JS engines' shared write path is
 `integrations/shared/run-logging.mjs`, bundled into each; the binary's is its own `crates/craft-store`. `craft runs retro <version>`
-gives a version's per-workflow, per-engine and per-lens numbers as `node integrations/shared/analyze-runs.mjs --version <version>` does;
+gives a version's per-workflow, per-engine and per-lens numbers, with every section the retired `analyze-runs.mjs --version <version>` printed (its figures frozen in `content/parity/retro-cases.json`);
 with `runs ls`'s filters (`--project`, `--branch`, `--since`, `--until`, `--name`, `--verdict`) and no version it sums any
 selection, and its runs by kind give each workflow's depth and lens scope with the minutes and agents its records carry, and the cost of
 the runs whose cost is usable — the report's rule, a run filed in parts priced by every part's share summed once — the others counted by why.
 Records written before these fields carry `null` and are outside any filter.
 
-Workflows add: `scout`, `dimensions[]`, `verification {candidates, judged, confirmed, suspected, refuted, unverified, died, refuteRate}` (`refuteRate` is over what was *judged*. When nothing was, the engines differ: `rust-audit` records `null` — a run whose verifiers all died reports no rate rather than a rate of zero — while `review` records `0`, as the retired `adversarial-review` did (`refuteRate()` in `integrations/shared/run-record.mjs`, the binary's `refute_rate` alike), and `integrations/shared/analyze-runs.mjs` averages that `0` into the workflow's `avg refute` as it skips a `null`; `unverified` counts candidates no verifier ever judged — an unchecked Low/Info the engine spends no verifier on — and is reported **beside** `candidates`, not inside it, so it is outside the rate),
+Workflows add: `scout`, `dimensions[]`, `verification {candidates, judged, confirmed, suspected, refuted, unverified, died, refuteRate}` (`refuteRate` is over what was *judged*. When nothing was, the engines differ: `rust-audit` records `null` — a run whose verifiers all died reports no rate rather than a rate of zero — while `review` records `0`, as the retired `adversarial-review` did (`refuteRate()` in `integrations/shared/run-record.mjs`, the binary's `refute_rate` alike), and `craft runs retro` averages that `0` into the workflow's `avg refute` as it skips a `null`; `unverified` counts candidates no verifier ever judged — an unchecked Low/Info the engine spends no verifier on — and is reported **beside** `candidates`, not inside it, so it is outside the rate),
 `notRun[]`, `outputTokens` (indicative only: the turn's output spend read off `budget.spent()` while
 the engine ran — a shared **pool** that includes the main loop and any workflow running at the same
 time, **not** the run's own cost, which is `cost` below; null on a nested run, whose parent's record
 covers it; never summed across records. A record holding that figure says so with
 `outputTokensScope: "turn-delta"`; a record without the marker holds the session's running total
-instead and enters no average. `integrations/shared/analyze-runs.mjs` averages only marked records
+instead and enters no average. `craft runs retro` averages only marked records
 with no usable `cost`. Its size tracks run TYPE: a re-review (`round > 1`)
 runs an extra Adjudicate phase (and periodically a whole-diff re-scan), so its pool is structurally larger than a
 first-pass's. It is therefore not a clean output-cost figure and must not be compared across run
-types — `integrations/shared/analyze-runs.mjs` splits it three ways on the PRESENCE and value of `round`: a
+types — `craft runs retro` splits it three ways on the PRESENCE and value of `round`: a
 first-pass pool (`round <= 1`), a re-review pool (`round > 1`), and a round-less pool for runs that
 carry no `round`. That third pool is keyed on the ABSENCE of the field, not on a cause the analyzer
 cannot know: only `review` stamps `round`, so every `rust-audit` / `triage-findings` run (and a retired
@@ -102,7 +102,7 @@ JS `review` did, the same way: `agentUnavailable[]` (the agent types the run lea
 empty or with an unrecognised "not found"). `rust-audit` also folds in what each nested review said in
 its "Reviewer agent unavailable" section. Records written before this by `review` carry
 `reviewerAgentUnavailable[]` (profile ids) and `reviewerAgentFallbacks` (per profile id);
-`integrations/shared/analyze-runs.mjs` reads both shapes and ranks the result in its AGENT UNAVAILABLE section.
+`craft runs retro` reads both shapes and ranks the result in its Agent unavailable section.
 `triage-findings` is not a review: it carries `verdict: ""` and `findings` summarizing the findings
 it *triaged* (total + severity mix of the gathered raw findings, not findings it produced). It adds
 `sources[]` (`{source, count}` per gathered source), `triage {gathered, validated, accept,
@@ -145,7 +145,7 @@ counts in each corroborating lens's row, so per-dimension counts may sum to more
 
 A lens row carries `{dimension, ran, findingCount, bySeverity, confirmedCount, suspectedCount,
 refutedCount, unverifiedCount}`. `unverifiedCount` is the per-lens share of the `unverified` tier and
-is **excluded** from the per-dimension refute denominator that `integrations/shared/analyze-runs.mjs` computes
+is **excluded** from the per-dimension refute denominator that `craft runs retro` computes
 (`refuted / (confirmed + suspected + refuted)`) — the same stance the run-level `candidates` takes.
 That stance is newer than `schemaVersion: 1`, though: before the tier existed the same unjudged items
 were filed under `suspectedCount` and so sat *inside* that denominator. The records cannot say which
@@ -218,12 +218,12 @@ transcript of a slice unreadable, or a record is missing/unparseable. In the sto
 rewritten under the index lock, after any pending filing is replayed. `cost` is **optional** — absent until a
 run is enriched — and it does not enter the `index.jsonl` projection.
 
-`node integrations/shared/analyze-runs.mjs` surfaces it per workflow beside the three-state pool, leading with
+`craft runs retro` surfaces it per workflow beside the three-state pool, leading with
 `cacheRead` because that IS the spend. A record with no `cost` was never enriched: it contributes
 nothing to the cost average and is **not** read as a zero-cost run (`costRuns` counts the usable
 enriched runs apart), the same "not measured is not zero" stance the pool split takes for a missing
-`round`. A cost is judged by one rule shared with `--round-pairs` (`costProblem` in
-`integrations/shared/run-record.mjs`), which follows what enrich-cost writes — all four token parts, `agents`, a
+`round`. A cost is judged by one rule shared with `craft runs round-pairs` (`problem` in
+`cli/crates/craft-store/src/cost/problem.rs`), which follows what enrich-cost writes — all four token parts, `agents`, a
 `total` equal to their sum, a `source`: **missing** means never enriched; **malformed** means not an
 object, none of the measured fields, a field that is not a non-negative number, a `source` that is not
 a string, a `slice` that is not `{index, of, tail?}` with `1 ≤ index ≤ of`, or a `total` that is not the sum of its parts; **empty** means written but measured nothing
@@ -306,7 +306,7 @@ run, because the transcripts are outside the workflow sandbox's reach.
 
 ## Three edits that deliberately did not refactor their host
 
-`integrations/shared/analyze-runs.mjs`'s aggregation loop, `integrations/shared/craft-log-run.mjs`'s
+The retired `analyze-runs.mjs`'s aggregation loop, `integrations/shared/craft-log-run.mjs`'s
 `finalizeRun`, and the retired JS review engine's `verifyPool` (gone with it) were each long and each
 mixed concerns. Fixes landed inside all three anyway, without extraction, and
 that was a decision rather than an oversight: refactoring the hot review engine
@@ -320,7 +320,7 @@ behaviour-preserving move can be checked as one.
 
 ## Does a re-review get cheaper? — the round-pair measurement
 
-`node integrations/shared/analyze-runs.mjs --round-pairs [store]` pairs consecutive top-level `review` rounds of one
+`craft runs round-pairs [--store <dir>]` pairs consecutive top-level `review` rounds of one
 project and branch (round n+1 with the newest round n before it) and compares them **only** when
 nothing but re-review memory differs between them. Each pair that fails a condition is listed with the
 reason and no numbers: a round whose engine is unknown, or a different engine; a moved `head`; a dirty
@@ -349,7 +349,7 @@ different slices of one run (`cost.slice`), which are disjoint sets of its trans
 
 To take the measurement: on a clean working tree, run a review on a branch; then, **without committing
 or editing anything**, run it again with `fullEvery=1` so the second round scans the full diff too;
-enrich both records with `enrich-cost --run-id <each run's wf_ id>`; and run `--round-pairs`.
+enrich both records with `enrich-cost --run-id <each run's wf_ id>`; and run `craft runs round-pairs`.
 
 Known gap: `enrich-cost` sums `agent-*.jsonl` transcripts in the workflow run directory. Claude Code
 2.1.286 on Linux was observed to write only `agent-*.meta.json` and `journal.jsonl` there, so no record

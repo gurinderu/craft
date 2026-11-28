@@ -110,26 +110,3 @@ export function readAgentUnavailableLine(line) {
   if (empty) return { agent: String(empty[1]), count: Number(empty[2]) }
   return { agent: /`([^`]+)`/.exec(line)?.[1] || 'a craft agent', error: line.slice(2, 162) }
 }
-
-// The fact read off a stored record of either engine and any age: the shape agentUnavailableRecord
-// writes (rust-audit wrote it from the start), or the review engine's earlier fields, keyed by profile
-// id — `reviewerAgentUnavailable[]` and `reviewerAgentFallbacks{}` — whose agent was `craft:<id>-reviewer`.
-/** @param {unknown} rec @returns {{ agentUnavailable: string[], agentFallbacks: Record<string, number> }} */
-export function readAgentUnavailable(rec) {
-  const r = /** @type {Record<string, unknown>} */ (rec && typeof rec === 'object' ? rec : {})
-  /** @param {unknown} v @returns {string[]} */
-  const list = v => (Array.isArray(v) ? v.filter(x => typeof x === 'string') : [])
-  /** @param {unknown} v @param {(k: string) => string} name */
-  const counts = (v, name) =>
-    (v && typeof v === 'object' && !Array.isArray(v) ? Object.entries(v) : [])
-      .filter(([, n]) => typeof n === 'number')
-      .map(([k, n]) => ({ agent: name(k), count: Number(n) }))
-  /** @param {string} id */
-  const legacy = id => `craft:${id}-reviewer`
-  if ('agentUnavailable' in r || 'agentFallbacks' in r)
-    return agentUnavailableRecord(
-      list(r['agentUnavailable']),
-      counts(r['agentFallbacks'], k => k),
-    )
-  return agentUnavailableRecord(list(r['reviewerAgentUnavailable']).map(legacy), counts(r['reviewerAgentFallbacks'], legacy))
-}

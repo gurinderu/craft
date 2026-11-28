@@ -1,9 +1,6 @@
 import { test } from 'vitest'
 import assert from 'node:assert/strict'
 import {
-  isCount,
-  costProblem,
-  costTotal,
   countBySeverity,
   summarizeFindings,
   worstVerdict,
@@ -15,10 +12,6 @@ import {
   normalizeSymbol,
   fingerprint,
   ENGINE_REVISION,
-  engineKey,
-  parseEngineKey,
-  engineRevisionToken,
-  isEngineAttributed,
   fpBasisOf,
   FP_BASIS_SINCE,
   fpBasisEstablished,
@@ -765,84 +758,8 @@ test('prior-round CLI: one line of JSON on stdout, exit 0, and the repo root as 
   assert.equal(runCli(['bogus'], { cwd: project }).status, 2)
 })
 
-test('engineKey: a record without a revision is its own unknown engine, never the current one', () => {
-  const old = { runtime: 'claude-code', craftVersion: '0.16.0' }
-  const now = { runtime: 'claude-code', craftVersion: '0.16.0', engineRevision: ENGINE_REVISION }
-  // THE defect this exists for: two engines shipped under one version string. Same key would mean
-  // an aggregate filtered by version silently averages both.
-  assert.notEqual(engineKey(old), engineKey(now))
-  assert.equal(engineKey(old), 'claude-code 0.16.0 r?')
-  assert.equal(engineKey(now), `claude-code 0.16.0 r${ENGINE_REVISION}`)
-  assert.equal(isEngineAttributed(old), false)
-  assert.equal(isEngineAttributed(now), true)
-})
-
-test('engineKey: the runtime is part of the identity, and nothing is guessed', () => {
-  // opencode writes into the same store and stamps no craftVersion — a different engine, not an
-  // unversioned run of this one.
-  assert.notEqual(engineKey({ runtime: 'opencode' }), engineKey({ runtime: 'claude-code' }))
-  assert.equal(engineKey({ runtime: 'opencode' }), 'opencode unversioned r?')
-  assert.equal(engineKey(null), 'unknown-runtime unversioned r?')
-  // A non-integer revision is not a revision: a hand-edited '2' must not read as r2.
-  assert.equal(engineKey({ runtime: 'claude-code', craftVersion: '1.0.0', engineRevision: '2' }), 'claude-code 1.0.0 r?')
-  assert.equal(isEngineAttributed({ engineRevision: '2' }), false)
-})
-
-test('parseEngineKey reads back every part engineKey wrote, absence as null', () => {
-  for (const runtime of ['claude-code', 'opencode', undefined]) {
-    for (const craftVersion of ['0.34.1', '1.0.0-rc.1', '1.0 beta', undefined]) {
-      for (const engineRevision of [4, 0, -1, 1e21, undefined, '2']) {
-        const r = { runtime, craftVersion, engineRevision }
-        assert.deepEqual(
-          parseEngineKey(engineKey(r)),
-          {
-            runtime: runtime ?? 'unknown-runtime',
-            version: craftVersion ?? null,
-            revision: Number.isInteger(engineRevision) ? engineRevision : null,
-          },
-          engineKey(r),
-        )
-      }
-    }
-  }
-  // The engine's own stamp is the revision, as engineKey reads it.
-  assert.equal(parseEngineKey(engineKey({ runtime: 'claude-code', workflowEngineRevision: 5, engineRevision: 4 }))?.revision, 5)
-  // A runtime with a space is the one part that does not read back: its tail lands in the version.
-  assert.deepEqual(parseEngineKey(engineKey({ runtime: 'a b', craftVersion: '1.0.0' })), { runtime: 'a', version: 'b 1.0.0', revision: null })
-})
-
-test('parseEngineKey refuses what engineKey never writes', () => {
-  for (const key of [
-    '',
-    'claude-code',
-    'claude-code 0.34.1',
-    'claude-code 0.34.1 4',
-    'claude-code 0.34.1 r',
-    'claude-code 0.34.1 r4.5',
-    'claude-code 0.34.1 r04',
-    'claude-code 0.34.1 r+4',
-    'claude-code 0.34.1 r 4',
-  ]) {
-    assert.equal(parseEngineKey(key), null, key)
-  }
-})
-
 test('ENGINE_REVISION is a positive integer — it is ordered and compared', () => {
   assert.ok(Number.isInteger(revision) && revision > 0)
-})
-
-// Tripwire: `engineRevisionToken` is the ONE authority for the `r…` token shape, shared by
-// `engineKey` here and by the analyzer's collision buckets (`revToken` in integrations/shared/analyze-runs.mjs). If
-// the token format ever drifts on one side, the collision buckets silently stop matching the engine
-// buckets — so pin the token to the last space-separated segment of `engineKey` for both an
-// attributed and an unattributed record. (realm @nick/craft, #95)
-test('engineRevisionToken equals the r… segment of engineKey — collision and engine buckets stay in lockstep', () => {
-  const attributed = { runtime: 'claude-code', craftVersion: '0.18.1', engineRevision: 3 }
-  const unattributed = { runtime: 'claude-code', craftVersion: '0.18.1' }
-  assert.equal(engineRevisionToken(attributed), 'r3')
-  assert.equal(engineRevisionToken(unattributed), 'r?')
-  assert.equal(engineKey(attributed).split(' ').pop(), engineRevisionToken(attributed))
-  assert.equal(engineKey(unattributed).split(' ').pop(), engineRevisionToken(unattributed))
 })
 
 // A per-crate child of a `rust-audit` fan-out files a `nested: true` review row under the SAME
@@ -872,42 +789,6 @@ test('basisVerdictFromRevisions: known only when every revision is established a
   assert.deepEqual(basisVerdictFromRevisions([5], 5), { sameFpBasis: true, fpBasisKnown: true }, "decided against the CALLER's revision")
 })
 
-// realm @nick/craft #111: a record's telemetry means the ENGINE's behaviour, so the analyzer labels it by
-// the engine's own revision when the engine stamped one, not by the logger's.
-test("engineRevisionToken prefers the engine's own revision over the logger's stamp", () => {
-  assert.equal(engineRevisionToken({ engineRevision: 9, workflowEngineRevision: 4 }), 'r4')
-  assert.equal(engineRevisionToken({ engineRevision: 3 }), 'r3', "an engine that stamped none: the logger's")
-  assert.equal(engineRevisionToken({}), 'r?')
-  assert.equal(isEngineAttributed({ workflowEngineRevision: 4 }), true)
-})
-
-test('isCount takes only finite non-negative numbers; costProblem judges a stored cost by it', () => {
-  for (const v of [0, 1, 2.5]) assert.equal(isCount(v), true, String(v))
-  for (const v of [-1, Number.NaN, Infinity, '7', '', [], true, null, undefined, {}]) assert.equal(isCount(v), false, JSON.stringify(v))
-  assert.equal(costProblem(undefined), 'missing')
-  assert.equal(costProblem(null), 'missing')
-  assert.equal(costProblem({ total: 4, output: 4, rule: 'per-message' }), null)
-  assert.equal(costProblem({ output: 4, input: 1, rule: 'per-message' }), null, 'no total: the parts are summed')
-  assert.equal(costTotal({ output: 4, input: 1 }), 5)
-  assert.equal(costProblem({ total: null, cacheRead: 1000, rule: 'per-message' }), null, 'a null total is absent, not zero')
-  assert.equal(costTotal({ total: null, cacheRead: 1000 }), 1000)
-  assert.equal(costProblem({}), 'malformed', 'enrich-cost never writes a cost without its measured fields')
-  assert.equal(costProblem({ source: 'x' }), 'malformed')
-  assert.equal(costProblem({ total: 0, cacheRead: 0, agents: 3 }), 'empty', 'the enrich-cost schema-drift flag (#98) stays visible')
-  assert.equal(costProblem({ total: 0, cacheRead: 1000 }), 'malformed', 'a total that contradicts its parts')
-  assert.equal(costProblem({ total: 0, output: 0, skipped: 2 }), 'empty', 'a lower bound of 0 bounds nothing')
-  assert.equal(costProblem({ total: 10, cacheRead: 1000 }), 'malformed', 'a total that is not the sum of its parts')
-  assert.equal(costProblem({ total: 1000, cacheRead: 1000, source: {} }), 'malformed', 'a source that is not a string')
-  assert.equal(costProblem({ total: 1000, cacheRead: 1000, source: 'wf-1', rule: 'per-message' }), null)
-  assert.equal(costProblem('garbage'), 'malformed', 'present but not an object is corrupt, not missing')
-  assert.equal(costProblem([1, 2]), 'malformed')
-  assert.equal(costProblem({ total: '10' }), 'malformed')
-  assert.equal(costProblem({ total: 10, cacheRead: true }), 'malformed')
-  assert.equal(costProblem({ total: 10, skipped: 'x' }), 'malformed')
-  assert.equal(costProblem({ total: 10, skipped: 2, rule: 'per-message' }), 'partial')
-  assert.equal(costProblem({ total: 10, skipped: 0, rule: 'per-message' }), null)
-})
-
 test('normalizeSymbol folds a keyword followed by several spaces mid-symbol', () => {
   assert.equal(normalizeSymbol('Trait::fn  run'), 'trait::run')
 })
@@ -921,9 +802,4 @@ test('selectPriorRounds skips holes and non-workflow records named review', () =
 
 test('fingerprint-basis guards at their boundaries', () => {
   assert.equal(fpBasisEstablished(1), true, 'revision 1 is a known revision')
-})
-
-test('costProblem: an empty or non-string source is malformed', () => {
-  assert.equal(costProblem({ total: 1000, cacheRead: 1000, source: '' }), 'malformed')
-  assert.equal(costProblem({ total: 1000, cacheRead: 1000, source: 5 }), 'malformed')
 })

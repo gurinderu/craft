@@ -1,5 +1,5 @@
 // The run record of a review run (integrations/claude-code/src/review.js, integrations/shared/cli-review-steps.mjs) in the store's own format, so the
-// run-store report (integrations/shared/analyze-runs.mjs) and the ledger readers read it as they read review's. The `craft` binary
+// run-store report (`craft runs retro`) and the ledger readers read it as they read review's. The `craft` binary
 // files it itself (realm @nick/craft, nodes #456, #539) with its own store writer (cli/crates/craft-store), which builds
 // the checkpoints and the record as this file does and writes them as integrations/shared/craft-log-run.mjs does
 // (content/parity/store-cases.json, written from integrations/shared/binary-filing-replay.mjs, holds the two together): one start checkpoint once the binary has
@@ -59,7 +59,7 @@ const keptRow = r => ({ fp: fingerprint(r), ...r })
 
 /**
  * The binary's count of the findings going against memory as the record keeps it (as the JavaScript `memory-contradiction.mjs` the binary replaced did): each
- * finding fingerprinted over the fields the binary names (`key`) as its ledger row is, so analyze-runs finds it in the
+ * finding fingerprinted over the fields the binary names (`key`) as its ledger row is, so `craft runs retro` finds it in the
  * branch's later round; null when the binary sent none.
  * @param {Record<string, unknown> | null | undefined} m @returns {Record<string, unknown> | null}
  */
@@ -179,7 +179,7 @@ export function cliRecord(o, { craftVersion, depth, strict, via, outputTokens, o
     name: ENGINE,
     driver: DRIVER,
     // The binary's run directory: a run stopped and resumed files a record per part, each naming it, which the store's
-    // readers fold into the run's finished record (integrations/shared/run-duplicates.mjs; cli/crates/craft-store/src/parts.rs).
+    // readers fold into the run's finished record (cli/crates/craft-store/src/parts.rs).
     cliRun: o.run ?? '',
     nested: via !== null,
     via,

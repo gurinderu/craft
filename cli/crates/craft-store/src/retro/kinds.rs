@@ -72,6 +72,8 @@ pub struct Deferred {
     key: String,
     id: String,
     cost: Option<Js>,
+    /// The workflow whose full-plan sums ([`super::plan`]) wait for the same cost.
+    pub(super) flow: Option<(String, super::plan::Input)>,
 }
 
 /// Adds `r`, a finished run of the workflow named `name`, to its kind; the cost of a run filed in
@@ -108,18 +110,18 @@ pub fn add(
             key,
             id: id.to_owned(),
             cost: r.get("cost").cloned(),
+            flow: None,
         }),
         None => price(kind, r.get("cost")),
     }
     Ok(())
 }
 
-/// Prices each deferred run by its parts' cost summed once ([`Parts::cost_for`]).
-pub fn settle(kinds: &mut BTreeMap<String, Kind>, deferred: Vec<Deferred>, parts: &Parts) {
-    for d in deferred {
-        let cost = parts.cost_for(Some(&d.key), &d.id, d.cost);
-        price(kinds.entry(d.kind).or_default(), cost.as_ref());
-    }
+/// Prices a deferred run by its parts' cost summed once ([`Parts::cost_for`]), and returns that cost.
+pub fn settle(kinds: &mut BTreeMap<String, Kind>, d: Deferred, parts: &Parts) -> Option<Js> {
+    let cost = parts.cost_for(Some(&d.key), &d.id, d.cost);
+    price(kinds.entry(d.kind).or_default(), cost.as_ref());
+    cost
 }
 
 fn price(kind: &mut Kind, cost: Option<&Js>) {

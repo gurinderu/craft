@@ -168,7 +168,7 @@ for (const [engine, raw] of Object.entries(ENGINE_RECORDS)) {
     const { record, index } = readBack(store)
 
     // The fact this whole change exists for: no engine can stamp this from a prompt, at any quality
-    // of instruction, and analyze-runs buckets a record without it into `r?`.
+    // of instruction, and `craft runs retro` buckets a record without it into `r?`.
     assert.equal(record.engineRevision, ENGINE_REVISION)
     assert.equal(record.project, repo) // NOT the store, and not the logger agent's cwd
     assert.equal(record.commit, head) // a real commit, not ''

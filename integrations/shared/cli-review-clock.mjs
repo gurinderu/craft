@@ -1,6 +1,5 @@
 // What a review run cost as the driver observes it (integrations/shared/cli-review-steps.mjs), for its record's `runtimeStats`
-// in the shape craft-log-run's transcript reading gives the engine's (`agents`, `wallClockMinutes`; integrations/shared/light-runs.mjs
-// and analyze-runs read them) and its phase checkpoints. `agents` counts the task agents the binary's steps handed
+// in the shape craft-log-run's transcript reading gives the engine's (`agents`, `wallClockMinutes`; `craft runs retro` reads them) and its phase checkpoints. `agents` counts the task agents the binary's steps handed
 // out, a re-run on the default type included — not the service agents that run the binary and write the record, which
 // the engine's transcript count does include: a CLI run's figure is the review's work alone. The sandbox reads no clock (integrations/shared/agent-deadline.mjs), so the
 // wall time is the binary's: each step it prints carries `at`, when it printed it, and `took`, how long that command

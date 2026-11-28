@@ -2,7 +2,7 @@
 //
 // Two ways it used to overclaim or misreport a nested review's verdict:
 //   1. `/INCOMPLETE/i` was tested FIRST, so `⛔ Block (INCOMPLETE)` was downgraded to Warning —
-//      the opposite of the severity-first rule integrations/shared/analyze-runs.mjs states and implements.
+//      the opposite of the severity-first rule `craft runs retro` states and implements.
 //   2. the whole report body was matched, so an Approve whose body carries a ⚠️ line (the
 //      "Not reviewed" section review.js now emits) scored Warning.
 //
@@ -28,7 +28,7 @@ const report = (verdict, ...body) => ['## Verdict', verdict, '', ...body].join('
 
 test('a Block (INCOMPLETE) nested review stays a Block', () => {
   // Partial coverage cannot un-find a finding that was already made. Testing /INCOMPLETE/ first
-  // downgraded this to Warning and contradicted integrations/shared/analyze-runs.mjs's rule for the same question.
+  // downgraded this to Warning and contradicted `craft runs retro`'s rule for the same question.
   assert.equal(reviewResult('review:x', report('⛔ Block — 2 High · ⚠️ INCOMPLETE — parts of the review did not run.')).verdict, 'Block')
   assert.equal(reviewResult('review:x', report('Block (INCOMPLETE)')).verdict, 'Block')
 })
@@ -70,7 +70,7 @@ test('an Approve voided by PARTIAL COVERAGE is not an Approve, even without the 
   // review.js now spells a coverage hole PARTIAL COVERAGE, distinct from a re-runnable INCOMPLETE. The
   // model can drop the ⚠️ glyph when it rewrites the verdict line, so classification must catch the
   // WORDS: under the old /INCOMPLETE/i-only step this line fell through to ✅ Approve — a green over a
-  // coverage hole, the same reversal integrations/shared/analyze-runs.mjs guards one layer up.
+  // coverage hole, the same reversal `craft runs retro` guards one layer up.
   const r = reviewResult('review:x', report('✅ Approve · PARTIAL COVERAGE — a coverage hole a re-run will not fix.'))
   assert.equal(r.verdict, 'Warning')
   assert.match(r.summary, /uncovered, not clean/)
@@ -190,7 +190,7 @@ test('every dimension result is normalised once, where results are collected', (
 test('the not-run verdict survives normalisation and never reads as green', () => {
   // The one word every layer has to agree on. normalizeDimensionVerdict() returns any INCOMPLETE
   // verdict UNCHANGED (so it lands in worstVerdict's non-permissive branch); worstVerdict() then
-  // reads it as a Warning; integrations/shared/analyze-runs.mjs's isIncomplete() buckets it as incomplete rather
+  // reads it as a Warning; `craft runs retro`'s `is_incomplete` buckets it as incomplete rather
   // than as an approve. If any of those three stopped agreeing, an unrun tool would read as clean.
   assert.equal(normalizeDimensionVerdict('INCOMPLETE (not run)'), 'INCOMPLETE (not run)')
   assert.equal(worstVerdict([normalizeDimensionVerdict('INCOMPLETE (not run)')]), 'Warning')

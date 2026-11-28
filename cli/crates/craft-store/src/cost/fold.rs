@@ -1,5 +1,5 @@
 //! The cost of a run stopped and resumed, as its standing record carries it once its stopped parts
-//! fold into it (`summedCost` in `integrations/shared/run-parts.mjs`; both held to
+//! fold into it (`summedCost` in the retired `run-parts.mjs`; both held to
 //! `content/parity/cost-problem-cases.json`, realm @nick/craft, node #658): every Workflow run's
 //! share of usable cost summed once — by the cost's `source` and slice, a repeated share the
 //! latest part's — and how many shares carry no usable cost as `partsUnmeasured`.

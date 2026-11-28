@@ -2,7 +2,7 @@
 // run with `comment` records how many findings it posted as defects and which it held back as doubtful
 // (`sorting`, integrations/claude-code/src/review.js); the reviewer's later choice for each doubtful one — asked the author, posted
 // as a defect, not posted — is appended to the SAME run's record by `craft runs sorting-choice` (cli/crates/craft-store/src/sorting.rs), the
-// one writer of the store (node #39); analyze-runs tallies how the doubtful ones ended (the precision of
+// one writer of the store (node #39); `craft runs retro` tallies how the doubtful ones ended (the precision of
 // the sorting, node #270).
 
 /** @typedef {import('./run-record.mjs').RunRecord} RunRecord */
@@ -69,42 +69,4 @@ function carriedChoices(record, next) {
     else dropped.push(droppedChoice(n, f, c))
   }
   return { choices: Object.keys(choices).length ? choices : null, dropped }
-}
-
-/** @typedef {{ runs: number, doubtful: number, defect: number, question: number, dropped: number, posted: number }} SortingTally */
-
-/** @returns {SortingTally} */
-export function newSortingTally() {
-  return { runs: 0, doubtful: 0, defect: 0, question: 0, dropped: 0, posted: 0 }
-}
-
-/** @param {unknown} v @returns {number} */
-const count = v => (typeof v === 'number' && Number.isInteger(v) && v > 0 ? v : 0)
-
-/** Adds one record's sorting, when it has one. @param {SortingTally} t @param {RunRecord} r @returns {void} */
-export function tallySorting(t, r) {
-  const s = sortingOf(r)
-  if (!s) return
-  t.runs++
-  t.posted += count(s['defect'])
-  t.doubtful += count(s['doubtful'])
-  const choices = s['choices'] && typeof s['choices'] === 'object' ? Object.values(/** @type {Record<string, unknown>} */ (s['choices'])) : []
-  for (const c of choices) {
-    const choice = c && typeof c === 'object' ? /** @type {Record<string, unknown>} */ (c)['choice'] : undefined
-    if (choice === 'defect' || choice === 'question' || choice === 'dropped') t[choice]++
-  }
-}
-
-/** The section's lines. @param {SortingTally} t @returns {string[]} */
-export function renderSortingSection(t) {
-  const L = ['## SORTING — how the doubtful findings held back from the PR ended']
-  if (!t.runs) return [...L, '- NOT MEASURED — no run carries `sorting` (a review posting to a PR with comment)']
-  const decided = t.defect + t.question + t.dropped
-  /** @param {number} n */
-  const pct = n => (t.doubtful ? ` (${Math.round((n / t.doubtful) * 100)}%)` : '')
-  L.push(`- ${t.runs} run(s) · ${t.posted} posted as defects at once · ${t.doubtful} held back as doubtful`)
-  L.push(
-    `- of the doubtful: ${t.defect} posted as defect${pct(t.defect)} · ${t.question} asked the author${pct(t.question)} · ${t.dropped} not posted${pct(t.dropped)} · ${Math.max(0, t.doubtful - decided)} still undecided`,
-  )
-  return L
 }

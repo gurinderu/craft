@@ -19,8 +19,8 @@ export default {
     '.': {
       entry: [
         'integrations/claude-code/src/*.js!',
-        // integrations/shared/craft-log-run.mjs (run by the engines through a shell line they build at runtime) and
-        // integrations/shared/analyze-runs.mjs (run by hand): not imported. The list is shared with integrations/shared/config/.dependency-cruiser.mjs.
+        // integrations/shared/craft-log-run.mjs (run by the engines through a shell line they build at runtime): not
+        // imported. The list is shared with integrations/shared/config/.dependency-cruiser.mjs.
         ...SHIPPED_NODE_ENTRIES.filter(p => !p.startsWith(PLUGIN)).map(p => `${p}!`),
         // Run by CI's quality-delta job and by hand (AGENTS.md, "Commands"): a signal, not a gate. CI-only
         // with every devDependency installed, so not a consumer-side entry (integrations/shared/shipped-entries.mjs).
