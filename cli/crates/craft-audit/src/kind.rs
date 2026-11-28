@@ -42,6 +42,16 @@ impl craft_step::Kind for AuditKind {
         craft_review::blocked::said(&task.schema, answer)
             .map(|why| craft_review::blocked::failure(&why))
     }
+
+    /// A verifier's answer carries every finding of its batch exactly once, as the review holds
+    /// its batches; one that skips, repeats or misnumbers a finding is refused and asked again.
+    fn check(task: &craft_step::Task<Self>, answer: &Value) -> Result<Value, String> {
+        let answer = craft_step::validate::check(&task.schema, Some(answer))?;
+        if let Self::Verify { findings, .. } = &task.kind {
+            craft_step::validate::batch_indices(&answer, findings.len())?;
+        }
+        Ok(answer)
+    }
 }
 
 #[cfg(test)]
@@ -87,5 +97,41 @@ mod tests {
         assert!(why.contains("sandbox"), "{why}");
         let looked = json!({"lens": "safety", "findings": [], "blocked": {"couldNotLook": false}});
         assert_eq!(AuditKind::blocked(&task, &looked), None);
+    }
+
+    fn verdict(index: u64) -> serde_json::Value {
+        json!({"index": index, "refuted": false, "citedLineMatches": true, "reachable": true,
+            "premiseSupported": true, "behaviourIntended": false, "harmSupported": true,
+            "confirmedHarmLevel": "outage", "reason": "r"})
+    }
+
+    #[test]
+    fn a_verifier_answer_skipping_misnumbering_or_lacking_a_finding_is_refused_and_a_whole_one_taken()
+     {
+        let verify = AuditKind::Verify {
+            profile: "rust".into(),
+            findings: vec![4, 7],
+        };
+        let schema = crate::prompts::verify_schema().unwrap();
+        let task = Task::new(
+            "v".into(),
+            "v".into(),
+            "p".into(),
+            Model::Opus,
+            schema,
+            verify,
+        );
+        let of =
+            |at: &[u64]| json!({"verdicts": at.iter().map(|&i| verdict(i)).collect::<Vec<_>>()});
+        AuditKind::check(&task, &of(&[1, 0])).unwrap();
+        for (bad, says) in [
+            (of(&[0]), "no verdict for index 1"),
+            (of(&[0, 7]), "index 7 is not a finding"),
+            (of(&[0, 0]), "appears twice"),
+            (of(&[]), "no verdict for index 0"),
+        ] {
+            let why = AuditKind::check(&task, &bad).unwrap_err();
+            assert!(why.contains(says), "{bad}: {why}");
+        }
     }
 }
