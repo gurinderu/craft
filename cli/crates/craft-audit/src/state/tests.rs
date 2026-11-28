@@ -9,14 +9,19 @@ fn state() -> AuditState {
             paths: vec!["src".into()],
             batch_bytes: 10,
             lens_agents: Some(3),
-            ..super::Args::default()
+            craft_version: "9.9.9".into(),
+            craft_root: Some("/plugins/craft".into()),
+            record: Some(super::Recording {
+                root: "/plugins/craft".into(),
+                session: "s-1".into(),
+            }),
         },
         scout: Scouted::default(),
         phase: Phase::Lens,
         pass: 1,
         tasks: Vec::new(),
-        degraded: Vec::new(),
-        notes: Vec::new(),
+        degraded: vec!["ran on a smaller model".into()],
+        notes: vec!["a note".into()],
         stopped: None,
     }
 }

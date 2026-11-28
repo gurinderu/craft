@@ -14,12 +14,14 @@ use serde_json::{Value, json};
 
 #[path = "audit/answers.rs"]
 mod answers;
+#[path = "audit/paths.rs"]
+mod paths;
 #[path = "audit/refused.rs"]
 mod refused;
 
 pub(crate) struct Scratch {
     _dir: tempfile::TempDir,
-    home: PathBuf,
+    pub(crate) home: PathBuf,
     pub(crate) repo: PathBuf,
     pub(crate) run: PathBuf,
 }
@@ -70,7 +72,7 @@ pub(crate) fn craft(s: &Scratch, args: &[&str]) -> Output {
         .unwrap()
 }
 
-fn ok(out: &Output) -> Value {
+pub(crate) fn ok(out: &Output) -> Value {
     assert!(
         out.status.success(),
         "{}",
