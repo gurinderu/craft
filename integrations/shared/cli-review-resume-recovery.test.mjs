@@ -108,3 +108,32 @@ test('a resume whose first page named its run but whose page step the harness re
   assert.ok(!labels(run).includes('log-run'), 'no second record beside the binary’s own')
   assert.match(run.report, /^## Verdict\n\n⛔ Block/, run.report)
 })
+
+/** A start whose first page named its run and whose next page was not read. @param {Record<string, unknown>} script */
+const lostStartPage = script => {
+  const step = JSON.stringify({ run: RUN, done: false, tasks: [] })
+  return runEngine('review', {
+    args: { craftBin: '/opt/craft', repo: '/work/repo' },
+    script: {
+      'step:locate': { exitCode: 0, stdout: 'root=/opt/plugin\n', stderr: '' },
+      'step:start': { exitCode: 0, stderr: '', stdout: `craft-out ${RUN} ${String(step.length)} 0 5\n${step.slice(0, 5)}\ncraft-page 5\n` },
+      'step:start:page': { exitCode: 1, stdout: '', stderr: REFUSED },
+      'log-run': { ok: true, output: ['wrote /store/r.json'] },
+      ...script,
+    },
+  })
+}
+
+test('a start whose first page named its run but whose next page was not read asks the status of that run', async () => {
+  const run = await lostStartPage({ 'step:status': statusSays(true) })
+  assert.ok(labels(run).includes('step:status'), String(labels(run)))
+  assert.ok(run.calls.find(c => c.label === 'step:status')?.prompt.includes(`--run '${RUN}'`), 'the status of the run the page named')
+  assert.ok(!labels(run).includes('log-run'), 'no second record beside the binary’s own')
+  assert.match(run.report, /^## Verdict\n\n⛔ Block/, run.report)
+})
+
+test('a start whose named run the binary did not finish files one INCOMPLETE record and offers its resume', async () => {
+  const run = await lostStartPage({ 'step:status': statusSays(false) })
+  assert.equal(labels(run).filter(l => l === 'log-run').length, 1, String(labels(run)))
+  assert.ok(run.report.includes(`craft:review run=${RUN}`), run.report)
+})
