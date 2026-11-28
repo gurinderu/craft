@@ -1,5 +1,6 @@
 //! A review run through the binary's own driver (`craft review run`, a stand-in `codex` giving the
-//! smallest answer each task's schema allows) files its record, and `craft runs retro` reads that
+//! smallest answer each task's schema allows, one Medium finding to the first lens and its verifier's
+//! confirming vote) files its record, and `craft runs retro` reads that
 //! record as it was filed: a lens row per lens it ran, the workflow's refute rate, its depth.
 #![cfg(unix)]
 #![expect(
@@ -29,7 +30,19 @@ const fill = s => {
   return { array: [], string: '', integer: s.minimum ?? 0, number: s.minimum ?? 0, boolean: false }[t] ?? null
 }
 fs.readFileSync(0, 'utf8')
-fs.writeFileSync(at('-o'), JSON.stringify(fill(JSON.parse(fs.readFileSync(at('--output-schema'), 'utf8')))))
+const schema = JSON.parse(fs.readFileSync(at('--output-schema'), 'utf8'))
+const answer = fill(schema)
+const lens = (schema.required ?? []).includes('lens') && 'findings' in (schema.properties ?? {})
+if (lens && !fs.existsSync(process.env.FAKE_MARK)) {
+  fs.writeFileSync(process.env.FAKE_MARK, '')
+  answer.findings = [{ severity: 'Medium', title: 'x[1] panics on a slice shorter than two', file: 'src/lib.rs', line: 1,
+    why: 'an out-of-bounds index panics', fix: 'use get', blastRadius: '', source: '', ruleId: '', whereChecked: '' }]
+}
+if ((schema.required ?? []).includes('verdicts')) {
+  answer.verdicts = [{ index: 0, refuted: false, citedLineMatches: true, reachable: true, premiseSupported: true,
+    behaviourIntended: false, harmSupported: true, confirmedHarmLevel: 'outage', reason: 'x[1] on a short slice panics' }]
+}
+fs.writeFileSync(at('-o'), JSON.stringify(answer))
 ";
 
 fn git(dir: &Path, args: &[&str]) {
@@ -112,6 +125,7 @@ fn a_record_the_binary_filed_is_read_as_it_was_filed() {
         .arg("--craft-root")
         .arg(&root)
         .env("HOME", &home)
+        .env("FAKE_MARK", tmp.path().join("found"))
         .env_remove("CLAUDE_PLUGIN_ROOT")
         .env_remove("CRAFT_ROOT")
         .output()
@@ -144,6 +158,8 @@ fn a_record_the_binary_filed_is_read_as_it_was_filed() {
         .filter(|d| d["ran"] != json!(false))
         .collect();
     assert!(!ran.is_empty(), "the light round ran its lenses: {record}");
+    let found: f64 = ran.iter().filter_map(|d| d["findingCount"].as_f64()).sum();
+    assert!(found >= 1.0, "one lens found the bug: {record}");
     for d in ran {
         let name = format!("{} (cli)", d["dimension"].as_str().unwrap());
         let row = ls

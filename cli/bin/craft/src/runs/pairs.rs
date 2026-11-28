@@ -84,7 +84,13 @@ fn pair_text(p: &Pair) -> String {
     };
     let apart = d.minutes.map_or_else(
         || "time apart unknown".to_owned(),
-        |m| format!("{} min apart", number_text(m)),
+        |m| {
+            format!(
+                "{} min apart — a prompt cache still warm from round {} lowers the later round's input",
+                number_text(m),
+                number_text(p.from.round)
+            )
+        },
     );
     let cost = |s: &pairs::Side| s.cost.map_or_else(String::new, |c| number_text(c[0]));
     format!(

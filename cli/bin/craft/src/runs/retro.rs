@@ -94,16 +94,44 @@ pub(super) fn command(
                 .is_none_or(|e| craft_store::retro::engine_key(r).is_ok_and(|k| k == *e))
     };
     let retro = retro_walk(store, &keep, Some(&slice), skipped)?;
+    let reported = retro.runs
+        + retro.develop.cycles
+        + retro.develop.unreadable
+        + retro.unfinished
+        + retro.listed.len() as u64
+        + retro.listed_unattributed;
     if let Some(e) = engine.as_deref()
-        && retro.runs + retro.develop.cycles + retro.develop.unreadable == 0
+        && reported == 0
     {
         bail!(
-            "no finished run matches engine \"{e}\"; the store's engines:\n{}",
+            "no run{} matches engine \"{e}\"; the store's engines:\n{}",
+            filters_said(&filter),
             engines(store)?
         );
     }
     render::retro(out, &slice, &retro, json)?;
     Ok(())
+}
+
+/// The filters beside the engine, as the refusal names them: ` the filters keep (version 1.0.0)`.
+fn filters_said(f: &craft_store::filter::Filter) -> String {
+    let said: Vec<String> = [
+        ("project", &f.project),
+        ("branch", &f.branch),
+        ("name", &f.name),
+        ("version", &f.version),
+        ("since", &f.since),
+        ("until", &f.until),
+        ("verdict", &f.verdict),
+    ]
+    .into_iter()
+    .filter_map(|(k, v)| v.as_ref().map(|v| format!("{k} {v}")))
+    .collect();
+    if said.is_empty() {
+        String::new()
+    } else {
+        format!(" the filters keep ({})", said.join(", "))
+    }
 }
 
 /// The engines of the store's records, each once in order, one `- <engine>` a line.
@@ -126,24 +154,28 @@ fn engines(store: &Path) -> Result<String> {
         .join("\n"))
 }
 
-/// The engine of the newest finished run `filter` keeps — no develop cycle nor a retro's mark —
-/// `None` when it keeps none. The walk after it says what it passed over.
+/// The engine of the newest run the retro would stand on among those `filter` keeps — a resumed
+/// run once, by the record standing for it; no develop cycle nor a retro's mark — `None` when it
+/// keeps none. The walk after it says what it passed over.
 fn latest_engine(store: &Path, filter: &craft_store::filter::Filter) -> Result<Option<String>> {
-    let mut newest: Option<(craft_store::js::JsString, Obj)> = None;
-    read::records(store, &mut Skipped::default(), |_, r| {
-        let live = r.get("schemaVersion").is_some_and(Js::truthy)
-            && !r.get("partial").is_some_and(Js::truthy)
-            && craft_store::retro::is_run(&r)
-            && filter.keeps(&r);
-        let ts = r
-            .get("ts")
-            .map_or_else(|| "undefined".into(), Js::to_js_text);
-        if live && newest.as_ref().is_none_or(|(at, _)| ts > *at) {
-            newest = Some((ts, r));
-        }
-    })
-    .with_context(|| format!("reading {}", store.display()))?;
-    Ok(newest
-        .map(|(_, r)| craft_store::retro::engine_key(&r))
-        .transpose()?)
+    let mut newest: Option<(craft_store::js::JsString, String)> = None;
+    visit::walk(
+        store,
+        &|r| filter.keeps(r),
+        &mut Skipped::default(),
+        &mut |seen| {
+            if let visit::Seen::Standing(_, r) = seen
+                && craft_store::retro::is_run(r)
+            {
+                let ts = r
+                    .get("ts")
+                    .map_or_else(|| "undefined".into(), Js::to_js_text);
+                if newest.as_ref().is_none_or(|(at, _)| ts > *at) {
+                    newest = Some((ts, craft_store::retro::engine_key(r)?));
+                }
+            }
+            Ok(())
+        },
+    )?;
+    Ok(newest.map(|(_, e)| e))
 }

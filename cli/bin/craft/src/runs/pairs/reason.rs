@@ -9,7 +9,7 @@ pub(super) fn reason(status: &str) -> &'static str {
         "engine-changed" => "engine changed between rounds — the rubric moves the cost by itself",
         "prior-unconfirmed" => "the later round does not say it chained from this round",
         "diff-moved" => {
-            "the rounds did not review the same diff (head, base, path or changed-file set)"
+            "the rounds did not review the same diff (head, base, path or changed-file set differ, or are missing) — the drop includes the change, not only memory"
         }
         "dirty-tree" => "a round ran on a dirty working tree",
         "incomplete" => {

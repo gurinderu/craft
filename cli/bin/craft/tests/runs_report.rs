@@ -258,7 +258,7 @@ fn an_engine_no_run_matches_is_refused_naming_the_stores_engines() {
     assert!(out.stdout.is_empty(), "no report over nothing");
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(
-        err.contains("no finished run matches engine \"claude-code 1.0.0 r3\""),
+        err.contains("no run matches engine \"claude-code 1.0.0 r3\""),
         "{err}"
     );
     assert!(
@@ -386,4 +386,68 @@ fn with_no_log_named_the_hooks_read_the_homes_own() {
         (row["runs"].clone(), row["silentBy"].clone()),
         (json!(1), json!({"off-env": 1}))
     );
+}
+
+#[test]
+fn an_engine_whose_runs_all_died_lists_them_instead_of_being_refused() {
+    let d = store(&[
+        run("2026-01-01T00-00-00Z", &json!({})),
+        run(
+            "2026-01-02T00-00-00Z",
+            &json!({"engineRevision": 5, "partial": true, "partialReason": "died"}),
+        ),
+    ]);
+    let out = lines(&craft(
+        d.path(),
+        &["retro", "--engine", "claude-code 1.0.0 r5"],
+    ));
+    assert_eq!(line(&out, "summary")["runs"], json!(0));
+    assert_eq!(line(&out, "unfinishedListed")["listed"], json!(1));
+    let dead = line(&out, "unfinishedRun");
+    assert_eq!(
+        (dead["ts"].clone(), dead["reason"].clone()),
+        (json!("2026-01-02T00-00-00Z"), json!("died"))
+    );
+}
+
+#[test]
+fn the_latest_engine_is_the_engine_of_the_record_the_retro_stands_on_not_a_folded_part() {
+    let part = json!({"driver": "cli", "cliRun": "/r/1"});
+    let mut stopped = part.clone();
+    (stopped["verdict"], stopped["engineRevision"]) = (json!("INCOMPLETE"), json!(5));
+    let d = store(&[
+        run("2026-01-01T00-00-00Z", &part),
+        run("2026-01-02T00-00-00Z", &stopped),
+    ]);
+    let out = lines(&craft(d.path(), &["retro", "--engine", "latest"]));
+    let s = line(&out, "summary");
+    assert_eq!(
+        s["engine"],
+        json!("claude-code+cli 1.0.0 r4"),
+        "the stopped part folds into the finished record"
+    );
+    assert_eq!(s["runs"], json!(1));
+}
+
+#[test]
+fn a_refused_engine_names_the_filters_that_kept_none_of_its_runs() {
+    let d = store(&[run("2026-01-01T00-00-00Z", &json!({}))]);
+    let out = craft(
+        d.path(),
+        &[
+            "retro",
+            "1.0.0",
+            "--branch",
+            "other",
+            "--engine",
+            "claude-code 1.0.0 r4",
+        ],
+    );
+    assert_eq!(out.status.code(), Some(1));
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("no run the filters keep (branch other, version 1.0.0) matches engine \"claude-code 1.0.0 r4\""),
+        "{err}"
+    );
+    assert!(err.contains("- claude-code 1.0.0 r4"), "{err}");
 }
