@@ -1389,7 +1389,8 @@ export function run(argv, _env, home = os.homedir()) {
   // finished, so averaging it in would depress every yield and refute rate with an artefact of the
   // outage rather than of the rubric. Excluded from the aggregate, but never silently: the whole
   // reason these records exist is that a dead run used to leave no trace at all.
-  const split = partitionByCompleteness(records.filter(r => r.schemaVersion))
+  // A retro's mark is no run: out before any count, slice or note (realm @nick/craft, #658).
+  const split = partitionByCompleteness(records.filter(r => r.schemaVersion && !isRetroMark(r)))
   const partials = split.partial
   // A run stopped and resumed is one run, folded before the slice: counted under the version and engine of the
   // record standing for it, its stopped part's slice saying it folded (integrations/shared/run-parts.mjs).

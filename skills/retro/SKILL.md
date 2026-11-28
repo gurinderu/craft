@@ -14,9 +14,13 @@ person's word.
 
 ## 1. The range
 
-By default: this repository's runs of the last 14 days. The person may name a period (a stamp
-prefix such as `2026-11-01` for `--since` and `--until`), a branch (`--branch`) or a craft
-version (`--version`). Say the range in one line before you read.
+When the session-start hook offered this retro, read the runs it counted: those of the craft
+version it names (`--version`) since this repository's last retro. Its time is the `ts` of the
+newest `retro` row `"$CRAFT_BIN" runs ls --project '<the key, as step 2 resolves it>' --name retro
+--limit 1 --json` prints — the stamp as it is for `--since`; no row, no `--since`. Otherwise, by
+default: this repository's runs of the last 14 days. The person may name a period (a stamp prefix
+such as `2026-11-01` for `--since` and `--until`), a branch (`--branch`) or a craft version
+(`--version`). Say the range in one line before you read.
 
 ## 2. Get the binary and read
 

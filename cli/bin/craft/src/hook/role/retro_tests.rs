@@ -10,7 +10,6 @@ fn row(ts: &str, verdict: &str) -> Row {
     Row {
         ts: ts.to_owned(),
         verdict: verdict.to_owned(),
-        branch: "feat/x".to_owned(),
     }
 }
 
@@ -25,7 +24,7 @@ fn runs(n: usize, verdict: &str) -> Vec<Row> {
 }
 
 #[test]
-fn twenty_runs_three_unclean_in_a_row_or_a_release_review_call_for_a_retro() {
+fn twenty_runs_or_three_unclean_in_a_row_call_for_a_retro() {
     let today = day("2026-11-02");
     let since = |runs| Since {
         runs,
@@ -50,9 +49,6 @@ fn twenty_runs_three_unclean_in_a_row_or_a_release_review_call_for_a_retro() {
         Some(Why::Unclean),
         "no verdict is none clean"
     );
-    let mut release = runs(1, "Warning");
-    release[0].branch = "release-please--branches--main".into();
-    assert_eq!(decide(&since(release), today), Some(Why::Release));
 }
 
 #[test]
@@ -149,4 +145,33 @@ fn the_offer_counts_this_repositorys_runs_of_this_version_since_its_retro_once_a
         None,
         "counted anew from the retro"
     );
+}
+
+#[test]
+fn the_index_read_keeps_this_repositorys_own_reviews_after_its_retro_in_time_order() {
+    let home = tempfile::tempdir().unwrap();
+    let store = home.path().join("runs");
+    let mut nested = review("2026-11-01T09-00-00Z", KEY, V);
+    nested["nested"] = serde_json::json!(true);
+    let mark = |ts: &str, project: &str| serde_json::json!({"ts": ts, "kind": "retro", "name": "retro", "project": project});
+    index(
+        &store,
+        &[
+            review("2026-11-01T12-00-00Z", KEY, V),
+            mark("2026-11-01T10-00-00Z", KEY),
+            review("2026-11-01T11-00-00Z", KEY, V),
+            review("2026-11-01T10-00-00Z", KEY, V),
+            nested,
+            mark("2026-11-01T11-30-00Z", "/w/other"),
+            review("2026-11-01T09-30-00Z", KEY, V),
+        ],
+    );
+    let since = read(&store, KEY, V);
+    let ts: Vec<&str> = since.runs.iter().map(|r| r.ts.as_str()).collect();
+    assert_eq!(
+        ts,
+        ["2026-11-01T11-00-00Z", "2026-11-01T12-00-00Z"],
+        "after its own retro, the run filed with it and a rust-audit slice aside, oldest first"
+    );
+    assert_eq!(since.last_retro.as_deref(), Some("2026-11-01T10-00-00Z"));
 }

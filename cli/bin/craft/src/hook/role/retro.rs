@@ -1,15 +1,16 @@
 //! The session start's offer of a retro (realm @nick/craft, node #658): read from the run store's
 //! index without an agent or the network — this repository's review runs of the hook's own craft
-//! version since its last `retro` record — and said at most once a day per repository, so a
-//! retro, which spends tokens, is offered and never run unasked. Silenced by `CRAFT_RETRO_HOOK=0`.
+//! version since its last `retro` record, a rust-audit's per-crate slices aside — and said at most
+//! once a day per repository ([`super::retro_offered`]), so a retro, which spends tokens, is
+//! offered and never run unasked. Silenced by `CRAFT_RETRO_HOOK=0`, which craft's own task
+//! subprocesses carry. A release's full review offers none yet: its record does not say it is one.
 
-use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use craft_store::js::Obj;
 use craft_store::read::{self, Skipped};
 
-use super::{Ctx, iso};
+use super::{Ctx, iso, retro_offered};
 
 pub const SWITCH: &str = "CRAFT_RETRO_HOOK";
 const RUNS: usize = 20;
@@ -17,7 +18,6 @@ const UNCLEAN: usize = 3;
 const DAYS: i64 = 14;
 /// Fewer runs than this say too little for the time alone to offer a retro.
 const DAYS_MIN_RUNS: usize = 5;
-const RELEASE_BRANCH: &str = "release-please--";
 const DAY_MS: i64 = 86_400_000;
 
 /// Why the offer is made.
@@ -25,16 +25,14 @@ const DAY_MS: i64 = 86_400_000;
 pub enum Why {
     Runs,
     Unclean,
-    Release,
     Days(i64),
 }
 
-/// One review run of the version: its time, verdict and branch, as the index spells them.
+/// One review run of the version: its time and verdict, as the index spells them.
 #[derive(Debug, Clone, Default)]
 pub struct Row {
     pub ts: String,
     pub verdict: String,
-    pub branch: String,
 }
 
 /// The repository's review runs of the version since its last retro, oldest first.
@@ -71,13 +69,6 @@ pub fn decide(since: &Since, today: i64) -> Option<Why> {
     if last.len() == UNCLEAN && last.iter().all(|r| unclean(&r.verdict)) {
         return Some(Why::Unclean);
     }
-    if since
-        .runs
-        .iter()
-        .any(|r| r.branch.starts_with(RELEASE_BRANCH))
-    {
-        return Some(Why::Release);
-    }
     let anchor = since
         .last_retro
         .as_deref()
@@ -100,40 +91,15 @@ fn read(store: &Path, key: &str, version: &str) -> Since {
             last_retro = last_retro.take().max(Some(ts));
         } else if ["review", "cli-review"].contains(&text(&r, "name").as_str())
             && r.text_units("craftVersion") == version
+            && !r.get("nested").is_some_and(craft_store::js::Js::truthy)
         {
-            let (verdict, branch) = (text(&r, "verdict"), text(&r, "branch"));
-            runs.push(Row {
-                ts,
-                verdict,
-                branch,
-            });
+            let verdict = text(&r, "verdict");
+            runs.push(Row { ts, verdict });
         }
     }));
     runs.retain(|r| last_retro.as_ref().is_none_or(|l| r.ts > *l));
     runs.sort_by(|a, b| a.ts.cmp(&b.ts));
     Since { runs, last_retro }
-}
-
-fn offered_file(home: &Path) -> PathBuf {
-    home.join(".craft").join("retro-offered.json")
-}
-
-/// Marks `key` offered on `today`, unless it already was: `false` then.
-fn first_today(home: &Path, key: &str, today: i64) -> bool {
-    let file = offered_file(home);
-    let mut seen: BTreeMap<String, i64> = std::fs::read_to_string(&file)
-        .ok()
-        .and_then(|t| serde_json::from_str(&t).ok())
-        .unwrap_or_default();
-    if seen.get(key) == Some(&today) {
-        return false;
-    }
-    seen.retain(|_, day| today - *day < DAYS);
-    seen.insert(key.to_owned(), today);
-    if let Ok(text) = serde_json::to_string(&seen) {
-        drop(std::fs::write(&file, text));
-    }
-    true
 }
 
 fn text(n: usize, version: &str, since: &Since, why: Why) -> String {
@@ -145,7 +111,6 @@ fn text(n: usize, version: &str, since: &Since, why: Why) -> String {
     let why = match why {
         Why::Runs => String::new(),
         Why::Unclean => format!(", the last {UNCLEAN} without a clean verdict"),
-        Why::Release => ", a release's full review among them".to_owned(),
         Why::Days(d) => format!(", {d} days ago"),
     };
     format!(
@@ -164,9 +129,13 @@ pub fn offer(ctx: &Ctx, key: &str, version: &str) -> Option<String> {
         return None;
     }
     let today = ctx.now.div_euclid(DAY_MS);
+    if retro_offered::already(home, key, today) {
+        return None;
+    }
     let since = read(&store, key, version);
     let why = decide(&since, today)?;
-    first_today(home, key, today).then(|| text(since.runs.len(), version, &since, why))
+    retro_offered::mark(home, key, today, DAYS);
+    Some(text(since.runs.len(), version, &since, why))
 }
 
 #[cfg(test)]

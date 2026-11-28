@@ -1054,6 +1054,27 @@ test('a craftVersion split between a known revision and an unattributed run is a
   assert.deepEqual(a.versionCollisions, [{ version: '0.18.1', revisions: ['r3', 'r?'] }], 'r? sorts last, after the known revision')
 })
 
+test('--engine latest picks no retro mark as the newest run, and counts none in its note', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'craft-runs-'))
+  const review = {
+    schemaVersion: 1,
+    runtime: 'claude-code',
+    name: 'review',
+    verdict: 'Approve',
+    craftVersion: '0.18.1',
+    engineRevision: 3,
+    ts: '2026-01-01T00-00-00Z',
+    notRun: [],
+    dimensions: [],
+  }
+  fs.writeFileSync(path.join(dir, 'a-review.json'), JSON.stringify(review))
+  fs.writeFileSync(path.join(dir, 'b-retro.json'), JSON.stringify({ schemaVersion: 1, kind: 'retro', name: 'retro', ts: '2026-01-02T00-00-00Z' }))
+  const script = fileURLToPath(new URL('./analyze-runs.mjs', import.meta.url))
+  const out = execFileSync('node', [script, dir, '--engine', 'latest'], { encoding: 'utf8' })
+  fs.rmSync(dir, { recursive: true, force: true })
+  assert.match(out, /Filtered to engine claude-code 0\.18\.1 r3: 1 of 1 run\(s\)/, out)
+})
+
 test('the --version CLI filter warns when its slice blends multiple engine revisions', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'craft-runs-'))
   /** @param {number} rev @param {string} ts */

@@ -92,6 +92,7 @@ fn twenty_review_runs_are_offered_a_retro_and_retro_done_counts_them_anew() {
         .env("HOME", &home)
         .output()
         .unwrap();
+    assert!(switched.status.success(), "{switched:?}");
     let stats = String::from_utf8(switched.stdout).unwrap();
     assert!(
         !stats.contains("\"retro\""),

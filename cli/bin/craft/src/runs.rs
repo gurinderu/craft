@@ -552,7 +552,7 @@ fn tally_record(
         By::Name => r.try_text("name")?,
         By::Project => r.try_text("project")?,
     };
-    if !craft_store::retro::is_run(r) {
+    if r.text_units("kind") == craft_store::retro::DONE_KIND {
         return Ok(());
     }
     let key = if key.is_empty() { "(none)" } else { key };
