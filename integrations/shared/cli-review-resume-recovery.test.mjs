@@ -1,6 +1,6 @@
 // A resume (`run=`) whose own output the driver could not read may still have finished the run and filed its record
 // (integrations/shared/cli-review-steps.mjs, opening and afterLost): the binary's status is asked before the driver files
-// anything, as after a lost submit (realm @nick/craft, node #731).
+// anything, as after a lost submit (realm @nick/craft, nodes #731, #736).
 import { test } from 'vitest'
 import assert from 'node:assert/strict'
 import { runEngine } from './engine-harness.mjs'
@@ -59,6 +59,9 @@ test('a lost resume whose run the binary did not finish stops where the binary s
   assert.deepEqual(labels(run), ['step:locate', 'step:resume', 'step:status', 'log-run'])
   assert.match(run.report, /review stopped \(the binary reports [^)]*verify[^)]*\): the command printed no JSON/, run.report)
   assert.ok(run.report.includes(`craft:review run=${RUN}`), run.report)
+  /** @type {{ notRun?: unknown } | null} */
+  const rec = JSON.parse(String(run.calls.find(c => c.label === 'log-run')?.prompt).split(/\nRECORD:\n/)[1] ?? 'null')
+  assert.deepEqual(rec?.notRun, ['the craft binary did not finish the run', 'stopped: a step of the binary was lost'], 'the resume ran: its step was lost')
 })
 
 for (const refused of [false, true])
@@ -92,4 +95,16 @@ test('a start whose step was lost asks no status: no run of its own is known to 
   })
   assert.ok(!labels(run).includes('step:status'), String(labels(run)))
   assert.match(run.report, /review stopped: the command printed no JSON/)
+})
+
+test('a resume whose first page named its run but whose page step the harness refused still asks the status', async () => {
+  const step = JSON.stringify({ run: RUN, done: false, tasks: [] })
+  const run = await lostResume({
+    'step:resume': { exitCode: 0, stderr: '', stdout: `craft-out ${RUN} ${String(step.length)} 0 5\n${step.slice(0, 5)}\ncraft-page 5\n` },
+    'step:resume:page': { exitCode: 1, stdout: '', stderr: REFUSED },
+    'step:status': statusSays(true),
+  })
+  assert.ok(labels(run).includes('step:status'), String(labels(run)))
+  assert.ok(!labels(run).includes('log-run'), 'no second record beside the binary’s own')
+  assert.match(run.report, /^## Verdict\n\n⛔ Block/, run.report)
 })
