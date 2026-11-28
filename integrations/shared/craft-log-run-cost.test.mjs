@@ -20,3 +20,27 @@ test('costProblem: a slice of a run is a usable cost; a slice of the wrong shape
     assert.equal(costProblem({ ...parts, slice }), 'malformed', JSON.stringify(slice))
   }
 })
+
+test('costProblem: every case the binary is held to as well (content/parity/cost-problem-cases.json)', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const url = new URL('../../content/parity/cost-problem-cases.json', import.meta.url)
+  const { cases } = /** @type {{ cases: { name: string, cost?: unknown, problem: string | null }[] }} */ (JSON.parse(await readFile(url, 'utf8')))
+  for (const c of cases) {
+    assert.equal(costProblem(c.cost), c.problem, c.name)
+  }
+})
+
+test('foldStoppedParts: a run filed in parts is priced by every share summed once (content/parity/cost-problem-cases.json)', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const { foldStoppedParts } = await import('./run-parts.mjs')
+  const url = new URL('../../content/parity/cost-problem-cases.json', import.meta.url)
+  /** @type {{ folds: { name: string, parts: { ts: string, verdict: string, cost?: unknown }[], standing: number, cost: unknown }[] }} */
+  const { folds } = JSON.parse(await readFile(url, 'utf8'))
+  for (const f of folds) {
+    const records = f.parts.map(p => ({ ...p, kind: 'workflow', name: 'review', driver: 'cli', project: '/p', cliRun: '/r/1' }))
+    const part = f.parts[f.standing]
+    const kept = foldStoppedParts(records).records.filter(r => r.ts === part?.ts && r.verdict === part.verdict)
+    assert.equal(kept.length, 1, `${f.name}: the standing part is kept once`)
+    assert.deepEqual(kept[0]?.cost ?? null, f.cost, f.name)
+  }
+})
