@@ -79,26 +79,27 @@ impl Protocol for InProcess {
     }
 }
 
+/// A refusal before anything ran: its answer and the last event, exit 2.
+fn refused(sink: &Sink, why: &anyhow::Error) -> Result<ExitCode> {
+    super::ended(
+        sink,
+        &format!("Triage refused: {why:#}. Nothing ran."),
+        Event::TriageResult {
+            plan_file: None,
+            summary: None,
+            run: None,
+            stopped: None,
+            exit_code: 2,
+        },
+        2,
+    )
+}
+
 pub(crate) async fn run(args: RunArgs) -> Result<ExitCode> {
-    let sink = Sink {
-        json: args.host.events == Some(EventFormat::Json),
-    };
-    let prepared = match prepare::prepare(args, sink) {
+    let sink = Sink::new(args.host.events == Some(EventFormat::Json));
+    let prepared = match prepare::prepare(args, &sink) {
         Ok(p) => p,
-        Err(e) => {
-            super::say(
-                &mut std::io::stdout().lock(),
-                &format!("Triage refused: {e:#}. Nothing ran."),
-            )?;
-            sink.emit(&Event::TriageResult {
-                plan_file: None,
-                summary: None,
-                run: None,
-                stopped: None,
-                exit_code: 2,
-            });
-            return Ok(ExitCode::from(2));
-        }
+        Err(e) => return refused(&sink, &e),
     };
     // (realm @nick/craft, node #735)
     let stop = super::stopping();
@@ -116,7 +117,7 @@ pub(crate) async fn run(args: RunArgs) -> Result<ExitCode> {
         )
     };
     let log = |line: &str| sink.log(line);
-    let emit = |event: Event| sink.emit(&event);
+    let emit = |event: Event| sink.emit(event);
     let proto = InProcess { start: p.start };
     let driver = Driver {
         proto: &proto,
@@ -133,7 +134,6 @@ pub(crate) async fn run(args: RunArgs) -> Result<ExitCode> {
         again: &again,
     };
     let answer = super::ending::drive(&driver, p.resume.as_deref(), false).await;
-    super::say(&mut std::io::stdout().lock(), &answer.text)?;
     let code = (*stop.borrow()).unwrap_or(u8::from(!answer.finished));
     let last = answer.step.as_ref();
     let text = |key| {
@@ -141,12 +141,16 @@ pub(crate) async fn run(args: RunArgs) -> Result<ExitCode> {
             .and_then(Value::as_str)
             .map(str::to_owned)
     };
-    sink.emit(&Event::TriageResult {
-        plan_file: text("planFile"),
-        summary: text("summary"),
-        run: answer.run,
-        stopped: last.and_then(|s| s.get("stopped")).cloned(),
-        exit_code: code,
-    });
-    Ok(ExitCode::from(code))
+    super::ended(
+        &sink,
+        &answer.text,
+        Event::TriageResult {
+            plan_file: text("planFile"),
+            summary: text("summary"),
+            run: answer.run,
+            stopped: last.and_then(|s| s.get("stopped")).cloned(),
+            exit_code: code,
+        },
+        code,
+    )
 }

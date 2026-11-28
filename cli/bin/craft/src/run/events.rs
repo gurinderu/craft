@@ -1,8 +1,19 @@
 //! The progress of `craft review run --events json` as a stream a host's view reads (realm
 //! @nick/craft, node #506): one JSON object per line on stderr, stdout left to the answer. Without
 //! the flag, stderr carries the human progress lines as before and no event.
+//!
+//! One thread of the sink's own writes the stream (realm @nick/craft, node #690). An event is
+//! offered to a bounded queue and never waited for: one the queue has no room for is lost, and a
+//! delegated task whose event is lost is not handed out (`delegate.rs`). A line the stream did not
+//! take whole is the last — nothing is written after it. The run waits for what it offered only as
+//! it ends, and no longer than its exit wait.
 
 use std::io::Write;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
+use std::sync::{Arc, Condvar, Mutex, PoisonError};
+use std::thread;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -113,226 +124,193 @@ impl Event {
     }
 }
 
+/// How many events may wait for the writer: not fewer than one round's dispatches.
+const CAPACITY: usize = 1024;
+/// How long a run waits, as it ends, for the events it offered and the writer has not written.
+const EXIT_WAIT: Duration = Duration::from_secs(2);
+
+/// What the writer has told, read by whoever offers an event or waits for one.
+#[derive(Debug, Default)]
+struct Told {
+    /// How many events the writer took off the queue, written or lost.
+    handled: Mutex<u64>,
+    /// Set once a line was not taken whole: the stream is over.
+    broken: AtomicBool,
+    /// Woken as each event is taken off the queue.
+    advanced: Condvar,
+}
+
+/// The event stream's queue and its one writer.
+#[derive(Debug)]
+struct Queue {
+    offered: SyncSender<Event>,
+    /// How many events the queue took.
+    queued: AtomicU64,
+    told: Arc<Told>,
+    wait: Duration,
+}
+
+impl Queue {
+    /// A queue of `capacity` events, at least one, and a thread of its own that writes each as
+    /// one line through `write`, which says whether the stream took it whole. A writer that could
+    /// not start takes the queue's other end with it: every event is then refused.
+    fn with(
+        capacity: usize,
+        wait: Duration,
+        write: impl FnMut(&str) -> bool + Send + 'static,
+    ) -> Self {
+        let (offered, taken) = sync_channel(capacity.max(1));
+        let told = Arc::new(Told::default());
+        // Detached: it ends with the stream, and a run that returns early does not wait for it.
+        let _writer = thread::Builder::new().name("craft-events".into()).spawn({
+            let told = Arc::clone(&told);
+            move || drain(&taken, &told, write)
+        });
+        Self {
+            offered,
+            queued: AtomicU64::new(0),
+            told,
+            wait,
+        }
+    }
+
+    /// Offers an event: whether the queue took it. It never waits.
+    fn offer(&self, event: Event) -> bool {
+        if self.told.broken.load(Ordering::SeqCst) {
+            return false;
+        }
+        if self.offered.try_send(event).is_err() {
+            return false;
+        }
+        self.queued.fetch_add(1, Ordering::SeqCst);
+        true
+    }
+
+    /// Waits, no longer than `wait`, for the events the queue took to be written; a stream that
+    /// broke ends the wait at once.
+    fn finish(&self) {
+        let queued = self.queued.load(Ordering::SeqCst);
+        let deadline = Instant::now() + self.wait;
+        let told = &*self.told;
+        let mut handled = told.handled.lock().unwrap_or_else(PoisonError::into_inner);
+        while *handled < queued && !told.broken.load(Ordering::SeqCst) {
+            let left = deadline.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                return;
+            }
+            handled = told
+                .advanced
+                .wait_timeout(handled, left)
+                .unwrap_or_else(PoisonError::into_inner)
+                .0;
+        }
+    }
+}
+
+/// The writer's whole work: each event as one line, in the order offered, until one is not taken
+/// whole — nothing is written after it. The caller holds the queue's other end and drops it once
+/// this returns: every later offer is then refused.
+fn drain(taken: &Receiver<Event>, told: &Told, mut write: impl FnMut(&str) -> bool) {
+    while let Ok(event) = taken.recv() {
+        let line = serde_json::to_string(&event).map(|mut line| {
+            line.push('\n');
+            line
+        });
+        let whole = line.is_ok_and(|line| write(&line));
+        if !whole {
+            told.broken.store(true, Ordering::SeqCst);
+        }
+        // Said before the waking, so whoever wakes reads the break with the count.
+        *told.handled.lock().unwrap_or_else(PoisonError::into_inner) += 1;
+        told.advanced.notify_all();
+        if !whole {
+            return;
+        }
+    }
+}
+
+/// The process's stderr, one line at a time.
+fn to_stderr(line: &str) -> bool {
+    std::io::stderr().lock().write_all(line.as_bytes()).is_ok()
+}
+
 /// Where the progress goes: human lines, or the event stream.
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct Sink {
-    pub(crate) json: bool,
+#[derive(Debug, Clone)]
+pub(crate) struct Sink(Mode);
+
+#[derive(Debug, Clone)]
+enum Mode {
+    Lines,
+    Events(Arc<Queue>),
 }
 
 impl Sink {
-    /// A progress line: printed, or as a `log` event. A failed write loses only progress.
-    pub(crate) fn log(self, line: &str) {
-        if self.json {
-            self.emit(&Event::Log {
-                line: line.to_owned(),
-            });
+    /// The process's sink: the event stream with `json`, human lines without.
+    pub(super) fn new(json: bool) -> Self {
+        Self::with(json, CAPACITY, EXIT_WAIT, to_stderr)
+    }
+
+    /// A sink whose event stream holds `capacity` events, at least one, waits `wait` as it ends
+    /// and writes each line through `write`, which says whether the stream took it whole.
+    pub(super) fn with(
+        json: bool,
+        capacity: usize,
+        wait: Duration,
+        write: impl FnMut(&str) -> bool + Send + 'static,
+    ) -> Self {
+        if json {
+            Self(Mode::Events(Arc::new(Queue::with(capacity, wait, write))))
         } else {
-            let _unlogged = writeln!(std::io::stderr().lock(), "{line}");
+            Self(Mode::Lines)
         }
     }
 
-    /// An event, written only in the event stream. A failed write loses only progress.
-    pub(crate) fn emit(self, event: &Event) {
+    /// Whether this is the event stream.
+    pub(super) fn json(&self) -> bool {
+        matches!(self.0, Mode::Events(_))
+    }
+
+    /// A progress line: printed, or offered as a `log` event. One not written loses only progress.
+    pub(crate) fn log(&self, line: &str) {
+        match &self.0 {
+            Mode::Events(queue) => {
+                let _lost = queue.offer(Event::Log {
+                    line: line.to_owned(),
+                });
+            }
+            Mode::Lines => {
+                let _unlogged = writeln!(std::io::stderr().lock(), "{line}");
+            }
+        }
+    }
+
+    /// An event, offered to the event stream alone. One not written loses only progress.
+    pub(crate) fn emit(&self, event: Event) {
         let _lost = self.emitted(event);
     }
 
-    /// An event written to the event stream: whether it was — what a delegated task's dispatch
-    /// stands on (`delegate.rs`).
-    pub(crate) fn emitted(self, event: &Event) -> bool {
-        self.written(&mut std::io::stderr().lock(), event)
+    /// An event offered to the event stream: whether the queue took it — what a delegated task's
+    /// dispatch stands on (`delegate.rs`).
+    pub(crate) fn emitted(&self, event: Event) -> bool {
+        match &self.0 {
+            Mode::Events(queue) => queue.offer(event),
+            Mode::Lines => false,
+        }
     }
 
-    /// An event written as one line to `out`, whole or not at all: whether it was written.
-    fn written(self, out: &mut dyn Write, event: &Event) -> bool {
-        self.json && serde_json::to_string(event).is_ok_and(|line| writeln!(out, "{line}").is_ok())
+    /// Waits, no longer than its exit wait, for the events offered to be written.
+    pub(crate) fn finish(&self) {
+        if let Mode::Events(queue) = &self.0 {
+            queue.finish();
+        }
     }
 }
+
+/// A test's event stream, for this module's tests, for `delegate`'s and for the run's end.
+#[cfg(test)]
+#[path = "events_stream_tests.rs"]
+pub(super) mod stream;
 
 #[cfg(test)]
-mod tests {
-    use serde_json::json;
-
-    use super::*;
-
-    fn round_trip(event: &Event, wire: &Value) {
-        let text = serde_json::to_string(event).unwrap();
-        assert_eq!(&serde_json::from_str::<Value>(&text).unwrap(), wire);
-        assert_eq!(&serde_json::from_str::<Event>(&text).unwrap(), event);
-    }
-
-    #[test]
-    fn every_event_has_the_shape_its_doc_names() {
-        let s = |v: &str| v.to_owned();
-        round_trip(
-            &Event::Log { line: s("run=/r") },
-            &json!({"type": "log", "line": "run=/r"}),
-        );
-        round_trip(
-            &Event::Phase { name: s("lenses") },
-            &json!({"type": "phase", "name": "lenses"}),
-        );
-        round_trip(
-            &Event::Round {
-                round: 2,
-                phase: s("lenses"),
-                tasks: 3,
-            },
-            &json!({"type": "round", "round": 2, "phase": "lenses", "tasks": 3}),
-        );
-        round_trip(
-            &Event::TaskStarted {
-                id: s("t1"),
-                label: s("lens a"),
-                agent: Some(s("review-task")),
-                model: None,
-                tier: s("opus"),
-            },
-            &json!({"type": "task_started", "id": "t1", "label": "lens a", "agent": "review-task", "model": null, "tier": "opus"}),
-        );
-        round_trip(
-            &Event::TaskFinished {
-                id: s("t1"),
-                tokens: Some(12),
-                cost_usd: Some(0.5),
-            },
-            &json!({"type": "task_finished", "id": "t1", "tokens": 12, "cost_usd": 0.5}),
-        );
-        round_trip(
-            &Event::TaskFailed {
-                id: s("t1"),
-                reason: s("boom"),
-            },
-            &json!({"type": "task_failed", "id": "t1", "reason": "boom"}),
-        );
-        round_trip(
-            &Event::Degraded { note: s("n") },
-            &json!({"type": "degraded", "note": "n"}),
-        );
-        round_trip(
-            &Event::UsageLimit { text: s("l") },
-            &json!({"type": "usage_limit", "text": "l"}),
-        );
-        round_trip(
-            &Event::Task {
-                key: 7,
-                id: s("t1"),
-                label: s("lens a"),
-                agent: Some(s("review-task")),
-                model: None,
-                cwd: s("/repo"),
-                prompt: s("p"),
-            },
-            &json!({"type": "task", "key": 7, "id": "t1", "label": "lens a", "agent": "review-task", "model": null, "cwd": "/repo", "prompt": "p"}),
-        );
-        round_trip(
-            &Event::TaskCancelled { key: 7 },
-            &json!({"type": "task_cancelled", "key": 7}),
-        );
-    }
-
-    #[test]
-    fn an_event_is_written_only_in_the_event_stream_and_says_so() {
-        let event = Event::TaskCancelled { key: 1 };
-        assert!(Sink { json: true }.emitted(&event));
-        assert!(
-            !Sink { json: false }.emitted(&event),
-            "without --events json no event is written, so no task can be handed out"
-        );
-    }
-
-    /// Set when this test's binary runs again as a child: there the test writes one event through the process's
-    /// stderr, for the parent to read.
-    const WRITES_EVENT: &str = "CRAFT_TEST_EVENT_STREAM";
-
-    /// The child's side: one event, written as the binary writes it under `--delegate`.
-    fn writes_event() {
-        assert!(
-            Sink { json: true }.emitted(&Event::TaskCancelled { key: 1 }),
-            "the process's stderr took the event"
-        );
-    }
-
-    #[test]
-    fn an_event_leaves_through_the_process_stderr() {
-        if std::env::var_os(WRITES_EVENT).is_some() {
-            writes_event();
-            return;
-        }
-        // A write through the stderr handle passes the harness's capture, so only this test's own process has its
-        // bytes to read: the test runs again as a child. Its name spells no event's kind, which the harness prints.
-        let child = std::process::Command::new(std::env::current_exe().unwrap())
-            .args([
-                "--exact",
-                "run::events::tests::an_event_leaves_through_the_process_stderr",
-            ])
-            .env(WRITES_EVENT, "1")
-            .output()
-            .unwrap();
-        let out = String::from_utf8_lossy(&child.stdout);
-        assert!(
-            child.status.success(),
-            "the child writing its event: {}\n{out}",
-            child.status
-        );
-        assert_eq!(
-            child.stderr.as_slice(),
-            b"{\"type\":\"task_cancelled\",\"key\":1}\n".as_slice(),
-            "the event, whole, on stderr"
-        );
-        assert!(
-            !out.contains("task_cancelled"),
-            "stdout is left to the answer:\n{out}"
-        );
-    }
-
-    /// An event stream that takes `n` bytes more, then is gone: its reader stopped reading.
-    struct GoneAfter(usize);
-
-    impl std::io::Write for GoneAfter {
-        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-            if self.0 == 0 {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::BrokenPipe,
-                    "the reader is gone",
-                ));
-            }
-            let take = self.0.min(buf.len());
-            self.0 -= take;
-            Ok(take)
-        }
-
-        fn flush(&mut self) -> std::io::Result<()> {
-            Ok(())
-        }
-    }
-
-    #[test]
-    fn an_event_that_could_not_be_written_whole_is_not_said_written() {
-        let event = Event::TaskCancelled { key: 1 };
-        let mut out = Vec::new();
-        assert!(Sink { json: true }.written(&mut out, &event));
-        assert_eq!(
-            out.as_slice(),
-            b"{\"type\":\"task_cancelled\",\"key\":1}\n".as_slice()
-        );
-        for taken in [0, 4] {
-            assert!(
-                !Sink { json: true }.written(&mut GoneAfter(taken), &event),
-                "a stream that took {taken} bytes and is gone did not get the event"
-            );
-        }
-    }
-
-    #[test]
-    fn the_result_reads_the_finished_step_or_says_incomplete() {
-        let step = json!({"verdict": "Approve", "report": "/r/report.md", "run": "/r", "findings": [{}, {}]});
-        round_trip(
-            &Event::result(Some(&step), None, 0),
-            &json!({"type": "result", "verdict": "Approve", "report": "/r/report.md", "run": "/r", "findings": 2, "exit_code": 0}),
-        );
-        round_trip(
-            &Event::result(None, Some("/q".into()), 1),
-            &json!({"type": "result", "verdict": "INCOMPLETE", "report": null, "run": "/q", "findings": 0, "exit_code": 1}),
-        );
-    }
-}
+#[path = "events_tests.rs"]
+mod tests;

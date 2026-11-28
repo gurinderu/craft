@@ -1,5 +1,6 @@
-//! What the stopped-run tests share: a repository with a Rust change, a stand-in host, a
-//! `craft review run` over it, and the pids its stand-ins leave.
+//! What the stopped-run and event-stream tests share: a repository with a Rust change, a stand-in
+//! host, a `craft review run` over it, and the pids its stand-ins leave.
+#![allow(dead_code, reason = "each test crate uses its own part of these")]
 
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -70,11 +71,15 @@ impl Bench {
     /// `craft review run --backend codex` over the repository, the stand-in tools first on PATH;
     /// `--no-gate` unless `gate`.
     pub fn review(&self, gate: bool) -> Child {
-        self.command(gate).stdin(Stdio::null()).spawn().unwrap()
+        self.command("codex", gate)
+            .stdin(Stdio::null())
+            .spawn()
+            .unwrap()
     }
 
-    /// [`Bench::review`] unspawned, its stdin left to the caller.
-    pub fn command(&self, gate: bool) -> Command {
+    /// [`Bench::review`] unspawned, the backend named; its stdin is left to the caller, its stdout
+    /// and stderr piped for the caller to take or replace.
+    pub fn command(&self, backend: &str, gate: bool) -> Command {
         let checkout = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
         let path = std::env::join_paths(std::iter::once(self.bin.clone()).chain(
             std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()),
@@ -87,7 +92,7 @@ impl Bench {
             "review",
             "run",
             "--backend",
-            "codex",
+            backend,
             "--base",
             "origin/main",
         ]);
@@ -97,7 +102,7 @@ impl Bench {
         cmd.args(["--no-recall", "--depth", "light", "--cwd"])
             .arg(&self.repo)
             .arg("--host-bin")
-            .arg(self.bin.join("codex"))
+            .arg(self.bin.join(backend))
             .arg("--craft-root")
             .arg(&checkout)
             .env("HOME", &self.home)

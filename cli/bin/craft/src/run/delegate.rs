@@ -7,8 +7,8 @@
 //! ([`answer_of`]); an error as the agent's failed turn, whose words are read for a usage limit as
 //! a failed exit's are, so it stops the run as there. A dispatch dropped before its reply — past
 //! its deadline, or its round stopped — is said with a `task_cancelled` event, for the plugin to
-//! stop that child. A dispatch whose event could not be written, or made once the input closed,
-//! stops the run, resumable: no later task could answer either.
+//! stop that child. A dispatch whose event the stream's queue did not take, or made once the input
+//! closed, stops the run, resumable: no later task could answer either.
 
 use std::collections::HashMap;
 use std::io::BufRead;
@@ -37,7 +37,7 @@ struct Shared {
     closed: AtomicBool,
     /// Each task's label by its id, for the event.
     labels: Mutex<HashMap<String, String>>,
-    /// Writes an event; whether it was written.
+    /// Offers an event to the event stream; whether its queue took it.
     emit: Box<dyn Fn(Event) -> bool + Send + Sync>,
     log: Box<dyn Fn(&str) + Send + Sync>,
 }
@@ -54,7 +54,7 @@ impl std::fmt::Debug for Delegate {
 
 /// Why a dispatch has no reply: the delegating process's input ended, or could not be read.
 const CLOSED: &str = "its input to craft ended";
-/// Why a dispatch failed before any reply could come: its event was not written.
+/// Why a dispatch failed before any reply could come: its event was not queued.
 const UNSENT: &str = "a task could not be handed to it";
 
 /// The run stops on either: no later task could answer (`AgentError::HostGone`, outcome.rs).
@@ -63,8 +63,9 @@ fn gone(why: &str) -> AgentError {
 }
 
 impl Delegate {
-    /// A delegate whose events go to `emit`, which says whether it wrote one, and whose passed-over
-    /// reply lines are said to `log`; replies come through [`Delegate::deliver`].
+    /// A delegate whose events go to `emit`, which says whether the stream's queue took it, and
+    /// whose passed-over reply lines are said to `log`; replies come through
+    /// [`Delegate::deliver`].
     pub(crate) fn new(
         emit: impl Fn(Event) -> bool + Send + Sync + 'static,
         log: impl Fn(&str) + Send + Sync + 'static,

@@ -19,7 +19,7 @@ pub(super) struct Prepared {
     pub(super) concurrency: NonZeroUsize,
 }
 
-pub(super) fn prepare(mut a: RunArgs, sink: Sink) -> Result<Prepared> {
+pub(super) fn prepare(mut a: RunArgs, sink: &Sink) -> Result<Prepared> {
     if a.host.delegate
         && [&a.start.prior_ledger, &a.start.prior_decisions]
             .iter()

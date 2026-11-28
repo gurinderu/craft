@@ -7,6 +7,8 @@ mod boundaries;
 mod common;
 #[path = "triage_run/delegate.rs"]
 mod delegate;
+#[path = "triage_run/events.rs"]
+mod events;
 #[path = "triage_run/fixture.rs"]
 mod fixture;
 #[cfg(target_os = "linux")]
@@ -14,8 +16,14 @@ mod fixture;
 mod interrupt;
 #[path = "triage_run/nonempty.rs"]
 mod nonempty;
+#[cfg(target_os = "linux")]
+#[path = "../../../test-support/pipes.rs"]
+mod pipes;
+#[cfg(target_os = "linux")]
+#[path = "triage_run/unread.rs"]
+mod unread;
 
-use fixture::{Bench, read};
+use fixture::{Bench, no_event, read};
 use serde_json::json;
 
 #[test]
@@ -23,7 +31,7 @@ fn native_triage_keeps_its_event_and_record_shape_without_review_statistics() {
     let b = Bench::new();
     let out = b.start("codex", "ok");
     b.expect(&out, 0);
-    let event = b.result(&out);
+    let event = b.made(&out);
     assert_eq!(event["type"], "triage_result");
     assert_eq!(event["plan_file"], json!(b.path("run/plan.json")));
     assert_eq!(event["summary"], "SUM");
@@ -137,7 +145,22 @@ fn new_sources_on_resume_are_refused_before_even_host_preflight() {
             .output()
             .unwrap();
         b.expect(&out, 2);
-        assert!(String::from_utf8_lossy(&out.stderr).contains(flag));
+        // The parser refuses before the run, so before the stream: its text on stderr and nothing
+        // on stdout — the one refusal that does not end the stream's way (realm @nick/craft,
+        // node #756).
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            out.stdout.is_empty(),
+            "{flag}: an answer on stdout: {}",
+            String::from_utf8_lossy(&out.stdout)
+        );
+        assert!(
+            stderr.starts_with(&format!(
+                "error: the argument '--run <RUN>' cannot be used with '{flag}"
+            )),
+            "{flag}: {stderr}"
+        );
+        no_event("stderr", &stderr);
         assert!(b.calls().is_empty(), "{flag} must precede preflight");
     }
 }

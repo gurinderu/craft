@@ -26,7 +26,7 @@ fn interrupted(sig: &str, number: i32) {
     let bench = Bench::new();
     common::write_executable(&bench.bin.join("codex"), HANGING_CODEX).unwrap();
     let mut craft = bench
-        .command(false)
+        .command("codex", false)
         .args(["--prior-decisions", "-"])
         .stdin(Stdio::piped())
         .spawn()
@@ -72,7 +72,7 @@ fn a_list_closed_on_stdin_still_reaches_the_run() {
     let bench = Bench::new();
     common::write_executable(&bench.bin.join("codex"), HANGING_CODEX).unwrap();
     let mut craft = bench
-        .command(false)
+        .command("codex", false)
         .args(["--prior-decisions", "-"])
         .stdin(Stdio::piped())
         .spawn()

@@ -6,6 +6,39 @@ use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
+/// The triage's result: the last event on stderr, itself a whole JSON line and with every line
+/// before it one too — a line of a journal or a stray event would end the stream early (realm
+/// @nick/craft, node #690).
+pub fn result(out: &Output) -> Value {
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let mut lines = stderr.lines();
+    let found = loop {
+        let Some(line) = lines.next() else {
+            break None;
+        };
+        let event: Value = serde_json::from_str(line).unwrap();
+        if event.get("type").and_then(Value::as_str) == Some("triage_result") {
+            let rest: Vec<&str> = lines.collect();
+            assert!(
+                rest.is_empty(),
+                "the result is the last event: after it came {rest:?}"
+            );
+            break Some(event);
+        }
+    };
+    found.unwrap()
+}
+
+/// Fails on the first line of `text` that parses as an event: the stream's lines are stderr's, so
+/// a run's stdout is the answer's alone (realm @nick/craft, node #690).
+pub fn no_event(what: &str, text: &str) {
+    let event = text.lines().find(|line| {
+        serde_json::from_str::<Value>(line)
+            .is_ok_and(|event| event.get("type").is_some_and(|kind| !kind.is_null()))
+    });
+    assert!(event.is_none(), "an event on {what}: {event:?}");
+}
+
 pub struct Bench(tempfile::TempDir);
 
 pub fn read(path: &Path) -> Value {
@@ -82,6 +115,22 @@ impl Bench {
             .unwrap()
     }
 
+    /// `craft triage run --delegate` over this bench's repository, a new run: each task comes back
+    /// on the stream for the test to answer on stdin, and no host runs.
+    pub fn delegated(&self, backend: &str, mode: &str) -> Command {
+        let mut c = self.command(backend, mode);
+        c.args(["--delegate", "--agents", "review-task"])
+            .arg("--repo")
+            .arg(self.path("repo"))
+            .arg("--report")
+            .arg(self.path("report.md"))
+            .arg("--run-dir")
+            .arg(self.path("run"));
+        c
+    }
+
+    /// The run ended with `code`, and nothing of the event stream reached its stdout: the answer's
+    /// alone (realm @nick/craft, node #690).
     pub fn expect(&self, out: &Output, code: i32) {
         assert_eq!(
             out.status.code(),
@@ -91,14 +140,12 @@ impl Bench {
             String::from_utf8_lossy(&out.stdout),
             String::from_utf8_lossy(&out.stderr)
         );
+        no_event("stdout", &String::from_utf8_lossy(&out.stdout));
     }
 
-    pub fn result(&self, out: &Output) -> Value {
-        let result = String::from_utf8_lossy(&out.stderr)
-            .lines()
-            .filter_map(|l| serde_json::from_str::<Value>(l).ok())
-            .rfind(|v| v["type"] == "triage_result")
-            .unwrap();
+    /// The result of a run that was made: the stream's last event, and its `run` is this bench's.
+    pub fn made(&self, out: &Output) -> Value {
+        let result = result(out);
         assert_eq!(
             result.get("run"),
             Some(&serde_json::json!(self.path("run")))

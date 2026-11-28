@@ -8,7 +8,8 @@ use std::time::Duration;
 use craft_agent::{AgentBackend, AgentError, AgentRequest, Usage};
 use serde_json::json;
 
-use super::super::events::Event;
+use super::super::events::stream;
+use super::super::events::{Event, Sink};
 use super::super::outcome::Outcome;
 use super::super::outcome::{outcome_of, stops};
 use super::super::task::Task;
@@ -296,6 +297,70 @@ async fn once_the_input_ends_every_waiting_dispatch_fails_and_every_later_one_at
 }
 
 #[tokio::test]
+async fn a_task_event_a_broken_stream_refuses_fails_its_dispatch_at_once() {
+    let sink = Sink::with(true, 8, Duration::from_secs(5), |_| false);
+    sink.log("a line the stream could not take");
+    sink.finish();
+    let error = bounded(wired(&sink).run(&request("t1"))).await.unwrap_err();
+    assert!(
+        matches!(&error, AgentError::HostGone(why) if why == "a task could not be handed to it"),
+        "{error}"
+    );
+}
+
+#[tokio::test]
+async fn a_task_event_a_full_stream_refuses_fails_its_dispatch_at_once() {
+    let gate = Arc::new(stream::Gate::default());
+    let kept = Arc::new(stream::Kept::at(&gate));
+    let sink = Sink::with(true, 1, Duration::from_secs(5), stream::writing(&kept));
+    let d = wired(&sink);
+    sink.log("first");
+    assert!(
+        stream::waited_until(|| gate.arrived()),
+        "the writer holds the first line in the stream"
+    );
+    sink.log("second");
+    let error = bounded(d.run(&request("t1"))).await.unwrap_err();
+    assert!(
+        matches!(&error, AgentError::HostGone(why) if why == "a task could not be handed to it"),
+        "{error}"
+    );
+    gate.open();
+    sink.finish();
+    assert_eq!(
+        kept.lines(),
+        [
+            "{\"type\":\"log\",\"line\":\"first\"}\n",
+            "{\"type\":\"log\",\"line\":\"second\"}\n"
+        ],
+        "the lines the queue took are written; the task it refused is not"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_cancelled_dispatch_is_said_behind_its_task_on_the_same_stream() {
+    let kept = Arc::new(stream::Kept::new());
+    let sink = Sink::with(true, 8, Duration::from_secs(5), stream::writing(&kept));
+    let d = wired(&sink);
+    let ran = tokio::time::timeout(Duration::from_secs(5), d.run(&request("t1"))).await;
+    assert!(ran.is_err(), "the deadline dropped it");
+    sink.finish();
+    let taken: Vec<Event> = kept
+        .lines()
+        .iter()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    let [
+        Event::Task { key, .. },
+        Event::TaskCancelled { key: cancelled },
+    ] = taken.as_slice()
+    else {
+        panic!("{taken:?}")
+    };
+    assert_eq!(key, cancelled, "the cancellation names the task before it");
+}
+
+#[tokio::test]
 async fn a_task_event_that_could_not_be_written_fails_its_dispatch_at_once() {
     let (d, _, _) = kept_logged(false);
     let error = bounded(d.run(&request("t1"))).await.unwrap_err();
@@ -303,6 +368,13 @@ async fn a_task_event_that_could_not_be_written_fails_its_dispatch_at_once() {
         matches!(&error, AgentError::HostGone(why) if why == "a task could not be handed to it"),
         "{error}"
     );
+}
+
+/// A delegate wired as `review run` wires it under `--delegate`: its events and its passed-over
+/// lines offered to `sink`'s stream.
+fn wired(sink: &Sink) -> Delegate {
+    let (events, lines) = (sink.clone(), sink.clone());
+    Delegate::new(move |e| events.emitted(e), move |l| lines.log(l))
 }
 
 #[tokio::test]
@@ -369,12 +441,12 @@ fn ready_of(argv: &[&str], json: bool) -> Result<super::super::host::Host, Strin
     );
     let cli = Cli::try_parse_from([&["craft", "--craft-root", root], argv].concat())
         .map_err(|e| e.to_string())?;
-    let sink = super::super::events::Sink { json };
+    let sink = Sink::new(json);
     super::super::ready(
         &cli.run.host,
         cli.run.start.craft_root.as_deref(),
         std::path::Path::new("/nowhere"),
-        sink,
+        &sink,
     )
     .map(|(_, host, _)| host)
 }

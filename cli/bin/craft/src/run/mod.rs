@@ -28,6 +28,9 @@ mod report;
 mod round;
 mod task;
 mod telemetry;
+#[cfg(test)]
+#[path = "mod_tests.rs"]
+mod tests;
 mod there;
 pub(crate) mod triage;
 mod watch;
@@ -129,14 +132,24 @@ fn say(out: &mut dyn Write, text: &str) -> Result<()> {
     Ok(())
 }
 
+/// How a run ends, refused or driven: its answer on stdout, its last event offered to the queue
+/// with the rest, and the exit once what was offered is written or the exit wait is over (realm
+/// @nick/craft, node #690).
+fn ended(sink: &Sink, answer: &str, result: Event, code: u8) -> Result<ExitCode> {
+    say(&mut std::io::stdout().lock(), answer)?;
+    sink.emit(result);
+    sink.finish();
+    Ok(ExitCode::from(code))
+}
+
 /// A refusal before anything ran: its answer and the last event, exit 2.
-fn refused(sink: Sink, why: &str) -> Result<ExitCode> {
-    say(
-        &mut std::io::stdout().lock(),
+fn refused(sink: &Sink, why: &str) -> Result<ExitCode> {
+    ended(
+        sink,
         &report::stopped_answer(&format!("review: {why}. Nothing ran.")),
-    )?;
-    sink.emit(&Event::result(None, None, 2));
-    Ok(ExitCode::from(2))
+        Event::result(None, None, 2),
+        2,
+    )
 }
 
 /// The host and what it runs with, or why it cannot be used: opencode is asked first which
@@ -145,18 +158,19 @@ fn ready(
     args: &HostArgs,
     root: Option<&Path>,
     repo: &Path,
-    sink: Sink,
+    sink: &Sink,
 ) -> Result<(NonZeroUsize, Host, PathBuf), String> {
     let (concurrency, mut host, root) =
         concurrency_of(args).and_then(|c| Ok((c, host_of(args)?, root_of(root)?)))?;
     if args.delegate {
-        if host.kind != HostKind::OpenCode || !sink.json {
+        if host.kind != HostKind::OpenCode || !sink.json() {
             return Err("--delegate is opencode's alone, with --events json".into());
         }
         host.agents = Some(opencode::delegated(args.agents.as_deref())?);
+        let (events, lines) = (sink.clone(), sink.clone());
         host.delegate = Some(delegate::Delegate::on_stdin(
-            move |e| sink.emitted(&e),
-            move |l| sink.log(l),
+            move |e| events.emitted(e),
+            move |l| lines.log(l),
         ));
         return Ok((concurrency, host, root));
     }
@@ -188,21 +202,19 @@ pub async fn run(mut args: RunArgs) -> Result<ExitCode> {
         args.start.prior_decisions_read = crate::steps::prior_decisions(&args.start);
     }
     let stop = stopping();
-    let sink = Sink {
-        json: args.host.events == Some(EventFormat::Json),
-    };
+    let sink = Sink::new(args.host.events == Some(EventFormat::Json));
     if args.run.is_some() && args.start.all_lenses {
         // A resume keeps the lenses its start chose: the flag would read as taken and not be.
         return refused(
-            sink,
+            &sink,
             "--all-lenses goes with a start: a resumed run keeps the lenses it started with",
         );
     }
     let repo = std::path::absolute(&args.start.cwd)?;
     let (concurrency, host, root) =
-        match ready(&args.host, args.start.craft_root.as_deref(), &repo, sink) {
+        match ready(&args.host, args.start.craft_root.as_deref(), &repo, &sink) {
             Ok(s) => s,
-            Err(why) => return refused(sink, &why),
+            Err(why) => return refused(&sink, &why),
         };
     let comment = args.start.comment;
     let mut start = args.start;
@@ -216,7 +228,7 @@ pub async fn run(mut args: RunArgs) -> Result<ExitCode> {
         .to_possible_value()
         .map(|v| v.get_name().to_owned());
     let log = |line: &str| sink.log(line);
-    let emit = |event: Event| sink.emit(&event);
+    let emit = |event: Event| sink.emit(event);
     log(&format!(
         "review {} in {}: {} over {}, up to {concurrency} task(s) at once",
         env!("CARGO_PKG_VERSION"),
@@ -254,8 +266,11 @@ pub async fn run(mut args: RunArgs) -> Result<ExitCode> {
         again: &again,
     };
     let answer = ending::drive(&driver, args.run.as_deref().map(Path::new), comment).await;
-    say(&mut std::io::stdout().lock(), &answer.text)?;
     let code = (*stop.borrow()).unwrap_or(u8::from(!answer.finished));
-    sink.emit(&Event::result(answer.step.as_ref(), answer.run, code));
-    Ok(ExitCode::from(code))
+    ended(
+        &sink,
+        &answer.text,
+        Event::result(answer.step.as_ref(), answer.run, code),
+        code,
+    )
 }
