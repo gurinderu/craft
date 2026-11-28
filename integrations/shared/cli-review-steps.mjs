@@ -383,16 +383,17 @@ async function drive(sb, o, craftVersion, service, recorder) {
 async function openingLost(sb, o, bin, serve, recorder, started) {
   const ran = started.harness === undefined || started.run !== undefined
   const known = o.run || started.run
+  if (started.run) recorder.named(started.run)
   if (known && !started.refused && ran) return afterLost(sb, bin, known, serve, recorder, started)
   return { stopped: stoppedAt('', started, runOfStop(started, o), bin), cause: stopCause(started, 'start') }
 }
 
 /**
- * The run directory a stopped opening names: none for a run the binary refused to resume; a start's that made its run
- * though its step was not read; else the one given.
- * @param {{ refused?: true, run?: string }} started @param {Options} o @returns {string}
+ * The run directory a stopped opening names: none for a run the binary refused to resume, else the one given. A start
+ * whose unread step named its run is recovered through its status, never stopped here (openingLost).
+ * @param {{ refused?: true }} started @param {Options} o @returns {string}
  */
-const runOfStop = (started, o) => (started.refused ? '' : (started.run ?? o.run))
+const runOfStop = (started, o) => (started.refused ? '' : o.run)
 
 /**
  * The run's first step: a resume's (`resumed`), or a start's — or why its binary refused an argument before any work
@@ -477,9 +478,9 @@ async function rounds(sb, bin, first, serve, recorder) {
 }
 
 /**
- * How a run ends whose submit or resume output was lost (`read`): as the binary's status says it ended, else stopped
- * where it stands — a lost step of the binary, unless the harness or the limit stopped it; a status that failed leaves
- * its completion unknown (realm @nick/craft, nodes #731, #736).
+ * How a run ends whose submit, resume or named start output was lost (`read`): as the binary's status says it ended,
+ * else stopped where it stands — a lost step of the binary, unless the harness or the limit stopped it; a status that
+ * failed leaves its completion unknown (realm @nick/craft, nodes #731, #736, #754).
  * @param {Watched} sb @param {string} bin @param {string} run @param {Serve} serve @param {Recorder} recorder
  * @param {{ error: string, harness?: string }} read @returns {Promise<Ending>}
  */
