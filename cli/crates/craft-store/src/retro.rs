@@ -13,6 +13,26 @@ use crate::tally::{Tally, round2};
 mod kinds;
 mod rounds;
 
+/// The kind of the record a finished retro files (`craft runs retro-done`), which marks when this
+/// repository's runs were last read; no reader counts it as a run (realm @nick/craft, node #658).
+pub const DONE_KIND: &str = "retro";
+
+/// The record a finished retro files.
+#[must_use]
+pub fn done_record() -> Obj {
+    Obj::new()
+        .with("schemaVersion", Js::Num(1.0))
+        .with("kind", Js::str(DONE_KIND))
+        .with("name", Js::str(DONE_KIND))
+}
+
+/// Whether a record counts as a run: neither a develop cycle nor a retro's mark.
+#[must_use]
+pub fn is_run(r: &Obj) -> bool {
+    let kind = r.text_units("kind");
+    kind != "develop" && kind != DONE_KIND
+}
+
 pub use kinds::{Deferred, Kind};
 pub use rounds::{Apart, Round};
 
@@ -251,7 +271,7 @@ pub fn retro(version: &str, records: impl IntoIterator<Item = Obj>) -> Result<Re
 /// # Errors
 /// When a report field cannot be represented as Unicode.
 pub fn add_record(out: &mut Retro, id: &str, r: &Obj) -> Result<(), Utf16Error> {
-    if r.text_units("kind") == "develop" {
+    if !is_run(r) {
         return Ok(());
     }
     out.runs += 1;

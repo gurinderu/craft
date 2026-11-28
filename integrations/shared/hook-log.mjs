@@ -13,7 +13,8 @@ import { parseJson } from './json-object.mjs'
  * it was not a request's text (the prompt hook's `re-review-nudge` and `language-reminder`; on a silent line, `no-work-sign`, so it never counts as
  * the request a continuation takes its kind from), or, on every line of the
  * Agent-tool hook, `reviewer-dispatch` (cli/bin/craft/src/hook/role/dispatch.rs), so its rows stand apart from other PreToolUse lines;
- * on a SessionStart line under Codex that said only the readiness lines, `codex-readiness`; `readiness` names the
+ * on a SessionStart line under Codex that said only the readiness lines, `codex-readiness`; on one that said only the
+ * offer of a retro (cli/bin/craft/src/hook/role/retro.rs), `retro-offer`; `readiness` names the
  * readiness lines a Codex start said (`sandbox`; once also `binary`; cli/bin/craft/src/hook/role/readiness.rs); `background`
  * whether a reviewer dispatch that line spoke on, or kept silent on as already said, runs in the background.
  * @typedef {{ ts: string, repo: string, source: string, spoke: boolean, found: string[], silent: string | null,

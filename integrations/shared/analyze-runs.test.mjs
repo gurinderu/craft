@@ -120,6 +120,15 @@ test('aggregate ignores non-object records', () => {
   assert.equal(aggregate([null, 42, 'x', undefined]).totalRuns, 0)
 })
 
+test('aggregate counts no retro mark as a run (craft runs retro-done)', () => {
+  const a = aggregate([REVIEW_1, { schemaVersion: 1, kind: 'retro', name: 'retro', ts: '2026-11-02T10-00-00Z' }])
+  assert.equal(a.totalRuns, 1)
+  assert.deepEqual(
+    a.workflows.map(w => w.name),
+    ['review'],
+  )
+})
+
 test('aggregate tallies runs, verdicts and INCOMPLETE', () => {
   const a = aggregate([REVIEW_1, REVIEW_2, AUDIT])
   assert.equal(a.totalRuns, 3)
@@ -1043,6 +1052,28 @@ test('a craftVersion split between a known revision and an unattributed run is a
     collisionRun({ craftVersion: '0.18.1' }), // no engineRevision → r?
   ])
   assert.deepEqual(a.versionCollisions, [{ version: '0.18.1', revisions: ['r3', 'r?'] }], 'r? sorts last, after the known revision')
+})
+
+test('--engine latest picks no retro mark as the newest run, and counts none in its note', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'craft-runs-'))
+  const review = {
+    schemaVersion: 1,
+    runtime: 'claude-code',
+    name: 'review',
+    verdict: 'Approve',
+    craftVersion: '0.18.1',
+    engineRevision: 3,
+    ts: '2026-01-01T00-00-00Z',
+    notRun: [],
+    dimensions: [],
+  }
+  fs.writeFileSync(path.join(dir, 'a-review.json'), JSON.stringify(review))
+  fs.writeFileSync(path.join(dir, 'b-retro.json'), JSON.stringify({ schemaVersion: 1, kind: 'retro', name: 'retro', ts: '2026-01-02T00-00-00Z' }))
+  const script = fileURLToPath(new URL('./analyze-runs.mjs', import.meta.url))
+  const out = execFileSync('node', [script, dir, '--engine', 'latest'], { encoding: 'utf8' })
+  fs.rmSync(dir, { recursive: true, force: true })
+  assert.match(out, /Filtered to engine claude-code 0\.18\.1 r3: 1 of 1 run\(s\)/, out)
+  assert.doesNotMatch(out, /skipped: no schemaVersion/, 'a mark is no pre-telemetry run either')
 })
 
 test('the --version CLI filter warns when its slice blends multiple engine revisions', () => {
