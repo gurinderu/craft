@@ -16,7 +16,7 @@
   "scripts": {
     "prepare": "git rev-parse --is-inside-work-tree >/dev/null 2>&1 && git config core.hooksPath .githooks || true",
     "test": "vitest run --config integrations/shared/config/vitest.config.mjs",
-    "gate": "node integrations/shared/gate.mjs",
+    "gate": "just gate",
     "lint": "eslint --config integrations/shared/config/eslint.config.mjs integrations/shared integrations/pi integrations/opencode/plugin integrations/shared/config/knip.config.js integrations/shared/config/.dependency-cruiser.mjs --max-warnings 0",
     "format": "prettier --write .",
     "check:format": "prettier --check .",
