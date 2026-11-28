@@ -513,7 +513,7 @@ test('a lost submit whose run the binary did not finish is filed INCOMPLETE by t
   // Where it stood is the binary's to say: the phase its status names, nothing when it says none (realm @nick/craft, node #479).
   for (const [status, at] of /** @type {Array<[unknown, string]>} */ ([
     [statusSays({ record: 'none', finished: false }, false), ' (the binary reports phase verify)'],
-    [{ exitCode: 1, stdout: '', stderr: 'craft: no run' }, ''],
+    [{ exitCode: 0, stdout: '{"run":"/tmp/run-x","done":false}', stderr: '' }, ''],
   ])) {
     const run = await lostSubmit({ 'step:status': status })
     assert.deepEqual(
@@ -628,6 +628,25 @@ test('a finished run read only briefly, whose record did not land, has it filed 
   assert.match(still.report, /## ⚠️ Telemetry lost\n/)
   assert.match(still.report, /The run record can be filed again/)
 })
+
+for (const brief of [false, true])
+  test(`a known ${brief ? 'brief' : 'full'} ending survives refused re-filing and a refused repeated status`, async () => {
+    const refused = { exitCode: 1, stdout: '', stderr: 'Permission for this action was denied. The command was not run.' }
+    let asked = 0
+    const run = await lostSubmit({
+      'step:status': brief ? cutStatus() : statusSays({ record: 'failed', lost: ['record write failed'] }, true),
+      'step:brief': () => (asked++ ? refused : briefSays('failed')),
+      'step:refile': refused,
+    })
+    const verdict = verdictLine(run.report)
+    assert.ok(verdict)
+    assert.match(verdict, /^⛔ Block/)
+    assert.match(run.report, /Telemetry lost/)
+    assert.match(run.report, /The run record can be filed again/)
+    assert.doesNotMatch(run.report, /whether the binary finished the run is unknown/)
+    assert.equal(run.calls.filter(c => c.label === 'step:brief').length, brief ? 2 : 0)
+    assert.ok(!run.calls.some(c => c.label === 'log-run'))
+  })
 
 test('a lost submit whose status the service agent returned empty or not at all is asked in brief, and files no INCOMPLETE twin', async () => {
   for (const status of [{ exitCode: 0, stderr: '', stdout: '' }, { ok: true }]) {

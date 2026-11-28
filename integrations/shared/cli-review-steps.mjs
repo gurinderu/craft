@@ -29,7 +29,7 @@ import { telemetryLostSection } from './review-coverage.mjs'
 import { argumentRefusal } from './run-record.mjs'
 import { normalizeArgs } from './workflow-args.mjs'
 import { runBudget } from './run-budget.mjs'
-import { stopCause, stopNotRun, stopRead } from './cli-review-stop.mjs'
+import { UNKNOWN_COMPLETION, recoveryFailure, stopCause, stopNotRun, stopRead } from './cli-review-stop.mjs'
 
 /** @typedef {import('./cli-review-options.mjs').Options} Options */
 /** @typedef {import('./cli-review-step.mjs').Step} Step */
@@ -157,7 +157,8 @@ function stoppedAt(standing, read, run, bin) {
 }
 
 /** @typedef {import('./cli-review-ended.mjs').Brief} Brief */
-/** @typedef {{ finished: Finished } | { stopped: string, cause: import('./cli-review-stop.mjs').StopCause } | { unrecorded: string } | { unread: Brief } | { refused: string }} Ending  refused: the binary's start refused an argument, before any work; unrecorded: the binary finished the run but left nothing to file its record from; unread: the binary ended it, but only its brief status could be read */
+/** @typedef {{ finished: Finished } | { stopped: string, cause: import('./cli-review-stop.mjs').StopCause } | { unknown: string } | { unrecorded: string } | { unread: Brief } | { refused: string }} Ending  refused: the binary's start refused an argument, before any work; unknown: recovery failed without establishing completion; unrecorded: the binary finished the run but left nothing to file its record from; unread: the binary ended it, but only its brief status could be read */
+/** @typedef {{ finished: Finished } | { unrecorded: string } | { standing: string } | { unread: Brief } | { failed: { error: string, harness?: string } }} Recovery */
 /** @typedef {ReturnType<typeof cliRecorder>} Recorder */
 /** @typedef {import('./cli-step-loop.mjs').Rounds<Exclude<Step, Finished>, Finished, Ending>} Rounds  the review's part of the step rounds */
 
@@ -204,6 +205,7 @@ export async function runCliReview(given, craftVersion) {
  */
 async function endedAnswer(sb, ending, recorder, at) {
   if ('finished' in ending) return withNotes(finishedAnswer(ending.finished), [recorder.settled(ending.finished)])
+  if ('unknown' in ending) return withNotes(stoppedAnswer(ending.unknown), [UNKNOWN_COMPLETION, recorder.notes()])
   // Never an INCOMPLETE record of a run the binary finished: its record is said missing.
   if ('unrecorded' in ending) return withNotes(stoppedAnswer(`review lost the run's last step: ${ending.unrecorded}`), [recorder.missing(ending.unrecorded)])
   if ('unread' in ending) return withNotes(unreadAnswer(ending.unread), [unreadNotes(ending.unread, recorder)])
@@ -359,7 +361,7 @@ async function drive(sb, o, craftVersion, service, recorder) {
   const filedThrough = filedRoot(sb, where, recorder)
   const started = await opening(sb, o, craftVersion, serve, { ...where, filedThrough })
   if ('argument' in started) return { refused: started.argument }
-  if ('error' in started) return { stopped: stoppedAt('', started, runOfStop(started, o), where.bin), cause: stopCause(started, 'start') }
+  if ('error' in started) return openingLost(sb, o, where.bin, serve, recorder, started)
   // The record is keyed to the repository the run reviews, which the binary names: a resumed run's, and a start's that
   // reviews elsewhere than the checkout given — craft's own worktree of the PR given (realm @nick/craft, node #517).
   const reviews = started.step.repo
@@ -367,6 +369,20 @@ async function drive(sb, o, craftVersion, service, recorder) {
   sb.clock.observe(started.step)
   recorder.heard(started.step)
   return rounds(sb, where.bin, started.step, serve, recorder)
+}
+
+/**
+ * How a run ends whose first step was not read. A resume the binary did not refuse and the harness ran may have gone
+ * on, even to the end: the binary is asked before anything is filed, as after a lost submit (realm @nick/craft, node
+ * #736): one whose first page named its run ran, even when the harness refused a later page step. A start's lost step,
+ * a refused resume and one the harness never ran stop where they are.
+ * @param {Watched} sb @param {Options} o @param {string} bin @param {Serve} serve @param {Recorder} recorder
+ * @param {{ error: string, harness?: string, refused?: true, run?: string }} started @returns {Promise<Ending>}
+ */
+async function openingLost(sb, o, bin, serve, recorder, started) {
+  const ran = started.harness === undefined || started.run !== undefined
+  if (o.run && !started.refused && ran) return afterLost(sb, bin, o.run, serve, recorder, started)
+  return { stopped: stoppedAt('', started, runOfStop(started, o), bin), cause: stopCause(started, 'start') }
 }
 
 /**
@@ -384,8 +400,13 @@ const runOfStop = (started, o) => (started.refused ? '' : (started.run ?? o.run)
  * @returns {Promise<{ step: Step } | { error: string, harness?: string, refused?: true, run?: string } | { argument: string }>}
  */
 async function opening(sb, o, craftVersion, serve, where) {
-  if (o.run)
-    return resumed(o.run, await submitStep(serve, 'step:resume', 'Start', where.bin, o.run, { resume: true, recordRoot: where.filedThrough }, spentSoFar(sb)))
+  if (o.run) {
+    const resumeGot = await submitStep(serve, 'step:resume', 'Start', where.bin, o.run, { resume: true, recordRoot: where.filedThrough }, spentSoFar(sb))
+    const resumeRead = resumed(o.run, resumeGot)
+    // A resume whose first page named its run ran, though the harness refused a later page step.
+    const named = unreadRun(resumeGot)
+    return 'error' in resumeRead && named !== null ? { ...resumeRead, run: named } : resumeRead
+  }
   const got = await paged(
     serve,
     'step:start',
@@ -446,16 +467,29 @@ async function rounds(sb, bin, first, serve, recorder) {
       sb.clock.observe(step)
       recorder.heard(step)
     },
-    lost: async read => {
-      const truth = await recovered(sb, bin, first.run, serve, recorder)
-      if (!('standing' in truth)) return truth
-      const why = stopRead(read, sb.limit.seen())
-      return { stopped: stoppedAt(truth.standing, why, first.run, bin), cause: stopCause(why, 'step') }
-    },
+    lost: read => afterLost(sb, bin, first.run, serve, recorder, read),
     gaveUp: step => ({ stopped: `review gave up after ${MAX_ROUNDS} rounds; the run is in ${step.run}. ${resumeHint(step.run)}`, cause: 'rounds' }),
     finished: step => ({ finished: step }),
   }
   return stepRounds(first, review)
+}
+
+/**
+ * How a run ends whose submit or resume output was lost (`read`): as the binary's status says it ended, else stopped
+ * where it stands — a lost step of the binary, unless the harness or the limit stopped it; a status that failed leaves
+ * its completion unknown (realm @nick/craft, nodes #731, #736).
+ * @param {Watched} sb @param {string} bin @param {string} run @param {Serve} serve @param {Recorder} recorder
+ * @param {{ error: string, harness?: string }} read @returns {Promise<Ending>}
+ */
+async function afterLost(sb, bin, run, serve, recorder, read) {
+  const truth = await recovered(sb, bin, run, serve, recorder)
+  const why = stopRead(read, sb.limit.seen())
+  if ('failed' in truth) {
+    const failure = truth.failed.harness === undefined ? truth.failed.error : harnessRefused(truth.failed.harness, bin)
+    return { unknown: `${stoppedAt('', why, run, bin)}\n\nStatus recovery failed: ${failure}` }
+  }
+  if (!('standing' in truth)) return truth
+  return { stopped: stoppedAt(truth.standing, why, run, bin), cause: stopCause(why, 'step') }
 }
 
 /**
@@ -468,11 +502,13 @@ async function rounds(sb, bin, first, serve, recorder) {
  * A status that ran but could not be read — empty, missing, too large to copy whole, its page step failed or refused
  * by the harness — is asked again in brief (briefly).
  * @param {Watched} sb @param {string} bin @param {string} run @param {Serve} serve @param {Recorder} recorder
- * @returns {Promise<{ finished: Finished } | { unrecorded: string } | { standing: string } | { unread: Brief }>}
+ * @returns {Promise<Recovery>}
  */
 async function recovered(sb, bin, run, serve, recorder) {
   const said = await paged(serve, 'step:status', 'Submit', bin, serve('step:status', 'Submit', statusPrompt(bin, run), statusCommand(bin, run)))
   if (statusUnreadable(said)) return briefly(sb, bin, run, serve, recorder)
+  const failed = recoveryFailure(said, statusCommand(bin, run))
+  if (failed) return { failed }
   const truth = endedOf(said)
   if (!truth) return { standing: standingOf(said) }
   if ('unrecorded' in truth) return truth
@@ -492,12 +528,14 @@ async function recovered(sb, bin, run, serve, recorder) {
  * is the same large step — has the brief status asked once more. What the telemetry's writes lost and the stopped
  * parts still waiting go to the answer's telemetry section.
  * @param {Watched} sb @param {string} bin @param {string} run @param {Serve} serve @param {Recorder} recorder
- * @returns {Promise<{ finished: Finished } | { unrecorded: string } | { standing: string } | { unread: Brief }>}
+ * @returns {Promise<Recovery>}
  */
 async function briefly(sb, bin, run, serve, recorder) {
   const brief = briefStatusCommand(bin, run)
   const ask = () => serve('step:brief', 'Submit', servicePrompt(`Run exactly this one command:\n\n${brief}`), brief)
   const said = await ask()
+  const failed = recoveryFailure(said, brief)
+  if (failed) return { failed }
   const first = briefOf(said)
   if (!first) return { standing: standingOf(said) }
   if (!('unread' in first)) return first

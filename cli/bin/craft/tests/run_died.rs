@@ -68,12 +68,21 @@ fn a_run_whose_agents_all_die_stops_naming_what_they_wrote() {
     args.extend(["--host-bin", host.to_str().unwrap(), "--cwd"]);
     args.extend([code.to_str().unwrap(), "--craft-root"]);
     args.push(checkout.to_str().unwrap());
+    args.extend(["--events", "json"]);
     let out = craft(&home, &args);
     let said = String::from_utf8_lossy(&out.stdout);
     assert_ne!(out.status.code(), Some(0), "{said}");
     assert!(said.contains("died with no answer; of "), "{said}");
     assert!(said.contains(&format!("said `{SAID}`")), "{said}");
     assert!(!said.contains(GUESS), "{said}");
+    let events: Vec<Value> = String::from_utf8_lossy(&out.stderr)
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    let result = events.last().unwrap();
+    assert_eq!(result["type"], "result");
+    assert_eq!(result["verdict"], "INCOMPLETE");
+    assert_eq!(result["exit_code"], out.status.code().unwrap());
 }
 
 /// The step a submit of the run in `run` with no answer and `died` printed.

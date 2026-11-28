@@ -29,20 +29,8 @@ pub struct StartOptions {
 /// When the repository cannot be read, the run directory holds a run already, or the state or a
 /// task's files cannot be written.
 pub fn start(opts: &StartOptions, w: &dyn Writer) -> Result<Value, TriageError> {
-    refuse(&opts.args)?;
-    let repo = if opts.args.repo.is_empty() {
-        opts.cwd.clone()
-    } else {
-        PathBuf::from(&opts.args.repo)
-    };
-    let cwd = repo
-        .canonicalize()
-        .map_err(|source| TriageError::NoRepo { path: repo, source })?;
+    let cwd = check_start(opts)?;
     let dir = &opts.run_dir;
-    // A directory a run filed from is not a new run's: its kept filing would answer for this one.
-    if state::state_path(dir).exists() || filing::filing_path(dir).exists() {
-        return Err(TriageError::RunExists(dir.clone()));
-    }
     std::fs::create_dir_all(dir).map_err(|source| TriageError::NoDir {
         path: dir.clone(),
         source,
@@ -59,4 +47,26 @@ pub fn start(opts: &StartOptions, w: &dyn Writer) -> Result<Value, TriageError> 
         stopped: None,
     };
     step(dir, &mut s, Aside::default(), None, w)
+}
+
+/// Checks a new run before its host is asked anything; returns its resolved repository.
+///
+/// # Errors
+/// When arguments, the repository or the run directory are refused.
+pub fn check_start(opts: &StartOptions) -> Result<PathBuf, TriageError> {
+    refuse(&opts.args)?;
+    let repo = if opts.args.repo.is_empty() {
+        opts.cwd.clone()
+    } else {
+        PathBuf::from(&opts.args.repo)
+    };
+    let cwd = repo
+        .canonicalize()
+        .map_err(|source| TriageError::NoRepo { path: repo, source })?;
+    let dir = &opts.run_dir;
+    // A directory a run filed from is not a new run's: its kept filing would answer for this one.
+    if state::state_path(dir).exists() || filing::filing_path(dir).exists() {
+        return Err(TriageError::RunExists(dir.clone()));
+    }
+    Ok(cwd)
 }
