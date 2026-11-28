@@ -372,16 +372,18 @@ async function drive(sb, o, craftVersion, service, recorder) {
 }
 
 /**
- * How a run ends whose first step was not read. A resume the binary did not refuse and the harness ran may have gone
- * on, even to the end: the binary is asked before anything is filed, as after a lost submit (realm @nick/craft, node
- * #736): one whose first page named its run ran, even when the harness refused a later page step. A start's lost step,
- * a refused resume and one the harness never ran stop where they are.
+ * How a run ends whose first step was not read. A resume the binary did not refuse and the harness ran, or a start
+ * whose first page named its run, may have gone on, even to the end: the binary is asked before anything is filed, as
+ * after a lost submit (realm @nick/craft, nodes #736, #754); a step whose first page named its run ran, even when the
+ * harness refused a later page step. A start that named no run, a refused resume and one the harness never ran stop
+ * where they are.
  * @param {Watched} sb @param {Options} o @param {string} bin @param {Serve} serve @param {Recorder} recorder
  * @param {{ error: string, harness?: string, refused?: true, run?: string }} started @returns {Promise<Ending>}
  */
 async function openingLost(sb, o, bin, serve, recorder, started) {
   const ran = started.harness === undefined || started.run !== undefined
-  if (o.run && !started.refused && ran) return afterLost(sb, bin, o.run, serve, recorder, started)
+  const known = o.run || started.run
+  if (known && !started.refused && ran) return afterLost(sb, bin, known, serve, recorder, started)
   return { stopped: stoppedAt('', started, runOfStop(started, o), bin), cause: stopCause(started, 'start') }
 }
 
