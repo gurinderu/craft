@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "craft",
-  "version": "0.61.0",
+  "version": "0.62.0",
   "description": "AI code review and code-quality skills for coding agents.",
   "owner": {
     "name": "gurinderu",
