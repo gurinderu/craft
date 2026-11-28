@@ -115,6 +115,12 @@ failed to gather. It has no `scout`/`dimensions`/`verification`/`outputTokens`.
 Native `craft triage run` keeps this record shape and uses `runtime` to name the starting host:
 `codex`, `pi` or `opencode`. Continuing a run keeps its recorded runtime, even with a different
 backend; the step commands and older state without that field keep `claude-code`.
+`craft audit` (with `start --record`) files one record named `audit` per finished pass, `kind:
+"workflow"`, `runtime: "claude-code"`: its `verdict` (Approve / Warning / Block, `INCOMPLETE` when a
+file went unread or a finding at Medium or above went unjudged), `findings` (total and severity mix
+of the settled findings, refuted ones aside), `audit {pass, paths, tracked, audited, outside, unread,
+batches, jobs, answered, tiers, heldUnverified}` and `notRun[]` (`audit:unread-files:<n>`,
+`audit:unjudged-findings:<n>`). A resumed pass files its own record of the whole audit so far.
 A review agent dispatched on its own records nothing. A store may still hold the `kind: "agent"` index
 lines such agents once appended themselves (the `rust-security-scanner`'s carried `toolsRun[]`); the
 readers list them, and no report is built on them.

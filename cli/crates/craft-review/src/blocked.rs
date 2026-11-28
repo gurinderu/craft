@@ -64,7 +64,8 @@ pub(crate) fn asked(schema: &Value) -> bool {
 
 /// Why the agent of the raw `answer` to `schema` could not look, read before the answer is held
 /// to its schema; `None` when the schema does not ask, or it did not say so.
-pub(crate) fn said(schema: &Value, answer: &Value) -> Option<String> {
+#[must_use]
+pub fn said(schema: &Value, answer: &Value) -> Option<String> {
     if !asked(schema) {
         return None;
     }
@@ -75,7 +76,7 @@ pub(crate) fn said(schema: &Value, answer: &Value) -> Option<String> {
 ///
 /// # Errors
 /// When the note's content file is missing.
-pub(crate) fn note(schema: &Value) -> Result<String, ContentError> {
+pub fn note(schema: &Value) -> Result<String, ContentError> {
     if !asked(schema) {
         return Ok(String::new());
     }

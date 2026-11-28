@@ -198,8 +198,8 @@ fn compose(opts: &StartOptions, profiles: &[Profile], run: &mut RunState) {
     }
 }
 
-/// The mutants of the change, launched to run beside the lens rounds once the Rust gate passed
-/// (realm @nick/craft, node #648); a run that will not run them says why.
+/// The mutants of the change, launched to run beside the lens rounds once the Rust gate's checks
+/// passed (realm @nick/craft, node #648); a run that will not run them says why.
 fn launch_mutants(cwd: &Path, dir: &Path, opts: &StartOptions, run: &mut RunState) {
     let rust: &[String] = run
         .tracks

@@ -117,6 +117,10 @@ fn flake_check(stderr: &str, code: u8) -> (Gate, String) {
         said.display()
     );
     tool(tools.path(), "nix", &script);
+    // The linters answer clean, so only the flake check's own outcome sets the track (realm
+    // @nick/craft, node #743).
+    tool(tools.path(), "statix", "exit 0");
+    tool(tools.path(), "deadnix", "exit 0");
     let (gate, _) = run(
         repo.path(),
         "HEAD~1",

@@ -1,0 +1,20 @@
+[package]
+name = "craft-audit"
+description = "The audit of a whole project as the craft binary runs it on the step protocol: its scout of the tracked files, its lens batches under a budget, the verification of Medium and above, its report and run record."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+craft-review.workspace = true
+craft-step.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

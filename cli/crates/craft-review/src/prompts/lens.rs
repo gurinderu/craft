@@ -86,7 +86,11 @@ pub(super) fn range(ctx: &PromptContext) -> String {
     format!("--merge-base {}", shq(&ctx.base))
 }
 
-pub(super) fn rules(ctx: &PromptContext) -> Result<String, ContentError> {
+/// The REVIEW RULES block every judging lens carries: where review-rules' files are, and HARM.
+///
+/// # Errors
+/// When its content file is missing.
+pub fn rules(ctx: &PromptContext) -> Result<String, ContentError> {
     content::prompt(
         "review-rules",
         &vars([("dirs", plugin_candidates(ctx, REVIEW_RULES_DIR))]),
@@ -132,7 +136,12 @@ fn plan_lines(plan: &Plan) -> Result<String, ContentError> {
     ))
 }
 
-fn catalogue_line(ctx: &PromptContext, lens: &Lens) -> Result<String, ContentError> {
+/// The catalogue line of `lens` (where its catalogue is, and its classes when none is readable);
+/// "" for a lens without one.
+///
+/// # Errors
+/// When its content file is missing.
+pub fn catalogue_line(ctx: &PromptContext, lens: &Lens) -> Result<String, ContentError> {
     let Some(cat) = &lens.catalogue else {
         return Ok(String::new());
     };
@@ -324,7 +333,10 @@ pub(super) fn re_review(ctx: &PromptContext) -> Result<String, ContentError> {
 
 /// The lens prompt's RULE ID line: cite the catalog of `lens`'s rubric, or, a rubric with none,
 /// leave it empty.
-fn rule_id(profile: &Profile, lens: &str) -> Result<String, ContentError> {
+///
+/// # Errors
+/// When its content file is missing.
+pub fn rule_id(profile: &Profile, lens: &str) -> Result<String, ContentError> {
     if profile.catalog_of(lens) {
         content::prompt(
             "lens-rule-id",
