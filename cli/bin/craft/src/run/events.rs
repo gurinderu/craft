@@ -152,7 +152,7 @@ impl Queue {
         wait: Duration,
         write: impl FnMut(&str) -> bool + Send + 'static,
     ) -> Self {
-        let (offered, taken) = sync_channel(capacity);
+        let (offered, taken) = sync_channel(capacity.max(1));
         let told = Arc::new(Told::default());
         // Detached: it ends with the stream, and a run that returns early does not wait for it.
         let _writer = thread::Builder::new().name("craft-events".into()).spawn({

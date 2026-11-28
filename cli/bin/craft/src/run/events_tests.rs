@@ -140,6 +140,25 @@ fn an_event_is_offered_only_to_the_event_stream_and_says_so() {
 }
 
 #[test]
+fn a_queue_asked_to_hold_nothing_holds_one() {
+    let gate = Arc::new(stream::Gate::default());
+    let kept = Arc::new(stream::Kept::at(&gate));
+    let sink = Sink::with(true, 0, Duration::from_secs(5), stream::writing(&kept));
+    assert!(sink.emitted(cancelled(1)));
+    assert!(
+        stream::waited_until(|| gate.arrived()),
+        "the writer took the first and holds it in the stream"
+    );
+    assert!(
+        sink.emitted(cancelled(2)),
+        "one more fits behind the line being written"
+    );
+    gate.open();
+    sink.finish();
+    assert_eq!(keys_of(&kept), [1, 2]);
+}
+
+#[test]
 fn every_event_is_written_by_the_sink_s_one_thread_and_no_other() {
     let kept = Arc::new(stream::Kept::new());
     let sink = Sink::with(true, 64, Duration::from_secs(5), stream::writing(&kept));
