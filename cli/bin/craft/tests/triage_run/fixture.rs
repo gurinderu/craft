@@ -6,6 +6,29 @@ use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
+/// The triage's result: the last event on stderr, itself a whole JSON line and with every line
+/// before it one too — a line of a journal or a stray event would end the stream early (realm
+/// @nick/craft, node #690).
+pub fn result(out: &Output) -> Value {
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let mut lines = stderr.lines();
+    let found = loop {
+        let Some(line) = lines.next() else {
+            break None;
+        };
+        let event: Value = serde_json::from_str(line).unwrap();
+        if event.get("type").and_then(Value::as_str) == Some("triage_result") {
+            let rest: Vec<&str> = lines.collect();
+            assert!(
+                rest.is_empty(),
+                "the result is the last event: after it came {rest:?}"
+            );
+            break Some(event);
+        }
+    };
+    found.unwrap()
+}
+
 pub struct Bench(tempfile::TempDir);
 
 pub fn read(path: &Path) -> Value {
@@ -93,12 +116,9 @@ impl Bench {
         );
     }
 
-    pub fn result(&self, out: &Output) -> Value {
-        let result = String::from_utf8_lossy(&out.stderr)
-            .lines()
-            .filter_map(|l| serde_json::from_str::<Value>(l).ok())
-            .rfind(|v| v["type"] == "triage_result")
-            .unwrap();
+    /// The result of a run that was made: the stream's last event, and its `run` is this bench's.
+    pub fn made(&self, out: &Output) -> Value {
+        let result = result(out);
         assert_eq!(
             result.get("run"),
             Some(&serde_json::json!(self.path("run")))

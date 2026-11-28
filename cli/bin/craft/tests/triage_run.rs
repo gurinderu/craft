@@ -23,7 +23,7 @@ fn native_triage_keeps_its_event_and_record_shape_without_review_statistics() {
     let b = Bench::new();
     let out = b.start("codex", "ok");
     b.expect(&out, 0);
-    let event = b.result(&out);
+    let event = b.made(&out);
     assert_eq!(event["type"], "triage_result");
     assert_eq!(event["plan_file"], json!(b.path("run/plan.json")));
     assert_eq!(event["summary"], "SUM");

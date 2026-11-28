@@ -133,4 +133,10 @@ fn a_reading_host_sees_every_event_whole_up_to_the_result() {
     assert!(kinds.contains(&"task".to_owned()), "{kinds:?}");
     assert_eq!(status.code(), Some(1), "{status}\n{answer}");
     assert!(answer.contains("INCOMPLETE"), "{answer}");
+    // The stream has the one writer: nothing of it reaches the answer (realm @nick/craft, node
+    // #690).
+    let event = answer.lines().find(|line| {
+        serde_json::from_str::<Value>(line).is_ok_and(|event| !event["type"].is_null())
+    });
+    assert!(event.is_none(), "an event on stdout: {event:?}");
 }

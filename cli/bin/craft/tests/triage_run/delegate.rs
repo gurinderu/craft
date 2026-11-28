@@ -27,7 +27,12 @@ fn delegated_tasks_use_the_same_answer_loop_and_never_spawn_the_host() {
     let mut tasks = Vec::new();
     let mut result = Value::Null;
     for line in events.lines() {
-        let event: Value = serde_json::from_str(&line.unwrap()).unwrap();
+        let line = line.unwrap();
+        let event: Value = serde_json::from_str(&line).unwrap();
+        assert!(
+            result.is_null(),
+            "the result is the last event: after it came {line:?}"
+        );
         if event["type"] == "triage_result" {
             result = event.clone();
         }

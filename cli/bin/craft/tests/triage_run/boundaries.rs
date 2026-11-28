@@ -1,4 +1,4 @@
-use super::fixture::{Bench, read};
+use super::fixture::{Bench, read, result};
 use serde_json::json;
 
 #[test]
@@ -22,6 +22,40 @@ fn an_invalid_plugin_root_is_refused_before_the_host_or_any_run_state() {
     assert!(String::from_utf8_lossy(&out.stdout).contains("no craft plugin root"));
     assert!(b.calls().is_empty());
     assert!(!b.path("run/state.json").exists());
+}
+
+#[test]
+fn a_refusal_before_the_host_ends_in_the_event_stream_too() {
+    let b = Bench::new();
+    let out = b
+        .command("opencode", "ok")
+        .args([
+            "--delegate",
+            "--agents",
+            "review-task",
+            "--prior-ledger",
+            "-",
+            "--report",
+            "r",
+        ])
+        .output()
+        .unwrap();
+    b.expect(&out, 2);
+    // The refusal is the stream's one event, its answer on stdout: the same end as the review's
+    // (realm @nick/craft, node #690).
+    let event = result(&out);
+    assert_eq!(event["exit_code"], 2);
+    assert!(event["run"].is_null(), "{event}");
+    assert_eq!(
+        String::from_utf8_lossy(&out.stderr).lines().count(),
+        1,
+        "the refusal is the stream's one event"
+    );
+    let answer = String::from_utf8_lossy(&out.stdout);
+    assert!(answer.contains("Triage refused"), "{answer}");
+    assert!(answer.contains("--delegate cannot share stdin"), "{answer}");
+    assert!(answer.contains("Nothing ran"), "{answer}");
+    assert!(b.calls().is_empty());
 }
 
 #[test]
