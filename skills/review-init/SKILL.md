@@ -285,7 +285,7 @@ On a Rust change whose gate passed, the review runs the branch's tests once per 
 changed lines with cargo-mutants (when `cargo mutants` answers), beside the lens rounds, for up
 to 10 minutes. `init --write` writes this section from `--mutants off` or `--mutants-budget
 <seconds>` (step 4) and replaces it on every write, so `mutants.flags` as `--propose` prints them
-keep it; a write with neither leaves the defaults. `--mutants off` writes
+keep it; a write with neither writes the defaults over it. `--mutants off` writes
 
 ```toml
 [mutants]

@@ -149,8 +149,9 @@ scripts and proc macros (inside the repository's flake dev shell when it defines
 and `nix flake check` runs its checks. On a Rust change whose gate passed, and where `cargo mutants` is installed,
 the review also **runs the branch's test suite**: cargo-mutants runs the tests once per mutant of the changed lines,
 beside the lens rounds, for up to 10 minutes. A suite with side effects (a database, the network) or a heavy one runs
-then too. The reviewer's profile turns this off or bounds it: a `[mutants]` section with `off = true` or
-`budget_secs = <seconds>` in `~/.craft/projects/<id>/review.toml`. For a branch you do not trust, pass `gate=false`
+then too. The reviewer's profile turns this off or bounds it: `craft init --write --mutants off` or
+`--mutants-budget <seconds>` (the `craft:review-init` skill) writes its `[mutants]` section in
+`~/.craft/projects/<id>/review.toml`, and every later `init --write` replaces that section with what it is given. For a branch you do not trust, pass `gate=false`
 (`--no-gate` on the command line): it turns off both.
 
 On pi and OpenCode that is not enough. pi has no sandbox: a review task's shell runs with your permissions, so
