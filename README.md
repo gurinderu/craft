@@ -103,6 +103,10 @@ Once per repository, `craft:review-init` (`craft init`) can record the external 
 which check of your CI runs what. The review then reads those systems' source at the version you deploy. It is
 optional.
 
+After a while of reviews, `craft:retro` reads your runs in that repository — where the minutes and tokens went,
+which lenses found nothing, what did not run — and proposes changes to that profile, written only on your word,
+and a draft issue about craft itself, sent only if you choose.
+
 ### What works where
 
 | | Claude Code | OpenCode | Codex | pi |
