@@ -151,7 +151,7 @@ fn the_offer_counts_this_repositorys_runs_of_this_version_since_its_retro_once_a
 fn the_index_read_keeps_this_repositorys_own_reviews_after_its_retro_in_time_order() {
     let home = tempfile::tempdir().unwrap();
     let store = home.path().join("runs");
-    let mut nested = review("2026-11-01T09-00-00Z", KEY, V);
+    let mut nested = review("2026-11-01T11-10-00Z", KEY, V);
     nested["nested"] = serde_json::json!(true);
     let mark = |ts: &str, project: &str| serde_json::json!({"ts": ts, "kind": "retro", "name": "retro", "project": project});
     index(

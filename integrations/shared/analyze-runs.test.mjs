@@ -1073,6 +1073,7 @@ test('--engine latest picks no retro mark as the newest run, and counts none in 
   const out = execFileSync('node', [script, dir, '--engine', 'latest'], { encoding: 'utf8' })
   fs.rmSync(dir, { recursive: true, force: true })
   assert.match(out, /Filtered to engine claude-code 0\.18\.1 r3: 1 of 1 run\(s\)/, out)
+  assert.doesNotMatch(out, /skipped: no schemaVersion/, 'a mark is no pre-telemetry run either')
 })
 
 test('the --version CLI filter warns when its slice blends multiple engine revisions', () => {

@@ -27,4 +27,6 @@ fn the_mark_is_a_versioned_retro_record_and_neither_it_nor_a_develop_cycle_is_a_
     marked.set("ts", Js::str("2026-11-02T11-00-00Z"));
     let r = retro("0.9.0", [rec(review), marked]).unwrap();
     assert_eq!(r.runs, 1, "{r:?}");
+    let flows: Vec<&String> = r.workflows.keys().collect();
+    assert_eq!(flows, ["review"], "the review counted, the mark not");
 }

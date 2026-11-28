@@ -64,6 +64,22 @@ async fn codex_reads_the_prompt_on_stdin_and_its_answer_from_its_own_file() {
 }
 
 #[tokio::test]
+async fn a_task_subprocess_takes_no_retro_offer_from_the_session_start_hook() {
+    let dir = tempfile::tempdir().unwrap();
+    let body = format!("echo \"$CRAFT_RETRO_HOOK\" > retro.txt\n{CODEX_ANSWERS}");
+    codex(script(dir.path(), "codex", &body).unwrap())
+        .run(&request(dir.path()))
+        .await
+        .unwrap();
+    let said = std::fs::read_to_string(dir.path().join("retro.txt")).unwrap();
+    assert_eq!(
+        said.trim(),
+        "0",
+        "CRAFT_RETRO_HOOK=0 on every task (realm @nick/craft, #658)"
+    );
+}
+
+#[tokio::test]
 async fn codex_failing_keeps_both_streams_and_a_clean_exit_with_no_file_is_no_answer() {
     let dir = tempfile::tempdir().unwrap();
     let failing = script(
