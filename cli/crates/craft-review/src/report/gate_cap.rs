@@ -1,5 +1,6 @@
 //! A gate signal the review asked for and could not establish caps the verdict at Warning, never
-//! Approve, and the verdict line says so with the CI the gate saw (realm @nick/craft, node #487: a
+//! Approve, and the verdict line says so, naming each seed tool that did not answer with why
+//! (realm @nick/craft, node #743), and the CI the gate saw (realm @nick/craft, node #487: a
 //! green CI check never stands for a gate signal craft did not establish itself). A gate switched
 //! off on purpose (`--no-gate`) or a refused `--gate-from` has no track, and a profile with nothing
 //! to gate (changed `.rs` files no Cargo package holds, or no `flake.nix` and its linters ran

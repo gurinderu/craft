@@ -36,7 +36,7 @@ mod units_parity;
 mod verify;
 pub use adjudicate::{adjudicate_prompt, carry_prompt, sanitize};
 pub use critic::{CriticIn, critic_prior, critic_prompt, extra_lens_prompt};
-pub use lens::{LensIn, lens_prompt, prior_found_summary};
+pub use lens::{LensIn, catalogue_line, lens_prompt, prior_found_summary, rule_id, rules};
 pub use red_team::red_team_prompt;
 pub use scout::{dedup_prompt, scout_prompt};
 pub use seam::{contract_prompt, seam_prompt};

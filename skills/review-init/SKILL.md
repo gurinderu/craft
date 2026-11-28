@@ -201,7 +201,8 @@ is still checked by a release's full review.
 
 ## 3d. The mutants of a change: show, then ask
 
-On a Rust change whose gate passed, a review runs `cargo mutants --in-diff` over the change beside
+On a Rust change whose gate's checks passed (a seed tool that did not answer leaves its track
+unknown and does not stop them), a review runs `cargo mutants --in-diff` over the change beside
 its lenses, where the gate's cargo runs, and its report says whether they ran and why not —
 cargo-mutants not installed included. `init` does not look for cargo-mutants itself. `mutants`
 says what the profile holds: `off` (they do not run on this repository), `budgetSecs` (how long
@@ -281,7 +282,8 @@ rule is added again after each plugin update.
 
 ## The mutants section
 
-On a Rust change whose gate passed, the review runs the branch's tests once per mutant of the
+On a Rust change whose gate's checks passed (a seed tool that did not answer leaves its track
+unknown and does not stop them), the review runs the branch's tests once per mutant of the
 changed lines with cargo-mutants (when `cargo mutants` answers), beside the lens rounds, for up
 to 10 minutes. `init --write` writes this section from `--mutants off` or `--mutants-budget
 <seconds>` (step 4) and replaces it on every write, so `mutants.flags` as `--propose` prints them

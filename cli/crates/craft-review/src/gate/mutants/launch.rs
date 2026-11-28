@@ -1,7 +1,9 @@
 //! Whether the change's mutants run and where, and the worker started to run them: only once the
-//! Rust gate passed, the run is not being stopped, and cargo-mutants answers `--version` where the
-//! gate's cargo ran (inside the flake's dev shell when it did) — so the tests lens is told the
-//! binary runs them only when it will ([`crate::prompts::PromptContext::mutants`]).
+//! Rust gate's checks passed — a seed tool that then left the track unknown does not stop them
+//! ([`super::super::Track::tests_build`]) — and the run is not being stopped, and cargo-mutants
+//! answers `--version` where the gate's cargo ran (inside the flake's dev shell when it did) — so
+//! the tests lens is told the binary runs them only when it will
+//! ([`crate::prompts::PromptContext::mutants`]).
 
 use std::path::Path;
 use std::time::Duration;
@@ -84,7 +86,7 @@ fn plan<'a>(at: &Launch<'a>) -> Result<Plan<'a>, Option<String>> {
     }
     let setup = allowed(at)?;
     let track = at.gate.tracks.iter().find(|t| t.profile == "rust");
-    let Some(track) = track.filter(|t| t.status == Status::Pass) else {
+    let Some(track) = track.filter(|t| t.tests_build()) else {
         let status = track.map_or("did not run", |t| status_word(t.status));
         return Err(Some(format!(
             "the Rust gate {status}, so the tests they rely on are not known to build"

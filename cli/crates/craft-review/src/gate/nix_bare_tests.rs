@@ -1,6 +1,7 @@
 //! A Nix change in a repository with no `flake.nix`: its linters are the whole gate, so they
 //! establish it — both clean is nothing to gate, one that did not run leaves it unknown and caps
-//! the verdict at Warning (realm @nick/craft, node #487).
+//! the verdict at Warning (realm @nick/craft, node #487). With a flake too a linter that did not
+//! run leaves the track unknown (realm @nick/craft, node #743).
 
 use std::time::Duration;
 
@@ -91,20 +92,23 @@ fn no_flake_and_a_linter_timed_out_is_unknown() {
     assert!(t.notes.iter().any(|n| n.contains("deadnix")), "{t:?}");
 }
 
+/// A flake's check passes, yet a linter that is not installed leaves the track unknown and is
+/// named with its reason (realm @nick/craft, node #743): a seed tool's silence is no pass.
 #[test]
-fn with_a_flake_a_missing_linter_keeps_the_flake_checks_status() {
-    let (repo, dir, run_dir) = (
-        repo(),
-        tempfile::tempdir().unwrap(),
-        tempfile::tempdir().unwrap(),
+fn with_a_flake_a_missing_linter_leaves_the_track_unknown_and_names_it() {
+    let gate = super::unanswered_tests::flake_gate(&[("nix", "exit 0")]);
+    let t = &gate.tracks[0];
+    assert_eq!(t.status, Status::Unknown, "{t:?}");
+    assert_eq!(t.missing, ["statix", "deadnix"], "{t:?}");
+    assert_eq!(
+        t.unanswered,
+        ["statix is not installed", "deadnix is not installed"],
+        "{t:?}"
     );
-    tool(dir.path(), "nix", "exit 0");
-    let (gate, _) = run(
-        repo.path(),
-        "HEAD~1",
-        &nix_track(),
-        &setup(dir.path(), Duration::from_secs(30)),
-        run_dir.path(),
+    assert_eq!(
+        unknown::reason(&gate),
+        Some(
+            "the gate was not established locally (nix: unknown); statix is not installed; deadnix is not installed; no CI check informed it".to_owned()
+        )
     );
-    assert_eq!(gate.tracks[0].status, Status::Pass, "{:?}", gate.tracks[0]);
 }

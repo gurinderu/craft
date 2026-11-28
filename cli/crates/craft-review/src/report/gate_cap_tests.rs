@@ -1,9 +1,11 @@
 //! A gate signal the review asked for and could not establish caps the verdict at Warning
-//! (realm @nick/craft, node #487); a gate switched off on purpose does not.
+//! (realm @nick/craft, node #487); a gate switched off on purpose does not. A seed tool that did
+//! not answer is such a signal, and the line names the tool and why (realm @nick/craft, node #743).
 
 use serde_json::{Value, json};
 
 use super::{verdict, verdict_line};
+use crate::gate::unanswered_tests::{BUDGET, SEMGREP_ERROR, flake_gate, rust_gate};
 use crate::gate::{Gate, Status, Track};
 use crate::state::{RunState, STATE_VERSION};
 
@@ -73,6 +75,40 @@ fn an_unknown_gate_with_no_ci_read_says_no_ci_informed_it() {
         "{}",
         verdict_line(&s, &v)
     );
+}
+
+/// A seed tool the review asked for and that did not answer (realm @nick/craft, node #743): each
+/// silence it can fall to leaves its track unknown, caps the verdict at Warning, and the line
+/// names the tool and its reason, not the profile alone.
+#[test]
+fn a_seed_tool_that_did_not_answer_caps_the_verdict_and_its_line_names_it_with_why() {
+    let broken = flake_gate(&[
+        ("nix", "exit 0"),
+        ("statix", "exit 101"),
+        ("deadnix", "exit 0"),
+    ]);
+    for (gate, profile, said) in [
+        (
+            rust_gate(Some(SEMGREP_ERROR), BUDGET),
+            "rust",
+            "semgrep printed no JSON: Semgrep encountered an internal error",
+        ),
+        (rust_gate(None, BUDGET), "rust", "semgrep is not installed"),
+        (broken, "nix", "statix on a.nix exited 101: no message"),
+    ] {
+        let s = run(&[], gate);
+        let v = verdict(&s);
+        assert_eq!(
+            v, "Warning",
+            "never Approve over a seed tool that did not answer"
+        );
+        assert_eq!(
+            verdict_line(&s, &v),
+            format!(
+                "Warning — the gate was not established locally ({profile}: unknown); {said}; no CI check informed it"
+            )
+        );
+    }
 }
 
 #[test]

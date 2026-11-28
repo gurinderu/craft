@@ -612,8 +612,17 @@ fn each_reason_they_do_not_run_is_said_never_silent() {
         }],
         ..Gate::default()
     };
+    // Unknown for any other reason than a silent seed tool: the checks did not pass.
+    let unbuilt = Gate {
+        tracks: vec![Track {
+            profile: "rust".into(),
+            status: Status::Unknown,
+            ..Track::default()
+        }],
+        ..Gate::default()
+    };
     let pass = passed(false);
-    let cases: [Case<'_>; 7] = [
+    let cases: [Case<'_>; 8] = [
         (&[], true, &pass, Ok(&ok), false, "no Rust"),
         (
             &rust,
@@ -632,6 +641,14 @@ fn each_reason_they_do_not_run_is_said_never_silent() {
             "off in the reviewer's profile",
         ),
         (&rust, false, &red, Ok(&ok), false, "the Rust gate is red"),
+        (
+            &rust,
+            false,
+            &unbuilt,
+            Ok(&ok),
+            false,
+            "the Rust gate could not establish its signal",
+        ),
         (
             &rust,
             false,
@@ -666,6 +683,51 @@ fn each_reason_they_do_not_run_is_said_never_silent() {
     }
     let (_, lines) = said(&(&[], false, &pass, Ok(&ok), false, ""));
     assert!(lines.is_empty(), "a change of nothing says nothing");
+}
+
+/// A Rust track whose checks passed and which a seed tool then left unknown.
+fn unknown_for_a_silent_seed_tool() -> Gate {
+    Gate {
+        tracks: vec![Track {
+            profile: "rust".into(),
+            status: Status::Unknown,
+            unanswered: vec!["semgrep is not installed".to_owned()],
+            checks_passed: true,
+            ..Track::default()
+        }],
+        ..Gate::default()
+    }
+}
+
+/// The launch reads what the gate established of the build, not the track's whole status: a
+/// seed tool that did not answer caps the verdict and keeps the mutants (realm @nick/craft,
+/// node #743).
+#[test]
+fn a_track_a_silent_seed_tool_left_unknown_still_launches_the_mutants() {
+    let (top, run, bin) = (
+        repo(),
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+    );
+    // A stand-in worker that exits at once: the launch is all this test reads.
+    let worker = bin.path().join("worker");
+    exe::write_executable(&worker, "#!/bin/sh\nexit 0\n").unwrap();
+    let s = MutantsSetup {
+        exe: worker,
+        ..setup(cargo(bin.path(), MISSED_BIG, 0, 2))
+    };
+    let rust = ["src/lib.rs".to_owned()];
+    let (m, lines) = launch(&Launch {
+        run_dir: run.path(),
+        top: top.path(),
+        base: "main",
+        rust_files: &rust,
+        other_profiles: false,
+        gate: &unknown_for_a_silent_seed_tool(),
+        setup: Ok(&s),
+        cancel: &crate::cancel::Cancel::default(),
+    });
+    assert!(m.running(), "{lines:?}");
 }
 
 #[test]

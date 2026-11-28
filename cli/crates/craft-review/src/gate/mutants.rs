@@ -1,6 +1,6 @@
 //! Mutants of the change's own lines (realm @nick/craft, node #648): whether a test fails when a
 //! changed line breaks has one answer, and cargo-mutants gives it, so the binary runs it rather
-//! than a lens reasoning about it. `review start` launches it once the Rust gate passed and
+//! than a lens reasoning about it. `review start` launches it once the Rust gate's checks passed and
 //! cargo-mutants answers where the gate's cargo ran ([`launch`]), as a process of its own that
 //! bounds itself ([`worker`]): the driver gives `start` 600 s, most of which the gate and the
 //! sources already take, so the mutants run beside the lens rounds. When the rounds end the binary
