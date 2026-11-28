@@ -1,5 +1,5 @@
 {
-  "note": "The figures integrations/shared/analyze-runs.mjs printed over this store before craft runs retro, hooks and round-pairs carried them; frozen golden data, edited by hand.",
+  "note": "The figures integrations/shared/analyze-runs.mjs printed over this store before craft runs retro, hooks and round-pairs carried them; frozen golden data, edited by hand. Two retro marks (`craft runs retro-done`) are in the store and in none of the figures: the reader drops them before any count, as the JavaScript reader did from #566 on.",
   "store": {
     "2026-11-01T10-00-00Z-01.json": {
       "ts": "2026-11-01T10-00-00Z",
@@ -1017,6 +1017,25 @@
       "ts": "2026-11-08T10-00-00Z",
       "kind": "workflow",
       "name": "review"
+    },
+    "2026-11-09T10-00-00Z-31.json": {
+      "ts": "2026-11-09T10-00-00Z",
+      "schemaVersion": 1,
+      "kind": "retro",
+      "name": "retro",
+      "runtime": "claude-code",
+      "craftVersion": "0.9.0",
+      "engineRevision": 9,
+      "project": "/w/p",
+      "branch": "feat/a",
+      "verdict": "Block"
+    },
+    "2026-11-09T11-00-00Z-32.json": {
+      "ts": "2026-11-09T11-00-00Z",
+      "schemaVersion": 1,
+      "kind": "retro",
+      "name": "retro",
+      "project": "/w/p"
     }
   },
   "hooks": "{\"ts\":\"2026-11-01T09:00:00.000Z\",\"repo\":\"/w/p\",\"spoke\":true,\"found\":[],\"silent\":null}\n{\"ts\":\"2026-11-01T09:30:00.000Z\",\"repo\":\"/w/q\",\"spoke\":false,\"found\":[],\"silent\":\"nothing-declared\"}\n{\"ts\":\"2026-11-03T10:30:00.000Z\",\"repo\":\"/w/p\",\"spoke\":true,\"found\":[],\"silent\":null,\"event\":\"UserPromptSubmit\",\"reason\":\"re-review-nudge\"}\n{\"ts\":\"2026-11-03T10:31:00.000Z\",\"repo\":\"/w/p\",\"spoke\":false,\"found\":[],\"silent\":\"off-env\",\"event\":\"UserPromptSubmit\"}\n{\"ts\":\"2026-11-03T10:32:00.000Z\",\"repo\":\"/w/p\",\"spoke\":false,\"found\":[],\"silent\":\"off-env\",\"event\":\"UserPromptSubmit\"}\n{\"ts\":\"2026-11-03T10:33:00.000Z\",\"repo\":\"/w/p\",\"spoke\":true,\"found\":[],\"silent\":null,\"event\":\"chat.message\"}\n{torn\n",

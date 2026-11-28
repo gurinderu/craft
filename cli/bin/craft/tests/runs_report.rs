@@ -199,3 +199,43 @@ fn a_stopped_part_of_another_version_is_read_past_as_another_versions() {
         .collect();
     assert_eq!(got, [json!(1), json!(0), json!(1)]);
 }
+
+#[test]
+fn a_retro_mark_is_no_run_no_engine_and_nothing_read_past() {
+    let mark = json!({"kind": "retro", "name": "retro", "engineRevision": 9, "verdict": ""});
+    let unversioned = json!({"kind": "retro", "name": "retro", "craftVersion": null});
+    let d = store(&[
+        run("2026-01-01T00-00-00Z", &json!({})),
+        run("2026-01-02T00-00-00Z", &mark),
+        run("2026-01-03T00-00-00Z", &unversioned),
+    ]);
+    let out = lines(&craft(d.path(), &["retro", "--engine", "latest"]));
+    let s = line(&out, "summary");
+    assert_eq!(
+        s["engine"],
+        json!("claude-code 1.0.0 r4"),
+        "the newest mark names no engine"
+    );
+    let s = line(&lines(&craft(d.path(), &["retro", "1.0.0"])), "summary").clone();
+    let got: Vec<Value> = ["runs", "other", "legacy"]
+        .iter()
+        .map(|k| s[*k].clone())
+        .collect();
+    assert_eq!(
+        got,
+        [json!(1), json!(0), json!(0)],
+        "a mark is neither another version's run nor a pre-telemetry one"
+    );
+    let log = d.path().join("hooks.jsonl");
+    std::fs::write(
+        &log,
+        format!(
+            "{}\n",
+            json!({"ts": "2025-12-31T00:00:00Z", "repo": "/p", "spoke": true})
+        ),
+    )
+    .unwrap();
+    let ls = lines(&craft(d.path(), &["hooks", "--log", log.to_str().unwrap()]));
+    let join = ls.iter().find(|l| l["section"] == "hookJoin").unwrap();
+    assert_eq!(join["workflowRuns"], json!(1));
+}
