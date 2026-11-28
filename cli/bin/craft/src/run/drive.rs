@@ -240,7 +240,12 @@ async fn rounds<P: Protocol>(
                 r.lost.heard(&step, &|l| d.log(l));
                 at = step;
             }
-            Err(e) => return recovered(d, run, &format!("{e:#}"), r),
+            Err(e) => {
+                // The submit may have failed before its state held the notes: they wait in the
+                // run, taken once by the resume (or the recovery's refiling) that comes next.
+                keep(d, run, &said.0.degraded);
+                return recovered(d, run, &format!("{e:#}"), r);
+            }
         }
     }
     Ending::Stopped(format!("{name} ran out of rounds"), StopCause::Rounds)

@@ -1,6 +1,7 @@
-//! A round the loop ends without a submit — a stopping signal cut it short, or no account is
-//! logged in — keeps the round's degraded notes in the run beside the answers that landed, for the
-//! resume's submit to take (realm @nick/craft, node #752); a round that is submitted keeps none.
+//! A round the loop ends without a submit that took it — a stopping signal cut it short, no account
+//! is logged in, or its submit failed — keeps the round's degraded notes in the run beside the
+//! answers that landed, for the resume's submit to take (realm @nick/craft, node #752); a round
+//! that is submitted keeps none.
 
 use craft_step::noted;
 
@@ -98,6 +99,37 @@ async fn a_round_stopped_for_a_missing_login_keeps_its_degraded_notes_for_the_re
     let answer = bench.drive(&fake).await;
     assert!(!answer.finished, "{}", answer.text);
     assert!(fake.submits.borrow().is_empty(), "nothing is submitted");
+    assert_kept(&bench);
+}
+
+#[tokio::test]
+async fn a_review_round_whose_submit_failed_keeps_its_degraded_notes_for_the_resume() {
+    let bench = Bench::new(HostKind::Codex);
+    let mut fake = bench.fake(vec![Spec("n", "do n", Some("nix-reviewer"))]);
+    fake.broken = true;
+    let answer = bench.drive(&fake).await;
+    assert!(!answer.finished, "{}", answer.text);
+    assert!(
+        answer.text.contains("the step could not be read"),
+        "{}",
+        answer.text
+    );
+    assert_kept(&bench);
+}
+
+#[tokio::test]
+async fn a_triage_round_whose_submit_failed_keeps_its_degraded_notes_for_the_resume() {
+    let bench = Bench::new(HostKind::Codex);
+    let mut fake = bench.fake(vec![Spec("n", "do n", Some("nix-reviewer"))]);
+    fake.broken = true;
+    let triage = Triage(fake);
+    let answer = bench.drive(&triage).await;
+    assert!(!answer.finished, "{}", answer.text);
+    assert!(
+        answer.text.contains("the step could not be read"),
+        "{}",
+        answer.text
+    );
     assert_kept(&bench);
 }
 

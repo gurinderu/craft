@@ -4,9 +4,10 @@
 
 mod common;
 
-use common::{fixture, lens, small_run, write_answer};
+use common::{fixture, lens, opts, small_run, write_answer};
+use craft_review::Error;
 use craft_review::state;
-use craft_review::step::{self, Said};
+use craft_review::step::{self, Said, StepError};
 use craft_step::noted;
 use serde_json::{Value, json};
 
@@ -85,4 +86,47 @@ fn a_run_with_no_kept_note_finishes_as_it_did() {
     assert!(s.get("degraded").is_none(), "{s}");
     let report = std::fs::read_to_string(state::report_path(&run)).unwrap();
     assert!(!report.contains("## Degraded"), "{report}");
+}
+
+#[test]
+fn a_submit_whose_state_could_not_be_saved_keeps_the_notes_for_the_next() {
+    let repo = fixture(true);
+    let out = tempfile::tempdir().unwrap();
+    let (run, s) = small_run(repo.path(), out.path());
+    answers_landed(&s);
+    noted::keep(&run, &[NOTE.to_owned()]).unwrap();
+    let resume = Said {
+        resume: true,
+        ..Said::default()
+    };
+    // The state's temporary file a directory: the save fails after the notes were read.
+    let blocker = run.join("state.json.tmp");
+    std::fs::create_dir(&blocker).unwrap();
+    let failed = step::submit_with(&run, None, &resume);
+    std::fs::remove_dir(&blocker).unwrap();
+    assert!(failed.is_err(), "{failed:?}");
+    assert_eq!(
+        noted::kept(&run),
+        [NOTE],
+        "kept until a saved state holds them"
+    );
+    let s = step::submit_with(&run, None, &resume).unwrap();
+    assert_eq!(s["degraded"], json!([NOTE]), "{s}");
+    assert!(!noted::file(&run).exists());
+}
+
+#[test]
+fn a_fresh_start_over_notes_a_host_kept_is_refused() {
+    let repo = fixture(true);
+    let out = tempfile::tempdir().unwrap();
+    let run = out.path().join("run");
+    std::fs::create_dir_all(&run).unwrap();
+    noted::keep(&run, &[NOTE.to_owned()]).unwrap();
+    let err = step::start(&opts(repo.path(), out.path())).unwrap_err();
+    assert!(
+        matches!(&err, Error::Step(StepError::Leftovers(f)) if *f == noted::file(&run)),
+        "{err}"
+    );
+    assert!(!state::state_path(&run).exists());
+    assert_eq!(noted::kept(&run), [NOTE], "left as it was");
 }

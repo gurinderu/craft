@@ -73,11 +73,15 @@ pub(super) fn refuse_delta_over_branch(
     }
 }
 
-/// Makes `dir` the new run's: refused when it holds a run, or a task or answer file that would be
-/// read as this run's.
+/// Makes `dir` the new run's: refused when it holds a run, or a task or answer file or degraded
+/// notes a host kept that would be read as this run's.
 pub(super) fn open_dir(dir: &Path) -> Result<(), StepError> {
     if state::state_path(dir).exists() {
         return Err(StepError::RunExists(dir.to_owned()));
+    }
+    let kept = craft_step::noted::file(dir);
+    if kept.exists() {
+        return Err(StepError::Leftovers(kept));
     }
     for sub in [handoff::tasks_dir(dir), handoff::answers_dir(dir)] {
         if sub.read_dir().is_ok_and(|mut d| d.next().is_some()) {
