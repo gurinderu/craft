@@ -69,3 +69,10 @@ test('the start quotes each path whole after `--path=`, so a path with a quote o
   const o = options({ path: ["it's", '-x'], repo: '/w' })
   assert.equal(auditStart('/b/craft', o, '9.9.9', '', ''), `/b/craft audit start --cwd '/w' --path='it'\\''s' --path='-x' --record '9.9.9'`)
 })
+
+test('a start option given as null beside run= is absent, not refused', () => {
+  for (const extra of [{ path: null }, { batchBytes: null }, { lensAgents: null }]) {
+    const read = readAuditOptions({ run: '/r/run', ...extra })
+    assert.ok('options' in read, JSON.stringify([extra, read]))
+  }
+})

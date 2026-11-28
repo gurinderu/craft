@@ -16,12 +16,12 @@ export const COMMON_KEYS = Object.freeze(['craftRoot', 'craftBin', 'repo', 'run'
 const PATH_REFUSED_CLASS = 'a path argument refused — not an absolute path an agent can quote, nothing ran'
 
 /**
- * Start-only arguments cannot change the saved run (realm @nick/craft, node #616).
+ * Start-only arguments cannot change the saved run (realm @nick/craft, node #616); a null one is absent.
  * @param {Record<string, unknown>} a @param {readonly string[]} startOnly @param {string} engine
  */
 function startOnlyBesideRun(a, startOnly, engine) {
   if (!a['run']) return ''
-  const given = startOnly.filter(k => a[k] !== undefined)
+  const given = startOnly.filter(k => a[k] != null)
   return given.length
     ? `${engine} cannot honour ${given.map(k => `\`${k}\``).join(', ')} beside run=: a resumed run keeps its start options. Drop them to resume it, or start a new run to change them. Nothing ran.`
     : ''
