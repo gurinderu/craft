@@ -202,7 +202,7 @@ export function applyGitIdentity(raw, id, fields = ['branch', 'head']) {
 // run and the writer are the same craft). For `recover` and `from-journal` it is the RECOVERING
 // craft — a stopped run can be recovered after an upgrade, and a transcript replayed by a later craft
 // — so on those `partial:true` records it does not say which engine produced the run's findings:
-// analyze-runs excludes them from every rate, and the re-review loader never reads their revision as a
+// `craft runs retro` excludes them from every rate, and the re-review loader never reads their revision as a
 // fingerprint basis (priorBasisVerdict, realm @nick/craft #110).
 // `session` is the harness's own `$CLAUDE_CODE_SESSION_ID`, shell-expanded into the logger's command
 // line (never composed by a model — see integrations/shared/run-logging.mjs) and threaded through unchanged. An
@@ -923,8 +923,8 @@ function finalizeFresh(raw, opts) {
   //   - a run whose every checkpoint failed to hand back its directory, finalizing with `--rejoin`
   //     after `recover` kept that directory as possibly live: the search never adopts a kept directory
   //     (see `rejoinable`), so the full record is filed BESIDE recover's partial one, and the directory
-  //     stays for recover. The round then has two records, and analyze-runs lists recover's partial as
-  //     a dead run: the full record folded no phases, so the #313 twin rule (integrations/shared/partial-twins.mjs) does
+  //     stays for recover. The round then has two records, and `craft runs retro` lists recover's partial as
+  //     a dead run: the full record folded no phases, so the #313 twin rule (cli/crates/craft-store/src/retro/unfinished.rs) does
   //     not match the two — its safe side, which may show a run that lived as dead but never hides a
   //     dead one. Only `--dir` replaces recover's record (realm @nick/craft, node #401).
   //
@@ -2091,7 +2091,7 @@ export function recordFromJournal(dir, { name = 'review', kind = 'workflow' } = 
 }
 
 // ---- backfill-engine (one-off, operator-run) -------------------------------------------------
-// Records written before `engineRevision` existed carry no engine identity, and analyze-runs
+// Records written before `engineRevision` existed carry no engine identity, and `craft runs retro`
 // therefore refuses to fold them in with attributed ones. That is the honest default, but it is not
 // always the whole truth: when EVERY undated-engine record predates the behavioural change, they are
 // all the OLD engine and can be classified without guessing. The soundness condition is exactly

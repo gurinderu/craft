@@ -1,0 +1,58 @@
+craft, every version: 0 finished run(s), 0 with partial coverage · 0 unfinished set apart · 0 folded into a newer record of the same run · 0 without a schema version read past
+
+Engines
+
+Workflows
+GROUP  RUNS  B/W/A  INC  PARTIAL  CRIT  HIGH  MED  LOW  INFO  VERIFIED  REFUTE  TRIAGE g/v/acc/rej/def/nd/conf/iss
+
+Verification (refute basis; panels thinned by off-schema votes)
+WORKFLOW  BASIS  THINNED  THINNED-RUNS  MEASURED
+
+Full-plan cost (light runs apart; tokens per run)
+WORKFLOW  PRICED  CACHE-READ  CACHE-WRITE  INPUT  OUTPUT  TOTAL  LEFT-OUT  POOL:first/re-review/no-round(runs)
+
+Surface gate (whole-repo lens passes not bought)
+not recorded in these runs
+
+Kinds
+KIND  RUNS  MIN/RUN  AGENTS/RUN  PRICED  COST/RUN  UNPRICED
+
+Not run
+
+Saved (verifications deliberately not bought)
+none
+
+Harm cap: 0 finding(s) lowered to their harm's ceiling over 0 run(s) that record it
+
+Not reviewed (files no language profile covered, 0 run(s))
+none
+
+Agent unavailable (not registered; work on the generic subagent)
+none
+
+Memory (what the review recalled before judging)
+not measured: none of the 0 run(s) carried `memory`
+
+Memory contradictions (findings against an active memory record)
+JS engines: not measured
+CLI: not measured
+
+Sorting (doubtful findings held back from the PR)
+not measured: no run carries `sorting`
+
+Develop (craft:develop cycles)
+not measured: no develop cycle record
+
+Depth: craft:review (JS engine), light runs apart from the full-plan figures
+full: 0 run(s), agents/run -, wall min/run -, confirmed/run -
+light: 0 run(s), agents/run -, wall min/run -, confirmed/run -
+
+Depth: craft:review (CLI), light runs apart from the full-plan figures
+full: 0 run(s), agents/run -, wall min/run -, confirmed/run -
+light: 0 run(s), agents/run -, wall min/run -, confirmed/run -
+
+Lenses
+LENS  RUNS  DEAD  FINDINGS  PER-RUN  CRIT  HIGH  MED  LOW  INFO  REFUTE  REFUTED/CANDIDATES  BASIS  UNVERIFIED
+
+Noise (lenses refuting ≥ 0.25 over ≥ 4 candidates)
+no per-lens refute data yet

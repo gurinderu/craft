@@ -61,7 +61,6 @@ function cruise(plant) {
       'integrations/opencode/plugin/node_modules/@opencode-ai/plugin/dist/index.js': 'export const tool = 1\n',
       ...Object.fromEntries(Object.entries(pkg('devpkg2')).map(([k, v]) => [`integrations/opencode/plugin/node_modules/${k}`, v])),
       'integrations/shared/craft-log-run.mjs': "import fs from 'node:fs'\nimport { h } from './helper.mjs'\nvoid fs, h\n",
-      'integrations/shared/analyze-runs.mjs': "import { h } from './helper.mjs'\nvoid h\n",
       'integrations/shared/helper.mjs': 'export const h = 1\n',
       'integrations/shared/helper.test.mjs': "import { h } from './helper.mjs'\nvoid h\n",
       'integrations/opencode/plugin/index.ts':
@@ -93,7 +92,7 @@ test('a clean tree passes: built-ins, @opencode-ai/plugin and a type-only import
 test('a shipped entry reaching a test file fails shipped-reaches-no-test', () => {
   const r = cruise({ 'integrations/shared/helper.mjs': "import './helper.test.mjs'\nexport const h = 1\n" })
   assert.notEqual(r.status, 0, r.out)
-  assert.match(r.out, /shipped-reaches-no-test: integrations\/shared\/analyze-runs\.mjs → integrations\/shared\/helper\.test\.mjs/)
+  assert.match(r.out, /shipped-reaches-no-test: integrations\/shared\/craft-log-run\.mjs → integrations\/shared\/helper\.test\.mjs/)
 })
 
 test('a shipped entry reaching a root devDependency fails shipped-reaches-no-package', () => {

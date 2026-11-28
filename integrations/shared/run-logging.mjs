@@ -8,7 +8,7 @@
 //
 //   1. `engineRevision` is stamped only by the script — on records inside `computedFields()`, on
 //      checkpoints inside `writeCheckpoint()` (both in craft-log-run.mjs) — and
-//      is deliberately absent from `indexProjection`. A prompt CANNOT produce it. `analyze-runs`
+//      is deliberately absent from `indexProjection`. A prompt CANNOT produce it. `craft runs retro`
 //      buckets a record without it into `r?` and `--engine latest` filters it out — so every record
 //      a prose engine ever wrote was excluded from the pending measurements by construction.
 //   2. The model computes the fields, so the fields are model variance. A live adversarial-review

@@ -1,5 +1,5 @@
 {
-  "about": "Which stored costs a reader takes as usable (`costProblem`): the JavaScript rule in integrations/shared/run-record.mjs and the binary's in cli/crates/craft-store/src/cost/problem.rs are both held to these cases (realm @nick/craft, #357, #393, #658). Edited by hand; `folds` are a run filed in parts, the index of its part that stands for it, and the cost that part is priced by (`summedCost` in integrations/shared/run-parts.mjs, the binary's cli/crates/craft-store/src/cost/fold.rs).",
+  "about": "Which stored costs a reader takes as usable: the binary's rule in cli/crates/craft-store/src/cost/problem.rs is held to these cases, frozen from the JavaScript `costProblem` it replaced (realm @nick/craft, #357, #393, #658). Edited by hand; `folds` are a run filed in parts, the index of its part that stands for it, and the cost that part is priced by (cli/crates/craft-store/src/cost/fold.rs).",
   "cases": [
     {
       "name": "no cost at all",

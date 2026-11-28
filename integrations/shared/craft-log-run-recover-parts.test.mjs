@@ -8,7 +8,6 @@ import path from 'node:path'
 import { checkpointDir, writeCheckpoint, recoverPartials, finalizeRun } from './craft-log-run.mjs'
 import { cutRecord } from './record-parts.mjs'
 import { indexProjection } from './run-record.mjs'
-import { run as analyze } from './analyze-runs.mjs'
 
 const HOUR = 60 * 60 * 1000
 /** @type {string[]} */
@@ -67,8 +66,8 @@ const indexRows = store =>
     .split('\n')
     .filter(Boolean)
     .map(l => JSON.parse(l))
-/** @param {string} store */
-const deadListed = async store => analyze([store], {}, store).stdout.join('\n').includes('Runs that did not finish')
+/** A dead run on file: a record that did not finish. @param {string} store */
+const deadListed = store => records(store).some(r => r.partial === true)
 const stale = () => new Date(Date.now() + 7 * HOUR)
 
 test('finalize died after every part landed: recover files the complete record, its index row, no dead run', async () => {
@@ -84,7 +83,7 @@ test('finalize died after every part landed: recover files the complete record, 
   assert.deepEqual(rec.items, BIG.items)
   assert.equal(rec.workflowEngineRevision, 7)
   assert.deepEqual(indexRows(store), [JSON.parse(JSON.stringify(indexProjection(rec)))])
-  assert.equal(await deadListed(store), false)
+  assert.equal(deadListed(store), false)
 })
 
 test("a record put back from its parts keeps the run's own phases and drops the parts", () => {
@@ -116,7 +115,7 @@ test('a part never landed: a partial record with what the rest hold, no transpor
   assert.match(rec.partialReason, /sent in \d+ part\(s\) and \d+ came back/)
   assert.equal(rec.verdict, 'Warning (INCOMPLETE)')
   assert.ok(rec.items.length > 0 && rec.items.length < BIG.items.length, 'what the landed parts hold is filed')
-  assert.equal(await deadListed(store), true)
+  assert.equal(deadListed(store), true)
 })
 
 test('a part altered in its copy: the content id refuses it as whole, filed partial', () => {

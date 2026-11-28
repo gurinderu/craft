@@ -7,7 +7,6 @@ import os from 'node:os'
 import path from 'node:path'
 import { checkpointDir, writeCheckpoint, recoverPartials, partialChainEvidence, finalizeRun, writeRecord, run } from './craft-log-run.mjs'
 import { indexProjection } from './run-record.mjs'
-import { splitSuperseded } from './partial-twins.mjs'
 
 const MIN = 60 * 1000
 /** @type {string[]} */
@@ -145,13 +144,10 @@ test("a run recover kept that finalizes with --rejoin and no --dir files its rec
   assert.equal(records(store).length, 2, "the round has two records: the full one beside recover's partial one")
   assert.equal(indexLines(store).length, 2)
   assert.ok(fs.existsSync(dir), 'the directory stays for recover')
-  // The #313 twin rule's safe side: recover's partial is listed as a dead run, never hidden.
+  // The #313 twin rule's safe side: recover's partial stays on file as a dead run beside the complete one (the
+  // binary's `craft runs retro` lists it, cli/crates/craft-store/src/retro/unfinished.rs).
   const recs = records(store).map(f => JSON.parse(fs.readFileSync(path.join(store, f), 'utf8')))
-  const { kept: dead, hidden } = splitSuperseded(
-    recs.filter(r => r.partial),
-    recs.filter(r => !r.partial),
-  )
-  assert.deepEqual([dead.length, hidden.length], [1, 0])
+  assert.deepEqual([recs.filter(r => r.partial).length, recs.filter(r => !r.partial).length], [1, 1])
 })
 
 test("a rerun's rejoin does not adopt a directory recover kept, so the round is not filed twice", () => {

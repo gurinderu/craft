@@ -138,7 +138,6 @@ const LOG_RUN_MODULES = [
   'json-object.mjs',
   'script-main.mjs',
   'sorting-choice.mjs',
-  'develop-cycle.mjs',
   'honest-verdict.mjs',
   'usage-limit.mjs',
   'repo-key.mjs',

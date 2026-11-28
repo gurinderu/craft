@@ -69,10 +69,10 @@ export function reviewResult(dimension, reportIn) {
   // (a genuine not-run) or PARTIAL COVERAGE (files no language profile covered) — review.js writes both
   // via verdictSuffix (integrations/shared/review-coverage.mjs), and the model may drop the ⚠️ glyph when it rewrites
   // the verdict line, so this classifies on the WORDS, not the emoji. It matches both markers, the same
-  // widening integrations/shared/analyze-runs.mjs's isIncomplete carries, so this reader and the run store never
+  // widening `craft runs retro`'s `is_incomplete` carries, so this reader and the run store never
   // disagree — and it drives BOTH the verdict step below and the summary, which can then never diverge.
   const incomplete = /INCOMPLETE|PARTIAL COVERAGE/i.test(line || '')
-  // SEVERITY FIRST, then coverage — the same rule integrations/shared/analyze-runs.mjs states and implements for the
+  // SEVERITY FIRST, then coverage — the same rule `craft runs retro` states and implements for the
   // run store, and the two must not disagree. A `⛔ Block (INCOMPLETE)` is a block: partial coverage
   // cannot un-find a finding that was already made, so it must not be downgraded to Warning. Only an
   // otherwise-green verdict is voided by incompleteness, because an Approve is a claim about what was

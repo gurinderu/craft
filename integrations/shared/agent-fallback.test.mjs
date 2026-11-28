@@ -3,7 +3,7 @@
 // nothing. The sentences themselves are not pinned (realm @nick/craft, #146) — what each must carry is.
 import { test } from 'vitest'
 import assert from 'node:assert/strict'
-import { agentUnavailableSection, agentUnavailableRecord, readAgentUnavailableSection, readAgentUnavailable, isAgentTypeMissing } from './agent-fallback.mjs'
+import { agentUnavailableSection, agentUnavailableRecord, readAgentUnavailableSection, isAgentTypeMissing } from './agent-fallback.mjs'
 
 const HEAD = /^## ⚠️ Reviewer agent unavailable\n/
 const INSTALL = '/plugin install craft@craft'
@@ -101,23 +101,6 @@ test('a section bullet in wording the reader does not know is read as an unavail
   assert.equal(got.missing[0]?.agent, 'craft:z')
   assert.equal(got.missing[0].error.length, 160, 'the quoted bullet is bounded at 160 characters')
   assert.equal(got.missing[1]?.agent, 'a craft agent')
-})
-
-test('a stored record of either shape and any age reads as the one shape', () => {
-  const now = { agentUnavailable: ['craft:rust-reviewer'], agentFallbacks: { 'craft:nix-reviewer': 2 } }
-  assert.deepEqual(readAgentUnavailable(now), now)
-  assert.deepEqual(
-    readAgentUnavailable({ reviewerAgentUnavailable: ['rust'], reviewerAgentFallbacks: { nix: 2 } }),
-    now,
-    "the review engine's earlier profile-keyed fields",
-  )
-  assert.deepEqual(readAgentUnavailable({}), { agentUnavailable: [], agentFallbacks: {} }, 'a record from before either')
-  assert.deepEqual(
-    readAgentUnavailable({ agentUnavailable: 'x', agentFallbacks: { a: '1' } }),
-    { agentUnavailable: [], agentFallbacks: {} },
-    'malformed fields read as nothing',
-  )
-  assert.deepEqual(readAgentUnavailable(null), { agentUnavailable: [], agentFallbacks: {} })
 })
 
 // A multi-line error (the harness appends "\nAvailable agents: …") must not break the bullet list: the

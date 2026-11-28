@@ -1,0 +1,5 @@
+SessionStart (claude-code): 2 run(s) — spoke 1, silent 1 (nothing-declared 1)
+UserPromptSubmit (claude-code): 2 run(s) — spoke 0, silent 2 (off-env 2)
+UserPromptSubmit re-review-nudge (claude-code): 1 run(s) — spoke 1, silent 0
+chat.message (opencode): 1 run(s) — spoke 1, silent 0
+review runs after the start hook (SessionStart) spoke in their repo: 18 of 19 (1 repo(s))

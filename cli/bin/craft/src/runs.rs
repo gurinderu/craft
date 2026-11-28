@@ -2,7 +2,12 @@
 //! (realm @nick/craft, nodes #535, #540). Each command prints a table, or NDJSON with `--json` for
 //! jq; a line or record that does not read is passed over and counted on stderr.
 
+mod hooks;
+mod pairs;
 mod render;
+mod retro;
+pub(crate) use retro::retro_where;
+mod visit;
 pub(crate) mod write;
 
 use std::io::Write;
@@ -109,7 +114,25 @@ pub enum RunsCommand {
         at: Option<String>,
         #[command(flatten)]
         filter: FilterArgs,
+        /// One engine: `<runtime> <version> r<N>` as the Engines section names it, or `latest`,
+        /// the engine of the newest run.
+        #[arg(long)]
+        engine: Option<String>,
     },
+    /// craft's hooks' trace (`~/.craft/hooks.jsonl`): per event, its firings against its
+    /// silences by reason, and how many workflow runs the filters keep came from a repository
+    /// after the start hook first spoke there.
+    Hooks {
+        #[command(flatten)]
+        filter: FilterArgs,
+        /// The hook log; `~/.craft/hooks.jsonl` when absent.
+        #[arg(long, value_parser = path_value())]
+        log: Option<PathBuf>,
+    },
+    /// Consecutive review rounds of one branch paired: does a re-review get cheaper because it
+    /// remembers? A pair is compared only when nothing but memory differs; any other is named with
+    /// what confounds it.
+    RoundPairs,
     /// Confirmed findings recurring across branches of this project, and with `--unverified` the
     /// unverified ones apart; always one JSON object.
     Recurring {
@@ -263,11 +286,30 @@ fn printed(args: &RunsArgs) -> Result<ExitCode> {
                 ExitCode::FAILURE
             }
         }
-        RunsCommand::Retro { at, filter } => {
-            let mut filter = filter.filter();
-            filter.version = filter.version.or_else(|| at.clone());
-            let retro = retro_where(&store, &|r| filter.keeps(r), &mut skipped)?;
-            render::retro(&mut out, &filter, &retro, args.at.json)?;
+        RunsCommand::Retro { at, filter, engine } => {
+            retro::command(
+                &mut out,
+                &store,
+                (at, filter, engine.as_deref()),
+                args.at.json,
+                &mut skipped,
+            )?;
+            ExitCode::SUCCESS
+        }
+        RunsCommand::Hooks { filter, log } => {
+            let filter = filter.filter();
+            hooks::report(
+                &mut out,
+                &store,
+                &filter,
+                log.as_deref(),
+                args.at.json,
+                &mut skipped,
+            )?;
+            ExitCode::SUCCESS
+        }
+        RunsCommand::RoundPairs => {
+            pairs::report(&mut out, &store, args.at.json, &mut skipped)?;
             ExitCode::SUCCESS
         }
         RunsCommand::Recurring {
@@ -308,86 +350,6 @@ fn printed(args: &RunsArgs) -> Result<ExitCode> {
     };
     said_skipped(&skipped);
     Ok(code)
-}
-
-/// The retro of the finished runs `keep` keeps — one version's, one repository's — read from the
-/// store at `store`, a resumed run once.
-pub(crate) fn retro_where(
-    store: &Path,
-    keep: &dyn Fn(&Obj) -> bool,
-    skipped: &mut Skipped,
-) -> Result<craft_store::retro::Retro> {
-    let mut out = craft_store::retro::Retro::default();
-    let mut newest = std::collections::BTreeMap::<String, (String, String)>::new();
-    let mut parts = Parts::default();
-    let mut failure = None;
-    read::records(store, skipped, |name, r| {
-        let died = r.get("partial").is_some_and(Js::truthy);
-        if r.get("schemaVersion").is_some_and(Js::truthy) && !died {
-            parts.note(name, &r);
-        }
-        let inside = keep(&r);
-        if r.get("schemaVersion").is_some_and(Js::truthy)
-            && !died
-            && held(&mut parts, (name, &r, inside), &mut failure)
-        {
-            // Counted, or folded, once every record is read, as the run's standing part is.
-            out.other += u64::from(!inside);
-        } else if !r.get("schemaVersion").is_some_and(Js::truthy) || !inside {
-            out.other += 1;
-        } else if died {
-            out.unfinished += 1;
-        } else if let Some(key) = craft_store::retro::run_key(&r) {
-            let ts = match r.try_text("ts") {
-                Ok(ts) => ts.to_owned(),
-                Err(e) => {
-                    failure = Some(e);
-                    return;
-                }
-            };
-            match newest.entry(key) {
-                std::collections::btree_map::Entry::Vacant(e) => {
-                    e.insert((ts, name.to_owned()));
-                }
-                std::collections::btree_map::Entry::Occupied(mut e) => {
-                    out.folded += 1;
-                    if ts > e.get().0 {
-                        e.insert((ts, name.to_owned()));
-                    }
-                }
-            }
-        } else if let Err(e) = craft_store::retro::add_record(&mut out, name, &r) {
-            failure = Some(e);
-        }
-    })
-    .with_context(|| format!("reading {}", store.display()))?;
-    if let Some(e) = failure {
-        return Err(e.into());
-    }
-    for (key, (ts, name)) in newest {
-        match read::record(store, &name) {
-            Ok(r)
-                if r.text_units("ts") == ts
-                    && keep(&r)
-                    && r.get("schemaVersion").is_some_and(Js::truthy)
-                    && !r.get("partial").is_some_and(Js::truthy)
-                    && craft_store::retro::run_key(&r).as_ref() == Some(&key) =>
-            {
-                craft_store::retro::add_record(&mut out, &name, &r)?;
-            }
-            Ok(_) => skipped
-                .records
-                .push((name, "record changed while reading".into())),
-            Err(why) => skipped.records.push((name, why)),
-        }
-    }
-    let (standing, folded) = parts.standing();
-    out.folded += folded;
-    for (name, r) in read_back(store, standing, skipped, keep) {
-        craft_store::retro::add_record(&mut out, &name, &r)?;
-    }
-    craft_store::retro::settle(&mut out, &parts);
-    Ok(out)
 }
 
 /// Whether `r` is a stopped part `parts` holds back until every record is read

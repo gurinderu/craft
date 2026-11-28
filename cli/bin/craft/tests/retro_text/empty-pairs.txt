@@ -1,0 +1,1 @@
+No consecutive review rounds of one branch in this store.

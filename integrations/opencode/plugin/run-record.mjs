@@ -645,7 +645,7 @@ export function buildAuditRecord({ results, baseRef, hasUnsafe, synthesisText, s
   // noEvidence bucket. Both still make the audit partial below.
   const noEvidence = dimensions.filter(d => d.ran && d.verdict.startsWith('INCOMPLETE (no evidence')).map(d => d.dimension)
   // Worst-wins ranks INCOMPLETE below Warning, so partial coverage vanishes from the top-level
-  // token whenever anything else is worse. The SUFFIXED form is the shape integrations/shared/analyze-runs.mjs
+  // token whenever anything else is worse. The SUFFIXED form is the shape `craft runs retro`
   // already reads (`/INCOMPLETE/i` over the verdict string, severity-first bucketing), so emitting
   // `Warning (INCOMPLETE)` keeps both readers working: the severity is still the severity, and the
   // run is still counted as partial coverage.

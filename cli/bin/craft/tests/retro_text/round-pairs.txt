@@ -1,0 +1,9 @@
+Compared only when nothing but memory differs; every other pair is named with what confounds it. Token counts are an unweighted sum across kinds (a cache read is priced far below output), so read the per-kind deltas, not the ratio alone, as money.
+feat/a (/w/p) round 1 → 2: tokens ×0.7 (1000 → 695): output +15, input +20, cache read -370, cache write +30 (60 min apart — a prompt cache still warm from round 1 lowers the later round's input); agents +2, lens dispatches -2, verified candidates -3, findings -2
+feat/a (/w/p) round 2 → 3: the rounds did not review the same diff (head, base, path or changed-file set differ, or are missing) — the drop includes the change, not only memory
+feat/p (/w/p) round 1 → 2: the later round does not say it chained from this round
+feat/p (/w/p) round 2 → 3: the later round does not say it chained from this round
+feat/p (/w/p) round 1 → 2: the later round does not say it chained from this round
+feat/c (/w/p) round 1 → 2: the later round does not say it chained from this round
+10 review record(s) are not rounds and pair with nothing: 3 did not finish, 6 no round, 1 pre-telemetry
+2 record(s) folded into a newer record of the same run before pairing (a resumed run files twice).

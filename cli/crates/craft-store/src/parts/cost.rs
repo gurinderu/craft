@@ -1,5 +1,5 @@
 //! The cost a record of a run filed in parts is priced by, as `foldStoppedParts` in
-//! `integrations/shared/run-parts.mjs` prices it (realm @nick/craft, node #658): the part standing
+//! the retired `run-parts.mjs` priced it (realm @nick/craft, node #658): the part standing
 //! for the run — the first of its newest finished records, else the first of its newest — carries
 //! every other stopped part's share summed once ([`crate::cost::fold`]); any other part its own.
 

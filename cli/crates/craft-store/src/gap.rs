@@ -1,7 +1,7 @@
 //! A coverage gap as the run record's `capped` holds it: its stable key — the lens and the kind of
 //! gap — then, after [`SEP`], the detail of its run (files, errors). Every writer of a gap builds it
 //! with [`entry`]; the readers that rank gaps across runs (`craft runs retro`, [`key`], and
-//! `gapKeys` in `integrations/shared/analyze-runs.mjs`) undo it: the text before the first [`SEP`].
+//! `gapKeys` in the retired `analyze-runs.mjs`) undo it: the text before the first [`SEP`].
 
 /// What parts a gap's key from its detail.
 pub const SEP: &str = " — ";

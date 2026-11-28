@@ -17,7 +17,6 @@ const entryField = (v, key) => (v && typeof v === 'object' ? /** @type {Record<s
 /** @typedef {'Critical' | 'High' | 'Medium' | 'Low' | 'Info'} Severity */
 /** @typedef {'accept' | 'reject' | 'defer' | 'needs-decision' | 'conflict'} TriageVerdict */
 /** @typedef {{ file?: unknown, symbol?: unknown, ruleId?: unknown, title?: unknown }} FindingKey */
-/** @typedef {{ runtime?: unknown, craftVersion?: unknown, workflowEngineRevision?: unknown, engineRevision?: unknown, name?: unknown, driver?: unknown }} EngineRecord */
 /**
  * A run record as a reader gets it from the store (realm @nick/craft, #132): the ONE description every
  * reader shares. Records are parsed JSON written by several engine revisions and by hand, so every field
@@ -272,7 +271,7 @@ export function fingerprint(f) {
 // craftVersion and stays true of craftVersion; it is NOT a claim that the index carries the engine
 // discriminator, because a version names a RELEASE and one release (0.16.0) spanned two engines.
 // So: index.jsonl is filterable by version only, and a version slice is not an engine slice.
-// Nothing is lost today — integrations/shared/analyze-runs.mjs, the only engine-aware reader, loads the DETAIL
+// Nothing is lost today — `craft runs retro`, the only engine-aware reader, loads the DETAIL
 // files, where the revision always is; and `backfillEngineRevision` correspondingly rewrites detail
 // files only, leaving existing index lines unattributed on purpose (the index is append-only, and a
 // real store was found holding 29 unparsable lines that any rewrite would silently drop).
@@ -393,7 +392,7 @@ export function branchFromAbbrevRef(ref) {
 // TRADE-OFF, stated plainly: nothing can enforce the bump. No gate can tell a behavioural change
 // from a cosmetic one, so the number is only as honest as the person editing the engine — and a
 // MISSED bump asserts sameness, where a missing field would merely have admitted ignorance. Two
-// consequences follow, and both are deliberate: the reading side (integrations/shared/analyze-runs.mjs) treats an
+// consequences follow, and both are deliberate: the reading side (`craft runs retro`, cli/crates/craft-store/src/retro.rs) treats an
 // ABSENT revision as an unknown engine rather than folding it in with the current one; and the
 // stronger alternative — fingerprinting the behavioural constants a run actually used, which cannot
 // be forgotten — is not what ships here, because the engine does not report those constants in the
@@ -408,7 +407,7 @@ export function branchFromAbbrevRef(ref) {
 //       change here that alters what a RECORDED NUMBER means rather than only how the engine
 //       behaves: `rust-audit`'s unused-crates `refuteRate` went from (candidates − confirmed)
 //       / candidates to (judged − confirmed) / judged, `null` when nothing was judged, because a
-//       dead verifier used to count as a refutation. `analyze-runs` averages that field, so mixing
+//       dead verifier used to count as a refutation. `craft runs retro` averages that field, so mixing
 //       the two would average two different quantities under one name. (Other workflows still
 //       compute dropped/candidates and are untouched; they now share `refuteRate()` above, same formula.)
 //   3 — the finding fingerprint (`fp`) was re-anchored. A finding WITH a ruleId now hashes on
@@ -501,174 +500,4 @@ export function basisVerdictFromRevisions(revs, currentRev = ENGINE_REVISION) {
   const bases = new Set(list.map(fpBasisOf))
   if (bases.size !== 1) return { sameFpBasis: false, fpBasisKnown: false }
   return { sameFpBasis: fpBasisOf(list[0]) === fpBasisOf(currentRev), fpBasisKnown: true }
-}
-
-// The identity a before/after comparison may be sliced on. RUNTIME is part of it: `claude-code` and
-// `opencode` are two different engines writing into one store, and the opencode adapter stamps no
-// craftVersion at all — folding them together would be the same overclaim one level up.
-// A record with no revision is `r?` — NOT revision 2: absence of the discriminator is ignorance
-// about which engine ran, never evidence that it was this one.
-// The revision token a run is bucketed under: `r<N>` for an attributed run, `r?` for one with no
-// engineRevision. The ONE authority for this shape — `engineKey` here and the analyzer's collision
-// buckets (`revToken` in integrations/shared/analyze-runs.mjs) both call it, so the two never drift. An absent
-// revision is its own bucket, never folded into a known one.
-// The revision of the ENGINE that produced the record — `workflowEngineRevision` when the engine stamped
-// it (realm @nick/craft #111), else the logger's `engineRevision`. What a record's telemetry means is
-// the engine's behaviour, so that is what the analyzer slices on.
-/**
- * @param {EngineRecord | null | undefined} r
- * @returns {number | null}
- */
-export function recordEngineRevision(r) {
-  if (!r) return null
-  if (Number.isInteger(r.workflowEngineRevision)) return /** @type {number} */ (r.workflowEngineRevision)
-  return Number.isInteger(r.engineRevision) ? /** @type {number} */ (r.engineRevision) : null
-}
-
-/**
- * @param {EngineRecord | null | undefined} r
- * @returns {string}
- */
-export function engineRevisionToken(r) {
-  const rev = recordEngineRevision(r)
-  return rev !== null ? `r${rev}` : 'r?'
-}
-
-/**
- * @param {EngineRecord | null | undefined} r
- * @returns {string}
- */
-export function engineKey(r) {
-  // The CLI's runs are their own engine even under the logger revision the JS engine's carry: its runtime token
-  // names the chain (`claude-code+cli`), so an engine slice never holds both (reviewChain above).
-  const runtime = `${String((r && r.runtime) || 'unknown-runtime')}${reviewChain(r) === 'cli' ? '+cli' : ''}`
-  const version = (r && r.craftVersion) || 'unversioned'
-  return `${runtime} ${String(version)} ${engineRevisionToken(r)}`
-}
-
-/** @typedef {{ runtime: string, version: string | null, revision: number | null }} EngineParts */
-
-// The parts an engineKey is made of, read back: the runtime runs to the first space and the revision
-// token is the last segment, so the version is everything between — a version with a space in it still
-// reads back whole. `unversioned` and `r?` are absence, read as null. A RUNTIME with a space (only a
-// hand-edited or non-string field could carry one) does not read back: its tail lands in the version.
-// Two strings parse alike only if they are the same key, so comparing parts never matches what comparing
-// keys would not. Null for a string engineKey cannot produce: fewer than three segments, or a last
-// segment that is not `r?` nor `r<integer>` as engineRevisionToken writes it.
-/** @param {string} key @returns {EngineParts | null} */
-export function parseEngineKey(key) {
-  const first = key.indexOf(' '),
-    last = key.lastIndexOf(' ')
-  if (first < 0 || last === first) return null
-  const token = key.slice(last + 1)
-  const n = Number(token.slice(1))
-  const revision = token === 'r?' ? null : Number.isInteger(n) && `r${n}` === token ? n : undefined
-  if (revision === undefined) return null
-  const version = key.slice(first + 1, last)
-  return { runtime: key.slice(0, first), version: version === 'unversioned' ? null : version, revision }
-}
-
-/**
- * @param {EngineRecord | null | undefined} r
- * @returns {boolean}
- */
-export function isEngineAttributed(r) {
-  return recordEngineRevision(r) !== null
-}
-
-// A count read from the store — tokens, agents, candidates — is a finite, non-negative number. Not
-// something Number() can be talked into: '', [], true and '7' are corrupt, and read as 0 they would
-// print as a confident measurement.
-/** @param {unknown} v @returns {v is number} */
-export function isCount(v) {
-  return typeof v === 'number' && Number.isFinite(v) && v >= 0
-}
-
-// The counting rule enrich-cost names on every cost it writes: usage counted once per model message
-// (realm @nick/craft, node #357). A cost without it was summed per transcript line and overstates the
-// run ~1.8x; re-running enrich-cost on the record recounts it while its transcripts still exist.
-export const COST_RULE = 'per-message'
-// What enrich-cost names instead when some usage line carried no message id: such lines count alone, so
-// the sum may be the per-line overcount again — the id is the harness's to keep (realm @nick/craft, #98).
-export const COST_RULE_PER_LINE = 'per-line'
-
-// The total a stored cost stands for: `total` when it is a count, else the sum of the four token parts
-// (a record enriched by an older writer carries no total). `null` counts as absent, never as 0.
-/** @param {RecordCost} cost @returns {number} */
-export function costTotal(cost) {
-  if (isCount(cost.total)) return cost.total
-  return [cost.cacheRead, cost.cacheWrite, cost.input, cost.output].reduce((/** @type {number} */ n, v) => n + (isCount(v) ? v : 0), 0)
-}
-
-// The `malformed` half of costProblem, on a cost that is an object: see costProblem below.
-/** @param {RecordCost} c @returns {boolean} */
-function costMalformed(c) {
-  const measured = [c.total, c.cacheRead, c.cacheWrite, c.input, c.output, c.agents]
-  if (measured.every(v => v == null)) return true
-  if ([...measured, c.skipped, c.partsUnmeasured].some(v => v != null && !isCount(v))) return true
-  if (costLabelMalformed(c)) return true
-  const partList = [c.cacheRead, c.cacheWrite, c.input, c.output]
-  const parts = partList.reduce((/** @type {number} */ n, v) => n + (isCount(v) ? v : 0), 0)
-  return isCount(c.total) && partList.some(v => v != null) && c.total !== parts
-}
-
-// The labels of a cost, beside its counts: a `source` that is not a non-empty string, a `rule` that is not a
-// string, or a `slice` that is not costSlice's shape.
-/** @param {RecordCost} c @returns {boolean} */
-function costLabelMalformed(c) {
-  if (c.source != null && (typeof c.source !== 'string' || c.source === '')) return true
-  if (c.rule != null && typeof c.rule !== 'string') return true
-  return c.slice != null && !costSlice(c.slice)
-}
-
-// A cost's `slice` (enrich-cost --run-id, realm @nick/craft, node #393): record `index` of the `of` records one
-// Workflow run filed, and `tail`, the agents that started after the run's last logger. Null when not that shape.
-/** @param {unknown} slice @returns {{ index: number, of: number, tail?: number } | null} */
-export function costSlice(slice) {
-  if (!slice || typeof slice !== 'object' || Array.isArray(slice)) return null
-  const s = /** @type {{ index?: unknown, of?: unknown, tail?: unknown }} */ (slice)
-  const placed = isWhole(s.index) && isWhole(s.of) && s.index >= 1 && s.index <= s.of
-  return placed && (s.tail == null || isWhole(s.tail)) ? /** @type {{ index: number, of: number, tail?: number }} */ (s) : null
-}
-
-/** @param {unknown} v @returns {v is number} */
-function isWhole(v) {
-  return Number.isInteger(v) && isCount(v)
-}
-
-// Whether a record's cost can be used as a cost — the ONE rule every reader of the store applies. It
-// follows what enrich-cost writes: all four token parts, `agents`, `total` = the sum of the parts,
-// `source`, `skipped` when some transcripts were unreadable, and `slice` when it is one record's share of a run.
-// `missing`: never enriched (no cost written). `malformed`: `cost` is not an object, carries none of
-// the measured fields, has a field that is not a count (or a `source` that is not a non-empty string, or a
-// `slice` that is not costSlice's shape), or a `total` that is not the sum of its parts. `empty`: written but measured nothing — enrich-cost's
-// flag for transcripts that parse yet carry no usage (realm @nick/craft, #98); a zero sum is empty even
-// when some transcripts were skipped, since a lower bound of 0 bounds nothing. `overcounted`: summed
-// with no `rule` (an enrich-cost before the rule existed) or COST_RULE_PER_LINE — per transcript line, a
-// message counted as many times as it has lines. `unknown-rule`: a rule this reader does not know, its
-// counting unknown. `partial`: `skipped` transcripts, or the parts of a resumed run whose cost was not measured
-// (`partsUnmeasured`, integrations/shared/run-parts.mjs), make the total a lower bound. `absorbed` (agents of
-// a nested engine that filed no record, counted into this cost — enrich-cost --run-id, #393) is not read
-// here: such a cost is usable, and larger than its own engine's share by those agents.
-/** @param {unknown} cost @returns {'missing' | 'malformed' | 'partial' | 'empty' | 'overcounted' | 'unknown-rule' | null} */
-export function costProblem(cost) {
-  if (cost == null) return 'missing'
-  if (typeof cost !== 'object' || Array.isArray(cost)) return 'malformed'
-  const c = /** @type {RecordCost} */ (cost)
-  if (costMalformed(c)) return 'malformed'
-  if (costTotal(c) <= 0) return 'empty'
-  const rule = ruleProblem(c.rule)
-  if (rule) return rule
-  return lowerBound(c) ? 'partial' : null
-}
-
-// Whether a cost counts only some of its spend: transcripts it skipped, or parts of a resumed run never measured.
-/** @param {RecordCost} c @returns {boolean} */
-const lowerBound = c => [c.skipped, c.partsUnmeasured].some(v => isCount(v) && v > 0)
-
-// The counting-rule half of costProblem, on a rule already known to be absent or a string.
-/** @param {unknown} rule @returns {'overcounted' | 'unknown-rule' | null} */
-function ruleProblem(rule) {
-  if (rule == null || rule === COST_RULE_PER_LINE) return 'overcounted'
-  return rule === COST_RULE ? null : 'unknown-rule'
 }

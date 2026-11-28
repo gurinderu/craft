@@ -164,7 +164,7 @@ test('buildAuditRecord rolls the top-level verdict up worst-wins over the dimens
 
 test('buildAuditRecord suffixes the verdict so partial coverage survives worst-wins', () => {
   // worstOf ranks INCOMPLETE below Warning, so a partial run collapsed to the bare token "Warning"
-  // and integrations/shared/analyze-runs.mjs — which counts partial coverage with /INCOMPLETE/i over the verdict
+  // and `craft runs retro` — which counts partial coverage with /INCOMPLETE/i over the verdict
   // string — scored it as fully covered. The suffix is the shape that file already understands.
   const warned = buildAuditRecord({
     results: [

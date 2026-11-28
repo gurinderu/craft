@@ -27,6 +27,12 @@ fn a_resumed_run_is_priced_by_its_stopped_parts_share_and_its_own() {
     assert_eq!((kind.runs, kind.priced, kind.cost), (2, 2, 900.0));
     assert!(kind.unpriced.is_empty(), "{kind:?}");
     assert!(r.deferred.is_empty(), "every deferred run is settled");
+    let plan = &r.flows["review (cli)"].plan;
+    assert_eq!(
+        (plan.priced, plan.total, plan.parts[3]),
+        (2, 900.0, 900.0),
+        "the workflow's full-plan cost waits for the same shares: {plan:?}"
+    );
 }
 
 #[test]
@@ -98,4 +104,20 @@ fn a_run_filed_twice_is_counted_once_by_its_newest_record() {
         (1, 300.0),
         "the newest record stands: {kind:?}"
     );
+}
+
+#[test]
+fn a_retro_in_memory_follows_a_contradiction_into_its_later_rounds_ledger() {
+    let rec = |ts: &str, more: &str| {
+        let text = format!(
+            r#"{{"schemaVersion":1,"ts":"{ts}","kind":"workflow","name":"review","craftVersion":"0.61.0","project":"/p","branch":"b"{more}}}"#
+        );
+        parse(&text).unwrap().as_obj().unwrap().clone()
+    };
+    let records = [
+        rec("1", r#","memoryContradictions":{"findings":[{"fp":"a"}]}"#),
+        rec("2", r#","ledger":[{"fp":"a","disposition":"closed"}]"#),
+    ];
+    let r = retro("0.61.0", records).unwrap();
+    assert_eq!((r.chains[0].runs, r.chains[0].fixed), (1, 1));
 }

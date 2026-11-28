@@ -1,17 +1,31 @@
-//! A version's retro: the finished runs of one craft version summed as the run-store report
-//! (`integrations/shared/analyze-runs.mjs --version <v>`) sums them — records that carry a schema version and did
-//! not die, a resumed run's second record folded into its newest and a stopped part into the
-//! record its resume finished (`integrations/shared/run-duplicates.mjs`, [`crate::parts`]), develop
-//! cycles apart — per workflow, per engine, per lens, and what did not run.
+//! A retro: the finished runs a reader keeps summed as the retired JavaScript run-store report
+//! (`analyze-runs.mjs`) summed them, its figures frozen in `content/parity/retro-cases.json`
+//! (realm @nick/craft, nodes #540, #562) — records that carry a schema version and did not die, a
+//! resumed run's second record folded into its newest and a stopped part into the record its resume
+//! finished ([`crate::parts`]) — per workflow ([`flow`]), kind, engine and lens, what did not run
+//! and what the runs did not do ([`signals`]), what they recalled ([`memory`]), their memory
+//! contradictions, sorting and depth; develop cycles apart ([`develop`]), and a retro's mark
+//! ([`DONE_KIND`]) in none of it.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::js::{Js, JsString, Obj, Utf16Error};
 use crate::record::SEVERITIES;
 use crate::tally::{Tally, round2};
 
+mod beside;
+pub mod contradictions;
+pub mod depth;
+pub mod develop;
+pub mod flow;
 mod kinds;
+pub mod memory;
+pub mod pairs;
+pub mod plan;
 mod rounds;
+pub mod signals;
+pub mod sorting;
+pub mod unfinished;
 
 /// The kind of the record a finished retro files (`craft runs retro-done`), which marks when this
 /// repository's runs were last read; no reader counts it as a run (realm @nick/craft, node #658).
@@ -33,6 +47,7 @@ pub fn is_run(r: &Obj) -> bool {
     kind != "develop" && kind != DONE_KIND
 }
 
+pub use flow::{Flow, Gate, basis};
 pub use kinds::{Deferred, Kind};
 pub use rounds::{Apart, Round};
 
@@ -47,9 +62,36 @@ pub struct Lens {
     pub refuted: f64,
     pub unverified: f64,
     pub by_severity: [f64; 5],
+    /// The rows that carried `unverifiedCount`, and those that predate it.
+    pub tracked: u64,
+    pub legacy: u64,
 }
 
 impl Lens {
+    /// The candidates verification judged.
+    #[must_use]
+    pub fn candidates(&self) -> f64 {
+        self.confirmed + self.suspected + self.refuted
+    }
+
+    /// What the refute rate is over ([`basis`]).
+    #[must_use]
+    pub fn refute_basis(&self) -> Option<&'static str> {
+        basis(self.tracked, self.legacy)
+    }
+
+    /// Findings per run that ran, to two places.
+    #[must_use]
+    pub fn findings_per_run(&self) -> f64 {
+        #[expect(clippy::cast_precision_loss, reason = "a run count is far below 2^52")]
+        let runs = self.runs as f64;
+        if self.runs == 0 {
+            0.0
+        } else {
+            round2(self.findings / runs)
+        }
+    }
+
     /// Refuted over the verified candidates, to two places; `None` when none was verified.
     #[must_use]
     pub fn refute_rate(&self) -> Option<f64> {
@@ -81,6 +123,27 @@ pub struct Retro {
     pub rounds: BTreeMap<u64, Round>,
     /// The confirmed of the gate's seeds and of no lens round.
     pub apart: Apart,
+    /// Per workflow, what its rates are over, its full-plan cost and surface gate.
+    pub flows: BTreeMap<String, Flow>,
+    pub signals: signals::Signals,
+    pub memory: memory::Memory,
+    pub sorting: sorting::Sorting,
+    pub develop: develop::Develop,
+    pub depth: depth::Depth,
+    pub contradictions: contradictions::Contradictions,
+    /// The contradictions settled once every record is read, `[js, cli]` ([`settle_chains`]).
+    pub chains: [contradictions::Tally; 2],
+    /// Runs whose record names no engine revision.
+    pub unattributed: u64,
+    /// Per craft version, the engine revisions (`r<N>`, `r?`) its runs carry.
+    pub revisions: BTreeMap<String, BTreeSet<String>>,
+    /// Records with no schema version, read past.
+    pub legacy: u64,
+    /// The records of runs that did not finish, listed: the slice's, its unattributed, and the
+    /// rebuilt ones hidden because their run finished after all ([`unfinished`]).
+    pub listed: Vec<Obj>,
+    pub listed_unattributed: u64,
+    pub listed_twins: u64,
 }
 
 /// Whether the run is the CLI's (`reviewChain`).
@@ -250,7 +313,14 @@ fn finished_of(
 
 /// Prices the runs filed in parts once every record is read, by their parts' shares summed once.
 pub fn settle(retro: &mut Retro, parts: &crate::parts::Parts) {
-    kinds::settle(&mut retro.kinds, std::mem::take(&mut retro.deferred), parts);
+    for mut d in std::mem::take(&mut retro.deferred) {
+        let flow = d.flow.take();
+        let cost = kinds::settle(&mut retro.kinds, d, parts);
+        if let Some((name, input)) = flow {
+            let plan = &mut retro.flows.entry(name).or_default().plan;
+            plan.add(&input, cost.as_ref());
+        }
+    }
 }
 
 /// The retro of `version` over every record.
@@ -259,10 +329,17 @@ pub fn settle(retro: &mut Retro, parts: &crate::parts::Parts) {
 pub fn retro(version: &str, records: impl IntoIterator<Item = Obj>) -> Result<Retro, Utf16Error> {
     let mut out = Retro::default();
     let (finished, parts) = finished_of(version, records, &mut out)?;
-    for (id, r) in finished {
-        add_record(&mut out, &id, &r)?;
+    for (id, r) in &finished {
+        add_record(&mut out, id, r)?;
     }
     settle(&mut out, &parts);
+    let ledger = |id: &str| {
+        finished
+            .iter()
+            .find(|(i, _)| i == id)
+            .and_then(|(_, r)| r.get("ledger").cloned())
+    };
+    out.chains = out.contradictions.settle(ledger);
     Ok(out)
 }
 
@@ -271,11 +348,16 @@ pub fn retro(version: &str, records: impl IntoIterator<Item = Obj>) -> Result<Re
 /// # Errors
 /// When a report field cannot be represented as Unicode.
 pub fn add_record(out: &mut Retro, id: &str, r: &Obj) -> Result<(), Utf16Error> {
+    if r.text_units("kind") == "develop" {
+        out.develop.add(r);
+        return Ok(());
+    }
     if !is_run(r) {
         return Ok(());
     }
     out.runs += 1;
     *out.engines.entry(engine_key(r)?).or_default() += 1;
+    beside::add(out, id, r)?;
     let name = match r.get("name") {
         Some(n) if n.truthy() => n.to_js_string()?,
         _ => "(unknown)".into(),
@@ -285,7 +367,9 @@ pub fn add_record(out: &mut Retro, id: &str, r: &Obj) -> Result<(), Utf16Error> 
     } else {
         name
     };
+    let waiting = out.deferred.len();
     kinds::add((id, r), &name, &mut out.kinds, &mut out.deferred)?;
+    beside::flow(out, &name, r, waiting)?;
     let w = out.workflows.entry(name).or_default();
     w.add(r);
     let verdict = r.get("verdict").filter(|v| v.truthy()).map(Js::to_js_text);
@@ -332,6 +416,11 @@ fn lenses_of(r: &Obj, lenses: &mut BTreeMap<String, Lens>) -> Result<(), Utf16Er
         lens.suspected += n("suspectedCount");
         lens.refuted += n("refutedCount");
         lens.unverified += n("unverifiedCount");
+        if d.get("unverifiedCount").and_then(Js::as_num).is_some() {
+            lens.tracked += 1;
+        } else {
+            lens.legacy += 1;
+        }
         let by = d.get("bySeverity").and_then(Js::as_obj);
         for (i, s) in SEVERITIES.iter().enumerate() {
             let v = by

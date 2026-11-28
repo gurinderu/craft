@@ -1,7 +1,7 @@
 //! `craft runs develop-cycle`: one craft:develop cycle as a run record (realm @nick/craft, nodes
 //! #281, #278, #263, #39) — its rounds (each one's engine, whether it reviewed the whole branch diff
 //! or the fixed delta, its verdict and open Medium+ count), its outcome and every full review run
-//! after convergence — read strictly as `readDevelopCycle` in `integrations/shared/develop-cycle.mjs`
+//! after convergence — read strictly as the retired `readDevelopCycle` (`develop-cycle.mjs`)
 //! reads it (the record frozen in `content/parity/posthoc-store-cases.json`): a refusal names the first field that does not fit.
 
 use crate::js::{Js, JsString, Obj};

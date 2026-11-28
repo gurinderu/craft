@@ -52,7 +52,15 @@ An exported `CRAFT_BIN` selects a local build. None of the three writes anything
 - `lens` — per lens: `runs`, `dead` (it did not run), `findings` and their `bySeverity`,
   `refuted` of the `candidates` verified and `refuteRate`, `unverified`; `lensRound` — what each
   lens round raised and what verification confirmed of it; `roundYieldApart` — what was
-  confirmed of the gate's seeds and of no lens round.
+  confirmed of the gate's seeds and of no lens round; `noise` — the lenses that refute a quarter
+  or more of at least four candidates, with what their rate is over (`refuteBasis`).
+- The workflow line also carries `pool` (the indicative token pool by round), `cost` (the real
+  cost per run by token part, over the full-plan runs with a usable cost, the others `apart` by
+  why) and `surfaceGate` (whole-repo passes not bought). `signals` — the runs whose savings'
+  premise did not hold, the harm cap, uncovered files (`saved`, `uncovered`, `agentUnavailable`,
+  `agentFallback` list them); `memory`, `contradictions` (one line per chain), `sorting`,
+  `develop` and `depth` (light runs beside full ones, per chain); `unfinishedListed` and
+  `unfinishedRun` — the runs that did not finish.
 
 `runs recurring --unverified` prints one JSON object: findings confirmed on more than one branch,
 and apart under `unverified`, unverified ones that recur, each group with its `file`, `titles`,

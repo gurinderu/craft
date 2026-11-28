@@ -1,4 +1,4 @@
-//! A group of runs summed as the run-store report (`integrations/shared/analyze-runs.mjs`) sums a workflow's runs:
+//! A group of runs summed as the run-store report (the retired `analyze-runs.mjs`, its figures frozen in `content/parity/retro-cases.json`) sums a workflow's runs:
 //! the verdicts in exclusive buckets, severity first then coverage (`tallyVerdict`); the findings by
 //! severity; the verification's candidates, confirmed findings and refute rates; a triage run's
 //! dispositions.

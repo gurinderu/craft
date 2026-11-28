@@ -1,7 +1,7 @@
 //! A CLI run stopped and resumed files a record per part: the part its host stopped driving files
 //! INCOMPLETE, the resume's part files the run's verdict, and each names the binary's run
 //! directory (`cliRun`). The store's readers count such a run once, as the JavaScript report does
-//! (`integrations/shared/run-parts.mjs`, `foldStoppedParts`): a stopped part of a run that also
+//! (the retired `foldStoppedParts`, `run-parts.mjs`): a stopped part of a run that also
 //! filed a finished record folds into it, the finished record standing for the run; a run whose
 //! every part stopped stands as its newest. The fold comes before any version or filter: the run
 //! is counted under its standing record's version, and a retro of the stopped part's version counts

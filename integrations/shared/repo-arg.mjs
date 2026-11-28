@@ -8,7 +8,7 @@ import { hasControl } from './cli-review-keys.mjs'
 // happens to be. `~` is not absolute here: the path reaches every `cd` single-quoted (shq), where it never expands.
 const ABSOLUTE_REPO = /^(\/|[A-Za-z]:[\\/])/
 // The class a refused `repo` files in the run record's `notRun`, without the caller's value: `notRun` is ranked
-// by exact string (integrations/shared/analyze-runs.mjs).
+// by exact string (`craft runs retro`).
 export const REPO_REFUSED_CLASS = '`repo` argument refused — not a path an agent can `cd` to, nothing ran'
 
 /**

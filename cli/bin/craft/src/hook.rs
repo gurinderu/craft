@@ -14,7 +14,7 @@ mod github;
 mod input;
 mod record;
 mod repo;
-mod role;
+pub(crate) mod role;
 mod runs;
 mod said;
 
