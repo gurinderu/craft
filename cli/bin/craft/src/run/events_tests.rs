@@ -195,20 +195,39 @@ fn every_event_is_written_by_the_sink_s_one_thread_and_no_other() {
 
 #[test]
 fn no_offer_waits_for_a_write_and_the_exit_waits_for_what_was_offered() {
-    let kept = Arc::new(stream::Kept::slow(Duration::from_millis(10)));
-    let sink = Sink::with(true, 128, Duration::from_secs(5), stream::writing(&kept));
+    let gate = Arc::new(stream::Gate::default());
+    let kept = Arc::new(stream::Kept::slow_at(&gate, Duration::from_millis(10)));
+    let sink = Sink::with(true, 128, Duration::from_secs(30), stream::writing(&kept));
+    // The writer holds the first line at the gate, so every line is still to be written after
+    // the last offer, whatever time the test itself took offering them.
     for round in 0..64 {
-        sink.emit(Event::Round {
-            round,
-            phase: "lenses".into(),
-            tasks: 1,
-        });
+        assert_eq!(
+            offered_elsewhere(
+                &sink,
+                Event::Round {
+                    round,
+                    phase: "lenses".into(),
+                    tasks: 1,
+                }
+            ),
+            Some(true),
+            "an offer waits for neither the writer nor room"
+        );
     }
-    sink.emit(Event::result(None, None, 0));
-    assert!(
-        kept.lines().len() < 65,
-        "the stream was still being written after the last offer"
+    assert_eq!(
+        offered_elsewhere(&sink, Event::result(None, None, 0)),
+        Some(true),
+        "an offer waits for neither the writer nor room"
     );
+    assert!(
+        stream::waited_until(|| gate.arrived()),
+        "the writer took the first line and holds it at the gate"
+    );
+    assert!(
+        kept.lines().is_empty(),
+        "nothing is written while the gate is shut"
+    );
+    gate.open();
     let exit = Instant::now();
     sink.finish();
     let waited = exit.elapsed();

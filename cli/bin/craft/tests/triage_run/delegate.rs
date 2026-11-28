@@ -9,14 +9,7 @@ use super::fixture::{Bench, read};
 fn delegated_tasks_use_the_same_answer_loop_and_never_spawn_the_host() {
     let b = Bench::new();
     let mut child = b
-        .command("opencode", "ok")
-        .args(["--delegate", "--agents", "review-task"])
-        .arg("--repo")
-        .arg(b.path("repo"))
-        .arg("--report")
-        .arg(b.path("report.md"))
-        .arg("--run-dir")
-        .arg(b.path("run"))
+        .delegated("opencode", "ok")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

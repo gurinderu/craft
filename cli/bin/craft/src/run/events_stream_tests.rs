@@ -1,7 +1,7 @@
 //! A test's event stream, for the event stream's own tests (`events_tests.rs`), for
 //! `delegate`'s and for the run's end (`mod_tests.rs`): a stream that takes a line as soon as
-//! it is given, holds its first at a gate, or takes time over each, and keeps what it was
-//! given and the thread that took it.
+//! it is given, holds its first at a gate, takes time over each line or both, and keeps what it
+//! was given and the thread that took it.
 
 use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::thread::{self, ThreadId};
@@ -62,6 +62,15 @@ impl Kept {
     /// A stream that takes `delay` over each line.
     pub(crate) fn slow(delay: Duration) -> Self {
         Self {
+            delay,
+            ..Self::default()
+        }
+    }
+
+    /// A stream whose first line waits at `gate` and that then takes `delay` over each line.
+    pub(crate) fn slow_at(gate: &Arc<Gate>, delay: Duration) -> Self {
+        Self {
+            gate: Some(Arc::clone(gate)),
             delay,
             ..Self::default()
         }

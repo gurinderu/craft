@@ -9,13 +9,15 @@
 
 #[path = "run_interrupt/fixture.rs"]
 mod fixture;
+#[path = "../../../test-support/pipes.rs"]
+mod pipes;
 
-use std::io::{BufRead, BufReader, Read, Write};
-use std::process::{Child, Command, ExitStatus, Stdio};
-use std::time::{Duration, Instant};
+use std::io::{BufRead, BufReader, Read};
+use std::process::{Command, Stdio};
+use std::time::Duration;
 
 use fixture::Bench;
-use nix::fcntl::{FcntlArg, fcntl};
+use pipes::{drained, full_stderr, settled};
 use serde_json::Value;
 
 /// `craft review run --delegate` over the repository, its events on stderr and stdin left for the
@@ -24,42 +26,6 @@ fn delegated(bench: &Bench) -> Command {
     let mut cmd = bench.command("opencode", false);
     cmd.args(["--delegate", "--agents", "review-task", "--events", "json"]);
     cmd
-}
-
-/// A stderr nobody reads: a pipe of one page, filled before the run starts, so a write to it
-/// waits. Its read end stays open with the caller — closed, the writes would fail, not wait.
-fn full_stderr() -> (std::io::PipeReader, Stdio) {
-    let (read, mut write) = std::io::pipe().unwrap();
-    fcntl(&write, FcntlArg::F_SETPIPE_SZ(4096)).unwrap();
-    let capacity = usize::try_from(fcntl(&write, FcntlArg::F_GETPIPE_SZ).unwrap()).unwrap();
-    write.write_all(&vec![b' '; capacity]).unwrap();
-    (read, Stdio::from(write))
-}
-
-/// What `out` says to its end, read on a thread of its own so nothing waits on it.
-fn drained(mut out: impl Read + Send + 'static) -> std::thread::JoinHandle<String> {
-    std::thread::spawn(move || {
-        let mut text = String::new();
-        out.read_to_string(&mut text).unwrap();
-        text
-    })
-}
-
-/// The child's status once it ends on its own within `within`; one still running is killed, then
-/// failed on.
-fn settled(what: &str, child: &mut Child, within: Duration) -> ExitStatus {
-    let deadline = Instant::now() + within;
-    while child.try_wait().unwrap().is_none() && Instant::now() < deadline {
-        std::thread::sleep(Duration::from_millis(20));
-    }
-    let outlived = child.try_wait().unwrap().is_none();
-    if outlived {
-        // Not left behind by the test, whatever its verdict.
-        let _killed = child.kill();
-    }
-    let status = child.wait().unwrap();
-    assert!(!outlived, "{what} did not end within {within:?}: {status}");
-    status
 }
 
 /// The kinds of each event on `stderr`, each one whole JSON line, up to and including the result,

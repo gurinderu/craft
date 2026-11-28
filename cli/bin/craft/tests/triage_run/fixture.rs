@@ -29,6 +29,16 @@ pub fn result(out: &Output) -> Value {
     found.unwrap()
 }
 
+/// Fails on the first line of `text` that parses as an event: the stream's lines are stderr's, so
+/// a run's stdout is the answer's alone (realm @nick/craft, node #690).
+pub fn no_event(what: &str, text: &str) {
+    let event = text.lines().find(|line| {
+        serde_json::from_str::<Value>(line)
+            .is_ok_and(|event| event.get("type").is_some_and(|kind| !kind.is_null()))
+    });
+    assert!(event.is_none(), "an event on {what}: {event:?}");
+}
+
 pub struct Bench(tempfile::TempDir);
 
 pub fn read(path: &Path) -> Value {
@@ -105,6 +115,22 @@ impl Bench {
             .unwrap()
     }
 
+    /// `craft triage run --delegate` over this bench's repository, a new run: each task comes back
+    /// on the stream for the test to answer on stdin, and no host runs.
+    pub fn delegated(&self, backend: &str, mode: &str) -> Command {
+        let mut c = self.command(backend, mode);
+        c.args(["--delegate", "--agents", "review-task"])
+            .arg("--repo")
+            .arg(self.path("repo"))
+            .arg("--report")
+            .arg(self.path("report.md"))
+            .arg("--run-dir")
+            .arg(self.path("run"));
+        c
+    }
+
+    /// The run ended with `code`, and nothing of the event stream reached its stdout: the answer's
+    /// alone (realm @nick/craft, node #690).
     pub fn expect(&self, out: &Output, code: i32) {
         assert_eq!(
             out.status.code(),
@@ -114,6 +140,7 @@ impl Bench {
             String::from_utf8_lossy(&out.stdout),
             String::from_utf8_lossy(&out.stderr)
         );
+        no_event("stdout", &String::from_utf8_lossy(&out.stdout));
     }
 
     /// The result of a run that was made: the stream's last event, and its `run` is this bench's.
