@@ -3,7 +3,7 @@
 use std::fs;
 use std::path::Path;
 
-pub(super) const JUSTFILE: &str = "gate *args:\n    cd cli && cargo xtask gate \"$@\"\n\n[group('gate')]\nok:\n    eslint .\n\n[group('gate')]\nred:\n    node integrations/shared/check-a.mjs\n\n[group('gate')]\nlast base=\"\":\n    vitest run\n";
+pub(super) const JUSTFILE: &str = "gate *args:\n    cd cli && cargo xtask gate \"$@\"\n\n[group('gate')]\nok:\n    npm run --silent lint\n\n[group('gate')]\nred:\n    npm run --silent check:a\n\n[group('gate')]\nlast base=\"\":\n    npm run --silent test -- ${1:+--base \"$1\"}\n";
 
 /// A `just` answering `--summary` with `summary` (exit `summary_exit`), failing the step `red`, logging the others.
 pub(super) fn fake_just(dir: &Path, summary: &str, summary_exit: u8) -> std::path::PathBuf {
@@ -23,7 +23,7 @@ pub(super) fn repo(justfile: &str) -> tempfile::TempDir {
     fs::write(root.join("justfile"), justfile).unwrap();
     fs::write(
         root.join("package.json"),
-        r#"{"scripts": {"lint": "eslint .", "test": "vitest run"}}"#,
+        r#"{"scripts": {"lint": "eslint .", "test": "vitest run", "check:a": "node integrations/shared/check-a.mjs"}}"#,
     )
     .unwrap();
     fs::write(root.join("integrations/shared/check-a.mjs"), "").unwrap();

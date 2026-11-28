@@ -4,8 +4,7 @@ use super::{check, summary_mismatch};
 use crate::justfile::{self, recipes};
 use crate::sources::Repo;
 
-const JUSTFILE: &str =
-    "gate *args:\n    cd cli && cargo xtask gate \"$@\"\n\n[group('gate')]\nlint:\n    eslint .\n";
+const JUSTFILE: &str = "gate *args:\n    cd cli && cargo xtask gate \"$@\"\n\n[group('gate')]\nlint:\n    npm run --silent lint\n";
 
 fn repo(justfile: &str, cells: &[&str]) -> Repo {
     let scripts: BTreeMap<String, String> = [("lint", "eslint ."), ("gate", "just gate")]
@@ -63,8 +62,8 @@ fn a_command_cell_naming_a_recipe_nothing_defines_is_uncovered() {
 }
 
 #[test]
-fn a_script_whose_body_no_step_spells_is_uncovered() {
-    let drifted = JUSTFILE.replace("eslint .", "eslint src");
+fn a_step_outside_the_two_forms_covers_nothing() {
+    let drifted = JUSTFILE.replace("npm run --silent lint", "npm run --silent lint --fix");
     let c = run(&repo(&drifted, &[]), "gate lint");
     assert!(
         c.err
@@ -128,7 +127,7 @@ fn the_gate_recipe_itself_may_not_hide_the_runner_s_failure() {
     let c = run(&repo(&masked, &["`just lint`"]), "gate lint");
     assert!(!c.passed);
     assert!(
-        c.err.starts_with("gate-steps: outside the gate's form: gate: cd cli && cargo xtask gate \"$@\" || true — `|`"),
+        c.err.starts_with("gate-steps: outside the gate's form: gate: cd cli && cargo xtask gate \"$@\" || true — `gate` is exactly"),
         "{}",
         c.err
     );

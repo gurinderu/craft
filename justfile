@@ -3,53 +3,50 @@
 # Without `--base`, the mutation floor's base is origin/main when it resolves.
 # `cargo xtask gate-steps` (the `gate-steps` step) fails when a check package.json, integrations/shared/check-*.mjs,
 # CI's `test` job, AGENTS.md "Commands" or this file names is neither a step here nor excluded with its reason.
-# A step standing for a package.json script is exactly that script's command (gate-steps holds them equal).
-# Every gate recipe, `gate` included, is held to a small form so an edit that could hide a failure fails gate-steps
-# loudly (cli/xtask/src/allowlist.rs): one line; no dependency; no attribute but [group('gate')] and [doc(...)];
-# parameters only a name, *name/+name or a literal default; commands joined by `&&`, each one of the commands used
-# below (cd, cargo, node, npm, npx, python3, prettier, eslint, vitest, depcruise, knip and the plugin's tsc), with
-# no environment assignment and no inline-code flag (node -e/-p/-r/--import, python3 -c, npm/npx -c); words and
-# quoted strings, with only `2>&1`, `>&2` and `>file`; `"$@"`, `"$1"` and `${1:+--base "$1"}` only in a recipe
-# that takes a parameter; no `{{` and no `-`/`@` prefix. Besides its recipes this file holds only
-# `set positional-arguments` and the `export PATH` below. Not a sandbox: an author set on bypassing it can edit
-# the xtask too.
+# A gate step's line is exactly one of two forms, nothing else (cli/xtask/src/allowlist.rs):
+#   npm run --silent <package.json script>      (` -- ${1:+--base "$1"}` appended only where the recipe takes `base`)
+#   cd cli && cargo xtask <check>               (one of xtask's own checks)
+# and `gate` is exactly `cd cli && cargo xtask gate "$@"`. A gate recipe is one line, with no dependency, no
+# attribute but [group('gate')] and [doc(...)], and parameters only a name, *name/+name or a literal default;
+# besides its recipes this file holds only `set positional-arguments`. gate-steps counts a step by the script or
+# check its form names and nothing else in the line. What a package.json script itself runs is outside this check,
+# as it was when the gate ran its steps through npm. Not a sandbox: an author set on bypassing it can edit the
+# scripts or the xtask.
 # `just gate --base <ref>` hands the base to the one step whose recipe takes `base`; a base no step takes is red.
 # Needs `npm ci` and `npm ci --prefix integrations/opencode/plugin`, and cargo for the xtask.
 
 set positional-arguments
-
-export PATH := justfile_directory() + "/node_modules/.bin:" + env_var('PATH')
 
 gate *args:
     cd cli && cargo xtask gate "$@"
 
 [group('gate')]
 check-format:
-    prettier --check .
+    npm run --silent check:format
 
 [group('gate')]
 lint:
-    eslint --config integrations/shared/config/eslint.config.mjs integrations/shared integrations/pi integrations/opencode/plugin integrations/shared/config/knip.config.js integrations/shared/config/.dependency-cruiser.mjs --max-warnings 0
+    npm run --silent lint
 
 [group('gate')]
 check-types:
-    npm --prefix integrations/opencode/plugin run typecheck
+    npm run --silent check:types
 
 [group('gate')]
 check-types-lib:
-    integrations/opencode/plugin/node_modules/.bin/tsc -p integrations/shared/tsconfig.json
+    npm run --silent check:types:lib
 
 [group('gate')]
 check-engines:
-    node integrations/shared/build-engines.mjs --check
+    npm run --silent check:engines
 
 [group('gate')]
 check-types-workflows:
-    node integrations/shared/check-workflow-types.mjs
+    npm run --silent check:types:workflows
 
 [group('gate')]
 test:
-    vitest run --config integrations/shared/config/vitest.config.mjs
+    npm run --silent test
 
 [group('gate')]
 gate-steps:
@@ -57,59 +54,59 @@ gate-steps:
 
 [group('gate')]
 check-workflows:
-    node integrations/shared/check-workflows.mjs
+    npm run --silent check:workflows
 
 [group('gate')]
 check-workflow-size:
-    node integrations/shared/check-workflow-size.mjs
+    npm run --silent check:workflow-size
 
 [group('gate')]
 check-skills:
-    node integrations/shared/check-skills.mjs
+    npm run --silent check:skills
 
 [group('gate')]
 check-js-boundary:
-    node integrations/shared/check-js-boundary.mjs
+    npm run --silent check:js-boundary
 
 [group('gate')]
 check-delivery-parity:
-    node integrations/shared/check-delivery-parity.mjs
+    npm run --silent check:delivery-parity
 
 [group('gate')]
 check-opencode-frontmatter:
-    python3 integrations/opencode/scripts/check-frontmatter.py agent integrations/opencode/agents/*.md && python3 integrations/opencode/scripts/check-frontmatter.py command integrations/opencode/commands/*.md
+    npm run --silent check:opencode-frontmatter
 
 [group('gate')]
 check-evals:
-    node integrations/shared/check-evals.mjs
+    npm run --silent check:evals
 
 [group('gate')]
 check-deps:
-    depcruise --config integrations/shared/config/.dependency-cruiser.mjs integrations/shared integrations/pi integrations/opencode/plugin integrations/claude-code/src
+    npm run --silent check:deps
 
 [group('gate')]
 check-dead-production:
-    knip --config integrations/shared/config/knip.config.js --no-progress --production
+    npm run --silent check:dead:production
 
 [group('gate')]
 check-dead:
-    knip --config integrations/shared/config/knip.config.js --no-progress
+    npm run --silent check:dead
 
 [group('gate')]
 check-dup:
-    node integrations/shared/check-dup.mjs
+    npm run --silent check:dup
 
 # The gate hands this step its base (a recipe parameter named `base`); empty, only the file's form is checked.
 [group('gate')]
 check-mutation-floor base="":
-    node integrations/shared/check-mutation-floor.mjs ${1:+--base "$1"}
+    npm run --silent check:mutation-floor -- ${1:+--base "$1"}
 
 # `validate .` reads only the marketplace manifest; check-plugin validates the plugin manifest with its hooks on a
 # copy of integrations/claude-code with its symlinks dereferenced, as an install lays it out.
 [group('gate')]
 plugin-validate:
-    npx --yes @anthropic-ai/claude-code plugin validate . --strict
+    npm run --silent check:marketplace
 
 [group('gate')]
 check-plugin:
-    node integrations/shared/validate-plugin.mjs
+    npm run --silent check:plugin

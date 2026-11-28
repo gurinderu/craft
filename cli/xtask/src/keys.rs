@@ -55,18 +55,9 @@ impl Keys {
         keys
     }
 
-    /// The keys a gate step's commands name: a script by its name, or by its command only when the step's
-    /// commands are exactly that command — one with a flag appended or a failure masked stands for no script.
-    pub fn of_step(&self, commands: &str) -> BTreeSet<String> {
-        let mut keys = self.named(commands);
-        let commands = commands.trim();
-        keys.extend(
-            self.scripts
-                .iter()
-                .filter(|(_, body)| body.trim() == commands)
-                .map(|(name, _)| format!("script:{name}")),
-        );
-        keys
+    /// Whether `package.json` has the script `name`.
+    pub fn has_script(&self, name: &str) -> bool {
+        self.scripts.iter().any(|(n, _)| n == name)
     }
 
     /// Every key but a script spelled out.

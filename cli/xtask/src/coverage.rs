@@ -4,6 +4,7 @@
 use std::collections::BTreeSet;
 
 use crate::allowlist;
+use crate::allowlist::forms::Form;
 use crate::justfile::Recipe;
 use crate::keys::Keys;
 
@@ -28,16 +29,24 @@ impl Report {
     }
 }
 
-/// What a step covers: its own recipe, what its body names, and what a script its body names names.
+/// What a step covers: its own recipe, and by its form alone the script it runs with what that script names, or
+/// the xtask check it runs. A name anywhere else in the line covers nothing.
 fn covers(step: &Recipe, keys: &Keys) -> BTreeSet<String> {
-    let ran = keys.of_step(&step.body_text());
-    let mut out: BTreeSet<String> = ran
-        .iter()
-        .filter_map(|k| k.strip_prefix("script:"))
-        .flat_map(|script| keys.of_script(script))
-        .collect();
-    out.extend(ran);
-    out.insert(format!("recipe:{}", step.name));
+    let mut out = BTreeSet::from([format!("recipe:{}", step.name)]);
+    let commands = step.commands();
+    let Some(line) = commands.first().filter(|_| commands.len() == 1) else {
+        return out;
+    };
+    match allowlist::forms::form(step, line, keys) {
+        Ok(Form::Script(script)) => {
+            out.insert(format!("script:{script}"));
+            out.extend(keys.of_script(script));
+        }
+        Ok(Form::Xtask(check)) => {
+            out.insert(format!("xtask:{check}"));
+        }
+        Ok(Form::Gate) | Err(_) => {}
+    }
     out
 }
 
@@ -83,7 +92,10 @@ pub fn check(
         })
         .map(|(_, (step, _))| step.name.clone())
         .collect();
-    let refused = steps.iter().flat_map(allowlist::recipe).collect();
+    let refused = steps
+        .iter()
+        .flat_map(|s| allowlist::recipe(s, keys))
+        .collect();
     Report {
         uncovered,
         refused,

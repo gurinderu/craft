@@ -36,8 +36,8 @@ const EXCLUDED: &[(&str, &str)] = &[("script:format", "a fix")];
 
 fn steps() -> Vec<Recipe> {
     vec![
-        step("lint", "eslint ."),
-        step("check-skills", "node integrations/shared/check-skills.mjs"),
+        step("lint", "npm run --silent lint"),
+        step("check-skills", "npm run --silent check:skills"),
     ]
 }
 
@@ -76,15 +76,15 @@ fn a_named_check_no_step_runs_is_uncovered() {
 }
 
 #[test]
-fn a_step_covers_what_the_script_it_runs_names() {
-    let gate = vec![
-        step("lint", "eslint ."),
-        step("skills", "npm run check:skills"),
-    ];
+fn a_step_covers_its_script_and_what_that_script_names() {
+    let report = check(&required(), EXCLUDED, &steps(), &keys());
+    assert!(report.is_clean(), "{report:?}");
     let mut req = required();
-    req.remove("recipe:check-skills");
-    req.insert("recipe:skills".to_owned());
-    assert!(check(&req, EXCLUDED, &gate, &keys()).is_clean());
+    req.insert("file:integrations/shared/check-other.mjs".to_owned());
+    assert_eq!(
+        check(&req, EXCLUDED, &steps(), &keys()).uncovered,
+        ["file:integrations/shared/check-other.mjs"]
+    );
 }
 
 #[test]
@@ -109,7 +109,7 @@ fn an_exclusion_naming_no_check_is_stale() {
 #[test]
 fn a_repeated_step_is_named_and_both_copies_are_redundant() {
     let mut gate = steps();
-    gate.push(step("lint", "eslint ."));
+    gate.push(step("lint", "npm run --silent lint"));
     let report = check(&required(), EXCLUDED, &gate, &keys());
     assert_eq!(report.repeated, ["lint"]);
     assert_eq!(report.redundant, ["lint", "lint"]);
@@ -118,7 +118,7 @@ fn a_repeated_step_is_named_and_both_copies_are_redundant() {
 #[test]
 fn a_step_covering_only_itself_or_what_another_covers_is_redundant() {
     let mut gate = steps();
-    gate.push(step("again", "eslint ."));
+    gate.push(step("again", "npm run --silent lint"));
     gate.push(step("noop", "echo hi"));
     let mut req = required();
     req.extend(set(&["recipe:again", "recipe:noop"]));

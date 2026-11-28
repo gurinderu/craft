@@ -45,10 +45,6 @@ impl Recipe {
         }
         out
     }
-
-    pub fn body_text(&self) -> String {
-        self.commands().join("\n")
-    }
 }
 
 /// The group whose recipes are the gate's steps.

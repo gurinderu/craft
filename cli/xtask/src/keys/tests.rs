@@ -74,18 +74,3 @@ fn a_scripts_own_keys_come_from_its_body() {
     );
     assert!(k.of_script("missing").is_empty());
 }
-
-#[test]
-fn a_step_names_a_script_by_its_command_only_when_it_is_exactly_that_command() {
-    let k = keys(&[("lint", "eslint ."), ("dead", "knip --no-progress")]);
-    let of_step = |text: &str| k.of_step(text).into_iter().collect::<Vec<_>>();
-    assert_eq!(of_step(" eslint . "), ["script:lint"]);
-    assert_eq!(of_step("eslint . --quiet"), Vec::<String>::new());
-    assert_eq!(of_step("-eslint ."), Vec::<String>::new());
-    assert_eq!(
-        of_step("knip --no-progress --production"),
-        Vec::<String>::new()
-    );
-    assert_eq!(of_step("npm run lint || true"), ["script:lint"]);
-    assert_eq!(of(&k, "eslint . --quiet"), ["script:lint"]);
-}

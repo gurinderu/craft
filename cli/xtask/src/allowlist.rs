@@ -2,35 +2,28 @@
 //! `gate-steps` loudly instead of passing quietly. An allowlist, not a sandbox: it reads the justfile as text, and
 //! an author set on bypassing it can still edit this file.
 //!
-//! A gate recipe (each step, and `gate` itself) is one line, continued lines joined as just joins them; it depends
-//! on no recipe, carries no attribute but `[group('gate')]` and `[doc(…)]`, and takes only parameters that are a
-//! bare name, `*name`/`+name` or a name with a literal string default — never `$`-exported, never a backquote or
-//! a function call. Its line is commands joined by `&&`. A command is one of exactly the commands the justfile
-//! runs today (`commands::COMMANDS`) — never an environment assignment, another shell, `just` or a wrapper — and
-//! `node` may not take `-e`/`--eval`/`-p`/`--print`/`-r`/`--require`/`--import`, `python3` may not take `-c`, and
-//! `npm`/`npx` may not take `-c`/`--call`. Its arguments are words — letters, digits and `_ . / : = , + @ * -` —
-//! and quoted strings, with the redirections `2>&1`, `>&2` and `>file`; a double-quoted string holds no `$`,
-//! backquote or backslash, except `"$@"` and `"$1"`, and `${1:+--base "$1"}` is the one expansion outside quotes,
-//! both only in a recipe that takes a parameter. No `{{`, no just `-` or `@` prefix. Anything else — `|`, `;`,
-//! `&`, `!`, `(`, `{`, `?`, `<`, `#`, `$(`, a backquote — refuses the recipe, naming it. Besides its recipes the
-//! justfile holds only `set positional-arguments` and the one `export PATH` (`TOP_LEVEL`): no other setting,
-//! export, assignment, alias, import or module.
+//! A gate step's line is exactly one of two forms: `npm run --silent <script>`, a `package.json` script (with
+//! ` -- ${1:+--base "$1"}` appended only in a recipe that takes `base`), or `cd cli && cargo xtask <check>`, one of
+//! xtask's own checks (`forms::XTASK_CHECKS`); `gate` is exactly `cd cli && cargo xtask gate "$@"`. No other word,
+//! flag or quoting. A gate recipe is one line, continued lines joined as just joins them; it depends on no recipe,
+//! carries no attribute but `[group('gate')]` and `[doc(…)]`, and takes only parameters that are a bare name,
+//! `*name`/`+name` or a name with a literal string default. Besides its recipes the justfile holds only
+//! `set positional-arguments` (`TOP_LEVEL`): no other setting, export, assignment, alias, import or module.
+//!
+//! What a `package.json` script itself runs is outside this check, as it was when the gate ran its steps through
+//! npm: a script is judged by its name and by `gate-steps`'s coverage of the checks it names, not by its command.
 
 use crate::justfile::Recipe;
 
-mod commands;
-mod line;
-use line::check_line;
+use crate::keys::Keys;
 
-/// The top-level lines the justfile may carry besides its recipes, whitespace collapsed: its one setting and the
-/// one export that puts `node_modules/.bin` on PATH.
-pub const TOP_LEVEL: [&str; 2] = [
-    "set positional-arguments",
-    "export PATH := justfile_directory() + \"/node_modules/.bin:\" + env_var('PATH')",
-];
+pub mod forms;
+
+/// The top-level lines the justfile may carry besides its recipes, whitespace collapsed.
+pub const TOP_LEVEL: [&str; 1] = ["set positional-arguments"];
 
 /// Each `recipe: why` for which `recipe` is outside the form.
-pub fn recipe(recipe: &Recipe) -> Vec<String> {
+pub fn recipe(recipe: &Recipe, keys: &Keys) -> Vec<String> {
     let name = &recipe.name;
     let mut out: Vec<String> = recipe
         .attributes
@@ -48,7 +41,7 @@ pub fn recipe(recipe: &Recipe) -> Vec<String> {
     }
     match recipe.commands().as_slice() {
         [line] => {
-            if let Err(why) = check_line(line, !recipe.params.is_empty()) {
+            if let Err(why) = forms::form(recipe, line, keys) {
                 out.push(format!("{name}: {} — {why}", line.trim()));
             }
         }

@@ -9,9 +9,6 @@ use crate::justfile::{self, Recipe};
 use crate::keys::Keys;
 use crate::sources::Repo;
 
-/// The recipe `just gate` runs.
-const ENTRY: &str = "gate";
-
 /// The names just itself lists (`just --summary --unsorted`) against the ones read here: a mismatch means the
 /// reader missed or invented a recipe, and every other verdict would rest on it.
 pub fn summary_mismatch(read: &[Recipe], summary: &str) -> Option<String> {
@@ -40,8 +37,13 @@ pub fn check(
     let steps = justfile::gate_steps(&repo.recipes);
     let mut report = coverage::check(&required, excluded, &steps, &keys);
     // The `gate` recipe runs the runner: what could hide its failure hides the whole gate's.
-    let entry = repo.recipes.iter().filter(|r| r.name == ENTRY);
-    report.refused.extend(entry.flat_map(allowlist::recipe));
+    let entry = repo
+        .recipes
+        .iter()
+        .filter(|r| r.name == allowlist::forms::ENTRY);
+    report
+        .refused
+        .extend(entry.flat_map(|r| allowlist::recipe(r, &keys)));
     report
         .refused
         .extend(allowlist::directives(&repo.directives));

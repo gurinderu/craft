@@ -73,7 +73,7 @@ fn gate_steps_passes_a_complete_gate_and_fails_a_gap() {
     let r = run(dir.path(), &just, &["gate-steps"]);
     assert_eq!(r.code, PASSED, "{}", r.err);
     assert!(r.out.starts_with("gate-steps: "), "{}", r.out);
-    let gap = repo(&JUSTFILE.replace("    vitest run\n", "    true\n"));
+    let gap = repo(&JUSTFILE.replace("npm run --silent test -- ", "npm run --silent missing -- "));
     let r = run(
         gap.path(),
         &fake_just(gap.path(), "gate ok red last", 0),

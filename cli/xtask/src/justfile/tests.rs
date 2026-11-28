@@ -35,7 +35,7 @@ fn reads_each_recipe_in_file_order_with_its_params_groups_and_body() {
     assert_eq!(gate.params, ["args"]);
     assert!(gate.groups.is_empty());
     assert_eq!(gate.body, [r#"cd cli && cargo xtask gate "$@""#]);
-    assert_eq!(all[1].body_text(), "echo one\necho two");
+    assert_eq!(all[1].commands().join("\n"), "echo one\necho two");
     assert_eq!(all[2].params, ["base", "rest"]);
     assert_eq!(all[2].groups, ["gate"]);
     assert_eq!(all[2].body, ["echo second"]);

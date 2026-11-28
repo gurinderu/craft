@@ -1,4 +1,4 @@
-//! The repository's own justfile, run by just itself with `node` and `cargo` replaced by stand-ins that print
+//! The repository's own justfile, run by just itself with `npm` and `cargo` replaced by stand-ins that print
 //! their arguments: the gate's base reaches the mutation floor's checker, and `just gate`'s arguments reach
 //! `cargo xtask gate`. Needs just on the path (the dev shell and CI's rust job have it).
 #![cfg(unix)]
@@ -10,17 +10,17 @@ use std::process::{Command, Output};
 use crate::gate::takes_base;
 use crate::justfile::{self, Recipe};
 
-const FLOOR: &str = "integrations/shared/check-mutation-floor.mjs";
+const FLOOR: &str = "check:mutation-floor";
 
 fn repo_recipes() -> Vec<Recipe> {
     justfile::recipes(&fs::read_to_string(crate::root().join("justfile")).unwrap())
 }
 
-/// Runs `just <args>` over `justfile` in the repository root, `node` and `cargo` printing their arguments, one a
+/// Runs `just <args>` over `justfile` in the repository root, `npm` and `cargo` printing their arguments, one a
 /// line, and exiting with `exit`.
 fn run_just(justfile: &Path, args: &[&str], exit: u8) -> Output {
     let stubs = tempfile::tempdir().unwrap();
-    for tool in ["node", "cargo"] {
+    for tool in ["npm", "cargo"] {
         let path = stubs.path().join(tool);
         let script = format!("#!/bin/sh\nprintf '%s\\n' {tool} \"$@\"\nexit {exit}\n");
         crate::exe::write_executable(&path, &script).unwrap();
@@ -55,7 +55,7 @@ fn just(args: &[&str]) -> String {
 fn floor_recipe() -> Recipe {
     let found: Vec<Recipe> = repo_recipes()
         .into_iter()
-        .filter(|r| r.body_text().contains(FLOOR))
+        .filter(|r| r.commands().join("\n").contains(FLOOR))
         .collect();
     assert_eq!(found.len(), 1, "one recipe runs {FLOOR}: {found:?}");
     found.into_iter().next().unwrap()
@@ -73,13 +73,13 @@ fn the_base_reaches_the_mutation_floor_checker_as_one_argument() {
     let name = floor_recipe().name;
     assert_eq!(
         just(&[&name, "abc"]),
-        format!("node\n{FLOOR}\n--base\nabc\n")
+        format!("npm\nrun\n--silent\n{FLOOR}\n--\n--base\nabc\n")
     );
     assert_eq!(
         just(&[&name, "a b"]),
-        format!("node\n{FLOOR}\n--base\na b\n")
+        format!("npm\nrun\n--silent\n{FLOOR}\n--\n--base\na b\n")
     );
-    assert_eq!(just(&[&name]), format!("node\n{FLOOR}\n"));
+    assert_eq!(just(&[&name]), format!("npm\nrun\n--silent\n{FLOOR}\n--\n"));
 }
 
 #[test]
