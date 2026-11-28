@@ -2,6 +2,7 @@
 //! answer files and the store's writer faked.
 
 mod budget;
+mod ending;
 mod halt;
 mod lifecycle;
 mod refile;

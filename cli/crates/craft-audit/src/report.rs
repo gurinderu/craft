@@ -15,6 +15,7 @@ use crate::state::AuditState;
 
 pub mod markdown;
 mod summary;
+pub mod unverified;
 
 pub use markdown::markdown;
 pub use summary::Summary;

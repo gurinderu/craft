@@ -59,19 +59,6 @@ fn list(path: PathBuf, text: Option<String>) -> Result<(), AuditError> {
     Ok(())
 }
 
-fn held(sum: &Summary) -> Option<String> {
-    let mut held = sum.held();
-    if held.is_empty() {
-        return None;
-    }
-    held.sort_by_key(|f| f.get("severity").and_then(Value::as_str) != Some("Low"));
-    let mut out = String::from(
-        "# Unverified Low and Info findings\n\nNo verifier checked these against the code.\n\n",
-    );
-    out.extend(held.into_iter().map(report::markdown::entry));
-    Some(out)
-}
-
 /// Ends the pass of `s` in `dir`: writes what it says, files its record, and returns its step.
 ///
 /// # Errors
@@ -93,7 +80,7 @@ pub(super) fn end(
     write(record_path(dir), &format!("{record:#}\n"))?;
     let unread = (!sum.unread.is_empty()).then(|| format!("{}\n", sum.unread.join("\n")));
     list(unread_path(dir), unread)?;
-    list(unverified_path(dir), held(&sum))?;
+    list(unverified_path(dir), report::unverified::list(&sum))?;
     let filed = filing::file(dir, s, &record, w)?;
     if let Some(f) = &filed {
         if !f.lost.is_empty() {
