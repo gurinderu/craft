@@ -1,5 +1,5 @@
 //! Whether a submitted answer matches its task's schema; a kind's own checks beyond the schema are
-//! its [`crate::Kind::check`].
+//! its [`crate::Kind::check`], a verifier's batch held to every finding once ([`batch_indices`]).
 
 use serde_json::Value;
 
@@ -42,4 +42,59 @@ pub fn check(schema: &Value, answer: Option<&Value>) -> Result<Value, String> {
         ));
     }
     Ok(answer)
+}
+
+/// Every index `0..count` appears exactly once among the verdicts.
+///
+/// # Errors
+/// The refusal: an index missing, repeated or out of `0..count`.
+pub fn batch_indices(answer: &Value, count: usize) -> Result<(), String> {
+    let mut seen = vec![false; count];
+    let verdicts = answer
+        .get("verdicts")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    for v in verdicts {
+        let i = v.get("index").and_then(Value::as_u64).unwrap_or(u64::MAX);
+        let slot = usize::try_from(i).ok().and_then(|i| seen.get_mut(i));
+        match slot {
+            Some(s) if !*s => *s = true,
+            Some(_) => return Err(format!("verdict index {i} appears twice")),
+            None => {
+                return Err(format!(
+                    "verdict index {i} is not a finding of this batch (0..{count})"
+                ));
+            }
+        }
+    }
+    match seen.iter().position(|s| !s) {
+        Some(i) => Err(format!(
+            "no verdict for index {i}: every index 0..{count} must appear"
+        )),
+        None => Ok(()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::batch_indices;
+
+    fn indices(of: &[u64]) -> serde_json::Value {
+        json!({"verdicts": of.iter().map(|i| json!({"index": i})).collect::<Vec<_>>()})
+    }
+
+    #[test]
+    fn a_batch_answer_names_every_index_once_or_is_refused_saying_which() {
+        assert_eq!(batch_indices(&indices(&[1, 0, 2]), 3), Ok(()));
+        let why = |of: &[u64]| batch_indices(&indices(of), 3).unwrap_err();
+        assert!(why(&[0, 2]).contains("no verdict for index 1"));
+        assert!(why(&[0, 1, 1, 2]).contains("index 1 appears twice"));
+        assert!(why(&[0, 1, 3]).contains("index 3 is not a finding"));
+        assert!(why(&[]).contains("no verdict for index 0"));
+        batch_indices(&json!({}), 1).unwrap_err();
+        assert_eq!(batch_indices(&json!({}), 0), Ok(()));
+    }
 }

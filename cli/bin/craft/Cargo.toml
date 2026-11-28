@@ -10,6 +10,7 @@ publish.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 craft-agent.workspace = true
+craft-audit.workspace = true
 craft-review.workspace = true
 craft-store.workspace = true
 craft-triage.workspace = true
