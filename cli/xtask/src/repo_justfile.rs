@@ -4,8 +4,8 @@
 #![cfg(unix)]
 
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
-use std::process::Command;
+use std::path::Path;
+use std::process::{Command, Output};
 
 use crate::gate::takes_base;
 use crate::justfile::{self, Recipe};
@@ -16,29 +16,34 @@ fn repo_recipes() -> Vec<Recipe> {
     justfile::recipes(&fs::read_to_string(crate::root().join("justfile")).unwrap())
 }
 
-/// Runs `just <args>` over the repository's justfile, `node` and `cargo` printing their arguments, one a line.
-fn just(args: &[&str]) -> String {
+/// Runs `just <args>` over `justfile` in the repository root, `node` and `cargo` printing their arguments, one a
+/// line, and exiting with `exit`.
+fn run_just(justfile: &Path, args: &[&str], exit: u8) -> Output {
     let stubs = tempfile::tempdir().unwrap();
     for tool in ["node", "cargo"] {
         let path = stubs.path().join(tool);
-        fs::write(&path, format!("#!/bin/sh\nprintf '%s\\n' {tool} \"$@\"\n")).unwrap();
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+        let script = format!("#!/bin/sh\nprintf '%s\\n' {tool} \"$@\"\nexit {exit}\n");
+        crate::exe::write_executable(&path, &script).unwrap();
     }
-    let root = crate::root();
     let path = format!(
         "{}:{}",
         stubs.path().display(),
         std::env::var("PATH").unwrap_or_default()
     );
-    let ran = Command::new("just")
+    Command::new("just")
         .arg("--justfile")
-        .arg(root.join("justfile"))
+        .arg(justfile)
         .arg("--working-directory")
-        .arg(&root)
+        .arg(crate::root())
         .args(args)
         .env("PATH", path)
         .output()
-        .unwrap_or_else(|e| panic!("just did not start ({e}): these tests need just on the path"));
+        .unwrap_or_else(|e| panic!("just did not start ({e}): these tests need just on the path"))
+}
+
+/// `just <args>` over the repository's justfile, its stand-ins succeeding: what they printed.
+fn just(args: &[&str]) -> String {
+    let ran = run_just(&crate::root().join("justfile"), args, 0);
     assert!(
         ran.status.success(),
         "just {args:?}: {}",
@@ -88,4 +93,32 @@ fn just_gate_hands_its_arguments_to_cargo_xtask_gate() {
         "cargo\nxtask\ngate\n--base\na b\n"
     );
     assert_eq!(just(&["gate"]), "cargo\nxtask\ngate\n");
+}
+
+#[test]
+fn just_gate_fails_with_the_runner_s_status() {
+    let ran = run_just(&crate::root().join("justfile"), &["gate"], 3);
+    assert_eq!(
+        ran.status.code(),
+        Some(3),
+        "{}",
+        String::from_utf8_lossy(&ran.stderr)
+    );
+}
+
+#[test]
+fn the_reader_joins_continued_lines_as_just_runs_them() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("justfile");
+    let text = "a:\n    echo one\\\n        two  \\\n    three\nb:\n    eslint\\\n    .\nc:\n    eslint \\\n      .\n";
+    fs::write(&file, text).unwrap();
+    for recipe in justfile::recipes(text) {
+        let ran = run_just(&file, &["--dry-run", &recipe.name], 0);
+        let printed: Vec<String> = String::from_utf8(ran.stderr)
+            .unwrap()
+            .lines()
+            .map(str::to_owned)
+            .collect();
+        assert_eq!(printed, recipe.commands(), "{}", recipe.name);
+    }
 }
