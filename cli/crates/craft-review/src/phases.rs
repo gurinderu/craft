@@ -224,6 +224,7 @@ fn plan_tracks(run: &mut RunState, profiles: &[Profile]) {
             design: track.design,
             signals: track.signals.as_deref(),
             changed_lines: track.changed_lines,
+            project: &run.context.project,
         }));
         if let Some(plan) = track.plan.as_mut() {
             let mut asked = crate::optional::bought(p, &run.optional);

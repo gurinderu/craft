@@ -75,6 +75,9 @@ pub struct StartArgs {
     /// a file or `-` for stdin; they add to what the run recalls from the project's memory.
     #[arg(long)]
     pub prior_decisions: Option<PathBuf>,
+    /// `--prior-decisions` as `review run` read it ahead; the start reads it itself when absent.
+    #[arg(skip)]
+    pub prior_decisions_read: Option<Result<Value, String>>,
     /// Recall nothing from the project's memory: only the records `--prior-decisions` passes
     /// apply (a launcher that recalled them itself).
     #[arg(long)]
@@ -307,6 +310,7 @@ pub(crate) fn start_step(args: &StartArgs, cancel: &craft_review::cancel::Cancel
         None => default_run_dir()?,
     };
     let lenses = lenses_of(&args.cwd);
+    let project = profile_section(&args.cwd, craft_review::project::properties::of);
     let opts = step::StartOptions {
         cwd: args.cwd.clone(),
         base: args.base.clone(),
@@ -324,13 +328,14 @@ pub(crate) fn start_step(args: &StartArgs, cancel: &craft_review::cancel::Cancel
         all_lenses: args.all_lenses,
         lenses: lenses.clone().unwrap_or_default(),
         lenses_unread: lenses.err().unwrap_or_default(),
+        project: project.clone().unwrap_or_default(),
+        project_unread: project.err().unwrap_or_default(),
         recall: !args.no_recall,
         recall_degraded: args.recall_degraded.clone(),
-        // An unreadable list is refused and named in the report; the review still runs.
         prior_decisions: args
-            .prior_decisions
-            .as_deref()
-            .map(|p| json_input(p).map_err(|e| format!("{e:#}"))),
+            .prior_decisions_read
+            .clone()
+            .or_else(|| prior_decisions(args)),
         sources: crate::init::sources_setup(),
         gate: (!args.no_gate).then(|| craft_review::gate::GateSetup {
             projects: crate::init::projects_dir(),
@@ -456,6 +461,14 @@ fn installed_copy(config: Option<PathBuf>, home: Option<PathBuf>) -> Option<Path
             .join("plugins/cache/craft/craft")
             .join(env!("CARGO_PKG_VERSION")),
     )
+}
+
+/// The launcher's list `--prior-decisions` names, when it names one: an unreadable list is refused
+/// and named in the report; the review still runs.
+pub(crate) fn prior_decisions(args: &StartArgs) -> Option<Result<Value, String>> {
+    args.prior_decisions
+        .as_deref()
+        .map(|p| json_input(p).map_err(|e| format!("{e:#}")))
 }
 
 /// A JSON value the host passes, as a file or `-` for stdin.
@@ -613,12 +626,21 @@ fn recall_note(s: &str) -> Result<String, String> {
 fn lenses_of(
     cwd: &std::path::Path,
 ) -> Result<Vec<(String, craft_review::composition::State)>, String> {
-    use craft_review::project::{lenses, profile_path};
+    profile_section(cwd, craft_review::project::lenses::of)
+}
+
+/// One section of the reviewer's profile of the repository at `cwd`, as `read` reads it; its
+/// default when there is no home to hold a profile, or why it could not be read.
+fn profile_section<T: Default, E: std::fmt::Display>(
+    cwd: &std::path::Path,
+    read: impl FnOnce(&std::path::Path) -> Result<T, E>,
+) -> Result<T, String> {
     let Some(projects) = crate::init::projects_dir() else {
-        return Ok(Vec::new());
+        return Ok(T::default());
     };
-    let (path, _) = profile_path(&projects, cwd).map_err(|e| e.to_string())?;
-    lenses::of(&path).map_err(|e| e.to_string())
+    let (path, _) =
+        craft_review::project::profile_path(&projects, cwd).map_err(|e| e.to_string())?;
+    read(&path).map_err(|e| e.to_string())
 }
 
 /// How a review's mutants run: this binary as their worker, for the budget the reviewer's profile

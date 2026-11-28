@@ -8,11 +8,15 @@ fn run(branch: &str, file: &str, title: &str) -> Run {
         file: format!("{branch}.json").into(),
         ts: "2026".into(),
         branch: branch.into(),
+        head: "h".into(),
+        dirty: false,
         rows: vec![Row {
             file: file.into(),
             title: title.into(),
             severity: "Low".into(),
+            line: 0,
         }],
+        unverified: vec![],
     }
 }
 
@@ -117,6 +121,7 @@ fn utf16_code_units_replace_locale_tie_breaks_and_keep_primary_ranks() {
                 file: file.into(),
                 title: "same".into(),
                 severity: s.into(),
+                line: 0,
             })
             .into();
             runs.push(r);
@@ -175,4 +180,46 @@ fn segments_and_trim_preserve_unpaired_units_without_normalizing_dot_dot() {
     assert!(!super::text::within(&file, &"src/a".into()));
     assert!(!super::text::within(&"./".into(), &".".into()));
     assert!(super::text::touched(&"./".into(), &[".".into()]));
+}
+
+#[test]
+fn a_hunk_covers_only_the_old_lines_it_replaced_or_removed() {
+    use super::unverified::{covers, hunk};
+    assert_eq!(hunk("@@ -3 +3 @@ fn a()"), Some((3, 1)));
+    assert_eq!(hunk("@@ -5,0 +6,2 @@"), Some((5, 0)));
+    assert_eq!(hunk("@@ -7,2 +6,0 @@"), Some((7, 2)));
+    assert_eq!(hunk("+@@ -1 +1 @@"), None);
+    let hunks = [(3, 1), (5, 0), (7, 2)];
+    for (line, changed) in [
+        (2, false),
+        (3, true),
+        (4, false),
+        (5, false),
+        (6, false),
+        (7, true),
+        (8, true),
+        (9, false),
+    ] {
+        assert_eq!(covers(&hunks, line), changed, "line {line}");
+    }
+    assert!(covers(&hunks, 0));
+    assert!(!covers(&[], 0));
+    assert!(!covers(&[], 3));
+}
+
+#[test]
+fn a_row_line_is_kept_only_when_whole_positive_and_within_u32() {
+    let ledger = parse(
+        r#"[{"file":"f","title":"t","tier":"unverified","line":3},
+            {"file":"f","title":"t","tier":"unverified","line":2.5},
+            {"file":"f","title":"t","tier":"unverified","line":-4},
+            {"file":"f","title":"t","tier":"unverified","line":0.5},
+            {"file":"f","title":"t","tier":"unverified","line":1e12},
+            {"file":"f","title":"t","tier":"unverified","line":"7"}]"#,
+    )
+    .unwrap();
+    let (real, unverified) = super::select::rows(ledger.as_arr().unwrap(), &[]);
+    assert!(real.is_empty());
+    let lines: Vec<_> = unverified.iter().map(|r| r.line).collect();
+    assert_eq!(lines, [3, 0, 0, 0, 0, 0]);
 }
