@@ -434,5 +434,20 @@
     "skills": ["rust-review"],
     "query": "Review my Rust change: I refactored the error enum in src/db/error.rs and its From impls; there is no SQL in the diff. Is it mergeable?",
     "expected_behavior": ["Selects rust-review.", "Does not select sql-review: the diff holds no SQL, only Rust error types."]
+  },
+  {
+    "skills": ["retro"],
+    "query": "Our craft reviews in this repo have been slow and expensive for the last two weeks. Can you look at where the time and tokens actually went and tell me which lenses never find anything?",
+    "expected_behavior": [
+      "Selects retro",
+      "Runs `craft runs retro` over this repository's runs for the period, with `--json`, and reads the kinds and lens rows",
+      "Gives each observation with its number and how it was counted, conclusions named as hypotheses",
+      "Proposes profile changes from `init --propose`'s lens offers and writes nothing without the reviewer's word"
+    ]
+  },
+  {
+    "skills": ["review-init"],
+    "query": "Set up my craft review profile for this repository: record the external systems we talk to and which CI check runs clippy.",
+    "expected_behavior": ["Selects review-init, not retro", "Runs `craft init --propose` and asks before `craft init --write`"]
   }
 ]
