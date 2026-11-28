@@ -145,6 +145,36 @@ fn a_semgrep_not_installed_leaves_the_rust_track_unknown() {
     );
 }
 
+/// A seed tool's silence leaves unknown only what it touched: the checks that passed stay known,
+/// so the change's tests are known to build and the mutants may run (realm @nick/craft, node
+/// #743). A build that did not happen is unknown to them too.
+#[test]
+fn a_silent_seed_tool_leaves_the_passed_checks_known_to_the_mutants() {
+    for gate in [
+        rust_gate(None, BUDGET),
+        rust_gate(Some(SEMGREP_ERROR), BUDGET),
+        rust_gate(Some(SEMGREP_BAD_RULE), BUDGET),
+    ] {
+        let t = &gate.tracks[0];
+        assert_eq!(
+            (t.status, t.tests_build()),
+            (Status::Unknown, true),
+            "{t:?}"
+        );
+    }
+    let (gate, _) = gated(
+        &["src/lib.rs"],
+        |_, tools| tool(tools, "cargo", "exit 101"),
+        BUDGET,
+    );
+    let t = &gate.tracks[0];
+    assert_eq!(
+        (t.status, t.tests_build()),
+        (Status::Unknown, false),
+        "{t:?}"
+    );
+}
+
 /// A track whose silent seed tools said `unanswered`.
 fn silent(profile: &str, status: Status, unanswered: &[&str]) -> GateTrack {
     GateTrack {
@@ -405,12 +435,14 @@ const SEMGREP_FOUND_NOTHING: &str =
 #[test]
 fn an_answer_that_reports_no_error_is_read_as_it_always_was() {
     // Its findings alone; none over the file it scanned; the older shape, with no `errors` or
-    // `paths` to read.
+    // `paths` to read; and the same clean answer under a non-zero exit, which says no more.
     let older = r#"printf '%s\n' '{"results":[]}'"#;
+    let nonzero = format!("{SEMGREP_FOUND_NOTHING}; exit 1");
     for (script, said, seeds) in [
         (SEMGREP_CLEAN, ": 1 result(s)", 1),
         (SEMGREP_FOUND_NOTHING, ": 0 result(s)", 0),
         (older, ": 0 result(s)", 0),
+        (&nonzero, ": 0 result(s)", 0),
     ] {
         let (gate, found) = gated(
             &["src/lib.rs"],

@@ -112,6 +112,30 @@ fn with_a_flake_a_broken_linter_leaves_the_track_unknown_and_names_it() {
     );
 }
 
+/// A red flake check fails the track whatever a linter then says: a linter that did not answer
+/// is kept with its reason, and its silence folds in behind the red (realm @nick/craft, node #743).
+#[test]
+fn a_red_flake_check_stays_red_beside_a_linter_that_did_not_answer() {
+    let gate = super::unanswered_tests::flake_gate(&[
+        ("nix", "echo 'error: attribute x missing' >&2; exit 1"),
+        ("statix", "exit 101"),
+        ("deadnix", "exit 0"),
+    ]);
+    let t = &gate.tracks[0];
+    assert_eq!(t.status, Status::Fail, "{t:?}");
+    assert_eq!(
+        t.failed_checks,
+        ["nix flake check: error: attribute x missing"],
+        "{t:?}"
+    );
+    assert_eq!(
+        t.unanswered,
+        ["statix on a.nix exited 101: no message"],
+        "{t:?}"
+    );
+    assert!(gate.exit().is_some(), "{t:?}");
+}
+
 /// The provenance of a flakeless Nix gate whose linters both ran clean, held to
 /// `content/parity/gate-provenance.json`: `integrations/shared/cli-review-gate.mjs` reads its reason off it.
 #[test]

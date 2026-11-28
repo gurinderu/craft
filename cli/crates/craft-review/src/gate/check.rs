@@ -84,6 +84,10 @@ pub(super) struct Acc {
     pub notes: Vec<String>,
     /// Each seed tool that did not answer, with why (realm @nick/craft, node #743).
     pub unanswered: Vec<String>,
+    /// The primary checks passed, read before the seed tools: the tests the mutants run are then
+    /// known to build, whatever a seed tool that did not answer went on to make of the status
+    /// (realm @nick/craft, node #743).
+    pub checks_passed: bool,
     pub seeds: Vec<Value>,
     /// A build was impossible: cargo ended with no compiler error, so the signal is unknown and
     /// CI may stand for it.
@@ -215,6 +219,7 @@ impl Acc {
             missing: self.missing,
             notes: self.notes,
             unanswered: self.unanswered,
+            checks_passed: self.checks_passed,
             seeds: self.seeds.len(),
             dev_shell: self.dev_shell,
         };

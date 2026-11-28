@@ -159,6 +159,12 @@ pub struct Track {
     /// @nick/craft, node #743): what the verdict line names. Kept whatever the status came to.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub unanswered: Vec<String>,
+    /// Whether its primary checks passed, read before the seed tools: the change's tests are then
+    /// known to build, whatever a seed tool that did not answer made of the status, so the mutants
+    /// still run ([`mutants`]; realm @nick/craft, node #743). Optional, so a track written before
+    /// it reads as not passed.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub checks_passed: bool,
     /// How many seed findings it gave the lenses.
     pub seeds: usize,
     /// Whether its cargo ran inside the checkout's flake dev shell: the mutants run where it did
@@ -191,6 +197,20 @@ pub struct Gate {
     /// none were launched.
     #[serde(skip_serializing_if = "mutants::Mutants::is_none")]
     pub mutants: mutants::Mutants,
+}
+
+impl Track {
+    /// Whether the change's tests are known to build, so the mutants may run on them: a track that
+    /// passed, or one a seed tool left unknown after its primary checks passed (realm @nick/craft,
+    /// node #743). Red, not run, nothing to check, or a build that did not happen: no.
+    #[must_use]
+    pub fn tests_build(&self) -> bool {
+        match self.status {
+            Status::Pass => true,
+            Status::Unknown => self.checks_passed,
+            Status::Fail | Status::Nothing => false,
+        }
+    }
 }
 
 impl Gate {

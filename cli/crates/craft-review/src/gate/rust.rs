@@ -74,6 +74,9 @@ pub(super) fn gate(cx: &Cx<'_>, acc: &mut Acc) {
     if acc.unbuilt && acc.status == Some(Status::Unknown) {
         ci::from_ci(cx, acc);
     }
+    // Read before the seed tools: one that does not answer then makes the track unknown, and the
+    // mutants still run on what the checks passed (realm @nick/craft, node #743).
+    acc.checks_passed = acc.status == Some(Status::Pass);
     semgrep(cx, acc);
 }
 
