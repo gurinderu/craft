@@ -5,14 +5,15 @@
 //! filed a finished record folds into it, the finished record standing for the run; a run whose
 //! every part stopped stands as its newest. The fold comes before any version or filter: the run
 //! is counted under its standing record's version, and a retro of the stopped part's version counts
-//! that part folded. These readers sum no cost, so nothing of a folded part is carried over; the
-//! JavaScript report, which sums cost, adds each Workflow run's share onto the standing record
-//! once. A record that names no run directory — one filed before records named it — folds on
+//! that part folded. A reader that sums cost prices the standing record by its parts' shares
+//! summed once (its `cost` module), as the JavaScript report does. A record that names no run directory — one filed before records named it — folds on
 //! nothing here.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::js::{Js, Obj, Utf16Error};
+
+mod cost;
 
 /// The run a CLI record is a part of — its workflow, project and the binary's run directory —
 /// `None` when it names no run directory.
@@ -52,13 +53,29 @@ struct Held {
 pub struct Parts {
     finished: BTreeSet<String>,
     held: BTreeMap<String, Held>,
+    /// Every part of each run noted, in the order noted.
+    costs: BTreeMap<String, Vec<cost::Noted>>,
 }
 
 impl Parts {
     /// Notes a record that did not die: a finished one stands for its run's stopped parts,
-    /// whichever version or filter it is read under.
-    pub fn note(&mut self, r: &Obj) {
-        if let Some(key) = part_key(r).filter(|_| !stopped(r)) {
+    /// whichever version or filter it is read under. `id` is the record's own among those read
+    /// (its file name, its place): a reader that prices cost passes the same `id` to
+    /// [`crate::retro::add_record`], or the record is priced by its own cost alone.
+    pub fn note(&mut self, id: &str, r: &Obj) {
+        let Some(key) = part_key(r) else {
+            return;
+        };
+        self.costs
+            .entry(key.clone())
+            .or_default()
+            .push(cost::Noted {
+                id: id.to_owned(),
+                ts: r.text_units("ts"),
+                stopped: stopped(r),
+                cost: r.get("cost").cloned(),
+            });
+        if !stopped(r) {
             self.finished.insert(key);
         }
     }
@@ -90,16 +107,16 @@ impl Parts {
     /// that is inside, by its run's key, time and name — and how many held parts inside fold into
     /// another record.
     #[must_use]
-    pub fn standing(self) -> (Vec<(String, String, String)>, u64) {
+    pub fn standing(&self) -> (Vec<(String, String, String)>, u64) {
         let mut out = Vec::new();
         let mut folded = 0;
-        for (key, h) in self.held {
-            if self.finished.contains(&key) {
+        for (key, h) in &self.held {
+            if self.finished.contains(key) {
                 folded += h.inside_n;
             } else {
                 folded += h.inside_n - u64::from(h.inside);
                 if h.inside {
-                    out.push((key, h.ts, h.name));
+                    out.push((key.clone(), h.ts.clone(), h.name.clone()));
                 }
             }
         }
@@ -123,7 +140,7 @@ mod tests {
     fn folded(records: &[(Obj, bool)]) -> (Vec<String>, u64) {
         let mut parts = Parts::default();
         for (r, _) in records {
-            parts.note(r);
+            parts.note(r.try_text("ts").unwrap(), r);
         }
         let mut counted = Vec::new();
         for (r, inside) in records {

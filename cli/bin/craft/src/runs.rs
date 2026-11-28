@@ -311,7 +311,7 @@ pub(crate) fn retro_where(
     read::records(store, skipped, |name, r| {
         let died = r.get("partial").is_some_and(Js::truthy);
         if r.get("schemaVersion").is_some_and(Js::truthy) && !died {
-            parts.note(&r);
+            parts.note(name, &r);
         }
         let inside = keep(&r);
         if r.get("schemaVersion").is_some_and(Js::truthy)
@@ -343,7 +343,7 @@ pub(crate) fn retro_where(
                     }
                 }
             }
-        } else if let Err(e) = craft_store::retro::add_record(&mut out, &r) {
+        } else if let Err(e) = craft_store::retro::add_record(&mut out, name, &r) {
             failure = Some(e);
         }
     })
@@ -360,7 +360,7 @@ pub(crate) fn retro_where(
                     && !r.get("partial").is_some_and(Js::truthy)
                     && craft_store::retro::run_key(&r).as_ref() == Some(&key) =>
             {
-                craft_store::retro::add_record(&mut out, &r)?;
+                craft_store::retro::add_record(&mut out, &name, &r)?;
             }
             Ok(_) => skipped
                 .records
@@ -370,9 +370,10 @@ pub(crate) fn retro_where(
     }
     let (standing, folded) = parts.standing();
     out.folded += folded;
-    for r in read_back(store, standing, skipped, keep) {
-        craft_store::retro::add_record(&mut out, &r)?;
+    for (name, r) in read_back(store, standing, skipped, keep) {
+        craft_store::retro::add_record(&mut out, &name, &r)?;
     }
+    craft_store::retro::settle(&mut out, &parts);
     Ok(out)
 }
 
@@ -396,7 +397,7 @@ fn read_back(
     held: Vec<(String, String, String)>,
     skipped: &mut Skipped,
     keep: impl Fn(&Obj) -> bool,
-) -> Vec<Obj> {
+) -> Vec<(String, Obj)> {
     let same = |r: &Obj, key: &str, ts: &str| {
         r.text_units("ts") == ts
             && r.get("schemaVersion").is_some_and(Js::truthy)
@@ -408,7 +409,7 @@ fn read_back(
     let mut out = Vec::new();
     for (key, ts, name) in held {
         match read::record(store, &name) {
-            Ok(r) if same(&r, &key, &ts) => out.push(r),
+            Ok(r) if same(&r, &key, &ts) => out.push((name, r)),
             Ok(_) => skipped
                 .records
                 .push((name, "record changed while reading".into())),
@@ -476,7 +477,7 @@ fn stats(
         let finished = r.get("schemaVersion").is_some_and(Js::truthy)
             && !r.get("partial").is_some_and(Js::truthy);
         if finished {
-            parts.note(&r);
+            parts.note(name, &r);
         }
         if !finished {
             return;
@@ -522,7 +523,7 @@ fn stats(
             Err(why) => skipped.records.push((name, why)),
         }
     }
-    for r in read_back(store, parts.standing().0, skipped, |r| filter.keeps(r)) {
+    for (_, r) in read_back(store, parts.standing().0, skipped, |r| filter.keeps(r)) {
         tally_record(&mut groups, by, &r)?;
     }
     Ok(groups.into_iter().collect())
