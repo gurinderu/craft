@@ -44,3 +44,58 @@ fn a_run_whose_every_part_stopped_is_priced_once_by_its_newest_part() {
     );
     assert_eq!(r.folded, 1);
 }
+
+#[test]
+fn a_part_is_priced_by_the_id_it_was_noted_by_whatever_order_the_records_are_priced_in() {
+    use craft_store::parts::Parts;
+    let stopped = part("2026-11-02T10-00-00Z", "INCOMPLETE", "/r/1", 100, "wf_a");
+    let first = part("2026-11-02T11-00-00Z", "Warning", "/r/1", 300, "wf_b");
+    let twin = part("2026-11-02T11-00-00Z", "Warning", "/r/1", 7, "wf_c");
+    let mut parts = Parts::default();
+    for (id, r) in [("0", &stopped), ("1", &first), ("2", &twin)] {
+        parts.note(id, r);
+    }
+    let total = |c: Option<craft_store::js::Js>| {
+        c.and_then(|c| {
+            c.as_obj()
+                .and_then(|o| o.get("total"))
+                .and_then(craft_store::js::Js::as_num)
+        })
+    };
+    assert_eq!(
+        total(parts.cost_of("2", &twin)),
+        Some(7.0),
+        "the twin priced first keeps its own"
+    );
+    assert_eq!(
+        total(parts.cost_of("1", &first)),
+        Some(400.0),
+        "the first of the newest stands"
+    );
+}
+
+#[test]
+fn a_run_filed_twice_is_counted_once_by_its_newest_record() {
+    let refiled = |ts: &str, total: u64| {
+        let mut r = part(ts, "Warning", "/r/9", total, "wf_r");
+        for (k, v) in [("head", "abc"), ("filesDigest", "d"), ("branch", "feat/a")] {
+            r.set(k, craft_store::js::Js::str(v));
+        }
+        let findings = parse(r#"{"total":2,"bySeverity":{"High":2}}"#).unwrap();
+        r.set("findings", findings);
+        r
+    };
+    let records = [
+        refiled("2026-11-02T10-00-00Z", 100),
+        refiled("2026-11-02T12-00-00Z", 300),
+        refiled("2026-11-02T11-00-00Z", 200),
+    ];
+    let r = retro("0.61.0", records).unwrap();
+    let kind = &r.kinds["review (cli)"];
+    assert_eq!((r.runs, r.folded), (1, 2));
+    assert_eq!(
+        (kind.priced, kind.cost),
+        (1, 300.0),
+        "the newest record stands: {kind:?}"
+    );
+}

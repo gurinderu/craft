@@ -59,7 +59,9 @@ pub struct Parts {
 
 impl Parts {
     /// Notes a record that did not die: a finished one stands for its run's stopped parts,
-    /// whichever version or filter it is read under.
+    /// whichever version or filter it is read under. `id` is the record's own among those read
+    /// (its file name, its place): a reader that prices cost passes the same `id` to
+    /// [`crate::retro::add_record`], or the record is priced by its own cost alone.
     pub fn note(&mut self, id: &str, r: &Obj) {
         let Some(key) = part_key(r) else {
             return;
