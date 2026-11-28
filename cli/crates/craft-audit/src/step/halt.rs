@@ -83,7 +83,7 @@ pub(super) fn finished_again(
     }
     let profiles = crate::scout::profiles()?;
     let unread = !plan::unanswered(plan::jobs(&s.scout, &profiles), &s.tasks).is_empty();
-    let unjudged = !crate::pool::batches(&crate::pool::pool(&s.tasks), &s.tasks).is_empty();
+    let unjudged = !crate::pool::unjudged(&crate::pool::pool(&s.tasks), &s.tasks).is_empty();
     if unread || unjudged {
         s.pass += 1;
         s.stopped = None;

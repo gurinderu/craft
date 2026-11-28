@@ -66,6 +66,7 @@ fn findings_are_listed_worst_first_with_their_fix_and_no_line_counts_nothing() {
         jobs: 1,
         answered: 1,
         settled: vec![low, medium, high],
+        unjudged: Vec::new(),
         left: Vec::new(),
     };
     let md = markdown(std::path::Path::new("/r"), &s, &sum, &[]);
@@ -90,6 +91,7 @@ fn a_finding_left_unjudged_is_named_with_how_to_hand_it_to_a_new_verifier() {
         jobs: 1,
         answered: 1,
         settled: vec![settled("High", "unverified")],
+        unjudged: vec![0],
         left: Vec::new(),
     };
     let md = markdown(std::path::Path::new("/r"), &s, &sum, &[]);

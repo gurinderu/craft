@@ -62,23 +62,58 @@ pub fn verified(f: &Value) -> bool {
     matches!(severity(f), "Critical" | "High" | "Medium")
 }
 
-/// Whether the pooled finding `i` is in the batch of a verifier that has not failed: one whose
-/// verifier died is handed to a new one by the next pass.
-fn routed(tasks: &[Task], i: usize) -> bool {
+/// The verdict a verifier gave the pooled finding `i`: the latest answered verifier holding it,
+/// at its place in that verifier's batch. An answer missing it judged nothing of it.
+#[must_use]
+pub fn verdict(tasks: &[Task], i: usize) -> Option<&Value> {
+    tasks.iter().rev().find_map(|t| {
+        let AuditKind::Verify { findings, .. } = &t.kind else {
+            return None;
+        };
+        let at = u64::try_from(findings.iter().position(|&j| j == i)?).ok()?;
+        let answer = t
+            .answer
+            .as_ref()
+            .filter(|_| t.state == TaskState::Answered)?;
+        answer
+            .get("verdicts")?
+            .as_array()?
+            .iter()
+            .find(|v| v.get("index").and_then(Value::as_u64) == Some(at))
+    })
+}
+
+/// The pooled findings a verifier must judge — at Medium and above as their lens rated them, the
+/// severity that routes them, before their harm caps it — that no verifier gave a verdict: none
+/// was handed them yet, or theirs died. The report, the finished step and the resume read this one
+/// list.
+#[must_use]
+pub fn unjudged(pool: &[Pooled], tasks: &[Task]) -> Vec<usize> {
+    pool.iter()
+        .enumerate()
+        .filter(|(i, p)| verified(&p.finding) && verdict(tasks, *i).is_none())
+        .map(|(i, _)| i)
+        .collect()
+}
+
+/// Whether a verifier still pending holds the pooled finding `i`.
+fn pending(tasks: &[Task], i: usize) -> bool {
     tasks.iter().any(|t| {
-        t.state != TaskState::Failed
+        t.state == TaskState::Pending
             && matches!(&t.kind, AuditKind::Verify { findings, .. } if findings.contains(&i))
     })
 }
 
-/// The verifier batches the findings no live verifier holds need, each with its profile: a
-/// Critical or High finding alone, Medium ones of a profile up to [`BATCH_SIZE`] together.
+/// The verifier batches the unjudged findings ([`unjudged`]) no pending verifier holds need, each
+/// with its profile: a Critical or High finding alone, Medium ones of a profile up to
+/// [`BATCH_SIZE`] together.
 #[must_use]
 pub fn batches(pool: &[Pooled], tasks: &[Task]) -> Vec<(String, Vec<usize>)> {
     let mut out: Vec<(String, Vec<usize>)> = Vec::new();
     let mut medium: Vec<(String, Vec<usize>)> = Vec::new();
+    let unjudged = unjudged(pool, tasks);
     for (i, p) in pool.iter().enumerate() {
-        if !verified(&p.finding) || routed(tasks, i) {
+        if !unjudged.contains(&i) || pending(tasks, i) {
             continue;
         }
         if severity(&p.finding) != "Medium" {

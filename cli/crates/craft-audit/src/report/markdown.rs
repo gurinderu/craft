@@ -42,9 +42,9 @@ pub fn entry(f: &Value) -> String {
 /// The entries of the findings of `tier` worth listing, worst first, under `title`; "" for none.
 fn section(sum: &Summary, title: &str, tier: Tier) -> String {
     let mut list: Vec<&Value> = sum
-        .settled
-        .iter()
-        .filter(|f| Tier::of(f) == tier && !craft_review::report::unverified::held(f))
+        .listed()
+        .into_iter()
+        .filter(|f| Tier::of(f) == tier)
         .collect();
     if list.is_empty() {
         return String::new();
@@ -70,10 +70,10 @@ fn coverage(dir: &Path, s: &AuditState, sum: &Summary) -> String {
             craft_step::stop::resume("audit", dir),
         ));
     }
-    if sum.unjudged() > 0 {
+    if !sum.unjudged.is_empty() {
         out.push_str(&format!(
             "- Unjudged: {} finding(s) at Medium or above whose verifier gave no verdict; a resume hands them to a new one: `{}`.\n",
-            sum.unjudged(),
+            sum.unjudged.len(),
             craft_step::stop::resume("audit", dir),
         ));
     }

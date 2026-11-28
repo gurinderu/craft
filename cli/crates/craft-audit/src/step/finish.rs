@@ -121,10 +121,10 @@ fn step(dir: &Path, s: &AuditState, sum: &Summary, filed: Option<&filing::Filed>
             json!({"count": sum.unread.len(), "file": path(unread_path(dir))}),
         );
     }
-    if sum.unjudged() > 0 {
-        o.insert("unjudged".into(), json!(sum.unjudged()));
+    if !sum.unjudged.is_empty() {
+        o.insert("unjudged".into(), json!(sum.unjudged.len()));
     }
-    if !sum.unread.is_empty() || sum.unjudged() > 0 {
+    if sum.incomplete() {
         o.insert(
             "resume".into(),
             json!(craft_step::stop::resume("audit", dir)),

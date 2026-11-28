@@ -1,10 +1,9 @@
 //! Each pooled finding as its verifier judged it, or why none did.
 
 use craft_review::settle::{finalize, tier_from_votes};
-use craft_step::TaskState;
 use serde_json::{Map, Value};
 
-use super::{Pooled, verified};
+use super::{Pooled, verdict, verified};
 use crate::kind::AuditKind;
 use crate::state::Task;
 
@@ -25,14 +24,11 @@ fn marked(f: &Value, tier: &str, note: &str) -> Value {
     Value::Object(o)
 }
 
-/// The latest verifier task holding the pooled finding `i`, and its place in that task's batch.
-fn holder(tasks: &[Task], i: usize) -> Option<(&Task, usize)> {
-    tasks.iter().rev().find_map(|t| match &t.kind {
-        AuditKind::Verify { findings, .. } => {
-            findings.iter().position(|&j| j == i).map(|at| (t, at))
-        }
-        AuditKind::Lens { .. } => None,
-    })
+/// Whether some verifier was handed the pooled finding `i`.
+fn handed(tasks: &[Task], i: usize) -> bool {
+    tasks
+        .iter()
+        .any(|t| matches!(&t.kind, AuditKind::Verify { findings, .. } if findings.contains(&i)))
 }
 
 /// The finding `f`, pooled at `i`, as its verifier judged it.
@@ -49,34 +45,16 @@ fn judged(tasks: &[Task], i: usize, f: &Value) -> Value {
             ),
         );
     }
-    let Some((task, at)) = holder(tasks, i) else {
-        return unchecked(f, "no verifier was handed it");
-    };
-    let verdicts = task
-        .answer
-        .as_ref()
-        .filter(|_| task.state == TaskState::Answered)
-        .and_then(|a| a.get("verdicts"))
-        .and_then(Value::as_array)
-        .filter(|v| !v.is_empty());
-    let Some(verdicts) = verdicts else {
-        return unchecked(
-            f,
-            "its verifier returned no verdicts — a dead agent, an exhausted retry or an expired deadline",
-        );
-    };
-    let at = u64::try_from(at).ok();
-    match verdicts
-        .iter()
-        .find(|v| v.get("index").and_then(Value::as_u64) == at)
-    {
-        Some(v) => tier_from_votes(f, &[Some(v.clone())]),
-        None => marked(
-            f,
-            "suspected",
-            "its verifier returned no verdict for this finding",
-        ),
+    if let Some(v) = verdict(tasks, i) {
+        return tier_from_votes(f, &[Some(v.clone())]);
     }
+    if !handed(tasks, i) {
+        return unchecked(f, "no verifier was handed it");
+    }
+    unchecked(
+        f,
+        "its verifier returned no verdict for it — a dead agent, an exhausted retry or an expired deadline",
+    )
 }
 
 /// Every pooled finding settled: judged, then raised by a verified harm and capped by its harm.

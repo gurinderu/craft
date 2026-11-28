@@ -37,8 +37,8 @@ fn not_run(sum: &Summary) -> Vec<String> {
     if !sum.unread.is_empty() {
         out.push(format!("audit:unread-files:{}", sum.unread.len()));
     }
-    if sum.unjudged() > 0 {
-        out.push(format!("audit:unjudged-findings:{}", sum.unjudged()));
+    if !sum.unjudged.is_empty() {
+        out.push(format!("audit:unjudged-findings:{}", sum.unjudged.len()));
     }
     out
 }
@@ -110,6 +110,7 @@ mod tests {
                 json!({"severity": "Medium", "tier": "unverified"}),
                 json!({"severity": "High", "tier": "refuted"}),
             ],
+            unjudged: vec![1],
             left: Vec::new(),
         };
         let r = run_record(&s, &sum);
@@ -132,6 +133,7 @@ mod tests {
         let whole = Summary {
             unread: Vec::new(),
             settled: vec![json!({"severity": "Medium", "tier": "confirmed"})],
+            unjudged: Vec::new(),
             ..sum
         };
         assert_eq!(run_record(&s, &whole)["notRun"], json!([]));

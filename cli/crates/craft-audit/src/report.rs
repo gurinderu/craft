@@ -14,8 +14,10 @@ use crate::plan;
 use crate::state::AuditState;
 
 pub mod markdown;
+mod summary;
 
 pub use markdown::markdown;
+pub use summary::Summary;
 
 /// The file of the run's unread paths, one a line.
 pub const UNREAD: &str = "unread.txt";
@@ -23,61 +25,6 @@ pub const UNREAD: &str = "unread.txt";
 pub const UNVERIFIED: &str = "unverified.md";
 /// The verdict of an audit whose profiles took no file.
 pub const NOTHING: &str = "Approve (nothing to audit)";
-
-/// A finished pass of an audit, as its report and record say it.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Summary {
-    pub verdict: String,
-    /// The paths no answered lens job read, in order.
-    pub unread: Vec<String>,
-    /// Every lens job the scout's parts need, and how many of them answered.
-    pub jobs: usize,
-    pub answered: usize,
-    /// Every finding settled, in pool order.
-    pub settled: Vec<Value>,
-    /// The lenses of each profile with files that the audit does not run.
-    pub left: Vec<(String, Vec<String>)>,
-}
-
-impl Summary {
-    /// How many findings are confirmed, suspected, refuted and unverified, in that order.
-    #[must_use]
-    pub fn tiers(&self) -> [usize; 4] {
-        let mut n = [0; 4];
-        for f in &self.settled {
-            let at = match Tier::of(f) {
-                Tier::Confirmed => 0,
-                Tier::Suspected => 1,
-                Tier::Refuted => 2,
-                Tier::Unverified => 3,
-            };
-            if let Some(c) = n.get_mut(at) {
-                *c += 1;
-            }
-        }
-        n
-    }
-
-    /// The unverified findings at Medium and above: their verifier died, they were not skipped.
-    #[must_use]
-    pub fn unjudged(&self) -> usize {
-        self.settled
-            .iter()
-            .filter(|f| {
-                Tier::of(f) == Tier::Unverified && !craft_review::report::unverified::held(f)
-            })
-            .count()
-    }
-
-    /// The unverified findings at Low and Info, held apart.
-    #[must_use]
-    pub fn held(&self) -> Vec<&Value> {
-        self.settled
-            .iter()
-            .filter(|f| craft_review::report::unverified::held(f))
-            .collect()
-    }
-}
 
 /// The paths of the jobs of `s` no task answered, each once, in job order.
 fn unread(s: &AuditState, profiles: &[Profile], todo: &[plan::Job]) -> Vec<String> {
@@ -124,12 +71,14 @@ pub fn summary(s: &AuditState, profiles: &[Profile]) -> Summary {
     let todo = plan::unanswered(all, &s.tasks);
     let pool = crate::pool::pool(&s.tasks);
     let settled = crate::pool::settle(&pool, &s.tasks);
+    let unjudged = crate::pool::unjudged(&pool, &s.tasks);
     let mut sum = Summary {
         verdict: String::new(),
         unread: unread(s, profiles, &todo),
         jobs,
         answered: jobs - todo.len(),
         settled,
+        unjudged,
         left: s
             .scout
             .parts
@@ -141,7 +90,7 @@ pub fn summary(s: &AuditState, profiles: &[Profile]) -> Summary {
     sum.verdict = if jobs == 0 {
         NOTHING.to_owned()
     } else {
-        verdict(&sum.settled, !sum.unread.is_empty() || sum.unjudged() > 0)
+        verdict(&sum.settled, sum.incomplete())
     };
     sum
 }

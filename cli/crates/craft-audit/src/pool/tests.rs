@@ -6,6 +6,7 @@ use crate::kind::AuditKind;
 use crate::state::Task;
 
 mod settle;
+mod unjudged;
 
 pub(super) fn task(kind: AuditKind, state: TaskState, answer: Option<Value>) -> Task {
     let mut t = Task::new(
@@ -34,6 +35,12 @@ pub(super) fn verify(findings: Vec<usize>) -> AuditKind {
         profile: "rust".into(),
         findings,
     }
+}
+
+pub(super) fn vote(index: u64, refuted: bool) -> Value {
+    json!({"index": index, "refuted": refuted, "citedLineMatches": true, "reachable": true,
+        "premiseSupported": true, "behaviourIntended": false, "harmSupported": true,
+        "confirmedHarmLevel": "outage", "reason": "r"})
 }
 
 pub(super) fn finding(sev: &str) -> Value {
@@ -110,6 +117,4 @@ fn critical_and_high_are_verified_alone_medium_together_by_profile_and_low_not_a
         ]
     );
     assert_eq!(got[0].1, [0]);
-    let routed = [task(verify(vec![0]), TaskState::Answered, None)];
-    assert!(batches(&p, &routed).iter().all(|(_, g)| !g.contains(&0)));
 }

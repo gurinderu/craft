@@ -133,6 +133,7 @@ fn the_tiers_are_counted_confirmed_suspected_refuted_unverified() {
         .iter()
         .map(|t| settled("Low", t))
         .collect(),
+        unjudged: Vec::new(),
         left: Vec::new(),
     };
     assert_eq!(sum.tiers(), [2, 1, 1, 2]);

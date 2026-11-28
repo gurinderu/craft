@@ -1,15 +1,9 @@
 use craft_review::settle::Tier;
 use craft_step::TaskState;
-use serde_json::{Value, json};
+use serde_json::json;
 
-use super::{finding, pooled, task, verify};
+use super::{finding, pooled, task, verify, vote};
 use crate::pool::{Pooled, settle};
-
-fn vote(index: u64, refuted: bool) -> Value {
-    json!({"index": index, "refuted": refuted, "citedLineMatches": true, "reachable": true,
-        "premiseSupported": true, "behaviourIntended": false, "harmSupported": true,
-        "confirmedHarmLevel": "outage", "reason": "r"})
-}
 
 #[test]
 fn each_finding_settles_by_its_verifiers_vote_or_says_why_none_judged_it() {
@@ -29,7 +23,7 @@ fn each_finding_settles_by_its_verifiers_vote_or_says_why_none_judged_it() {
         task(
             verify(vec![1, 2]),
             TaskState::Answered,
-            Some(json!({"verdicts": [vote(0, true)]})),
+            Some(json!({"verdicts": [vote(1, false), vote(0, true)]})),
         ),
         task(verify(vec![4]), TaskState::Failed, None),
     ];
@@ -39,19 +33,36 @@ fn each_finding_settles_by_its_verifiers_vote_or_says_why_none_judged_it() {
         [
             Tier::Confirmed,
             Tier::Refuted,
-            Tier::Suspected,
+            Tier::Confirmed,
             Tier::Unverified,
             Tier::Unverified
         ]
     );
-    let low = &settle(&p, &tasks)[3];
+    let why = |i: usize| settle(&p, &tasks)[i]["why"].as_str().unwrap().to_owned();
     assert!(
-        low["why"]
+        why(3).contains("verifies only Medium and above"),
+        "{}",
+        why(3)
+    );
+    assert!(why(4).contains("returned no verdict for it"), "{}", why(4));
+    assert!(
+        settle(&p, &[])[0]["why"]
             .as_str()
             .unwrap()
-            .contains("verifies only Medium and above"),
-        "{low}"
+            .contains("no verifier was handed it")
     );
+}
+
+#[test]
+fn a_kept_answer_missing_a_findings_verdict_leaves_it_unverified_never_suspected() {
+    let p = vec![pooled("rust", "Medium"), pooled("rust", "Medium")];
+    let partial = [task(
+        verify(vec![0, 1]),
+        TaskState::Answered,
+        Some(json!({"verdicts": [vote(0, false)]})),
+    )];
+    let tiers: Vec<Tier> = settle(&p, &partial).iter().map(Tier::of).collect();
+    assert_eq!(tiers, [Tier::Confirmed, Tier::Unverified]);
 }
 
 #[test]

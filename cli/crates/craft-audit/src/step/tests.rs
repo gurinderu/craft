@@ -5,6 +5,7 @@ mod budget;
 mod halt;
 mod lifecycle;
 mod refile;
+mod unjudged;
 
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
