@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use super::{check, summary_mismatch};
-use crate::justfile::recipes;
+use crate::justfile::{self, recipes};
 use crate::sources::Repo;
 
 const JUSTFILE: &str =
@@ -21,6 +21,7 @@ fn repo(justfile: &str, cells: &[&str]) -> Repo {
         ],
         agents_cells: cells.iter().map(|c| (*c).to_owned()).collect(),
         recipes: recipes(justfile),
+        ignores_errors: justfile::ignores_errors(justfile),
     }
 }
 
@@ -119,4 +120,24 @@ fn an_exclusion_the_repository_does_not_name_fails_the_check() {
         c.err,
         "gate-steps: an exclusion naming no check: cmd:npm ci\n"
     );
+}
+
+#[test]
+fn the_gate_recipe_itself_may_not_hide_the_runner_s_failure() {
+    let masked = JUSTFILE.replace("gate \"$@\"\n", "gate \"$@\" || true\n");
+    let c = run(&repo(&masked, &["`just lint`"]), "gate lint");
+    assert!(!c.passed);
+    assert!(
+        c.err.starts_with("gate-steps: a gate line whose failure cannot fail its step: gate: cd cli && cargo xtask gate \"$@\" || true — "),
+        "{}",
+        c.err
+    );
+}
+
+#[test]
+fn a_justfile_ignoring_errors_fails_the_check() {
+    let ignoring = format!("set ignore-errors\n\n{JUSTFILE}");
+    let c = run(&repo(&ignoring, &["`just lint`"]), "gate lint");
+    assert!(!c.passed);
+    assert!(c.err.contains("justfile: `set ignore-errors`"), "{}", c.err);
 }

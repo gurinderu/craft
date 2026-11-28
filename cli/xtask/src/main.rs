@@ -4,11 +4,16 @@
 
 mod cli;
 mod coverage;
+// The workspace's one way to write an executable a test then runs.
 mod exclusions;
+#[cfg(test)]
+#[path = "../../test-support/exe.rs"]
+mod exe;
 mod gate;
 mod gate_steps;
 mod justfile;
 mod keys;
+mod masking;
 #[cfg(test)]
 mod repo_justfile;
 mod sources;

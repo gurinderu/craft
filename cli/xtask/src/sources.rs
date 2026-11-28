@@ -18,6 +18,8 @@ pub struct Repo {
     pub ci_runs: Vec<String>,
     pub agents_cells: Vec<String>,
     pub recipes: Vec<Recipe>,
+    /// The justfile sets `ignore-errors`.
+    pub ignores_errors: bool,
 }
 
 impl Repo {
@@ -29,12 +31,14 @@ impl Repo {
             .map_err(|e| format!("integrations/shared: {e}"))?
             .filter_map(Result::ok)
             .filter_map(|entry| entry.file_name().into_string().ok());
+        let justfile = read("justfile")?;
         Ok(Self {
             scripts: scripts(&read("package.json")?)?,
             check_files: check_files(names),
             ci_runs: ci_test_runs(&read(".github/workflows/ci.yml")?)?,
             agents_cells: agents_commands(&read("AGENTS.md")?),
-            recipes: justfile::recipes(&read("justfile")?),
+            recipes: justfile::recipes(&justfile),
+            ignores_errors: justfile::ignores_errors(&justfile),
         })
     }
 

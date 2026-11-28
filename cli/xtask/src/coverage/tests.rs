@@ -9,6 +9,7 @@ fn step(name: &str, body: &str) -> Recipe {
         name: name.to_owned(),
         params: Vec::new(),
         groups: vec!["gate".to_owned()],
+        script: false,
         body: vec![body.to_owned()],
     }
 }

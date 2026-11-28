@@ -97,3 +97,30 @@ fn a_header_names_a_recipe_only_by_just_s_name_characters() {
         assert_eq!(header(line), None, "{line}");
     }
 }
+
+#[test]
+fn continued_lines_join_as_just_joins_them() {
+    let all = recipes("a:\n    echo one\\\n        two  \\\n    three\n    echo four\n");
+    // `just --dry-run a` prints `echo onetwo  three`.
+    assert_eq!(all[0].commands(), ["echo onetwo  three", "echo four"]);
+}
+
+#[test]
+fn a_script_attribute_or_a_shebang_makes_a_script_recipe() {
+    let all = recipes(
+        "[script('bash')]\na:\n    x\n\n[group('gate'), script]\nb:\n    x\n\nc:\n    #!/bin/sh\n    x\n\nd:\n    x\n",
+    );
+    let scripts: Vec<bool> = all.iter().map(crate::justfile::Recipe::is_script).collect();
+    assert_eq!(scripts, [true, true, true, false]);
+}
+
+#[test]
+fn ignore_errors_counts_unless_it_is_set_false() {
+    assert!(crate::justfile::ignores_errors("set ignore-errors\n"));
+    assert!(crate::justfile::ignores_errors(
+        "set ignore-errors := true\n"
+    ));
+    assert!(!crate::justfile::ignores_errors(
+        "set ignore-errors := false\nset positional-arguments\n"
+    ));
+}

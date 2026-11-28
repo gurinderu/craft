@@ -6,7 +6,11 @@ use std::io::{self, Write};
 use crate::coverage::{self, Report};
 use crate::justfile::{self, Recipe};
 use crate::keys::Keys;
+use crate::masking;
 use crate::sources::Repo;
+
+/// The recipe `just gate` runs.
+const ENTRY: &str = "gate";
 
 /// The names just itself lists (`just --summary --unsorted`) against the ones read here: a mismatch means the
 /// reader missed or invented a recipe, and every other verdict would rest on it.
@@ -34,7 +38,15 @@ pub fn check(
     };
     let required = repo.required(&keys);
     let steps = justfile::gate_steps(&repo.recipes);
-    let report = coverage::check(&required, excluded, &steps, &keys);
+    let mut report = coverage::check(&required, excluded, &steps, &keys);
+    // The `gate` recipe runs the runner: a failure it hides hides the whole gate's.
+    let entry = repo.recipes.iter().filter(|r| r.name == ENTRY);
+    report.masked.extend(entry.flat_map(masking::masked));
+    if repo.ignores_errors {
+        report.masked.push(
+            "justfile: `set ignore-errors` — every recipe line ignores its failure".to_owned(),
+        );
+    }
     let mismatch = summary_mismatch(&repo.recipes, summary);
     if report.is_clean() && mismatch.is_none() {
         writeln!(

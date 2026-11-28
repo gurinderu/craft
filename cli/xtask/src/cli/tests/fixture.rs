@@ -1,7 +1,6 @@
 //! A scratch repository and a `just` that logs.
 
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
 pub(super) const JUSTFILE: &str = "gate *args:\n    cd cli && cargo xtask gate \"$@\"\n\n[group('gate')]\nok:\n    eslint .\n\n[group('gate')]\nred:\n    node integrations/shared/check-a.mjs\n\n[group('gate')]\nlast base=\"\":\n    vitest run\n";
@@ -12,8 +11,7 @@ pub(super) fn fake_just(dir: &Path, summary: &str, summary_exit: u8) -> std::pat
     let script = format!(
         "#!/bin/sh\nif [ \"$1\" = --summary ]; then echo '{summary}'; echo 'no justfile' >&2; exit {summary_exit}; fi\necho \"$*\" >> log\n[ \"$1\" = red ] && exit 3\nexit 0\n"
     );
-    fs::write(&path, script).unwrap();
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+    crate::exe::write_executable(&path, &script).unwrap();
     path
 }
 

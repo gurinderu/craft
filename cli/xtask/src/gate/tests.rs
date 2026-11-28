@@ -39,6 +39,7 @@ fn step(name: &str, params: &[&str]) -> Recipe {
         name: name.to_owned(),
         params: params.iter().map(|p| (*p).to_owned()).collect(),
         groups: vec!["gate".to_owned()],
+        script: false,
         body: Vec::new(),
     }
 }

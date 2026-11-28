@@ -2,12 +2,18 @@
 //! body lines, in file order. A reader of the forms this repository writes, not of just's whole grammar:
 //! `gate-steps` holds the names it reads to the ones `just --summary --unsorted` lists.
 
+mod syntax;
+pub use syntax::ignores_errors;
+use syntax::{groups_in, header, names_script};
+
 /// One recipe.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Recipe {
     pub name: String,
     pub params: Vec<String>,
     pub groups: Vec<String>,
+    /// `[script]`: the body runs as one script, not line by line.
+    pub script: bool,
     /// The body's lines, their indentation trimmed.
     pub body: Vec<String>,
 }
@@ -17,7 +23,9 @@ impl Recipe {
         self.groups.iter().any(|g| g == group)
     }
 
-    /// The body's commands: a line ending in `\\` joined to the next, as just joins them.
+    /// The body's commands, a line ending in `\\` joined to the next as just joins them: the backslash and the
+    /// line break dropped, the next line's indentation too, and nothing put in their place
+    /// (`echo one\\` then `two` runs `echo onetwo`).
     pub fn commands(&self) -> Vec<String> {
         let mut out: Vec<String> = Vec::new();
         let mut open = false;
@@ -26,15 +34,17 @@ impl Recipe {
                 .strip_suffix('\\')
                 .map_or((line.as_str(), false), |t| (t, true));
             match (open, out.last_mut()) {
-                (true, Some(last)) => {
-                    last.push(' ');
-                    last.push_str(text.trim());
-                }
-                _ => out.push(text.trim().to_owned()),
+                (true, Some(last)) => last.push_str(text.trim_start()),
+                _ => out.push(text.to_owned()),
             }
             open = continues;
         }
         out
+    }
+
+    /// A script recipe: `[script]`, or a body opening with `#!`; just runs it whole, not line by line.
+    pub fn is_script(&self) -> bool {
+        self.script || self.body.first().is_some_and(|l| l.starts_with("#!"))
     }
 
     pub fn body_text(&self) -> String {
@@ -49,11 +59,12 @@ pub const GATE_GROUP: &str = "gate";
 pub fn recipes(text: &str) -> Vec<Recipe> {
     let mut found: Vec<Recipe> = Vec::new();
     let mut groups: Vec<String> = Vec::new();
+    let mut script = false;
     let mut open = false;
     for line in text.lines() {
         if line.starts_with([' ', '\t']) {
             if let (true, Some(recipe)) = (open, found.last_mut()) {
-                recipe.body.push(line.trim().to_owned());
+                recipe.body.push(line.trim_start().to_owned());
             }
             continue;
         }
@@ -64,6 +75,7 @@ pub fn recipes(text: &str) -> Vec<Recipe> {
         open = false;
         if let Some(inner) = line.strip_prefix('[').and_then(|l| l.strip_suffix(']')) {
             groups.extend(groups_in(inner));
+            script |= names_script(inner);
             continue;
         }
         if let Some((name, params)) = header(line) {
@@ -71,11 +83,13 @@ pub fn recipes(text: &str) -> Vec<Recipe> {
                 name,
                 params,
                 groups: std::mem::take(&mut groups),
+                script: std::mem::take(&mut script),
                 body: Vec::new(),
             });
             open = true;
         } else {
             groups.clear();
+            script = false;
         }
     }
     found
@@ -88,55 +102,6 @@ pub fn gate_steps(recipes: &[Recipe]) -> Vec<Recipe> {
         .filter(|r| r.in_group(GATE_GROUP))
         .cloned()
         .collect()
-}
-
-/// The names in `group('…')` / `group("…")` of an attribute line's inside.
-fn groups_in(inner: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut rest = inner;
-    while let Some(at) = rest.find("group(") {
-        let (_, after) = rest.split_at(at + "group(".len());
-        let quoted = after.trim_start();
-        let Some(quote) = quoted.chars().next().filter(|c| *c == '\'' || *c == '"') else {
-            break;
-        };
-        let (_, value) = quoted.split_at(quote.len_utf8());
-        let Some(end) = value.find(quote) else { break };
-        let (name, tail) = value.split_at(end);
-        out.push(name.to_owned());
-        rest = tail;
-    }
-    out
-}
-
-/// `name params…:` — a recipe header; `None` for a setting, an assignment or anything else.
-fn header(line: &str) -> Option<(String, Vec<String>)> {
-    const KEYWORDS: [&str; 5] = ["set ", "export ", "alias ", "import ", "mod "];
-    if KEYWORDS.iter().any(|k| line.starts_with(k)) {
-        return None;
-    }
-    let colon = line.find(':')?;
-    let (head, tail) = line.split_at(colon);
-    if tail.starts_with(":=") {
-        return None;
-    }
-    let mut words = head.trim_start_matches('@').split_whitespace();
-    let name = words.next()?;
-    let valid = name
-        .chars()
-        .next()
-        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
-        && name
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');
-    if !valid {
-        return None;
-    }
-    let params = words
-        .map(|w| w.trim_start_matches(['*', '+']).trim_start_matches('$'))
-        .map(|w| w.split('=').next().unwrap_or(w).to_owned())
-        .collect();
-    Some((name.to_owned(), params))
 }
 
 #[cfg(test)]

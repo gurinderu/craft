@@ -4,7 +4,9 @@
 # `cargo xtask gate-steps` (the `gate-steps` step) fails when a check package.json, integrations/shared/check-*.mjs,
 # CI's `test` job, AGENTS.md "Commands" or this file names is neither a step here nor excluded with its reason.
 # A step standing for a package.json script is exactly that script's command (gate-steps holds them equal), and
-# no gate line may ignore its own failure: no `-` prefix, no trailing `|| true` or `; true`.
+# no line of a gate step or of `gate` may hide its own failure: just runs each as `sh -cu` and stops on a non-zero
+# status, so no `-` prefix, no `||`, pipe, `;`, background `&` or `!` outside quotes, and no script recipe
+# (`#!` or `[script]`) — gate-steps fails otherwise (cli/xtask/src/masking.rs).
 # `just gate --base <ref>` hands the base to the one step whose recipe takes `base`; a base no step takes is red.
 # Needs `npm ci` and `npm ci --prefix integrations/opencode/plugin`, and cargo for the xtask.
 

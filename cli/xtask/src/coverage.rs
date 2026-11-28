@@ -5,6 +5,7 @@ use std::collections::BTreeSet;
 
 use crate::justfile::Recipe;
 use crate::keys::Keys;
+use crate::masking;
 
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct Report {
@@ -16,7 +17,7 @@ pub struct Report {
     pub repeated: Vec<String>,
     /// Steps covering nothing another step does not.
     pub redundant: Vec<String>,
-    /// `step: line` of each gate line whose failure cannot fail the step.
+    /// `step: line — why` of each gate line whose failure cannot fail its step.
     pub masked: Vec<String>,
     pub no_steps: bool,
 }
@@ -82,15 +83,7 @@ pub fn check(
         })
         .map(|(_, (step, _))| step.name.clone())
         .collect();
-    let masked = steps
-        .iter()
-        .flat_map(|s| {
-            s.commands()
-                .into_iter()
-                .filter(|l| masks_failure(l))
-                .map(move |l| format!("{}: {l}", s.name))
-        })
-        .collect();
+    let masked = steps.iter().flat_map(masking::masked).collect();
     Report {
         uncovered,
         masked,
@@ -99,19 +92,6 @@ pub fn check(
         redundant,
         no_steps: steps.is_empty(),
     }
-}
-
-/// A line just runs without failing the recipe (`-`, before or after `@`), or that ends in a command that
-/// always succeeds (`|| true`, `; true`, and `:` for `true`).
-pub fn masks_failure(line: &str) -> bool {
-    let line = line.trim();
-    if line.trim_start_matches('@').starts_with('-') {
-        return true;
-    }
-    let compact: String = line.chars().filter(|c| !c.is_whitespace()).collect();
-    ["||true", ";true", "||:", ";:"]
-        .iter()
-        .any(|tail| compact.ends_with(tail))
 }
 
 #[cfg(test)]
