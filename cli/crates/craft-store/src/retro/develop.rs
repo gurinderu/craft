@@ -43,6 +43,12 @@ impl Develop {
         )
     }
 
+    /// The full reviews that left no open Medium+ and had a verdict.
+    #[must_use]
+    pub fn clean(&self) -> u64 {
+        self.full_reviews - self.full_reopened - self.full_no_verdict
+    }
+
     /// Adds one develop record.
     pub fn add(&mut self, r: &Obj) {
         let read = r

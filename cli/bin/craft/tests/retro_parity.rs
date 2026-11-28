@@ -195,20 +195,38 @@ fn the_round_pairs_are_what_the_javascript_pairing_found() {
     let d = laid(&c);
     let (lines, _) = craft(d.path(), &["round-pairs"]);
     let want = &c["expected"]["roundPairs"];
-    let pairs: Map<String, Value> = lines
+    let rows: Vec<&Value> = lines
         .iter()
         .filter(|l| l["section"] == "roundPair")
+        .collect();
+    assert_eq!(
+        Some(rows.len() as u64),
+        want["count"].as_u64(),
+        "one row per pair"
+    );
+    let pairs: Map<String, Value> = rows
+        .iter()
         .map(|l| {
             let key = format!(
-                "{} {}>{}",
+                "{} {}>{} {}",
                 l["branch"].as_str().unwrap(),
                 l["fromRound"],
-                l["toRound"]
+                l["toRound"],
+                l["toTs"].as_str().unwrap()
             );
-            (key, l.clone())
+            (key, (*l).clone())
         })
         .collect();
+    assert_eq!(pairs.len(), rows.len(), "no two pairs share a key");
     within(&want["pairs"], &Value::Object(pairs), "pairs", true);
+    let folded = lines
+        .iter()
+        .find(|l| l["section"] == "roundPairsFolded")
+        .unwrap();
+    assert_eq!(
+        folded["records"], want["folded"],
+        "records folded before pairing"
+    );
     let excluded: Map<String, Value> = lines
         .iter()
         .filter(|l| l["section"] == "roundsExcluded")

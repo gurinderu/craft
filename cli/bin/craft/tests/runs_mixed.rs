@@ -33,7 +33,7 @@ fn store() -> tempfile::TempDir {
         round(1, &json!({"memoryContradictions": said})),
         round(
             1,
-            &json!({"name": "cli-review", "ts": "2026-10-01T01-00-00Z"}),
+            &json!({"name": "cli-review", "ts": "2026-10-01T01-00-00Z", "memoryContradictions": said}),
         ),
         round(2, &json!({"ledger": [{"fp": "f1", "disposition": "open"}]})),
         round(
@@ -139,6 +139,27 @@ fn each_chain_is_its_own_population_in_the_retro() {
         (json!(1), json!(0)),
         "its fate is its own chain's later round"
     );
+    let cli = section(&ls, "contradictions")
+        .into_iter()
+        .find(|c| c["chain"] == "cli")
+        .unwrap();
+    assert_eq!(
+        (cli["fixed"].clone(), cli["open"].clone()),
+        (json!(1), json!(0)),
+        "the CLI's round under `cli-review` is followed into its later round under `review`"
+    );
+    let noise: Vec<(&Value, &Value)> = section(&ls, "noise")
+        .iter()
+        .map(|n| (&n["lens"], &n["candidates"]))
+        .collect();
+    assert_eq!(
+        noise,
+        [
+            (&json!("rust:errors"), &json!(30)),
+            (&json!("rust:errors (cli)"), &json!(20))
+        ],
+        "one noisy lens key in two chains is two NOISE rows"
+    );
     let chains: Vec<&Value> = section(&ls, "unfinishedRun")
         .iter()
         .map(|u| &u["chain"])
@@ -149,6 +170,32 @@ fn each_chain_is_its_own_population_in_the_retro() {
         json!(0),
         "a JS and a CLI run of one head and round are two runs"
     );
+}
+
+#[test]
+fn a_resumed_round_filed_twice_is_folded_before_it_pairs() {
+    let d = tempfile::tempdir().unwrap();
+    let records = [
+        round(1, &json!({})),
+        round(2, &json!({})),
+        round(2, &json!({"ts": "2026-10-02T00-30-00Z"})),
+    ];
+    for (i, r) in records.iter().enumerate() {
+        std::fs::write(d.path().join(format!("{i}.json")), r.to_string()).unwrap();
+    }
+    let ls = lines(d.path(), &["round-pairs"]);
+    let pairs = section(&ls, "roundPair");
+    assert_eq!(
+        pairs.len(),
+        1,
+        "one round 2, however often it filed: {pairs:?}"
+    );
+    assert_eq!(
+        pairs[0]["toTs"],
+        json!("2026-10-02T00-30-00Z"),
+        "the newest record stands for it"
+    );
+    assert_eq!(section(&ls, "roundPairsFolded")[0]["records"], json!(1));
 }
 
 #[test]

@@ -24,7 +24,7 @@ rust-audit       -      0        0             0
 
 Full-plan cost (light runs apart; tokens per run)
 WORKFLOW         PRICED  CACHE-READ  CACHE-WRITE  INPUT  OUTPUT  TOTAL  LEFT-OUT                                             POOL:first/re-review/no-round(runs)
-review           2       820         10           10     10      850    malformed 1, empty 1, overcounted 1, unknown-rule 1  151 (2) / 351 (2) / 50 (5)
+review           2       785         25           20     18      848    malformed 1, empty 1, overcounted 1, unknown-rule 1  151 (2) / 351 (2) / 50 (5)
 review (cli)     1       470         10           10     10      500    -                                                    - (0) / - (0) / - (0)
 triage-findings  0       -           -            -      -       -      -                                                    - (0) / - (0) / - (0)
 rust-audit       0       -           -            -      -       -      -                                                    - (0) / - (0) / - (0)
@@ -36,7 +36,7 @@ review    3          10         1       2           3             66.67   1     
 Kinds
 KIND                   RUNS  MIN/RUN  AGENTS/RUN  PRICED  COST/RUN  UNPRICED
 review                 11    -        -           0       -         missing 7, malformed 1, empty 1, overcounted 1, unknown-rule 1
-review · full          2     9        7           2       850       -
+review · full          2     9        7           2       847.5     -
 triage-findings        2     -        -           0       -         missing 2
 review (cli)           1     -        -           1       500       -
 review (cli) · light   1     2        4           1       500       -
@@ -81,7 +81,7 @@ Sorting (doubtful findings held back from the PR)
 Develop (craft:develop cycles)
 2 cycle(s) · 1 converged · 1 capped · 0 stopped without a verdict · light 1 / full 1 · 1.5 round(s) per cycle, 2 to converge
 open Medium+ after each round: r1 3 in 2 · r2 0 in 1
-full review: 3 run(s) · 1 reopened the loop · 1 without a verdict
+full review: 3 run(s) · 1 reopened the loop · 1 without a verdict · 1 clean
 1 develop record(s) unreadable, not counted
 
 Depth: craft:review (JS engine), light runs apart from the full-plan figures

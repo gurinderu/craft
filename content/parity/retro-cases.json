@@ -157,7 +157,12 @@
         "agents": 9,
         "wallClockMinutes": 12
       },
-      "reReview": null
+      "reReview": null,
+      "lensRounds": [
+        {
+          "agents": 4
+        }
+      ]
     },
     "2026-11-01T11-00-00Z-02.json": {
       "ts": "2026-11-01T11-00-00Z",
@@ -221,12 +226,12 @@
         }
       ],
       "cost": {
-        "cacheRead": 670,
-        "cacheWrite": 10,
-        "input": 10,
-        "output": 10,
-        "total": 700,
-        "agents": 3,
+        "cacheRead": 600,
+        "cacheWrite": 40,
+        "input": 30,
+        "output": 25,
+        "total": 695,
+        "agents": 5,
         "rule": "per-message",
         "source": "wf_b"
       },
@@ -275,6 +280,11 @@
         {
           "phase": "lenses",
           "at": "2026-11-01T10:40:00.000Z"
+        }
+      ],
+      "lensRounds": [
+        {
+          "agents": 2
         }
       ]
     },
@@ -1075,11 +1085,11 @@
           },
           "cost": {
             "runs": 2,
-            "cacheRead": 820,
-            "cacheWrite": 10,
-            "input": 10,
-            "output": 10,
-            "total": 850,
+            "cacheRead": 785,
+            "cacheWrite": 25,
+            "input": 20,
+            "output": 18,
+            "total": 848,
             "apart": {
               "malformed": 1,
               "empty": 1,
@@ -1343,6 +1353,7 @@
           0
         ],
         "noVerdict": 0,
+        "clean": 1,
         "roundsPerCycle": 1.5,
         "roundsToConverge": 2
       },
@@ -1449,11 +1460,17 @@
       "noise": {
         "rust:errors": {
           "refuteRate": 0.43,
-          "candidates": 7
+          "refuted": 3,
+          "candidates": 7,
+          "confirmed": 4,
+          "refuteBasis": "mixed"
         },
         "rust:noise": {
           "refuteRate": 0.6,
-          "candidates": 5
+          "refuted": 3,
+          "candidates": 5,
+          "confirmed": 1,
+          "refuteBasis": "legacy"
         }
       },
       "unfinishedListed": {
@@ -1462,8 +1479,22 @@
         "twins": 1
       },
       "unfinishedRun": {
-        "2026-11-07T10-00-00Z": {},
-        "2026-11-07T11-00-00Z": {}
+        "2026-11-07T10-00-00Z": {
+          "name": "review",
+          "chain": "js",
+          "reason": "lost",
+          "agents": 3,
+          "wallClockMinutes": 40,
+          "longestStallSeconds": 900
+        },
+        "2026-11-07T11-00-00Z": {
+          "name": "review",
+          "chain": "js",
+          "reason": "incomplete",
+          "agents": null,
+          "wallClockMinutes": null,
+          "longestStallSeconds": null
+        }
       }
     },
     "retroVersion": {
@@ -1501,11 +1532,11 @@
           },
           "cost": {
             "runs": 2,
-            "cacheRead": 820,
-            "cacheWrite": 10,
-            "input": 10,
-            "output": 10,
-            "total": 850,
+            "cacheRead": 785,
+            "cacheWrite": 25,
+            "input": 20,
+            "output": 18,
+            "total": 848,
             "apart": {
               "malformed": 1,
               "empty": 1,
@@ -1763,6 +1794,7 @@
         "cyclesByRound": [],
         "mediumPlusByRound": [],
         "noVerdict": 0,
+        "clean": 0,
         "roundsPerCycle": 0,
         "roundsToConverge": 0
       },
@@ -1869,11 +1901,17 @@
       "noise": {
         "rust:errors": {
           "refuteRate": 0.43,
-          "candidates": 7
+          "refuted": 3,
+          "candidates": 7,
+          "confirmed": 4,
+          "refuteBasis": "mixed"
         },
         "rust:noise": {
           "refuteRate": 0.6,
-          "candidates": 5
+          "refuted": 3,
+          "candidates": 5,
+          "confirmed": 1,
+          "refuteBasis": "legacy"
         }
       },
       "unfinishedListed": {
@@ -1882,7 +1920,14 @@
         "twins": 1
       },
       "unfinishedRun": {
-        "2026-11-07T10-00-00Z": {}
+        "2026-11-07T10-00-00Z": {
+          "name": "review",
+          "chain": "js",
+          "reason": "lost",
+          "agents": 3,
+          "wallClockMinutes": 40,
+          "longestStallSeconds": 900
+        }
       }
     },
     "retroEngine": {
@@ -1913,11 +1958,11 @@
           },
           "cost": {
             "runs": 2,
-            "cacheRead": 820,
-            "cacheWrite": 10,
-            "input": 10,
-            "output": 10,
-            "total": 850,
+            "cacheRead": 785,
+            "cacheWrite": 25,
+            "input": 20,
+            "output": 18,
+            "total": 848,
             "apart": {
               "malformed": 1,
               "empty": 1,
@@ -2090,6 +2135,7 @@
         "cyclesByRound": [],
         "mediumPlusByRound": [],
         "noVerdict": 0,
+        "clean": 0,
         "roundsPerCycle": 0,
         "roundsToConverge": 0
       },
@@ -2178,11 +2224,17 @@
       "noise": {
         "rust:errors": {
           "refuteRate": 0.43,
-          "candidates": 7
+          "refuted": 3,
+          "candidates": 7,
+          "confirmed": 4,
+          "refuteBasis": "mixed"
         },
         "rust:noise": {
           "refuteRate": 0.6,
-          "candidates": 5
+          "refuted": 3,
+          "candidates": 5,
+          "confirmed": 1,
+          "refuteBasis": "legacy"
         }
       },
       "unfinishedListed": {
@@ -2191,7 +2243,14 @@
         "twins": 1
       },
       "unfinishedRun": {
-        "2026-11-07T10-00-00Z": {}
+        "2026-11-07T10-00-00Z": {
+          "name": "review",
+          "chain": "js",
+          "reason": "lost",
+          "agents": 3,
+          "wallClockMinutes": 40,
+          "longestStallSeconds": 900
+        }
       }
     },
     "hooks": {
@@ -2232,36 +2291,42 @@
       }
     },
     "roundPairs": {
+      "count": 6,
+      "folded": 2,
       "pairs": {
-        "feat/a 1>2": {
+        "feat/a 1>2 2026-11-01T11-00-00Z": {
           "status": "clean",
           "delta": {
-            "costTotal": -300,
+            "costTotal": -305,
             "costRatio": 0.7,
-            "cacheRead": -300,
-            "cacheWrite": 0,
-            "input": 0,
-            "output": 0,
-            "agents": 0,
-            "lensAgents": 0,
+            "cacheRead": -370,
+            "cacheWrite": 30,
+            "input": 20,
+            "output": 15,
+            "agents": 2,
+            "lensAgents": -2,
             "candidates": -3,
             "findings": -2,
             "minutesApart": 60
           }
         },
-        "feat/a 2>3": {
+        "feat/a 2>3 2026-11-01T12-00-00Z": {
           "status": "diff-moved",
           "delta": null
         },
-        "feat/p 1>2": {
+        "feat/p 1>2 2026-11-02T11-20-00Z": {
           "status": "prior-unconfirmed",
           "delta": null
         },
-        "feat/p 2>3": {
+        "feat/p 2>3 2026-11-02T11-30-00Z": {
           "status": "prior-unconfirmed",
           "delta": null
         },
-        "feat/c 1>2": {
+        "feat/p 1>2 2026-11-02T11-40-00Z": {
+          "status": "prior-unconfirmed",
+          "delta": null
+        },
+        "feat/c 1>2 2026-11-03T11-00-00Z": {
           "status": "prior-unconfirmed",
           "delta": null
         }

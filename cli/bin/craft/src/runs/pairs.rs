@@ -64,6 +64,9 @@ fn pair_json(p: &Pair) -> Obj {
         .with("delta", delta)
 }
 
+/// What the pairs' token counts are, said above them.
+const UNWEIGHTED: &str = "Compared only when nothing but memory differs; every other pair is named with what confounds it. Token counts are an unweighted sum across kinds (a cache read is priced far below output), so read the per-kind deltas, not the ratio alone, as money.";
+
 fn signed(n: f64) -> String {
     format!("{}{}", if n >= 0.0 { "+" } else { "" }, number_text(n))
 }
@@ -109,7 +112,7 @@ pub(super) fn report(
 ) -> Result<()> {
     let mut rounds: Vec<(String, Obj)> = Vec::new();
     let mut excluded: BTreeMap<&'static str, u64> = BTreeMap::new();
-    let (_, parts) = visit::walk(store, &|_| true, skipped, &mut |seen| {
+    let (counts, parts) = visit::walk(store, &|_| true, skipped, &mut |seen| {
         let r = match seen {
             Seen::Standing(name, r) if pairs::is_round(r) => {
                 rounds.push((name.to_owned(), pairs::kept(r)));
@@ -145,13 +148,18 @@ pub(super) fn report(
                 .with("records", count(*n));
             writeln!(out, "{}", Js::Obj(o).compact())?;
         }
-        return Ok(());
+        let o = Obj::new()
+            .with("section", Js::str("roundPairsFolded"))
+            .with("records", count(counts.folded));
+        return writeln!(out, "{}", Js::Obj(o).compact()).map_err(Into::into);
     }
     if found.is_empty() {
         writeln!(
             out,
             "No consecutive review rounds of one branch in this store."
         )?;
+    } else {
+        writeln!(out, "{UNWEIGHTED}")?;
     }
     for p in &found {
         writeln!(out, "{}", pair_text(p))?;
@@ -163,6 +171,13 @@ pub(super) fn report(
             "{} review record(s) are not rounds and pair with nothing: {}",
             excluded.values().sum::<u64>(),
             why.join(", ")
+        )?;
+    }
+    if counts.folded > 0 {
+        writeln!(
+            out,
+            "{} record(s) folded into a newer record of the same run before pairing (a resumed run files twice).",
+            counts.folded
         )?;
     }
     Ok(())

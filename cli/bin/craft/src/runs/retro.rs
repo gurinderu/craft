@@ -74,10 +74,10 @@ pub(super) fn command(
     let mut filter = filter.filter();
     filter.version = filter.version.or_else(|| at.clone());
     let engine = match engine {
-        Some("latest") => match latest_engine(store, skipped)? {
+        Some("latest") => match latest_engine(store, &filter)? {
             Some(e) => Some(e),
             None => bail!(
-                "no finished run in {} to pick the latest engine from",
+                "no finished run the filters keep in {} to pick the latest engine from",
                 store.display()
             ),
         },
@@ -94,17 +94,47 @@ pub(super) fn command(
                 .is_none_or(|e| craft_store::retro::engine_key(r).is_ok_and(|k| k == *e))
     };
     let retro = retro_walk(store, &keep, Some(&slice), skipped)?;
+    if let Some(e) = engine.as_deref()
+        && retro.runs + retro.develop.cycles + retro.develop.unreadable == 0
+    {
+        bail!(
+            "no finished run matches engine \"{e}\"; the store's engines:\n{}",
+            engines(store)?
+        );
+    }
     render::retro(out, &slice, &retro, json)?;
     Ok(())
 }
 
-/// The engine of the newest finished run — no develop cycle nor a retro's mark — `None` in a store without one.
-fn latest_engine(store: &Path, skipped: &mut Skipped) -> Result<Option<String>> {
+/// The engines of the store's records, each once in order, one `- <engine>` a line.
+fn engines(store: &Path) -> Result<String> {
+    let mut seen = std::collections::BTreeSet::new();
+    read::records(store, &mut Skipped::default(), |_, r| {
+        if r.get("schemaVersion").is_some_and(Js::truthy)
+            && r.text_units("kind") != craft_store::retro::DONE_KIND
+        {
+            seen.insert(
+                craft_store::retro::engine_key(&r).unwrap_or_else(|_| "(not Unicode)".into()),
+            );
+        }
+    })
+    .with_context(|| format!("reading {}", store.display()))?;
+    Ok(seen
+        .into_iter()
+        .map(|e| format!("- {e}"))
+        .collect::<Vec<_>>()
+        .join("\n"))
+}
+
+/// The engine of the newest finished run `filter` keeps — no develop cycle nor a retro's mark —
+/// `None` when it keeps none. The walk after it says what it passed over.
+fn latest_engine(store: &Path, filter: &craft_store::filter::Filter) -> Result<Option<String>> {
     let mut newest: Option<(craft_store::js::JsString, Obj)> = None;
-    read::records(store, skipped, |_, r| {
+    read::records(store, &mut Skipped::default(), |_, r| {
         let live = r.get("schemaVersion").is_some_and(Js::truthy)
             && !r.get("partial").is_some_and(Js::truthy)
-            && craft_store::retro::is_run(&r);
+            && craft_store::retro::is_run(&r)
+            && filter.keeps(&r);
         let ts = r
             .get("ts")
             .map_or_else(|| "undefined".into(), Js::to_js_text);

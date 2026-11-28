@@ -1,5 +1,5 @@
 // The run store's detail records read in one pass, for integrations/shared/match-external-findings-cli.mjs. The run-store
-// report this file once printed is the binary's now: `craft runs retro`, `craft runs hooks` and `craft runs round-pairs`
+// report the retired analyze-runs.mjs printed beside this loader is the binary's now: `craft runs retro`, `craft runs hooks` and `craft runs round-pairs`
 // (cli/bin/craft/src/runs.rs; realm @nick/craft, #540, #562), its figures frozen in content/parity/retro-cases.json.
 import { parseJsonObject } from './json-object.mjs'
 import fs from 'node:fs'

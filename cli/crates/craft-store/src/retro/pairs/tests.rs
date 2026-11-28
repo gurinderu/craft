@@ -227,3 +227,70 @@ fn of_two_earlier_rounds_filed_at_once_the_first_is_paired_and_a_count_of_zero_i
         "config-changed"
     );
 }
+
+#[test]
+fn each_delta_is_its_own_part_later_minus_earlier() {
+    let cost = |read: u32, write: u32, input: u32, output: u32, agents: u32| {
+        let total = read + write + input + output;
+        format!(
+            r#","cost":{{"total":{total},"cacheRead":{read},"cacheWrite":{write},"input":{input},"output":{output},"agents":{agents},"rule":"per-message","source":"wf_{read}"}}"#
+        )
+    };
+    let a = round(
+        1,
+        "2026-01-01T00-00-00Z",
+        &format!(
+            r#"{}, "lensRounds":[{{"agents":7}}],"findings":{{"total":9}}"#,
+            cost(100, 10, 20, 30, 2)
+        ),
+    );
+    let b = round(
+        2,
+        "2026-01-01T00-45-00Z",
+        &format!(
+            r#"{}, "lensRounds":[{{"agents":3}},{{"agents":1}}],"findings":{{"total":4}}"#,
+            cost(50, 13, 27, 41, 11)
+        ),
+    );
+    let got = pairs(&[a, b]);
+    let d = got[0].delta().unwrap();
+    assert_eq!(d.by, [-29.0, -50.0, 3.0, 7.0, 11.0, 9.0, -3.0, 1.0, -5.0]);
+    assert_eq!((d.ratio, d.minutes), (0.82, Some(45.0)));
+}
+
+#[test]
+fn every_part_of_the_configuration_moves_the_fingerprint() {
+    let base = r#","languages":["rust","nix"],"scout":[{"language":"rust","lenses":["a"],"model":"m","maxRounds":2,"verifyVotes":1,"size":"s","securitySensitive":false,"isLibrary":false}],"criticFollowups":["x"],"optionalPass":{"requested":["design"]},"strict":false"#;
+    let same = |more: &str| {
+        checks::status(
+            &round(1, "1", base),
+            &round(2, "2", &format!("{base}{more}")),
+        )
+    };
+    assert_eq!(same(""), "clean");
+    let scout = |field: &str| {
+        format!(
+            r#","scout":[{{"language":"rust","lenses":["a"],"model":"m","maxRounds":2,"verifyVotes":1,"size":"s","securitySensitive":false,"isLibrary":false,{field}}}]"#
+        )
+    };
+    let changes = [
+        r#","languages":["rust"]"#.to_owned(),
+        scout(r#""language":"nix""#),
+        scout(r#""lenses":["a","b"]"#),
+        scout(r#""model":"n""#),
+        scout(r#""maxRounds":3"#),
+        scout(r#""verifyVotes":3"#),
+        scout(r#""size":"l""#),
+        scout(r#""securitySensitive":true"#),
+        scout(r#""isLibrary":true"#),
+        r#","criticFollowups":["y"]"#.to_owned(),
+        r#","optionalPass":{"requested":[]}"#.to_owned(),
+        r#","strict":true"#.to_owned(),
+        r#","intentDigest":"j""#.to_owned(),
+        r#","specDigest":"t""#.to_owned(),
+        r#","depth":"light""#.to_owned(),
+    ];
+    for more in &changes {
+        assert_eq!(same(more), "config-changed", "{more}");
+    }
+}

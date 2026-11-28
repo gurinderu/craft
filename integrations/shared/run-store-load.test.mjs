@@ -5,7 +5,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { loadRecords } from './analyze-runs.mjs'
+import { loadRecords } from './run-store-load.mjs'
 
 test('a missing store is none, and a record that does not parse is named beside the ones that do', () => {
   assert.equal(loadRecords(path.join(os.tmpdir(), 'craft-ar-no-such-store')), null)

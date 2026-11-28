@@ -45,6 +45,7 @@ fn cycles_count_by_outcome_and_mode_with_the_open_medium_plus_of_each_round() {
         (d.full_reviews, d.full_reopened, d.full_no_verdict),
         (2, 1, 1)
     );
+    assert_eq!(d.clean(), 0, "one reopened, one without a verdict");
     assert_eq!(d.rounds_per_cycle(), (1.3, 2.0));
     assert_eq!(tenths(1.0, 0), 0.0);
 }

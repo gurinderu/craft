@@ -35,7 +35,8 @@ pub fn json(out: &mut dyn Write, r: &Retro) -> io::Result<()> {
         )
         .with("fullReviews", count(d.full_reviews))
         .with("fullReopened", count(d.full_reopened))
-        .with("fullNoVerdict", count(d.full_no_verdict));
+        .with("fullNoVerdict", count(d.full_no_verdict))
+        .with("clean", count(d.clean()));
     line(out, o)?;
     for (chain, pair) in CHAINS.iter().zip(&r.depth) {
         for (depth, p) in DEPTHS.iter().zip(pair) {
@@ -91,11 +92,21 @@ pub fn text(out: &mut dyn Write, r: &Retro) -> io::Result<()> {
             .map(|(i, (n, m))| format!("r{} {} in {n}", i + 1, num(*m)))
             .collect();
         writeln!(out, "open Medium+ after each round: {}", rounds.join(" · "))?;
-        writeln!(
-            out,
-            "full review: {} run(s) · {} reopened the loop · {} without a verdict",
-            d.full_reviews, d.full_reopened, d.full_no_verdict
-        )?;
+        if d.full_reviews == 0 {
+            writeln!(
+                out,
+                "full review: none ran (no cycle converged, or none recorded one)"
+            )?;
+        } else {
+            writeln!(
+                out,
+                "full review: {} run(s) · {} reopened the loop · {} without a verdict · {} clean",
+                d.full_reviews,
+                d.full_reopened,
+                d.full_no_verdict,
+                d.clean()
+            )?;
+        }
     }
     if d.unreadable > 0 {
         writeln!(

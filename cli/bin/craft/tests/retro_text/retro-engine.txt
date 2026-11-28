@@ -15,7 +15,7 @@ triage-findings  -      0        0             0
 
 Full-plan cost (light runs apart; tokens per run)
 WORKFLOW         PRICED  CACHE-READ  CACHE-WRITE  INPUT  OUTPUT  TOTAL  LEFT-OUT                                             POOL:first/re-review/no-round(runs)
-review           2       820         10           10     10      850    malformed 1, empty 1, overcounted 1, unknown-rule 1  151 (2) / 351 (2) / 50 (5)
+review           2       785         25           20     18      848    malformed 1, empty 1, overcounted 1, unknown-rule 1  151 (2) / 351 (2) / 50 (5)
 triage-findings  0       -           -            -      -       -      -                                                    - (0) / - (0) / - (0)
 
 Surface gate (whole-repo lens passes not bought)
@@ -25,7 +25,7 @@ review    3          10         1       2           3             66.67   1     
 Kinds
 KIND                   RUNS  MIN/RUN  AGENTS/RUN  PRICED  COST/RUN  UNPRICED
 review                 11    -        -           0       -         missing 7, malformed 1, empty 1, overcounted 1, unknown-rule 1
-review · full          2     9        7           2       850       -
+review · full          2     9        7           2       847.5     -
 review · light · full  1     3        2           0       -         partial 1
 triage-findings        1     -        -           0       -         missing 1
 

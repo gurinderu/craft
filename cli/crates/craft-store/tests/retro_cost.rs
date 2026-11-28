@@ -27,6 +27,12 @@ fn a_resumed_run_is_priced_by_its_stopped_parts_share_and_its_own() {
     assert_eq!((kind.runs, kind.priced, kind.cost), (2, 2, 900.0));
     assert!(kind.unpriced.is_empty(), "{kind:?}");
     assert!(r.deferred.is_empty(), "every deferred run is settled");
+    let plan = &r.flows["review (cli)"].plan;
+    assert_eq!(
+        (plan.priced, plan.total, plan.parts[3]),
+        (2, 900.0, 900.0),
+        "the workflow's full-plan cost waits for the same shares: {plan:?}"
+    );
 }
 
 #[test]

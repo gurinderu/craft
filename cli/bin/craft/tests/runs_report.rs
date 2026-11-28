@@ -239,3 +239,151 @@ fn a_retro_mark_is_no_run_no_engine_and_nothing_read_past() {
     let join = ls.iter().find(|l| l["section"] == "hookJoin").unwrap();
     assert_eq!(join["workflowRuns"], json!(1));
 }
+
+#[test]
+fn an_engine_no_run_matches_is_refused_naming_the_stores_engines() {
+    let d = store(&[
+        run("2026-01-01T00-00-00Z", &json!({})),
+        run(
+            "2026-01-02T00-00-00Z",
+            &json!({"engineRevision": 5, "craftVersion": "2.0.0", "partial": true}),
+        ),
+        run(
+            "2026-01-03T00-00-00Z",
+            &json!({"kind": "retro", "name": "retro", "engineRevision": 9}),
+        ),
+    ]);
+    let out = craft(d.path(), &["retro", "--engine", "claude-code 1.0.0 r3"]);
+    assert_eq!(out.status.code(), Some(1));
+    assert!(out.stdout.is_empty(), "no report over nothing");
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("no finished run matches engine \"claude-code 1.0.0 r3\""),
+        "{err}"
+    );
+    assert!(
+        err.contains("- claude-code 1.0.0 r4\n- claude-code 2.0.0 r5"),
+        "{err}"
+    );
+    assert!(
+        !err.contains("r9"),
+        "a retro mark is no engine of the store: {err}"
+    );
+}
+
+#[test]
+fn the_latest_engine_is_the_newest_among_the_runs_the_filters_keep() {
+    let d = store(&[
+        run("2026-01-01T00-00-00Z", &json!({"engineRevision": 3})),
+        run(
+            "2026-01-02T00-00-00Z",
+            &json!({"engineRevision": 4, "branch": "other"}),
+        ),
+    ]);
+    let out = lines(&craft(
+        d.path(),
+        &["retro", "--branch", "b", "--engine", "latest"],
+    ));
+    assert_eq!(
+        line(&out, "summary")["engine"],
+        json!("claude-code 1.0.0 r3")
+    );
+    assert_eq!(line(&out, "summary")["runs"], json!(1));
+}
+
+#[test]
+fn a_suffixed_audit_verdict_is_its_severity_and_partial_coverage() {
+    let d = store(&[run(
+        "2026-01-01T00-00-00Z",
+        &json!({"name": "rust-audit", "verdict": "Warning (INCOMPLETE)"}),
+    )]);
+    let out = lines(&craft(d.path(), &["retro"]));
+    let audit = out.iter().find(|l| l["section"] == "workflow").unwrap();
+    let v = &audit["verdicts"];
+    assert_eq!(
+        (
+            v["warning"].clone(),
+            v["incomplete"].clone(),
+            v["partialCoverage"].clone()
+        ),
+        (json!(1), json!(0), json!(1))
+    );
+    assert_eq!(line(&out, "summary")["partialCoverage"], json!(1));
+}
+
+fn hook_line(ts: &str, spoke: bool, more: &Value) -> String {
+    let mut l = json!({"ts": ts, "repo": "/p", "spoke": spoke, "silent": if spoke { Value::Null } else { json!("off-env") }});
+    let fields = l.as_object_mut().unwrap();
+    for (k, v) in more.as_object().unwrap() {
+        fields.insert(k.clone(), v.clone());
+    }
+    format!("{l}\n")
+}
+
+#[test]
+fn the_older_generation_is_read_and_only_the_start_hooks_own_word_starts_the_join() {
+    let d = store(&[
+        run("2026-01-01T00-00-00Z", &json!({})),
+        run("2026-01-03T00-00-00Z", &json!({})),
+    ]);
+    let log = d.path().join("hooks.jsonl");
+    let older = [
+        hook_line(
+            "2025-12-30T00:00:00Z",
+            true,
+            &json!({"event": "UserPromptSubmit"}),
+        ),
+        hook_line(
+            "2025-12-30T01:00:00Z",
+            true,
+            &json!({"reason": "retro-offer"}),
+        ),
+    ]
+    .concat();
+    std::fs::write(d.path().join("hooks.jsonl.1"), older).unwrap();
+    std::fs::write(&log, hook_line("2026-01-02T00:00:00Z", true, &json!({}))).unwrap();
+    let ls = lines(&craft(d.path(), &["hooks", "--log", log.to_str().unwrap()]));
+    let groups: Vec<(&Value, &Value)> = ls
+        .iter()
+        .filter(|l| l["section"] == "hook")
+        .map(|l| (&l["group"], &l["runs"]))
+        .collect();
+    assert_eq!(
+        groups,
+        [
+            (&json!("SessionStart"), &json!(1)),
+            (&json!("SessionStart retro-offer"), &json!(1)),
+            (&json!("UserPromptSubmit"), &json!(1))
+        ]
+    );
+    let join = ls.iter().find(|l| l["section"] == "hookJoin").unwrap();
+    assert_eq!(
+        (join["joined"].clone(), join["workflowRuns"].clone()),
+        (json!(1), json!(2)),
+        "the run before the start hook's role text spoke is not joined"
+    );
+}
+
+#[test]
+fn with_no_log_named_the_hooks_read_the_homes_own() {
+    let d = store(&[run("2026-01-01T00-00-00Z", &json!({}))]);
+    let home = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(home.path().join(".craft")).unwrap();
+    std::fs::write(
+        home.path().join(".craft/hooks.jsonl"),
+        hook_line("2025-01-01T00:00:00Z", false, &json!({})),
+    )
+    .unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_craft"))
+        .args(["runs", "hooks", "--json", "--store"])
+        .arg(d.path())
+        .env("HOME", home.path())
+        .output()
+        .unwrap();
+    let ls = lines(&out);
+    let row = ls.iter().find(|l| l["section"] == "hook").unwrap();
+    assert_eq!(
+        (row["runs"].clone(), row["silentBy"].clone()),
+        (json!(1), json!({"off-env": 1}))
+    );
+}
