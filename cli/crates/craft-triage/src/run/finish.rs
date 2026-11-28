@@ -63,7 +63,7 @@ pub(super) fn finish(
         .filter_map(|r| f.by_id.get(&r.id()).map(|x| issue_of(x, &r.id(), r)))
         .collect();
     let memory = &sift.memory;
-    let record = run_record(&RecordInput {
+    let mut record = run_record(&RecordInput {
         craft_version: &args.craft_version,
         gathered: &got.gathered,
         raw: &got.raw,
@@ -76,6 +76,9 @@ pub(super) fn finish(
         not_run_sources: &got.not_run,
         unjudged: v.unjudged,
     });
+    if let (Some(runtime), Js::Obj(o)) = (&args.runtime, &mut record) {
+        o.set("runtime", Js::str(runtime));
+    }
     let Some(mut p) = planned else {
         return Finished {
             record,

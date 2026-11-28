@@ -9,7 +9,7 @@ use regex::Regex;
 
 use super::host::Host;
 use super::models::ThinkingTable;
-use super::{HostKind, RunArgs, models};
+use super::{HostArgs, HostKind, models};
 use crate::review::find_craft_root;
 
 /// The host's own environment variable for `what`.
@@ -23,7 +23,7 @@ fn host_env(kind: HostKind, what: &str) -> Option<String> {
 }
 
 /// The concurrency asked for, or why it cannot be used.
-pub(super) fn concurrency_of(args: &RunArgs) -> Result<NonZeroUsize, String> {
+pub(super) fn concurrency_of(args: &HostArgs) -> Result<NonZeroUsize, String> {
     let given = match (args.concurrency, host_env(args.backend, "CONCURRENCY")) {
         (Some(n), _) => Some(n),
         (None, Some(t)) => Some(
@@ -39,14 +39,14 @@ pub(super) fn concurrency_of(args: &RunArgs) -> Result<NonZeroUsize, String> {
 }
 
 /// The host from the arguments and its environment variables, or why it cannot be used.
-pub(super) fn host_of(args: &RunArgs) -> Result<Host, String> {
+pub(super) fn host_of(args: &HostArgs) -> Result<Host, String> {
     host_with(args, &|what| host_env(args.backend, what))
 }
 
 /// pi's thinking level for each tier from `--thinking`, else `CRAFT_PI_THINKING` (realm
 /// `@nick/craft`, node #518); another host takes none, and is refused one.
 fn thinking_of(
-    args: &RunArgs,
+    args: &HostArgs,
     env: &dyn Fn(&str) -> Option<String>,
 ) -> Result<ThinkingTable, String> {
     match (args.backend, &args.thinking) {
@@ -63,7 +63,7 @@ fn thinking_of(
 
 /// The host from the arguments and `env`, the host's variable for a name, or why it cannot be
 /// used.
-fn host_with(args: &RunArgs, env: &dyn Fn(&str) -> Option<String>) -> Result<Host, String> {
+fn host_with(args: &HostArgs, env: &dyn Fn(&str) -> Option<String>) -> Result<Host, String> {
     let (name, command) = match args.backend {
         HostKind::Codex => (r"^[\w.:/-]{1,80}$", "codex"),
         HostKind::Pi => (r"^[\w.:/@*-]{1,120}$", "pi"),
@@ -93,8 +93,8 @@ fn host_with(args: &RunArgs, env: &dyn Fn(&str) -> Option<String>) -> Result<Hos
 }
 
 /// The plugin root the tasks read craft's agents and skills from, and the run is filed through.
-pub(super) fn root_of(args: &RunArgs) -> Result<PathBuf, String> {
-    let given = args.start.craft_root.as_deref().map(std::path::absolute);
+pub(super) fn root_of(root: Option<&std::path::Path>) -> Result<PathBuf, String> {
+    let given = root.map(std::path::absolute);
     let near = match given {
         Some(Ok(p)) => plugin_root_at(&p),
         Some(Err(e)) => return Err(format!("--craft-root cannot be resolved: {e}")),

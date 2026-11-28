@@ -11,6 +11,7 @@ mod filing;
 mod finished;
 mod halt;
 mod open;
+mod outcome;
 mod refuse;
 mod status;
 
@@ -28,7 +29,8 @@ use advance::advance;
 use aside::set_aside;
 
 pub use halt::Said;
-pub use open::{StartOptions, start};
+pub use open::{StartOptions, check_start, start};
+pub use outcome::{Outcome, outcome};
 pub use status::status;
 
 /// Takes the answers to the pending tasks of the run in `dir` — from their files, or `given` by

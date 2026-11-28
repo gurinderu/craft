@@ -339,7 +339,7 @@ releases wrote out of the harness's `MEMORY.md`, leaving one pointer line; the m
 a host (the `review` engine above) runs its agents. The step protocol was observed end to end
 in a live session (craft 0.41.0, a Rust diff, finished with Approve); the full-lens review it runs
 now is not yet observed live. `bin/craft` (the command: `craft review start | submit | status`, the step
-protocol, with `--paged` writing a step to the run directory and printing it a page at a time, `craft review page` the next (`src/paged.rs`, read by `integrations/shared/cli-review-paged.mjs`); `craft review run --backend codex|pi|opencode`, which drives that protocol itself to the verdict, each task its own
+protocol, with `--paged` writing a step to the run directory and printing it a page at a time, `craft review page` the next (`src/paged.rs`, read by `integrations/shared/cli-review-paged.mjs`); `craft triage run --backend codex|pi|opencode`, which drives triage to a plan through the shared host loop (`src/run/`, its triage adapter in `src/run/triage.rs` and `triage/`), calling the same in-process start/submit/status as the step commands; `craft review run --backend codex|pi|opencode`, which drives the review protocol itself to the verdict, each task its own
 `codex exec`, `pi -p` or `opencode run` process — or, with `--delegate`, handed back to the OpenCode plugin that runs it as a child session —, its progress as lines or `--events json`; `craft review probe`, one agent end to end; `filing_worker.rs` isolates a run-store write in a time-bounded child of the same binary; and `craft runs ls | show | stats | check | retro`, the run store read by streaming its files, a table or NDJSON), `crates/craft-agent` (one agent run through a
 backend — the `claude`, `codex`, `pi` or `opencode` CLI — and many under a concurrency cap), `crates/craft-review` (the steps — each changed file to one profile (Rust, Nix, SQL, or the general lenses for source in
 any other language, `content/profiles/`; a Rust or general file whose changed lines hold a query string also gets the
@@ -416,7 +416,7 @@ into the run store through `crates/craft-store`, which writes the checkpoints, t
 `integrations/shared/craft-log-run.mjs` does, with no node, keeping what it needs between steps in `filing.json`, including the stopped parts whose
 record has not landed, which every `--resume` files again first; `craft review status` carries that `filing` — the
 record, its file and the step the run ended with — for a host that lost the step that said it), `crates/craft-step` (the step protocol
-every kind of run shares, review now: the task and its kind, its prompt, schema and answer files, the answer checked against
+review and triage share: the task and its kind, its prompt, schema and answer files, the answer checked against
 its schema and asked for again, the notes on a refused answer file left in place (`src/left.rs`), the stop on the account's usage limit (`src/stop.rs`), the pending step and a task's status line; the review is its first kind, its phases, lenses,
 memory and verification its own), `crates/craft-store` (the run store's writer and its streaming reader — a record filed as its
 run built it, a triage's (`src/ready.rs`), and the section a run's answer leads with when a telemetry write did not land
@@ -427,7 +427,7 @@ batch sifted by the review's memory, the validators, the plan agent, their promp
 settled verdicts carried, the noise classes and the issue class 1 files, the plan's ledger pinned, the plan's banners and
 the run record, which `start --record` files in the run store itself before the plan is built, what it did kept in the
 run's `filing.json` (`src/step/filing.rs`) — held to the JavaScript engine it replaced by `content/parity/triage-cases.json`, frozen golden data edited by hand;
-the Claude Code engine drives it, `integrations/shared/cli-triage-steps.mjs`; `bin/craft/tests/triage_driver.rs` runs its JavaScript-generated commands through the real binary to a plan, including resume and re-filing; `bin/craft/tests/triage_refused.rs` and `triage_refused/stdin.rs` exercise exit-code boundaries and stdin)
+the Claude Code engine drives it, `integrations/shared/cli-triage-steps.mjs`; the native `triage run` command uses the shared host driver and returns the plan file and summary, leaving fixes and issue filing to the calling session. Its records name the starting host in `runtime`; a resume preserves it, and older state without it keeps `claude-code`. `bin/craft/tests/triage_run.rs` and `triage_run/` exercise the native driver with controlled host processes; `bin/craft/tests/triage_driver.rs` runs the JavaScript-generated commands through the real binary to a plan, including resume and re-filing; `bin/craft/tests/triage_refused.rs` and `triage_refused/stdin.rs` exercise exit-code boundaries and stdin)
 and `crates/craft-tui` (progress as a phases → agents tree
 on a terminal, one line per event otherwise); `test-support/` holds the one copy of a helper every crate's tests
 include by path (an executable a test writes and runs). In `craft-store`, `js/string.rs` holds lossless JavaScript
@@ -471,8 +471,9 @@ full `craft:review` of that head and the PR's whole change, and says when it cou
 `.codex-plugin/plugin.json` and the marketplace `.agents/plugins/marketplace.json` deliver the same
 `skills/` and hooks file (`integrations/claude-code/hooks/hooks.json`, named by the manifest's `hooks`) to the
 Codex CLI. Its plugin root is the repository root: Codex leaves symlinks out of the copy it installs
-(`integrations/codex/README.md`). Codex has no Workflow tool, so `rust-audit`, `triage-findings` and
-craft:develop's loop do not run there. The review, new and not yet observed running in a real Codex session: the
+(`integrations/codex/README.md`). Codex has no Workflow tool, so the `rust-audit` and `triage-findings`
+workflows and craft:develop's loop do not run there; `craft triage run --backend codex` is a separate
+binary command for triage. The review, new and not yet observed running in a real Codex session: the
 `codex-review` skill has the session run `bin/craft review run --backend codex`, the `craft` binary's own driver, which
 runs each task as its own `codex exec --ephemeral -s read-only` process, with the prompt body of the craft agent the
 task names (`integrations/claude-code/agents/`) before the task's prompt.
