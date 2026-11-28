@@ -2,7 +2,8 @@
 //! each routed to the language profile the review of a diff would give it
 //! ([`craft_review::coverage::assign`]) and cut into batches ([`crate::batch`]). A tracked file no
 //! profile takes — project configuration, prose, an image — is outside the audit and counted as
-//! such; one the working tree does not hold as a regular file (deleted, a symlink) is not listed.
+//! such; one the working tree does not hold as a regular file inside the repository (deleted, a
+//! symlink, or reached through a symlinked directory leading out of it) is not listed.
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -79,17 +80,26 @@ pub fn tracked(root: &Path, paths: &[String]) -> Result<Vec<Tracked>, AuditError
         return Err(not_git(String::from_utf8_lossy(&out.stderr).trim().into()));
     }
     let listed = String::from_utf8(out.stdout).map_err(|e| not_git(e.to_string()))?;
+    let base = root.canonicalize().unwrap_or_else(|_| root.to_owned());
+    let mut seen = HashSet::new();
     Ok(listed
         .split('\0')
-        .filter(|p| !p.is_empty())
-        .filter_map(|p| {
-            let meta = std::fs::symlink_metadata(root.join(p)).ok()?;
-            meta.is_file().then(|| Tracked {
-                path: p.to_owned(),
-                bytes: meta.len(),
-            })
-        })
+        // A conflicted path is listed once per stage it holds.
+        .filter(|p| !p.is_empty() && seen.insert(*p))
+        .filter_map(|p| regular(root, &base, p))
         .collect())
+}
+
+/// The tracked path `p` under `root` as a file to read: a regular file the working tree holds
+/// inside `base`, the canonical root — never one a symlinked parent directory leads outside it.
+fn regular(root: &Path, base: &Path, p: &str) -> Option<Tracked> {
+    let at = root.join(p);
+    let meta = std::fs::symlink_metadata(&at).ok()?;
+    let inside = at.canonicalize().ok()?.starts_with(base);
+    (meta.is_file() && inside).then(|| Tracked {
+        path: p.to_owned(),
+        bytes: meta.len(),
+    })
 }
 
 /// `files` routed to `profiles` and each part cut into batches under `budget` bytes.

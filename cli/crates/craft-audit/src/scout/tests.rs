@@ -65,6 +65,45 @@ fn a_tracked_symlink_is_not_read() {
     assert_eq!(paths(&tracked(d.path(), &[]).unwrap()), ["real.rs"]);
 }
 
+#[cfg(unix)]
+#[test]
+fn a_tracked_file_a_symlinked_directory_leads_out_of_the_repository_is_not_read() {
+    let outside = tempfile::tempdir().unwrap();
+    std::fs::write(outside.path().join("x.rs"), "fn secret() {}").unwrap();
+    let d = repo(&[("dir/x.rs", "fn a() {}"), ("in/y.rs", "fn b() {}")]);
+    std::fs::remove_dir_all(d.path().join("dir")).unwrap();
+    std::os::unix::fs::symlink(outside.path(), d.path().join("dir")).unwrap();
+    // A directory linked inside the repository still reads.
+    std::fs::remove_dir_all(d.path().join("in")).unwrap();
+    std::fs::create_dir(d.path().join("real")).unwrap();
+    std::fs::write(d.path().join("real/y.rs"), "fn b() {}").unwrap();
+    std::os::unix::fs::symlink("real", d.path().join("in")).unwrap();
+    assert_eq!(paths(&tracked(d.path(), &[]).unwrap()), ["in/y.rs"]);
+}
+
+#[test]
+fn a_conflicted_path_is_listed_once() {
+    let d = repo(&[("a.rs", "fn a() {}\n")]);
+    let id = ["-c", "user.name=t", "-c", "user.email=t@example.com"];
+    let run = |args: &[&str]| git(d.path(), &[&id[..], args].concat());
+    run(&["commit", "-qm", "base"]);
+    run(&["checkout", "-qb", "side"]);
+    std::fs::write(d.path().join("a.rs"), "fn side() {}\n").unwrap();
+    run(&["commit", "-qam", "side"]);
+    run(&["checkout", "-q", "-"]);
+    std::fs::write(d.path().join("a.rs"), "fn main_line() {}\n").unwrap();
+    run(&["commit", "-qam", "main"]);
+    let merged = Command::new("git")
+        .arg("-C")
+        .arg(d.path())
+        .args(id)
+        .args(["merge", "-q", "side"])
+        .output()
+        .unwrap();
+    assert!(!merged.status.success(), "the merge conflicts");
+    assert_eq!(paths(&tracked(d.path(), &[]).unwrap()), ["a.rs"]);
+}
+
 #[test]
 fn a_directory_git_does_not_track_is_refused_as_not_git() {
     let d = tempfile::tempdir().unwrap();
