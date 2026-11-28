@@ -3,7 +3,7 @@
 # core.hooksPath to .githooks): Prettier on staged JS/TS/JSON/YAML, ESLint on the staged files in the `lint`
 # script's scope, `cargo fmt --check` when Rust is staged. Each check runs only when its files are staged; a needed
 # tool that is missing stops the commit with how to install it. It reads the working-tree copy of each staged file.
-# Not the gate: run `npm run gate` before pushing.
+# Not the gate: run `just gate` before pushing.
 set -u
 
 root=$(git rev-parse --show-toplevel) || exit 1

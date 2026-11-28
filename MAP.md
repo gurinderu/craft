@@ -451,7 +451,7 @@ cached-binary queries on macOS/Windows); `tests/lock_interop.rs` exercises both 
 The toolchain is pinned in `cli/rust-toolchain.toml`;
 CI's `rust` job runs `cargo fmt --check`, `cargo clippy` at zero warnings and `cargo test`, and checks that the
 parity files the CLI owns (`verify-cases.json`, `plan-cases.json`, `prompt-cases.json`) regenerate unchanged, apart
-from `npm run gate`. The release build for each of the release's five targets, with the native external-discovery
+from `just gate`. The release build for each of the release's five targets, with the native external-discovery
 tests on it, is `.github/workflows/native-builds.yml`'s `init-native` job: on each push to main and on a pull request
 that touches the build's inputs, not on every pull request. The CLI's version is the plugin's: release-please moves `cli/Cargo.toml` and
 `cli/Cargo.lock` with the manifest, and its `cli-binaries` job attaches `craft-<target>.tar.gz` (the
@@ -489,11 +489,20 @@ binary command for triage. The review, new and not yet observed running in a rea
 runs each task as its own `codex exec --ephemeral -s read-only` process, with the prompt body of the craft agent the
 task names (`integrations/claude-code/agents/`) before the task's prompt.
 
+## Gate
+
+`just gate` runs the root `justfile`'s `gate` group, every step in order, a failed one included, and exits non-zero
+when any failed (`npm run gate` is its alias for one release). Its runner is `cargo xtask gate` (`cli/xtask`, a
+workspace member the release never builds: it builds `-p craft`); `cargo xtask gate-steps`, a step of its own, fails
+when a check `package.json`, `integrations/shared/check-*.mjs`, CI's `test` job, AGENTS.md "Commands" or the justfile
+names is neither a step nor excluded with its reason. The third-party tools are plain justfile lines; craft's own
+checkers are still `integrations/shared/check-*.mjs`, moving into `cli/xtask` one by one.
+
 ## Dev shell
 
 `flake.nix` gives `nix develop` (and direnv, through `.envrc`) the CLI's pinned toolchain from
-`cli/rust-toolchain.toml` with rust-analyzer, Node 22, a C linker for the build scripts, `cargo mutants`, `jq` and
-`nixfmt`, its formatter. CI installs its own tools and does not read it.
+`cli/rust-toolchain.toml` with rust-analyzer, Node 22, a C linker for the build scripts, `cargo mutants`, `just` (the
+gate's runner), `jq` and `nixfmt`, its formatter. CI installs its own tools and does not read it.
 
 ## Layout
 
@@ -518,7 +527,8 @@ craft/
 │   └── pi/                # the pi package's craft-review skill; its craft_review tool is integrations/pi/pi-extension.mjs (new)
 ├── bin/craft              # the sh wrapper Codex, pi and OpenCode run the craft binary of this version through
 ├── content/               # prompts and schemas the engines and the CLI render
-├── cli/                   # the craft Rust CLI
+├── cli/                   # the craft Rust CLI; cli/xtask, the repository's own checks (`cargo xtask`), never shipped
+├── justfile               # the gate: `just gate` runs its gate group through `cargo xtask gate`
 └── skills/                # (abbreviated)
     ├── rust-review/
     ├── rust-testing/
