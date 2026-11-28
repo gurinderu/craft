@@ -59,6 +59,7 @@ fn the_gate_refuses_an_unknown_argument_and_a_missing_justfile() {
     let dir = repo(JUSTFILE);
     let just = fake_just(dir.path(), "", 0);
     assert_eq!(run(dir.path(), &just, &["gate", "--bse"]).code, USAGE);
+    assert_eq!(run(dir.path(), &just, &["gate", "--base", ""]).code, USAGE);
     fs::remove_file(dir.path().join("justfile")).unwrap();
     let r = run(dir.path(), &just, &["gate"]);
     assert_eq!(r.code, FAILED);

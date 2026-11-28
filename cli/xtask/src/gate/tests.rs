@@ -79,4 +79,5 @@ fn gate(steps: &[Recipe], base: Option<&str>, exec: &mut dyn Exec) -> Run {
 }
 
 mod base;
+mod base_steps;
 mod runs;

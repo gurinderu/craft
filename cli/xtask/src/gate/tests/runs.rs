@@ -104,26 +104,6 @@ fn a_step_that_runs_long_prints_its_seconds() {
 }
 
 #[test]
-fn the_base_goes_only_to_the_step_whose_recipe_takes_it() {
-    let mut exec = recorder(|_, _| Status::Exit(0));
-    gate(&steps(), Some("deadbeef"), &mut exec);
-    assert_eq!(
-        exec.ran,
-        [
-            "just lint",
-            "just check-mutation-floor deadbeef",
-            "just test"
-        ]
-    );
-    let mut none = recorder(|_, _| Status::Exit(0));
-    let r = gate(&steps(), None, &mut none);
-    assert_eq!(none.ran[1], "just check-mutation-floor");
-    assert!(r.out.contains(
-        "gate: mutation floor compared with no base (none given, origin/main not found)\n"
-    ));
-}
-
-#[test]
 fn an_empty_gate_is_red() {
     let mut exec = recorder(|_, _| Status::Exit(0));
     let r = gate(&[], None, &mut exec);

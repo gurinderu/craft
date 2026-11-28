@@ -1,4 +1,5 @@
-use super::super::{Options, Status, base, options};
+use super::super::base::Options;
+use super::super::{Status, base, options};
 use super::recorder;
 
 #[test]
@@ -39,6 +40,13 @@ fn reads_base_and_refuses_anything_else() {
         options(&args(&["--base"])),
         Err("--base needs a ref".to_owned())
     );
+    for empty in ["", " "] {
+        assert_eq!(
+            options(&args(&["--base", empty])),
+            Err("--base needs a ref".to_owned()),
+            "{empty:?}"
+        );
+    }
     assert!(
         options(&args(&["--bse", "x"]))
             .unwrap_err()

@@ -8,6 +8,9 @@ use std::time::Duration;
 use crate::exclusions::EXCLUDED;
 use crate::justfile::Recipe;
 
+mod base;
+pub use base::{base, options, takes_base};
+
 /// How one command ended.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Status {
@@ -21,38 +24,6 @@ pub trait Exec {
     fn run(&mut self, cmd: &str, args: &[String], quiet: bool) -> Status;
 }
 
-/// The command line's options.
-#[derive(Debug, PartialEq, Eq)]
-pub struct Options {
-    pub base: Option<String>,
-}
-
-pub fn options(args: &[String]) -> Result<Options, String> {
-    let mut base = None;
-    let mut rest = args.iter();
-    while let Some(arg) = rest.next() {
-        match arg.as_str() {
-            "--base" => base = Some(rest.next().ok_or("--base needs a ref")?.clone()),
-            other => {
-                return Err(format!(
-                    "unknown argument {other}; usage: cargo xtask gate [--base <ref>]"
-                ));
-            }
-        }
-    }
-    Ok(Options { base })
-}
-
-pub const DEFAULT_BASE: &str = "origin/main";
-
-/// The mutation floor's base: the one given, else origin/main when it resolves, else none.
-pub fn base(given: Option<String>, exec: &mut dyn Exec) -> Option<String> {
-    given.or_else(|| {
-        let probe = ["rev-parse", "--verify", "--quiet", "origin/main^{commit}"].map(str::to_owned);
-        (exec.run("git", &probe, true) == Status::Exit(0)).then(|| DEFAULT_BASE.to_owned())
-    })
-}
-
 /// Where the gate's lines go, and its clock: the time since the run began.
 pub struct Io<'a> {
     pub out: &'a mut dyn Write,
@@ -60,17 +31,52 @@ pub struct Io<'a> {
     pub now: &'a mut dyn FnMut() -> Duration,
 }
 
-/// Runs every step; `Ok(true)` when all passed.
+/// Runs every step; `Ok(true)` when all passed. A base that no step takes is red: the floor would not see it.
 pub fn run(
     steps: &[Recipe],
     base: Option<&str>,
     exec: &mut dyn Exec,
     io: &mut Io<'_>,
 ) -> io::Result<bool> {
-    let mut failed: Vec<&str> = Vec::new();
+    let failed = run_steps(steps, base, exec, io)?;
+    let base_unused = report_base(steps, base, io)?;
+    for (key, why) in EXCLUDED {
+        writeln!(io.out, "gate: not a step — {key}: {why}")?;
+    }
+    if steps.is_empty() {
+        writeln!(
+            io.err,
+            "gate: the justfile has no recipe in the gate group: nothing was checked"
+        )?;
+        return Ok(false);
+    }
+    if !failed.is_empty() {
+        writeln!(
+            io.err,
+            "gate: {} of {} steps failed: {}",
+            failed.len(),
+            steps.len(),
+            failed.join(", ")
+        )?;
+    }
+    if failed.is_empty() && !base_unused {
+        writeln!(io.out, "gate: all {} steps passed", steps.len())?;
+        return Ok(true);
+    }
+    Ok(false)
+}
+
+/// Each step in turn, a failed one included; the names of those that failed.
+fn run_steps<'s>(
+    steps: &'s [Recipe],
+    base: Option<&str>,
+    exec: &mut dyn Exec,
+    io: &mut Io<'_>,
+) -> io::Result<Vec<&'s str>> {
+    let mut failed = Vec::new();
     for step in steps {
         let mut args = vec![step.name.clone()];
-        if let (Some(b), true) = (base, step.params.iter().any(|p| p == "base")) {
+        if let (Some(b), true) = (base, takes_base(step)) {
             args.push(b.to_owned());
         }
         writeln!(io.out, "gate: ▶ {} — just {}", step.name, args.join(" "))?;
@@ -91,29 +97,25 @@ pub fn run(
             }
         }
     }
-    let floor = base.unwrap_or("no base (none given, origin/main not found)");
-    writeln!(io.out, "gate: mutation floor compared with {floor}")?;
-    for (key, why) in EXCLUDED {
-        writeln!(io.out, "gate: not a step — {key}: {why}")?;
+    Ok(failed)
+}
+
+/// What the mutation floor was compared with; `true` when a base was set and no step took it.
+fn report_base(steps: &[Recipe], base: Option<&str>, io: &mut Io<'_>) -> io::Result<bool> {
+    match (base, steps.iter().any(takes_base)) {
+        (Some(b), true) => writeln!(io.out, "gate: mutation floor compared with {b}")?,
+        (Some(b), false) => {
+            writeln!(
+                io.err,
+                "gate: the base {b} reached no step: no gate recipe takes a `base` parameter, so the mutation floor was not compared with it"
+            )?;
+            return Ok(true);
+        }
+        (None, _) => writeln!(
+            io.out,
+            "gate: mutation floor compared with no base (none given, origin/main not found)"
+        )?,
     }
-    if steps.is_empty() {
-        writeln!(
-            io.err,
-            "gate: the justfile has no recipe in the gate group: nothing was checked"
-        )?;
-        return Ok(false);
-    }
-    if failed.is_empty() {
-        writeln!(io.out, "gate: all {} steps passed", steps.len())?;
-        return Ok(true);
-    }
-    writeln!(
-        io.err,
-        "gate: {} of {} steps failed: {}",
-        failed.len(),
-        steps.len(),
-        failed.join(", ")
-    )?;
     Ok(false)
 }
 
