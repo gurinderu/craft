@@ -21,8 +21,11 @@ jobs:
       - name: Install opencode plugin deps
         run: npm ci --prefix integrations/opencode/plugin
       # The gate's runner and its completeness check are cli/xtask (`cargo xtask gate`, `cargo xtask gate-steps`), so
-      # the job needs the CLI's toolchain — the same pin as the rust job, which cli/rust-toolchain.toml names.
+      # the job needs the CLI's toolchain — the same pin as the rust job, which cli/rust-toolchain.toml names, with
+      # the components it lists, which rustup would otherwise have to add itself.
       - uses: dtolnay/rust-toolchain@1.99.0
+        with:
+          components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: cli
@@ -97,6 +100,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: cli
+      # cli/xtask's tests run the repository's justfile with just: the same pin as the test job's.
+      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
+        with:
+          just-version: '1.51.0'
       - name: cargo fmt
         run: cargo fmt --check
       - name: cargo clippy
