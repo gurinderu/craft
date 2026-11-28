@@ -495,8 +495,9 @@ task names (`integrations/claude-code/agents/`) before the task's prompt.
 when any failed (`npm run gate` is its alias for one release). Its runner is `cargo xtask gate` (`cli/xtask`, a
 workspace member the release never builds: it builds `-p craft`); `cargo xtask gate-steps`, a step of its own, fails
 when a check `package.json`, `integrations/shared/check-*.mjs`, CI's `test` job, AGENTS.md "Commands" or the justfile
-names is neither a step nor excluded with its reason. The third-party tools are plain justfile lines; craft's own
-checkers are still `integrations/shared/check-*.mjs`, moving into `cli/xtask` one by one.
+names is neither a step nor excluded with its reason. Each step is `npm run --silent <package.json script>` or
+`cd cli && cargo xtask <check>`, nothing else; craft's own checkers are still `integrations/shared/check-*.mjs`,
+reached through their scripts, moving into `cli/xtask` one by one.
 
 ## Dev shell
 
