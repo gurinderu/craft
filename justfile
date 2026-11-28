@@ -6,10 +6,13 @@
 # A step standing for a package.json script is exactly that script's command (gate-steps holds them equal).
 # Every gate recipe, `gate` included, is held to a small form so an edit that could hide a failure fails gate-steps
 # loudly (cli/xtask/src/allowlist.rs): one line; no dependency; no attribute but [group('gate')] and [doc(...)];
-# words and quoted strings joined by `&&`, with only `2>&1`, `>&2` and `>file`; `"$@"`, `"$1"` and
-# `${1:+--base "$1"}` only in a recipe that takes a parameter; no `{{`, no `-`/`@` prefix, no other shell or `just`.
-# The only setting this file may carry is `set positional-arguments`, and it imports nothing. Not a sandbox: an
-# author set on bypassing it can edit the xtask too.
+# parameters only a name, *name/+name or a literal default; commands joined by `&&`, each one of the commands used
+# below (cd, cargo, node, npm, npx, python3, prettier, eslint, vitest, depcruise, knip and the plugin's tsc), with
+# no environment assignment and no inline-code flag (node -e/-p/-r/--import, python3 -c, npm/npx -c); words and
+# quoted strings, with only `2>&1`, `>&2` and `>file`; `"$@"`, `"$1"` and `${1:+--base "$1"}` only in a recipe
+# that takes a parameter; no `{{` and no `-`/`@` prefix. Besides its recipes this file holds only
+# `set positional-arguments` and the `export PATH` below. Not a sandbox: an author set on bypassing it can edit
+# the xtask too.
 # `just gate --base <ref>` hands the base to the one step whose recipe takes `base`; a base no step takes is red.
 # Needs `npm ci` and `npm ci --prefix integrations/opencode/plugin`, and cargo for the xtask.
 

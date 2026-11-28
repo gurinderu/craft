@@ -80,7 +80,7 @@ fn a_header_names_a_recipe_only_by_just_s_name_characters() {
         ("@quiet:", "quiet"),
     ] {
         assert_eq!(
-            header(line).map(|(n, _, _)| n).as_deref(),
+            header(line).map(|h| h.name).as_deref(),
             Some(name),
             "{line}"
         );
@@ -94,7 +94,7 @@ fn a_header_names_a_recipe_only_by_just_s_name_characters() {
         "set shell := ['sh']",
         "export X := '1'",
     ] {
-        assert_eq!(header(line), None, "{line}");
+        assert!(header(line).is_none(), "{line}");
     }
 }
 
@@ -126,7 +126,8 @@ fn reads_attributes_dependencies_and_directives() {
         [
             "set positional-arguments",
             "set shell := ['bash']",
-            "import 'x.just'"
+            "import 'x.just'",
+            "export A := '1'"
         ]
     );
 }

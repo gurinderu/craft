@@ -11,6 +11,7 @@ fn step(name: &str, body: &str) -> Recipe {
         groups: vec!["gate".to_owned()],
         attributes: vec!["group('gate')".to_owned()],
         dependencies: String::new(),
+        param_words: Vec::new(),
         body: vec![body.to_owned()],
     }
 }

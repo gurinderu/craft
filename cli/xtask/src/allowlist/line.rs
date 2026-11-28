@@ -1,13 +1,9 @@
 //! One gate line held to the form `crate::allowlist` describes.
 
+use super::commands;
+
 /// The one expansion allowed outside quotes: the mutation floor's base, when given.
 const FLOOR_BASE: &str = "${1:+--base \"$1\"}";
-
-/// Commands that would run another shell or recipe, out of this reading's sight.
-const SHELLS: [&str; 13] = [
-    "just", "sh", "bash", "zsh", "dash", "ksh", "fish", "eval", "exec", "source", ".", "env",
-    "command",
-];
 
 /// Whether `line` is commands joined by `&&`, each words and allowed redirections.
 pub(super) fn check_line(line: &str, takes_params: bool) -> Result<(), String> {
@@ -20,6 +16,7 @@ pub(super) fn check_line(line: &str, takes_params: bool) -> Result<(), String> {
     }
     let mut rest = line;
     let mut command_next = true;
+    let mut current = "";
     loop {
         rest = rest.trim_start();
         if rest.is_empty() {
@@ -40,26 +37,16 @@ pub(super) fn check_line(line: &str, takes_params: bool) -> Result<(), String> {
                 return Err(format!("`{}`", rest.chars().next().unwrap_or(' ')));
             }
             if command_next {
-                command_word(word, plain)?;
+                current = commands::command(word, plain)?;
                 command_next = false;
+            } else {
+                commands::argument(current, word)?;
             }
             rest = after;
         }
     }
     if command_next {
         return Err("an empty command".to_owned());
-    }
-    Ok(())
-}
-
-/// A command must be a plain word, and not just or another shell.
-fn command_word(word: &str, plain: bool) -> Result<(), String> {
-    if !plain {
-        return Err(format!("the quoted or expanded command `{word}`"));
-    }
-    let base = word.rsplit('/').next().unwrap_or(word);
-    if SHELLS.contains(&base) {
-        return Err(format!("`{word}` runs another shell or recipe"));
     }
     Ok(())
 }

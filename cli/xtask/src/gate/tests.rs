@@ -41,6 +41,7 @@ fn step(name: &str, params: &[&str]) -> Recipe {
         groups: vec!["gate".to_owned()],
         attributes: vec!["group('gate')".to_owned()],
         dependencies: String::new(),
+        param_words: Vec::new(),
         body: Vec::new(),
     }
 }

@@ -11,6 +11,8 @@ use syntax::{attributes_in, groups_in, header};
 pub struct Recipe {
     pub name: String,
     pub params: Vec<String>,
+    /// The parameters as written (`*args`, `base=""`).
+    pub param_words: Vec<String>,
     pub groups: Vec<String>,
     /// Each attribute as written, its inner whitespace dropped (`group('gate')`, `script:'sh'`).
     pub attributes: Vec<String>,
@@ -75,13 +77,14 @@ pub fn recipes(text: &str) -> Vec<Recipe> {
             attributes.extend(attributes_in(inner));
             continue;
         }
-        if let Some((name, params, dependencies)) = header(line) {
+        if let Some(h) = header(line) {
             found.push(Recipe {
-                name,
-                params,
+                name: h.name,
+                params: h.params,
+                param_words: h.param_words,
                 groups: std::mem::take(&mut groups),
                 attributes: std::mem::take(&mut attributes),
-                dependencies,
+                dependencies: h.dependencies,
                 body: Vec::new(),
             });
             open = true;
