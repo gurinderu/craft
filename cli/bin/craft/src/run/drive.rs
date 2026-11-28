@@ -17,7 +17,7 @@ use tokio::task::block_in_place;
 use super::HostKind;
 use super::ending::{Caught, Ending, recovered};
 use super::events::Event;
-use super::protocol::{Protocol, Said};
+use super::protocol::{Lifecycle, Protocol, Said};
 use super::report::resume_hint;
 use super::round::{RoundCtx, RoundResult, run_round};
 use super::task::{Task, tasks_of};
@@ -43,10 +43,15 @@ impl<P> Driver<'_, P> {
     fn emit(&self, event: Event) {
         (self.round.emit)(event);
     }
+}
 
+impl<P: Protocol> Driver<'_, P> {
     pub(crate) fn hint(&self, run: &Path) -> String {
         let run = run.display().to_string();
-        resume_hint(&run, &(self.again)(&run))
+        match self.proto.lifecycle() {
+            Lifecycle::Review => resume_hint(&run, &(self.again)(&run)),
+            Lifecycle::Triage => format!("To resume it: {}.", (self.again)(&run)),
+        }
     }
 }
 
@@ -60,6 +65,7 @@ pub(crate) struct Running {
     /// A round in which no task answered.
     pub(crate) all_died: bool,
     pub(crate) lost: Lost,
+    pub(crate) limit: Option<String>,
 }
 
 pub(crate) fn is_done(step: &Value) -> bool {
@@ -72,6 +78,7 @@ pub(crate) async fn steps<P: Protocol>(
     resume: Option<&Path>,
     r: &mut Running,
 ) -> Ending {
+    let name = d.proto.lifecycle().name();
     let first = match resume {
         Some(run) => d.proto.submit(
             run,
@@ -94,12 +101,16 @@ pub(crate) async fn steps<P: Protocol>(
         (Ok(s), _) => s,
         (Err(e), Some(code)) => return ending(code, Some(format!("{e:#}"))),
         (Err(e), None) => {
-            return Ending::Stopped(format!("review could not {doing}: {e:#}"), StopCause::Start);
+            if let Some(run) = resume.filter(|_| d.proto.lifecycle() == Lifecycle::Triage) {
+                r.run = Some(run.to_owned());
+                return recovered(d, run, &format!("{e:#}"), r);
+            }
+            return Ending::Stopped(format!("{name} could not {doing}: {e:#}"), StopCause::Start);
         }
     };
     let Some(run) = step.get("run").and_then(Value::as_str).map(PathBuf::from) else {
         return Ending::Stopped(
-            format!("review could not {doing}: the step names no run directory"),
+            format!("{name} could not {doing}: the step names no run directory"),
             StopCause::Start,
         );
     };
@@ -123,7 +134,7 @@ pub(crate) async fn steps<P: Protocol>(
                     let hint = d.hint(&run);
                     return Ending::Stopped(
                         format!(
-                            "review cannot run its tasks: {why}. The run is in {}. {hint}",
+                            "{name} cannot run its tasks: {why}. The run is in {}. {hint}",
                             run.display()
                         ),
                         StopCause::Host,
@@ -185,15 +196,16 @@ async fn rounds<P: Protocol>(
     r: &mut Running,
 ) -> Ending {
     let mut last_phase = String::new();
+    let name = d.proto.lifecycle().name();
     for round in 1.. {
-        if is_done(&at) {
+        if d.proto.lifecycle().terminal(&at) {
             return Ending::Finished(at);
         }
         if round > MAX_ROUNDS {
             let hint = d.hint(run);
             return Ending::Stopped(
                 format!(
-                    "review gave up after {MAX_ROUNDS} rounds; the run is in {}. {hint}",
+                    "{name} gave up after {MAX_ROUNDS} rounds; the run is in {}. {hint}",
                     run.display()
                 ),
                 StopCause::Rounds,
@@ -228,7 +240,7 @@ async fn rounds<P: Protocol>(
             Err(e) => return recovered(d, run, &format!("{e:#}"), r),
         }
     }
-    Ending::Stopped("review ran out of rounds".into(), StopCause::Rounds)
+    Ending::Stopped(format!("{name} ran out of rounds"), StopCause::Rounds)
 }
 
 /// A round's start, said: the phase when it moved, then the round and its tasks.
@@ -269,6 +281,9 @@ fn heard(r: &mut Running, res: RoundResult) -> (Said, Option<String>) {
         *r.said.entry(line).or_default() += 1;
     }
     r.all_died |= res.all_died;
+    if res.limit.is_some() {
+        r.limit.clone_from(&res.limit);
+    }
     let said = Said {
         degraded: res.degraded,
         abandoned: res.abandoned,

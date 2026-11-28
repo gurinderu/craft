@@ -370,7 +370,13 @@ fn ready_of(argv: &[&str], json: bool) -> Result<super::super::host::Host, Strin
     let cli = Cli::try_parse_from([&["craft", "--craft-root", root], argv].concat())
         .map_err(|e| e.to_string())?;
     let sink = super::super::events::Sink { json };
-    super::super::ready(&cli.run, std::path::Path::new("/nowhere"), sink).map(|(_, host, _)| host)
+    super::super::ready(
+        &cli.run.host,
+        cli.run.start.craft_root.as_deref(),
+        std::path::Path::new("/nowhere"),
+        sink,
+    )
+    .map(|(_, host, _)| host)
 }
 
 #[test]

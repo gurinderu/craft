@@ -27,6 +27,10 @@ pub(crate) struct Said {
 
 /// The binary's side of the loop.
 pub(crate) trait Protocol {
+    /// The lifecycle around the shared host/step loop.
+    fn lifecycle(&self) -> Lifecycle {
+        Lifecycle::Review
+    }
     /// Opens the run: its first step; a stop asked through `cancel` cuts its gate, sources and
     /// consumers list short, each saying so.
     fn start(&self, cancel: &Cancel) -> Result<Value>;
@@ -39,6 +43,26 @@ pub(crate) trait Protocol {
     /// Files the INCOMPLETE record of a run the loop stopped driving, `not_run` saying why: what
     /// did not land; `None` when nothing was filed.
     fn unfinished(&self, run: &Path, not_run: &[&str]) -> Option<Vec<String>>;
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Lifecycle {
+    Review,
+    Triage,
+}
+
+impl Lifecycle {
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            Self::Review => "review",
+            Self::Triage => "triage",
+        }
+    }
+
+    pub(crate) fn terminal(self, step: &Value) -> bool {
+        super::drive::is_done(step)
+            || (self == Self::Triage && step.get("stopped").is_some_and(Value::is_object))
+    }
 }
 
 /// The protocol in this process: the commands' own functions.

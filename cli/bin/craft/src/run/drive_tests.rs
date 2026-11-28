@@ -252,7 +252,11 @@ impl Bench {
         Fake::new(&self.path("run"), tasks)
     }
 
-    async fn drive(&self, fake: &Fake) -> Answer {
+    async fn drive(&self, fake: &impl Protocol) -> Answer {
+        self.drive_from(fake, None).await
+    }
+
+    async fn drive_from(&self, fake: &impl Protocol, resume: Option<&Path>) -> Answer {
         let models: ModelTable = [("opus".to_owned(), "big".to_owned())]
             .into_iter()
             .collect();
@@ -302,7 +306,7 @@ impl Bench {
                 round,
                 again: &again,
             },
-            None,
+            resume,
             false,
         )
         .await
@@ -625,6 +629,9 @@ mod opencode;
 
 #[path = "start_stop_tests.rs"]
 mod start_stop;
+
+#[path = "triage/recovery_tests.rs"]
+mod triage;
 
 #[tokio::test]
 async fn the_tasks_run_in_the_worktree_the_step_names_and_the_answer_names_it() {

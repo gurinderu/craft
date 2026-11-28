@@ -46,6 +46,9 @@ pub struct Args {
     /// Where the binary files its record (`start --record`); none, and nothing is filed.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub record: Option<Recording>,
+    /// The native host at start; old and step-command runs keep `claude-code` (#513).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runtime: Option<String>,
 }
 
 /// What the binary files the run's record with: the craft plugin root its `craftCommit` is read

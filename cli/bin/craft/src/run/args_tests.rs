@@ -1,6 +1,7 @@
 use clap::Parser;
 
 use super::*;
+use crate::run::RunArgs;
 
 #[derive(Parser)]
 struct Cli {
@@ -15,7 +16,7 @@ fn host(argv: &[&str], vars: &[(&str, &str)]) -> Result<Host, String> {
             .find(|(k, _)| *k == what)
             .map(|(_, v)| (*v).to_owned())
     };
-    host_with(&cli.run, &env)
+    host_with(&cli.run.host, &env)
 }
 
 #[test]
