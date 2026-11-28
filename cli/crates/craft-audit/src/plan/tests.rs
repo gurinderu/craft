@@ -93,6 +93,23 @@ fn only_an_answered_task_reads_its_job_and_a_pass_buys_the_rest_in_order_up_to_i
     let todo = unanswered(all.clone(), &tasks);
     assert_eq!(todo.len(), all.len() - 1);
     assert_eq!(&todo[0], second);
-    assert_eq!(buy(todo.clone(), Some(2)), todo[..2]);
-    assert_eq!(buy(todo.clone(), None), todo);
+    assert_eq!(buy(todo.clone(), &[], Some(2)), todo[..2]);
+    assert_eq!(buy(todo.clone(), &[], None), todo);
+}
+
+#[test]
+fn a_pass_buys_the_jobs_never_tried_first_then_the_least_tried_each_tie_in_job_order() {
+    let all = jobs(&scouted(), &profiles().unwrap());
+    let (a, b, c, d) = (&all[0], &all[1], &all[2], &all[3]);
+    let tasks = [
+        task(a, TaskState::Failed),
+        task(a, TaskState::Failed),
+        task(b, TaskState::Failed),
+    ];
+    let todo = vec![a.clone(), b.clone(), c.clone(), d.clone()];
+    assert_eq!(buy(todo.clone(), &tasks, Some(2)), [c.clone(), d.clone()]);
+    assert_eq!(
+        buy(todo, &tasks, None),
+        [c.clone(), d.clone(), b.clone(), a.clone()]
+    );
 }

@@ -1,8 +1,9 @@
 //! The lens agents an audit needs and the ones a pass buys: one job per lens an audit runs
 //! ([`crate::lenses`]) over each batch of its profile's part, but a lens that reads none of the
 //! batch's files (the general profile's per-file lenses read no data file). A pass buys the jobs
-//! not yet answered, in order, as many as its budget allows; no job is sampled away, a job not
-//! bought leaves its files unread, and the next pass buys it.
+//! not yet answered, the least tried first and else in order, as many as its budget allows; no job
+//! is sampled away, a job not bought leaves its files unread, and a later pass buys it — never
+//! behind a job that fails each time it is bought.
 
 use craft_review::profile::Profile;
 use craft_step::TaskState;
@@ -99,9 +100,17 @@ pub fn unanswered(all: Vec<Job>, tasks: &[Task]) -> Vec<Job> {
     all.into_iter().filter(|j| !answered(tasks, j)).collect()
 }
 
-/// The jobs a pass buys of `todo`: the first `budget` of them, every one without a budget.
+/// How many tasks `tasks` handed out for `job`.
+fn tries(tasks: &[Task], job: &Job) -> usize {
+    let kind = job.kind();
+    tasks.iter().filter(|t| t.kind == kind).count()
+}
+
+/// The jobs a pass buys of `todo`: `budget` of them, every one without a budget — those never
+/// tried first, then by fewest tries, each tie in job order.
 #[must_use]
-pub fn buy(todo: Vec<Job>, budget: Option<usize>) -> Vec<Job> {
+pub fn buy(mut todo: Vec<Job>, tasks: &[Task], budget: Option<usize>) -> Vec<Job> {
+    todo.sort_by_key(|j| tries(tasks, j));
     match budget {
         Some(n) => todo.into_iter().take(n).collect(),
         None => todo,

@@ -19,7 +19,7 @@ pub(super) fn open_pass(s: &mut AuditState, profiles: &[Profile]) -> Result<(), 
     let ctx = prompts::context(s);
     let schema = prompts::lens_schema()?;
     let todo = plan::unanswered(plan::jobs(&s.scout, profiles), &s.tasks);
-    for job in plan::buy(todo, s.args.lens_agents) {
+    for job in plan::buy(todo, &s.tasks, s.args.lens_agents) {
         let (Some(p), Some(b)) = (
             plan::profile(profiles, &job.profile),
             plan::batch(&s.scout, &job),

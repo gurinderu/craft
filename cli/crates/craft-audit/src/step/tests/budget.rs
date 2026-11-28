@@ -109,3 +109,30 @@ fn a_finished_audit_submitted_without_resume_is_refused_as_done() {
     let got = submit(&s.run, None, &Said::default(), &w);
     assert!(matches!(got, Err(AuditError::Done(_))), "{got:?}");
 }
+
+#[test]
+fn a_job_whose_agent_dies_each_pass_never_starves_the_jobs_never_tried() {
+    let s = scratch(&FILES);
+    let w = Fake::default();
+    let mut step = open(&s, args(Some(1)), &w);
+    let mut bought: Vec<String> = Vec::new();
+    for pass in 1..=3 {
+        let dead = ids(&step);
+        assert_eq!(dead.len(), 1, "{step}");
+        let job = dead[0]
+            .strip_prefix(&format!("lens-{pass}-"))
+            .unwrap()
+            .to_owned();
+        assert!(
+            !bought.contains(&job),
+            "pass {pass} bought {job} again: {bought:?}"
+        );
+        bought.push(job);
+        let said = Said {
+            abandoned: &dead,
+            ..Said::default()
+        };
+        assert_eq!(next(&s.run, &w, &said)["verdict"], "INCOMPLETE");
+        step = next(&s.run, &w, &RESUME);
+    }
+}
