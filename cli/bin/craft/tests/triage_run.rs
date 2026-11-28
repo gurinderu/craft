@@ -110,6 +110,11 @@ fn absent_or_malformed_answers_and_a_failed_plan_never_succeed() {
             assert!(!plan["notRun"].as_array().unwrap().is_empty());
         }
         assert_eq!(b.index().len(), 1, "no fallback review record");
+        assert_eq!(
+            read(&b.path("run/record.json"))["runtime"],
+            "codex",
+            "{mode}"
+        );
     }
 }
 

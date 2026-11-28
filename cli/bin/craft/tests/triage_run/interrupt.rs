@@ -129,7 +129,12 @@ fn a_signal_stops_the_host_group_without_filing_a_review_then_resumes() {
             assert!(gone, "{file} outlived craft");
         }
         b.expect(&out, code);
-        assert!(String::from_utf8_lossy(&out.stdout).contains("To resume it"));
+        let hint = format!(
+            "To resume it: `craft triage run --backend codex --run '{}'`.",
+            b.path("run").display()
+        );
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(stdout.contains(&hint), "{stdout}");
         assert!(b.index().is_empty());
         assert!(!b.path("run/record.json").exists());
         assert_eq!(read(&b.path("run/state.json"))["tasks"][0]["retries"], 0);

@@ -68,6 +68,12 @@ async fn lost_submit_and_lost_resume_recover_a_stop_before_a_stale_plan_even_wit
         let a = b.drive_from(&f, resume.then_some(dir.as_path())).await;
         assert!(!a.finished);
         assert!(a.text.contains("wait until tomorrow"), "{}", a.text);
+        assert!(
+            a.text
+                .contains("the step after the stop — lost submit response"),
+            "{}",
+            a.text
+        );
         assert!(!a.text.contains("final triage plan") && !a.text.contains("STALE"));
         assert!(a.step.as_ref().unwrap().get("planFile").is_none());
         assert_eq!(f.calls.borrow().len(), 1);
@@ -140,5 +146,11 @@ async fn failed_refiling_keeps_the_confirmed_plan_and_names_the_missing_record()
     let a = b.drive(&f).await;
     assert!(a.finished, "{}", a.text);
     assert!(a.text.contains("record — unavailable") && a.text.contains("filed again"));
+    for lost in [
+        "the lost step — lost submit response",
+        "the record's refiling — lost submit response",
+    ] {
+        assert!(a.text.contains(lost), "{}", a.text);
+    }
     assert_eq!(f.calls.borrow().len(), 2);
 }

@@ -18,8 +18,10 @@ pub(crate) fn recovered<P: Protocol>(
         Ok(s) => s,
         Err(e) => return unavailable(error, &format!("status unavailable: {e:#}"), r),
     };
-    // status of a held triage says done=false: the stop still wins over every file.
+    // status of a held triage says done=false: the stop still wins over every file. The stop on
+    // disk need not explain the step that failed, so that failure is named beside it.
     if status.get("stopped").is_some_and(Value::is_object) {
+        r.lost.note("the step after the stop", error, &|l| d.log(l));
         return Ending::Finished(status);
     }
     if !is_done(&status) {
@@ -32,20 +34,24 @@ pub(crate) fn recovered<P: Protocol>(
     let refile = status
         .get("filing")
         .is_some_and(|f| text(f, "record") != "filed");
-    let again = refile
-        .then(|| {
-            d.proto
-                .submit(
-                    run,
-                    &Said {
-                        resume: true,
-                        ..Said::default()
-                    },
-                )
-                .ok()
-        })
-        .flatten()
-        .filter(|s| d.proto.lifecycle().terminal(s));
+    let again = if refile {
+        r.lost.note("the lost step", error, &|l| d.log(l));
+        let said = Said {
+            resume: true,
+            ..Said::default()
+        };
+        match d.proto.submit(run, &said) {
+            Ok(s) if d.proto.lifecycle().terminal(&s) => Some(s),
+            Ok(_) => None,
+            Err(e) => {
+                r.lost
+                    .note("the record's refiling", &format!("{e:#}"), &|l| d.log(l));
+                None
+            }
+        }
+    } else {
+        None
+    };
     let last = again.unwrap_or(status);
     r.lost.heard(&last, &|l| d.log(l));
     Ending::Finished(last)

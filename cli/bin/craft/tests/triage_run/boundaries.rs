@@ -53,31 +53,46 @@ fn invalid_or_missing_terminal_plan_is_failure_without_a_fallback_record() {
 
 #[test]
 fn delegate_stdin_conflict_and_run_dir_conflict_are_refused_before_host() {
-    for args in [
-        vec![
-            "--delegate",
-            "--agents",
-            "review-task",
-            "--prior-ledger",
-            "-",
-            "--report",
-            "r",
-        ],
-        vec!["--run", "r", "--run-dir", "s"],
-        vec!["--repo", "relative", "--report", "r"],
-        vec![
-            "--report",
-            "r",
-            "--prior-decisions",
-            "-",
-            "--delegate",
-            "--agents",
-            "review-task",
-        ],
+    let stdin = "--delegate cannot share stdin";
+    for (args, said) in [
+        (
+            vec![
+                "--delegate",
+                "--agents",
+                "review-task",
+                "--prior-ledger",
+                "-",
+                "--report",
+                "r",
+            ],
+            Some(stdin),
+        ),
+        (vec!["--run", "r", "--run-dir", "s"], Some("--run-dir")),
+        (vec!["--repo", "relative", "--report", "r"], None),
+        (
+            vec![
+                "--report",
+                "r",
+                "--prior-decisions",
+                "-",
+                "--delegate",
+                "--agents",
+                "review-task",
+            ],
+            Some(stdin),
+        ),
     ] {
         let b = Bench::new();
-        let out = b.command("opencode", "ok").args(args).output().unwrap();
+        let out = b.command("opencode", "ok").args(&args).output().unwrap();
         b.expect(&out, 2);
+        if let Some(said) = said {
+            let said_out =
+                [&out.stdout, &out.stderr].map(|o| String::from_utf8_lossy(o).into_owned());
+            assert!(
+                said_out.iter().any(|o| o.contains(said)),
+                "{args:?}: {said_out:?}"
+            );
+        }
         assert!(b.calls().is_empty());
     }
 }
