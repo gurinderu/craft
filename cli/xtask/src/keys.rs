@@ -40,8 +40,37 @@ impl Keys {
         })
     }
 
-    /// The keys `text` names.
+    /// The keys `text` names, a script by its name or by its command anywhere in `text`.
     pub fn of(&self, text: &str) -> BTreeSet<String> {
+        let mut keys = self.named(text);
+        // Longest body first, each match removed: `knip --no-progress` must not match inside
+        // `knip --no-progress --production`.
+        let mut rest = text.to_owned();
+        for (name, body) in &self.scripts {
+            if rest.contains(body.as_str()) {
+                keys.insert(format!("script:{name}"));
+                rest = rest.replace(body.as_str(), " ");
+            }
+        }
+        keys
+    }
+
+    /// The keys a gate step's commands name: a script by its name, or by its command only when the step's
+    /// commands are exactly that command — one with a flag appended or a failure masked stands for no script.
+    pub fn of_step(&self, commands: &str) -> BTreeSet<String> {
+        let mut keys = self.named(commands);
+        let commands = commands.trim();
+        keys.extend(
+            self.scripts
+                .iter()
+                .filter(|(_, body)| body.trim() == commands)
+                .map(|(name, _)| format!("script:{name}")),
+        );
+        keys
+    }
+
+    /// Every key but a script spelled out.
+    fn named(&self, text: &str) -> BTreeSet<String> {
         let mut keys = BTreeSet::new();
         for m in self.npm.captures_iter(text) {
             if let Some(name) = m.get(1).or_else(|| m.get(2)) {
@@ -54,15 +83,6 @@ impl Keys {
         for cmd in KNOWN_COMMANDS {
             if text.contains(cmd) {
                 keys.insert(format!("cmd:{cmd}"));
-            }
-        }
-        // Longest body first, each match removed: `knip --no-progress` must not match inside
-        // `knip --no-progress --production`.
-        let mut rest = text.to_owned();
-        for (name, body) in &self.scripts {
-            if rest.contains(body.as_str()) {
-                keys.insert(format!("script:{name}"));
-                rest = rest.replace(body.as_str(), " ");
             }
         }
         keys

@@ -17,8 +17,28 @@ impl Recipe {
         self.groups.iter().any(|g| g == group)
     }
 
+    /// The body's commands: a line ending in `\\` joined to the next, as just joins them.
+    pub fn commands(&self) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        let mut open = false;
+        for line in &self.body {
+            let (text, continues) = line
+                .strip_suffix('\\')
+                .map_or((line.as_str(), false), |t| (t, true));
+            match (open, out.last_mut()) {
+                (true, Some(last)) => {
+                    last.push(' ');
+                    last.push_str(text.trim());
+                }
+                _ => out.push(text.trim().to_owned()),
+            }
+            open = continues;
+        }
+        out
+    }
+
     pub fn body_text(&self) -> String {
-        self.body.join("\n")
+        self.commands().join("\n")
     }
 }
 

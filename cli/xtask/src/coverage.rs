@@ -16,6 +16,8 @@ pub struct Report {
     pub repeated: Vec<String>,
     /// Steps covering nothing another step does not.
     pub redundant: Vec<String>,
+    /// `step: line` of each gate line whose failure cannot fail the step.
+    pub masked: Vec<String>,
     pub no_steps: bool,
 }
 
@@ -27,7 +29,7 @@ impl Report {
 
 /// What a step covers: its own recipe, what its body names, and what a script its body names names.
 fn covers(step: &Recipe, keys: &Keys) -> BTreeSet<String> {
-    let ran = keys.of(&step.body_text());
+    let ran = keys.of_step(&step.body_text());
     let mut out: BTreeSet<String> = ran
         .iter()
         .filter_map(|k| k.strip_prefix("script:"))
@@ -80,13 +82,36 @@ pub fn check(
         })
         .map(|(_, (step, _))| step.name.clone())
         .collect();
+    let masked = steps
+        .iter()
+        .flat_map(|s| {
+            s.commands()
+                .into_iter()
+                .filter(|l| masks_failure(l))
+                .map(move |l| format!("{}: {l}", s.name))
+        })
+        .collect();
     Report {
         uncovered,
+        masked,
         stale,
         repeated,
         redundant,
         no_steps: steps.is_empty(),
     }
+}
+
+/// A line just runs without failing the recipe (`-`, before or after `@`), or that ends in a command that
+/// always succeeds (`|| true`, `; true`, and `:` for `true`).
+pub fn masks_failure(line: &str) -> bool {
+    let line = line.trim();
+    if line.trim_start_matches('@').starts_with('-') {
+        return true;
+    }
+    let compact: String = line.chars().filter(|c| !c.is_whitespace()).collect();
+    ["||true", ";true", "||:", ";:"]
+        .iter()
+        .any(|tail| compact.ends_with(tail))
 }
 
 #[cfg(test)]

@@ -68,6 +68,12 @@ fn print(report: &Report, err: &mut dyn Write) -> io::Result<()> {
             "gate-steps: a step covering no named check another step does not: {name}"
         )?;
     }
+    for line in &report.masked {
+        writeln!(
+            err,
+            "gate-steps: a gate line whose failure cannot fail its step: {line}"
+        )?;
+    }
     if report.no_steps {
         writeln!(
             err,

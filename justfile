@@ -1,9 +1,11 @@
 # The gate as one call: `just gate` runs every recipe in the `gate` group below, in this order, a failed one
 # included, prints each one's result and exits non-zero when any failed (`cargo xtask gate`, cli/xtask).
-# `just gate --base <ref>` names the mutation floor's base; without it, origin/main when it resolves.
+# Without `--base`, the mutation floor's base is origin/main when it resolves.
 # `cargo xtask gate-steps` (the `gate-steps` step) fails when a check package.json, integrations/shared/check-*.mjs,
 # CI's `test` job, AGENTS.md "Commands" or this file names is neither a step here nor excluded with its reason.
-# A step that runs a package.json script spells its command as the script does, so the two cannot drift apart.
+# A step standing for a package.json script is exactly that script's command (gate-steps holds them equal), and
+# no gate line may ignore its own failure: no `-` prefix, no trailing `|| true` or `; true`.
+# `just gate --base <ref>` hands the base to the one step whose recipe takes `base`; a base no step takes is red.
 # Needs `npm ci` and `npm ci --prefix integrations/opencode/plugin`, and cargo for the xtask.
 
 set positional-arguments
