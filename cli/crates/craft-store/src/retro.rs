@@ -13,7 +13,7 @@ use crate::tally::{Tally, round2};
 mod kinds;
 mod rounds;
 
-pub use kinds::Kind;
+pub use kinds::{Deferred, Kind};
 pub use rounds::{Apart, Round};
 
 /// One lens's yield over the runs it ran in.
@@ -46,6 +46,8 @@ pub struct Retro {
     pub workflows: BTreeMap<String, Tally>,
     /// The runs by kind: the workflow, a review's depth and lens scope ([`kinds`]).
     pub kinds: BTreeMap<String, Kind>,
+    /// The runs filed in parts whose cost waits for [`settle`].
+    pub deferred: Vec<Deferred>,
     pub engines: BTreeMap<String, u64>,
     pub lenses: BTreeMap<String, Lens>,
     pub not_run: BTreeMap<String, u64>,
@@ -183,7 +185,7 @@ fn finished_of(
     version: &str,
     records: impl IntoIterator<Item = Obj>,
     retro: &mut Retro,
-) -> Result<Vec<Obj>, Utf16Error> {
+) -> Result<(Vec<Obj>, crate::parts::Parts), Utf16Error> {
     let records: Vec<Obj> = records.into_iter().collect();
     let mut parts = crate::parts::Parts::default();
     let live = |r: &Obj| {
@@ -213,7 +215,12 @@ fn finished_of(
     let before = kept.len();
     let folded = fold_runs(kept);
     retro.folded += u64::try_from(before - folded.len()).unwrap_or(u64::MAX);
-    Ok(folded)
+    Ok((folded, parts))
+}
+
+/// Prices the runs filed in parts once every record is read, by their parts' shares summed once.
+pub fn settle(retro: &mut Retro, parts: &crate::parts::Parts) {
+    kinds::settle(&mut retro.kinds, std::mem::take(&mut retro.deferred), parts);
 }
 
 /// The retro of `version` over every record.
@@ -221,9 +228,11 @@ fn finished_of(
 /// When a report field cannot be represented as Unicode.
 pub fn retro(version: &str, records: impl IntoIterator<Item = Obj>) -> Result<Retro, Utf16Error> {
     let mut out = Retro::default();
-    for r in finished_of(version, records, &mut out)? {
+    let (finished, parts) = finished_of(version, records, &mut out)?;
+    for r in finished {
         add_record(&mut out, &r)?;
     }
+    settle(&mut out, &parts);
     Ok(out)
 }
 
@@ -245,7 +254,7 @@ pub fn add_record(out: &mut Retro, r: &Obj) -> Result<(), Utf16Error> {
     } else {
         name
     };
-    kinds::add(r, &name, &mut out.kinds)?;
+    kinds::add(r, &name, &mut out.kinds, &mut out.deferred)?;
     let w = out.workflows.entry(name).or_default();
     w.add(r);
     let verdict = r.get("verdict").filter(|v| v.truthy()).map(Js::to_js_text);

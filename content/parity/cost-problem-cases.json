@@ -1,0 +1,808 @@
+{
+  "about": "Which stored costs a reader takes as usable (`costProblem`): the JavaScript rule in integrations/shared/run-record.mjs and the binary's in cli/crates/craft-store/src/cost/problem.rs are both held to these cases (realm @nick/craft, #357, #393, #658). Edited by hand; `folds` are a run filed in parts and the cost its standing record is priced by (`summedCost` in integrations/shared/run-parts.mjs, the binary's cli/crates/craft-store/src/cost/fold.rs).",
+  "cases": [
+    {
+      "name": "no cost at all",
+      "problem": "missing"
+    },
+    {
+      "name": "a null cost",
+      "problem": "missing",
+      "cost": null
+    },
+    {
+      "name": "a cost that is an array",
+      "problem": "malformed",
+      "cost": [
+        1
+      ]
+    },
+    {
+      "name": "a cost that is a string",
+      "problem": "malformed",
+      "cost": "4"
+    },
+    {
+      "name": "an object with none of the measured fields",
+      "problem": "malformed",
+      "cost": {
+        "source": "r",
+        "rule": "per-message"
+      }
+    },
+    {
+      "name": "a part that is not a count",
+      "problem": "malformed",
+      "cost": {
+        "output": 1,
+        "input": -1,
+        "cacheRead": 1,
+        "cacheWrite": 1,
+        "total": 2,
+        "agents": 1,
+        "source": "r",
+        "rule": "per-message"
+      }
+    },
+    {
+      "name": "agents that is not a count",
+      "problem": "malformed",
+      "cost": {
+        "output": 1,
+        "input": 1,
+        "cacheRead": 1,
+        "cacheWrite": 1,
+        "total": 4,
+        "agents": "1",
+        "source": "r",
+        "rule": "per-message"
+      }
+    },
+    {
+      "name": "skipped that is not a count",
+      "problem": "malformed",
+      "cost": {
+        "output": 1,
+        "input": 1,
+        "cacheRead": 1,
+        "cacheWrite": 1,
+        "total": 4,
+        "agents": 1,
+        "source": "r",
+        "rule": "per-message",
+        "skipped": "2"
+      }
+    },
+    {
+      "name": "an empty source",
+      "problem": "malformed",
+      "cost": {
+        "output": 1,
+        "input": 1,
+        "cacheRead": 1,
+        "cacheWrite": 1,
+        "total": 4,
+        "agents": 1,
+        "source": "",
+        "rule": "per-message"
+      }
+    },
+    {
+      "name": "a source that is not a string",
+      "problem": "malformed",
+      "cost": {
+        "output": 1,
+        "input": 1,
+        "cacheRead": 1,
+        "cacheWrite": 1,
+        "total": 4,
+        "agents": 1,
+        "source": 7,
+        "rule": "per-message"
+      }
+    },
+    {
+      "name": "a rule that is not a string",
+      "problem": "malformed",
+      "cost": {
+        "output": 1,
+        "input": 1,
+        "cacheRead": 1,
+        "cacheWrite": 1,
+        "total": 4,
+        "agents": 1,
+        "source": "r",
+        "rule": 7
+      }
+    },
+    {
+      "name": "a total that is not the sum of its parts",
+      "problem": "malformed",
+      "cost": {
+        "output": 1,
+        "input": 1,
+        "cacheRead": 1,
+        "cacheWrite": 1,
+        "total": 5,
+        "agents": 1,
+        "source": "r",
+        "rule": "per-message"
+      }
+    },
+    {
+      "name": "a total alone, no parts",
+      "problem": null,
+      "cost": {
+        "total": 9,
+        "agents": 2,
+        "rule": "per-message"
+      }
+    },
+    {
+      "name": "parts alone, no total",
+      "problem": null,
+      "cost": {
+        "output": 2,
+        "input": 3,
+        "rule": "per-message"
+      }
+    },
+    {
+      "name": "a zero total",
+      "problem": "empty",
+      "cost": {
+        "output": 0,
+        "input": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0,
+        "agents": 1,
+        "source": "r",
+        "rule": "per-message"
+      }
+    },
+    {
+      "name": "zero, even with transcripts skipped and no rule",
+      "problem": "empty",
+      "cost": {
+        "output": 0,
+        "input": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0,
+        "skipped": 2
+      }
+    },
+    {
+      "name": "agents alone measure nothing",
+      "problem": "empty",
+      "cost": {
+        "agents": 3,
+        "rule": "per-message"
+      }
+    },
+    {
+      "name": "no rule: summed per line",
+      "problem": "overcounted",
+      "cost": {
+        "output": 1,
+        "input": 1,
+        "cacheRead": 1,
+        "cacheWrite": 1,
+        "total": 4,
+        "agents": 1,
+        "source": "r"
+      }
+    },
+    {
+      "name": "the per-line rule",
+      "problem": "overcounted",
+      "cost": {
+        "output": 1,
+        "input": 1,
+        "cacheRead": 1,
+        "cacheWrite": 1,
+        "total": 4,
+        "agents": 1,
+        "source": "r",
+        "rule": "per-line"
+      }
+    },
+    {
+      "name": "a rule this reader does not know",
+      "problem": "unknown-rule",
+      "cost": {
+        "output": 1,
+        "input": 1,
+        "cacheRead": 1,
+        "cacheWrite": 1,
+        "total": 4,
+        "agents": 1,
+        "source": "r",
+        "rule": "per-turn"
+      }
+    },
+    {
+      "name": "the per-message rule",
+      "problem": null,
+      "cost": {
+        "output": 1,
+        "input": 1,
+        "cacheRead": 1,
+        "cacheWrite": 1,
+        "total": 4,
+        "agents": 1,
+        "source": "r",
+        "rule": "per-message"
+      }
+    },
+    {
+      "name": "transcripts skipped: a lower bound",
+      "problem": "partial",
+      "cost": {
+        "output": 1,
+        "input": 1,
+        "cacheRead": 1,
+        "cacheWrite": 1,
+        "total": 4,
+        "agents": 1,
+        "source": "r",
+        "rule": "per-message",
+        "skipped": 1
+      }
+    },
+    {
+      "name": "parts of a resumed run unmeasured",
+      "problem": "partial",
+      "cost": {
+        "output": 1,
+        "input": 1,
+        "cacheRead": 1,
+        "cacheWrite": 1,
+        "total": 4,
+        "agents": 1,
+        "source": "r",
+        "rule": "per-message",
+        "partsUnmeasured": 2
+      }
+    },
+    {
+      "name": "none skipped",
+      "problem": null,
+      "cost": {
+        "output": 1,
+        "input": 1,
+        "cacheRead": 1,
+        "cacheWrite": 1,
+        "total": 4,
+        "agents": 1,
+        "source": "r",
+        "rule": "per-message",
+        "skipped": 0,
+        "partsUnmeasured": 0
+      }
+    },
+    {
+      "name": "overcounted before partial",
+      "problem": "overcounted",
+      "cost": {
+        "output": 1,
+        "input": 1,
+        "cacheRead": 1,
+        "cacheWrite": 1,
+        "total": 4,
+        "agents": 1,
+        "source": "r",
+        "skipped": 1
+      }
+    },
+    {
+      "name": "a slice of a run",
+      "problem": null,
+      "cost": {
+        "output": 1,
+        "input": 1,
+        "cacheRead": 1,
+        "cacheWrite": 1,
+        "total": 4,
+        "agents": 1,
+        "source": "r",
+        "rule": "per-message",
+        "slice": {
+          "index": 2,
+          "of": 2,
+          "tail": 3
+        }
+      }
+    },
+    {
+      "name": "a slice at index 0",
+      "problem": "malformed",
+      "cost": {
+        "output": 1,
+        "input": 1,
+        "cacheRead": 1,
+        "cacheWrite": 1,
+        "total": 4,
+        "agents": 1,
+        "source": "r",
+        "rule": "per-message",
+        "slice": {
+          "index": 0,
+          "of": 1
+        }
+      }
+    },
+    {
+      "name": "a slice past its records",
+      "problem": "malformed",
+      "cost": {
+        "output": 1,
+        "input": 1,
+        "cacheRead": 1,
+        "cacheWrite": 1,
+        "total": 4,
+        "agents": 1,
+        "source": "r",
+        "rule": "per-message",
+        "slice": {
+          "index": 2,
+          "of": 1
+        }
+      }
+    },
+    {
+      "name": "a slice with a negative tail",
+      "problem": "malformed",
+      "cost": {
+        "output": 1,
+        "input": 1,
+        "cacheRead": 1,
+        "cacheWrite": 1,
+        "total": 4,
+        "agents": 1,
+        "source": "r",
+        "rule": "per-message",
+        "slice": {
+          "index": 1,
+          "of": 1,
+          "tail": -1
+        }
+      }
+    },
+    {
+      "name": "a slice whose index is a string",
+      "problem": "malformed",
+      "cost": {
+        "output": 1,
+        "input": 1,
+        "cacheRead": 1,
+        "cacheWrite": 1,
+        "total": 4,
+        "agents": 1,
+        "source": "r",
+        "rule": "per-message",
+        "slice": {
+          "index": "1",
+          "of": 1
+        }
+      }
+    },
+    {
+      "name": "a slice with a fractional index",
+      "problem": "malformed",
+      "cost": {
+        "output": 1,
+        "input": 1,
+        "cacheRead": 1,
+        "cacheWrite": 1,
+        "total": 4,
+        "agents": 1,
+        "source": "r",
+        "rule": "per-message",
+        "slice": {
+          "index": 1.5,
+          "of": 2
+        }
+      }
+    },
+    {
+      "name": "a slice that is an array",
+      "problem": "malformed",
+      "cost": {
+        "output": 1,
+        "input": 1,
+        "cacheRead": 1,
+        "cacheWrite": 1,
+        "total": 4,
+        "agents": 1,
+        "source": "r",
+        "rule": "per-message",
+        "slice": [
+          1
+        ]
+      }
+    },
+    {
+      "name": "a slice that is a string",
+      "problem": "malformed",
+      "cost": {
+        "output": 1,
+        "input": 1,
+        "cacheRead": 1,
+        "cacheWrite": 1,
+        "total": 4,
+        "agents": 1,
+        "source": "r",
+        "rule": "per-message",
+        "slice": "x"
+      }
+    },
+    {
+      "name": "a null slice, source and rule are absent",
+      "problem": null,
+      "cost": {
+        "output": 1,
+        "input": 1,
+        "cacheRead": 1,
+        "cacheWrite": 1,
+        "total": 4,
+        "agents": 1,
+        "source": null,
+        "slice": null,
+        "rule": "per-message"
+      }
+    },
+    {
+      "name": "absorbed agents are not read",
+      "problem": null,
+      "cost": {
+        "output": 1,
+        "input": 1,
+        "cacheRead": 1,
+        "cacheWrite": 1,
+        "total": 4,
+        "agents": 1,
+        "source": "r",
+        "rule": "per-message",
+        "absorbed": 4
+      }
+    }
+  ],
+  "folds": [
+    {
+      "name": "a stopped part and its resume: both shares summed",
+      "parts": [
+        {
+          "ts": "2026-11-01T10-00-00Z",
+          "verdict": "INCOMPLETE",
+          "cost": {
+            "output": 100,
+            "input": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 100,
+            "agents": 2,
+            "source": "wf_a",
+            "rule": "per-message",
+            "slice": {
+              "index": 1,
+              "of": 1
+            }
+          }
+        },
+        {
+          "ts": "2026-11-01T11-00-00Z",
+          "verdict": "Warning",
+          "cost": {
+            "output": 300,
+            "input": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 300,
+            "agents": 2,
+            "source": "wf_b",
+            "rule": "per-message"
+          }
+        }
+      ],
+      "standing": "2026-11-01T11-00-00Z",
+      "cost": {
+        "output": 400,
+        "input": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 400,
+        "agents": 4,
+        "source": "wf_b",
+        "rule": "per-message"
+      }
+    },
+    {
+      "name": "a stopped part with no cost: the sum is partial",
+      "parts": [
+        {
+          "ts": "2026-11-01T10-00-00Z",
+          "verdict": "INCOMPLETE"
+        },
+        {
+          "ts": "2026-11-01T11-00-00Z",
+          "verdict": "Warning",
+          "cost": {
+            "output": 300,
+            "input": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 300,
+            "agents": 2,
+            "source": "wf_b",
+            "rule": "per-message"
+          }
+        }
+      ],
+      "standing": "2026-11-01T11-00-00Z",
+      "cost": {
+        "output": 300,
+        "input": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 300,
+        "agents": 2,
+        "source": "wf_b",
+        "rule": "per-message",
+        "partsUnmeasured": 1
+      }
+    },
+    {
+      "name": "one Workflow run filed twice: its share once, the latest",
+      "parts": [
+        {
+          "ts": "2026-11-01T10-00-00Z",
+          "verdict": "INCOMPLETE (stopped)",
+          "cost": {
+            "output": 100,
+            "input": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 100,
+            "agents": 2,
+            "source": "wf_a",
+            "rule": "per-message"
+          }
+        },
+        {
+          "ts": "2026-11-01T11-00-00Z",
+          "verdict": "Block",
+          "cost": {
+            "output": 150,
+            "input": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 150,
+            "agents": 2,
+            "source": "wf_a",
+            "rule": "per-message"
+          }
+        }
+      ],
+      "standing": "2026-11-01T11-00-00Z",
+      "cost": {
+        "output": 150,
+        "input": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 150,
+        "agents": 2,
+        "source": "wf_a",
+        "rule": "per-message"
+      }
+    },
+    {
+      "name": "every part stopped: the newest stands for the run",
+      "parts": [
+        {
+          "ts": "2026-11-01T10-00-00Z",
+          "verdict": "INCOMPLETE",
+          "cost": {
+            "output": 100,
+            "input": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 100,
+            "agents": 2,
+            "source": "wf_a",
+            "rule": "per-message"
+          }
+        },
+        {
+          "ts": "2026-11-01T12-00-00Z",
+          "verdict": "INCOMPLETE",
+          "cost": {
+            "output": 50,
+            "input": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 50,
+            "agents": 2,
+            "source": "wf_c",
+            "rule": "per-message"
+          }
+        }
+      ],
+      "standing": "2026-11-01T12-00-00Z",
+      "cost": {
+        "output": 150,
+        "input": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 150,
+        "agents": 4,
+        "source": "wf_c",
+        "rule": "per-message"
+      }
+    },
+    {
+      "name": "a partial share: its skipped carried",
+      "parts": [
+        {
+          "ts": "2026-11-01T10-00-00Z",
+          "verdict": "INCOMPLETE",
+          "cost": {
+            "output": 100,
+            "input": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 100,
+            "agents": 2,
+            "source": "wf_a",
+            "rule": "per-message",
+            "skipped": 2
+          }
+        },
+        {
+          "ts": "2026-11-01T11-00-00Z",
+          "verdict": "Approve",
+          "cost": {
+            "output": 300,
+            "input": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 300,
+            "agents": 2,
+            "source": "wf_b",
+            "rule": "per-message"
+          }
+        }
+      ],
+      "standing": "2026-11-01T11-00-00Z",
+      "cost": {
+        "output": 400,
+        "input": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 400,
+        "agents": 4,
+        "source": "wf_b",
+        "rule": "per-message",
+        "skipped": 2
+      }
+    },
+    {
+      "name": "two finished records and no stopped part: its own cost",
+      "parts": [
+        {
+          "ts": "2026-11-01T10-00-00Z",
+          "verdict": "Warning",
+          "cost": {
+            "output": 100,
+            "input": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 100,
+            "agents": 2,
+            "source": "wf_a",
+            "rule": "per-message"
+          }
+        },
+        {
+          "ts": "2026-11-01T11-00-00Z",
+          "verdict": "Warning",
+          "cost": {
+            "output": 300,
+            "input": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 300,
+            "agents": 2,
+            "source": "wf_b",
+            "rule": "per-message"
+          }
+        }
+      ],
+      "standing": "2026-11-01T11-00-00Z",
+      "cost": {
+        "output": 300,
+        "input": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 300,
+        "agents": 2,
+        "source": "wf_b",
+        "rule": "per-message"
+      }
+    },
+    {
+      "name": "no usable share: its own cost",
+      "parts": [
+        {
+          "ts": "2026-11-01T10-00-00Z",
+          "verdict": "INCOMPLETE",
+          "cost": {
+            "total": 5,
+            "agents": 1
+          }
+        },
+        {
+          "ts": "2026-11-01T11-00-00Z",
+          "verdict": "Warning"
+        }
+      ],
+      "standing": "2026-11-01T11-00-00Z",
+      "cost": null
+    },
+    {
+      "name": "shares with no source each count alone",
+      "parts": [
+        {
+          "ts": "2026-11-01T10-00-00Z",
+          "verdict": "INCOMPLETE",
+          "cost": {
+            "output": 100,
+            "input": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 100,
+            "agents": 2,
+            "rule": "per-message"
+          }
+        },
+        {
+          "ts": "2026-11-01T10-30-00Z",
+          "verdict": "INCOMPLETE",
+          "cost": {
+            "output": 20,
+            "input": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 20,
+            "agents": 2,
+            "rule": "per-message"
+          }
+        },
+        {
+          "ts": "2026-11-01T11-00-00Z",
+          "verdict": "Warning",
+          "cost": {
+            "output": 300,
+            "input": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 300,
+            "agents": 2,
+            "rule": "per-message"
+          }
+        }
+      ],
+      "standing": "2026-11-01T11-00-00Z",
+      "cost": {
+        "output": 420,
+        "input": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 420,
+        "agents": 6,
+        "rule": "per-message"
+      }
+    }
+  ]
+}

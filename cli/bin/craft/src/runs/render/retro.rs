@@ -6,11 +6,12 @@ use std::io::{self, Write};
 use craft_store::filter::Filter;
 use craft_store::js::{Js, Obj};
 use craft_store::record::SEVERITIES;
-use craft_store::retro::{Kind, Retro};
+use craft_store::retro::Retro;
 use craft_store::tally::Tally;
 
 use super::{TALLY_HEAD, line, num, opt, table, tally_cells, tally_obj};
 
+mod kinds;
 mod rounds;
 
 /// What `f` keeps, each filter by its flag's name, the version first.
@@ -63,23 +64,7 @@ pub fn retro(out: &mut dyn Write, f: &Filter, r: &Retro, json: bool) -> io::Resu
     flows.sort_by_key(|f| std::cmp::Reverse(f.1.runs));
     cells.extend(flows.iter().map(|(g, t)| tally_cells(g, t)));
     table(out, &cells)?;
-    writeln!(out, "\nKinds")?;
-    let mut kinds: Vec<(&String, &Kind)> = r.kinds.iter().collect();
-    kinds.sort_by(|a, b| b.1.runs.cmp(&a.1.runs).then(a.0.cmp(b.0)));
-    let mut cells = vec![
-        ["KIND", "RUNS", "MIN/RUN", "AGENTS/RUN"]
-            .map(String::from)
-            .to_vec(),
-    ];
-    cells.extend(kinds.iter().map(|(k, n)| {
-        vec![
-            (*k).clone(),
-            n.runs.to_string(),
-            opt(n.minutes_per_run()),
-            opt(n.agents_per_run()),
-        ]
-    }));
-    table(out, &cells)?;
+    kinds::text(out, r)?;
     writeln!(out, "\nNot run")?;
     let mut not_run: Vec<(&String, &u64)> = r.not_run.iter().collect();
     not_run.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
@@ -151,20 +136,7 @@ fn retro_json(out: &mut dyn Write, f: &Filter, r: &Retro) -> io::Result<()> {
         o.spread(&tally_obj(t));
         line(out, o)?;
     }
-    for (k, c) in &r.kinds {
-        let o = Obj::new()
-            .with("section", Js::str("kind"))
-            .with("kind", Js::str(k))
-            .with("runs", n(c.runs))
-            .with("timed", n(c.timed))
-            .with(
-                "minutesPerRun",
-                c.minutes_per_run().map_or(Js::Null, Js::Num),
-            )
-            .with("counted", n(c.counted))
-            .with("agentsPerRun", c.agents_per_run().map_or(Js::Null, Js::Num));
-        line(out, o)?;
-    }
+    kinds::json(out, r)?;
     for (w, c) in &r.not_run {
         line(
             out,
